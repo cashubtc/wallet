@@ -241,23 +241,10 @@ struct HistoryView: View {
 
                 Spacer(minLength: 8)
 
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text(formatAmount(transaction))
-                        .font(.system(.body, design: .rounded).weight(.semibold))
-                        .foregroundStyle(amountColor(transaction))
-                        .contentTransition(.numericText(value: Double(transaction.amount)))
-
-                    if transaction.status == .pending {
-                        HStack(spacing: 4) {
-                            Image(systemName: "clock")
-                                .symbolEffect(.pulse, options: .repeating)
-                                .font(.caption2)
-                            Text(transaction.displayStatusText)
-                                .font(.caption)
-                        }
-                        .foregroundStyle(.orange)
-                    }
-                }
+                Text(formatAmount(transaction))
+                    .font(.system(.body, design: .rounded).weight(.semibold))
+                    .foregroundStyle(amountColor(transaction))
+                    .contentTransition(.numericText(value: Double(transaction.amount)))
 
                 if transaction.status == .pending {
                     Button {
@@ -296,11 +283,9 @@ struct HistoryView: View {
             kindIcon(transaction.kind)
                 .frame(width: 36, height: 36)
 
-            Image(systemName: transaction.type == .incoming
-                  ? "arrow.down.circle.fill"
-                  : "arrow.up.circle.fill")
+            Image(systemName: badgeSymbol(for: transaction))
                 .font(.system(size: 14, weight: .bold))
-                .foregroundStyle(transaction.type == .incoming ? .green : .primary)
+                .foregroundStyle(badgeColor(for: transaction))
                 .background(Color(.systemBackground), in: Circle())
                 .offset(x: 4, y: 4)
                 .accessibilityHidden(true)
@@ -343,6 +328,16 @@ struct HistoryView: View {
         if transaction.status == .pending { return .secondary }
         if transaction.type == .incoming { return .green }
         return .primary
+    }
+
+    private func badgeSymbol(for transaction: WalletTransaction) -> String {
+        if transaction.status == .pending { return "clock.circle.fill" }
+        return transaction.type == .incoming ? "arrow.down.circle.fill" : "arrow.up.circle.fill"
+    }
+
+    private func badgeColor(for transaction: WalletTransaction) -> Color {
+        if transaction.status == .pending { return .orange }
+        return transaction.type == .incoming ? .green : .primary
     }
 
     private static let relativeDateFormatter: RelativeDateTimeFormatter = {
