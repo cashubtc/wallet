@@ -117,7 +117,7 @@ struct AuthorizingOverlay: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 10)
-            .background(Color.red.opacity(0.15), in: RoundedRectangle(cornerRadius: 26))
+            .background(Color.red.opacity(0.18), in: RoundedRectangle(cornerRadius: 26))
             .foregroundStyle(.red)
             .transition(.opacity)
         }

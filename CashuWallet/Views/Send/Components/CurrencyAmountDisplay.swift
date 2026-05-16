@@ -42,6 +42,7 @@ struct CurrencyAmountDisplay: View {
         VStack(spacing: 6) {
             Text(primaryText)
                 .font(.system(size: primarySize, weight: .semibold, design: .rounded))
+                .monospacedDigit()
                 .minimumScaleFactor(0.4)
                 .lineLimit(1)
                 .contentTransition(.numericText(value: Double(sats)))
@@ -56,6 +57,7 @@ struct CurrencyAmountDisplay: View {
                     HStack(spacing: 6) {
                         Text(secondaryText)
                             .font(.subheadline.weight(.medium))
+                            .monospacedDigit()
                             .contentTransition(.numericText(value: Double(sats)))
                         Image(systemName: "arrow.up.arrow.down")
                             .font(.caption.weight(.semibold))

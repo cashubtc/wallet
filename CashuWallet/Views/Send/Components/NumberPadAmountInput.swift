@@ -7,6 +7,8 @@ import SwiftUI
 struct NumberPadAmountInput: View {
     @Binding var amountString: String
 
+    @ScaledMetric(relativeTo: .title) private var keyHeight: CGFloat = 64
+
     private let rows: [[String]] = [
         ["1", "2", "3"],
         ["4", "5", "6"],
@@ -30,7 +32,7 @@ struct NumberPadAmountInput: View {
     private func keyView(_ key: String) -> some View {
         if key.isEmpty {
             Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity)
-                .frame(height: 64)
+                .frame(height: keyHeight)
         } else if key == "⌫" {
             Button(action: backspace) {
                 Image(systemName: "delete.left")
@@ -43,7 +45,7 @@ struct NumberPadAmountInput: View {
                 LongPressGesture(minimumDuration: 0.4)
                     .onEnded { _ in clearAll() }
             )
-            .frame(height: 64)
+            .frame(height: keyHeight)
             .accessibilityLabel("Delete")
             .accessibilityHint("Long press to clear")
         } else {
@@ -54,7 +56,7 @@ struct NumberPadAmountInput: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .frame(height: 64)
+            .frame(height: keyHeight)
             .accessibilityLabel(key)
         }
     }

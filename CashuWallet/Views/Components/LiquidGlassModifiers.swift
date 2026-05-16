@@ -60,7 +60,7 @@ struct CanvasDivider: View {
 
     var body: some View {
         Rectangle()
-            .fill(Color.primary.opacity(0.08))
+            .fill(Color(.separator))
             .frame(height: 0.5)
             .padding(.leading, inset)
     }

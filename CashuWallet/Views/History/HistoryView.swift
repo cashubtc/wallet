@@ -19,7 +19,6 @@ struct HistoryView: View {
     }
 
     @State private var filter: FilterMode = .all
-    @State private var showFilterDialog = false
     @State private var selectedTransaction: WalletTransaction?
     @State private var isCheckingStatus: String? = nil
     @State private var transactionUpdateRevision = 0
@@ -42,9 +41,12 @@ struct HistoryView: View {
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        HapticFeedback.selection()
-                        showFilterDialog = true
+                    Menu {
+                        Picker("Filter", selection: $filter) {
+                            ForEach(FilterMode.allCases) { mode in
+                                Text(mode.label).tag(mode)
+                            }
+                        }
                     } label: {
                         Image(systemName: filter == .all
                               ? "line.3.horizontal.decrease"
@@ -55,14 +57,9 @@ struct HistoryView: View {
                     .accessibilityValue(filter.label)
                 }
             }
-            .confirmationDialog("Filter", isPresented: $showFilterDialog, titleVisibility: .visible) {
-                ForEach(FilterMode.allCases) { mode in
-                    Button(mode.label) {
-                        filter = mode
-                        currentPage = 1
-                    }
-                }
-                Button("Cancel", role: .cancel) {}
+            .onChange(of: filter) { _, _ in
+                currentPage = 1
+                HapticFeedback.selection()
             }
             .sheet(item: $selectedTransaction) { transaction in
                 TransactionDetailView(transaction: transaction)
@@ -243,6 +240,7 @@ struct HistoryView: View {
 
                 Text(formatAmount(transaction))
                     .font(.system(.body, design: .rounded).weight(.semibold))
+                    .monospacedDigit()
                     .foregroundStyle(amountColor(transaction))
                     .contentTransition(.numericText(value: Double(transaction.amount)))
 
