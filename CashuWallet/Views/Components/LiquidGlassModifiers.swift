@@ -28,6 +28,42 @@ extension View {
     func glassButton(prominent: Bool = false) -> some View {
         self.buttonStyle(FullWidthCapsuleButtonStyle())
     }
+
+    /// Family-style inverted-fill primary capsule. Surface uses `Color.primary`
+    /// (white in dark mode, black in light); content uses `Color(.systemBackground)`
+    /// for the inverse. Works in both modes regardless of accent color.
+    ///
+    /// Apply this to the *Label* inside a `Button(...)`, not the Button itself,
+    /// so the button's tap target stays the capsule:
+    ///
+    ///     Button(action: ...) {
+    ///         Text("Continue").primaryFillCapsule()
+    ///     }
+    ///     .buttonStyle(.plain)
+    func primaryFillCapsule() -> some View {
+        self
+            .font(.body.weight(.semibold))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 16)
+            .background(Color.primary, in: Capsule())
+            .foregroundStyle(Color(.systemBackground))
+    }
+}
+
+// MARK: - Canvas Divider
+
+/// Hairline divider used between rows on the single-canvas screens
+/// (Lightning Invoice, Pending Ecash, Settings groups, History rows, etc.).
+/// Sits directly on the canvas with a subtle inset to the label baseline.
+struct CanvasDivider: View {
+    var inset: CGFloat = 28
+
+    var body: some View {
+        Rectangle()
+            .fill(Color.primary.opacity(0.08))
+            .frame(height: 0.5)
+            .padding(.leading, inset)
+    }
 }
 
 // MARK: - Full Width Capsule Button Style

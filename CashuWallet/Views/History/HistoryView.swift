@@ -3,12 +3,28 @@ import SwiftUI
 struct HistoryView: View {
     @EnvironmentObject var walletManager: WalletManager
     @ObservedObject var settings = SettingsManager.shared
-    @State private var filterPending: Bool = false
+
+    enum FilterMode: String, CaseIterable, Identifiable {
+        case all
+        case pending
+        case completed
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .all:       return "All transactions"
+            case .pending:   return "Pending only"
+            case .completed: return "Completed only"
+            }
+        }
+    }
+
+    @State private var filter: FilterMode = .all
+    @State private var showFilterDialog = false
     @State private var selectedTransaction: WalletTransaction?
     @State private var isCheckingStatus: String? = nil
     @State private var transactionUpdateRevision = 0
 
-    // Pagination
+    // Pagination — kept for now (visual polish only; structural overhaul deferred)
     @State private var currentPage: Int = 1
     private let pageSize: Int = 10
 
@@ -18,41 +34,35 @@ struct HistoryView: View {
                 if filteredTransactions.isEmpty {
                     emptyStateView
                 } else {
-                    List {
-                        Section {
-                            ForEach(paginatedTransactions) { transaction in
-                                transactionRow(transaction: transaction)
-                                    .listRowSeparator(.hidden)
-                            }
-                        }
-
-                        if maxPages > 1 {
-                            Section {
-                                paginationControls
-                                    .listRowSeparator(.hidden)
-                            }
-                        }
-                    }
-                    .refreshable {
-                        await walletManager.syncPendingMintQuotes()
-                        await walletManager.checkAllPendingTokens()
-                    }
+                    historyList
                 }
             }
-            .listStyle(.plain)
             .navigationTitle("History")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Toggle(isOn: $filterPending) {
-                        Label("Pending Only", systemImage: "line.3.horizontal.decrease.circle")
+                    Button {
+                        HapticFeedback.selection()
+                        showFilterDialog = true
+                    } label: {
+                        Image(systemName: filter == .all
+                              ? "line.3.horizontal.decrease"
+                              : "line.3.horizontal.decrease.circle.fill")
+                            .font(.body.weight(.medium))
                     }
-                    .toggleStyle(.button)
-                    .onChange(of: filterPending) {
+                    .accessibilityLabel("Filter transactions")
+                    .accessibilityValue(filter.label)
+                }
+            }
+            .confirmationDialog("Filter", isPresented: $showFilterDialog, titleVisibility: .visible) {
+                ForEach(FilterMode.allCases) { mode in
+                    Button(mode.label) {
+                        filter = mode
                         currentPage = 1
                     }
-                    .accessibilityLabel(filterPending ? "Show all transactions" : "Filter pending transactions")
-                    .accessibilityHint("Toggles between showing all transactions and only pending ones")
                 }
+                Button("Cancel", role: .cancel) {}
             }
             .sheet(item: $selectedTransaction) { transaction in
                 TransactionDetailView(transaction: transaction)
@@ -68,13 +78,111 @@ struct HistoryView: View {
         }
     }
 
+    // MARK: - History List
+
+    private var historyList: some View {
+        ScrollView {
+            LazyVStack(spacing: 0, pinnedViews: []) {
+                ForEach(groupedSections, id: \.title) { group in
+                    sectionHeader(group.title)
+
+                    VStack(spacing: 0) {
+                        ForEach(Array(group.transactions.enumerated()), id: \.element.id) { index, transaction in
+                            transactionRow(transaction: transaction)
+                            if index < group.transactions.count - 1 {
+                                CanvasDivider()
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 4)
+                    .padding(.bottom, 12)
+                }
+
+                if maxPages > 1 {
+                    paginationControls
+                        .padding(.top, 8)
+                        .padding(.bottom, 24)
+                }
+            }
+            .padding(.horizontal)
+            .padding(.top, 8)
+            .animation(.snappy(duration: 0.25), value: filter)
+            .animation(.snappy(duration: 0.25), value: currentPage)
+        }
+        .refreshable {
+            await walletManager.syncPendingMintQuotes()
+            await walletManager.checkAllPendingTokens()
+        }
+    }
+
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .textCase(.uppercase)
+            .tracking(1.2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 4)
+            .padding(.top, 16)
+            .padding(.bottom, 8)
+    }
+
+    // MARK: - Grouping
+
+    private struct TransactionGroup {
+        let title: String
+        let transactions: [WalletTransaction]
+    }
+
+    private var groupedSections: [TransactionGroup] {
+        let txns = paginatedTransactions
+        guard !txns.isEmpty else { return [] }
+
+        let calendar = Calendar.current
+        let now = Date()
+        let startOfToday = calendar.startOfDay(for: now)
+        let startOfYesterday = calendar.date(byAdding: .day, value: -1, to: startOfToday) ?? startOfToday
+        let startOfThisWeek = calendar.dateInterval(of: .weekOfYear, for: now)?.start ?? startOfYesterday
+        let startOfThisMonth = calendar.dateInterval(of: .month, for: now)?.start ?? startOfThisWeek
+
+        // Buckets in display order
+        var today: [WalletTransaction] = []
+        var yesterday: [WalletTransaction] = []
+        var thisWeek: [WalletTransaction] = []
+        var thisMonth: [WalletTransaction] = []
+        var earlier: [WalletTransaction] = []
+
+        for t in txns {
+            if t.date >= startOfToday {
+                today.append(t)
+            } else if t.date >= startOfYesterday {
+                yesterday.append(t)
+            } else if t.date >= startOfThisWeek {
+                thisWeek.append(t)
+            } else if t.date >= startOfThisMonth {
+                thisMonth.append(t)
+            } else {
+                earlier.append(t)
+            }
+        }
+
+        var groups: [TransactionGroup] = []
+        if !today.isEmpty     { groups.append(.init(title: "Today",      transactions: today)) }
+        if !yesterday.isEmpty { groups.append(.init(title: "Yesterday",  transactions: yesterday)) }
+        if !thisWeek.isEmpty  { groups.append(.init(title: "This Week",  transactions: thisWeek)) }
+        if !thisMonth.isEmpty { groups.append(.init(title: "This Month", transactions: thisMonth)) }
+        if !earlier.isEmpty   { groups.append(.init(title: "Earlier",    transactions: earlier)) }
+        return groups
+    }
+
     // MARK: - Computed Properties
 
     private var filteredTransactions: [WalletTransaction] {
-        if filterPending {
-            return walletManager.transactions.filter { $0.status == .pending }
+        switch filter {
+        case .all:       return walletManager.transactions
+        case .pending:   return walletManager.transactions.filter { $0.status == .pending }
+        case .completed: return walletManager.transactions.filter { $0.status == .completed }
         }
-        return walletManager.transactions
     }
 
     private var maxPages: Int {
@@ -84,7 +192,6 @@ struct HistoryView: View {
     private var paginatedTransactions: [WalletTransaction] {
         let startIndex = (currentPage - 1) * pageSize
         let endIndex = min(startIndex + pageSize, filteredTransactions.count)
-
         guard startIndex < filteredTransactions.count else { return [] }
         return Array(filteredTransactions[startIndex..<endIndex])
     }
@@ -93,74 +200,74 @@ struct HistoryView: View {
 
     @ViewBuilder
     private var emptyStateView: some View {
-        if #available(iOS 17.0, *) {
-            ContentUnavailableView(
-                "No Transactions Yet",
-                systemImage: "clock",
-                description: Text("Your transaction history will appear here")
-            )
-        } else {
-            VStack(spacing: 20) {
-                Spacer()
-                Image(systemName: "clock")
-                    .font(.title)
-                    .foregroundStyle(.secondary)
-                Text("No Transactions Yet")
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                Text("Your transaction history will appear here")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                Spacer()
-            }
-            .padding()
+        VStack(spacing: 16) {
+            Spacer()
+            Image(systemName: "bolt.fill")
+                .font(.system(size: 56, weight: .light))
+                .foregroundStyle(.secondary)
+                .symbolEffect(.pulse, options: .repeating)
+            Text("No activity yet")
+                .font(.title3.weight(.semibold))
+            Text("Your first payment will show up here")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            Spacer()
+            Spacer()
         }
+        .padding(.horizontal, 32)
     }
 
     // MARK: - Transaction Row
 
     private func transactionRow(transaction: WalletTransaction) -> some View {
         Button {
+            HapticFeedback.selection()
             selectedTransaction = transaction
         } label: {
-            HStack(spacing: 12) {
-                transactionKindIcon(transaction.kind)
-                    .frame(width: 32, height: 32)
+            HStack(spacing: 14) {
+                rowIcon(for: transaction)
+                    .frame(width: 36, height: 36)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(transaction.kind.displayName)
-                        .font(.body)
+                    Text(rowTitle(for: transaction))
+                        .font(.body.weight(.medium))
+                        .lineLimit(1)
 
                     Text(formatRelativeDate(transaction.date))
-                        .font(.subheadline)
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                 }
 
-                Spacer()
+                Spacer(minLength: 8)
 
                 VStack(alignment: .trailing, spacing: 2) {
                     Text(formatAmount(transaction))
-                        .font(.body.bold())
+                        .font(.system(.body, design: .rounded).weight(.semibold))
                         .foregroundStyle(amountColor(transaction))
+                        .contentTransition(.numericText(value: Double(transaction.amount)))
 
                     if transaction.status == .pending {
-                        Text(transaction.displayStatusText)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.trailing)
+                        HStack(spacing: 4) {
+                            Image(systemName: "clock")
+                                .symbolEffect(.pulse, options: .repeating)
+                                .font(.caption2)
+                            Text(transaction.displayStatusText)
+                                .font(.caption)
+                        }
+                        .foregroundStyle(.orange)
                     }
                 }
 
                 if transaction.status == .pending {
                     Button {
-                        Task {
-                            await refreshPendingTransaction(transaction)
-                        }
+                        Task { await refreshPendingTransaction(transaction) }
                     } label: {
                         if isCheckingStatus == transaction.id {
-                            ProgressView()
+                            ProgressView().controlSize(.small)
                         } else {
                             Image(systemName: "arrow.triangle.2.circlepath")
+                                .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -169,14 +276,39 @@ struct HistoryView: View {
                     .accessibilityHint(refreshHint(for: transaction))
                 }
             }
+            .padding(.horizontal, 4)
+            .padding(.vertical, 14)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(transaction.kind.displayName) transaction, \(formatAmount(transaction)) sats, \(transaction.status == .pending ? transaction.displayStatusText.lowercased() : "completed"), \(formatRelativeDate(transaction.date))")
+        .accessibilityLabel("\(rowTitle(for: transaction)), \(formatAmount(transaction)) sats, \(transaction.status == .pending ? transaction.displayStatusText.lowercased() : "completed"), \(formatRelativeDate(transaction.date))")
         .accessibilityHint("Opens transaction details")
     }
 
+    // MARK: - Row content
+
+    /// Icon stack: leading kind icon with a small direction-overlay bubble in
+    /// the bottom-trailing corner. Family-style.
     @ViewBuilder
-    private func transactionKindIcon(_ kind: WalletTransaction.TransactionKind) -> some View {
+    private func rowIcon(for transaction: WalletTransaction) -> some View {
+        ZStack(alignment: .bottomTrailing) {
+            kindIcon(transaction.kind)
+                .frame(width: 36, height: 36)
+
+            Image(systemName: transaction.type == .incoming
+                  ? "arrow.down.circle.fill"
+                  : "arrow.up.circle.fill")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(transaction.type == .incoming ? .green : .primary)
+                .background(Color(.systemBackground), in: Circle())
+                .offset(x: 4, y: 4)
+                .accessibilityHidden(true)
+        }
+    }
+
+    @ViewBuilder
+    private func kindIcon(_ kind: WalletTransaction.TransactionKind) -> some View {
         switch kind {
         case .ecash:
             EcashIcon()
@@ -189,20 +321,27 @@ struct HistoryView: View {
         }
     }
 
+    private func rowTitle(for transaction: WalletTransaction) -> String {
+        switch (transaction.kind, transaction.type) {
+        case (.ecash,     .incoming): return "Received ecash"
+        case (.ecash,     .outgoing): return "Sent ecash"
+        case (.lightning, .incoming): return "Lightning received"
+        case (.lightning, .outgoing): return "Lightning paid"
+        case (.onchain,   .incoming): return "Bitcoin received"
+        case (.onchain,   .outgoing): return "Bitcoin sent"
+        }
+    }
+
     // MARK: - Formatting
 
     private func formatAmount(_ transaction: WalletTransaction) -> String {
-        let prefix = transaction.type == .incoming ? "+" : "-"
+        let prefix = transaction.type == .incoming ? "+" : "−"
         return "\(prefix)\(settings.formatAmountShort(transaction.amount))"
     }
 
     private func amountColor(_ transaction: WalletTransaction) -> Color {
-        if transaction.status == .pending {
-            return .secondary
-        }
-        if transaction.type == .incoming {
-            return .green
-        }
+        if transaction.status == .pending { return .secondary }
+        if transaction.type == .incoming { return .green }
         return .primary
     }
 
@@ -231,12 +370,10 @@ struct HistoryView: View {
 
     private func checkTransactionStatus(_ transaction: WalletTransaction) async {
         guard let token = transaction.token else { return }
-
         isCheckingStatus = transaction.id
         defer { isCheckingStatus = nil }
 
         let isSpent = await walletManager.checkTokenSpendable(token: token, mintUrl: transaction.mintUrl)
-
         if isSpent {
             walletManager.removePendingToken(tokenId: transaction.id)
             await walletManager.loadTransactions()
@@ -245,83 +382,51 @@ struct HistoryView: View {
 
     private func refreshHint(for transaction: WalletTransaction) -> String {
         switch transaction.kind {
-        case .ecash:
-            return "Checks if this pending token has been claimed"
-        case .lightning, .onchain:
-            return "Refreshes this pending receive request"
+        case .ecash:                return "Checks if this pending token has been claimed"
+        case .lightning, .onchain:  return "Refreshes this pending receive request"
         }
     }
 
     // MARK: - Pagination
 
     private var paginationControls: some View {
-        HStack {
+        HStack(spacing: 8) {
             Spacer()
 
-            Button("|<") { currentPage = 1 }
-                .disabled(currentPage <= 1)
-                .accessibilityLabel("First page")
-
-            Button("<") { currentPage = max(1, currentPage - 1) }
-                .disabled(currentPage <= 1)
-                .accessibilityLabel("Previous page")
-
-            ForEach(visiblePageNumbers, id: \.self) { pageNum in
-                if pageNum == -1 {
-                    Text("...")
-                        .foregroundStyle(.secondary)
-                } else {
-                    Button("\(pageNum)") { currentPage = pageNum }
-                        .fontWeight(currentPage == pageNum ? .bold : .regular)
-                        .accessibilityLabel("Page \(pageNum)")
-                        .accessibilityValue(currentPage == pageNum ? "Current page" : "")
-                }
+            Button { currentPage = 1 } label: {
+                Image(systemName: "chevron.left.2")
             }
+            .disabled(currentPage <= 1)
+            .accessibilityLabel("First page")
 
-            Button(">") { currentPage = min(maxPages, currentPage + 1) }
-                .disabled(currentPage >= maxPages)
-                .accessibilityLabel("Next page")
+            Button { currentPage = max(1, currentPage - 1) } label: {
+                Image(systemName: "chevron.left")
+            }
+            .disabled(currentPage <= 1)
+            .accessibilityLabel("Previous page")
 
-            Button(">|") { currentPage = maxPages }
-                .disabled(currentPage >= maxPages)
-                .accessibilityLabel("Last page")
+            Text("Page \(currentPage) of \(maxPages)")
+                .font(.footnote.weight(.medium))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 12)
+                .contentTransition(.numericText())
+
+            Button { currentPage = min(maxPages, currentPage + 1) } label: {
+                Image(systemName: "chevron.right")
+            }
+            .disabled(currentPage >= maxPages)
+            .accessibilityLabel("Next page")
+
+            Button { currentPage = maxPages } label: {
+                Image(systemName: "chevron.right.2")
+            }
+            .disabled(currentPage >= maxPages)
+            .accessibilityLabel("Last page")
 
             Spacer()
         }
-        .font(.caption)
-    }
-
-    private var visiblePageNumbers: [Int] {
-        var pages: [Int] = []
-
-        if maxPages <= 5 {
-            pages = Array(1...maxPages)
-        } else {
-            pages.append(1)
-
-            if currentPage > 3 {
-                pages.append(-1)
-            }
-
-            let start = max(2, currentPage - 1)
-            let end = min(maxPages - 1, currentPage + 1)
-
-            for i in start...end {
-                if !pages.contains(i) {
-                    pages.append(i)
-                }
-            }
-
-            if currentPage < maxPages - 2 {
-                pages.append(-1)
-            }
-
-            if !pages.contains(maxPages) {
-                pages.append(maxPages)
-            }
-        }
-
-        return pages
+        .font(.footnote)
+        .buttonStyle(.borderless)
     }
 }
 
