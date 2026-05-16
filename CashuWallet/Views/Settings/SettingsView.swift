@@ -36,46 +36,42 @@ struct SettingsView: View {
         NavigationStack {
             ScrollView {
                 LazyVStack(spacing: 0) {
-                    accountHeader
-                        .padding(.top, 8)
-                        .padding(.bottom, 16)
-
                     sectionGroup(title: "Backup") {
-                        navRow("Backup & Restore", icon: "key.fill", tint: .green) {
+                        navRow("Backup & Restore", icon: "key.fill") {
                             backupDetailView
                         }
                     }
 
                     sectionGroup(title: "Payments") {
-                        navRow("Lightning", icon: "bolt.fill", tint: .orange) {
+                        navRow("Lightning", icon: "bolt.fill") {
                             lightningDetailView
                         }
                         CanvasDivider()
-                        navRow("Payment Requests", icon: "arrow.left.arrow.right", tint: .orange) {
+                        navRow("Payment Requests", icon: "arrow.left.arrow.right") {
                             paymentRequestsDetailView
                         }
                         CanvasDivider()
-                        navRow("P2PK", icon: "lock.fill", tint: .blue) {
+                        navRow("P2PK", icon: "lock.fill") {
                             p2pkDetailView
                         }
                     }
 
                     sectionGroup(title: "Integrations") {
-                        navRow("Nostr", icon: "person.circle", tint: .purple) {
+                        navRow("Nostr", icon: "person.circle") {
                             nostrDetailView
                         }
                         CanvasDivider()
-                        navRow("Nostr Wallet Connect", icon: "link", tint: .purple) {
+                        navRow("Nostr Wallet Connect", icon: "link") {
                             nwcDetailView
                         }
                     }
 
                     sectionGroup(title: "Privacy & Display") {
-                        navRow("Privacy", icon: "eye.slash", tint: .gray) {
+                        navRow("Privacy", icon: "eye.slash") {
                             privacyDetailView
                         }
                         CanvasDivider()
-                        navRow("Appearance", icon: "paintbrush", tint: .pink) {
+                        navRow("Appearance", icon: "paintbrush") {
                             appearanceDetailView
                         }
                     }
@@ -95,7 +91,7 @@ struct SettingsView: View {
                             HapticFeedback.selection()
                             showDeleteConfirm = true
                         } label: {
-                            settingsRow("Delete Wallet", icon: "trash", tint: .red, isDestructive: true)
+                            settingsRow("Delete Wallet", icon: "trash", isDestructive: true)
                         }
                         .buttonStyle(.plain)
                     }
@@ -147,42 +143,6 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - Account Header
-
-    private var accountHeader: some View {
-        VStack(spacing: 14) {
-            // Avatar
-            Image(systemName: "person.crop.circle.fill")
-                .font(.system(size: 64))
-                .foregroundStyle(.secondary)
-                .symbolRenderingMode(.hierarchical)
-
-            VStack(spacing: 4) {
-                if let mint = walletManager.activeMint {
-                    Text(mint.name)
-                        .font(.title3.weight(.semibold))
-                } else {
-                    Text("Cashu Wallet")
-                        .font(.title3.weight(.semibold))
-                }
-
-                Text(settings.formatAmount(walletManager.balance))
-                    .font(.system(.title2, design: .rounded).weight(.semibold))
-                    .contentTransition(.numericText(value: Double(walletManager.balance)))
-
-                if !npcService.lightningAddress.isEmpty {
-                    Text(npcService.lightningAddress)
-                        .font(.caption.monospaced())
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .padding(.top, 2)
-                }
-            }
-        }
-        .frame(maxWidth: .infinity)
-    }
-
     // MARK: - Section + Row Helpers
 
     @ViewBuilder
@@ -210,13 +170,12 @@ struct SettingsView: View {
     private func navRow<Destination: View>(
         _ title: String,
         icon: String,
-        tint: Color,
         @ViewBuilder destination: () -> Destination
     ) -> some View {
         NavigationLink {
             destination()
         } label: {
-            settingsRow(title, icon: icon, tint: tint, showChevron: true)
+            settingsRow(title, icon: icon, showChevron: true)
         }
         .buttonStyle(.plain)
         .simultaneousGesture(TapGesture().onEnded { HapticFeedback.selection() })
@@ -224,7 +183,7 @@ struct SettingsView: View {
 
     private func externalLinkRow(_ title: String, icon: String, url: URL) -> some View {
         Link(destination: url) {
-            settingsRow(title, icon: icon, tint: .gray, showChevron: true, isExternal: true)
+            settingsRow(title, icon: icon, showChevron: true, isExternal: true)
         }
         .simultaneousGesture(TapGesture().onEnded { HapticFeedback.selection() })
     }
@@ -232,17 +191,15 @@ struct SettingsView: View {
     private func settingsRow(
         _ title: String,
         icon: String,
-        tint: Color,
         showChevron: Bool = false,
         isExternal: Bool = false,
         isDestructive: Bool = false
     ) -> some View {
         HStack(spacing: 14) {
             Image(systemName: icon)
-                .font(.callout.weight(.semibold))
-                .foregroundStyle(.white)
-                .frame(width: 30, height: 30)
-                .background(isDestructive ? Color.red : tint, in: RoundedRectangle(cornerRadius: 7))
+                .font(.body.weight(.semibold))
+                .foregroundStyle(isDestructive ? .red : .secondary)
+                .frame(width: 28)
 
             Text(title)
                 .font(.body)
@@ -257,7 +214,7 @@ struct SettingsView: View {
             }
         }
         .padding(.horizontal, 4)
-        .padding(.vertical, 12)
+        .padding(.vertical, 14)
         .contentShape(Rectangle())
     }
 
