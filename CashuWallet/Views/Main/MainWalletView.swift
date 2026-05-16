@@ -371,19 +371,16 @@ private struct WalletActionSheetView: View {
     let onSelect: (WalletFlow) -> Void
 
     private var secondaryOptionTitle: String {
-        switch action {
-        case .receive:
-            return "Invoice / Address"
-        case .send:
-            return "Lightning / On-chain"
-        }
+        // Lightning + on-chain are both "Bitcoin" from the user's mental model;
+        // the protocol choice happens inside the flow itself.
+        "Bitcoin"
     }
 
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 0) {
                 optionButton(title: "Ecash", icon: "banknote", action: action.primaryOption)
-                optionButton(title: secondaryOptionTitle, icon: "bolt.fill", action: action.secondaryOption)
+                optionButton(title: secondaryOptionTitle, icon: "bitcoinsign.circle.fill", action: action.secondaryOption)
                 if action == .send, NFCNDEFReaderSession.readingAvailable {
                     optionButton(title: "Contactless", icon: "wave.3.right.circle.fill", action: .contactlessPay)
                 }
