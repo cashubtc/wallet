@@ -326,7 +326,7 @@ struct HistoryView: View {
 
     private func amountColor(_ transaction: WalletTransaction) -> Color {
         if transaction.status == .pending { return .secondary }
-        if transaction.type == .incoming { return .green }
+        if transaction.status == .completed { return .green }
         return .primary
     }
 
