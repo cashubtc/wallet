@@ -315,9 +315,9 @@ private enum WalletActionSheet: String, Identifiable {
 
     var detentHeight: CGFloat {
         if self == .send, NFCNDEFReaderSession.readingAvailable {
-            return 265
+            return 245
         }
-        return 205
+        return 195
     }
 }
 
@@ -414,6 +414,7 @@ private struct WalletActionSheetView: View {
 
     private func optionButton(title: String, icon: String, action flow: WalletFlow) -> some View {
         Button {
+            HapticFeedback.selection()
             onSelect(flow)
         } label: {
             optionLabel(title: title, icon: icon)
@@ -424,17 +425,22 @@ private struct WalletActionSheetView: View {
     private func optionLabel(title: String, icon: String) -> some View {
         HStack(spacing: 14) {
             Image(systemName: icon)
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: 24)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(.primary)
+                .frame(width: 36, height: 36)
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
 
             Text(title)
-                .font(.title3)
+                .font(.title3.weight(.medium))
 
             Spacer()
+
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.tertiary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 18)
+        .padding(.vertical, 14)
         .foregroundStyle(.primary)
         .contentShape(Rectangle())
     }

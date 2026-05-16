@@ -31,10 +31,19 @@ struct SendView: View {
             Group {
                 if let token = generatedToken {
                     tokenDisplayView(token: token)
+                        .transition(.asymmetric(
+                            insertion: .move(edge: .trailing).combined(with: .opacity),
+                            removal: .move(edge: .leading).combined(with: .opacity)
+                        ))
                 } else {
                     sendInputView
+                        .transition(.asymmetric(
+                            insertion: .move(edge: .leading).combined(with: .opacity),
+                            removal: .move(edge: .leading).combined(with: .opacity)
+                        ))
                 }
             }
+            .animation(.snappy(duration: 0.35), value: generatedToken != nil)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -51,18 +60,10 @@ struct SendView: View {
 
                 if generatedToken == nil {
                     ToolbarItem(placement: .topBarTrailing) {
-                        HStack(spacing: 6) {
-                            Button(action: { lockWithP2PK.toggle() }) {
-                                Image(systemName: lockWithP2PK ? "lock.fill" : "lock.open")
-                                    .font(.caption)
-                                    .foregroundStyle(lockWithP2PK ? Color.accentColor : .secondary)
-                            }
-                            Button(action: { settings.useBitcoinSymbol.toggle() }) {
-                                Text(settings.unitLabel)
-                                    .font(.caption)
-                                    .fontWeight(.bold)
-                                    .foregroundStyle(Color.accentColor)
-                            }
+                        Button(action: { lockWithP2PK.toggle() }) {
+                            Image(systemName: lockWithP2PK ? "lock.fill" : "lock.open")
+                                .font(.caption)
+                                .foregroundStyle(lockWithP2PK ? Color.accentColor : .secondary)
                         }
                     }
                 }
@@ -117,31 +118,18 @@ struct SendView: View {
 
             Spacer()
 
-            // Amount display
-            VStack(spacing: 8) {
-                Text(formattedAmount)
-                    .font(.largeTitle.bold())
-                    .minimumScaleFactor(0.5)
-                    .lineLimit(1)
-                    .contentTransition(.numericText())
-
-                // Fiat conversion
-                if priceService.btcPriceUSD > 0, let sats = UInt64(amountString) {
-                    Text(priceService.formatSatsAsFiat(sats))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text("$0.00")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-            }
+            // Amount display — fiat-primary with tap-to-flip ↕ pill
+            CurrencyAmountDisplay(
+                sats: UInt64(amountString) ?? 0,
+                primary: $settings.amountDisplayPrimary
+            )
 
             if let error = errorMessage {
                 Text(error)
                     .font(.caption)
                     .foregroundStyle(.red)
                     .padding(.top, 8)
+                    .transition(.opacity.combined(with: .scale))
             }
 
             Spacer()
@@ -154,7 +142,7 @@ struct SendView: View {
             }
 
             // Number pad
-            numberPad
+            NumberPadAmountInput(amountString: $amountString)
                 .padding(.horizontal, 24)
 
             // Send button
@@ -173,91 +161,60 @@ struct SendView: View {
         }
     }
 
-    // MARK: - Number Pad
-
-    private var numberPad: some View {
-        VStack(spacing: 8) {
-            ForEach(numberRows, id: \.self) { row in
-                HStack(spacing: 8) {
-                    ForEach(row, id: \.self) { key in
-                        numberKey(key)
-                    }
-                }
-            }
-        }
-    }
-
-    private var numberRows: [[String]] {
-        [["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"], ["", "0", "⌫"]]
-    }
-
-    private func numberKey(_ key: String) -> some View {
-        Group {
-            if key.isEmpty {
-                Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                Button(action: { handleKeyPress(key) }) {
-                    Group {
-                        if key == "⌫" {
-                            Image(systemName: "chevron.left").font(.title3)
-                        } else {
-                            Text(key).font(.title2.weight(.medium))
-                        }
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(key == "⌫" ? "Delete" : key)
-            }
-        }
-        .frame(height: 56)
-    }
-
-    private func handleKeyPress(_ key: String) {
-        if key == "⌫" {
-            if !amountString.isEmpty { amountString.removeLast() }
-        } else {
-            if amountString == "0" { amountString = key } else { amountString.append(key) }
-        }
-    }
-
     // MARK: - Mint Selector
 
     private func mintSelector(mint: MintInfo) -> some View {
-        Button(action: { showMintPicker = true }) {
-            HStack(spacing: 12) {
-                if let iconUrl = mint.iconUrl, let url = URL(string: iconUrl) {
-                    AsyncImage(url: url) { image in
-                        image.resizable().aspectRatio(contentMode: .fill)
-                    } placeholder: {
-                        Image(systemName: "bitcoinsign.bank.building").foregroundStyle(.secondary)
-                    }
-                    .frame(width: 40, height: 40)
-                    .clipShape(Circle())
-                } else {
-                    Image(systemName: "bitcoinsign.bank.building")
-                        .foregroundStyle(.secondary)
+        HStack(spacing: 12) {
+            Button(action: { showMintPicker = true }) {
+                HStack(spacing: 12) {
+                    if let iconUrl = mint.iconUrl, let url = URL(string: iconUrl) {
+                        AsyncImage(url: url) { image in
+                            image.resizable().aspectRatio(contentMode: .fill)
+                        } placeholder: {
+                            Image(systemName: "bitcoinsign.bank.building").foregroundStyle(.secondary)
+                        }
                         .frame(width: 40, height: 40)
-                }
+                        .clipShape(Circle())
+                    } else {
+                        Image(systemName: "bitcoinsign.bank.building")
+                            .foregroundStyle(.secondary)
+                            .frame(width: 40, height: 40)
+                    }
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(mint.name).font(.subheadline.weight(.medium))
-                    Text(formatBalance(mint.balance))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(mint.name).font(.subheadline.weight(.medium))
+                        Text(formatBalance(mint.balance))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer(minLength: 0)
+
+                    Image(systemName: "chevron.down")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-
-                Spacer()
-
-                Image(systemName: "chevron.down")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                .contentShape(Rectangle())
             }
-            .padding(12)
-            .liquidGlass(in: RoundedRectangle(cornerRadius: 12), interactive: true)
+            .buttonStyle(.plain)
+
+            Button(action: { useMax(mint: mint) }) {
+                Text("Use Max")
+                    .font(.caption.weight(.semibold))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(.thinMaterial, in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Fill the amount with your full mint balance")
         }
-        .buttonStyle(.plain)
+        .padding(12)
+        .liquidGlass(in: RoundedRectangle(cornerRadius: 12), interactive: true)
+    }
+
+    private func useMax(mint: MintInfo) {
+        HapticFeedback.impact(.light)
+        amountString = String(mint.balance)
     }
 
     private var canSend: Bool {
@@ -310,32 +267,44 @@ struct SendView: View {
                         .padding(.top, 8)
 
                     // Amount
-                    Text(formattedAmount)
-                        .font(.title.bold())
+                    CurrencyAmountDisplay(
+                        sats: UInt64(amountString) ?? 0,
+                        primary: $settings.amountDisplayPrimary,
+                        primarySize: 36
+                    )
 
                     // Status
-                    if tokenClaimed {
-                        HStack(spacing: 6) {
-                            Image(systemName: "checkmark.circle.fill")
-                            Text("Claimed")
+                    Group {
+                        if tokenClaimed {
+                            HStack(spacing: 6) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .symbolEffect(.bounce, value: tokenClaimed)
+                                Text("Claimed")
+                            }
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.green)
+                            .transition(.scale.combined(with: .opacity))
+                        } else if isCheckingClaim {
+                            HStack(spacing: 6) {
+                                ProgressView().scaleEffect(0.8)
+                                Text("Checking...")
+                            }
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .transition(.opacity)
+                        } else {
+                            HStack(spacing: 6) {
+                                Image(systemName: "clock")
+                                    .symbolEffect(.pulse, options: .repeating)
+                                Text("Pending")
+                            }
+                            .font(.subheadline)
+                            .foregroundStyle(.orange)
+                            .transition(.opacity)
                         }
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.green)
-                    } else if isCheckingClaim {
-                        HStack(spacing: 6) {
-                            ProgressView().scaleEffect(0.8)
-                            Text("Checking...")
-                        }
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    } else {
-                        HStack(spacing: 6) {
-                            Image(systemName: "clock")
-                            Text("Pending")
-                        }
-                        .font(.subheadline)
-                        .foregroundStyle(.orange)
                     }
+                    .animation(.spring(response: 0.5, dampingFraction: 0.7), value: tokenClaimed)
+                    .animation(.easeInOut(duration: 0.2), value: isCheckingClaim)
 
                     // Details
                     VStack(spacing: 12) {
@@ -375,11 +344,6 @@ struct SendView: View {
             Text(value).fontWeight(.medium)
         }
         .font(.subheadline)
-    }
-
-    private var formattedAmount: String {
-        let amount = amountString.isEmpty ? "0" : amountString
-        return settings.useBitcoinSymbol ? "₿\(amount)" : "\(amount) sat"
     }
 
     private func formatBalance(_ sats: UInt64) -> String {
@@ -566,7 +530,28 @@ struct MeltView: View {
     @State private var isPaid = false
     @State private var errorMessage: String?
 
-    @FocusState private var amountFieldFocused: Bool
+    // Authorizing overlay state
+    @State private var showAuthorizingOverlay = false
+    @State private var authorizingState: AuthorizingOverlay.FlowState = .authorizing
+
+    private var meltViewStateKey: String {
+        if isPaid { return "paid" }
+        if meltQuote != nil { return "quote" }
+        return "input"
+    }
+
+    private var shortRecipient: String {
+        let trimmed = requestInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count > 24 else { return trimmed }
+        let prefix = trimmed.prefix(10)
+        let suffix = trimmed.suffix(10)
+        return "\(prefix)…\(suffix)"
+    }
+
+    private func handleAuthorizingDismiss() {
+        // Reset state so the overlay can be presented again cleanly next time.
+        authorizingState = .authorizing
+    }
 
     init(
         initialRequest: String = "",
@@ -587,12 +572,22 @@ struct MeltView: View {
             Group {
                 if isPaid {
                     paymentSuccessView
+                        .transition(.scale.combined(with: .opacity))
                 } else if let quote = meltQuote {
                     quoteConfirmView(quote: quote)
+                        .transition(.asymmetric(
+                            insertion: .move(edge: .trailing).combined(with: .opacity),
+                            removal: .move(edge: .leading).combined(with: .opacity)
+                        ))
                 } else {
                     requestInputView
+                        .transition(.asymmetric(
+                            insertion: .move(edge: .leading).combined(with: .opacity),
+                            removal: .move(edge: .leading).combined(with: .opacity)
+                        ))
                 }
             }
+            .animation(.snappy(duration: 0.35), value: meltViewStateKey)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -606,17 +601,18 @@ struct MeltView: View {
                     Text(screenTitle)
                         .font(.headline)
                 }
-
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button(action: { settings.useBitcoinSymbol.toggle() }) {
-                        Text(settings.unitLabel)
-                            .font(.caption)
-                            .fontWeight(.bold)
-                            .foregroundStyle(Color.accentColor)
-                    }
-                    .accessibilityLabel("Unit: \(settings.unitLabel)")
-                    .accessibilityHint("Toggles display unit")
-                }
+            }
+            .sheet(isPresented: $showAuthorizingOverlay, onDismiss: handleAuthorizingDismiss) {
+                AuthorizingOverlay(
+                    amountSats: meltQuote?.totalAmount ?? 0,
+                    recipient: shortRecipient,
+                    recipientCaption: meltQuote.map { $0.paymentMethod.displayName },
+                    state: $authorizingState,
+                    onDismiss: { showAuthorizingOverlay = false }
+                )
+                .presentationDetents([.height(340)])
+                .presentationBackgroundInteraction(.disabled)
+                .interactiveDismissDisabled()
             }
             .onAppear {
                 syncMeltModeWithActiveMint()
@@ -720,7 +716,7 @@ struct MeltView: View {
 
             if amountRequired {
                 amountEntrySection
-                    .padding(.top, 24)
+                    .padding(.top, 16)
             }
 
             if meltMode == .onchain,
@@ -741,7 +737,13 @@ struct MeltView: View {
                     .padding(.horizontal)
             }
 
-            Spacer()
+            if amountRequired {
+                NumberPadAmountInput(amountString: $amountString)
+                    .padding(.horizontal, 24)
+                    .padding(.top, 12)
+            } else {
+                Spacer()
+            }
 
             Button(action: getQuote) {
                 if isGettingQuote {
@@ -753,37 +755,54 @@ struct MeltView: View {
             .glassButton()
             .disabled(!canGetQuote || isGettingQuote)
             .padding(.horizontal)
+            .padding(.top, 12)
             .padding(.bottom, 16)
         }
     }
 
     private var meltModePicker: some View {
-        Picker("Payment mode", selection: $meltMode) {
-            Text(MeltMode.lightning.displayName).tag(MeltMode.lightning)
-            Text(MeltMode.onchain.displayName).tag(MeltMode.onchain)
+        HStack(spacing: 8) {
+            modePill(mode: .lightning, icon: "bolt.fill")
+            modePill(mode: .onchain, icon: "bitcoinsign.circle")
         }
-        .pickerStyle(.segmented)
+        .padding(4)
+        .background(.thinMaterial, in: Capsule())
         .accessibilityLabel("Payment mode")
     }
 
-    private var amountEntrySection: some View {
-        VStack(spacing: 4) {
-            TextField("0", text: $amountString)
-                .keyboardType(.numberPad)
-                .focused($amountFieldFocused)
-                .font(.largeTitle.bold())
-                .multilineTextAlignment(.center)
-            Text("sat")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+    private func modePill(mode: MeltMode, icon: String) -> some View {
+        let isSelected = meltMode == mode
+        return Button(action: {
+            guard meltMode != mode else { return }
+            HapticFeedback.selection()
+            withAnimation(.snappy) { meltMode = mode }
+        }) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.caption.weight(.semibold))
+                Text(mode.displayName)
+                    .font(.subheadline.weight(.semibold))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+            .background(
+                Capsule().fill(isSelected ? Color.primary.opacity(0.12) : Color.clear)
+            )
+            .foregroundStyle(isSelected ? .primary : .secondary)
+            .contentShape(Capsule())
         }
-        .padding(.horizontal)
+        .buttonStyle(.plain)
+    }
+
+    private var amountEntrySection: some View {
+        CurrencyAmountDisplay(
+            sats: UInt64(amountString) ?? 0,
+            primary: $settings.amountDisplayPrimary,
+            primarySize: 48
+        )
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Payment amount")
         .accessibilityValue("\(amountString.isEmpty ? "0" : amountString) sats")
-        .onAppear {
-            amountFieldFocused = true
-        }
     }
 
     private func meltMintSelector(mint: MintInfo) -> some View {
@@ -819,25 +838,33 @@ struct MeltView: View {
     private func quoteConfirmView(quote: MeltQuoteInfo) -> some View {
         VStack(spacing: 0) {
             ScrollView {
-                VStack(spacing: 20) {
-                    Text("\(quote.totalAmount) sat")
-                        .font(.largeTitle.bold())
-                        .padding(.top, 24)
+                VStack(spacing: 24) {
+                    CurrencyAmountDisplay(
+                        sats: quote.totalAmount,
+                        primary: $settings.amountDisplayPrimary
+                    )
+                    .padding(.top, 24)
 
-                    VStack(spacing: 12) {
+                    VStack(spacing: 0) {
                         meltDetailRow(label: "Method", value: quote.paymentMethod.displayName)
+                        Divider().padding(.leading)
                         if quote.paymentMethod == .onchain {
                             meltDetailRow(
                                 label: "To",
                                 value: PaymentRequestParser.normalizeBitcoinRequest(requestInput)
                             )
+                            Divider().padding(.leading)
                         }
                         meltDetailRow(label: "Amount", value: "\(quote.amount) sat")
+                        Divider().padding(.leading)
                         meltDetailRow(label: "Fee", value: "\(quote.feeReserve) sat")
                         if let mint = walletManager.activeMint {
+                            Divider().padding(.leading)
                             meltDetailRow(label: "Mint", value: URL(string: mint.url)?.host ?? mint.url)
                         }
                     }
+                    .padding(.vertical, 4)
+                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
                     .padding(.horizontal)
 
                     if let error = errorMessage {
@@ -871,8 +898,12 @@ struct MeltView: View {
             Text(value)
                 .fontWeight(.medium)
                 .multilineTextAlignment(.trailing)
+                .lineLimit(1)
+                .truncationMode(.middle)
         }
         .font(.subheadline)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
     }
 
     private var paymentSuccessView: some View {
@@ -881,8 +912,9 @@ struct MeltView: View {
 
             VStack(spacing: 16) {
                 Image(systemName: "checkmark.circle.fill")
-                    .font(.largeTitle)
+                    .font(.system(size: 64))
                     .foregroundStyle(.green)
+                    .symbolEffect(.bounce, value: isPaid)
 
                 Text("Payment Sent!")
                     .font(.title2.weight(.semibold))
@@ -961,13 +993,26 @@ struct MeltView: View {
 
         isPaying = true
         errorMessage = nil
+        HapticFeedback.impact(.medium)
+        authorizingState = .authorizing
+        showAuthorizingOverlay = true
 
         Task { @MainActor in
             do {
                 let _ = try await walletManager.meltTokens(quoteId: quote.id)
+                authorizingState = .sent
+                // Overlay calls onDismiss after 1.2s; flip isPaid then so the
+                // underlying view transitions to success while the sheet dismisses.
+                try? await Task.sleep(nanoseconds: 1_200_000_000)
                 isPaid = true
+                showAuthorizingOverlay = false
             } catch {
-                errorMessage = error.localizedDescription
+                let message = error.localizedDescription
+                authorizingState = .error(message)
+                errorMessage = message
+                // Let the user read the error in the sheet, then dismiss after 2s.
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                showAuthorizingOverlay = false
             }
             isPaying = false
         }
