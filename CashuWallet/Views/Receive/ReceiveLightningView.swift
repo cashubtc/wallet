@@ -47,10 +47,19 @@ struct ReceiveLightningView: View {
             Group {
                 if let quote = mintQuote {
                     requestDisplayView(quote: quote)
+                        .transition(.asymmetric(
+                            insertion: .move(edge: .trailing).combined(with: .opacity),
+                            removal: .move(edge: .trailing).combined(with: .opacity)
+                        ))
                 } else {
                     amountInputView
+                        .transition(.asymmetric(
+                            insertion: .move(edge: .leading).combined(with: .opacity),
+                            removal: .move(edge: .leading).combined(with: .opacity)
+                        ))
                 }
             }
+            .animation(.snappy(duration: 0.35), value: mintQuote != nil)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -63,19 +72,6 @@ struct ReceiveLightningView: View {
                 ToolbarItem(placement: .principal) {
                     Text(screenTitle)
                         .font(.headline)
-                }
-
-                if mintQuote == nil && showsAmountEntry {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button(action: { settings.useBitcoinSymbol.toggle() }) {
-                            Text(settings.unitLabel)
-                                .font(.caption)
-                                .fontWeight(.bold)
-                                .foregroundStyle(Color.accentColor)
-                        }
-                        .accessibilityLabel("Unit: \(settings.unitLabel)")
-                        .accessibilityHint("Toggles display unit")
-                    }
                 }
             }
             .sheet(isPresented: $showMintPicker) {
@@ -140,10 +136,6 @@ struct ReceiveLightningView: View {
             || (selectedMethod.supportsOptionalMintAmount && bolt12OfferAmountMode == .fixedAmount)
     }
 
-    private var formattedInputAmount: String {
-        formattedAmount(sats: UInt64(amountString))
-    }
-
     // MARK: - Amount Input View
 
     private var amountInputView: some View {
@@ -185,7 +177,7 @@ struct ReceiveLightningView: View {
             Spacer()
 
             if showsAmountEntry {
-                numberPad
+                NumberPadAmountInput(amountString: $amountString)
                     .padding(.horizontal, 24)
             }
 
@@ -205,43 +197,72 @@ struct ReceiveLightningView: View {
     }
 
     private var paymentMethodPicker: some View {
-        Picker("Payment Method", selection: $selectedMethod) {
+        HStack(spacing: 8) {
             ForEach(availableMintMethods, id: \.self) { method in
-                Text(method.displayName).tag(method)
+                methodPill(method: method)
             }
         }
-        .pickerStyle(.segmented)
+        .padding(4)
+        .background(.thinMaterial, in: Capsule())
         .accessibilityLabel("Payment method")
     }
 
+    private func methodPill(method: PaymentMethodKind) -> some View {
+        let isSelected = selectedMethod == method
+        return Button(action: {
+            guard selectedMethod != method else { return }
+            HapticFeedback.selection()
+            withAnimation(.snappy) { selectedMethod = method }
+        }) {
+            Text(method.displayName)
+                .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(
+                    Capsule().fill(isSelected ? Color.primary.opacity(0.12) : Color.clear)
+                )
+                .foregroundStyle(isSelected ? .primary : .secondary)
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
     private var bolt12AmountModePicker: some View {
-        Picker("Offer Amount", selection: $bolt12OfferAmountMode) {
+        HStack(spacing: 8) {
             ForEach(Bolt12OfferAmountMode.allCases) { mode in
-                Text(mode.title).tag(mode)
+                bolt12ModePill(mode: mode)
             }
         }
-        .pickerStyle(.segmented)
+        .padding(4)
+        .background(.thinMaterial, in: Capsule())
         .accessibilityLabel("BOLT12 offer amount mode")
     }
 
-    private var amountDisplaySection: some View {
-        VStack(spacing: 8) {
-            Text(formattedInputAmount)
-                .font(.largeTitle.bold())
-                .minimumScaleFactor(0.5)
-                .lineLimit(1)
-                .contentTransition(.numericText())
-
-            if priceService.btcPriceUSD > 0, let sats = UInt64(amountString) {
-                Text(priceService.formatSatsAsFiat(sats))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            } else {
-                Text("$0.00")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
+    private func bolt12ModePill(mode: Bolt12OfferAmountMode) -> some View {
+        let isSelected = bolt12OfferAmountMode == mode
+        return Button(action: {
+            guard bolt12OfferAmountMode != mode else { return }
+            HapticFeedback.selection()
+            withAnimation(.snappy) { bolt12OfferAmountMode = mode }
+        }) {
+            Text(mode.title)
+                .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(
+                    Capsule().fill(isSelected ? Color.primary.opacity(0.12) : Color.clear)
+                )
+                .foregroundStyle(isSelected ? .primary : .secondary)
+                .contentShape(Capsule())
         }
+        .buttonStyle(.plain)
+    }
+
+    private var amountDisplaySection: some View {
+        CurrencyAmountDisplay(
+            sats: UInt64(amountString) ?? 0,
+            primary: $settings.amountDisplayPrimary
+        )
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Request amount: \(amountString.isEmpty ? "0" : amountString) sats")
     }
@@ -264,67 +285,6 @@ struct ReceiveLightningView: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Amountless BOLT12 offer. The sender chooses the amount.")
-    }
-
-    // MARK: - Number Pad
-
-    private var numberPad: some View {
-        VStack(spacing: 8) {
-            ForEach(numberRows, id: \.self) { row in
-                HStack(spacing: 8) {
-                    ForEach(row, id: \.self) { key in
-                        numberKey(key)
-                    }
-                }
-            }
-        }
-    }
-
-    private var numberRows: [[String]] {
-        [
-            ["1", "2", "3"],
-            ["4", "5", "6"],
-            ["7", "8", "9"],
-            ["", "0", "\u{232B}"]
-        ]
-    }
-
-    private func numberKey(_ key: String) -> some View {
-        Group {
-            if key.isEmpty {
-                Color.clear
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                Button(action: { handleKeyPress(key) }) {
-                    Group {
-                        if key == "\u{232B}" {
-                            Image(systemName: "chevron.left")
-                                .font(.title3)
-                        } else {
-                            Text(key)
-                                .font(.title2.weight(.medium))
-                        }
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(key == "\u{232B}" ? "Delete" : key)
-            }
-        }
-        .frame(height: 56)
-    }
-
-    private func handleKeyPress(_ key: String) {
-        if key == "\u{232B}" {
-            if !amountString.isEmpty {
-                amountString.removeLast()
-            }
-        } else if amountString == "0" {
-            amountString = key
-        } else {
-            amountString.append(key)
-        }
     }
 
     // MARK: - Mint Selector
@@ -395,16 +355,18 @@ struct ReceiveLightningView: View {
                         expiryView
                     }
 
-                    VStack(spacing: 12) {
+                    VStack(spacing: 0) {
                         detailRow(icon: "arrow.left.arrow.right", label: "Type", value: quote.paymentMethod.displayName)
-                        detailRow(icon: "banknote", label: "Unit", value: settings.unitLabel.uppercased())
+                        Divider().padding(.leading)
                         detailRow(
                             icon: "number",
                             label: "Amount",
                             value: quote.amount.map { formattedAmount(sats: $0) } ?? "Set by sender"
                         )
+                        Divider().padding(.leading)
                         detailRow(icon: "info.circle", label: "State", value: quoteStateText(for: quote))
                         if let mint = walletManager.activeMint {
+                            Divider().padding(.leading)
                             detailRow(
                                 icon: "bitcoinsign.bank.building",
                                 label: "Mint",
@@ -412,6 +374,8 @@ struct ReceiveLightningView: View {
                             )
                         }
                     }
+                    .padding(.vertical, 4)
+                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
                     .padding(.horizontal)
                 }
             }
@@ -430,11 +394,14 @@ struct ReceiveLightningView: View {
     }
 
     private func amountSummary(for quote: MintQuoteInfo) -> some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 8) {
             if let amount = quote.amount {
-                Text(formattedAmount(sats: amount))
-                    .font(.title.bold())
-                    .accessibilityLabel("Request amount: \(amount) sats")
+                CurrencyAmountDisplay(
+                    sats: amount,
+                    primary: $settings.amountDisplayPrimary,
+                    primarySize: 40
+                )
+                .accessibilityLabel("Request amount: \(amount) sats")
             } else {
                 Text("Amount set by sender")
                     .font(.title3.weight(.semibold))
@@ -442,9 +409,10 @@ struct ReceiveLightningView: View {
             }
 
             Text(quote.paymentMethod.requestDisplayName)
-                .font(.subheadline)
+                .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)
+                .tracking(0.5)
         }
     }
 
@@ -458,56 +426,74 @@ struct ReceiveLightningView: View {
             Text(value)
                 .fontWeight(.medium)
                 .multilineTextAlignment(.trailing)
+                .lineLimit(1)
+                .truncationMode(.middle)
         }
         .font(.subheadline)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
     }
 
     // MARK: - Status Badge
 
     @ViewBuilder
     private var statusBadge: some View {
-        if isPaid {
-            HStack(spacing: 6) {
-                Image(systemName: "checkmark.circle.fill")
-                    .accessibilityHidden(true)
-                Text("Payment Received!")
+        Group {
+            if isPaid {
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .symbolEffect(.bounce, value: isPaid)
+                        .accessibilityHidden(true)
+                    Text("Payment Received!")
+                }
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.green)
+                .transition(.scale.combined(with: .opacity))
+            } else if isCheckingPayment || isMinting {
+                HStack(spacing: 6) {
+                    ProgressView()
+                        .tint(.accentColor)
+                        .scaleEffect(0.8)
+                    Text(isMinting ? "Minting..." : "Checking...")
+                }
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .transition(.opacity)
+            } else if isExpired {
+                HStack(spacing: 6) {
+                    Image(systemName: "xmark.circle.fill")
+                        .accessibilityHidden(true)
+                    Text("Expired")
+                }
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.red)
+                .transition(.opacity)
+            } else if mintQuote?.state == .paid || mintQuote?.state == .issued {
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.seal.fill")
+                        .symbolEffect(.bounce, value: mintQuote?.state)
+                        .accessibilityHidden(true)
+                    Text("Payment detected")
+                }
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.green)
+                .transition(.scale.combined(with: .opacity))
+            } else {
+                HStack(spacing: 6) {
+                    Image(systemName: "clock")
+                        .symbolEffect(.pulse, options: .repeating)
+                        .accessibilityHidden(true)
+                    Text(pendingStatusText)
+                }
+                .font(.subheadline)
+                .foregroundStyle(.orange)
+                .transition(.opacity)
             }
-            .font(.subheadline.weight(.medium))
-            .foregroundStyle(.green)
-        } else if isCheckingPayment || isMinting {
-            HStack(spacing: 6) {
-                ProgressView()
-                    .tint(.accentColor)
-                    .scaleEffect(0.8)
-                Text(isMinting ? "Minting..." : "Checking...")
-            }
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
-        } else if isExpired {
-            HStack(spacing: 6) {
-                Image(systemName: "xmark.circle.fill")
-                    .accessibilityHidden(true)
-                Text("Expired")
-            }
-            .font(.subheadline.weight(.medium))
-            .foregroundStyle(.red)
-        } else if mintQuote?.state == .paid || mintQuote?.state == .issued {
-            HStack(spacing: 6) {
-                Image(systemName: "checkmark.seal.fill")
-                    .accessibilityHidden(true)
-                Text("Payment detected")
-            }
-            .font(.subheadline.weight(.medium))
-            .foregroundStyle(.green)
-        } else {
-            HStack(spacing: 6) {
-                Image(systemName: "clock")
-                    .accessibilityHidden(true)
-                Text(pendingStatusText)
-            }
-            .font(.subheadline)
-            .foregroundStyle(.orange)
         }
+        .animation(.spring(response: 0.5, dampingFraction: 0.7), value: isPaid)
+        .animation(.easeInOut(duration: 0.2), value: isCheckingPayment)
+        .animation(.easeInOut(duration: 0.2), value: isMinting)
+        .animation(.easeInOut(duration: 0.2), value: isExpired)
     }
 
     private var pendingStatusText: String {
@@ -656,6 +642,7 @@ struct ReceiveLightningView: View {
 
     private func copyRequest(_ request: String) {
         UIPasteboard.general.string = request
+        HapticFeedback.notification(.success)
         copiedRequest = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
             copiedRequest = false
@@ -845,6 +832,7 @@ struct ReceiveLightningView: View {
         guard !isPaid else { return }
 
         isPaid = true
+        HapticFeedback.notification(.success)
         quoteStatusTask?.cancel()
         expiryTimer?.invalidate()
 

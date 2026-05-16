@@ -119,38 +119,60 @@ struct ReceiveEcashView: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
+            VStack(spacing: 16) {
+                ZStack(alignment: .topLeading) {
                     TextEditor(text: $tokenInput)
                         .font(.system(.body, design: .monospaced))
-                        .frame(height: 120)
+                        .scrollContentBackground(.hidden)
+                        .padding(12)
+                        .frame(height: 160)
                         .accessibilityLabel("Ecash token input")
                         .accessibilityHint("Enter or paste a cashu ecash token")
-                }
 
-                Section {
-                    Button(action: pasteFromClipboard) {
-                        Label("Paste from Clipboard", systemImage: "doc.on.clipboard")
+                    if tokenInput.isEmpty {
+                        Text("cashuB…")
+                            .font(.system(.body, design: .monospaced))
+                            .foregroundStyle(.tertiary)
+                            .padding(.horizontal, 17)
+                            .padding(.vertical, 20)
+                            .allowsHitTesting(false)
                     }
-                    .accessibilityHint("Pastes ecash token from clipboard")
                 }
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
+                .padding(.horizontal)
+                .padding(.top, 16)
+
+                Button(action: pasteFromClipboard) {
+                    Label("Paste from Clipboard", systemImage: "doc.on.clipboard")
+                        .font(.subheadline.weight(.medium))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .background(.thinMaterial, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Pastes ecash token from clipboard")
 
                 if let error = errorMessage {
-                    Section {
-                        Text(error)
-                            .foregroundStyle(.red)
-                    }
+                    Text(error)
+                        .foregroundStyle(.red)
+                        .font(.caption)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal)
+                        .transition(.opacity.combined(with: .scale))
                 }
 
-                Section {
-                    Button(action: validateAndContinue) {
-                        Text("Continue")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .disabled(tokenInput.isEmpty)
-                    .accessibilityHint("Validates the token and proceeds to details")
+                Spacer()
+
+                Button(action: validateAndContinue) {
+                    Text("Continue")
                 }
+                .glassButton()
+                .disabled(tokenInput.isEmpty)
+                .padding(.horizontal)
+                .padding(.bottom, 16)
+                .accessibilityHint("Validates the token and proceeds to details")
             }
+            .animation(.easeInOut(duration: 0.2), value: errorMessage)
             .navigationTitle("Receive Ecash")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -182,6 +204,7 @@ struct ReceiveEcashView: View {
 
     private func pasteFromClipboard() {
         if let clipboardContent = UIPasteboard.general.string {
+            HapticFeedback.selection()
             tokenInput = clipboardContent
         }
     }
