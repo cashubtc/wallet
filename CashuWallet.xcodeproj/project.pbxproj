@@ -77,7 +77,6 @@
 		F300000000000004 /* ClipboardPaymentChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = F400000000000004 /* ClipboardPaymentChip.swift */; };
 		F300000000000005 /* RecentRecipientsList.swift in Sources */ = {isa = PBXBuildFile; fileRef = F400000000000005 /* RecentRecipientsList.swift */; };
 		F300000000000006 /* PaymentRequestDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = F400000000000006 /* PaymentRequestDecoder.swift */; };
-		F300000000000007 /* PaymentSuccessSplash.swift in Sources */ = {isa = PBXBuildFile; fileRef = F400000000000007 /* PaymentSuccessSplash.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -149,7 +148,6 @@
 		F400000000000004 /* ClipboardPaymentChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardPaymentChip.swift; sourceTree = "<group>"; };
 		F400000000000005 /* RecentRecipientsList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentRecipientsList.swift; sourceTree = "<group>"; };
 		F400000000000006 /* PaymentRequestDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaymentRequestDecoder.swift; sourceTree = "<group>"; };
-		F400000000000007 /* PaymentSuccessSplash.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaymentSuccessSplash.swift; sourceTree = "<group>"; };
 		F200000000000005 /* CashuWallet.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CashuWallet.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -299,7 +297,6 @@
 				F400000000000003 /* AuthorizingOverlay.swift */,
 				F400000000000004 /* ClipboardPaymentChip.swift */,
 				F400000000000005 /* RecentRecipientsList.swift */,
-				F400000000000007 /* PaymentSuccessSplash.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -545,7 +542,6 @@
 				F300000000000004 /* ClipboardPaymentChip.swift in Sources */,
 				F300000000000005 /* RecentRecipientsList.swift in Sources */,
 				F300000000000006 /* PaymentRequestDecoder.swift in Sources */,
-				F300000000000007 /* PaymentSuccessSplash.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

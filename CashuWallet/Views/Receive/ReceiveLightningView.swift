@@ -79,22 +79,6 @@ struct ReceiveLightningView: View {
                         .font(.headline)
                 }
             }
-            // Success splash lives on an overlay so its entrance doesn't
-            // fight the body's transition system. Without this, the splash
-            // appeared for a fraction of a second and slid off with the
-            // sheet dismiss.
-            .overlay {
-                if isPaid, let amount = mintQuote?.amount {
-                    PaymentSuccessSplash(
-                        title: "Received",
-                        amountSats: amount,
-                        onDone: { dismiss() }
-                    )
-                    .transition(.opacity)
-                    .zIndex(1)
-                }
-            }
-            .animation(.easeOut(duration: 0.25), value: isPaid)
             .sheet(isPresented: $showMintPicker) {
                 MintSelectorSheet(selectedMint: $walletManager.activeMint)
                     .environmentObject(walletManager)
@@ -894,11 +878,10 @@ struct ReceiveLightningView: View {
             await walletManager.loadTransactions()
         }
 
-        // Auto-dismiss fallback for the splash. The splash has its own Done
-        // button so users can skip ahead; this is just to make sure we don't
-        // strand them if they walk away from the device.
-        try? await Task.sleep(nanoseconds: 5_000_000_000)
-        if isPaid { dismiss() }
+        // Brief dwell so the user sees the "Payment Received!" badge flip
+        // before the sheet dismisses and the home-screen toast appears.
+        try? await Task.sleep(nanoseconds: 2_000_000_000)
+        dismiss()
     }
 
     private func isAlreadyIssuedMintError(_ error: Error) -> Bool {

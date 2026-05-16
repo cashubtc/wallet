@@ -102,21 +102,6 @@ struct SendView: View {
                     CashuTokenShareSheet(token: token)
                 }
             }
-            // Claimed splash overlays the entire screen when the recipient
-            // redeems the token. Overlay (not body branch) so the entrance
-            // doesn't fight the rest of the view's transitions.
-            .overlay {
-                if tokenClaimed, generatedToken != nil {
-                    PaymentSuccessSplash(
-                        title: "Claimed",
-                        amountSats: UInt64(amountString) ?? 0,
-                        onDone: { dismiss() }
-                    )
-                    .transition(.opacity)
-                    .zIndex(1)
-                }
-            }
-            .animation(.easeOut(duration: 0.25), value: tokenClaimed)
             .onDisappear {
                 checkingTask?.cancel()
             }
@@ -295,9 +280,18 @@ struct SendView: View {
                         primarySize: 32
                     )
 
-                    // Status
+                    // Status — inline badge transition, then dismiss + toast.
                     Group {
-                        if isCheckingClaim {
+                        if tokenClaimed {
+                            HStack(spacing: 6) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .symbolEffect(.bounce, value: tokenClaimed)
+                                Text("Claimed")
+                            }
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.green)
+                            .transition(.scale.combined(with: .opacity))
+                        } else if isCheckingClaim {
                             HStack(spacing: 6) {
                                 ProgressView().scaleEffect(0.8)
                                 Text("Checking...")
@@ -316,6 +310,7 @@ struct SendView: View {
                             .transition(.opacity)
                         }
                     }
+                    .animation(.spring(response: 0.5, dampingFraction: 0.7), value: tokenClaimed)
                     .animation(.easeInOut(duration: 0.2), value: isCheckingClaim)
 
                     // Detail rows on canvas with hairline dividers — same
@@ -488,11 +483,11 @@ struct SendView: View {
                     await walletManager.markTokenAsClaimed(token: token)
 
                     await MainActor.run {
-                        // Auto-dismiss fallback. The Claimed splash has its
-                        // own Done button so users can skip; this is a
-                        // safety net if they walk away from the device.
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-                            if tokenClaimed { dismiss() }
+                        // Brief dwell so the user sees the "Claimed" badge
+                        // flip; the home-screen toast carries the celebration
+                        // from there.
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                            dismiss()
                         }
                     }
                     break
@@ -522,8 +517,8 @@ struct SendView: View {
             }
             await walletManager.markTokenAsClaimed(token: token)
             await MainActor.run {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-                    if tokenClaimed { dismiss() }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                    dismiss()
                 }
             }
         }
