@@ -13,13 +13,11 @@ struct CashuWalletApp: App {
                 .environmentObject(navigationManager)
                 .task {
                     await walletManager.initialize()
-                    let (shouldCheckPending, shouldTrackSentTokens) = await MainActor.run {
-                        (
-                            SettingsManager.shared.checkPendingOnStartup,
-                            SettingsManager.shared.checkSentTokens
-                        )
-                    }
+                    let settingsStore = SettingsStore.shared
+                    let shouldCheckPending = settingsStore.checkPendingOnStartup
+                    let shouldTrackSentTokens = settingsStore.checkSentTokens
                     if shouldCheckPending && shouldTrackSentTokens {
+                        try? await Task.sleep(nanoseconds: 1_500_000_000)
                         await walletManager.checkAllPendingTokens()
                     }
                     CashuRequestListener.shared.attach(walletManager: walletManager)

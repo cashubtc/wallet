@@ -6,14 +6,10 @@ struct MainWalletView: View {
     @EnvironmentObject var navigationManager: NavigationManager
     @ObservedObject var settings = SettingsManager.shared
     @ObservedObject var priceService = PriceService.shared
-    @ObservedObject var npcService = NPCService.shared
-    @ObservedObject var nostrService = NostrService.shared
 
     @State private var activeSheet: WalletSheet?
     @State private var notification: (message: String, amount: UInt64?, fee: UInt64?)?
     @State private var showNotification = false
-    @State private var isRefreshing = false
-    @State private var copiedLightningAddress = false
     @State private var receiveEcashDetent: PresentationDetent = .medium
     @State private var contactlessCoordinator = ContactlessPaymentCoordinator()
 
@@ -128,28 +124,6 @@ struct MainWalletView: View {
             .accessibilityLabel("Pending balance: \(formatPendingAmount())")
     }
 
-    // MARK: - Lightning Address Badge
-
-    private var lightningAddressBadge: some View {
-        Button(action: copyLightningAddress) {
-            HStack(spacing: 6) {
-                Image(systemName: "bolt.fill")
-                    .font(.caption2)
-                    .accessibilityHidden(true)
-                Text(truncatedLightningAddress())
-                    .font(.system(.caption2, design: .monospaced))
-                    .lineLimit(1)
-                Image(systemName: copiedLightningAddress ? "checkmark" : "doc.on.doc")
-                    .font(.caption2)
-                    .accessibilityHidden(true)
-            }
-            .foregroundStyle(.secondary)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Lightning address: \(npcService.lightningAddress)")
-        .accessibilityHint("Copies lightning address to clipboard")
-    }
-
     // MARK: - Action Buttons
 
     private var actionButtons: some View {
@@ -199,23 +173,6 @@ struct MainWalletView: View {
 
     // MARK: - Helpers
 
-    private func truncatedLightningAddress() -> String {
-        let address = npcService.lightningAddress
-        let parts = address.split(separator: "@")
-        if parts.count == 2, let pubkey = parts.first, pubkey.count > 16 {
-            return "\(pubkey.prefix(8))…\(pubkey.suffix(4))@\(parts[1])"
-        }
-        return address
-    }
-
-    private func copyLightningAddress() {
-        UIPasteboard.general.string = npcService.lightningAddress
-        withAnimation { copiedLightningAddress = true }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            withAnimation { copiedLightningAddress = false }
-        }
-    }
-
     private func formatBalanceWithUnit(_ sats: UInt64) -> String {
         let formatted = settings.formatAmountBalance(sats)
         return settings.useBitcoinSymbol ? "₿\(formatted)" : "\(formatted) sat"
@@ -225,14 +182,6 @@ struct MainWalletView: View {
         let pendingFromTokens = walletManager.pendingTokens.reduce(UInt64(0)) { $0 + $1.amount }
         let totalPending = max(walletManager.pendingBalance, pendingFromTokens)
         return settings.useBitcoinSymbol ? "₿\(totalPending)" : "\(totalPending) sat"
-    }
-
-    private func refreshWallet() async {
-        isRefreshing = true
-        await walletManager.refreshBalance()
-        await walletManager.loadTransactions()
-        try? await Task.sleep(nanoseconds: 500_000_000)
-        isRefreshing = false
     }
 
     @ViewBuilder

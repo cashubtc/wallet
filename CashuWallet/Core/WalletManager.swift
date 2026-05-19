@@ -111,6 +111,7 @@ class WalletManager: ObservableObject {
     private var mnemonic: String?
     private var hasInitialized = false
     private var npcQuoteObserver: NSObjectProtocol?
+    private var startupRefreshTask: Task<Void, Never>?
     private var serviceChangeCancellables: Set<AnyCancellable> = []
     private let walletDatabaseDirectoryName = "cashu-swift"
     private let walletDatabaseFilename = "wallet.db"
@@ -125,9 +126,7 @@ class WalletManager: ObservableObject {
     private func bindServiceChanges() {
         [
             mintService.objectWillChange.eraseToAnyPublisher(),
-            transactionService.objectWillChange.eraseToAnyPublisher(),
-            tokenService.objectWillChange.eraseToAnyPublisher(),
-            lightningService.objectWillChange.eraseToAnyPublisher()
+            transactionService.objectWillChange.eraseToAnyPublisher()
         ]
         .forEach { publisher in
             publisher
@@ -156,12 +155,14 @@ class WalletManager: ObservableObject {
             
             if let storedMnemonic = try keychainService.loadMnemonic() {
                 mnemonic = storedMnemonic
-                try await initializeWallet(mnemonic: storedMnemonic)
+                try await initializeWalletForLaunch(mnemonic: storedMnemonic)
                 needsOnboarding = false
+                isInitialized = true
+                schedulePostLaunchRefresh(mnemonic: storedMnemonic)
             } else {
                 needsOnboarding = true
+                isInitialized = true
             }
-            isInitialized = true
         } catch {
             AppLogger.wallet.error("Wallet initialization error: \(error)")
             isInitialized = true
@@ -313,21 +314,51 @@ class WalletManager: ObservableObject {
         }
     }
     
+    private func initializeWalletForLaunch(mnemonic: String) async throws {
+        try initializeWalletRepository(mnemonic: mnemonic)
+
+        await mintService.loadMints()
+        balance = mints.reduce(UInt64(0)) { $0 + $1.balance }
+        transactionService.loadCachedState()
+
+        setupNPCQuoteListener()
+    }
+
     private func initializeWallet(mnemonic: String) async throws {
+        try initializeWalletRepository(mnemonic: mnemonic)
+
+        await mintService.loadMints()
+        await refreshBalance()
+        await loadTransactions()
+        await mintService.refreshMintInfo()
+
+        await initializeNostrKeypair(mnemonic: mnemonic)
+        setupNPCQuoteListener()
+    }
+
+    private func initializeWalletRepository(mnemonic: String) throws {
         let databaseURL = try walletDatabaseURL()
         let repository = try initializeRepositoryWithRecovery(mnemonic: mnemonic, databaseURL: databaseURL)
         
         db = repository.db
         walletRepository = repository.repository
         processedQuotes = Set(walletStore.loadProcessedNPCQuotes())
-        
-        await mintService.loadMints()
-        await refreshBalance()
-        await loadTransactions()
-        await mintService.refreshMintInfo()
+    }
 
-        initializeNostrKeypair(mnemonic: mnemonic)
-        setupNPCQuoteListener()
+    private func schedulePostLaunchRefresh(mnemonic: String) {
+        startupRefreshTask?.cancel()
+        startupRefreshTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 650_000_000)
+            guard !Task.isCancelled, let self else { return }
+
+            await self.refreshBalance()
+            await self.loadTransactions(includeRemoteObservations: false)
+
+            try? await Task.sleep(nanoseconds: 850_000_000)
+            guard !Task.isCancelled else { return }
+            await self.initializeNostrKeypair(mnemonic: mnemonic)
+            await self.refreshMintInfoIfNeeded()
+        }
     }
 
     private func proveWalletCanInitialize(mnemonic: String) throws {
@@ -345,6 +376,9 @@ class WalletManager: ObservableObject {
     }
 
     private func resetRuntimeState() {
+        startupRefreshTask?.cancel()
+        startupRefreshTask = nil
+
         if let npcQuoteObserver {
             NotificationCenter.default.removeObserver(npcQuoteObserver)
             self.npcQuoteObserver = nil
@@ -617,16 +651,14 @@ class WalletManager: ObservableObject {
     
     // MARK: - Nostr & NPC Integration
     
-    private func initializeNostrKeypair(mnemonic: String) {
-        Task {
-            do {
-                let seedData = Data(mnemonic.utf8).sha256()
-                try NostrService.shared.deriveKeypair(from: seedData)
-                try NPCService.shared.initializeWithSeed(seedData)
-                await NPCService.shared.initializeIfEnabled()
-            } catch {
-                AppLogger.security.error("Failed to initialize Nostr keypair: \(error)")
-            }
+    private func initializeNostrKeypair(mnemonic: String) async {
+        do {
+            let seedData = Data(mnemonic.utf8).sha256()
+            try NostrService.shared.deriveKeypair(from: seedData)
+            try NPCService.shared.initializeWithSeed(seedData)
+            await NPCService.shared.initializeIfEnabled()
+        } catch {
+            AppLogger.security.error("Failed to initialize Nostr keypair: \(error)")
         }
     }
     
@@ -734,6 +766,10 @@ class WalletManager: ObservableObject {
         await refreshBalance()
     }
 
+    func refreshMintInfoIfNeeded(maxAge: TimeInterval = 6 * 60 * 60) async {
+        await mintService.refreshMintInfoIfNeeded(maxAge: maxAge)
+    }
+
     /// Fetch full mint info from the mint's API via CashuDevKit
     func fetchFullMintInfo(mintUrl: String) async throws -> CashuDevKit.MintInfo? {
         guard let walletRepository = walletRepository else {
@@ -756,6 +792,7 @@ class WalletManager: ObservableObject {
         }
         
         var total: UInt64 = 0
+        var balancesByMintURL: [String: UInt64] = [:]
         
         for mintUrlString in mintUrls {
             do {
@@ -764,13 +801,14 @@ class WalletManager: ObservableObject {
                 let walletBalance = try await wallet.totalBalance()
                 
                 total += walletBalance.value
-                mintService.updateMintBalance(url: mintUrlString, balance: walletBalance.value)
+                balancesByMintURL[mintUrlString] = walletBalance.value
             } catch {
-                mintService.updateMintBalance(url: mintUrlString, balance: 0)
+                balancesByMintURL[mintUrlString] = 0
                 AppLogger.wallet.error("Failed to refresh balance for mint \(mintUrlString): \(error)")
             }
         }
         
+        mintService.updateMintBalances(balancesByMintURL)
         balance = total
     }
     
@@ -1125,8 +1163,8 @@ class WalletManager: ObservableObject {
     
     // MARK: - Transaction History
     
-    func loadTransactions() async {
-        await transactionService.loadTransactions()
+    func loadTransactions(includeRemoteObservations: Bool = true) async {
+        await transactionService.loadTransactions(includeRemoteObservations: includeRemoteObservations)
         objectWillChange.send()
     }
 

@@ -147,17 +147,7 @@ class MintService: ObservableObject {
 
         for i in mints.indices {
             do {
-                let mintUrl = MintUrl(url: mints[i].url)
-                let wallet = try await repo.getWallet(mintUrl: mintUrl, unit: .sat)
-                let info = try await wallet.fetchMintInfo()
-                let refreshedMint = await makeMintInfo(
-                    url: mints[i].url,
-                    existing: mints[i],
-                    fetchedInfo: info
-                )
-
-                if refreshedMint != mints[i] {
-                    mints[i] = refreshedMint
+                if try await refreshMintInfo(at: i, using: repo) {
                     updated = true
                 }
             } catch {
@@ -174,16 +164,59 @@ class MintService: ObservableObject {
         }
     }
 
-    /// Update balance for a specific mint
-    func updateMintBalance(url: String, balance: UInt64) {
-        let normalizedUrl = normalizeUrl(url)
-        if let index = mints.firstIndex(where: { $0.url == normalizedUrl }) {
-            mints[index].balance = balance
-            if activeMint?.url == normalizedUrl {
-                activeMint = mints[index]
+    func refreshMintInfoIfNeeded(maxAge: TimeInterval) async {
+        guard let repo = walletRepository() else { return }
+        let cutoff = Date().addingTimeInterval(-maxAge)
+        var updated = false
+
+        for i in mints.indices where mints[i].lastUpdated < cutoff {
+            do {
+                if try await refreshMintInfo(at: i, using: repo) {
+                    updated = true
+                }
+            } catch {
+                AppLogger.wallet.error("Failed to refresh stale mint info for \(self.mints[i].url): \(error)")
+            }
+        }
+
+        if updated {
+            if let activeMintUrl = activeMint?.url,
+               let refreshed = mints.first(where: { $0.url == activeMintUrl }) {
+                activeMint = refreshed
             }
             saveMints()
         }
+    }
+
+    /// Update balance for a specific mint
+    func updateMintBalance(url: String, balance: UInt64) {
+        updateMintBalances([url: balance])
+    }
+
+    func updateMintBalances(_ balancesByURL: [String: UInt64]) {
+        var normalizedBalances: [String: UInt64] = [:]
+        for (url, balance) in balancesByURL {
+            normalizedBalances[normalizeUrl(url)] = balance
+        }
+        var updated = false
+
+        for index in mints.indices {
+            let normalizedURL = normalizeUrl(mints[index].url)
+            guard let balance = normalizedBalances[normalizedURL],
+                  mints[index].balance != balance else {
+                continue
+            }
+            mints[index].balance = balance
+            updated = true
+        }
+
+        guard updated else { return }
+
+        if let activeMintUrl = activeMint?.url,
+           let refreshed = mints.first(where: { normalizeUrl($0.url) == normalizeUrl(activeMintUrl) }) {
+            activeMint = refreshed
+        }
+        saveMints()
     }
     
     /// Add a mint if it doesn't exist (used for NPC and token receiving)
@@ -206,6 +239,24 @@ class MintService: ObservableObject {
     }
     
     // MARK: - Private Methods
+
+    private func refreshMintInfo(
+        at index: Int,
+        using repo: WalletRepository
+    ) async throws -> Bool {
+        let mintUrl = MintUrl(url: mints[index].url)
+        let wallet = try await repo.getWallet(mintUrl: mintUrl, unit: .sat)
+        let info = try await wallet.fetchMintInfo()
+        let refreshedMint = await makeMintInfo(
+            url: mints[index].url,
+            existing: mints[index],
+            fetchedInfo: info
+        )
+
+        guard refreshedMint != mints[index] else { return false }
+        mints[index] = refreshedMint
+        return true
+    }
     
     /// Normalize a mint URL
     private func normalizeUrl(_ url: String) -> String {

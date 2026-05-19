@@ -32,6 +32,7 @@ class SettingsManager: ObservableObject {
     @Published var showFiatBalance: Bool {
         didSet { 
             settingsStore.showFiatBalance = showFiatBalance
+            guard showFiatBalance != oldValue else { return }
             // Enable/disable price service based on this setting
             PriceService.shared.isEnabled = showFiatBalance
         }
@@ -40,6 +41,7 @@ class SettingsManager: ObservableObject {
     @Published var bitcoinPriceCurrency: String {
         didSet {
             settingsStore.bitcoinPriceCurrency = bitcoinPriceCurrency
+            guard bitcoinPriceCurrency != oldValue else { return }
             PriceService.shared.currencyCode = bitcoinPriceCurrency
         }
     }
@@ -143,8 +145,15 @@ class SettingsManager: ObservableObject {
         persistNWCConnections()
         persistP2PKKeys()
         
-        PriceService.shared.currencyCode = bitcoinPriceCurrency
-        PriceService.shared.isEnabled = showFiatBalance
+        let priceService = PriceService.shared
+        if priceService.currencyCode != bitcoinPriceCurrency {
+            priceService.currencyCode = bitcoinPriceCurrency
+        }
+        if priceService.isEnabled != showFiatBalance {
+            priceService.isEnabled = showFiatBalance
+        } else if showFiatBalance {
+            priceService.startAutoRefresh()
+        }
     }
 
     func addNostrRelay(_ relay: String) -> Bool {

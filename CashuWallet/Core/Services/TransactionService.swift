@@ -44,13 +44,11 @@ class TransactionService: ObservableObject {
     // MARK: - Transaction Loading
     
     /// Load transaction history from all mints
-    func loadTransactions() async {
+    func loadTransactions(includeRemoteObservations: Bool = true) async {
         guard let repo = walletRepository() else { return }
         
         // Load pending and claimed tokens from storage
-        loadPendingTokens()
-        loadPendingReceiveTokens()
-        loadClaimedTokens()
+        loadCachedState()
         var mintQuoteTimestamps = loadMintQuoteTimestamps()
         
         // Get transactions from tracked wallets
@@ -114,7 +112,8 @@ class TransactionService: ObservableObject {
                     from: pendingMintQuotes,
                     trackedMintUrls: trackedMintUrls,
                     completedQuoteIds: completedQuoteIds,
-                    timestamps: &mintQuoteTimestamps
+                    timestamps: &mintQuoteTimestamps,
+                    includeRemoteObservations: includeRemoteObservations
                 )
                 allTransactions.append(contentsOf: pendingQuoteTransactions)
 
@@ -173,6 +172,12 @@ class TransactionService: ObservableObject {
         
         // Post notification that transactions were updated
         NotificationCenter.default.post(name: .cashuTransactionsUpdated, object: nil)
+    }
+
+    func loadCachedState() {
+        loadPendingTokens()
+        loadPendingReceiveTokens()
+        loadClaimedTokens()
     }
 
     func clearState() {
@@ -332,7 +337,8 @@ class TransactionService: ObservableObject {
         from quotes: [MintQuote],
         trackedMintUrls: Set<String>,
         completedQuoteIds: Set<String>,
-        timestamps: inout [String: TimeInterval]
+        timestamps: inout [String: TimeInterval],
+        includeRemoteObservations: Bool
     ) async -> [WalletTransaction] {
         var transactions: [WalletTransaction] = []
 
@@ -374,7 +380,8 @@ class TransactionService: ObservableObject {
             var storedPaymentProof = getPreimage(quoteId: quote.id)
             var statusNote: String?
 
-            if paymentMethod == .onchain,
+            if includeRemoteObservations,
+               paymentMethod == .onchain,
                let observation = await OnchainExplorer.observePayment(
                 for: quote.request,
                 mintURL: quote.mintUrl.url,
