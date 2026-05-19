@@ -421,9 +421,9 @@ class LightningService: ObservableObject {
     
     /// Pay a Lightning invoice (melt tokens)
     /// - Parameter quoteId: The quote ID to melt
-    /// - Returns: Payment preimage if successful
-    func meltTokens(quoteId: String) async throws -> String? {
-        guard let repo = walletRepository(), let activeMint = getActiveMint() else {
+    /// - Returns: Melt result including payment proof and actual fee paid.
+    func meltTokens(quoteId: String, mintUrl preferredMintUrl: String? = nil) async throws -> MeltPaymentResult {
+        guard let repo = walletRepository() else {
             throw WalletError.notInitialized
         }
         
@@ -431,13 +431,20 @@ class LightningService: ObservableObject {
         defer { isLoading = false }
 
         let storedMeltQuote = try await walletDatabase()?.getMeltQuote(quoteId: quoteId)
-        let mintURLString = storedMeltQuote?.mintUrl?.url ?? activeMint.url
+        guard let mintURLString = preferredMintUrl ?? storedMeltQuote?.mintUrl?.url ?? getActiveMint()?.url else {
+            throw WalletError.notInitialized
+        }
         let mintUrl = MintUrl(url: mintURLString)
         let wallet = try await repo.getWallet(mintUrl: mintUrl, unit: .sat)
 
         let preparedMelt = try await wallet.prepareMelt(quoteId: quoteId)
         let result = try await preparedMelt.confirm()
-        return result.preimage
+        return MeltPaymentResult(
+            preimage: result.preimage,
+            amount: result.amount.value,
+            feePaid: result.feePaid.value,
+            mintUrl: mintURLString
+        )
     }
 
     private func mintQuoteInfo(
@@ -485,6 +492,7 @@ class LightningService: ObservableObject {
     ) -> MeltQuoteInfo {
         MeltQuoteInfo(
             id: quote.id,
+            mintUrl: quote.mintUrl?.url ?? fallbackMintUrl,
             amount: quote.amount.value,
             feeReserve: quote.feeReserve.value,
             paymentMethod: paymentMethod,

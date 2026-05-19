@@ -576,15 +576,16 @@ class WalletManager: ObservableObject {
         )
     }
     
-    func meltTokens(quoteId: String) async throws -> String? {
-        let preimage = try await lightningService.meltTokens(quoteId: quoteId)
+    func meltTokens(quoteId: String, mintUrl: String? = nil) async throws -> MeltPaymentResult {
+        let result = try await lightningService.meltTokens(quoteId: quoteId, mintUrl: mintUrl)
         // Persist preimage as proof of payment
-        if let preimage = preimage {
+        if let preimage = result.preimage {
             transactionService.savePreimage(quoteId: quoteId, preimage: preimage)
         }
+        transactionService.saveMeltFeePaid(quoteId: quoteId, feePaid: result.feePaid)
         await refreshBalance()
         await loadTransactions()
-        return preimage
+        return result
     }
 
     private func syncActiveMintWithMeltQuote(_ quote: MeltQuoteInfo) async {

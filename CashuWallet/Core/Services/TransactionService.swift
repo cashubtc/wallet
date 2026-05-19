@@ -203,6 +203,18 @@ class TransactionService: ObservableObject {
         walletStore.loadPaymentPreimages()[quoteId]
     }
 
+    /// Save the actual fee paid for a completed melt quote.
+    func saveMeltFeePaid(quoteId: String, feePaid: UInt64) {
+        var fees = walletStore.loadMeltQuoteFees()
+        fees[quoteId] = feePaid
+        walletStore.saveMeltQuoteFees(fees)
+    }
+
+    /// Get a stored actual fee by quote ID.
+    func getMeltFeePaid(quoteId: String) -> UInt64? {
+        walletStore.loadMeltQuoteFees()[quoteId]
+    }
+
     // MARK: - Pending Token Management (Outgoing)
     
     /// Save a pending token (when sending ecash)
@@ -432,7 +444,7 @@ class TransactionService: ObservableObject {
                 token: nil,
                 invoice: quote.request
             )
-            transaction.fee = quote.feeReserve.value
+            transaction.fee = getMeltFeePaid(quoteId: quote.id) ?? quote.feeReserve.value
             transactions.append(transaction)
         }
 

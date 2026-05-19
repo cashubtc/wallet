@@ -647,7 +647,7 @@ struct MeltView: View {
             }
             .sheet(isPresented: $showAuthorizingOverlay, onDismiss: handleAuthorizingDismiss) {
                 AuthorizingOverlay(
-                    amountSats: meltQuote?.totalAmount ?? 0,
+                    amountSats: meltQuote?.amount ?? 0,
                     recipient: shortRecipient,
                     recipientCaption: meltQuote.map { $0.paymentMethod.displayName },
                     state: $authorizingState,
@@ -677,6 +677,8 @@ struct MeltView: View {
             }
             .onChange(of: walletManager.activeMint?.id) {
                 syncMeltModeWithActiveMint()
+                meltQuote = nil
+                errorMessage = nil
             }
             .onChange(of: meltMode) {
                 errorMessage = nil
@@ -719,6 +721,22 @@ struct MeltView: View {
         }
 
         return true
+    }
+
+    private func mintInfo(for quote: MeltQuoteInfo) -> MintInfo? {
+        walletManager.mints.first { $0.url == quote.mintUrl }
+            ?? (walletManager.activeMint?.url == quote.mintUrl ? walletManager.activeMint : nil)
+    }
+
+    private func mintDisplayName(for quote: MeltQuoteInfo) -> String {
+        mintInfo(for: quote)?.name
+            ?? URL(string: quote.mintUrl)?.host
+            ?? quote.mintUrl
+    }
+
+    private func hasSufficientBalance(for quote: MeltQuoteInfo) -> Bool {
+        guard let balance = mintInfo(for: quote)?.balance else { return true }
+        return balance >= quote.totalAmount
     }
 
     private var requestPlaceholder: String {
@@ -999,7 +1017,7 @@ struct MeltView: View {
             ScrollView {
                 VStack(spacing: 24) {
                     CurrencyAmountDisplay(
-                        sats: quote.totalAmount,
+                        sats: quote.amount,
                         primary: $settings.amountDisplayPrimary
                     )
                     .padding(.top, 24)
@@ -1016,15 +1034,25 @@ struct MeltView: View {
                         }
                         meltDetailRow(label: "Amount", value: "\(quote.amount) sat")
                         Divider().padding(.leading)
-                        meltDetailRow(label: "Fee", value: "\(quote.feeReserve) sat")
-                        if let mintUrl = quote.mintUrl ?? walletManager.activeMint?.url {
+                        meltDetailRow(label: "Max fee", value: "\(quote.feeReserve) sat")
+                        if quote.feeReserve > 0 {
                             Divider().padding(.leading)
-                            meltDetailRow(label: "Mint", value: URL(string: mintUrl)?.host ?? mintUrl)
+                            meltDetailRow(label: "Required balance", value: "\(quote.totalAmount) sat")
                         }
+                        Divider().padding(.leading)
+                        meltDetailRow(label: "Mint", value: mintDisplayName(for: quote))
                     }
                     .padding(.vertical, 4)
                     .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
                     .padding(.horizontal)
+
+                    if !hasSufficientBalance(for: quote),
+                       let balance = mintInfo(for: quote)?.balance {
+                        Text("Selected mint has \(balance) sat; this quote can reserve up to \(quote.totalAmount) sat.")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                            .padding(.horizontal)
+                    }
 
                     if let error = errorMessage {
                         Text(error)
@@ -1039,11 +1067,11 @@ struct MeltView: View {
                 if isPaying {
                     ProgressView()
                 } else {
-                    Text("Pay \(quote.totalAmount) sat")
+                    Text("Pay \(quote.amount) sat")
                 }
             }
             .glassButton()
-            .disabled(isPaying)
+            .disabled(isPaying || !hasSufficientBalance(for: quote))
             .padding(.horizontal)
             .padding(.bottom, 16)
         }
@@ -1238,7 +1266,7 @@ struct MeltView: View {
 
         Task { @MainActor in
             do {
-                let _ = try await walletManager.meltTokens(quoteId: quote.id)
+                let _ = try await walletManager.meltTokens(quoteId: quote.id, mintUrl: quote.mintUrl)
                 authorizingState = .sent
                 // Overlay calls onDismiss after 1.2s; flip isPaid then so the
                 // underlying view transitions to success while the sheet dismisses.

@@ -105,5 +105,5 @@ protocol QuoteServiceProtocol {
     func createOnchainMeltQuote(address: String, amount: UInt64) async throws -> MeltQuoteInfo
     
     /// Execute the melt (pay the request)
-    func meltTokens(quoteId: String) async throws -> PaymentResult
+    func meltTokens(quoteId: String, mintUrl: String?) async throws -> MeltPaymentResult
 }

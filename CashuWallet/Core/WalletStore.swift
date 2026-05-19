@@ -66,6 +66,14 @@ final class WalletStore {
         set(preimages, forKey: StorageKeys.paymentPreimages)
     }
 
+    func loadMeltQuoteFees() -> [String: UInt64] {
+        value(forKey: StorageKeys.meltQuoteFees) ?? [:]
+    }
+
+    func saveMeltQuoteFees(_ fees: [String: UInt64]) {
+        set(fees, forKey: StorageKeys.meltQuoteFees)
+    }
+
     func loadMintQuoteTimestamps() -> [String: TimeInterval] {
         value(
             forKey: StorageKeys.mintQuoteTimestamps,
