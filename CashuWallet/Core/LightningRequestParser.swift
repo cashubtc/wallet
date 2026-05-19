@@ -9,10 +9,10 @@ enum LightningRequestParser {
 
     static func normalize(_ request: String) -> String {
         let trimmedRequest = request.trimmingCharacters(in: .whitespacesAndNewlines)
-        let lightningPrefix = "lightning:"
+        let lightningPrefixes = ["lightning://", "lightning:"]
 
-        if trimmedRequest.lowercased().hasPrefix(lightningPrefix) {
-            return String(trimmedRequest.dropFirst(lightningPrefix.count))
+        for prefix in lightningPrefixes where trimmedRequest.lowercased().hasPrefix(prefix) {
+            return String(trimmedRequest.dropFirst(prefix.count))
         }
 
         return trimmedRequest

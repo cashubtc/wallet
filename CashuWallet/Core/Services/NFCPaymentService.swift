@@ -72,19 +72,22 @@ final class NFCPaymentService {
         }
 
         if input.lowercased().hasPrefix("bitcoin:") {
-            guard let parsed = Self.parseBIP321(input) else {
-                throw NFCPaymentError.invalidPaymentRequest("Could not parse bitcoin URI")
-            }
+            let lightningFallback = PaymentRequestDecoder.encodedLightningRequest(from: input)
 
-            if let creq = parsed.creq, !creq.isEmpty {
+            if let creq = PaymentRequestDecoder.encodedCashuPaymentRequest(from: input) {
                 do {
-                    return .creq(try CashuDevKit.PaymentRequest.fromString(encoded: creq))
+                    let request = try decodePaymentRequest(encoded: creq)
+                    if Self.canPrepareInBandToken(for: request) || lightningFallback == nil {
+                        return .creq(request)
+                    }
                 } catch {
-                    throw NFCPaymentError.invalidPaymentRequest(error.localizedDescription)
+                    if lightningFallback == nil {
+                        throw NFCPaymentError.invalidPaymentRequest(error.localizedDescription)
+                    }
                 }
             }
 
-            if let bolt11 = parsed.bolt11, !bolt11.isEmpty {
+            if let bolt11 = lightningFallback {
                 return .bolt11(bolt11)
             }
 
@@ -96,14 +99,12 @@ final class NFCPaymentService {
         input = Self.stripPrefix("lightning://", from: input)
         input = Self.stripPrefix("lightning:", from: input)
 
-        let lowercasedInput = input.lowercased()
-        let bolt11Prefixes = ["lnbc", "lntbs", "lntb", "lnbcrt"]
-        if bolt11Prefixes.contains(where: { lowercasedInput.hasPrefix($0) }) {
-            return .bolt11(input)
+        if let lightningRequest = PaymentRequestDecoder.encodedLightningRequest(from: input) {
+            return .bolt11(lightningRequest)
         }
 
         do {
-            return .creq(try CashuDevKit.PaymentRequest.fromString(encoded: input))
+            return .creq(try decodePaymentRequest(encoded: input))
         } catch {
             throw NFCPaymentError.invalidPaymentRequest(error.localizedDescription)
         }
@@ -145,7 +146,8 @@ final class NFCPaymentService {
         if requested.isEmpty {
             candidates = walletManager.mints
         } else {
-            candidates = walletManager.mints.filter { requested.contains($0.url) }
+            let requestedHosts = Set(requested.map(Self.normalizedMintURL))
+            candidates = walletManager.mints.filter { requestedHosts.contains(Self.normalizedMintURL($0.url)) }
         }
 
         guard !candidates.isEmpty else {
@@ -160,27 +162,34 @@ final class NFCPaymentService {
         return selectedMint
     }
 
-    private static func parseBIP321(_ s: String) -> (creq: String?, bolt11: String?)? {
-        guard let components = URLComponents(string: s),
-              components.scheme?.lowercased() == "bitcoin" else {
-            return nil
-        }
-
-        let queryItems = components.queryItems ?? []
-        let creq = queryItems.first { $0.name.lowercased() == "creq" }?.value
-        let bolt11 = queryItems.first {
-            let name = $0.name.lowercased()
-            return name == "lightning" || name == "lightninginvoice"
-        }?.value
-
-        return (creq, bolt11)
-    }
-
     private static func stripPrefix(_ prefix: String, from input: String) -> String {
         if input.lowercased().hasPrefix(prefix) {
             return String(input.dropFirst(prefix.count))
         }
         return input
+    }
+
+    private static func canPrepareInBandToken(for request: CashuDevKit.PaymentRequest) -> Bool {
+        guard let unit = request.unit() else { return true }
+        if case .sat = unit {
+            return true
+        }
+        return false
+    }
+
+    private static func normalizedMintURL(_ urlString: String) -> String {
+        let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: trimmed),
+              let host = url.host?.lowercased() else {
+            return trimmed.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        }
+
+        var normalized = host
+        if let port = url.port {
+            normalized += ":\(port)"
+        }
+        normalized += url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        return normalized
     }
 
     private static func description(for unit: CashuDevKit.CurrencyUnit) -> String {

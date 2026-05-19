@@ -868,6 +868,8 @@ struct MeltView: View {
             return amount.map { "BOLT12 offer — \($0) sat" } ?? "BOLT12 offer — set amount"
         case .onchain:
             return "Bitcoin address"
+        case .cashuPaymentRequest:
+            return "Cashu payment request"
         case .unrecognized:
             return "Unrecognized — try a Lightning address, invoice, or Bitcoin address"
         }
@@ -1120,8 +1122,9 @@ struct MeltView: View {
         case .onchain:
             requestInput = PaymentRequestParser.normalizeBitcoinRequest(raw)
         case .bolt11, .bolt12:
-            requestInput = PaymentRequestParser.normalizeLightningRequest(raw)
-        default:
+            requestInput = PaymentRequestDecoder.encodedLightningRequest(from: raw)
+                ?? PaymentRequestParser.normalizeLightningRequest(raw)
+        case .lightningAddress, .cashuPaymentRequest, .unrecognized:
             requestInput = raw
         }
 
@@ -1149,8 +1152,9 @@ struct MeltView: View {
         case .onchain:
             requestInput = PaymentRequestParser.normalizeBitcoinRequest(recipient.invoice)
         case .bolt11, .bolt12:
-            requestInput = PaymentRequestParser.normalizeLightningRequest(recipient.invoice)
-        default:
+            requestInput = PaymentRequestDecoder.encodedLightningRequest(from: recipient.invoice)
+                ?? PaymentRequestParser.normalizeLightningRequest(recipient.invoice)
+        case .lightningAddress, .cashuPaymentRequest, .unrecognized:
             requestInput = recipient.invoice
         }
         errorMessage = nil
@@ -1185,7 +1189,8 @@ struct MeltView: View {
                             amount: amount
                         )
                     } else {
-                        meltQuote = try await walletManager.createMeltQuote(request: trimmedInput)
+                        let request = PaymentRequestDecoder.encodedLightningRequest(from: trimmedInput) ?? trimmedInput
+                        meltQuote = try await walletManager.createMeltQuote(request: request)
                     }
                 case .onchain:
                     guard let amount = UInt64(amountString), amount > 0 else { return }

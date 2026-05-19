@@ -56,9 +56,9 @@
 		CC00000000000005 /* NostrSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC00000000000015 /* NostrSettingsSection.swift */; };
 		CC00000000000006 /* PrivacySettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC00000000000016 /* PrivacySettingsSection.swift */; };
 		CC00000000000007 /* AdvancedSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC00000000000017 /* AdvancedSettingsSection.swift */; };
-		CC00000000000020 /* PressableButtonStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC00000000000021 /* PressableButtonStyle.swift */; };
 		CC00000000000008 /* LightningAddressSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC00000000000018 /* LightningAddressSettingsSection.swift */; };
 		CC00000000000009 /* PaymentRequestsSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC00000000000019 /* PaymentRequestsSettingsSection.swift */; };
+		CC00000000000020 /* PressableButtonStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC00000000000021 /* PressableButtonStyle.swift */; };
 		DD00000000000001 /* AppLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD00000000000011 /* AppLogger.swift */; };
 		DD00000000000002 /* BIP39WordList.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD00000000000012 /* BIP39WordList.swift */; };
 		DD00000000000003 /* HapticFeedback.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD00000000000013 /* HapticFeedback.swift */; };
@@ -128,9 +128,9 @@
 		CC00000000000015 /* NostrSettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NostrSettingsSection.swift; sourceTree = "<group>"; };
 		CC00000000000016 /* PrivacySettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacySettingsSection.swift; sourceTree = "<group>"; };
 		CC00000000000017 /* AdvancedSettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdvancedSettingsSection.swift; sourceTree = "<group>"; };
-		CC00000000000021 /* PressableButtonStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PressableButtonStyle.swift; sourceTree = "<group>"; };
 		CC00000000000018 /* LightningAddressSettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LightningAddressSettingsSection.swift; sourceTree = "<group>"; };
 		CC00000000000019 /* PaymentRequestsSettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaymentRequestsSettingsSection.swift; sourceTree = "<group>"; };
+		CC00000000000021 /* PressableButtonStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PressableButtonStyle.swift; sourceTree = "<group>"; };
 		DD00000000000011 /* AppLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLogger.swift; sourceTree = "<group>"; };
 		DD00000000000012 /* BIP39WordList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BIP39WordList.swift; sourceTree = "<group>"; };
 		DD00000000000013 /* HapticFeedback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HapticFeedback.swift; sourceTree = "<group>"; };
@@ -681,7 +681,7 @@
 				CODE_SIGN_ENTITLEMENTS = CashuWallet/CashuWallet.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = D7AHD3GLH6;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = CashuWallet/Info.plist;
@@ -702,7 +702,7 @@
 					"-framework",
 					SystemConfiguration,
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.cashu.wallet;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jcashu.wallet;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -718,7 +718,7 @@
 				CODE_SIGN_ENTITLEMENTS = CashuWallet/CashuWallet.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = D7AHD3GLH6;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = CashuWallet/Info.plist;
@@ -739,7 +739,7 @@
 					"-framework",
 					SystemConfiguration,
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.cashu.wallet;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jcashu.wallet;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;

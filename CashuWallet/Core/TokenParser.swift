@@ -3,13 +3,13 @@ import CashuDevKit
 
 enum TokenParser {
     static func normalizedToken(from rawToken: String) -> String? {
-        let token = rawToken.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard isCashuToken(token) else { return nil }
+        let token = stripCashuScheme(from: rawToken.trimmingCharacters(in: .whitespacesAndNewlines))
+        guard isCashuDeepLinkToken(token) else { return nil }
         return token
     }
 
     static func isCashuToken(_ token: String) -> Bool {
-        token.lowercased().hasPrefix("cashu")
+        normalizedToken(from: token) != nil
     }
 
     static func isCashuDeepLinkToken(_ token: String) -> Bool {
@@ -18,8 +18,8 @@ enum TokenParser {
     }
 
     static func tokenInfo(from tokenString: String) -> TokenInfo? {
-        guard isCashuToken(tokenString),
-              let token = try? Token.decode(encodedToken: tokenString),
+        guard let normalized = normalizedToken(from: tokenString),
+              let token = try? Token.decode(encodedToken: normalized),
               let mint = try? token.mintUrl().url,
               let proofs = try? token.proofsSimple() else {
             return nil
@@ -33,5 +33,13 @@ enum TokenParser {
             memo: token.memo(),
             proofCount: proofs.count
         )
+    }
+
+    private static func stripCashuScheme(from token: String) -> String {
+        let prefixes = ["cashu://", "cashu:"]
+        for prefix in prefixes where token.lowercased().hasPrefix(prefix) {
+            return String(token.dropFirst(prefix.count))
+        }
+        return token
     }
 }

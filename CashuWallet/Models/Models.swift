@@ -87,10 +87,10 @@ enum PaymentMethodKind: String, CaseIterable, Codable, Hashable {
 enum PaymentRequestParser {
     static func normalizeLightningRequest(_ request: String) -> String {
         let trimmedRequest = request.trimmingCharacters(in: .whitespacesAndNewlines)
-        let lightningPrefix = "lightning:"
+        let lightningPrefixes = ["lightning://", "lightning:"]
 
-        if trimmedRequest.lowercased().hasPrefix(lightningPrefix) {
-            return String(trimmedRequest.dropFirst(lightningPrefix.count))
+        for prefix in lightningPrefixes where trimmedRequest.lowercased().hasPrefix(prefix) {
+            return String(trimmedRequest.dropFirst(prefix.count))
         }
 
         return trimmedRequest
@@ -98,10 +98,10 @@ enum PaymentRequestParser {
 
     static func normalizeBitcoinRequest(_ request: String) -> String {
         let trimmedRequest = request.trimmingCharacters(in: .whitespacesAndNewlines)
-        let prefix = "bitcoin:"
+        let bitcoinPrefixes = ["bitcoin://", "bitcoin:"]
 
         let withoutScheme: String
-        if trimmedRequest.lowercased().hasPrefix(prefix) {
+        if let prefix = bitcoinPrefixes.first(where: { trimmedRequest.lowercased().hasPrefix($0) }) {
             withoutScheme = String(trimmedRequest.dropFirst(prefix.count))
         } else {
             withoutScheme = trimmedRequest
@@ -133,22 +133,23 @@ enum PaymentRequestParser {
     }
 
     static func paymentMethod(for request: String) -> PaymentMethodKind? {
+        let normalizedRequest = PaymentRequestDecoder.encodedLightningRequest(from: request)
+            ?? normalizeLightningRequest(request)
+        if !normalizedRequest.isEmpty,
+           let decodedRequest = try? decodeInvoice(invoiceStr: normalizedRequest) {
+            switch decodedRequest.paymentType {
+            case .bolt11:
+                return .bolt11
+            case .bolt12:
+                return .bolt12
+            }
+        }
+
         if isBitcoinAddress(request) {
             return .onchain
         }
 
-        let normalizedRequest = normalizeLightningRequest(request)
-        guard !normalizedRequest.isEmpty else { return nil }
-        guard let decodedRequest = try? decodeInvoice(invoiceStr: normalizedRequest) else {
-            return nil
-        }
-
-        switch decodedRequest.paymentType {
-        case .bolt11:
-            return .bolt11
-        case .bolt12:
-            return .bolt12
-        }
+        return nil
     }
 }
 

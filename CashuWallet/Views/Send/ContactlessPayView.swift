@@ -189,7 +189,7 @@ struct ContactlessPayView: View {
                 dismiss()
 
             case .bolt11(let invoice):
-                session.alertMessage = "Lightning invoice found"
+                session.alertMessage = "Lightning request found"
                 session.invalidate()
                 navigationManager.pendingMeltInvoice = invoice
                 dismiss()

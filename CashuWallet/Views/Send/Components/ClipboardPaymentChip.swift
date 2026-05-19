@@ -13,7 +13,7 @@ struct ClipboardPaymentChip: View {
         switch result {
         case .bolt11(let amount, _), .bolt12(let amount, _):
             return amount
-        case .lightningAddress, .onchain, .unrecognized:
+        case .lightningAddress, .onchain, .cashuPaymentRequest, .unrecognized:
             return nil
         }
     }

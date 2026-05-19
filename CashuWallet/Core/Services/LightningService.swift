@@ -251,11 +251,13 @@ class LightningService: ObservableObject {
         let mintUrl = MintUrl(url: activeMint.url)
         let wallet = try await repo.getWallet(mintUrl: mintUrl, unit: .sat)
 
-        if PaymentRequestParser.isBitcoinAddress(request) {
+        let normalizedRequest = PaymentRequestDecoder.encodedLightningRequest(from: request) ?? request
+
+        if PaymentRequestParser.isBitcoinAddress(normalizedRequest) {
             throw WalletError.networkError("On-chain payments require an amount before requesting a quote.")
         }
 
-        let parsedRequest = try LightningRequestParser.parse(request)
+        let parsedRequest = try LightningRequestParser.parse(normalizedRequest)
         let paymentMethod = PaymentMethodKind.from(parsedRequest.method) ?? .bolt11
         
         let quote = try await wallet.meltQuote(

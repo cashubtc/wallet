@@ -76,10 +76,12 @@ struct ScannerWrapperView: View {
     @StateObject private var scannerModel = ScannerViewModel()
     @State private var scannedToken: String?
     @State private var scannedMeltRequest: String?
+    @State private var scannedCashuPaymentRequest: CashuPaymentRequestSummary?
     @State private var scannedMeltMode: MeltView.MeltMode = .lightning
     @State private var scannedMeltAutoQuote = false
     @State private var navigateToDetail = false
     @State private var navigateToMelt = false
+    @State private var navigateToCashuPaymentRequest = false
     
     var body: some View {
         NavigationStack {
@@ -171,6 +173,14 @@ struct ScannerWrapperView: View {
                     .environmentObject(walletManager)
                 }
             }
+            .fullScreenCover(isPresented: $navigateToCashuPaymentRequest) {
+                if let request = scannedCashuPaymentRequest {
+                    CashuPaymentRequestPayView(request: request, onComplete: {
+                        dismiss()
+                    })
+                    .environmentObject(walletManager)
+                }
+            }
         }
     }
 
@@ -218,36 +228,63 @@ struct ScannerWrapperView: View {
             return
         }
 
-        // Determine content type: Token (Receive) or Invoice (Pay/Melt)
-        if TokenParser.isCashuToken(content) {
+        // Determine content type: Token (Receive), Cashu request (Pay), or
+        // external payment request (Pay/Melt).
+        if let token = TokenParser.normalizedToken(from: content) {
             // Handle Ecash Token -> Show Detail View
             let generator = UINotificationFeedbackGenerator()
             generator.notificationOccurred(.success)
             
-            scannedToken = content
+            scannedToken = token
             navigateToDetail = true
-            
-        } else if let paymentMethod = PaymentRequestParser.paymentMethod(for: content) {
+
+        } else if case .cashuPaymentRequest(let request) = PaymentRequestDecoder.decode(
+            content,
+            includeCashuPaymentRequests: true,
+            preferCashuPaymentRequests: true
+        ), request.isSatUnit || PaymentRequestDecoder.encodedLightningRequest(from: content) == nil {
             let generator = UINotificationFeedbackGenerator()
             generator.notificationOccurred(.success)
 
-            scannedMeltRequest = paymentMethod == .onchain
-                ? PaymentRequestParser.normalizeBitcoinRequest(content)
-                : PaymentRequestParser.normalizeLightningRequest(content)
-            scannedMeltMode = paymentMethod == .onchain ? .onchain : .lightning
-            scannedMeltAutoQuote = paymentMethod != .onchain
-            navigateToMelt = true
+            scannedCashuPaymentRequest = request
+            navigateToCashuPaymentRequest = true
             
-        } else if PaymentRequestParser.isHumanReadableLightningAddress(content) {
-            let generator = UINotificationFeedbackGenerator()
-            generator.notificationOccurred(.success)
+        } else {
+            let decodedPaymentRequest = PaymentRequestDecoder.decode(content)
+            switch decodedPaymentRequest {
+            case .bolt11, .bolt12, .onchain:
+                let generator = UINotificationFeedbackGenerator()
+                generator.notificationOccurred(.success)
 
-            scannedMeltRequest = content
-            scannedMeltMode = .lightning
-            scannedMeltAutoQuote = false
-            navigateToMelt = true
+                if case .onchain = decodedPaymentRequest {
+                    scannedMeltRequest = PaymentRequestParser.normalizeBitcoinRequest(content)
+                    scannedMeltMode = .onchain
+                    scannedMeltAutoQuote = false
+                } else {
+                    scannedMeltRequest = PaymentRequestDecoder.encodedLightningRequest(from: content)
+                        ?? PaymentRequestParser.normalizeLightningRequest(content)
+                    scannedMeltMode = .lightning
+                    scannedMeltAutoQuote = true
+                }
+                navigateToMelt = true
 
-        } else if content.lowercased().hasPrefix("https://") && content.contains("mint") {
+            case .lightningAddress:
+                let generator = UINotificationFeedbackGenerator()
+                generator.notificationOccurred(.success)
+
+                scannedMeltRequest = content
+                scannedMeltMode = .lightning
+                scannedMeltAutoQuote = false
+                navigateToMelt = true
+
+            case .cashuPaymentRequest, .unrecognized:
+                processUnsupportedContent(content)
+            }
+        }
+    }
+
+    private func processUnsupportedContent(_ content: String) {
+        if content.lowercased().hasPrefix("https://") && content.contains("mint") {
             // Possibly a mint URL - copy for now, could add mint
             UIPasteboard.general.string = content
             let generator = UINotificationFeedbackGenerator()
@@ -264,6 +301,205 @@ struct ScannerWrapperView: View {
                 scannerModel.reset()
             }
         }
+    }
+}
+
+private struct CashuPaymentRequestPayView: View {
+    let request: CashuPaymentRequestSummary
+    var onComplete: (() -> Void)?
+
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var walletManager: WalletManager
+    @ObservedObject private var settings = SettingsManager.shared
+
+    @State private var customAmountString = ""
+    @State private var isPaying = false
+    @State private var errorMessage: String?
+    @State private var showAuthorizingOverlay = false
+    @State private var authorizingState: AuthorizingOverlay.FlowState = .authorizing
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                ScrollView {
+                    VStack(spacing: 24) {
+                        amountSection
+                            .padding(.top, 24)
+
+                        detailsSection
+
+                        if !request.isSatUnit {
+                            Text("This wallet can only pay sat-denominated Cashu requests.")
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal)
+                        }
+
+                        if let errorMessage {
+                            Text(errorMessage)
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal)
+                        }
+                    }
+                }
+
+                if request.amount == nil {
+                    NumberPadAmountInput(amountString: $customAmountString)
+                        .padding(.horizontal, 24)
+                }
+
+                Button(action: payRequest) {
+                    if isPaying {
+                        ProgressView()
+                    } else {
+                        Label("Pay", systemImage: "checkmark.circle.fill")
+                    }
+                }
+                .glassButton()
+                .disabled(!canPay)
+                .padding(.horizontal)
+                .padding(.top, 16)
+                .padding(.bottom, 16)
+            }
+            .navigationTitle("Cashu Request")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(action: { dismiss() }) {
+                        Image(systemName: "xmark")
+                    }
+                    .accessibilityLabel("Close")
+                }
+            }
+            .sheet(isPresented: $showAuthorizingOverlay, onDismiss: resetAuthorizingState) {
+                AuthorizingOverlay(
+                    amountSats: paymentAmount ?? 0,
+                    recipient: recipientLabel,
+                    recipientCaption: "Cashu payment request",
+                    state: $authorizingState,
+                    onDismiss: {
+                        showAuthorizingOverlay = false
+                        onComplete?()
+                        dismiss()
+                    }
+                )
+                .presentationDetents([.height(340)])
+                .presentationBackgroundInteraction(.disabled)
+                .interactiveDismissDisabled()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var amountSection: some View {
+        if let amount = request.amount, request.isSatUnit {
+            CurrencyAmountDisplay(
+                sats: amount,
+                primary: $settings.amountDisplayPrimary
+            )
+        } else if let amount = request.amount {
+            VStack(spacing: 6) {
+                Text("\(amount)")
+                    .font(.system(size: 48, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                Text(request.unit ?? "unknown unit")
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
+            }
+        } else {
+            CurrencyAmountDisplay(
+                sats: UInt64(customAmountString) ?? 0,
+                primary: $settings.amountDisplayPrimary
+            )
+        }
+    }
+
+    private var detailsSection: some View {
+        VStack(spacing: 0) {
+            detailRow(
+                icon: "text.quote",
+                label: "Description",
+                value: request.description?.isEmpty == false ? request.description! : "Cashu payment"
+            )
+            Divider().padding(.leading)
+            detailRow(icon: "banknote", label: "Unit", value: request.unit ?? "sat")
+            Divider().padding(.leading)
+            detailRow(icon: "bitcoinsign.bank.building", label: "Mint", value: mintLabel)
+        }
+        .padding(.vertical, 4)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .padding(.horizontal)
+    }
+
+    private func detailRow(icon: String, label: String, value: String) -> some View {
+        HStack(spacing: 12) {
+            Label(label, systemImage: icon)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text(value)
+                .fontWeight(.medium)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .font(.subheadline)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+    }
+
+    private var canPay: Bool {
+        guard !isPaying, request.isSatUnit else { return false }
+        return paymentAmount.map { $0 > 0 } ?? false
+    }
+
+    private var paymentAmount: UInt64? {
+        request.amount ?? UInt64(customAmountString)
+    }
+
+    private var recipientLabel: String {
+        request.description?.isEmpty == false ? request.description! : "Cashu request"
+    }
+
+    private var mintLabel: String {
+        guard let firstMint = request.mints.first else { return "Any mint" }
+        if request.mints.count == 1 {
+            return URL(string: firstMint)?.host ?? firstMint
+        }
+        return "\(request.mints.count) mints"
+    }
+
+    private func payRequest() {
+        guard canPay else { return }
+
+        isPaying = true
+        errorMessage = nil
+        authorizingState = .authorizing
+        showAuthorizingOverlay = true
+        HapticFeedback.impact(.medium)
+
+        Task { @MainActor in
+            do {
+                try await walletManager.payCashuPaymentRequest(
+                    encoded: request.encoded,
+                    customAmountSats: request.amount == nil ? paymentAmount : nil
+                )
+                authorizingState = .sent
+            } catch {
+                let message = error.localizedDescription
+                errorMessage = message
+                authorizingState = .error(message)
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                showAuthorizingOverlay = false
+            }
+
+            isPaying = false
+        }
+    }
+
+    private func resetAuthorizingState() {
+        authorizingState = .authorizing
     }
 }
 
