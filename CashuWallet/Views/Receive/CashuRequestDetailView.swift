@@ -7,7 +7,7 @@ struct CashuRequestDetailView: View {
     @ObservedObject private var store = CashuRequestStore.shared
     @ObservedObject private var settings = SettingsManager.shared
 
-    let onClose: () -> Void
+    let onClose: (() -> Void)?
 
     @State private var requestId: String
     @State private var showCopied = false
@@ -15,7 +15,7 @@ struct CashuRequestDetailView: View {
     @State private var showMintPicker = false
     @State private var showAmountPicker = false
 
-    init(request: CashuRequest, onClose: @escaping () -> Void) {
+    init(request: CashuRequest, onClose: (() -> Void)? = nil) {
         self._requestId = State(initialValue: request.id)
         self.onClose = onClose
     }
@@ -46,7 +46,9 @@ struct CashuRequestDetailView: View {
                     .font(.headline)
             }
             ToolbarItem(placement: .cancellationAction) {
-                Button(action: { dismiss() }) {
+                Button {
+                    if let onClose { onClose() } else { dismiss() }
+                } label: {
                     Image(systemName: "xmark")
                 }
                 .accessibilityLabel("Close")
@@ -129,7 +131,7 @@ struct CashuRequestDetailView: View {
                         )
                         canvasDivider
                         editableRow(
-                            icon: "number",
+                            icon: "bitcoinsign",
                             label: "Amount",
                             value: amountDisplayValue(for: request),
                             action: { showAmountPicker = true }

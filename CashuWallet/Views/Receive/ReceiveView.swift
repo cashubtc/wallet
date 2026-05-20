@@ -277,11 +277,7 @@ struct ReceiveEcashView: View {
                 encoded: encoded
             )
             currentRequest = request
-            if let sheetDetent {
-                withAnimation(.snappy) {
-                    sheetDetent.wrappedValue = .large
-                }
-            }
+            sheetDetent?.wrappedValue = .large
             navigateToRequest = true
         } catch {
             errorMessage = "Could not build request: \(error)"

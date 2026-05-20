@@ -257,7 +257,7 @@ struct HistoryView: View {
 
     private func cashuRequestRow(request: CashuRequest) -> some View {
         NavigationLink {
-            CashuRequestDetailView(request: request, onClose: {})
+            CashuRequestDetailView(request: request)
                 .environmentObject(walletManager)
                 .navigationBarBackButtonHidden(false)
         } label: {
