@@ -20,14 +20,39 @@ struct HistoryView: View {
     }
 
     @State private var filter: FilterMode = .all
+    @State private var searchText: String = ""
     @State private var selectedTransaction: WalletTransaction?
+    @State private var selectedRequest: CashuRequest?
+    @State private var requestPendingDeletion: CashuRequest?
     @State private var isCheckingStatus: String? = nil
     @State private var transactionUpdateRevision = 0
     @State private var hasAppearedOnce = false
 
-    // Pagination — kept for now (visual polish only; structural overhaul deferred)
-    @State private var currentPage: Int = 1
-    private let pageSize: Int = 10
+    // Unified timeline item — Cashu Requests and transactions share a sort key
+    // and live in the same date-grouped sections.
+    private enum HistoryItem: Identifiable {
+        case transaction(WalletTransaction)
+        case request(CashuRequest)
+
+        var id: String {
+            switch self {
+            case .transaction(let t): return "tx-\(t.id)"
+            case .request(let r):     return "req-\(r.id)"
+            }
+        }
+
+        var date: Date {
+            switch self {
+            case .transaction(let t): return t.date
+            case .request(let r):     return r.createdAt
+            }
+        }
+    }
+
+    @State private var visibleCount: Int = 30
+    @State private var scrollResetToken: UInt = 0
+    private let pageStep: Int = 30
+    private let prefetchLead: Int = 5
 
     // Cap stagger so a full page enters in ~300ms regardless of row count.
     private let maxStaggerIndex = 8
@@ -43,8 +68,6 @@ struct HistoryView: View {
                 }
             }
             .navigationTitle("History")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
@@ -63,20 +86,48 @@ struct HistoryView: View {
                     .accessibilityValue(filter.label)
                 }
             }
+            .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Search history")
             .onChange(of: filter) { _, _ in
-                currentPage = 1
+                visibleCount = pageStep
+                scrollResetToken &+= 1
                 HapticFeedback.selection()
+            }
+            .onChange(of: searchText) { _, _ in
+                visibleCount = pageStep
             }
             .sheet(item: $selectedTransaction) { transaction in
                 TransactionDetailView(transaction: transaction)
                     .environmentObject(walletManager)
+            }
+            .navigationDestination(item: $selectedRequest) { request in
+                CashuRequestDetailView(request: request)
+                    .environmentObject(walletManager)
+            }
+            .confirmationDialog(
+                "Remove this Cashu Request from history?",
+                isPresented: Binding(
+                    get: { requestPendingDeletion != nil },
+                    set: { if !$0 { requestPendingDeletion = nil } }
+                ),
+                titleVisibility: .visible,
+                presenting: requestPendingDeletion
+            ) { request in
+                Button("Remove", role: .destructive) {
+                    requestStore.delete(id: request.id)
+                    requestPendingDeletion = nil
+                }
+                Button("Cancel", role: .cancel) {
+                    requestPendingDeletion = nil
+                }
+            } message: { _ in
+                Text("The QR and any pending payment routing stay valid; this only removes the row from your history.")
             }
             .task {
                 await walletManager.loadTransactions()
             }
             .onReceive(NotificationCenter.default.publisher(for: .cashuTransactionsUpdated)) { _ in
                 transactionUpdateRevision += 1
-                currentPage = min(currentPage, maxPages)
+                visibleCount = min(visibleCount, max(pageStep, filteredItems.count))
             }
         }
     }
@@ -101,40 +152,55 @@ struct HistoryView: View {
                 }
 
                 ForEach(sectionsWithOffsets, id: \.group.title) { entry in
-                    sectionHeader(entry.group.title)
-
-                    VStack(spacing: 0) {
-                        ForEach(Array(entry.group.transactions.enumerated()), id: \.element.id) { index, transaction in
-                            transactionRow(transaction: transaction, staggerIndex: entry.startIndex + index)
-                            if index < entry.group.transactions.count - 1 {
-                                CanvasDivider()
-                            }
+                    Section {
+                        ForEach(Array(entry.group.items.enumerated()), id: \.element.id) { index, item in
+                            let globalIndex = entry.startIndex + index
+                            row(for: item, staggerIndex: globalIndex)
+                                .id(item.id)
+                                .onAppear {
+                                    if globalIndex >= visibleCount - prefetchLead {
+                                        extendWindow()
+                                    }
+                                }
                         }
+                    } header: {
+                        Text(entry.group.title)
                     }
-                    .padding(.horizontal, 4)
-                    .padding(.bottom, 12)
-                }
-
-                if maxPages > 1 {
-                    paginationControls
-                        .padding(.top, 8)
-                        .padding(.bottom, 24)
                 }
             }
-            .padding(.horizontal)
-            .padding(.top, 8)
-            .animation(.snappy(duration: 0.25), value: filter)
-            .animation(.snappy(duration: 0.25), value: currentPage)
+            .listStyle(.plain)
+            .refreshable {
+                await walletManager.syncPendingMintQuotes()
+                await walletManager.checkAllPendingTokens()
+            }
+            .onAppear { hasAppearedOnce = true }
+            .onChange(of: scrollResetToken) { _, _ in
+                if let firstId = visibleItems.first?.id {
+                    withAnimation(.snappy(duration: 0.25)) {
+                        proxy.scrollTo(firstId, anchor: .top)
+                    }
+                }
+            }
         }
-        .refreshable {
-            await walletManager.syncPendingMintQuotes()
-            await walletManager.checkAllPendingTokens()
+    }
+
+    private func extendWindow() {
+        guard visibleCount < filteredItems.count else { return }
+        visibleCount = min(visibleCount + pageStep, filteredItems.count)
+    }
+
+    @ViewBuilder
+    private func row(for item: HistoryItem, staggerIndex: Int) -> some View {
+        switch item {
+        case .transaction(let tx):
+            transactionRow(transaction: tx, staggerIndex: staggerIndex)
+        case .request(let req):
+            cashuRequestRow(request: req, staggerIndex: staggerIndex)
         }
-        .onAppear { hasAppearedOnce = true }
     }
 
     private struct SectionWithOffset {
-        let group: TransactionGroup
+        let group: HistoryGroup
         let startIndex: Int
     }
 
@@ -145,33 +211,21 @@ struct HistoryView: View {
         var offset = 0
         for g in groupedSections {
             result.append(.init(group: g, startIndex: offset))
-            offset += g.transactions.count
+            offset += g.items.count
         }
         return result
     }
 
-    private func sectionHeader(_ title: String) -> some View {
-        Text(title)
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(.secondary)
-            .textCase(.uppercase)
-            .tracking(1.2)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 4)
-            .padding(.top, 16)
-            .padding(.bottom, 8)
-    }
-
     // MARK: - Grouping
 
-    private struct TransactionGroup {
+    private struct HistoryGroup {
         let title: String
-        let transactions: [WalletTransaction]
+        let items: [HistoryItem]
     }
 
-    private var groupedSections: [TransactionGroup] {
-        let txns = paginatedTransactions
-        guard !txns.isEmpty else { return [] }
+    private var groupedSections: [HistoryGroup] {
+        let items = visibleItems
+        guard !items.isEmpty else { return [] }
 
         let calendar = Calendar.current
         let now = Date()
@@ -180,77 +234,204 @@ struct HistoryView: View {
         let startOfThisWeek = calendar.dateInterval(of: .weekOfYear, for: now)?.start ?? startOfYesterday
         let startOfThisMonth = calendar.dateInterval(of: .month, for: now)?.start ?? startOfThisWeek
 
-        // Buckets in display order
-        var today: [WalletTransaction] = []
-        var yesterday: [WalletTransaction] = []
-        var thisWeek: [WalletTransaction] = []
-        var thisMonth: [WalletTransaction] = []
-        var earlier: [WalletTransaction] = []
+        var today: [HistoryItem] = []
+        var yesterday: [HistoryItem] = []
+        var thisWeek: [HistoryItem] = []
+        var thisMonth: [HistoryItem] = []
+        var earlier: [HistoryItem] = []
 
-        for t in txns {
-            if t.date >= startOfToday {
-                today.append(t)
-            } else if t.date >= startOfYesterday {
-                yesterday.append(t)
-            } else if t.date >= startOfThisWeek {
-                thisWeek.append(t)
-            } else if t.date >= startOfThisMonth {
-                thisMonth.append(t)
+        for item in items {
+            let d = item.date
+            if d >= startOfToday {
+                today.append(item)
+            } else if d >= startOfYesterday {
+                yesterday.append(item)
+            } else if d >= startOfThisWeek {
+                thisWeek.append(item)
+            } else if d >= startOfThisMonth {
+                thisMonth.append(item)
             } else {
-                earlier.append(t)
+                earlier.append(item)
             }
         }
 
-        var groups: [TransactionGroup] = []
-        if !today.isEmpty     { groups.append(.init(title: "Today",      transactions: today)) }
-        if !yesterday.isEmpty { groups.append(.init(title: "Yesterday",  transactions: yesterday)) }
-        if !thisWeek.isEmpty  { groups.append(.init(title: "This Week",  transactions: thisWeek)) }
-        if !thisMonth.isEmpty { groups.append(.init(title: "This Month", transactions: thisMonth)) }
-        if !earlier.isEmpty   { groups.append(.init(title: "Earlier",    transactions: earlier)) }
+        var groups: [HistoryGroup] = []
+        if !today.isEmpty     { groups.append(.init(title: "Today",      items: today)) }
+        if !yesterday.isEmpty { groups.append(.init(title: "Yesterday",  items: yesterday)) }
+        if !thisWeek.isEmpty  { groups.append(.init(title: "This Week",  items: thisWeek)) }
+        if !thisMonth.isEmpty { groups.append(.init(title: "This Month", items: thisMonth)) }
+        if !earlier.isEmpty   { groups.append(.init(title: "Earlier",    items: earlier)) }
         return groups
     }
 
     // MARK: - Computed Properties
 
-    private var filteredTransactions: [WalletTransaction] {
+    /// Set of CDK transaction ids that are claimed by some Cashu Request.
+    /// These are suppressed from the timeline because the request row
+    /// represents the same money event.
+    private var requestClaimedTxIds: Set<String> {
+        Set(requestStore.requests.flatMap { req in
+            req.receivedPayments.map { $0.transactionId }
+        })
+    }
+
+    /// Surviving transactions (not claimed by any Cashu Request) merged with
+    /// every Cashu Request, then filtered by toolbar mode and search text.
+    private var filteredItems: [HistoryItem] {
+        let claimed = requestClaimedTxIds
+        let txItems: [HistoryItem] = walletManager.transactions
+            .filter { !claimed.contains($0.id) }
+            .filter { matchesFilter(transaction: $0) }
+            .map(HistoryItem.transaction)
+
+        let reqItems: [HistoryItem] = requestStore.requests
+            .filter { matchesFilter(request: $0) }
+            .map(HistoryItem.request)
+
+        let combined = (txItems + reqItems).sorted { $0.date > $1.date }
+        return combined.filter { matchesSearch($0) }
+    }
+
+    private func matchesFilter(transaction: WalletTransaction) -> Bool {
         switch filter {
-        case .all:       return walletManager.transactions
-        case .pending:   return walletManager.transactions.filter { $0.status == .pending }
-        case .completed: return walletManager.transactions.filter { $0.status == .completed }
+        case .all:       return true
+        case .pending:   return transaction.status == .pending
+        case .completed: return transaction.status == .completed
         }
     }
 
-    private var maxPages: Int {
-        max(1, Int(ceil(Double(filteredTransactions.count) / Double(pageSize))))
+    private func matchesFilter(request: CashuRequest) -> Bool {
+        switch filter {
+        case .all:       return true
+        case .pending:   return request.receivedPayments.isEmpty
+        case .completed: return !request.receivedPayments.isEmpty
+        }
     }
 
-    private var paginatedTransactions: [WalletTransaction] {
-        let startIndex = (currentPage - 1) * pageSize
-        let endIndex = min(startIndex + pageSize, filteredTransactions.count)
-        guard startIndex < filteredTransactions.count else { return [] }
-        return Array(filteredTransactions[startIndex..<endIndex])
+    private func matchesSearch(_ item: HistoryItem) -> Bool {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !query.isEmpty else { return true }
+        switch item {
+        case .transaction(let tx):
+            if rowTitle(for: tx).lowercased().contains(query) { return true }
+            if "\(tx.amount)".contains(query) { return true }
+            return false
+        case .request(let req):
+            if "cashu request".contains(query) { return true }
+            if let amount = req.amount, "\(amount)".contains(query) { return true }
+            if req.totalReceived > 0, "\(req.totalReceived)".contains(query) { return true }
+            return false
+        }
+    }
+
+    private var visibleItems: [HistoryItem] {
+        Array(filteredItems.prefix(visibleCount))
     }
 
     // MARK: - Empty State
 
     @ViewBuilder
     private var emptyStateView: some View {
-        VStack(spacing: 16) {
-            Spacer()
-            Image(systemName: "bolt.fill")
-                .font(.system(size: 56, weight: .light))
-                .foregroundStyle(.secondary)
-                .symbolEffect(.pulse, options: .repeating)
-            Text("No activity yet")
-                .font(.title3.weight(.semibold))
-            Text("Your first payment will show up here")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-            Spacer()
-            Spacer()
+        if !searchText.isEmpty {
+            ContentUnavailableView.search(text: searchText)
+        } else if filter != .all {
+            ContentUnavailableView(
+                "Nothing here",
+                systemImage: "line.3.horizontal.decrease.circle",
+                description: Text("No transactions match this filter.")
+            )
+        } else {
+            ContentUnavailableView {
+                Label("No activity yet", systemImage: "bolt.fill")
+                    .symbolEffect(.pulse, options: .repeating)
+            } description: {
+                Text("Your first payment will show up here.")
+            }
         }
-        .padding(.horizontal, 32)
+    }
+
+    // MARK: - Cashu Request Row
+
+    private func cashuRequestRow(request: CashuRequest, staggerIndex: Int) -> some View {
+        let clampedIndex = min(staggerIndex, maxStaggerIndex)
+        let delay = Double(clampedIndex) * staggerDelay
+        let isReceived = !request.receivedPayments.isEmpty
+        return Button {
+            HapticFeedback.selection()
+            selectedRequest = request
+        } label: {
+            HStack(spacing: 14) {
+                requestRowIcon(received: isReceived)
+                    .frame(width: 36, height: 36)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Cashu Request")
+                        .font(.body.weight(.medium))
+                        .lineLimit(1)
+
+                    Text(formatRelativeDate(request.createdAt))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: 8)
+
+                requestTrailingAmount(request: request, received: isReceived)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .opacity(hasAppearedOnce ? 1 : 0)
+        .offset(y: hasAppearedOnce ? 0 : 6)
+        .animation(.smooth(duration: 0.32).delay(delay), value: hasAppearedOnce)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Cashu Request, \(isReceived ? "received" : "waiting for payment"), \(formatRelativeDate(request.createdAt))")
+        .accessibilityHint("Opens request details")
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            Button(role: .destructive) {
+                requestPendingDeletion = request
+            } label: {
+                Label("Remove", systemImage: "trash")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func requestRowIcon(received: Bool) -> some View {
+        ZStack(alignment: .bottomTrailing) {
+            EcashIcon()
+                .frame(width: 36, height: 36)
+
+            Image(systemName: received ? "arrow.down.circle.fill" : "clock.circle.fill")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(received ? Color.green : Color.orange)
+                .background(Color(.systemBackground), in: Circle())
+                .offset(x: 4, y: 4)
+                .contentTransition(.symbolEffect(.replace.downUp))
+                .animation(.snappy(duration: 0.28), value: received)
+                .accessibilityHidden(true)
+        }
+    }
+
+    @ViewBuilder
+    private func requestTrailingAmount(request: CashuRequest, received: Bool) -> some View {
+        if received {
+            Text("+\(settings.formatAmountShort(request.totalReceived))")
+                .font(.system(.body, design: .rounded).weight(.semibold))
+                .monospacedDigit()
+                .foregroundStyle(Color.green)
+                .contentTransition(.numericText(value: Double(request.totalReceived)))
+        } else if let amount = request.amount, amount > 0 {
+            HStack(spacing: 4) {
+                Image(systemName: "clock")
+                    .font(.caption2.weight(.semibold))
+                Text(settings.formatAmountShort(amount))
+                    .font(.system(.body, design: .rounded).weight(.medium))
+                    .monospacedDigit()
+            }
+            .foregroundStyle(.secondary)
+        }
+        // Any-amount + waiting: no trailing element.
     }
 
     // MARK: - Cashu Request Row
@@ -347,11 +528,9 @@ struct HistoryView: View {
                     .accessibilityHint(refreshHint(for: transaction))
                 }
             }
-            .padding(.horizontal, 4)
-            .padding(.vertical, 14)
             .contentShape(Rectangle())
         }
-        .buttonStyle(PressableButtonStyle())
+        .buttonStyle(.plain)
         .opacity(hasAppearedOnce ? 1 : 0)
         .offset(y: hasAppearedOnce ? 0 : 6)
         .animation(.smooth(duration: 0.32).delay(delay), value: hasAppearedOnce)
@@ -430,14 +609,45 @@ struct HistoryView: View {
         return transaction.type == .incoming ? .green : .primary
     }
 
-    private static let relativeDateFormatter: RelativeDateTimeFormatter = {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .abbreviated
-        return formatter
+    private static let shortTimeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .none
+        f.timeStyle = .short
+        return f
     }()
 
+    private static let sameYearDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.setLocalizedDateFormatFromTemplate("MMMd")
+        return f
+    }()
+
+    private static let otherYearDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.setLocalizedDateFormatFromTemplate("MMMdyyyy")
+        return f
+    }()
+
+    /// Smart relative date: <1 min → "Now", <1 h → "X min ago",
+    /// same day → time, yesterday → "Yesterday HH:MM", older → "MMM d" (or +year).
     private func formatRelativeDate(_ date: Date) -> String {
-        Self.relativeDateFormatter.localizedString(for: date, relativeTo: Date())
+        let now = Date()
+        let delta = now.timeIntervalSince(date)
+        if delta < 60 { return "Now" }
+
+        let calendar = Calendar.current
+        if calendar.isDateInToday(date) {
+            if delta < 3600 {
+                let minutes = max(1, Int(delta / 60))
+                return "\(minutes) min ago"
+            }
+            return Self.shortTimeFormatter.string(from: date)
+        }
+        if calendar.isDateInYesterday(date) {
+            return "Yesterday \(Self.shortTimeFormatter.string(from: date))"
+        }
+        let sameYear = calendar.component(.year, from: date) == calendar.component(.year, from: now)
+        return (sameYear ? Self.sameYearDateFormatter : Self.otherYearDateFormatter).string(from: date)
     }
 
     // MARK: - Actions
@@ -472,47 +682,6 @@ struct HistoryView: View {
         }
     }
 
-    // MARK: - Pagination
-
-    private var paginationControls: some View {
-        HStack(spacing: 8) {
-            Spacer()
-
-            Button { currentPage = 1 } label: {
-                Image(systemName: "chevron.left.2")
-            }
-            .disabled(currentPage <= 1)
-            .accessibilityLabel("First page")
-
-            Button { currentPage = max(1, currentPage - 1) } label: {
-                Image(systemName: "chevron.left")
-            }
-            .disabled(currentPage <= 1)
-            .accessibilityLabel("Previous page")
-
-            Text("Page \(currentPage) of \(maxPages)")
-                .font(.footnote.weight(.medium))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 12)
-                .contentTransition(.numericText())
-
-            Button { currentPage = min(maxPages, currentPage + 1) } label: {
-                Image(systemName: "chevron.right")
-            }
-            .disabled(currentPage >= maxPages)
-            .accessibilityLabel("Next page")
-
-            Button { currentPage = maxPages } label: {
-                Image(systemName: "chevron.right.2")
-            }
-            .disabled(currentPage >= maxPages)
-            .accessibilityLabel("Last page")
-
-            Spacer()
-        }
-        .font(.footnote)
-        .buttonStyle(.borderless)
-    }
 }
 
 #Preview {

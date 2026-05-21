@@ -78,6 +78,15 @@ struct ReceiveLightningView: View {
                     Text(screenTitle)
                         .font(.headline)
                 }
+
+                if let quote = mintQuote {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        ShareLink(item: quote.request) {
+                            Image(systemName: "square.and.arrow.up")
+                        }
+                        .accessibilityLabel("Share request")
+                    }
+                }
             }
             .sheet(isPresented: $showMintPicker) {
                 MintSelectorSheet(selectedMint: $walletManager.activeMint)
@@ -401,20 +410,10 @@ struct ReceiveLightningView: View {
                 .padding(.horizontal)
             }
 
-            HStack(spacing: 12) {
-                Button(action: { copyRequest(quote.request) }) {
-                    Label(copyButtonTitle(for: quote), systemImage: copiedRequest ? "checkmark" : "doc.on.doc")
-                }
-                .glassButton()
-
-                ShareLink(item: quote.request) {
-                    Image(systemName: "square.and.arrow.up")
-                        .font(.body.weight(.semibold))
-                        .frame(width: 52, height: 52)
-                        .liquidGlass(in: Circle(), interactive: true)
-                }
-                .accessibilityLabel("Share request")
+            Button(action: { copyRequest(quote.request) }) {
+                Label(copyButtonTitle(for: quote), systemImage: copiedRequest ? "checkmark" : "doc.on.doc")
             }
+            .glassButton()
             .padding(.horizontal)
             .padding(.bottom, 16)
         }

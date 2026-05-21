@@ -127,8 +127,9 @@ struct TransactionDetailView: View {
                     .padding(.horizontal)
                 }
 
-                // Single primary action — Copy. Share via long-press on the
-                // QR (context menu). Mirrors the Lightning Invoice screen.
+                // Single primary action — Copy. Share lives at top-right in
+                // the toolbar (with a doubled QR context-menu entry for
+                // long-press discovery). See DESIGN.md → Share-At-Top Rule.
                 if let content = qrContent {
                     Button(action: { copyContent(content) }) {
                         Label(copyButtonText, systemImage: copyButtonText == "Copied" ? "checkmark" : "doc.on.doc")
@@ -151,6 +152,14 @@ struct TransactionDetailView: View {
                 }
                 ToolbarItem(placement: .principal) {
                     Text(titleForTransaction).font(.headline)
+                }
+                if qrContent != nil {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button(action: { showShareSheet = true }) {
+                            Image(systemName: "square.and.arrow.up")
+                        }
+                        .accessibilityLabel("Share")
+                    }
                 }
             }
             .sheet(isPresented: $showShareSheet) {

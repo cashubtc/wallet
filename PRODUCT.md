@@ -20,15 +20,20 @@ crowding the default flow.
 
 ## Product Purpose
 
-A privacy-first iOS wallet for Cashu ecash, Lightning, on-chain Bitcoin, and NFC
-contactless payments. Success looks like: a newcomer can mint their first token,
-send it, and redeem it back without consulting external docs, and an expert can
-manage multiple mints, swap, and recover from seed without feeling that the app
-is hiding things from them.
+A privacy-first iOS wallet for Cashu ecash (NUT-18 receive over Nostr), Lightning
+(BOLT11 + BOLT12 offers), on-chain Bitcoin, and NFC contactless payments. Success
+looks like: a newcomer can mint their first token, send it, and redeem it back
+without consulting external docs, and an expert can manage multiple mints, swap,
+hand out reusable Cashu Requests, and recover from seed without feeling that the
+app is hiding things from them.
 
 It exists because the existing wallets in the space are either web-first
-(constrained UX, no NFC, no Keychain), or do not treat Cashu's privacy model
-with native-iOS care.
+(constrained UX, no NFC, no Keychain, no native Nostr inbox), or do not treat
+Cashu's privacy model with native-iOS care. Cashu Requests — a sender-pulls,
+relay-mediated receive primitive — are a first-class surface here precisely
+because they are the most ecash-native thing about ecash: a receiver can publish
+an address-shaped artifact (QR or copy string) that does not leak to any single
+mint, custodian, or Lightning node.
 
 ## Brand Personality
 
@@ -68,20 +73,33 @@ What this should explicitly NOT look or feel like:
 ## Design Principles
 
 1. **Native before novel.** When iOS has a pattern that fits (sheets, bottom
-   action buttons, semantic separators, system materials) use it. Reach for a
-   custom solution only when the native one demonstrably fails the task.
+   action buttons, semantic separators, system materials, navigation
+   destinations inside a sheet) use it. Reach for a custom solution only when
+   the native one demonstrably fails the task.
 2. **Restraint scales further than flourish.** Monochrome surfaces with one
    accent role per state will read clearly in a year; gradients and decorative
    color will look dated in six months. Default to quiet.
 3. **Teach the mental model, don't lecture.** Newcomers don't know what a mint
-   is. The product reveals concepts through use (first send, first redeem,
-   first multi-mint moment) never through a wall of explanatory copy.
+   is, or what makes a Cashu Request different from a Lightning invoice. The
+   product reveals concepts through use (first send, first redeem, first
+   multi-mint moment, first request that collects two payments) never through
+   a wall of explanatory copy.
 4. **Numbers are sacred.** Balances, amounts, fees, and unit toggles get the
    typographic care of a stopwatch face: tabular figures, numeric content
-   transitions, no animations that obscure what the value just changed to.
+   transitions, no animations that obscure what the value just changed to. A
+   balance never jumps frames; it slides digit-by-digit.
 5. **Quiet pending, clear final.** Intermediate states (pending, signing,
-   in-flight) are muted on purpose so confirmed states land with weight. A
-   confirmed transaction is the only thing on the row that gets to be green.
+   in-flight, waiting-for-payment) are muted on purpose so confirmed states
+   land with weight. A confirmed *incoming* transaction is the only thing on
+   the row that gets to be green; a confirmed *outgoing* one stays in
+   `Color.primary`. Pending is always an orange clock badge over secondary
+   text, never a saturated pill.
+6. **In-sheet flow swaps cross-fade; cross-screen flows push.** When a single
+   sheet has two faces of the same task (e.g. "paste a token" → "show a fresh
+   Cashu Request") the swap is a 0.25s opacity cross-fade inside the sheet,
+   not a `NavigationLink` push. Push navigation is reserved for content-detail
+   relationships (history row → transaction detail). The sheet is the unit of
+   intent; the cross-fade keeps the unit intact.
 
 ## Accessibility & Inclusion
 
@@ -93,8 +111,11 @@ Commit: **full Apple HIG accessibility** as the floor, not the ceiling.
 - **VoiceOver** — every actionable control has a meaningful label and (where
   state isn't obvious from the label) a hint. Balance and status changes are
   announced.
-- **Reduce Motion** — the four custom SwiftUI animations (row stagger, badge
-  morph, chooser cascade, press feedback) honor `accessibilityReduceMotion`.
+- **Reduce Motion** — the named custom animations (row stagger, badge
+  symbol-replace, chooser cascade, press feedback, sheet cross-fade,
+  payment-received celebration, waiting-pulse) honor
+  `accessibilityReduceMotion`. Existing code does not yet check this everywhere;
+  new code must.
 - **Contrast** — WCAG 2.2 AA contrast in both light and dark modes for all
   text and interactive surfaces, AAA for critical-numeric surfaces (balance,
   amount-being-sent) where reasonable.

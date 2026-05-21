@@ -1,6 +1,6 @@
 ---
 name: Cashu Wallet
-description: Privacy-first iOS wallet for Cashu ecash, Lightning, on-chain Bitcoin, and NFC.
+description: Privacy-first iOS wallet for Cashu ecash (incl. NUT-18 Cashu Requests over Nostr), Lightning (BOLT11 + BOLT12), on-chain Bitcoin, and NFC.
 colors:
   accent-ink: "#000000"
   primary-text: "#000000"
@@ -106,9 +106,46 @@ components:
     rounded: "{rounded.capsule}"
     padding: "4px 8px"
     typography: "{typography.caption-emphasis}"
+  badge-directional-incoming:
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.state-confirmed}"
+    rounded: "{rounded.capsule}"
+    iconSymbol: "arrow.down.circle.fill"
+    iconSize: "14px"
+    note: "Bottom-trailing overlay on history-row icons. Confirmed incoming only."
+  badge-directional-outgoing:
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.primary-text}"
+    rounded: "{rounded.capsule}"
+    iconSymbol: "arrow.up.circle.fill"
+    iconSize: "14px"
+    note: "Bottom-trailing overlay on history-row icons. Confirmed outgoing only."
+  badge-directional-pending:
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.state-pending}"
+    rounded: "{rounded.capsule}"
+    iconSymbol: "clock.circle.fill"
+    iconSize: "14px"
+    note: "Replaces directional arrow while a tx is pending. Symbol-replace transition."
+  row-inspector-editable:
+    backgroundColor: "transparent"
+    textColor: "{colors.primary-text}"
+    secondaryTextColor: "{colors.secondary-text}"
+    padding: "12px 8px"
+    typography: "{typography.body}"
+    trailingHintSymbol: "pencil"
+    note: "Cashu Request detail. Tap opens a medium-detent sub-sheet."
   divider-canvas:
     backgroundColor: "{colors.separator-hair}"
     height: "0.5px"
+  notification-toast:
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.primary-text}"
+    rounded: "{rounded.hairline}"
+    padding: "12px 16px"
+    typography: "{typography.callout}"
+    shadow: "0 2px 4px rgba(0,0,0,0.2)"
+    note: "Lone flat-by-default exception — toast literally floats over the canvas."
 ---
 
 # Design System: Cashu Wallet
@@ -149,9 +186,14 @@ What this system explicitly rejects, pulled verbatim from PRODUCT.md:
 - Liquid Glass on iOS 26+ for primary interactive surfaces. Quiet fallbacks below.
 - Hairline `CanvasDivider` (0.5pt at `Color(.separator)`) as the single-canvas
   separator. No card stacks, no nested containers.
-- Motion is exponential ease-out, in the 200–350ms range. The four named animations
-  (row stagger, badge symbol-replace, chooser cascade, press feedback) are the
-  full motion vocabulary; nothing decorative.
+- Motion is exponential ease-out, in the 180–350ms range. Seven named animations
+  carry the full vocabulary: row stagger, badge symbol-replace, chooser cascade,
+  press feedback, sheet cross-fade (in-sheet flow swap), payment-received
+  celebration, and waiting-pulse. Nothing decorative beyond that.
+- One inspector pattern for editable detail rows (Cashu Request → Mint, Amount):
+  leading SF Symbol + secondary label + trailing value (medium weight, middle-
+  truncated) + trailing `pencil` hint glyph. Tap opens a `.medium`-detent
+  sub-sheet rather than pushing a screen.
 
 ## 2. Colors: The Inverted-Ink Palette
 
@@ -187,13 +229,19 @@ opacity for foreground (icon, status text) and at low opacity (10–18%) when us
 as a tinted background.
 
 - **Confirmed Green** (`Color.green`, ≈ `#34C759` / `#30D158`): the colour of a
-  completed transaction. Foreground on the history row amount when status is
-  `completed`, foreground on the badge checkmark. **Nothing else on the row is
-  allowed to be green.**
-- **Pending Orange** (`Color.orange`, ≈ `#FF9500` / `#FF9F0A`): muted clock badge
-  on a pending history row, foreground for the "pending" status string. When used
-  as a background it lives at `.opacity(0.1)` — the quiet-pending principle made
-  visual.
+  completed transaction's *amount text* (both directions — money landed is money
+  landed, on the page green is "this row settled"), and of the
+  `arrow.down.circle.fill` directional badge for confirmed **incoming**
+  transactions, the `checkmark.seal.fill` "N payments received" status on a
+  Cashu Request, and the `checkmark.circle.fill` payment-received toast inside
+  the Cashu Request detail. **Nothing else is allowed to be green.** Outgoing
+  rows render their directional badge (`arrow.up.circle.fill`) in
+  `Color.primary`, never green — green belongs to the receiver.
+- **Pending Orange** (`Color.orange`, ≈ `#FF9500` / `#FF9F0A`): the
+  `clock.circle.fill` directional badge while a transaction is pending,
+  foreground for "pending" status text, and foreground for the "Waiting for
+  payment…" clock on a Cashu Request. When used as a background it lives at
+  `.opacity(0.1)` — the quiet-pending principle made visual.
 - **Error Red** (`Color.red`, ≈ `#FF3B30` / `#FF453A`): the `.failed` status
   foreground and destructive-action accents. As a tint background it appears at
   `.opacity(0.18)` (e.g. the authorizing-overlay destructive surface).
@@ -214,9 +262,11 @@ as a tinted background.
 `Color(.separator)`) or one of three state hues at a stated opacity. There is no
 fourth case.
 
-**The One Green Rule.** A confirmed transaction is the only thing on its row that
-gets to be green. Not the icon, not the chevron, not the amount in pending state.
-Green is the reward the row earns by clearing.
+**The One Green Rule.** Green is the reward for *settlement* and *receipt*.
+The completed-row amount (incoming or outgoing) gets it because the row has
+cleared. The directional badge gets it **only when arrow points down** — receipt
+is the green moment, dispatch is not. Pending amounts stay `.secondary`; nothing
+else on the row, anywhere, ever, gets to be green.
 
 **The Quiet Pending Rule.** Pending is `Color.orange` muted to `.opacity(0.1)`
 as a background and the clock SF Symbol as a leading badge. Never a full-saturation
@@ -281,9 +331,12 @@ The system is **flat by default with one elevation layer**: Liquid Glass on iOS
 directly on the canvas; depth comes from material translucency and the
 `CanvasDivider` hairline, not from shadows.
 
-There is no `box-shadow` or `.shadow(...)` modifier in the production view
-tree. A single subtle press scale (0.97 via `PressableButtonStyle`, 0.09s down /
-0.18s spring back) is the only "lift" the system ships.
+There is exactly one `.shadow(...)` in the production view tree — the
+`NotificationBadgeView` toast (`Color.black.opacity(0.2)`, radius 4, y-offset 2)
+— and it earns the exception because the toast literally floats above the
+underlying canvas. Everywhere else, a single subtle press scale (0.97 via
+`PressableButtonStyle`, 0.09s down / 0.18s spring back) is the only "lift" the
+system ships.
 
 ### Material Vocabulary
 
@@ -300,9 +353,18 @@ tree. A single subtle press scale (0.97 via `PressableButtonStyle`, 0.09s down /
 
 ### Named Rules
 
-**The Flat-By-Default Rule.** No drop shadows. No glow rings. Depth is conveyed
-by translucent materials and hairline `CanvasDivider`s, not by elevation
-geometry. If you reach for `.shadow(...)`, the layout is wrong.
+**The Flat-By-Default Rule.** No drop shadows on cards, buttons, rows, or any
+surface that lives *in* the canvas. No glow rings, no inner shadows, no glossy
+highlights. Depth on the canvas is conveyed by translucent materials and
+hairline `CanvasDivider`s, not by elevation geometry.
+
+**The Floating-Toast Exception.** `NotificationBadgeView` is allowed a single
+soft shadow (`Color.black.opacity(0.2)`, radius 4, y 2) because it is the one
+surface that genuinely floats *over* the app — it slides in from the top edge,
+sits above the wallet canvas without joining it, and dismisses. No other
+component may take this exception. If you find yourself reaching for a shadow,
+the layout is wrong; verify the alternative isn't a hairline divider or a
+material change before adding lift.
 
 **The Glass-As-Surface Rule.** Liquid Glass is a *surface*, not a *decoration*.
 It belongs on container shapes (`Capsule`, `RoundedRectangle(cornerRadius: 12)`)
@@ -349,19 +411,54 @@ right tool for the job.
 The canonical list pattern. Defined in
 `CashuWallet/Views/History/HistoryView.swift`.
 
-- **Leading**: stacked icon — transaction-kind glyph (EcashIcon, LightningIcon,
-  or `bitcoinsign.circle.fill`) with a small badge overlay. The badge uses
-  `.contentTransition(.symbolEffect(.replace.downUp))` so it morphs cleanly
-  between `clock` (pending) and `checkmark.circle.fill` (confirmed).
-- **Title**: left-aligned, `.body.weight(.medium)`, single line.
+- **Leading**: stacked icon — 36×36 transaction-kind glyph (`EcashIcon`,
+  `LightningIcon`, or `bitcoinsign.circle.fill`) with a directional badge
+  overlay in the bottom-trailing corner, 14pt bold, on a `Color(.systemBackground)`
+  circle so it reads cleanly against either canvas. The badge uses
+  `.contentTransition(.symbolEffect(.replace.downUp))` and a `.snappy(0.28)`
+  animation, morphing cleanly through three states:
+  - `clock.circle.fill` in `Color.orange` while pending
+  - `arrow.down.circle.fill` in `Color.green` when a completed receive lands
+  - `arrow.up.circle.fill` in `Color.primary` when a completed send clears
+  Direction is now part of the badge taxonomy, not just status.
+- **Title**: left-aligned, `.body.weight(.medium)`, single line, derived from
+  `(kind, type)` — e.g. "Lightning received", "Bitcoin sent", "Sent ecash".
 - **Timestamp**: `.caption`, `Color.secondary`, immediately under the title.
-- **Trailing amount**: `.body.weight(.semibold).monospacedDigit()`,
-  `.contentTransition(.numericText())`. Pending → `Color.secondary`. Confirmed →
-  `Color.green`. Never colored in any other state.
+  Formatted with `RelativeDateTimeFormatter(.abbreviated)` ("2 hr ago", "3 d ago").
+- **Trailing amount**: `.system(.body, design: .rounded).weight(.semibold)
+  .monospacedDigit()`, `.contentTransition(.numericText(value:))`, prefixed
+  with `+` or `−`. Pending → `Color.secondary`. Completed → `Color.green`
+  (both incoming and outgoing — see the One Green Rule). Failed → `.primary`.
+- **Trailing pending refresh**: while a row is pending, a borderless
+  `arrow.triangle.2.circlepath` button sits to the right of the amount and
+  swaps for `ProgressView().controlSize(.small)` while checking. This is the
+  only borderless `Button` in a row.
 - **Separator**: `CanvasDivider()` with the default 28pt leading inset.
 - **Entrance**: row stagger via `.smooth(duration: 0.32).delay(index * 0.035s)`,
   capped at `maxStaggerIndex = 8`. The first eight rows cascade in; everything
-  after enters immediately.
+  after enters immediately. Driven by `hasAppearedOnce` so only the first
+  appearance staggers — subsequent re-renders (filter change, pagination) animate
+  via `.snappy(0.25)` on `value: filter` / `value: currentPage`.
+
+### Cashu Request Rows (History header)
+
+Cashu Requests pin to the top of `HistoryView` in their own "Cashu Requests"
+section above the dated transactions, because they are *open* rather than
+*resolved* — fundamentally a different row class. Defined in
+`HistoryView.swift` → `cashuRequestRow(request:)`.
+
+- **Leading**: 36×36 `arrow.triangle.2.circlepath` SF Symbol over a
+  `Color.secondary.opacity(0.12)` circle fill. No stacked badge — the request
+  is the activity, not a transaction with a status.
+- **Title**: "Cashu Request", `.subheadline.weight(.medium)`.
+- **Subtitle**: derived from `receivedPaymentIds.count` — "Waiting for payment",
+  "1 payment received", or "N payments received". `.caption`, `.secondary`.
+- **Trailing**: relative time (`.caption2`, `.tertiary`) — quieter than a
+  transaction timestamp because a request's recency matters less than its
+  status.
+- **Tap target**: a `NavigationLink` to `CashuRequestDetailView`, *not* a
+  `Button` that pushes a sheet. Requests are content; transactions are
+  modals — that asymmetry is intentional.
 
 ### Inputs
 
@@ -384,12 +481,71 @@ camera scanner only.
   `.presentationDragIndicator(.visible)`. Use for any flow that has its own
   internal navigation (Send, Receive, Mints).
 - **Adaptive**: `.presentationDetents([.medium, .large])`. Use for inspection-
-  style sheets (Settings → Backup, single-mint detail).
+  style sheets (Settings → Backup, single-mint detail). `ReceiveEcashView`
+  opens at `.medium` and lets the user pull to `.large`; when the inner state
+  flips to a freshly-built Cashu Request, the parent programmatically promotes
+  the detent to `.large` (`sheetDetent?.wrappedValue = .large`) so the QR has
+  room to land — the *detent* moves to the *content*, not the other way around.
 - **Fixed height**: `.presentationDetents([.height(340)])` for compact
   confirmation surfaces (`AuthorizingOverlay`). Pair with
   `.presentationBackgroundInteraction(.disabled)` to lock the underlying canvas.
+  The Send/Receive chooser uses `.presentationDetents([.height(195)])`
+  (or `245` when NFC is available) — fitted exactly to the option list, never
+  taller. Variable-height chooser detents are intentional: an empty option
+  costs the user vertical space and adds no information.
+- **Sub-sheets on a sheet**: `CashuRequestDetailView` opens
+  `CashuRequestMintPickerSheet` and `CashuRequestAmountPickerSheet` as nested
+  sheets at `.presentationDetents([.medium])`. The parent stays put; the
+  sub-sheet is a transient editor and dismisses on selection. This pattern is
+  the right replacement for "Edit Cashu Request" being its own screen — the
+  attribute is small, the edit is one tap, the surrounding context never leaves.
 - **Confirmation dialogs**: `.confirmationDialog(...)` for destructive
   actions (remove mint, sign out). Never a custom alert sheet.
+
+### Cashu Request Inspector
+
+The signature surface of the NUT-18 receive flow.
+`CashuWallet/Views/Receive/CashuRequestDetailView.swift`. The view runs in two
+contexts: pushed inside a `.medium`/`.large` sheet from `ReceiveEcashView`, or
+pushed as a `NavigationLink` destination from the History "Cashu Requests"
+section. The same content scales to both.
+
+- **QR**: 280×280 `QRCodeView(content:, showControls: false, staticOnly: true)`
+  on a `Color.white` `RoundedRectangle(cornerRadius: 20)` with 16pt padding.
+  White is intentional and one of the three explicit exceptions to "no
+  `.white`" in the palette rules (the others being scanner overlay and QR
+  contexts themselves). Context menu on long-press exposes Copy + Share.
+- **Amount**: when set, rendered through `CurrencyAmountDisplay` at
+  `primarySize: 32` so it doesn't compete with the QR but still reads as the
+  dominant numeric element.
+- **Status badge**: three exclusive states, all `.subheadline.weight(.medium)`,
+  no surrounding pill:
+  - Waiting → `clock` SF Symbol with `.symbolEffect(.pulse, options: .repeating)`
+    + "Waiting for payment…", `Color.orange`, no animation on appearance.
+  - Received (live) → `checkmark.circle.fill` with `.symbolEffect(.bounce)` +
+    "Payment received!", `Color.green`, slid in via
+    `.scale.combined(with: .opacity)` under `.spring(0.5, 0.7)`. Holds for
+    2.5s then reverts to the persistent count.
+  - Received (persistent) → `checkmark.seal.fill` + "N payments received",
+    `Color.green`. Quiet — no symbol effect, no animation.
+- **Editable inspector rows** (Mint, Amount): see `row-inspector-editable`
+  in the YAML frontmatter. Tap opens the appropriate `.medium`-detent
+  sub-sheet. Selecting a value calls back into the parent which regenerates
+  the request — the QR rotates, the new request gets a new id, and the
+  `CashuRequestStore` archives the prior one.
+- **Read-only rows** (Unit, Created): same row shape, no pencil glyph, no
+  tap target.
+- **Row dividers**: 0.5pt `Rectangle().fill(Color.primary.opacity(0.08))`
+  with 8pt horizontal inset — *not* `CanvasDivider()`. The inspector lives in
+  a narrower container than a single-canvas list, and the lighter tint reads
+  better when stacked tightly between editable rows. (If this divergence
+  bothers a reader, the right fix is to add an `inset` and `tint` parameter
+  to `CanvasDivider`, not to introduce a third hairline.)
+- **Actions**: two siblings via `glassButton()` — "Copy" (flips to "Copied"
+  for 2s after tap, no other state change) and "New Request" (regenerates,
+  rotating the QR). Order matters: the existing request lives on the left
+  because it is the thing you'd usually share; the destructive-ish rotate
+  lives on the right.
 
 ### Notifications
 
@@ -430,7 +586,74 @@ copy, and disabled state** — never from a parallel button vocabulary. A
 "secondary" Liquid Glass button stacked under a "primary" one is intentional:
 they are siblings, not parent-and-child.
 
-## 6. Do's and Don'ts
+**The Share-At-Top Rule.** Any sheet that displays a shareable QR artifact —
+Lightning Invoice (`ReceiveLightningView`), Cashu Request
+(`CashuRequestDetailView`), generated ecash token (`SendView`), historical
+transaction (`TransactionDetailView`) — places its Share affordance at
+toolbar `.topBarTrailing`. The Share is either a bare `ShareLink(item:)`
+(when the artifact ships as a plain string, e.g. a Lightning invoice or a
+Cashu Request) or a `Button { showShareSheet = true }` that routes through a
+custom share sheet (when the artifact needs URL-scheme formatting, e.g. an
+ecash token gets the `cashu:` prefix via `CashuTokenShareSheet`). The QR
+additionally carries a `.contextMenu { Copy + Share }` so long-pressers find
+the same affordance — the doubled discovery is intentional, not a redundancy.
+The bottom row is reserved for primary CTAs (Copy, Continue, New Request,
+Send) and **never** carries Share. Aligning Share to one corner across every
+artifact-display sheet makes it a learnable habit, not a per-screen guess.
+
+## 6. Motion Vocabulary
+
+Seven named animations carry the entire system. New custom motion must justify
+why none of these fit before it earns its own name. All seven honor
+`accessibilityReduceMotion` (existing code is not yet uniformly compliant; new
+code must be).
+
+1. **Row stagger** — `.smooth(duration: 0.32).delay(index * 0.035s)` on
+   `value: hasAppearedOnce`, capped at index 8. Drives the History list's
+   first appearance: 6pt y-offset + opacity → final position. Only first
+   appearance staggers; filter/page changes re-render under `.snappy(0.25)`.
+2. **Badge symbol-replace** — `.contentTransition(.symbolEffect(.replace.downUp))`
+   on the history-row directional badge, `.snappy(0.28)` keyed on
+   `transaction.status` and `transaction.type`. Morphs `clock.circle.fill` →
+   `arrow.down.circle.fill` / `arrow.up.circle.fill` when a transaction clears.
+3. **Chooser cascade** — Receive/Send action sheet options reveal with
+   `.smooth(duration: 0.32).delay(index * 0.07s)` on `value: revealed`. Each
+   option fades in and slides 12pt from the leading edge. The cascade is the
+   *only* place an in-app element animates from a *direction* rather than
+   from a *scale or opacity*.
+4. **Press feedback** — `PressableButtonStyle` scales to 0.97 on press
+   (`.snappy(0.09)`), springs back to 1.0 on release (`.snappy(0.18)`).
+   Color/opacity unchanged. Apply only where the glass surface doesn't
+   already carry feedback; `glassButton()` ships its own pressed opacity drop.
+5. **Sheet cross-fade** — in-sheet flow swap, e.g. `ReceiveEcashView`
+   flipping between the paste-token form and the `CashuRequestDetailView`.
+   Each branch ships `.transition(.opacity)` and the container animates
+   `.easeInOut(duration: 0.25)` on the discriminator (`value: currentRequest?.id`).
+   Use this whenever a sheet has two faces of the same task; the alternative
+   (push navigation, modal stacking) breaks the "the sheet is the unit of
+   intent" principle in PRODUCT.md.
+6. **Payment-received celebration** — `paymentJustReceived` lights up the
+   Cashu Request status badge for 2.5s with `.spring(response: 0.5,
+   dampingFraction: 0.7)`. The checkmark uses `.symbolEffect(.bounce, value:)`
+   and the entire badge transitions in via `.scale.combined(with: .opacity)`.
+   Same pattern is mirrored in `ReceiveLightningView` for `isPaid`. The
+   *singular* allowed celebration vocabulary — never confetti, never a haptic
+   stronger than `.success`, never a sustained-color flash. Holds 2.5s,
+   then quietly steps back to the persistent N-payments-received line.
+7. **Waiting-pulse** — `.symbolEffect(.pulse, options: .repeating)` on a
+   single SF Symbol while a system is waiting on external state: the empty-
+   state History bolt, the Cashu Request "Waiting for payment…" clock, the
+   ActivityOrb's rotating dotted-circle. Quiet, infinite, no scale change.
+
+**Allowed easings.** `.smooth(duration:)` for entrances and reflows.
+`.snappy(duration:)` for state flips and presses (.09 / .18 / .25 / .28 / .35
+are the canonical durations). `.easeInOut(duration: 0.2–0.3)` for
+cross-fades and value-driven container animations.
+`.spring(response: 0.5, dampingFraction: 0.7)` for the celebration only.
+`.linear(duration: 2).repeatForever()` for the ActivityOrb rotation only.
+No bounce, no elastic, no custom cubic-bezier, no `.interactiveSpring`.
+
+## 7. Do's and Don'ts
 
 ### Do
 
@@ -453,11 +676,23 @@ they are siblings, not parent-and-child.
   Type scales for free. Pair balance/amount text with `.minimumScaleFactor(0.5)`
   and `.lineLimit(1)` so AX5 doesn't truncate a money value.
 - **Do** stagger the first eight history rows on entrance and morph the
-  pending/confirmed badge with `.contentTransition(.symbolEffect(.replace.downUp))`.
-  Those are the existing motion vocabulary; new screens should reuse it, not
-  invent more.
+  directional badge with `.contentTransition(.symbolEffect(.replace.downUp))`.
+  Those are part of the seven named animations; new screens should reuse
+  them, not invent more.
+- **Do** swap in-sheet faces with a 0.25s opacity cross-fade
+  (`.transition(.opacity)` + `.animation(.easeInOut(duration: 0.25), value:)`)
+  rather than pushing a sub-view through a `NavigationLink`. Sheets are units
+  of intent; cross-fade keeps the unit intact. Push navigation is for
+  content-detail relationships.
+- **Do** open small attribute editors (mint, amount on a Cashu Request) as
+  nested sheets at `.presentationDetents([.medium])` and dismiss on selection.
+  The parent's context never leaves the screen.
+- **Do** promote the parent sheet's detent programmatically when its content
+  outgrows the current size (e.g. flipping from a paste-token form at
+  `.medium` to a freshly-built Cashu Request at `.large`). The detent serves
+  the content, not the other way around.
 - **Do** honor `accessibilityReduceMotion` on every custom animation. (The
-  current four custom animations do not yet check this; new code must.)
+  current named animations are not yet uniformly compliant; new code must be.)
 
 ### Don't
 
@@ -465,12 +700,16 @@ they are siblings, not parent-and-child.
   no `Color.brandInk`. If you reach for one, the design has drifted.
 - **Don't** use `.black` or `.white` outside the scanner overlay and QR code
   contexts. Use `Color.primary` and `Color(.systemBackground)` instead.
-- **Don't** color a pending row green, an icon green, a chevron green, or
-  anything other than the confirmed-amount text green. **The One Green Rule.**
+- **Don't** color a pending row green, an outgoing badge green, a chevron
+  green, or anything other than a completed-row amount or a confirmed
+  *incoming* directional badge. **The One Green Rule.**
 - **Don't** ship a loud "PENDING" pill or any full-saturation orange chip. The
-  quiet-pending principle is encoded in `.opacity(0.1)` and the clock SF Symbol.
+  quiet-pending principle is encoded in `clock.circle.fill` over secondary
+  text and `.opacity(0.1)` orange backgrounds.
 - **Don't** drop a `.shadow(...)` modifier on a card, a button, or a row.
-  **The Flat-By-Default Rule.** Depth is materials and hairlines.
+  **The Flat-By-Default Rule.** Depth is materials and hairlines. The only
+  permitted shadow lives on `NotificationBadgeView` because the toast
+  literally floats over the canvas — see the Floating-Toast Exception.
 - **Don't** ship the **hero-metric SaaS panel**: big number on tinted card,
   small label below, supporting stats around it. The balance is the only
   hero number the wallet gets, and it lives on the bare canvas.
@@ -480,9 +719,17 @@ they are siblings, not parent-and-child.
   or a `Font.system(size: N)` for body text. SF system styles only.
 - **Don't** reach for `.fullScreenCover` for a confirmation, a settings flow,
   or any modal that is not the camera. Use a sheet with the right detent.
-- **Don't** add bounce, elastic, or `.spring(response:, dampingFraction:)`
-  values outside the existing vocabulary (`.smooth(0.32)`, `.snappy(0.25–0.35)`,
-  `.easeOut(0.2–0.3)`). Motion is exponential ease-out, in that range.
+- **Don't** add bounce, elastic, or new `.spring` parameters outside the
+  named seven (see § Motion Vocabulary). The single allowed spring is the
+  payment-received celebration at `(0.5, 0.7)`; everything else lives in
+  `.smooth(0.32)`, `.snappy(0.09–0.35)`, or `.easeInOut(0.2–0.3)`.
+- **Don't** push a sub-view inside a sheet when the inner state is just
+  another face of the same task. Use the 0.25s opacity cross-fade. Push
+  navigation inside a sheet is reserved for content-detail relationships
+  (a history row opening its transaction detail).
+- **Don't** spawn a new sheet, full-screen cover, or alert for an attribute
+  edit that fits in three rows. The right pattern is a `.medium`-detent
+  sub-sheet that closes itself on selection.
 - **Don't** echo the anti-references from PRODUCT.md: no gamified crypto-app
   confetti, no neon-on-black "crypto default" palette, no mascots, no
   signature gradients, no holographic borders, no glowing rings. Money is not
