@@ -57,11 +57,13 @@ struct HistoryView: View {
     // Cap stagger so a full page enters in ~300ms regardless of row count.
     private let maxStaggerIndex = 8
     private let staggerDelay: Double = 0.035
+    private let rowHorizontalPadding: CGFloat = 4
+    private let rowVerticalPadding: CGFloat = 10
 
     var body: some View {
         NavigationStack {
             Group {
-                if filteredItems.isEmpty && requestStore.requests.isEmpty {
+                if filteredItems.isEmpty {
                     emptyStateView
                 } else {
                     historyList
@@ -138,22 +140,9 @@ struct HistoryView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 0, pinnedViews: []) {
-                    if !requestStore.requests.isEmpty {
-                        sectionHeader("Cashu Requests")
-                    VStack(spacing: 0) {
-                        ForEach(Array(requestStore.requests.enumerated()), id: \.element.id) { index, request in
-                            cashuRequestRow(request: request, staggerIndex: index)
-                            if index < requestStore.requests.count - 1 {
-                                CanvasDivider()
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 4)
-                    .padding(.bottom, 12)
-                }
+                    ForEach(sectionsWithOffsets, id: \.group.title) { entry in
+                        sectionHeader(entry.group.title)
 
-                ForEach(sectionsWithOffsets, id: \.group.title) { entry in
-                    Section {
                         ForEach(Array(entry.group.items.enumerated()), id: \.element.id) { index, item in
                             let globalIndex = entry.startIndex + index
                             row(for: item, staggerIndex: globalIndex)
@@ -163,13 +152,16 @@ struct HistoryView: View {
                                         extendWindow()
                                     }
                                 }
+
+                            if index < entry.group.items.count - 1 {
+                                CanvasDivider()
+                            }
                         }
-                    } header: {
-                        Text(entry.group.title)
                     }
                 }
+                .padding(.horizontal)
+                .padding(.bottom, 32)
             }
-            .listStyle(.plain)
             .refreshable {
                 await walletManager.syncPendingMintQuotes()
                 await walletManager.checkAllPendingTokens()
@@ -181,7 +173,6 @@ struct HistoryView: View {
                         proxy.scrollTo(firstId, anchor: .top)
                     }
                 }
-            }
             }
         }
     }
@@ -400,6 +391,8 @@ struct HistoryView: View {
 
                 requestTrailingAmount(request: request, received: isReceived)
             }
+            .padding(.horizontal, rowHorizontalPadding)
+            .padding(.vertical, rowVerticalPadding)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -505,6 +498,8 @@ struct HistoryView: View {
                     .accessibilityHint(refreshHint(for: transaction))
                 }
             }
+            .padding(.horizontal, rowHorizontalPadding)
+            .padding(.vertical, rowVerticalPadding)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
