@@ -78,22 +78,10 @@ struct SendView: View {
 
                 if generatedToken != nil {
                     ToolbarItem(placement: .topBarTrailing) {
-                        Menu {
-                            Button(action: { showShareSheet = true }) {
-                                Label("Share", systemImage: "square.and.arrow.up")
-                            }
-                            if !settings.checkSentTokens {
-                                Button(action: {
-                                    if let token = generatedToken {
-                                        Task { await checkTokenClaimNow(token: token) }
-                                    }
-                                }) {
-                                    Label("Check Status", systemImage: "arrow.clockwise")
-                                }
-                            }
-                        } label: {
-                            Image(systemName: "ellipsis.circle")
+                        Button(action: { showShareSheet = true }) {
+                            Image(systemName: "square.and.arrow.up")
                         }
+                        .accessibilityLabel("Share token")
                     }
                 }
             }
@@ -279,6 +267,21 @@ struct SendView: View {
                         .padding(16)
                         .background(Color.white, in: RoundedRectangle(cornerRadius: 20))
                         .padding(.top, 8)
+                        .contextMenu {
+                            Button(action: { copyToken(token) }) {
+                                Label("Copy", systemImage: "doc.on.doc")
+                            }
+                            Button(action: { showShareSheet = true }) {
+                                Label("Share", systemImage: "square.and.arrow.up")
+                            }
+                            if !settings.checkSentTokens {
+                                Button(action: {
+                                    Task { await checkTokenClaimNow(token: token) }
+                                }) {
+                                    Label("Check Status", systemImage: "arrow.clockwise")
+                                }
+                            }
+                        }
 
                     // Amount
                     CurrencyAmountDisplay(
