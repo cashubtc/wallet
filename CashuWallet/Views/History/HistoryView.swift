@@ -457,52 +457,6 @@ struct HistoryView: View {
         // Any-amount + waiting: no trailing element.
     }
 
-    // MARK: - Cashu Request Row
-
-    private func cashuRequestRow(request: CashuRequest) -> some View {
-        NavigationLink {
-            CashuRequestDetailView(request: request)
-                .environmentObject(walletManager)
-                .navigationBarBackButtonHidden(false)
-        } label: {
-            HStack(spacing: 14) {
-                Image(systemName: "arrow.triangle.2.circlepath")
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 36, height: 36)
-                    .background(
-                        Circle().fill(Color.secondary.opacity(0.12))
-                    )
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Cashu Request")
-                        .font(.subheadline.weight(.medium))
-                    Text(requestSubtitle(request))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-
-                Text(request.createdAt.formatted(.relative(presentation: .numeric)))
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-            }
-            .padding(.vertical, 10)
-            .padding(.horizontal, 8)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Cashu Request, \(requestSubtitle(request))")
-    }
-
-    private func requestSubtitle(_ request: CashuRequest) -> String {
-        let count = request.receivedPaymentIds.count
-        if count == 0 { return "Waiting for payment" }
-        if count == 1 { return "1 payment received" }
-        return "\(count) payments received"
-    }
-
     // MARK: - Transaction Row
 
     private func transactionRow(transaction: WalletTransaction, staggerIndex: Int) -> some View {
