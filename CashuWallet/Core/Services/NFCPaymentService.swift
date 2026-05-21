@@ -126,21 +126,31 @@ final class NFCPaymentService {
             }
         }
 
-        let selectedMint = try selectMint(for: request, amount: amount)
-        if selectedMint.url != walletManager.activeMint?.url {
-            try await walletManager.setActiveMint(selectedMint)
-        }
+        let selectedMint = try selectMint(
+            for: request,
+            amount: amount,
+            preferredMintURL: walletManager.activeMint?.url
+        )
 
         do {
-            let result = try await walletManager.sendTokens(amount: amount, memo: nil, p2pkPubkey: nil)
+            let result = try await walletManager.sendTokens(
+                amount: amount,
+                memo: nil,
+                p2pkPubkey: nil,
+                mintUrl: selectedMint.url
+            )
             return result.token
         } catch {
             throw NFCPaymentError.tokenCreationFailed(error.userFacingWalletMessage)
         }
     }
 
-    private func selectMint(for request: CashuDevKit.PaymentRequest, amount: UInt64) throws -> MintInfo {
-        let requested = request.mints() ?? []
+    private func selectMint(
+        for request: CashuDevKit.PaymentRequest,
+        amount: UInt64,
+        preferredMintURL: String?
+    ) throws -> MintInfo {
+        let requested = request.mints()
         let candidates: [MintInfo]
 
         if requested.isEmpty {
@@ -152,6 +162,14 @@ final class NFCPaymentService {
 
         guard !candidates.isEmpty else {
             throw NFCPaymentError.noMatchingMint(requestedMints: requested)
+        }
+
+        if let preferredMintURL,
+           let preferredMint = candidates.first(where: {
+               Self.normalizedMintURL($0.url) == Self.normalizedMintURL(preferredMintURL)
+           }),
+           preferredMint.balance >= amount {
+            return preferredMint
         }
 
         guard let selectedMint = candidates.first(where: { $0.balance >= amount }) else {

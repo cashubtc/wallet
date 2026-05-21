@@ -114,12 +114,22 @@ class MintService: ObservableObject {
         activeMint = mint
     }
     
-    /// Load mints from persistent storage
+    /// Load mints from persistent storage without touching the network-backed wallet repository.
+    func loadCachedMints() {
+        mints = walletStore.loadMints()
+        restoreActiveMint()
+    }
+
+    /// Load mints from persistent storage and prepare matching wallet repository entries.
     func loadMints() async {
+        loadCachedMints()
+        await prepareLoadedMintsInRepository()
+    }
+
+    /// Prepare wallet repository entries for the currently loaded mints.
+    func prepareLoadedMintsInRepository() async {
         guard let repo = walletRepository() else { return }
         
-        mints = walletStore.loadMints()
-
         // Add each mint to wallet repository (with unit)
         // Always call createWallet to ensure the unit is set, even if mint exists.
         for mint in mints {
@@ -130,8 +140,6 @@ class MintService: ObservableObject {
                 AppLogger.wallet.error("Failed to add mint \(mint.url): \(error)")
             }
         }
-
-        restoreActiveMint()
     }
 
     func clearState() {
@@ -270,14 +278,14 @@ class MintService: ObservableObject {
         return normalized
     }
 
-    /// Validate that a mint URL uses HTTPS
+    /// Validate that a mint URL uses http or https
     func validateMintUrl(_ url: String) -> String? {
         let normalized = normalizeUrl(url)
         guard let parsedUrl = URL(string: normalized), parsedUrl.host != nil else {
             return "Invalid URL format."
         }
-        guard parsedUrl.scheme == "https" else {
-            return "Mint URL must use HTTPS for security."
+        guard parsedUrl.scheme == "https" || parsedUrl.scheme == "http" else {
+            return "Mint URL must use http or https."
         }
         return nil
     }

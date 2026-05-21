@@ -117,7 +117,7 @@ enum PaymentRequestDecoder {
             amount: request.amount()?.value,
             unit: request.unit().map(unitDescription),
             description: request.description(),
-            mints: request.mints() ?? []
+            mints: request.mints()
         )
     }
 

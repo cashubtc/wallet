@@ -111,7 +111,6 @@ class WalletManager: ObservableObject {
     private var mnemonic: String?
     private var hasInitialized = false
     private var npcQuoteObserver: NSObjectProtocol?
-    private var startupRefreshTask: Task<Void, Never>?
     private var serviceChangeCancellables: Set<AnyCancellable> = []
     private let walletDatabaseDirectoryName = "cashu-swift"
     private let walletDatabaseFilename = "wallet.db"
@@ -158,7 +157,6 @@ class WalletManager: ObservableObject {
                 try await initializeWalletForLaunch(mnemonic: storedMnemonic)
                 needsOnboarding = false
                 isInitialized = true
-                schedulePostLaunchRefresh(mnemonic: storedMnemonic)
             } else {
                 needsOnboarding = true
                 isInitialized = true
@@ -182,8 +180,6 @@ class WalletManager: ObservableObject {
         
         // No default mint added - user must add mints manually
         // This avoids connection errors during wallet creation
-        
-        needsOnboarding = false
     }
     
     /// Restore wallet from mnemonic - Phase 1: Initialize wallet state
@@ -244,8 +240,11 @@ class WalletManager: ObservableObject {
 
     /// Restore wallet from mnemonic - Phase 3: Complete restore and dismiss onboarding
     func completeRestore() async {
-        await refreshBalance()
-        await loadTransactions()
+        completeOnboarding()
+    }
+
+    func completeOnboarding() {
+        transactionService.loadCachedState()
         needsOnboarding = false
     }
 
@@ -294,7 +293,7 @@ class WalletManager: ObservableObject {
             NPCService.shared.resetForWalletBoundary()
             SettingsStore.shared.clearWalletScopedData()
 
-            try await initializeWallet(mnemonic: newMnemonic)
+            try initializeWalletForCreation(mnemonic: newMnemonic)
             try keychainService.saveMnemonic(newMnemonic)
             mnemonic = newMnemonic
             SettingsManager.shared.resetWalletScopedData(resetRuntimeServices: false)
@@ -307,7 +306,7 @@ class WalletManager: ObservableObject {
 
             if let previousMnemonic {
                 mnemonic = previousMnemonic
-                try? await initializeWallet(mnemonic: previousMnemonic)
+                try? await initializeWalletForLaunch(mnemonic: previousMnemonic)
             }
 
             throw error
@@ -317,22 +316,22 @@ class WalletManager: ObservableObject {
     private func initializeWalletForLaunch(mnemonic: String) async throws {
         try initializeWalletRepository(mnemonic: mnemonic)
 
-        await mintService.loadMints()
+        mintService.loadCachedMints()
         balance = mints.reduce(UInt64(0)) { $0 + $1.balance }
         transactionService.loadCachedState()
 
+        initializeNostrKeypairLocally(mnemonic: mnemonic)
         setupNPCQuoteListener()
     }
 
-    private func initializeWallet(mnemonic: String) async throws {
+    private func initializeWalletForCreation(mnemonic: String) throws {
         try initializeWalletRepository(mnemonic: mnemonic)
 
-        await mintService.loadMints()
-        await refreshBalance()
-        await loadTransactions()
-        await mintService.refreshMintInfo()
+        mintService.loadCachedMints()
+        balance = mints.reduce(UInt64(0)) { $0 + $1.balance }
+        transactionService.loadCachedState()
 
-        await initializeNostrKeypair(mnemonic: mnemonic)
+        initializeNostrKeypairLocally(mnemonic: mnemonic)
         setupNPCQuoteListener()
     }
 
@@ -343,22 +342,6 @@ class WalletManager: ObservableObject {
         db = repository.db
         walletRepository = repository.repository
         processedQuotes = Set(walletStore.loadProcessedNPCQuotes())
-    }
-
-    private func schedulePostLaunchRefresh(mnemonic: String) {
-        startupRefreshTask?.cancel()
-        startupRefreshTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 650_000_000)
-            guard !Task.isCancelled, let self else { return }
-
-            await self.refreshBalance()
-            await self.loadTransactions(includeRemoteObservations: false)
-
-            try? await Task.sleep(nanoseconds: 850_000_000)
-            guard !Task.isCancelled else { return }
-            await self.initializeNostrKeypair(mnemonic: mnemonic)
-            await self.refreshMintInfoIfNeeded()
-        }
     }
 
     private func proveWalletCanInitialize(mnemonic: String) throws {
@@ -376,9 +359,6 @@ class WalletManager: ObservableObject {
     }
 
     private func resetRuntimeState() {
-        startupRefreshTask?.cancel()
-        startupRefreshTask = nil
-
         if let npcQuoteObserver {
             NotificationCenter.default.removeObserver(npcQuoteObserver)
             self.npcQuoteObserver = nil
@@ -650,15 +630,17 @@ class WalletManager: ObservableObject {
     }
     
     // MARK: - Nostr & NPC Integration
-    
-    private func initializeNostrKeypair(mnemonic: String) async {
+
+    @discardableResult
+    private func initializeNostrKeypairLocally(mnemonic: String) -> Bool {
         do {
             let seedData = Data(mnemonic.utf8).sha256()
             try NostrService.shared.deriveKeypair(from: seedData)
             try NPCService.shared.initializeWithSeed(seedData)
-            await NPCService.shared.initializeIfEnabled()
+            return true
         } catch {
             AppLogger.security.error("Failed to initialize Nostr keypair: \(error)")
+            return false
         }
     }
     
@@ -834,26 +816,45 @@ class WalletManager: ObservableObject {
         return amount
     }
     
-    func createMeltQuote(request: String) async throws -> MeltQuoteInfo {
-        let quote = try await lightningService.createMeltQuote(request: request)
-        await syncActiveMintWithMeltQuote(quote)
-        return quote
+    func createMeltQuote(
+        request: String,
+        preferredMintURL: String? = nil
+    ) async throws -> MeltQuoteInfo {
+        try await lightningService.createMeltQuote(
+            request: request,
+            preferredMintURL: preferredMintURL
+        )
     }
     
-    func createMeltQuote(invoice: String) async throws -> MeltQuoteInfo {
-        return try await createMeltQuote(request: invoice)
+    func createMeltQuote(
+        invoice: String,
+        preferredMintURL: String? = nil
+    ) async throws -> MeltQuoteInfo {
+        return try await createMeltQuote(request: invoice, preferredMintURL: preferredMintURL)
     }
 
-    func createHumanReadableMeltQuote(address: String, amount: UInt64) async throws -> MeltQuoteInfo {
-        let quote = try await lightningService.createHumanReadableMeltQuote(address: address, amount: amount)
-        await syncActiveMintWithMeltQuote(quote)
-        return quote
+    func createHumanReadableMeltQuote(
+        address: String,
+        amount: UInt64,
+        preferredMintURL: String? = nil
+    ) async throws -> MeltQuoteInfo {
+        try await lightningService.createHumanReadableMeltQuote(
+            address: address,
+            amount: amount,
+            preferredMintURL: preferredMintURL
+        )
     }
 
-    func createOnchainMeltQuote(address: String, amount: UInt64) async throws -> MeltQuoteInfo {
-        let quote = try await lightningService.createOnchainMeltQuote(address: address, amount: amount)
-        await syncActiveMintWithMeltQuote(quote)
-        return quote
+    func createOnchainMeltQuote(
+        address: String,
+        amount: UInt64,
+        preferredMintURL: String? = nil
+    ) async throws -> MeltQuoteInfo {
+        try await lightningService.createOnchainMeltQuote(
+            address: address,
+            amount: amount,
+            preferredMintURL: preferredMintURL
+        )
     }
 
     func subscribeToMintQuote(
@@ -878,26 +879,25 @@ class WalletManager: ObservableObject {
         return result
     }
 
-    private func syncActiveMintWithMeltQuote(_ quote: MeltQuoteInfo) async {
-        let quoteMintUrl = quote.mintUrl
-        guard activeMint?.url != quoteMintUrl,
-              let mint = mints.first(where: { normalizedMintURL($0.url) == normalizedMintURL(quoteMintUrl) }) else {
-            return
-        }
-
-        try? await setActiveMint(mint)
-    }
-
     // MARK: - Cashu Payment Requests
 
-    func payCashuPaymentRequest(encoded: String, customAmountSats: UInt64? = nil) async throws {
+    func payCashuPaymentRequest(
+        encoded: String,
+        customAmountSats: UInt64? = nil,
+        preferredMintURL: String? = nil
+    ) async throws {
         let request = try PaymentRequestDecoder.parseCashuPaymentRequest(encoded)
-        try await payCashuPaymentRequest(request, customAmountSats: customAmountSats)
+        try await payCashuPaymentRequest(
+            request,
+            customAmountSats: customAmountSats,
+            preferredMintURL: preferredMintURL
+        )
     }
 
     func payCashuPaymentRequest(
         _ request: CashuDevKit.PaymentRequest,
-        customAmountSats: UInt64? = nil
+        customAmountSats: UInt64? = nil,
+        preferredMintURL: String? = nil
     ) async throws {
         guard let walletRepository else {
             throw WalletError.notInitialized
@@ -914,7 +914,11 @@ class WalletManager: ObservableObject {
             throw NFCPaymentError.noAmountSpecified
         }
 
-        let selectedMint = try selectMint(forCashuPaymentRequest: request, amount: amount)
+        let selectedMint = try selectMint(
+            forCashuPaymentRequest: request,
+            amount: amount,
+            preferredMintURL: preferredMintURL
+        )
         let wallet = try await walletRepository.getWallet(mintUrl: MintUrl(url: selectedMint.url), unit: .sat)
         let customAmount = request.amount() == nil ? Amount(value: amount) : nil
 
@@ -925,9 +929,10 @@ class WalletManager: ObservableObject {
 
     private func selectMint(
         forCashuPaymentRequest request: CashuDevKit.PaymentRequest,
-        amount: UInt64
+        amount: UInt64,
+        preferredMintURL: String?
     ) throws -> MintInfo {
-        let requested = request.mints() ?? []
+        let requested = request.mints()
         let candidates: [MintInfo]
 
         if requested.isEmpty {
@@ -939,6 +944,25 @@ class WalletManager: ObservableObject {
 
         guard !candidates.isEmpty else {
             throw NFCPaymentError.noMatchingMint(requestedMints: requested)
+        }
+
+        if let preferredMintURL,
+           let preferredMint = candidates.first(where: {
+               normalizedMintURL($0.url) == normalizedMintURL(preferredMintURL)
+           }) {
+            guard preferredMint.balance >= amount else {
+                throw NFCPaymentError.insufficientBalance(required: amount, available: preferredMint.balance)
+            }
+
+            return preferredMint
+        }
+
+        if let activeMint,
+           let preferredMint = candidates.first(where: {
+               normalizedMintURL($0.url) == normalizedMintURL(activeMint.url)
+           }),
+           preferredMint.balance >= amount {
+            return preferredMint
         }
 
         guard let selectedMint = candidates.first(where: { $0.balance >= amount }) else {
@@ -966,8 +990,19 @@ class WalletManager: ObservableObject {
     
     // MARK: - Token Operations (Delegate to TokenService)
     
-    func sendTokens(amount: UInt64, memo: String? = nil, p2pkPubkey: String? = nil) async throws -> SendTokenResult {
-        let result = try await tokenService.sendTokens(amount: amount, memo: memo, p2pkPubkey: p2pkPubkey)
+    func sendTokens(
+        amount: UInt64,
+        memo: String? = nil,
+        p2pkPubkey: String? = nil,
+        mintUrl preferredMintURL: String? = nil
+    ) async throws -> SendTokenResult {
+        let result = try await tokenService.sendTokens(
+            amount: amount,
+            memo: memo,
+            p2pkPubkey: p2pkPubkey,
+            mintUrl: preferredMintURL
+        )
+        let tokenMintURL = preferredMintURL ?? activeMint?.url ?? ""
         
         // Save pending token for tracking
         let tokenId = UUID().uuidString
@@ -977,7 +1012,7 @@ class WalletManager: ObservableObject {
             amount: amount,
             fee: result.fee,
             date: Date(),
-            mintUrl: activeMint?.url ?? "",
+            mintUrl: tokenMintURL,
             memo: memo
         )
         transactionService.savePendingToken(pendingToken)

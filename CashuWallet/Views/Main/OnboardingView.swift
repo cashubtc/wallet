@@ -1149,7 +1149,7 @@ struct OnboardingView: View {
 
     private func finishOnboarding() {
         // Onboarding complete - wallet is ready
-        walletManager.needsOnboarding = false
+        walletManager.completeOnboarding()
     }
 }
 

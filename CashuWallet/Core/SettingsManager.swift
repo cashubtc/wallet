@@ -146,13 +146,11 @@ class SettingsManager: ObservableObject {
         persistP2PKKeys()
         
         let priceService = PriceService.shared
-        if priceService.currencyCode != bitcoinPriceCurrency {
+        if !priceService.isEnabled, priceService.currencyCode != bitcoinPriceCurrency {
             priceService.currencyCode = bitcoinPriceCurrency
         }
-        if priceService.isEnabled != showFiatBalance {
-            priceService.isEnabled = showFiatBalance
-        } else if showFiatBalance {
-            priceService.startAutoRefresh()
+        if !showFiatBalance, priceService.isEnabled {
+            priceService.isEnabled = false
         }
     }
 
