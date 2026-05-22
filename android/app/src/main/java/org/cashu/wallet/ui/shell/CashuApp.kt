@@ -23,8 +23,8 @@ import org.cashu.wallet.Core.PaymentRequestDecodeResult
 import org.cashu.wallet.Core.PaymentRequestDecoder
 import org.cashu.wallet.Core.TokenParser
 import org.cashu.wallet.Views.Components.ScannerView
-import org.cashu.wallet.Views.Main.OnboardingView
 import org.cashu.wallet.Views.Send.ContactlessPayView
+import org.cashu.wallet.ui.onboarding.OnboardingScreen
 import org.cashu.wallet.ui.navigation.Routes
 import org.cashu.wallet.ui.navigation.TopTab
 import org.cashu.wallet.ui.navigation.navigateToTab
@@ -81,7 +81,7 @@ fun CashuApp(container: AppContainer) {
 
         when {
             !walletState.isInitialized -> LoadingScreen()
-            walletState.needsOnboarding -> OnboardingView(walletManager = container.walletManager)
+            walletState.needsOnboarding -> OnboardingScreen(walletManager = container.walletManager)
             else -> AuthenticatedShell(container = container)
         }
     }
