@@ -19,7 +19,7 @@ bcurKotlin = "1.0.5"
 junit = "4.13.2"
 androidxJunit = "1.2.1"
 espresso = "3.6.1"
-cdkKotlin = "0.17.0-rc-onchain"
+cdkKotlin = "0.17.0-rc.2-onchain"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }

@@ -30,8 +30,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import org.cashu.wallet.Core.SettingsManager
 import org.cashu.wallet.Core.TokenParser
+import org.cashu.wallet.Core.WalletHaptic
 import org.cashu.wallet.Core.WalletManager
 import org.cashu.wallet.Core.quoteExpiryText
+import org.cashu.wallet.Core.rememberWalletHaptics
 import org.cashu.wallet.Core.shouldPollMintQuote
 import org.cashu.wallet.Models.MintQuoteInfo
 import org.cashu.wallet.Models.MintQuoteState
@@ -41,6 +43,7 @@ import org.cashu.wallet.Models.TokenInfo
 import org.cashu.wallet.Views.Components.ClipboardSuggestionChip
 import org.cashu.wallet.Views.Components.CopyShareRow
 import org.cashu.wallet.Views.Components.KeyValueRow
+import org.cashu.wallet.Views.Components.NotificationBadgeView
 import org.cashu.wallet.Views.Components.PrimaryActionButton
 import org.cashu.wallet.Views.Components.QRCodeView
 import org.cashu.wallet.Views.Components.QuietCard
@@ -58,10 +61,11 @@ fun ReceiveView(
 ) {
     val state by walletManager.state.collectAsState()
     val settings by settingsManager.state.collectAsState()
+    val haptics = rememberWalletHaptics()
     var tokenInput by remember { mutableStateOf("") }
     var amountInput by remember { mutableStateOf("") }
     var generatedQuote by remember { mutableStateOf<MintQuoteInfo?>(null) }
-    var receivedAmount by remember { mutableStateOf<Long?>(null) }
+    var receiveSuccess by remember { mutableStateOf<ReceiveSuccessNotification?>(null) }
     var pendingReceiveMessage by remember { mutableStateOf<String?>(null) }
     var receiveFee by remember { mutableStateOf<Long?>(null) }
     var isLoadingReceiveFee by remember { mutableStateOf(false) }
@@ -116,6 +120,13 @@ fun ReceiveView(
         isCheckingTokenSpent = true
         tokenSpent = runCatching { walletManager.checkTokenSpent(token, mintUrl) }.getOrNull()
         isCheckingTokenSpent = false
+    }
+    LaunchedEffect(receiveSuccess?.id) {
+        val notificationId = receiveSuccess?.id ?: return@LaunchedEffect
+        delay(5_000)
+        if (receiveSuccess?.id == notificationId) {
+            receiveSuccess = null
+        }
     }
     LaunchedEffect(generatedQuote?.id) {
         val quote = generatedQuote ?: return@LaunchedEffect
@@ -204,10 +215,24 @@ fun ReceiveView(
                 },
                 onMintPaidQuote = {
                     walletManager.launch {
-                        walletManager.mintTokens(quote.id)
-                        generatedQuote = null
+                        runCatching { walletManager.mintTokens(quote.id) }
+                            .onSuccess { amount ->
+                                haptics.perform(WalletHaptic.Success)
+                                receiveSuccess = ReceiveSuccessNotification(amount = amount, fee = null)
+                                pendingReceiveMessage = null
+                                generatedQuote = null
+                            }
+                            .onFailure { haptics.perform(WalletHaptic.Error) }
                     }
                 },
+            )
+        }
+        receiveSuccess?.let { notification ->
+            NotificationBadgeView(
+                message = "Received",
+                amount = notification.amount,
+                fee = notification.fee,
+                onDismiss = { receiveSuccess = null },
             )
         }
         Spacer(Modifier.height(8.dp))
@@ -255,9 +280,16 @@ fun ReceiveView(
         ) {
             if (tokenLockedToKnownKey && tokenSpent != true) {
                 walletManager.launch {
-                    receivedAmount = walletManager.receiveTokens(tokenInput)
-                    pendingReceiveMessage = null
-                    tokenInput = ""
+                    val tokenToReceive = tokenInput
+                    val fee = receiveFee?.takeIf { it > 0 }
+                    runCatching { walletManager.receiveTokens(tokenToReceive) }
+                        .onSuccess { amount ->
+                            haptics.perform(WalletHaptic.Success)
+                            receiveSuccess = ReceiveSuccessNotification(amount = amount, fee = fee)
+                            pendingReceiveMessage = null
+                            tokenInput = ""
+                        }
+                        .onFailure { haptics.perform(WalletHaptic.Error) }
                 }
             }
         }
@@ -278,12 +310,9 @@ fun ReceiveView(
                     ),
                 )
                 tokenInput = ""
-                receivedAmount = null
+                receiveSuccess = null
                 pendingReceiveMessage = "Saved token for later"
             }
-        }
-        receivedAmount?.let { amount ->
-            Text("Received $amount sat", color = MaterialTheme.colorScheme.primary)
         }
         pendingReceiveMessage?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
         if (state.pendingReceiveTokens.isNotEmpty()) {
@@ -292,8 +321,16 @@ fun ReceiveView(
                 isLoading = state.isLoading,
                 onClaim = { token ->
                     walletManager.launch {
-                        receivedAmount = walletManager.claimPendingReceiveToken(token)
-                        pendingReceiveMessage = null
+                        val fee = runCatching { walletManager.calculateReceiveFee(token.token) }
+                            .getOrDefault(0)
+                            .takeIf { it > 0 }
+                        runCatching { walletManager.claimPendingReceiveToken(token) }
+                            .onSuccess { amount ->
+                                haptics.perform(WalletHaptic.Success)
+                                receiveSuccess = ReceiveSuccessNotification(amount = amount, fee = fee)
+                                pendingReceiveMessage = null
+                            }
+                            .onFailure { haptics.perform(WalletHaptic.Error) }
                     }
                 },
                 onRemove = { token -> walletManager.removePendingReceiveToken(token.tokenId) },
@@ -302,6 +339,12 @@ fun ReceiveView(
         state.errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
     }
 }
+
+private data class ReceiveSuccessNotification(
+    val amount: Long,
+    val fee: Long?,
+    val id: String = UUID.randomUUID().toString(),
+)
 
 @Composable
 private fun TokenPreviewCard(

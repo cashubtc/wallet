@@ -33,6 +33,7 @@ import org.cashudevkit.MintInfo as CdkMintInfo
 import org.cashudevkit.MintQuote as CdkMintQuote
 import org.cashudevkit.MintUrl as CdkMintUrl
 import org.cashudevkit.NotificationPayload as CdkNotificationPayload
+import org.cashudevkit.P2pkLockedProofSendMode as CdkP2pkLockedProofSendMode
 import org.cashudevkit.PaymentMethod as CdkPaymentMethod
 import org.cashudevkit.QuoteState as CdkQuoteState
 import org.cashudevkit.ReceiveOptions as CdkReceiveOptions
@@ -290,6 +291,8 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
             useP2bk = false,
             maxProofs = null,
             metadata = emptyMap(),
+            p2pkSigningKeys = emptyList(),
+            p2pkLockedProofSendMode = CdkP2pkLockedProofSendMode.SWAP,
         )
         val prepared = walletFor(mintUrl).prepareSend(amount.toCdkAmount(), sendOptions)
         val fee = prepared.fee().value.toLong()

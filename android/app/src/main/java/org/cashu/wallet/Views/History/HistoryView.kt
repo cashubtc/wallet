@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -26,6 +27,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
@@ -45,8 +47,12 @@ import org.cashu.wallet.Core.pendingTokenRefreshMessage
 import org.cashu.wallet.Core.isPendingMintQuoteTransaction
 import org.cashu.wallet.Models.TransactionKind
 import org.cashu.wallet.Models.WalletTransaction
+import org.cashu.wallet.Views.Components.ActivityOrbView
+import org.cashu.wallet.Views.Components.BannerType
 import org.cashu.wallet.Views.Components.CopyShareRow
+import org.cashu.wallet.Views.Components.ErrorBannerView
 import org.cashu.wallet.Views.Components.KeyValueRow
+import org.cashu.wallet.Views.Components.LoadingSpinnerView
 import org.cashu.wallet.Views.Components.QRCodeView
 import org.cashu.wallet.Views.Components.QuietCard
 import org.cashu.wallet.Views.Components.SecondaryActionButton
@@ -63,7 +69,7 @@ fun HistoryView(
     var selectedTransactionId by remember { mutableStateOf<String?>(null) }
     var filter by remember { mutableStateOf(HistoryFilter.All) }
     var currentPage by remember { mutableStateOf(1) }
-    var pendingRefreshMessage by remember { mutableStateOf<String?>(null) }
+    var refreshBanner by remember { mutableStateOf<HistoryRefreshBanner?>(null) }
     var isPullRefreshing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     LaunchedEffect(Unit) {
@@ -100,9 +106,14 @@ fun HistoryView(
                     messages += pendingTokenRefreshMessage(walletManager.checkAllPendingTokens())
                 }
             }.onSuccess {
-                pendingRefreshMessage = messages.joinToString(" ").takeIf { it.isNotBlank() }
+                refreshBanner = messages.joinToString(" ")
+                    .takeIf { it.isNotBlank() }
+                    ?.let { HistoryRefreshBanner(it, BannerType.Info) }
             }.onFailure { error ->
-                pendingRefreshMessage = error.message ?: "Unable to refresh history."
+                refreshBanner = HistoryRefreshBanner(
+                    message = error.message ?: "Unable to refresh history.",
+                    type = BannerType.Error,
+                )
             }
             isPullRefreshing = false
         }
@@ -114,7 +125,14 @@ fun HistoryView(
             .padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("History", style = MaterialTheme.typography.headlineSmall)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("History", style = MaterialTheme.typography.headlineSmall)
+            Spacer(Modifier.weight(1f))
+            ActivityOrbView(isActive = state.isLoading || isPullRefreshing)
+        }
         HistoryFilterRow(selected = filter, onSelect = { filter = it })
         if (state.pendingTokens.isNotEmpty() || hasPendingMintQuotes) {
             SecondaryActionButton(
@@ -123,8 +141,18 @@ fun HistoryView(
                 onClick = ::refreshHistory,
             )
         }
-        pendingRefreshMessage?.let {
-            Text(it, color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall)
+        state.errorMessage?.let { error ->
+            ErrorBannerView(
+                message = error,
+                onDismiss = walletManager::clearError,
+            )
+        }
+        refreshBanner?.let { banner ->
+            ErrorBannerView(
+                message = banner.message,
+                type = banner.type,
+                onDismiss = { refreshBanner = null },
+            )
         }
         PullToRefreshBox(
             isRefreshing = isPullRefreshing,
@@ -139,14 +167,25 @@ fun HistoryView(
             ) {
                 if (filteredTransactions.isEmpty()) {
                     item {
-                        Text(
-                            if (state.transactions.isEmpty()) {
-                                "No transactions yet."
-                            } else {
-                                "No ${filter.label.lowercase()} transactions."
-                            },
-                            color = MaterialTheme.colorScheme.secondary,
-                        )
+                        if (state.isLoading || isPullRefreshing) {
+                            LoadingSpinnerView(
+                                message = "Loading history",
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 32.dp),
+                            )
+                        } else {
+                            QuietCard {
+                                Text(
+                                    if (state.transactions.isEmpty()) {
+                                        "No transactions yet."
+                                    } else {
+                                        "No ${filter.label.lowercase()} transactions."
+                                    },
+                                    color = MaterialTheme.colorScheme.secondary,
+                                )
+                            }
+                        }
                     }
                 }
                 historySections.forEach { section ->
@@ -185,6 +224,11 @@ fun HistoryView(
         }
     }
 }
+
+private data class HistoryRefreshBanner(
+    val message: String,
+    val type: BannerType,
+)
 
 @Composable
 private fun HistoryFilterRow(

@@ -295,7 +295,7 @@ Storage keys to port:
 - [x] Create BOLT12 offer/invoice flow including amountless/fixed amount behavior.
 - [x] Create on-chain mint quote/address.
 - [x] Render QR and animated QR where needed. Static QR rendering, Swift-style `ur:bytes` animated frames for long non-static payloads, speed/size controls, and static-only Lightning/on-chain quote rendering are implemented.
-- [x] Copy/share invoice, offer, address, or token.
+- [x] Copy/share invoice, offer, address, or token. Ecash token copy uses the raw token while share uses a `cashu:` URL, matching Swift.
 - [x] Track quote expiry and status. Expiry countdown, manual CDK status refresh, BOLT12/on-chain subscription updates, and polling fallback are implemented.
 - [x] Use quote subscriptions where Swift currently uses them for BOLT12/on-chain quote monitoring, and keep polling fallback. Preserve the WebSocket setting for Nostr mint discovery; do not newly gate quote subscriptions on that setting unless Swift does first.
 - [x] Fall back to polling when quote subscriptions are unavailable or fail.
@@ -633,6 +633,12 @@ Implementation notes:
 - [x] Verification after NFC decoder coverage changes: focused `NFCPaymentInputDecoderTest`, `./gradlew --no-daemon :app:assembleDebug :app:testDebugUnitTest --stacktrace`, and `./gradlew --no-daemon :app:lintDebug :app:assembleRelease --stacktrace` passed on 2026-05-21.
 - [x] Wired Mint detail parity: configured mint rows now open a detail dialog backed by `MintDetailView`, including URL copy/share, balance, units, receive/send methods, on-chain confirmations, and icon URL display where available.
 - [x] Verification after Mint detail wiring: `./gradlew --no-daemon :app:assembleDebug :app:testDebugUnitTest --stacktrace` and `./gradlew --no-daemon :app:lintDebug :app:assembleRelease --stacktrace` passed on 2026-05-21.
+- [x] Fixed copy/share payload parity: `CopyShareRow` now supports distinct copy and share payloads, generated ecash tokens and history ecash entries copy the raw token, and ecash share actions wrap the payload with `cashu:` exactly once.
+- [x] Verification after copy/share payload changes: focused `PlatformActionsTest`, `./gradlew --no-daemon :app:assembleDebug :app:testDebugUnitTest --stacktrace`, and `./gradlew --no-daemon :app:lintDebug :app:assembleRelease --stacktrace` passed on 2026-05-21.
+- [x] Improved receive success parity: ecash receives, pending receive claims, and paid quote minting now use the shared success notification badge, auto-dismiss behavior, and success/error haptic feedback.
+- [x] Verification after receive success parity changes: `./gradlew --no-daemon :app:assembleDebug :app:testDebugUnitTest --stacktrace` and `./gradlew --no-daemon :app:lintDebug :app:assembleRelease --stacktrace` passed on 2026-05-22.
+- [x] Improved History loading/error parity: the History screen now uses the shared activity indicator, dismissible error banner, refresh status banner, loading empty state, and carded empty state.
+- [x] Verification after History loading/error changes: `./gradlew --no-daemon :app:assembleDebug :app:testDebugUnitTest --stacktrace` and `./gradlew --no-daemon :app:lintDebug :app:assembleRelease --stacktrace` passed on 2026-05-22.
 - [ ] Camera scanner still requires physical-device validation.
 
 ### Phase 5: Hardening and Parity Verification
@@ -767,7 +773,7 @@ Progress column:
 | --- | --- | --- | --- |
 | `CashuWallet/Views/Main/MainWalletView.swift` | Port | [ ] | Wallet shell, balance card, quick actions, bottom tabs, active mint display, pending indicators, refresh behavior. |
 | `CashuWallet/Views/Main/OnboardingView.swift` | Port | [ ] | Welcome, create, seed display, word verification, restore phrase input, recommended/custom mints, restore progress and summary. Welcome, create mnemonic display, full-phrase confirmation, restore phrase input, restore word-count gating, recommended/custom first-mint setup, mint URL paste/normalization, two-phase restore, per-mint restore progress, and recovered/pending summary are implemented; visual parity and screenshot/device review remain open. |
-| `CashuWallet/Views/History/HistoryView.swift` | Port | [ ] | Transaction list, filters/sections, pending refresh, empty/loading/error states. Transaction list, filters, date sections, pagination, empty state, pull-to-refresh, pending refresh on entry, pending sent-token status checks, pending mint quote refresh, status/amount rows, and expandable details are implemented; richer loading/error states remain open. |
+| `CashuWallet/Views/History/HistoryView.swift` | Port | [ ] | Transaction list, filters/sections, pending refresh, empty/loading/error states. Transaction list, filters, date sections, pagination, empty/loading/error states, pull-to-refresh, pending refresh on entry, pending sent-token status checks, pending mint quote refresh, status/amount rows, and expandable details are implemented; screenshot/device polish remains open. |
 | `CashuWallet/Views/History/TransactionDetailView.swift` | Port | [ ] | Transaction detail, QR/copy/share, mint/quote/preimage/fee/explorer fields. Expandable Android detail content now covers QR/copy/share plus mint/quote/preimage/fee fields and on-chain block-explorer links; standalone detail navigation remains open. |
 | `CashuWallet/Views/Mints/MintsListView.swift` | Port | [ ] | Mint list, add/discover/set-active/remove, balances, method chips, loading/error states. Android now includes shared mint URL normalization, scanner handoff normalization, paste-from-clipboard, clipboard suggestion, copy/share actions for configured and discovered mint URLs, active mint indication, method chips, scrolling, remove confirmation, and a mint detail dialog; richer loading/error polish remains open. |
 | `CashuWallet/Views/Mints/MintDetailView.swift` | Port | [x] | Mint info detail dialog with URL copy/share, balance, units, supported receive/send methods, description, icon URL, and on-chain confirmations. |
@@ -777,8 +783,8 @@ Progress column:
 | Source file | Migration type | Progress | Kotlin target and checklist |
 | --- | --- | --- | --- |
 | `CashuWallet/Views/Receive/ReceiveView.swift` | Port | [ ] | Receive entry sheet, receive ecash flow, amount entry, method selection, scanner/paste actions. Cashu-token clipboard auto-paste/suggestion is implemented. |
-| `CashuWallet/Views/Receive/ReceiveTokenDetailView.swift` | Port | [ ] | Token preview, fee estimate, P2PK warning, receive now/later, success state. Preview, fee estimate, spendability status, P2PK unknown-key guard, receive-later persistence, pending claim, and remove actions are implemented; success-detail parity remains open. |
-| `CashuWallet/Views/Receive/ReceiveLightningView.swift` | Port | [ ] | BOLT11/BOLT12/on-chain receive, method picker, quote/address display, QR, copy/share, expiry countdown, status polling/subscription, mint success. BOLT11, BOLT12 amountless/fixed entry, on-chain quote entry, quote display/copy/share/QR, expiry countdown, manual status refresh, BOLT12/on-chain quote subscriptions, polling fallback, and paid-quote mint action are implemented; richer mint-success parity remains open. |
+| `CashuWallet/Views/Receive/ReceiveTokenDetailView.swift` | Port | [ ] | Token preview, fee estimate, P2PK warning, receive now/later, success state. Preview, fee estimate, spendability status, P2PK unknown-key guard, receive-later persistence, pending claim, remove actions, and receive success badge/haptics are implemented; standalone receive-token sheet polish remains open. |
+| `CashuWallet/Views/Receive/ReceiveLightningView.swift` | Port | [ ] | BOLT11/BOLT12/on-chain receive, method picker, quote/address display, QR, copy/share, expiry countdown, status polling/subscription, mint success. BOLT11, BOLT12 amountless/fixed entry, on-chain quote entry, quote display/copy/share/QR, expiry countdown, manual status refresh, BOLT12/on-chain quote subscriptions, polling fallback, paid-quote mint action, and success badge/haptics after minting are implemented; broader richer mint-success parity remains open. |
 
 ### Send and Pay UI
 
