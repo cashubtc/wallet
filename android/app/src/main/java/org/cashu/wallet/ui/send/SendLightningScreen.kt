@@ -157,6 +157,7 @@ fun SendLightningScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
+            forward = { initial, target -> faceOrdinal(target) >= faceOrdinal(initial) },
             label = "send-lightning-face",
         ) { current ->
             when (current) {
@@ -215,6 +216,14 @@ fun SendLightningScreen(
             }
         }
     }
+}
+
+private fun faceOrdinal(face: PayFace): Int = when (face) {
+    PayFace.Input -> 0
+    is PayFace.Confirm -> 1
+    is PayFace.Paying -> 2
+    is PayFace.Done -> 3
+    is PayFace.Failed -> 3
 }
 
 private fun PaymentRequestDecodeResult.knownAmountSats(): Long? = when (this) {

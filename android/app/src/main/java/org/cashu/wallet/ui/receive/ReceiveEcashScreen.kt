@@ -54,7 +54,7 @@ import org.cashu.wallet.ui.components.CanvasDivider
 import org.cashu.wallet.ui.components.GhostButton
 import org.cashu.wallet.ui.components.InspectorRow
 import org.cashu.wallet.ui.components.PrimaryButton
-import org.cashu.wallet.ui.components.TwoFaceScreen
+import org.cashu.wallet.ui.components.TwoFaceCrossfade
 import org.cashu.wallet.ui.theme.withMonoDigits
 
 private sealed interface ReceiveFace {
@@ -157,7 +157,7 @@ fun ReceiveEcashScreen(
             )
         },
     ) { padding ->
-        TwoFaceScreen(
+        TwoFaceCrossfade(
             targetState = face,
             modifier = Modifier
                 .fillMaxSize()

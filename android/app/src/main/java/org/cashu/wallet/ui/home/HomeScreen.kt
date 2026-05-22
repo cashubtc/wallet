@@ -43,8 +43,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import org.cashu.wallet.Core.AmountDisplayPrimary
 import org.cashu.wallet.Core.AmountFormatter
@@ -117,10 +123,33 @@ fun HomeScreen(
         unifiedRecent(walletState.transactions, requestState.requests, RECENT_LIMIT)
     }
 
+    val density = LocalDensity.current
+    val pinnedTopPx = with(density) { PINNED_TOP_HEIGHT.toPx() }
+    val fadeBandPx = with(density) { 32.dp.toPx() }
+
     Box(modifier = Modifier.fillMaxSize().padding(contentPadding)) {
-        // Scrolling body sits behind the pinned top.
+        // Scrolling body sits behind the pinned top with a soft fade-mask at the
+        // top edge so rows dissolve into the pinned region as they scroll up,
+        // matching the iOS LinearGradient scroll mask.
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                .drawWithCache {
+                    val total = size.height.coerceAtLeast(1f)
+                    val clearEnd = (pinnedTopPx / total).coerceIn(0f, 1f)
+                    val opaqueAt = ((pinnedTopPx + fadeBandPx) / total).coerceIn(0f, 1f)
+                    val brush = Brush.verticalGradient(
+                        0f to Color.Transparent,
+                        clearEnd to Color.Transparent,
+                        opaqueAt to Color.Black,
+                        1f to Color.Black,
+                    )
+                    onDrawWithContent {
+                        drawContent()
+                        drawRect(brush = brush, blendMode = BlendMode.DstIn)
+                    }
+                },
             contentPadding = PaddingValues(
                 top = PINNED_TOP_HEIGHT,
                 bottom = 24.dp,
@@ -303,12 +332,9 @@ private fun PinnedTop(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(
-                brush = Brush.verticalGradient(
-                    0.85f to MaterialTheme.colorScheme.background,
-                    1f to MaterialTheme.colorScheme.background.copy(alpha = 0f),
-                ),
-            )
+            // Solid background; the fade effect lives on the LazyColumn mask below
+            // (rows fade as they scroll up past the pinned region).
+            .background(MaterialTheme.colorScheme.background)
             .statusBarsPadding()
             .padding(horizontal = 16.dp)
             .padding(top = 8.dp, bottom = 16.dp),

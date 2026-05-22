@@ -2,6 +2,7 @@ package org.cashu.wallet.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -16,12 +17,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import coil.compose.SubcomposeAsyncImage
+import coil.request.ImageRequest
 import org.cashu.wallet.Models.MintInfo
 
 /**
- * Round avatar derived deterministically from mint URL hash + first letter of name.
- * Fallback: a tonal circle with the bank icon when name is empty.
+ * Round avatar for a mint. Loads [MintInfo.iconUrl] via Coil with crossfade; falls
+ * back to a deterministic HSL color circle with the mint's first letter (or a
+ * bank glyph if the name is empty).
  *
  * The active-mint dot overlay is added by the caller via [Box] sibling, since the
  * dot color depends on theme tokens and the avatar should remain composition-shape-stable.
@@ -32,15 +38,51 @@ fun MintAvatar(
     modifier: Modifier = Modifier,
     size: Int = 40,
 ) {
+    val shape = if (size <= 48) CircleShape else RoundedCornerShape(16.dp)
+    val context = LocalContext.current
+    val iconUrl = mint.iconUrl?.takeIf { it.isNotBlank() }
+    if (iconUrl != null) {
+        Box(
+            modifier = modifier
+                .size(size.dp)
+                .clip(shape),
+            contentAlignment = Alignment.Center,
+        ) {
+            val request = remember(iconUrl) {
+                ImageRequest.Builder(context)
+                    .data(iconUrl)
+                    .crossfade(true)
+                    .build()
+            }
+            SubcomposeAsyncImage(
+                model = request,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+                loading = { GeneratedFallback(mint = mint, size = size) },
+                error = { GeneratedFallback(mint = mint, size = size) },
+            )
+        }
+    } else {
+        Box(
+            modifier = modifier
+                .size(size.dp)
+                .clip(shape),
+        ) {
+            GeneratedFallback(mint = mint, size = size)
+        }
+    }
+}
+
+@Composable
+private fun GeneratedFallback(mint: MintInfo, size: Int) {
     val initial = mint.name.firstOrNull()?.uppercase()
     val seed = mint.url.hashCode().toLong() and 0xFFFFFFFFL
     val hue = (seed % 360L).toFloat()
     val backgroundColor = remember(hue) { hslToColor(hue, saturation = 0.45f, lightness = 0.40f) }
-
     Box(
-        modifier = modifier
-            .size(size.dp)
-            .clip(if (size <= 48) CircleShape else RoundedCornerShape(16.dp))
+        modifier = Modifier
+            .fillMaxSize()
             .background(backgroundColor),
         contentAlignment = Alignment.Center,
     ) {

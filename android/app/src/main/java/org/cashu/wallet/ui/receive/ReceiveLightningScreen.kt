@@ -163,6 +163,9 @@ fun ReceiveLightningScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
+            forward = { initial, target ->
+                initial is ReceiveLnFace.Input && target is ReceiveLnFace.Display
+            },
             label = "receive-lightning-face",
         ) { current ->
             when (current) {
