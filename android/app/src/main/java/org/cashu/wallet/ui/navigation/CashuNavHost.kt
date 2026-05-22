@@ -10,11 +10,11 @@ import androidx.navigation.compose.composable
 import org.cashu.wallet.App.AppContainer
 import org.cashu.wallet.Core.Platform.ConnectivityState
 import org.cashu.wallet.Views.History.HistoryView
-import org.cashu.wallet.Views.Main.MainWalletView
 import org.cashu.wallet.Views.Mints.MintsListView
 import org.cashu.wallet.Views.Receive.ReceiveView
 import org.cashu.wallet.Views.Send.SendView
 import org.cashu.wallet.Views.Settings.SettingsView
+import org.cashu.wallet.ui.home.HomeScreen
 
 /**
  * The NavHost. For PR #1, top-level destinations call legacy Views composables;
@@ -91,17 +91,18 @@ private fun NavGraphBuilder.tabDestinations(
     onPendingMintScanConsumed: () -> Unit,
 ) {
     composable(Routes.HOME) {
-        MainWalletView(
+        HomeScreen(
             walletManager = container.walletManager,
             settingsManager = container.settingsManager,
             priceService = container.priceService,
-            connectivityState = connectivityState,
             onOpenMints = { navController.navigateToTab(TopTab.Mints) },
             onOpenHistory = { navController.navigateToTab(TopTab.History) },
+            onOpenTransaction = { _ -> navController.navigateToTab(TopTab.History) },
             onReceive = { navController.navigate(Routes.RECEIVE_ECASH) },
             onSend = { navController.navigate(Routes.SEND_ECASH) },
             onScan = onScan,
             onContactless = onContactless,
+            contentPadding = contentPadding,
         )
     }
     composable(Routes.HISTORY) {
