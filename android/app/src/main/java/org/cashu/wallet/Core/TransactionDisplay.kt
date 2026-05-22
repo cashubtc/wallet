@@ -12,21 +12,23 @@ data class TransactionDetailField(
 )
 
 object TransactionDisplay {
+    // Mirrors iOS HistoryView.rowTitle — pending state is conveyed by the badge
+    // and the amount color, not the title string.
     fun title(transaction: WalletTransaction): String = when (transaction.kind) {
         TransactionKind.Lightning -> if (transaction.type == TransactionType.Incoming) {
-            "Lightning request"
+            "Lightning received"
         } else {
-            "Lightning payment"
+            "Lightning paid"
         }
         TransactionKind.Onchain -> if (transaction.type == TransactionType.Incoming) {
-            "On-chain receive"
+            "Bitcoin received"
         } else {
-            "On-chain payment"
+            "Bitcoin sent"
         }
-        TransactionKind.Ecash -> if (transaction.status == TransactionStatus.Pending) {
-            "Pending ecash"
+        TransactionKind.Ecash -> if (transaction.type == TransactionType.Incoming) {
+            "Received ecash"
         } else {
-            "Ecash"
+            "Sent ecash"
         }
     }
 

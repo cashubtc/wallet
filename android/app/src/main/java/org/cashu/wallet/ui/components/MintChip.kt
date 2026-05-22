@@ -4,9 +4,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.outlined.AccountBalance
-import androidx.compose.material.icons.outlined.UnfoldMore
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -43,18 +41,15 @@ fun MintChip(
             )
         },
         leadingIcon = {
-            Icon(
-                imageVector = Icons.Outlined.AccountBalance,
-                contentDescription = null,
-                modifier = Modifier.size(AssistChipDefaults.IconSize),
-            )
-        },
-        trailingIcon = {
-            Icon(
-                imageVector = Icons.Outlined.UnfoldMore,
-                contentDescription = null,
-                modifier = Modifier.size(AssistChipDefaults.IconSize),
-            )
+            if (activeMint != null) {
+                MintAvatar(mint = activeMint, size = 20)
+            } else {
+                Icon(
+                    imageVector = Icons.Outlined.AccountBalance,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
         },
     )
     DropdownMenu(

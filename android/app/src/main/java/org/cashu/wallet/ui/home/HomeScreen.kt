@@ -271,28 +271,15 @@ fun HomeScreen(
                     },
                 )
             },
-            pending = {
-                val pending = maxOf(walletState.pendingBalance, walletState.pendingTokens.sumOf { it.amount })
-                AnimatedVisibility(
-                    visible = pending > 0,
-                    enter = fadeIn(),
-                    exit = fadeOut(),
-                ) {
-                    PendingBalanceRow(
-                        amountText = formatter.formatWalletSats(pending, settings.useBitcoinSymbol),
-                        onClick = onOpenHistory,
-                    )
-                }
-            },
             triptych = {
-                ActionTriptych(
+                ActionDuet(
                     onReceive = { receiveChooserOpen = true },
-                    onScan = onScan,
                     onSend = { sendChooserOpen = true },
                     receiveEnabled = walletState.activeMint != null,
                     sendEnabled = walletState.balance > 0,
                 )
             },
+            onScan = onScan,
         )
     }
 
@@ -326,8 +313,8 @@ private val PINNED_TOP_HEIGHT = 280.dp
 private fun PinnedTop(
     mintChip: @Composable () -> Unit,
     balance: @Composable () -> Unit,
-    pending: @Composable () -> Unit,
     triptych: @Composable () -> Unit,
+    onScan: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -341,21 +328,33 @@ private fun PinnedTop(
         verticalArrangement = Arrangement.spacedBy(12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
+        // Top-right scan affordance (iOS parity — scan lives in the top bar, not in the action row).
+        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+            FilledTonalIconButton(
+                onClick = onScan,
+                shape = CircleShape,
+                modifier = Modifier.size(44.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.QrCodeScanner,
+                    contentDescription = "Scan QR",
+                )
+            }
+        }
+        // Mint chip centered above the balance.
+        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
             mintChip()
         }
         Spacer(Modifier.height(4.dp))
         balance()
-        pending()
         Spacer(Modifier.height(4.dp))
         triptych()
     }
 }
 
 @Composable
-private fun ActionTriptych(
+private fun ActionDuet(
     onReceive: () -> Unit,
-    onScan: () -> Unit,
     onSend: () -> Unit,
     receiveEnabled: Boolean,
     sendEnabled: Boolean,
@@ -375,17 +374,6 @@ private fun ActionTriptych(
         ) {
             Text("Receive", style = MaterialTheme.typography.labelLarge)
         }
-        FilledTonalIconButton(
-            onClick = onScan,
-            modifier = Modifier.size(52.dp),
-            shape = CircleShape,
-            colors = IconButtonDefaults.filledTonalIconButtonColors(),
-        ) {
-            Icon(
-                imageVector = Icons.Outlined.QrCodeScanner,
-                contentDescription = "Scan",
-            )
-        }
         FilledTonalButton(
             onClick = onSend,
             modifier = Modifier.weight(1f).heightIn(min = 52.dp),
@@ -394,42 +382,6 @@ private fun ActionTriptych(
         ) {
             Text("Send", style = MaterialTheme.typography.labelLarge)
         }
-    }
-}
-
-@Composable
-private fun PendingBalanceRow(
-    amountText: String,
-    onClick: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .background(
-                color = CashuTheme.colors.pendingContainer,
-                shape = MaterialTheme.shapes.large,
-            )
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Icon(
-            imageVector = Icons.Outlined.History,
-            contentDescription = null,
-            tint = CashuTheme.colors.pending,
-            modifier = Modifier.size(16.dp),
-        )
-        Text(
-            text = "Pending",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        AmountText(
-            text = amountText,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            animated = false,
-        )
-        GhostButton(text = "Open", onClick = onClick)
     }
 }
 
