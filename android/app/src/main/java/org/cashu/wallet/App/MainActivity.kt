@@ -5,6 +5,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import org.cashu.wallet.ui.shell.CashuApp
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -13,7 +14,7 @@ class MainActivity : ComponentActivity() {
         val container = (application as CashuWalletApplication).container
         handleIntent(intent)
         setContent {
-            CashuWalletApp(container = container)
+            CashuApp(container = container)
         }
     }
 
