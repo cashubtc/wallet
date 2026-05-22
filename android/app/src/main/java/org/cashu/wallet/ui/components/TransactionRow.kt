@@ -134,96 +134,36 @@ fun TransactionRow(
     }
 }
 
+/**
+ * Bare method icon — no bottom-trailing status badge. Status is conveyed by the
+ * amount color (One-Green Rule), the +/− sign, and the refresh affordance for
+ * pending tx, matching iOS.
+ */
 @Composable
 private fun MethodIconWithStatusBadge(
     kind: TransactionKind,
-    status: TransactionStatus,
-    incoming: Boolean,
+    @Suppress("UNUSED_PARAMETER") status: TransactionStatus,
+    @Suppress("UNUSED_PARAMETER") incoming: Boolean,
 ) {
-    Box(modifier = Modifier.size(40.dp)) {
-        val methodIcon: ImageVector = when (kind) {
-            TransactionKind.Ecash -> Icons.Outlined.Money
-            TransactionKind.Lightning -> Icons.Filled.Bolt
-            TransactionKind.Onchain -> Icons.Outlined.CurrencyBitcoin
-        }
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .background(
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    shape = CircleShape,
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = methodIcon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.size(20.dp),
-            )
-        }
-        StatusBadge(
-            status = status,
-            incoming = incoming,
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .size(16.dp),
+    val methodIcon: ImageVector = when (kind) {
+        TransactionKind.Ecash -> Icons.Outlined.Money
+        TransactionKind.Lightning -> Icons.Filled.Bolt
+        TransactionKind.Onchain -> Icons.Outlined.CurrencyBitcoin
+    }
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .background(
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                shape = CircleShape,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = methodIcon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.size(20.dp),
         )
     }
 }
-
-@Composable
-private fun StatusBadge(
-    status: TransactionStatus,
-    incoming: Boolean,
-    modifier: Modifier = Modifier,
-) {
-    val targetState = when {
-        status == TransactionStatus.Pending -> BadgeState.Pending
-        status == TransactionStatus.Failed -> BadgeState.Failed
-        incoming -> BadgeState.Incoming
-        else -> BadgeState.Outgoing
-    }
-    val pulseAlpha = if (targetState == BadgeState.Pending) {
-        val transition = rememberInfiniteTransition(label = "pending-pulse")
-        transition.animateFloat(
-            initialValue = 1f,
-            targetValue = 0.4f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 1100),
-                repeatMode = RepeatMode.Reverse,
-            ),
-            label = "pending-pulse-alpha",
-        ).value
-    } else 1f
-    Box(
-        modifier = modifier
-            .background(
-                color = MaterialTheme.colorScheme.surface,
-                shape = CircleShape,
-            )
-            .alpha(pulseAlpha),
-        contentAlignment = Alignment.Center,
-    ) {
-        AnimatedContent(
-            targetState = targetState,
-            transitionSpec = { fadeIn(tween(280)) togetherWith fadeOut(tween(280)) },
-            label = "status-badge",
-        ) { state ->
-            val (icon, tint) = when (state) {
-                BadgeState.Pending -> Icons.Outlined.Schedule to CashuTheme.colors.pending
-                BadgeState.Incoming -> Icons.Filled.ArrowDownward to CashuTheme.colors.received
-                BadgeState.Outgoing -> Icons.Filled.ArrowUpward to MaterialTheme.colorScheme.onSurface
-                BadgeState.Failed -> Icons.Outlined.Schedule to MaterialTheme.colorScheme.error
-            }
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = tint,
-                modifier = Modifier.size(14.dp),
-            )
-        }
-    }
-}
-
-private enum class BadgeState { Pending, Incoming, Outgoing, Failed }

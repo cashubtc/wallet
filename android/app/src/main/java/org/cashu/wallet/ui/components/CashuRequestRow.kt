@@ -98,69 +98,23 @@ fun CashuRequestRow(
     }
 }
 
+/** Bare ecash icon — no bottom-trailing status badge, matching iOS. */
 @Composable
-private fun RequestIconWithStatusBadge(received: Boolean) {
-    Box(modifier = Modifier.size(40.dp)) {
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .background(
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    shape = CircleShape,
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = Icons.Outlined.Money,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.size(20.dp),
-            )
-        }
-        val pulseAlpha = if (!received) {
-            val transition = rememberInfiniteTransition(label = "request-pulse")
-            transition.animateFloat(
-                initialValue = 1f,
-                targetValue = 0.4f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(durationMillis = 1100),
-                    repeatMode = RepeatMode.Reverse,
-                ),
-                label = "request-pulse-alpha",
-            ).value
-        } else 1f
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .size(16.dp)
-                .background(
-                    color = MaterialTheme.colorScheme.surface,
-                    shape = CircleShape,
-                )
-                .alpha(pulseAlpha),
-            contentAlignment = Alignment.Center,
-        ) {
-            AnimatedContent(
-                targetState = received,
-                transitionSpec = { fadeIn(tween(280)) togetherWith fadeOut(tween(280)) },
-                label = "request-badge",
-            ) { isReceived ->
-                if (isReceived) {
-                    Icon(
-                        imageVector = Icons.Filled.ArrowDownward,
-                        contentDescription = null,
-                        tint = CashuTheme.colors.received,
-                        modifier = Modifier.size(14.dp),
-                    )
-                } else {
-                    Icon(
-                        imageVector = Icons.Outlined.Schedule,
-                        contentDescription = null,
-                        tint = CashuTheme.colors.pending,
-                        modifier = Modifier.size(14.dp),
-                    )
-                }
-            }
-        }
+private fun RequestIconWithStatusBadge(@Suppress("UNUSED_PARAMETER") received: Boolean) {
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .background(
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                shape = CircleShape,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = Icons.Outlined.Money,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.size(20.dp),
+        )
     }
 }
