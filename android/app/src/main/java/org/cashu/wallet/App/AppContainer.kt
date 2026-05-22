@@ -3,6 +3,7 @@ package org.cashu.wallet.App
 import android.content.Context
 import org.cashu.wallet.Core.CDK.CdkWalletGatewayImpl
 import org.cashu.wallet.Core.CashuRequestListener
+import org.cashu.wallet.Core.CashuRequestStore
 import org.cashu.wallet.Core.MintDiscoveryManager
 import org.cashu.wallet.Core.NPCService
 import org.cashu.wallet.Core.Navigation.NavigationManager
@@ -20,6 +21,7 @@ class AppContainer(context: Context) {
     private val appContext = context.applicationContext
     val secureStorage = AndroidSecureStorage(appContext)
     val walletStore = WalletStore(appContext)
+    val cashuRequestStore = CashuRequestStore(walletStore)
     val settingsStore = SettingsStore(appContext)
     val settingsManager = SettingsManager(settingsStore, secureStorage)
     val nostrService = NostrService(secureStorage, settingsStore)
@@ -44,6 +46,7 @@ class AppContainer(context: Context) {
         nostrService = nostrService,
         settingsManager = settingsManager,
         walletManager = walletManager,
+        cashuRequestStore = cashuRequestStore,
     )
 
     init {

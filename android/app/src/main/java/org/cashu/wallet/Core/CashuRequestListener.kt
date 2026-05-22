@@ -29,6 +29,7 @@ class CashuRequestListener(
     private val nostrService: NostrService,
     private val settingsManager: SettingsManager,
     private val walletManager: WalletManager,
+    private val cashuRequestStore: CashuRequestStore,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val metadataStore = DataStorePreferenceStore(context.applicationContext, "settings_store")
@@ -81,18 +82,26 @@ class CashuRequestListener(
             .onFailure { AppLogger.wallet.debug("CashuRequestListener: NIP-17 unwrap failed: ${it.message}") }
             .getOrNull() ?: return
         if (rumor.kind != 14) return
-        tryClaim(rumor.content)
+        tryClaim(rumor.content, event.id)
     }
 
-    private suspend fun tryClaim(rumorContent: String) {
+    private suspend fun tryClaim(rumorContent: String, eventId: String) {
         val payload = runCatching { paymentPayloadToToken(rumorContent) }
             .onFailure { AppLogger.wallet.debug("CashuRequestListener: malformed PaymentRequestPayload") }
             .getOrNull() ?: return
         runCatching {
-            walletManager.receiveCashuRequestPayment(
+            val amount = walletManager.receiveCashuRequestPayment(
                 tokenString = payload.token,
                 requestId = payload.requestId,
+                processedId = eventId,
             )
+            if (amount > 0 && !payload.requestId.isNullOrBlank()) {
+                cashuRequestStore.attachPayment(
+                    requestId = payload.requestId,
+                    transactionId = eventId,
+                    amount = amount,
+                )
+            }
         }.onFailure { error ->
             AppLogger.wallet.error("CashuRequestListener: redeem failed", error)
             scope.launch {

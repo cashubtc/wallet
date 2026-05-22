@@ -7,6 +7,7 @@ import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import org.cashu.wallet.Core.Protocols.StorageKeys
+import org.cashu.wallet.Models.CashuRequest
 import org.cashu.wallet.Models.ClaimedToken
 import org.cashu.wallet.Models.MintInfo
 import org.cashu.wallet.Models.PendingReceiveToken
@@ -64,6 +65,15 @@ class WalletStore(
         loadList(StorageKeys.walletProcessedCashuRequests, String.serializer())
     fun saveProcessedCashuRequests(requestIds: List<String>) =
         saveList(StorageKeys.walletProcessedCashuRequests, String.serializer(), requestIds)
+
+    fun loadCashuRequests(): List<CashuRequest> =
+        loadList(StorageKeys.cashuRequests, CashuRequest.serializer()).map { it.withLegacyPaymentFallback() }
+    fun saveCashuRequests(requests: List<CashuRequest>) =
+        saveList(StorageKeys.cashuRequests, CashuRequest.serializer(), requests.map { it.withLegacyPaymentFallback() })
+
+    var currentCashuRequestId: String?
+        get() = store.string(StorageKeys.cashuRequestsCurrentId)
+        set(value) = store.putString(StorageKeys.cashuRequestsCurrentId, value)
 
     internal fun snapshotWalletScopedData(): PreferenceSnapshot {
         val prefixKeys = store.keys().filter {

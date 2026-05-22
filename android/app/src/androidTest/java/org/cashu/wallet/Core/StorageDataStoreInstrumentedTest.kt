@@ -10,6 +10,7 @@ import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import org.cashu.wallet.Core.Platform.AndroidSecureStorage
 import org.cashu.wallet.Core.Protocols.StorageKeys
+import org.cashu.wallet.Models.CashuRequest
 import org.cashu.wallet.Models.MintInfo
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -35,6 +36,11 @@ class StorageDataStoreInstrumentedTest {
             )
             putString(StorageKeys.walletActiveMintUrl, mint.url)
             putString(StorageKeys.walletProcessedNPCQuotes, json.encodeToString(ListSerializer(String.serializer()), listOf("quote-1")))
+            putString(
+                StorageKeys.cashuRequests,
+                json.encodeToString(ListSerializer(CashuRequest.serializer()), listOf(CashuRequest(id = "req-1", encoded = "creqA-test"))),
+            )
+            putString(StorageKeys.cashuRequestsCurrentId, "req-1")
         }
 
         val store = WalletStore(context, storeName)
@@ -42,12 +48,16 @@ class StorageDataStoreInstrumentedTest {
         assertEquals(mint.url, store.activeMintURL)
         assertEquals(listOf(mint), store.loadMints())
         assertEquals(listOf("quote-1"), store.loadProcessedNPCQuotes())
+        assertEquals("req-1", store.loadCashuRequests().first().id)
+        assertEquals("req-1", store.currentCashuRequestId)
 
         store.removeAllWalletData()
 
         assertNull(store.activeMintURL)
         assertEquals(emptyList<MintInfo>(), store.loadMints())
         assertEquals(emptyList<String>(), store.loadProcessedNPCQuotes())
+        assertEquals(emptyList<CashuRequest>(), store.loadCashuRequests())
+        assertNull(store.currentCashuRequestId)
     }
 
     @Test

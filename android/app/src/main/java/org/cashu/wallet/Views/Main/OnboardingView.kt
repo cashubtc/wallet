@@ -29,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -174,6 +175,13 @@ fun OnboardingView(walletManager: WalletManager) {
                 )
                 Spacer(Modifier.height(12.dp))
                 SeedPhraseCard(words = MnemonicInput.words(mnemonic))
+                Spacer(Modifier.height(12.dp))
+                SecondaryActionButton(
+                    text = "Copy to clipboard",
+                    enabled = mnemonic.isNotBlank(),
+                ) {
+                    clipboard.setText(AnnotatedString(mnemonic))
+                }
                 Spacer(Modifier.height(12.dp))
                 PrimaryActionButton(
                     text = "I've saved these words",

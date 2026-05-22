@@ -204,6 +204,9 @@ private fun WalletShell(container: AppContainer) {
                 RootTab.Receive -> ReceiveView(
                     walletManager = container.walletManager,
                     settingsManager = container.settingsManager,
+                    priceService = container.priceService,
+                    nostrService = container.nostrService,
+                    cashuRequestStore = container.cashuRequestStore,
                     contentPadding = padding,
                     scannedPayload = pendingReceiveScan,
                     onScannedPayloadConsumed = { pendingReceiveScan = null },

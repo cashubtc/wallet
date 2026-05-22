@@ -361,13 +361,13 @@ class WalletManager(
             }
         }
 
-    suspend fun receiveCashuRequestPayment(tokenString: String, requestId: String?): Long {
-        val normalizedRequestId = requestId?.trim()?.takeIf { it.isNotEmpty() }
-        if (normalizedRequestId != null && normalizedRequestId in walletStore.loadProcessedCashuRequests()) {
+    suspend fun receiveCashuRequestPayment(tokenString: String, requestId: String?, processedId: String? = requestId): Long {
+        val normalizedProcessedId = processedId?.trim()?.takeIf { it.isNotEmpty() }
+        if (normalizedProcessedId != null && normalizedProcessedId in walletStore.loadProcessedCashuRequests()) {
             return 0
         }
         val amount = receiveTokens(tokenString)
-        normalizedRequestId?.let { id ->
+        normalizedProcessedId?.let { id ->
             walletStore.saveProcessedCashuRequests((walletStore.loadProcessedCashuRequests() + id).distinct().sorted())
         }
         return amount
