@@ -42,6 +42,7 @@ import org.cashu.wallet.Core.SettingsManager
 import org.cashu.wallet.ui.components.CanvasDivider
 import org.cashu.wallet.ui.components.SectionHeader
 import org.cashu.wallet.ui.components.ToggleRow
+import org.cashu.wallet.ui.theme.CashuTheme
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -163,7 +164,10 @@ private fun CurrencyPickerRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 14.dp),
+                .padding(
+                    horizontal = CashuTheme.spacing.comfortable,
+                    vertical = CashuTheme.spacing.default,
+                ),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
@@ -183,7 +187,7 @@ private fun CurrencyPickerRow(
                         imageVector = Icons.Outlined.UnfoldMore,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp),
+                        modifier = Modifier.size(CashuTheme.spacing.loose),
                     )
                 }
             }
@@ -215,7 +219,10 @@ private fun PriceRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .padding(
+                horizontal = CashuTheme.spacing.comfortable,
+                vertical = CashuTheme.spacing.default,
+            ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
@@ -240,7 +247,7 @@ private fun PriceRow(
         IconButton(onClick = onRefresh, enabled = !isFetching) {
             if (isFetching) {
                 CircularProgressIndicator(
-                    modifier = Modifier.size(20.dp),
+                    modifier = Modifier.size(CashuTheme.spacing.loose),
                     strokeWidth = 2.dp,
                 )
             } else {

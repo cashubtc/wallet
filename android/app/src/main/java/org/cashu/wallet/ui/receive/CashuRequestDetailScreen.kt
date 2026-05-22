@@ -154,7 +154,7 @@ fun CashuRequestDetailScreen(
                     text = "Request not found",
                     style = MaterialTheme.typography.titleMedium,
                 )
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(CashuTheme.spacing.comfortable))
                 GhostButton(text = "Back", onClick = onClose)
             }
             return@Scaffold
@@ -165,11 +165,11 @@ fun CashuRequestDetailScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+                .padding(horizontal = CashuTheme.spacing.comfortable),
+            verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.comfortable),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(CashuTheme.spacing.snug))
             QrCard(content = request.encoded, shareSubject = "Cashu Request", staticOnly = true)
 
             if (request.amount != null && request.amount > 0L) {
@@ -226,10 +226,10 @@ fun CashuRequestDetailScreen(
                 }
             }
 
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(CashuTheme.spacing.snug))
             Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
             ) {
                 PrimaryButton(
                     text = if (copied) "Copied" else "Copy request",
@@ -244,7 +244,7 @@ fun CashuRequestDetailScreen(
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(CashuTheme.spacing.section))
         }
     }
 
@@ -278,7 +278,7 @@ fun CashuRequestDetailScreen(
 private fun StatusBlock(received: Boolean, paymentCount: Int, celebrate: Boolean) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
     ) {
         if (received) {
             AnimatedVisibility(
@@ -290,14 +290,14 @@ private fun StatusBlock(received: Boolean, paymentCount: Int, celebrate: Boolean
                     imageVector = Icons.Outlined.CheckCircle,
                     contentDescription = null,
                     tint = CashuTheme.colors.received,
-                    modifier = Modifier.size(20.dp),
+                    modifier = Modifier.size(CashuTheme.spacing.loose),
                 )
             }
             Icon(
                 imageVector = Icons.Outlined.CheckCircle,
                 contentDescription = null,
                 tint = CashuTheme.colors.received,
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(CashuTheme.spacing.loose),
             )
             Text(
                 text = when {
@@ -324,7 +324,7 @@ private fun StatusBlock(received: Boolean, paymentCount: Int, celebrate: Boolean
                     imageVector = Icons.Outlined.Schedule,
                     contentDescription = null,
                     tint = CashuTheme.colors.pending,
-                    modifier = Modifier.size(20.dp),
+                    modifier = Modifier.size(CashuTheme.spacing.loose),
                 )
             }
             Text(

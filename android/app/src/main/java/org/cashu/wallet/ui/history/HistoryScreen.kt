@@ -29,7 +29,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MediumTopAppBar
+import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -71,6 +71,7 @@ import org.cashu.wallet.ui.components.SectionHeader
 import org.cashu.wallet.ui.components.TransactionRow
 import org.cashu.wallet.ui.components.TransactionRowModel
 import org.cashu.wallet.ui.components.formatRelativeTimestamp
+import org.cashu.wallet.ui.theme.CashuTheme
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -125,7 +126,7 @@ fun HistoryScreen(
             .padding(contentPadding)
             .nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            MediumTopAppBar(
+            CenterAlignedTopAppBar(
                 title = { Text("History") },
                 scrollBehavior = scrollBehavior,
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -195,7 +196,10 @@ fun HistoryScreen(
                                 onValueChange = { query = it },
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                                    .padding(
+                                        horizontal = CashuTheme.spacing.comfortable,
+                                        vertical = CashuTheme.spacing.snug,
+                                    ),
                                 placeholder = { Text("Search history") },
                                 singleLine = true,
                                 shape = MaterialTheme.shapes.medium,
@@ -336,14 +340,14 @@ private fun HistoryEmptyState(filter: HistoryFilter, hasQuery: Boolean) {
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
-                    .size(40.dp)
+                    .size(HISTORY_EMPTY_ICON_SIZE)
                     .alpha(if (icon == Icons.Filled.Bolt) alpha else 1f),
             )
             Text(
@@ -361,6 +365,10 @@ private fun HistoryEmptyState(filter: HistoryFilter, hasQuery: Boolean) {
         }
     }
 }
+
+// Smaller-than-48dp on purpose: this is an inline empty-state glyph inside an
+// already-spaced column, not the standalone EmptyState component.
+private val HISTORY_EMPTY_ICON_SIZE = 40.dp
 
 /** Unified History timeline item. Mirrors iOS HistoryItem enum. */
 internal sealed interface HistoryItem {

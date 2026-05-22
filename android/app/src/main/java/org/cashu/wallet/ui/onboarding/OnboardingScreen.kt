@@ -169,7 +169,7 @@ private fun WelcomeFace(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 24.dp, vertical = 32.dp),
+            .padding(horizontal = CashuTheme.spacing.section, vertical = CashuTheme.spacing.page + CashuTheme.spacing.micro),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Spacer(Modifier.weight(0.8f))
@@ -180,7 +180,7 @@ private fun WelcomeFace(
             ),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(CashuTheme.spacing.default))
         Text(
             text = "Private cash.\nIn your pocket.",
             style = MaterialTheme.typography.displaySmall,
@@ -193,12 +193,12 @@ private fun WelcomeFace(
             onClick = onCreate,
             loading = isLoading,
         )
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(CashuTheme.spacing.snug))
         PrimaryButton(
             text = "I have a seed phrase",
             onClick = onRestore,
         )
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(CashuTheme.spacing.snug))
         GhostButton(
             text = "What is ecash?",
             onClick = onInfo,
@@ -219,9 +219,9 @@ private fun ShowMnemonicFace(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 24.dp, vertical = 24.dp)
+            .padding(CashuTheme.spacing.section)
             .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.comfortable),
     ) {
         Text(
             text = "Your recovery phrase",
@@ -270,9 +270,9 @@ private fun VerifyMnemonicFace(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 24.dp, vertical = 24.dp)
+            .padding(CashuTheme.spacing.section)
             .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
     ) {
         Text(
             text = "Verify your phrase",
@@ -307,13 +307,13 @@ private fun VerifyMnemonicFace(
         if (verified) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.tight),
             ) {
                 Icon(
                     imageVector = Icons.Outlined.Check,
                     contentDescription = null,
                     tint = CashuTheme.colors.received,
-                    modifier = Modifier.size(18.dp),
+                    modifier = Modifier.size(VERIFY_CHECK_ICON_SIZE),
                 )
                 Text(
                     text = "Looks right.",
@@ -322,7 +322,7 @@ private fun VerifyMnemonicFace(
                 )
             }
         }
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(CashuTheme.spacing.snug))
         PrimaryButton(
             text = "Verified, continue",
             onClick = onContinue,
@@ -345,9 +345,9 @@ private fun FirstMintFace(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 24.dp, vertical = 24.dp)
+            .padding(CashuTheme.spacing.section)
             .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
     ) {
         Text(
             text = "Add your first mint",
@@ -391,7 +391,7 @@ private fun FirstMintFace(
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None),
             )
         }
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(CashuTheme.spacing.snug))
         PrimaryButton(
             text = if (isLoading) "Setting up…" else "Continue",
             onClick = { onFinish(effectiveUrl) },
@@ -422,9 +422,9 @@ private fun RestoreInputFace(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 24.dp, vertical = 24.dp)
+            .padding(CashuTheme.spacing.section)
             .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
     ) {
         Text(
             text = "Restore from seed",
@@ -444,7 +444,7 @@ private fun RestoreInputFace(
             minLines = 4,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(160.dp),
+                .height(SEED_INPUT_HEIGHT),
             shape = MaterialTheme.shapes.medium,
             colors = TextFieldDefaults.colors(
                 focusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
@@ -464,7 +464,7 @@ private fun RestoreInputFace(
                 color = MaterialTheme.colorScheme.error,
             )
         }
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(CashuTheme.spacing.snug))
         PrimaryButton(
             text = if (isLoading) "Restoring…" else "Restore wallet",
             onClick = { onRestore(input) },
@@ -483,20 +483,20 @@ private fun SeedGrid(words: List<String>) {
             .fillMaxWidth()
             .clip(MaterialTheme.shapes.medium)
             .background(MaterialTheme.colorScheme.surfaceContainer)
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+            .padding(CashuTheme.spacing.comfortable),
+        verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
     ) {
         words.chunked(2).forEachIndexed { rowIndex, pair ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
             ) {
                 pair.forEachIndexed { columnIndex, word ->
                     val index = rowIndex * 2 + columnIndex + 1
                     Row(
                         modifier = Modifier.weight(1f),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
                     ) {
                         Text(
                             text = "%2d".format(index),
@@ -524,13 +524,13 @@ private fun MintOptionRow(
             .clip(MaterialTheme.shapes.medium)
             .background(MaterialTheme.colorScheme.surfaceContainer)
             .clickable(onClick = onSelect)
-            .padding(16.dp),
+            .padding(CashuTheme.spacing.comfortable),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
     ) {
         Box(
             modifier = Modifier
-                .size(20.dp)
+                .size(CashuTheme.spacing.loose)
                 .clip(CircleShape)
                 .background(
                     if (selected) CashuTheme.colors.received
@@ -543,7 +543,7 @@ private fun MintOptionRow(
                     imageVector = Icons.Outlined.Check,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.surface,
-                    modifier = Modifier.size(14.dp),
+                    modifier = Modifier.size(RADIO_CHECK_ICON_SIZE),
                 )
             }
         }
@@ -578,6 +578,11 @@ private fun EcashInfoDialog(onDismiss: () -> Unit) {
         },
     )
 }
+
+// Component-local sizes that sit below the spacing scale on purpose.
+private val VERIFY_CHECK_ICON_SIZE = 18.dp
+private val SEED_INPUT_HEIGHT = 160.dp
+private val RADIO_CHECK_ICON_SIZE = 14.dp
 
 private fun <S> AnimatedContentTransitionScope<S>.stepTransition(direction: Int):
     androidx.compose.animation.ContentTransform {

@@ -18,7 +18,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import org.cashu.wallet.ui.theme.CashuTheme
 import org.cashu.wallet.ui.theme.withMonoDigits
+
+// Inspector leading icon stays at 18dp (a touch smaller than the 20dp body icon size)
+// so the inspector reads as denser metadata, not list-row chrome.
+private val InspectorLeadingIconSize = 18.dp
+private val InspectorEditHintSize = 16.dp
 
 /**
  * Two-column metadata row used inside Cashu Request / Transaction Detail inspector
@@ -41,16 +47,19 @@ fun InspectorRow(
         modifier.fillMaxWidth()
     }
     Row(
-        modifier = rowMod.padding(horizontal = 16.dp, vertical = 12.dp),
+        modifier = rowMod.padding(
+            horizontal = CashuTheme.spacing.comfortable,
+            vertical = CashuTheme.spacing.default,
+        ),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
     ) {
         if (leadingIcon != null) {
             Icon(
                 imageVector = leadingIcon,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(18.dp),
+                modifier = Modifier.size(InspectorLeadingIconSize),
             )
         }
         Text(
@@ -74,7 +83,7 @@ fun InspectorRow(
                 imageVector = Icons.Outlined.Edit,
                 contentDescription = "Edit $label",
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(16.dp),
+                modifier = Modifier.size(InspectorEditHintSize),
             )
         }
     }

@@ -95,7 +95,10 @@ fun MintDiscoveryContent(
             onValueChange = { query = it },
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .padding(
+                    horizontal = CashuTheme.spacing.comfortable,
+                    vertical = CashuTheme.spacing.snug,
+                ),
             placeholder = { Text("Search mints") },
             singleLine = true,
             shape = MaterialTheme.shapes.medium,
@@ -162,9 +165,12 @@ private fun DiscoveryRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(
+                horizontal = CashuTheme.spacing.comfortable,
+                vertical = CashuTheme.spacing.default,
+            ),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
     ) {
         MintAvatar(mint = mint)
         Column(modifier = Modifier.weight(1f)) {
@@ -189,13 +195,13 @@ private fun DiscoveryRow(
         if (isConfigured) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.micro),
             ) {
                 Icon(
                     imageVector = Icons.Outlined.Check,
                     contentDescription = null,
                     tint = CashuTheme.colors.received,
-                    modifier = Modifier.size(18.dp),
+                    modifier = Modifier.size(CashuTheme.spacing.loose),
                 )
                 Text(
                     text = "Added",

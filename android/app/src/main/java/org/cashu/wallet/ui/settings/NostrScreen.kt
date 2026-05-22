@@ -53,6 +53,7 @@ import org.cashu.wallet.ui.components.GhostButton
 import org.cashu.wallet.ui.components.InspectorRow
 import org.cashu.wallet.ui.components.PrimaryButton
 import org.cashu.wallet.ui.components.SectionHeader
+import org.cashu.wallet.ui.theme.CashuTheme
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -92,10 +93,10 @@ fun NostrScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
         ) {
             SectionHeader("Signer")
-            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = CashuTheme.spacing.comfortable)) {
                 SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
                     NostrSignerType.entries.forEachIndexed { index, kind ->
                         SegmentedButton(
@@ -110,7 +111,7 @@ fun NostrScreen(
                         ) { Text(kind.displayName) }
                     }
                 }
-                Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.height(CashuTheme.spacing.snug))
                 Text(
                     text = when (nostrState.signerType) {
                         NostrSignerType.Seed -> "Keys are derived from your wallet seed."
@@ -142,9 +143,12 @@ fun NostrScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                    .padding(
+                        horizontal = CashuTheme.spacing.comfortable,
+                        vertical = CashuTheme.spacing.snug,
+                    ),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
             ) {
                 Text(
                     text = if (nsecRevealed) nostrState.nsec.ifBlank { "—" }
@@ -173,8 +177,8 @@ fun NostrScreen(
                 }
             }
             Column(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = CashuTheme.spacing.comfortable),
+                verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
             ) {
                 PrimaryButton(
                     text = "Generate new key",
@@ -199,7 +203,10 @@ fun NostrScreen(
                     text = "Using defaults (relay.damus.io, nos.lol, primal.net, 8333.space).",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                    modifier = Modifier.padding(
+                        horizontal = CashuTheme.spacing.comfortable,
+                        vertical = CashuTheme.spacing.snug,
+                    ),
                 )
             } else {
                 Column(modifier = Modifier.fillMaxWidth()) {
@@ -207,7 +214,10 @@ fun NostrScreen(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                                .padding(
+                                    horizontal = CashuTheme.spacing.comfortable,
+                                    vertical = CashuTheme.spacing.default,
+                                ),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
@@ -222,7 +232,7 @@ fun NostrScreen(
                                 Icon(
                                     imageVector = Icons.Outlined.Close,
                                     contentDescription = "Remove relay",
-                                    modifier = Modifier.size(18.dp),
+                                    modifier = Modifier.size(CashuTheme.spacing.loose),
                                 )
                             }
                         }
@@ -231,8 +241,8 @@ fun NostrScreen(
                 }
             }
             Column(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = CashuTheme.spacing.comfortable),
+                verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
             ) {
                 PrimaryButton(
                     text = "Add relay…",
@@ -244,7 +254,7 @@ fun NostrScreen(
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(CashuTheme.spacing.section))
         }
     }
 
@@ -254,7 +264,7 @@ fun NostrScreen(
             onDismissRequest = { showImport = false; importError = null },
             title = { Text("Import nsec") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug)) {
                     OutlinedTextField(
                         value = input,
                         onValueChange = { input = it; importError = null },
@@ -341,7 +351,7 @@ fun NostrScreen(
             onDismissRequest = { addRelayOpen = false; addRelayError = null },
             title = { Text("Add relay") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug)) {
                     OutlinedTextField(
                         value = input,
                         onValueChange = { input = it; addRelayError = null },

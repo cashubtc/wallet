@@ -55,6 +55,7 @@ import org.cashu.wallet.ui.components.GhostButton
 import org.cashu.wallet.ui.components.InspectorRow
 import org.cashu.wallet.ui.components.PrimaryButton
 import org.cashu.wallet.ui.components.TwoFaceCrossfade
+import org.cashu.wallet.ui.theme.CashuTheme
 import org.cashu.wallet.ui.theme.withMonoDigits
 
 private sealed interface ReceiveFace {
@@ -230,9 +231,9 @@ private fun PasteFace(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp)
+            .padding(horizontal = CashuTheme.spacing.comfortable)
             .imePadding(),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
     ) {
         Text(
             text = "Paste an ecash token to redeem it.",
@@ -289,9 +290,12 @@ private fun ReviewFace(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 16.dp),
+            .padding(
+                horizontal = CashuTheme.spacing.comfortable,
+                vertical = CashuTheme.spacing.comfortable,
+            ),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(20.dp),
+        verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.loose),
     ) {
         AmountText(
             text = formatter.formatWalletSats(info.amount, useBitcoinSymbol),
@@ -332,7 +336,7 @@ private fun ReviewFace(
                 color = MaterialTheme.colorScheme.error,
             )
         }
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(CashuTheme.spacing.snug))
         PrimaryButton(
             text = if (receiving) "Receiving…" else "Receive",
             onClick = onReceive,

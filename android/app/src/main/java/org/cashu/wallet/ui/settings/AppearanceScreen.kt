@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import org.cashu.wallet.Core.SettingsManager
 import org.cashu.wallet.ui.components.SectionHeader
 import org.cashu.wallet.ui.components.ToggleRow
+import org.cashu.wallet.ui.theme.CashuTheme
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -50,8 +51,11 @@ fun AppearanceScreen(
         ) {
             SectionHeader("Theme")
             Column(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier.padding(
+                    horizontal = CashuTheme.spacing.comfortable,
+                    vertical = CashuTheme.spacing.snug,
+                ),
+                verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.micro),
             ) {
                 Text(
                     text = "Follows system theme",

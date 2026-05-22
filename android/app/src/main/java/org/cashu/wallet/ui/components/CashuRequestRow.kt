@@ -37,6 +37,9 @@ import org.cashu.wallet.Models.CashuRequest
 import org.cashu.wallet.ui.theme.CashuTheme
 import org.cashu.wallet.ui.theme.withMonoDigits
 
+// Matches TransactionRow geometry for vertically-aligned timeline rendering.
+private val RequestIconSize = 40.dp
+
 /**
  * Cashu Request timeline row, paired with [TransactionRow] in History and Home Recent.
  * Mirrors iOS CashuRequestAmountColumn variants — fixed-amount vs any-amount,
@@ -61,9 +64,9 @@ fun CashuRequestRow(
                 onClick = onClick,
                 onLongClick = onLongClick,
             )
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = CashuTheme.spacing.comfortable, vertical = CashuTheme.spacing.default),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
     ) {
         RequestIconWithStatusBadge(received = received)
         Column(modifier = Modifier.weight(1f)) {
@@ -103,7 +106,7 @@ fun CashuRequestRow(
 private fun RequestIconWithStatusBadge(@Suppress("UNUSED_PARAMETER") received: Boolean) {
     Box(
         modifier = Modifier
-            .size(40.dp)
+            .size(RequestIconSize)
             .background(
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
                 shape = CircleShape,
@@ -114,7 +117,7 @@ private fun RequestIconWithStatusBadge(@Suppress("UNUSED_PARAMETER") received: B
             imageVector = Icons.Outlined.Money,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.size(20.dp),
+            modifier = Modifier.size(CashuTheme.spacing.loose),
         )
     }
 }

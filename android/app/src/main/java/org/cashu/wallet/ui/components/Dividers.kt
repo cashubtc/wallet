@@ -7,9 +7,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import org.cashu.wallet.ui.theme.CashuTheme
 
+// Hairline (0.5dp) matches iOS Color(.separator) at @2x — finer than M3's 1dp default.
+private val HairlineThickness = 0.5.dp
+
 /**
  * Single hairline used to separate rows on canvas screens (History, Settings root, Mints).
- * 28dp leading inset aligns with the icon column.
+ * 28dp leading inset (page spacing) aligns with the icon column.
  */
 @Composable
 fun CanvasDivider(
@@ -17,7 +20,7 @@ fun CanvasDivider(
     leadingInset: Int = 28,
 ) {
     HorizontalDivider(
-        thickness = 0.5.dp,
+        thickness = HairlineThickness,
         color = CashuTheme.colors.canvasDivider,
         modifier = modifier.padding(start = leadingInset.dp),
     )
@@ -29,8 +32,8 @@ fun CanvasDivider(
 @Composable
 fun InspectorDivider(modifier: Modifier = Modifier) {
     HorizontalDivider(
-        thickness = 0.5.dp,
+        thickness = HairlineThickness,
         color = CashuTheme.colors.canvasDivider,
-        modifier = modifier.padding(horizontal = 8.dp),
+        modifier = modifier.padding(horizontal = CashuTheme.spacing.snug),
     )
 }

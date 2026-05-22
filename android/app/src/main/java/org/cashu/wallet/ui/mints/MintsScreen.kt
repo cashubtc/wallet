@@ -30,8 +30,8 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.MediumTopAppBar
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -143,7 +143,7 @@ fun MintsScreen(
             .padding(contentPadding)
             .nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            MediumTopAppBar(
+            CenterAlignedTopAppBar(
                 title = { Text("Mints") },
                 scrollBehavior = scrollBehavior,
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -157,7 +157,7 @@ fun MintsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
-            contentPadding = PaddingValues(bottom = 24.dp),
+            contentPadding = PaddingValues(bottom = CashuTheme.spacing.section),
         ) {
             if (walletState.mints.isNotEmpty()) {
                 items(walletState.mints, key = { it.url }) { mint ->
@@ -182,7 +182,7 @@ fun MintsScreen(
                     leadingIcon = {
                         Box(
                             modifier = Modifier
-                                .size(40.dp)
+                                .size(MINT_AVATAR_SIZE)
                                 .clip(CircleShape)
                                 .background(MaterialTheme.colorScheme.surfaceContainerHigh),
                             contentAlignment = Alignment.Center,
@@ -191,7 +191,7 @@ fun MintsScreen(
                                 imageVector = Icons.Outlined.Search,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.size(20.dp),
+                                modifier = Modifier.size(CashuTheme.spacing.loose),
                             )
                         }
                     },
@@ -205,8 +205,11 @@ fun MintsScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                        .padding(
+                            horizontal = CashuTheme.spacing.comfortable,
+                            vertical = CashuTheme.spacing.comfortable,
+                        ),
+                    verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
                 ) {
                     OutlinedTextField(
                         value = url,
@@ -252,7 +255,7 @@ fun MintsScreen(
                         )
                     }
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         GhostButton(
@@ -267,7 +270,7 @@ fun MintsScreen(
                         enabled = url.isNotBlank() && !walletState.isLoading,
                         loading = walletState.isLoading,
                     )
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(CashuTheme.spacing.snug))
                 }
             }
 
@@ -277,7 +280,10 @@ fun MintsScreen(
                         text = msg,
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        modifier = Modifier.padding(
+                            horizontal = CashuTheme.spacing.comfortable,
+                            vertical = CashuTheme.spacing.snug,
+                        ),
                     )
                 }
             }
@@ -295,7 +301,10 @@ fun MintsScreen(
                     text = "Discover Mints",
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    modifier = Modifier.padding(
+                        horizontal = CashuTheme.spacing.comfortable,
+                        vertical = CashuTheme.spacing.snug,
+                    ),
                 )
                 MintDiscoveryContent(
                     walletManager = walletManager,
@@ -393,13 +402,13 @@ private fun SwipeableMintRow(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(bg)
-                    .padding(horizontal = 20.dp),
+                    .padding(horizontal = CashuTheme.spacing.loose),
                 contentAlignment = align,
             ) {
                 if (icon != null) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
                     ) {
                         Icon(imageVector = icon, contentDescription = label, tint = fg)
                         Text(text = label, color = fg, style = MaterialTheme.typography.labelLarge)
@@ -440,9 +449,12 @@ private fun MintRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+                .padding(
+                    horizontal = CashuTheme.spacing.comfortable,
+                    vertical = CashuTheme.spacing.default,
+                ),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
         ) {
             Box {
                 MintAvatar(mint = mint)
@@ -450,14 +462,14 @@ private fun MintRow(
                     Box(
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
-                            .size(12.dp)
+                            .size(CashuTheme.spacing.default)
                             .clip(CircleShape)
                             .background(MaterialTheme.colorScheme.surface),
                         contentAlignment = Alignment.Center,
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(8.dp)
+                                .size(CashuTheme.spacing.snug)
                                 .clip(CircleShape)
                                 .background(CashuTheme.colors.received),
                         )
@@ -480,7 +492,7 @@ private fun MintRow(
                     overflow = TextOverflow.MiddleEllipsis,
                 )
                 if (mint.supportedMintMethods.isNotEmpty() || mint.supportedMeltMethods.isNotEmpty()) {
-                    Spacer(Modifier.height(4.dp))
+                    Spacer(Modifier.height(CashuTheme.spacing.micro))
                     MintMethodChips(mint = mint)
                 }
             }
@@ -500,7 +512,7 @@ private fun MintRow(
                 imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(CashuTheme.spacing.loose),
             )
         }
         DropdownMenu(
@@ -528,6 +540,10 @@ private fun MintRow(
     }
 }
 
+// Mint avatar / leading box size — matches TransactionRow's MethodIconSize for
+// vertically-aligned timeline rendering.
+private val MINT_AVATAR_SIZE = 40.dp
+
 @Composable
 internal fun ListEntryRow(
     leadingIcon: @Composable () -> Unit,
@@ -539,9 +555,12 @@ internal fun ListEntryRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(
+                horizontal = CashuTheme.spacing.comfortable,
+                vertical = CashuTheme.spacing.default,
+            ),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
     ) {
         leadingIcon()
         Column(modifier = Modifier.weight(1f)) {
@@ -562,7 +581,7 @@ internal fun ListEntryRow(
             imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(20.dp),
+            modifier = Modifier.size(CashuTheme.spacing.loose),
         )
     }
 }

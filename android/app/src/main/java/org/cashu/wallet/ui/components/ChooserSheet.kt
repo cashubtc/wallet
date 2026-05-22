@@ -34,6 +34,10 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
+import org.cashu.wallet.ui.theme.CashuTheme
+
+private val ChooserIconSize = 24.dp
+private val ChooserLabelGap = 2.dp
 
 data class ChooserOption(
     val id: String,
@@ -68,15 +72,18 @@ fun ChooserSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .padding(top = 8.dp)
+                .padding(horizontal = CashuTheme.spacing.comfortable)
+                .padding(top = CashuTheme.spacing.snug)
                 .navigationBarsPadding(),
         ) {
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp),
+                modifier = Modifier.padding(
+                    horizontal = CashuTheme.spacing.snug,
+                    vertical = CashuTheme.spacing.default,
+                ),
             )
             options.forEachIndexed { index, option ->
                 AnimatedVisibility(
@@ -87,7 +94,7 @@ fun ChooserSheet(
                     ChooserRow(option = option, onClick = { onSelect(option) })
                 }
             }
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(CashuTheme.spacing.snug))
         }
     }
 }
@@ -103,16 +110,16 @@ private fun ChooserRow(option: ChooserOption, onClick: () -> Unit) {
                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                 onClick()
             }
-            .padding(horizontal = 8.dp, vertical = 14.dp),
+            .padding(horizontal = CashuTheme.spacing.snug, vertical = CashuTheme.spacing.default),
     ) {
         Icon(
             imageVector = option.icon,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.size(24.dp),
+            modifier = Modifier.size(ChooserIconSize),
         )
-        Spacer(Modifier.width(16.dp))
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Spacer(Modifier.width(CashuTheme.spacing.comfortable))
+        Column(verticalArrangement = Arrangement.spacedBy(ChooserLabelGap)) {
             Text(
                 text = option.label,
                 style = MaterialTheme.typography.bodyLarge,

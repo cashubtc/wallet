@@ -32,7 +32,6 @@ import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -70,6 +69,7 @@ import org.cashu.wallet.ui.components.CashuRequestRow
 import org.cashu.wallet.ui.components.EmptyState
 import org.cashu.wallet.ui.components.GhostButton
 import org.cashu.wallet.ui.components.MintChip
+import org.cashu.wallet.ui.components.SectionHeader
 import org.cashu.wallet.ui.components.TransactionRow
 import org.cashu.wallet.ui.components.TransactionRowModel
 import org.cashu.wallet.ui.components.formatRelativeTimestamp
@@ -125,7 +125,7 @@ fun HomeScreen(
 
     val density = LocalDensity.current
     val pinnedTopPx = with(density) { PINNED_TOP_HEIGHT.toPx() }
-    val fadeBandPx = with(density) { 32.dp.toPx() }
+    val fadeBandPx = with(density) { FADE_BAND_HEIGHT.toPx() }
 
     Box(modifier = Modifier.fillMaxSize().padding(contentPadding)) {
         // Scrolling body sits behind the pinned top with a soft fade-mask at the
@@ -152,18 +152,12 @@ fun HomeScreen(
                 },
             contentPadding = PaddingValues(
                 top = PINNED_TOP_HEIGHT,
-                bottom = 24.dp,
+                bottom = CashuTheme.spacing.section,
             ),
         ) {
             item("section-header") {
                 if (recentItems.isNotEmpty()) {
-                    Text(
-                        text = "RECENT",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier
-                            .padding(start = 16.dp, end = 16.dp, top = 24.dp, bottom = 8.dp),
-                    )
+                    SectionHeader(text = "Recent")
                 }
             }
             if (recentItems.isEmpty()) {
@@ -237,7 +231,7 @@ fun HomeScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(top = 8.dp),
+                            .padding(top = CashuTheme.spacing.snug),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center,
                     ) {
@@ -246,7 +240,7 @@ fun HomeScreen(
                             imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(16.dp),
+                            modifier = Modifier.size(VIEW_ALL_CHEVRON_SIZE),
                         )
                     }
                 }
@@ -307,7 +301,12 @@ fun HomeScreen(
     }
 }
 
+// PINNED_TOP_HEIGHT must match the LazyColumn's top contentPadding so the fade
+// mask aligns with the bottom edge of the pinned region.
 private val PINNED_TOP_HEIGHT = 280.dp
+private val FADE_BAND_HEIGHT = 32.dp
+private val VIEW_ALL_CHEVRON_SIZE = 16.dp
+private val ACTION_BUTTON_MIN_HEIGHT = 56.dp
 
 @Composable
 private fun PinnedTop(
@@ -323,17 +322,18 @@ private fun PinnedTop(
             // (rows fade as they scroll up past the pinned region).
             .background(MaterialTheme.colorScheme.background)
             .statusBarsPadding()
-            .padding(horizontal = 16.dp)
-            .padding(top = 8.dp, bottom = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+            .padding(horizontal = CashuTheme.spacing.comfortable)
+            .padding(top = CashuTheme.spacing.snug, bottom = CashuTheme.spacing.comfortable),
+        verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         // Top-right scan affordance (iOS parity — scan lives in the top bar, not in the action row).
+        // Default M3 FilledTonalIconButton size is 40dp visual + 48dp touch target via
+        // minimumInteractiveComponentSize. No explicit size needed.
         Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
             FilledTonalIconButton(
                 onClick = onScan,
                 shape = CircleShape,
-                modifier = Modifier.size(44.dp),
             ) {
                 Icon(
                     imageVector = Icons.Outlined.QrCodeScanner,
@@ -345,9 +345,11 @@ private fun PinnedTop(
         Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
             mintChip()
         }
-        Spacer(Modifier.height(4.dp))
+        // Spacing.spacedBy(12) above + micro spacer + spacing.spacedBy(12) below =
+        // ~28dp between mint→balance and balance→triptych (iOS-matched).
+        Spacer(Modifier.height(CashuTheme.spacing.micro))
         balance()
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(CashuTheme.spacing.micro))
         triptych()
     }
 }
@@ -360,15 +362,13 @@ private fun ActionDuet(
     sendEnabled: Boolean,
 ) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         FilledTonalButton(
             onClick = onReceive,
-            modifier = Modifier.weight(1f).heightIn(min = 52.dp),
+            modifier = Modifier.weight(1f).heightIn(min = ACTION_BUTTON_MIN_HEIGHT),
             shape = MaterialTheme.shapes.extraLarge,
             enabled = receiveEnabled,
         ) {
@@ -376,7 +376,7 @@ private fun ActionDuet(
         }
         FilledTonalButton(
             onClick = onSend,
-            modifier = Modifier.weight(1f).heightIn(min = 52.dp),
+            modifier = Modifier.weight(1f).heightIn(min = ACTION_BUTTON_MIN_HEIGHT),
             shape = MaterialTheme.shapes.extraLarge,
             enabled = sendEnabled,
         ) {

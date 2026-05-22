@@ -23,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import org.cashu.wallet.Models.MintInfo
+import org.cashu.wallet.ui.theme.CashuTheme
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -41,13 +42,16 @@ fun MintPickerSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp)
+                .padding(horizontal = CashuTheme.spacing.comfortable)
                 .navigationBarsPadding(),
         ) {
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp),
+                modifier = Modifier.padding(
+                    horizontal = CashuTheme.spacing.snug,
+                    vertical = CashuTheme.spacing.default,
+                ),
             )
             mints.forEach { mint ->
                 val isActive = mint.url == activeMintUrl
@@ -55,9 +59,12 @@ fun MintPickerSheet(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable { onSelect(mint) }
-                        .padding(horizontal = 8.dp, vertical = 14.dp),
+                        .padding(
+                            horizontal = CashuTheme.spacing.snug,
+                            vertical = CashuTheme.spacing.default,
+                        ),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(mint.name, style = MaterialTheme.typography.bodyLarge)
@@ -73,12 +80,12 @@ fun MintPickerSheet(
                             imageVector = Icons.Filled.Check,
                             contentDescription = "Active",
                             tint = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.size(18.dp),
+                            modifier = Modifier.size(CashuTheme.spacing.loose),
                         )
                     }
                 }
             }
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(CashuTheme.spacing.snug))
         }
     }
 }

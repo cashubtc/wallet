@@ -20,6 +20,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.unit.dp
 import org.cashu.wallet.Core.AmountDisplayPrimary
 import org.cashu.wallet.Core.AmountDisplayText
+import org.cashu.wallet.ui.theme.CashuTheme
 
 /**
  * Large hero balance with optional secondary line. Tap to toggle the primary unit.
@@ -51,7 +52,7 @@ fun BalanceDisplay(
             .then(clickModifier)
             .padding(padding),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.micro),
     ) {
         AmountText(
             text = amount.primary,

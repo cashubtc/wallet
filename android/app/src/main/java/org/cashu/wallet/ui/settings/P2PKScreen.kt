@@ -46,6 +46,7 @@ import org.cashu.wallet.ui.components.EmptyState
 import org.cashu.wallet.ui.components.PrimaryButton
 import org.cashu.wallet.ui.components.SectionHeader
 import org.cashu.wallet.ui.components.ToggleRow
+import org.cashu.wallet.ui.theme.CashuTheme
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -105,10 +106,10 @@ fun P2PKScreen(
                 onCheckedChange = settingsManager::setShowP2PKButtonInDrawer,
             )
 
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(CashuTheme.spacing.comfortable))
             Column(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = CashuTheme.spacing.comfortable),
+                verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
             ) {
                 PrimaryButton(
                     text = "Generate new key",
@@ -133,7 +134,7 @@ fun P2PKScreen(
             },
             title = { Text("Import P2PK key") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug)) {
                     OutlinedTextField(
                         value = input,
                         onValueChange = { input = it; importError = null },
@@ -202,15 +203,18 @@ private fun P2PKRow(
     onDelete: () -> Unit,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+        modifier = Modifier.fillMaxWidth().padding(
+            horizontal = CashuTheme.spacing.comfortable,
+            vertical = CashuTheme.spacing.default,
+        ),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
     ) {
         Icon(
             imageVector = Icons.Outlined.VpnKey,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(20.dp),
+            modifier = Modifier.size(CashuTheme.spacing.loose),
         )
         Column(modifier = Modifier.weight(1f)) {
             Text(
@@ -230,7 +234,7 @@ private fun P2PKRow(
             Icon(
                 imageVector = Icons.Outlined.ContentCopy,
                 contentDescription = "Copy",
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(CashuTheme.spacing.loose),
             )
         }
         IconButton(onClick = onDelete) {
@@ -238,7 +242,7 @@ private fun P2PKRow(
                 imageVector = Icons.Outlined.Delete,
                 contentDescription = "Delete",
                 tint = MaterialTheme.colorScheme.error,
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(CashuTheme.spacing.loose),
             )
         }
     }

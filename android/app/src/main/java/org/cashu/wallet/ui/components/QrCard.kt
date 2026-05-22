@@ -33,6 +33,12 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import org.cashu.wallet.Views.Components.QRCodeView
+import org.cashu.wallet.ui.theme.CashuTheme
+
+// QR canvas: 20dp corner is the M3 'large' shape token; 16dp padding cushions
+// the QR off the white surface. Off-limits to change the QR rendering itself
+// per memory — these are *around* QRCodeView.
+private val QrCardCornerRadius = 20.dp
 
 /**
  * White-cushioned wrapper around the legacy QRCodeView (which is off-limits per memory).
@@ -57,7 +63,7 @@ fun QrCard(
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
         Box(
             modifier = Modifier
-                .clip(RoundedCornerShape(20.dp))
+                .clip(RoundedCornerShape(QrCardCornerRadius))
                 .background(Color.White)
                 .combinedClickable(
                     onClick = {},
@@ -68,7 +74,7 @@ fun QrCard(
                     onClickLabel = null,
                     onLongClickLabel = "Show options",
                 )
-                .padding(16.dp)
+                .padding(CashuTheme.spacing.comfortable)
                 .size(sizeDp.dp),
         ) {
             QRCodeView(

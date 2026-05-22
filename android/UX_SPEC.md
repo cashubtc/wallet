@@ -86,14 +86,14 @@ Top-to-bottom inside the pinned region:
 1. **Mint chip** — `AssistChip` with active mint name. Tap opens `DropdownMenu` listing all mints (checkmark on active) + "Change mint…" item that opens a `ModalBottomSheet` mint picker.
 2. **Balance** — `displayLarge` or larger, bold, monospaced digits. Tappable to toggle ₿ vs sat unit (persists in `SettingsManager.useBitcoinSymbol`). Animates digit-by-digit on change.
 3. **Fiat sub-line** — only if `settings.showFiatBalance && priceService.btcPriceUsd > 0`. `titleMedium`, `onSurfaceVariant`, monospaced digits. Silently updates on price ticks (no animation).
-4. **Action triptych** — three `FilledTonalButton`s in equal columns: **Receive** (text only, left), **Scan** (icon-only `IconButton` inside a tonal circle, center), **Send** (text only, right). Tap Receive/Send → bottom-sheet chooser. Tap Scan → full-screen `ScannerScreen`.
+4. **Action row.** Carve-out from the original "triptych" spec: the current build matches iOS by placing **Receive** and **Send** as two equal-width `FilledTonalButton`s, with **Scan** living as a separate `FilledTonalIconButton` (M3 default size) in the top-right corner of the pinned region. Button height is 56dp (M3 standard CTA height). Tap Receive/Send → bottom-sheet chooser; tap Scan → full-screen `ScannerScreen`.
 
-`TopAppBar` is empty / hidden on Home (the pinned region serves the role). If a `TopAppBar` is rendered, its only action is `IconButton(Icons.Outlined.QrCodeScanner)` for Scan, mirroring iOS — but **don't double up** — pick one Scan affordance and remove the other.
+`TopAppBar` is empty / hidden on Home (the pinned region serves the role).
 
 ### 3.2 Scrolling body
 
 - **Notification toast** (top inset) — if `walletManager.lastNotification` non-null. Floating M3 surface with leading icon, message, and dismiss `IconButton`. Auto-dismiss after 5s. Toast carries the only allowed shadow in the app.
-- **"Recent activity" section header** — `labelMedium`, uppercase, letter-spaced, `onSurfaceVariant`, 28dp top, 8dp bottom.
+- **"Recent activity" section header** — `labelMedium`, uppercase, letter-spaced, `onSurfaceVariant`. **Padding: 16dp top, 8dp bottom** (carve-out from the original 28dp top spec — matches iOS rhythm where `HistoryView` and `SettingsView` section headers both use 16pt top). Rendered via the shared `SectionHeader` component for consistency across Home, History, Settings, and Mints.
 - **Up to 5 transaction rows** — same anatomy as History rows (see §4.2). `CanvasDivider` between, none after last.
 - **"View all activity" `TextButton`** — bottom of section, navigates to History tab.
 
@@ -126,7 +126,7 @@ Full-screen destination (route `scanner/{target}`). Pure black background, camer
 
 ## 4. History
 
-Pushed top-level destination from the History tab. `LargeTopAppBar(title = "History")` that collapses to compact on scroll. Trailing actions: filter `IconButton` + search `IconButton` (opens M3 `SearchBar`).
+Pushed top-level destination from the History tab. `CenterAlignedTopAppBar(title = "History")` (carve-out from the original `LargeTopAppBar` spec — the three top-level destinations Home, History, Mints, Settings all use the compact `CenterAlignedTopAppBar` for a uniformly dense feel that matches iOS inline titles). Hides on scroll via `exitUntilCollapsedScrollBehavior`. Trailing actions: filter `IconButton` + search `IconButton` (opens M3 `SearchBar`).
 
 ### 4.1 Filter & search
 
@@ -180,7 +180,7 @@ Pushed top-level destination from the History tab. `LargeTopAppBar(title = "Hist
 
 ## 5. Mints
 
-Pushed top-level destination from the Mints tab. `LargeTopAppBar(title = "Mints")`.
+Pushed top-level destination from the Mints tab. `CenterAlignedTopAppBar(title = "Mints")` (compact — see §4 for the cross-tab carve-out from the original Large variant).
 
 ### 5.1 List
 
@@ -229,7 +229,7 @@ Pushed route (not a sheet — it's a search list). `LargeTopAppBar(title = "Disc
 
 ## 6. Settings
 
-Pushed top-level destination from the Settings tab. `LargeTopAppBar(title = "Settings")`.
+Pushed top-level destination from the Settings tab. `CenterAlignedTopAppBar(title = "Settings")` (compact — see §4 for the cross-tab carve-out from the original Large variant).
 
 `LazyColumn` of section groups. Each group:
 - Group header — `labelMedium`, uppercase, letter-spaced, `onSurfaceVariant`, 24dp top, 8dp bottom.
@@ -494,7 +494,7 @@ These pre-existing NotificationCenter events on iOS map to Kotlin `SharedFlow` o
 |--------------|--------------------------|-------|
 | Onboarding | `OnboardingScreen` (multi-step) | No bottom nav. |
 | Tab: Wallet (`MainWalletView`) | `home/HomeScreen` | 4-tab `WalletScaffold` host. |
-| Tab: History (`HistoryView`) | `history/HistoryScreen` | `LargeTopAppBar`. |
+| Tab: History (`HistoryView`) | `history/HistoryScreen` | `CenterAlignedTopAppBar` (see §4 carve-out). |
 | Tab: Mints (`MintsListView`) | `mints/MintsScreen` | Inline add form + Discover. |
 | Tab: Settings (`SettingsView`) | `settings/SettingsScreen` | Group list. |
 | Mint Detail | `mints/MintDetailScreen` (pushed) | |

@@ -23,6 +23,11 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.unit.dp
 
+// NumberPad spacing intentionally matches the iOS 10pt grid — between snug (8)
+// and default (12) on the token scale. Keypad keys are 56dp (M3 button height).
+private val KeyGap = 10.dp
+private val KeyHeight = 56.dp
+
 /**
  * Numeric keypad for amount entry. Output is a digit-only String.
  * "0" alone is replaced rather than appended; long-press delete clears all.
@@ -44,16 +49,16 @@ fun NumberPad(
     )
     Column(
         modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(KeyGap),
     ) {
         rows.forEach { row ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(KeyGap),
             ) {
                 row.forEach { key ->
                     when (key) {
-                        "" -> Box(modifier = Modifier.weight(1f).height(56.dp))
+                        "" -> Box(modifier = Modifier.weight(1f).height(KeyHeight))
                         "delete" -> NumberPadKey(
                             modifier = Modifier.weight(1f),
                             contentDescription = "Delete",
@@ -100,7 +105,7 @@ private fun NumberPadKey(
     val haptics = LocalHapticFeedback.current
     Box(
         modifier = modifier
-            .height(56.dp)
+            .height(KeyHeight)
             .clip(MaterialTheme.shapes.medium)
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .combinedClickable(

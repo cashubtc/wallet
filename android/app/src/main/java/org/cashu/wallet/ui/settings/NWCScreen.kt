@@ -47,6 +47,7 @@ import org.cashu.wallet.ui.components.EmptyState
 import org.cashu.wallet.ui.components.PrimaryButton
 import org.cashu.wallet.ui.components.SectionHeader
 import org.cashu.wallet.ui.components.ToggleRow
+import org.cashu.wallet.ui.theme.CashuTheme
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -108,8 +109,8 @@ fun NWCScreen(
                         }
                     }
 
-                    Spacer(Modifier.height(16.dp))
-                    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                    Spacer(Modifier.height(CashuTheme.spacing.comfortable))
+                    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = CashuTheme.spacing.comfortable)) {
                         PrimaryButton(
                             text = "New connection…",
                             onClick = { showCreate = true },
@@ -128,7 +129,7 @@ fun NWCScreen(
             onDismissRequest = { showCreate = false; createError = null },
             title = { Text("New NWC connection") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug)) {
                     OutlinedTextField(
                         value = name,
                         onValueChange = { name = it; createError = null },
@@ -225,15 +226,18 @@ private fun ConnectionRow(
     onRemove: () -> Unit,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+        modifier = Modifier.fillMaxWidth().padding(
+            horizontal = CashuTheme.spacing.comfortable,
+            vertical = CashuTheme.spacing.default,
+        ),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
     ) {
         Icon(
             imageVector = Icons.Outlined.Link,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(20.dp),
+            modifier = Modifier.size(CashuTheme.spacing.loose),
         )
         Column(modifier = Modifier.weight(1f)) {
             Text(
@@ -260,7 +264,7 @@ private fun ConnectionRow(
             Icon(
                 imageVector = Icons.Outlined.ContentCopy,
                 contentDescription = "Copy connection string",
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(CashuTheme.spacing.loose),
             )
         }
         IconButton(onClick = onRemove) {
@@ -268,7 +272,7 @@ private fun ConnectionRow(
                 imageVector = Icons.Outlined.Delete,
                 contentDescription = "Revoke",
                 tint = MaterialTheme.colorScheme.error,
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(CashuTheme.spacing.loose),
             )
         }
     }

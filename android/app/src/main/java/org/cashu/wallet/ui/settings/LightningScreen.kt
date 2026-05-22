@@ -85,7 +85,7 @@ fun LightningScreen(
     ) { padding ->
         Column(
             modifier = Modifier.fillMaxSize().padding(padding),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
         ) {
             SectionHeader("Lightning address")
             if (npcState.lightningAddress.isNotBlank()) {
@@ -96,7 +96,10 @@ fun LightningScreen(
                 )
                 CanvasDivider(leadingInset = 16)
                 Column(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                    modifier = Modifier.fillMaxWidth().padding(
+                        horizontal = CashuTheme.spacing.comfortable,
+                        vertical = CashuTheme.spacing.snug,
+                    ),
                 ) {
                     GhostButton(
                         text = "Copy address",
@@ -111,7 +114,10 @@ fun LightningScreen(
                     text = "No Lightning address configured. Enable below to receive at an @ address.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                    modifier = Modifier.padding(
+                        horizontal = CashuTheme.spacing.comfortable,
+                        vertical = CashuTheme.spacing.snug,
+                    ),
                 )
             }
 
@@ -143,17 +149,17 @@ fun LightningScreen(
             )
 
             if (npcState.errorMessage != null) {
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(CashuTheme.spacing.snug))
                 Text(
                     text = npcState.errorMessage!!,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(horizontal = 16.dp),
+                    modifier = Modifier.padding(horizontal = CashuTheme.spacing.comfortable),
                 )
             }
 
-            Spacer(Modifier.height(16.dp))
-            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+            Spacer(Modifier.height(CashuTheme.spacing.comfortable))
+            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = CashuTheme.spacing.comfortable)) {
                 PrimaryButton(
                     text = if (npcState.isCheckingPayments) "Checking…" else "Check for paid quotes now",
                     onClick = { npcService.checkAndClaimPayments() },
@@ -184,9 +190,12 @@ fun LightningScreen(
             sheetState = sheetState,
         ) {
             Column(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                modifier = Modifier.fillMaxWidth().padding(
+                    horizontal = CashuTheme.spacing.comfortable,
+                    vertical = CashuTheme.spacing.snug,
+                ),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
             ) {
                 Text(
                     text = "Lightning Address",
@@ -203,7 +212,7 @@ fun LightningScreen(
                     style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(CashuTheme.spacing.snug))
             }
         }
     }
@@ -219,13 +228,16 @@ private fun LightningAddressRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onShowQr)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .padding(
+                horizontal = CashuTheme.spacing.comfortable,
+                vertical = CashuTheme.spacing.default,
+            ),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
     ) {
         Box(
             modifier = Modifier
-                .size(8.dp)
+                .size(CashuTheme.spacing.snug)
                 .clip(CircleShape)
                 .background(statusColor),
         )
@@ -241,7 +253,7 @@ private fun LightningAddressRow(
             imageVector = Icons.Outlined.QrCode2,
             contentDescription = "Show QR",
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(20.dp),
+            modifier = Modifier.size(CashuTheme.spacing.loose),
         )
     }
 }

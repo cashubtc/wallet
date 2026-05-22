@@ -125,9 +125,9 @@ fun TransactionDetailScreen(
                 .padding(padding)
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.comfortable),
         ) {
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(CashuTheme.spacing.snug))
             if (qrContent != null) {
                 QrCard(
                     content = qrContent,
@@ -165,16 +165,16 @@ fun TransactionDetailScreen(
 
             val explorerUrl = remember(transaction) { transaction.explorerUrl() }
             if (explorerUrl != null) {
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(CashuTheme.spacing.snug))
                 ExplorerLinkRow(url = explorerUrl, onOpen = { context.openInBrowser(it) })
             }
 
             if (qrContent != null) {
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(CashuTheme.spacing.snug))
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp),
+                        .padding(horizontal = CashuTheme.spacing.comfortable),
                 ) {
                     PrimaryButton(
                         text = if (copied) "Copied" else "Copy ${TransactionDisplay.qrLabel(transaction).lowercase()}",
@@ -185,10 +185,13 @@ fun TransactionDetailScreen(
                     )
                 }
             }
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(CashuTheme.spacing.section))
         }
     }
 }
+
+// Inline link glyph next to the "View in block explorer" label.
+private val EXPLORER_GLYPH_SIZE = 18.dp
 
 private val MonospacedLabels = setOf("Request", "Address", "Payment Proof", "Transaction ID", "Quote ID", "Mint")
 
@@ -216,15 +219,18 @@ private fun ExplorerLinkRow(url: String, onOpen: (String) -> Unit) {
     androidx.compose.foundation.layout.Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(
+                horizontal = CashuTheme.spacing.comfortable,
+                vertical = CashuTheme.spacing.snug,
+            ),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
     ) {
         Icon(
             imageVector = Icons.AutoMirrored.Outlined.OpenInNew,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(18.dp),
+            modifier = Modifier.size(EXPLORER_GLYPH_SIZE),
         )
         Text(
             text = "View in block explorer",

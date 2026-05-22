@@ -11,12 +11,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.dp
 import org.cashu.wallet.Models.MintInfo
 import org.cashu.wallet.Models.PaymentMethodKind
 import org.cashu.wallet.ui.theme.CashuTheme
 
-/** Small capsule pills describing what a mint supports — Lightning, Bitcoin (onchain), Ecash. */
+/** Small capsule pills describing what a mint supports — Lightning, Bitcoin (onchain), Ecash.
+ *  Vertical padding is intentionally micro (4dp): these are inline-with-text mini-pills,
+ *  not interactive M3 chips. The 4dp keeps the row body breathable on cramped mint rows. */
 @Composable
 fun MintMethodChips(
     mint: MintInfo,
@@ -28,7 +29,7 @@ fun MintMethodChips(
     if (methods.isEmpty()) return
     Row(
         modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.tight),
     ) {
         methods.forEach { method ->
             val (label, tint) = methodAppearance(method)
@@ -45,7 +46,7 @@ private fun MethodPill(label: String, tint: Color) {
         style = MaterialTheme.typography.labelSmall,
         modifier = Modifier
             .background(tint.copy(alpha = 0.12f), RoundedCornerShape(percent = 50))
-            .padding(horizontal = 8.dp, vertical = 3.dp),
+            .padding(horizontal = CashuTheme.spacing.snug, vertical = CashuTheme.spacing.micro),
     )
 }
 

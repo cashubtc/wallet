@@ -89,10 +89,10 @@ fun BackupScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+                .padding(horizontal = CashuThemeTokens.spacing.comfortable),
+            verticalArrangement = Arrangement.spacedBy(CashuThemeTokens.spacing.comfortable),
         ) {
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(CashuThemeTokens.spacing.snug))
             WarningBanner(
                 "Anyone with these words can spend your wallet. Store them offline."
             )
@@ -100,7 +100,7 @@ fun BackupScreen(
                 SectionHeader("Recovery phrase")
                 SeedGrid(words = words)
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(CashuThemeTokens.spacing.snug),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     PrimaryButton(
@@ -127,7 +127,7 @@ fun BackupScreen(
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(CashuThemeTokens.spacing.section))
         }
     }
 }
@@ -139,15 +139,15 @@ private fun WarningBanner(text: String) {
             .fillMaxWidth()
             .clip(MaterialTheme.shapes.medium)
             .background(CashuThemeTokens.colors.pendingContainer)
-            .padding(12.dp),
+            .padding(CashuThemeTokens.spacing.comfortable),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(CashuThemeTokens.spacing.snug),
     ) {
         Icon(
             imageVector = Icons.Outlined.Warning,
             contentDescription = null,
             tint = CashuThemeTokens.colors.pending,
-            modifier = Modifier.size(20.dp),
+            modifier = Modifier.size(CashuThemeTokens.spacing.loose),
         )
         Text(
             text = text,
@@ -165,20 +165,20 @@ private fun SeedGrid(words: List<String>) {
             .fillMaxWidth()
             .clip(MaterialTheme.shapes.medium)
             .background(MaterialTheme.colorScheme.surfaceContainer)
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+            .padding(CashuThemeTokens.spacing.comfortable),
+        verticalArrangement = Arrangement.spacedBy(CashuThemeTokens.spacing.snug),
     ) {
         words.chunked(2).forEachIndexed { rowIndex, pair ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(CashuThemeTokens.spacing.default),
             ) {
                 pair.forEachIndexed { columnIndex, word ->
                     val index = rowIndex * 2 + columnIndex + 1
                     Row(
                         modifier = Modifier.weight(1f),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(CashuThemeTokens.spacing.snug),
                     ) {
                         Text(
                             text = "%2d".format(index),
@@ -212,8 +212,8 @@ private fun VerifyQuiz(words: List<String>) {
             .fillMaxWidth()
             .clip(MaterialTheme.shapes.medium)
             .background(MaterialTheme.colorScheme.surfaceContainer)
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+            .padding(CashuThemeTokens.spacing.comfortable),
+        verticalArrangement = Arrangement.spacedBy(CashuThemeTokens.spacing.default),
     ) {
         Text(
             text = if (verified) "Looks right." else "Type the words at these positions.",

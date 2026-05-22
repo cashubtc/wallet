@@ -258,12 +258,12 @@ private fun InputFace(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp)
+            .padding(horizontal = CashuTheme.spacing.comfortable)
             .imePadding(),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(CashuTheme.spacing.snug))
         Text(
             text = activeMintName,
             style = MaterialTheme.typography.bodySmall,
@@ -307,7 +307,7 @@ private fun InputFace(
 
         Spacer(modifier = Modifier.weight(1f, fill = true))
         NumberPad(amount = amount, onAmountChange = onAmountChange)
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(CashuTheme.spacing.micro))
         PrimaryButton(
             text = if (creating) "Creating…" else "Create request",
             onClick = onCreate,
@@ -339,9 +339,12 @@ private fun DisplayFace(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 16.dp),
+            .padding(
+                horizontal = CashuTheme.spacing.comfortable,
+                vertical = CashuTheme.spacing.comfortable,
+            ),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.comfortable),
     ) {
         QrCard(content = quote.request, shareSubject = "Payment request", staticOnly = true)
         if (amountLabel != null) {
@@ -351,7 +354,7 @@ private fun DisplayFace(
             )
         }
         QuoteStatusRow(isPaid = isPaid, showCelebration = showCelebration)
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(CashuTheme.spacing.snug))
         PrimaryButton(
             text = if (copied) "Copied" else "Copy request",
             onClick = {
@@ -372,7 +375,7 @@ private fun DisplayFace(
 private fun QuoteStatusRow(isPaid: Boolean, showCelebration: Boolean) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Spacer(modifier = Modifier.weight(1f))
@@ -386,14 +389,14 @@ private fun QuoteStatusRow(isPaid: Boolean, showCelebration: Boolean) {
                     imageVector = Icons.Outlined.CheckCircle,
                     contentDescription = null,
                     tint = CashuTheme.colors.received,
-                    modifier = Modifier.size(20.dp),
+                    modifier = Modifier.size(CashuTheme.spacing.loose),
                 )
             }
             Icon(
                 imageVector = Icons.Outlined.CheckCircle,
                 contentDescription = null,
                 tint = CashuTheme.colors.received,
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(CashuTheme.spacing.loose),
             )
             Text(
                 text = if (showCelebration) "Payment received!" else "Paid",
@@ -416,7 +419,7 @@ private fun QuoteStatusRow(isPaid: Boolean, showCelebration: Boolean) {
                     imageVector = Icons.Outlined.Schedule,
                     contentDescription = null,
                     tint = CashuTheme.colors.pending,
-                    modifier = Modifier.size(20.dp),
+                    modifier = Modifier.size(CashuTheme.spacing.loose),
                 )
             }
             Text(

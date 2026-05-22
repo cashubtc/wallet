@@ -18,6 +18,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import org.cashu.wallet.Models.MintInfo
+import org.cashu.wallet.ui.theme.CashuTheme
 
 @Composable
 fun MintChip(
@@ -47,7 +48,7 @@ fun MintChip(
                 Icon(
                     imageVector = Icons.Outlined.AccountBalance,
                     contentDescription = null,
-                    modifier = Modifier.size(20.dp),
+                    modifier = Modifier.size(CashuTheme.spacing.loose),
                 )
             }
         },
@@ -69,7 +70,7 @@ fun MintChip(
                         Icon(
                             imageVector = Icons.Filled.Check,
                             contentDescription = "Active",
-                            modifier = Modifier.size(18.dp),
+                            modifier = Modifier.size(CashuTheme.spacing.loose),
                         )
                     }
                 } else null,

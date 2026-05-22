@@ -62,6 +62,11 @@ import org.cashu.wallet.ui.components.TwoFaceScreen
 import org.cashu.wallet.ui.theme.CashuTheme
 import org.cashu.wallet.ui.theme.withMonoDigits
 
+// Multi-line paste area for invoices / addresses; large enough to fit a BOLT12 string at body size.
+private val DESTINATION_FIELD_HEIGHT = 160.dp
+// Hero status icon on Done/Failed screens — much larger than the inline 20dp icons.
+private val STATUS_HERO_ICON = 56.dp
+
 private sealed interface PayFace {
     data object Input : PayFace
     data class Confirm(val raw: String, val decoded: PaymentRequestDecodeResult, val amount: Long?) : PayFace
@@ -246,9 +251,9 @@ private fun InputFace(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp)
+            .padding(horizontal = CashuTheme.spacing.comfortable)
             .imePadding(),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
     ) {
         Text(
             text = "Paste a Lightning invoice, BOLT12 offer, on-chain address, or Lightning address.",
@@ -260,7 +265,7 @@ private fun InputFace(
             onValueChange = onInputChange,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(160.dp),
+                .height(DESTINATION_FIELD_HEIGHT),
             label = { Text("Destination") },
             shape = MaterialTheme.shapes.medium,
             colors = TextFieldDefaults.colors(
@@ -298,8 +303,11 @@ private fun ConfirmFace(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+            .padding(
+                horizontal = CashuTheme.spacing.comfortable,
+                vertical = CashuTheme.spacing.default,
+            ),
+        verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.comfortable),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
@@ -368,12 +376,12 @@ private fun PayingFace() {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 24.dp),
+            .padding(horizontal = CashuTheme.spacing.section),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         androidx.compose.material3.CircularProgressIndicator()
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(CashuTheme.spacing.comfortable))
         Text(
             text = "Sending payment…",
             style = MaterialTheme.typography.titleMedium,
@@ -390,15 +398,18 @@ private fun DoneFace(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 24.dp, vertical = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+            .padding(
+                horizontal = CashuTheme.spacing.section,
+                vertical = CashuTheme.spacing.section,
+            ),
+        verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.comfortable),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Icon(
             imageVector = Icons.Outlined.CheckCircle,
             contentDescription = null,
             tint = CashuTheme.colors.received,
-            modifier = Modifier.size(56.dp),
+            modifier = Modifier.size(STATUS_HERO_ICON),
         )
         Text(
             text = "Payment sent",
@@ -440,15 +451,15 @@ private fun FailedFace(reason: String, onRetry: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+            .padding(CashuTheme.spacing.section),
+        verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.comfortable),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Icon(
             imageVector = Icons.Outlined.Cancel,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.error,
-            modifier = Modifier.size(56.dp),
+            modifier = Modifier.size(STATUS_HERO_ICON),
         )
         Text(
             "Payment failed",

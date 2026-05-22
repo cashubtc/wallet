@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -21,6 +22,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import org.cashu.wallet.ui.theme.CashuTheme
+
+// M3 ListItem geometry: single-line rows are 56dp tall, two-line rows are 72dp.
+// We roll the row by hand (so destructive tint + custom chevron + click ripple
+// stay first-class) but match the M3 minimums here.
+private val RowMinHeight = 56.dp
 
 /** Settings list row with optional leading icon, optional subtitle, trailing chevron.
  *  Pass `tint = colorScheme.error` for destructive rows (matches iOS isDestructive). */
@@ -41,8 +48,9 @@ fun NavRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .heightIn(min = RowMinHeight)
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .padding(horizontal = CashuTheme.spacing.comfortable, vertical = CashuTheme.spacing.default),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (leadingIcon != null) {
@@ -50,9 +58,9 @@ fun NavRow(
                 imageVector = leadingIcon,
                 contentDescription = null,
                 tint = iconColor,
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(CashuTheme.spacing.loose),
             )
-            Spacer(Modifier.width(16.dp))
+            Spacer(Modifier.width(CashuTheme.spacing.comfortable))
         }
         Column(modifier = Modifier.weight(1f)) {
             Text(
@@ -73,7 +81,7 @@ fun NavRow(
                 imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
                 contentDescription = null,
                 tint = chevronColor,
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(CashuTheme.spacing.loose),
             )
         }
     }
@@ -92,10 +100,11 @@ fun ToggleRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .heightIn(min = RowMinHeight)
             .clickable(enabled = enabled) { onCheckedChange(!checked) }
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = CashuTheme.spacing.comfortable, vertical = CashuTheme.spacing.default),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(

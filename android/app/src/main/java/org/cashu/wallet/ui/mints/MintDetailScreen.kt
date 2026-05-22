@@ -98,7 +98,7 @@ fun MintDetailScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
         ) {
             HeaderBlock(mint = mint, isActive = isActive)
 
@@ -108,7 +108,7 @@ fun MintDetailScreen(
                     text = mint.description,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 16.dp),
+                    modifier = Modifier.padding(horizontal = CashuTheme.spacing.comfortable),
                 )
             }
 
@@ -122,17 +122,20 @@ fun MintDetailScreen(
                 CanvasDivider(leadingInset = 16)
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable { clipboard.setText(AnnotatedString(mint.url)) }
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                        .padding(
+                            horizontal = CashuTheme.spacing.comfortable,
+                            vertical = CashuTheme.spacing.default,
+                        ),
                 ) {
                     Icon(
                         imageVector = Icons.Outlined.ContentCopy,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp),
+                        modifier = Modifier.size(COPY_ROW_ICON_SIZE),
                     )
                     Text(
                         text = "Copy full URL",
@@ -175,12 +178,12 @@ fun MintDetailScreen(
                 value = mint.units.joinToString(", ").ifBlank { "sat" },
             )
 
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(CashuTheme.spacing.comfortable))
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                    .padding(horizontal = CashuTheme.spacing.comfortable),
+                verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
             ) {
                 PrimaryButton(
                     text = if (isActive) "Active mint" else "Set as active mint",
@@ -195,7 +198,7 @@ fun MintDetailScreen(
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(CashuTheme.spacing.section))
         }
     }
 
@@ -230,12 +233,15 @@ private fun HeaderBlock(mint: MintInfo, isActive: Boolean) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+            .padding(
+                horizontal = CashuTheme.spacing.comfortable,
+                vertical = CashuTheme.spacing.comfortable,
+            ),
+        verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.comfortable),
         ) {
             Box {
                 MintAvatar(mint = mint, size = 72)
@@ -243,7 +249,7 @@ private fun HeaderBlock(mint: MintInfo, isActive: Boolean) {
                     Box(
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
-                            .size(16.dp)
+                            .size(CashuTheme.spacing.comfortable)
                             .clip(CircleShape)
                             .background(MaterialTheme.colorScheme.surface),
                         contentAlignment = Alignment.Center,
@@ -252,7 +258,7 @@ private fun HeaderBlock(mint: MintInfo, isActive: Boolean) {
                             imageVector = Icons.Outlined.Check,
                             contentDescription = "Active",
                             tint = CashuTheme.colors.received,
-                            modifier = Modifier.size(12.dp),
+                            modifier = Modifier.size(CashuTheme.spacing.default),
                         )
                     }
                 }
@@ -288,7 +294,7 @@ private fun EmptyMintFallback(padding: PaddingValues, onClose: () -> Unit) {
         modifier = Modifier
             .fillMaxSize()
             .padding(padding)
-            .padding(24.dp),
+            .padding(CashuTheme.spacing.section),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
@@ -296,7 +302,10 @@ private fun EmptyMintFallback(padding: PaddingValues, onClose: () -> Unit) {
             text = "Mint not found",
             style = MaterialTheme.typography.titleMedium,
         )
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(CashuTheme.spacing.comfortable))
         GhostButton(text = "Back to mints", onClick = onClose)
     }
 }
+
+// Inline copy-row glyph (smaller than the body 20dp).
+private val COPY_ROW_ICON_SIZE = 18.dp

@@ -46,6 +46,13 @@ import org.cashu.wallet.Models.WalletTransaction
 import org.cashu.wallet.ui.theme.CashuTheme
 import org.cashu.wallet.ui.theme.withMonoDigits
 
+// M3 ListItem rejected here: the pending-refresh affordance + trailing amount
+// column don't fit ListItem's single trailingContent slot cleanly. Hand-rolled
+// row preserves iOS anatomy.
+private val MethodIconSize = 40.dp
+private val RefreshButtonSize = 24.dp
+private val RefreshIconSize = 16.dp
+
 data class TransactionRowModel(
     val transaction: WalletTransaction,
     val title: String,
@@ -74,9 +81,9 @@ fun TransactionRow(
         modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = CashuTheme.spacing.comfortable, vertical = CashuTheme.spacing.default),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
     ) {
         MethodIconWithStatusBadge(
             kind = tx.kind,
@@ -99,20 +106,20 @@ fun TransactionRow(
         if (tx.status == TransactionStatus.Pending && onRefresh != null) {
             if (isChecking) {
                 CircularProgressIndicator(
-                    modifier = Modifier.size(16.dp),
+                    modifier = Modifier.size(RefreshIconSize),
                     strokeWidth = 1.5.dp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             } else {
                 IconButton(
                     onClick = onRefresh,
-                    modifier = Modifier.size(24.dp),
+                    modifier = Modifier.size(RefreshButtonSize),
                 ) {
                     Icon(
                         imageVector = Icons.Outlined.Sync,
                         contentDescription = "Refresh status",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(16.dp),
+                        modifier = Modifier.size(RefreshIconSize),
                     )
                 }
             }
@@ -152,7 +159,7 @@ private fun MethodIconWithStatusBadge(
     }
     Box(
         modifier = Modifier
-            .size(40.dp)
+            .size(MethodIconSize)
             .background(
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
                 shape = CircleShape,
@@ -163,7 +170,7 @@ private fun MethodIconWithStatusBadge(
             imageVector = methodIcon,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.size(20.dp),
+            modifier = Modifier.size(CashuTheme.spacing.loose),
         )
     }
 }

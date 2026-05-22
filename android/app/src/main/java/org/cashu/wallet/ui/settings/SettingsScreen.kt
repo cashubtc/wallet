@@ -49,6 +49,7 @@ import org.cashu.wallet.Core.WalletManager
 import org.cashu.wallet.ui.components.CanvasDivider
 import org.cashu.wallet.ui.components.NavRow
 import org.cashu.wallet.ui.components.SectionHeader
+import org.cashu.wallet.ui.theme.CashuTheme
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -89,7 +90,8 @@ fun SettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
-            contentPadding = PaddingValues(bottom = 32.dp),
+            // Generous bottom inset so the last section clears the navigation bar.
+            contentPadding = PaddingValues(bottom = CashuTheme.spacing.section + CashuTheme.spacing.snug),
         ) {
             item("backup-header") { SectionHeader("Backup") }
             item("backup") {
@@ -190,13 +192,13 @@ fun SettingsScreen(
             }
 
             item("footer") {
-                Spacer(Modifier.height(24.dp))
+                Spacer(Modifier.height(CashuTheme.spacing.section))
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp),
+                        .padding(horizontal = CashuTheme.spacing.comfortable),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                    verticalArrangement = Arrangement.spacedBy(FOOTER_LINE_GAP),
                 ) {
                     Text(
                         text = "Cashu Wallet",
@@ -261,6 +263,9 @@ fun SettingsScreen(
         )
     }
 }
+
+// Tight pair-gap between the two footer label lines — below the spacing scale.
+private val FOOTER_LINE_GAP = 2.dp
 
 private fun Context.openExternal(url: String) {
     val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {

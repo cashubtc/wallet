@@ -78,7 +78,12 @@ import org.cashu.wallet.ui.components.PrimaryButton
 import org.cashu.wallet.ui.components.QrCard
 import org.cashu.wallet.ui.components.TwoFaceScreen
 import org.cashu.wallet.ui.components.shareText
+import org.cashu.wallet.ui.theme.CashuTheme
 import org.cashu.wallet.ui.theme.withMonoDigits
+
+// Inline status icons inside dense rows — smaller than the standard 20dp body icon.
+private val STATUS_ICON_SMALL = 18.dp
+private val CHECKING_PROGRESS_SIZE = 14.dp
 
 private sealed interface SendFace {
     data object Input : SendFace
@@ -316,15 +321,15 @@ private fun InputFace(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp)
+            .padding(horizontal = CashuTheme.spacing.comfortable)
             .imePadding(),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(CashuTheme.spacing.micro))
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
         ) {
             MintSelectorChip(name = activeMintName, mintCount = mintCount, onClick = onPickMint)
             if (mintBalanceText != null) {
@@ -341,7 +346,7 @@ private fun InputFace(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(CashuTheme.spacing.snug))
         AmountText(
             text = if (amount.isEmpty()) "0" else amount,
             style = MaterialTheme.typography.displayMedium.withMonoDigits(),
@@ -388,7 +393,7 @@ private fun InputFace(
 
         NumberPad(amount = amount, onAmountChange = onAmountChange)
 
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(CashuTheme.spacing.micro))
         PrimaryButton(
             text = if (sending) "Sending…" else "Send",
             onClick = onSend,
@@ -411,7 +416,7 @@ private fun P2pkLockSection(
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.tight),
     ) {
         OutlinedTextField(
             value = input,
@@ -511,9 +516,12 @@ private fun GeneratedFace(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 16.dp),
+            .padding(
+                horizontal = CashuTheme.spacing.comfortable,
+                vertical = CashuTheme.spacing.comfortable,
+            ),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(20.dp),
+        verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.loose),
     ) {
         QrCard(
             content = result.token,
@@ -532,7 +540,7 @@ private fun GeneratedFace(
             )
         }
         ClaimStatusRow(claimState = claimState)
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(CashuTheme.spacing.micro))
         if (claimState != ClaimState.Claimed) {
             PrimaryButton(
                 text = if (copied) "Copied" else "Copy token",
@@ -573,14 +581,14 @@ private fun ClaimStatusRow(claimState: ClaimState) {
                 )
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.tight),
                     modifier = Modifier.alpha(alpha),
                 ) {
                     Icon(
                         imageVector = Icons.Outlined.Schedule,
                         contentDescription = null,
                         tint = org.cashu.wallet.ui.theme.CashuTheme.colors.pending,
-                        modifier = Modifier.size(18.dp),
+                        modifier = Modifier.size(STATUS_ICON_SMALL),
                     )
                     Text(
                         text = "Waiting for recipient",
@@ -592,10 +600,10 @@ private fun ClaimStatusRow(claimState: ClaimState) {
             ClaimState.Checking -> {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.tight),
                 ) {
                     CircularProgressIndicator(
-                        modifier = Modifier.size(14.dp),
+                        modifier = Modifier.size(CHECKING_PROGRESS_SIZE),
                         strokeWidth = 1.5.dp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -613,13 +621,13 @@ private fun ClaimStatusRow(claimState: ClaimState) {
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.tight),
                     ) {
                         Icon(
                             imageVector = Icons.Outlined.CheckCircle,
                             contentDescription = null,
                             tint = org.cashu.wallet.ui.theme.CashuTheme.colors.received,
-                            modifier = Modifier.size(20.dp),
+                            modifier = Modifier.size(CashuTheme.spacing.loose),
                         )
                         Text(
                             text = "Claimed",

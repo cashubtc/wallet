@@ -19,6 +19,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.unit.dp
+import org.cashu.wallet.ui.theme.CashuTheme
+
+// 56dp is the M3 CTA height; the 14dp internal vertical padding centers the
+// labelLarge baseline inside that height and doesn't belong on the spacing scale.
+private val ButtonMinHeight = 56.dp
+private val ButtonContentVertical = 14.dp
+private val ButtonProgressSize = 20.dp
 
 /**
  * The Singular Button: both primary and secondary CTAs use the same tonal surface.
@@ -40,15 +47,15 @@ fun PrimaryButton(
         },
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = 56.dp),
+            .heightIn(min = ButtonMinHeight),
         enabled = enabled && !loading,
         shape = MaterialTheme.shapes.extraLarge,
-        contentPadding = PaddingValues(horizontal = 24.dp, vertical = 14.dp),
+        contentPadding = PaddingValues(horizontal = CashuTheme.spacing.section, vertical = ButtonContentVertical),
     ) {
         Box(contentAlignment = Alignment.Center) {
             if (loading) {
                 CircularProgressIndicator(
-                    modifier = Modifier.size(20.dp),
+                    modifier = Modifier.size(ButtonProgressSize),
                     strokeWidth = 2.dp,
                     color = LocalContentColor.current,
                 )
@@ -79,14 +86,14 @@ fun BoldPrimaryButton(
         },
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = 56.dp),
+            .heightIn(min = ButtonMinHeight),
         enabled = enabled && !loading,
         shape = MaterialTheme.shapes.extraLarge,
-        contentPadding = PaddingValues(horizontal = 24.dp, vertical = 14.dp),
+        contentPadding = PaddingValues(horizontal = CashuTheme.spacing.section, vertical = ButtonContentVertical),
     ) {
         if (loading) {
             CircularProgressIndicator(
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(ButtonProgressSize),
                 strokeWidth = 2.dp,
                 color = LocalContentColor.current,
             )

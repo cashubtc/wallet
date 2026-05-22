@@ -17,6 +17,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import org.cashu.wallet.ui.theme.CashuTheme
+
+// M3 empty-state icon is 48dp (component-level, not on the spacing scale).
+private val EmptyStateIconSize = 48.dp
 
 @Composable
 fun EmptyState(
@@ -30,7 +34,7 @@ fun EmptyState(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(horizontal = 32.dp),
+            .padding(horizontal = CashuTheme.spacing.comfortable),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
@@ -38,9 +42,9 @@ fun EmptyState(
             imageVector = icon,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(40.dp),
+            modifier = Modifier.size(EmptyStateIconSize),
         )
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(CashuTheme.spacing.comfortable))
         Text(
             text = title,
             style = MaterialTheme.typography.titleMedium,
@@ -48,7 +52,7 @@ fun EmptyState(
             textAlign = TextAlign.Center,
         )
         if (supporting != null) {
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(CashuTheme.spacing.snug))
             Text(
                 text = supporting,
                 style = MaterialTheme.typography.bodyMedium,
@@ -57,7 +61,7 @@ fun EmptyState(
             )
         }
         if (actionLabel != null && onAction != null) {
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(CashuTheme.spacing.section))
             PrimaryButton(
                 text = actionLabel,
                 onClick = onAction,
