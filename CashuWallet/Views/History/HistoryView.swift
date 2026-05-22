@@ -389,7 +389,11 @@ struct HistoryView: View {
 
                 Spacer(minLength: 8)
 
-                requestTrailingAmount(request: request, received: isReceived)
+                CashuRequestAmountColumn(
+                    request: request,
+                    received: isReceived,
+                    receivedAmount: totalReceived(for: request)
+                )
             }
             .padding(.horizontal, rowHorizontalPadding)
             .padding(.vertical, rowVerticalPadding)
@@ -428,27 +432,6 @@ struct HistoryView: View {
         }
     }
 
-    @ViewBuilder
-    private func requestTrailingAmount(request: CashuRequest, received: Bool) -> some View {
-        if received {
-            let receivedAmount = totalReceived(for: request)
-            Text("+\(settings.formatAmountShort(receivedAmount))")
-                .font(.system(.body, design: .rounded).weight(.semibold))
-                .monospacedDigit()
-                .foregroundStyle(Color.green)
-                .contentTransition(.numericText(value: Double(receivedAmount)))
-        } else if let amount = request.amount, amount > 0 {
-            HStack(spacing: 4) {
-                Image(systemName: "clock")
-                    .font(.caption2.weight(.semibold))
-                Text(settings.formatAmountShort(amount))
-                    .font(.system(.body, design: .rounded).weight(.medium))
-                    .monospacedDigit()
-            }
-            .foregroundStyle(.secondary)
-        }
-        // Any-amount + waiting: no trailing element.
-    }
 
     // MARK: - Transaction Row
 
@@ -475,28 +458,11 @@ struct HistoryView: View {
 
                 Spacer(minLength: 8)
 
-                Text(formatAmount(transaction))
-                    .font(.system(.body, design: .rounded).weight(.semibold))
-                    .monospacedDigit()
-                    .foregroundStyle(amountColor(transaction))
-                    .contentTransition(.numericText(value: Double(transaction.amount)))
-
-                if transaction.status == .pending {
-                    Button {
-                        Task { await refreshPendingTransaction(transaction) }
-                    } label: {
-                        if isCheckingStatus == transaction.id {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            Image(systemName: "arrow.triangle.2.circlepath")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .buttonStyle(.borderless)
-                    .accessibilityLabel(isCheckingStatus == transaction.id ? "Checking status" : "Refresh status")
-                    .accessibilityHint(refreshHint(for: transaction))
-                }
+                TransactionAmountColumn(
+                    transaction: transaction,
+                    isCheckingStatus: isCheckingStatus,
+                    onRefresh: { Task { await refreshPendingTransaction(transaction) } }
+                )
             }
             .padding(.horizontal, rowHorizontalPadding)
             .padding(.vertical, rowVerticalPadding)
@@ -563,12 +529,6 @@ struct HistoryView: View {
     private func formatAmount(_ transaction: WalletTransaction) -> String {
         let prefix = transaction.type == .incoming ? "+" : "−"
         return "\(prefix)\(settings.formatAmountShort(transaction.amount))"
-    }
-
-    private func amountColor(_ transaction: WalletTransaction) -> Color {
-        if transaction.status == .pending { return .secondary }
-        if transaction.status == .completed { return .green }
-        return .primary
     }
 
     private func badgeSymbol(for transaction: WalletTransaction) -> String {
@@ -647,12 +607,6 @@ struct HistoryView: View {
         }
     }
 
-    private func refreshHint(for transaction: WalletTransaction) -> String {
-        switch transaction.kind {
-        case .ecash:                return "Checks if this pending token has been claimed"
-        case .lightning, .onchain:  return "Refreshes this pending receive request"
-        }
-    }
 
 }
 

@@ -262,16 +262,37 @@ as a tinted background.
 `Color(.separator)`) or one of three state hues at a stated opacity. There is no
 fourth case.
 
-**The One Green Rule.** Green is the reward for *settlement* and *receipt*.
-The completed-row amount (incoming or outgoing) gets it because the row has
-cleared. The directional badge gets it **only when arrow points down** — receipt
-is the green moment, dispatch is not. Pending amounts stay `.secondary`; nothing
-else on the row, anywhere, ever, gets to be green.
+**The One Green Rule.** Green is the reward for *receipt*. The directional
+badge gets it **only when arrow points down**, and the row's amount text gets
+it **only when the row settled incoming** — `transaction.status == .completed
+&& transaction.type == .incoming`, or a Cashu Request that has received
+payment. Outgoing completed amounts render `.primary` so the row reads as
+cleared but neutral. Pending amounts stay `.secondary` in both directions.
+Nothing else on the row, anywhere, ever, gets to be green. The shared
+`TransactionAmountColumn` (`CashuWallet/Views/Components/`) is the canonical
+implementation; do not re-derive the color elsewhere.
 
 **The Quiet Pending Rule.** Pending is `Color.orange` muted to `.opacity(0.1)`
 as a background and the clock SF Symbol as a leading badge. Never a full-saturation
 pill, never a loud "PENDING" wordmark. The recent commit "Quiet pending row state
 in History — clock badge, drop orange pill" is the standing law.
+
+**The Fiat Sub-Amount Rule.** When
+`settings.showFiatBalance && priceService.btcPriceUSD > 0`, any row that
+renders a sats amount also renders the fiat equivalent directly below it in
+`.caption / .secondary / .monospacedDigit()` — supplementary text, never a
+peer. Cashu Request "any amount" rows (no fixed expected total) render no
+trailing element and therefore no fiat. Fiat re-renders silently on price
+ticks; no `.contentTransition`. Same gate as the hero balance fiat line, so
+turning fiat off in Settings clears the entire app uniformly.
+
+**The Amount Column Rule.** Pending/waiting trailing indicators (the
+`arrow.triangle.2.circlepath` refresh button, the `clock` SF Symbol on a
+waiting Cashu Request) sit to the **left** of the amount column. Amounts
+always anchor to the trailing edge of the row so the column reads as one
+straight vertical line down the list, regardless of which rows have
+indicators. The `Spacer(minLength:)` before the amount column pushes both
+indicator and amount right; the trailing edge stays fixed.
 
 ## 3. Typography
 

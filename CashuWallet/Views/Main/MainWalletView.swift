@@ -21,6 +21,7 @@ struct MainWalletView: View {
     @State private var selectedTransaction: WalletTransaction?
     @State private var selectedRequest: CashuRequest?
     @State private var topInsetHeight: CGFloat = 0
+    @State private var isCheckingStatus: String? = nil
 
     private let recentRowCap = 5
     private let scrollFadeBand: CGFloat = 24
@@ -155,28 +156,24 @@ struct MainWalletView: View {
 
     private var balanceSection: some View {
         VStack(spacing: 0) {
-            // Unit toggle
-            Button(action: { settings.useBitcoinSymbol.toggle() }) {
-                Text(settings.unitLabel)
-                    .font(.footnote.weight(.medium))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 6)
-                    .liquidGlass(in: Capsule(), interactive: true)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Display unit: \(settings.unitLabel)")
-            .accessibilityHint("Toggles between Bitcoin and Satoshi display")
+            mintChip
 
-            // Primary balance
+            // Primary balance — tap to toggle Bitcoin / Satoshi display
             VStack(spacing: 6) {
-                Text(formatBalanceWithUnit(walletManager.balance))
-                    .font(.largeTitle.bold())
-                    .monospacedDigit()
-                    .minimumScaleFactor(0.5)
-                    .lineLimit(1)
-                    .contentTransition(.numericText(value: Double(walletManager.balance)))
-                    .accessibilityLabel("Balance: \(formatBalanceWithUnit(walletManager.balance))")
+                Button(action: {
+                    HapticFeedback.selection()
+                    settings.useBitcoinSymbol.toggle()
+                }) {
+                    Text(formatBalanceWithUnit(walletManager.balance))
+                        .font(.system(size: 44, weight: .bold))
+                        .monospacedDigit()
+                        .minimumScaleFactor(0.5)
+                        .lineLimit(1)
+                        .contentTransition(.numericText(value: Double(walletManager.balance)))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Balance: \(formatBalanceWithUnit(walletManager.balance))")
+                .accessibilityHint("Tap to toggle between Bitcoin and Satoshi")
 
                 if settings.showFiatBalance && priceService.btcPriceUSD > 0 {
                     Text(priceService.formatSatsAsFiat(walletManager.balance))
@@ -186,6 +183,74 @@ struct MainWalletView: View {
             }
             .padding(.top, 18)
         }
+    }
+
+    // MARK: - Active Mint Chip
+
+    @ViewBuilder
+    private var mintChip: some View {
+        if let active = walletManager.activeMint {
+            Menu {
+                ForEach(walletManager.mints) { mint in
+                    Button {
+                        HapticFeedback.selection()
+                        Task { try? await walletManager.setActiveMint(mint) }
+                    } label: {
+                        if mint.id == active.id {
+                            Label(mint.name, systemImage: "checkmark")
+                        } else {
+                            Text(mint.name)
+                        }
+                    }
+                }
+
+                Divider()
+
+                Button {
+                    activeSheet = .discoverMints
+                } label: {
+                    Label("Add Mint", systemImage: "plus")
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    mintChipIcon(url: active.iconUrl)
+                    Text(active.name)
+                        .font(.subheadline.weight(.medium))
+                        .lineLimit(1)
+                }
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
+                .liquidGlass(in: Capsule(), interactive: true)
+            }
+            .accessibilityLabel("Active mint: \(active.name)")
+            .accessibilityHint("Choose a different active mint")
+        }
+    }
+
+    @ViewBuilder
+    private func mintChipIcon(url: String?) -> some View {
+        if let urlString = url, let imageURL = URL(string: urlString) {
+            AsyncImage(url: imageURL) { phase in
+                switch phase {
+                case .success(let image):
+                    image.resizable().scaledToFill()
+                default:
+                    mintChipIconPlaceholder
+                }
+            }
+            .frame(width: 20, height: 20)
+            .clipShape(Circle())
+        } else {
+            mintChipIconPlaceholder
+        }
+    }
+
+    private var mintChipIconPlaceholder: some View {
+        Image(systemName: "bitcoinsign.bank.building.fill")
+            .font(.system(size: 14, weight: .semibold))
+            .foregroundStyle(.secondary)
+            .frame(width: 20, height: 20)
     }
 
     // MARK: - Action Buttons (Receive + Send)
@@ -357,11 +422,11 @@ struct MainWalletView: View {
 
                 Spacer(minLength: 8)
 
-                Text(formatAmount(transaction))
-                    .font(.system(.body, design: .rounded).weight(.semibold))
-                    .monospacedDigit()
-                    .foregroundStyle(amountColor(transaction))
-                    .contentTransition(.numericText(value: Double(transaction.amount)))
+                TransactionAmountColumn(
+                    transaction: transaction,
+                    isCheckingStatus: isCheckingStatus,
+                    onRefresh: { Task { await refreshPendingTransaction(transaction) } }
+                )
             }
             .padding(.horizontal, 4)
             .padding(.vertical, 16)
@@ -421,12 +486,6 @@ struct MainWalletView: View {
         return "\(prefix)\(settings.formatAmountShort(transaction.amount))"
     }
 
-    private func amountColor(_ transaction: WalletTransaction) -> Color {
-        if transaction.status == .pending { return .secondary }
-        if transaction.status == .completed { return .green }
-        return .primary
-    }
-
     private func badgeSymbol(for transaction: WalletTransaction) -> String {
         if transaction.status == .pending { return "clock.circle.fill" }
         return transaction.type == .incoming ? "arrow.down.circle.fill" : "arrow.up.circle.fill"
@@ -473,7 +532,11 @@ struct MainWalletView: View {
 
                 Spacer(minLength: 8)
 
-                requestTrailingAmount(request: request, received: isReceived)
+                CashuRequestAmountColumn(
+                    request: request,
+                    received: isReceived,
+                    receivedAmount: totalReceived(for: request)
+                )
             }
             .padding(.horizontal, 4)
             .padding(.vertical, 16)
@@ -483,27 +546,6 @@ struct MainWalletView: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Cashu Request, \(isReceived ? "received" : "waiting for payment"), \(formatRelativeDate(request.createdAt))")
         .accessibilityHint("Opens request details")
-    }
-
-    @ViewBuilder
-    private func requestTrailingAmount(request: CashuRequest, received: Bool) -> some View {
-        if received {
-            let receivedAmount = totalReceived(for: request)
-            Text("+\(settings.formatAmountShort(receivedAmount))")
-                .font(.system(.body, design: .rounded).weight(.semibold))
-                .monospacedDigit()
-                .foregroundStyle(Color.green)
-                .contentTransition(.numericText(value: Double(receivedAmount)))
-        } else if let amount = request.amount, amount > 0 {
-            HStack(spacing: 4) {
-                Image(systemName: "clock")
-                    .font(.caption2.weight(.semibold))
-                Text(settings.formatAmountShort(amount))
-                    .font(.system(.body, design: .rounded).weight(.medium))
-                    .monospacedDigit()
-            }
-            .foregroundStyle(.secondary)
-        }
     }
 
     private func totalReceived(for request: CashuRequest) -> UInt64 {
@@ -553,6 +595,32 @@ struct MainWalletView: View {
         }
         let sameYear = calendar.component(.year, from: date) == calendar.component(.year, from: now)
         return (sameYear ? Self.sameYearDateFormatter : Self.otherYearDateFormatter).string(from: date)
+    }
+
+    // MARK: - Refresh pending transactions
+    // Mirror of HistoryView so behavior matches across surfaces.
+
+    private func refreshPendingTransaction(_ transaction: WalletTransaction) async {
+        switch transaction.kind {
+        case .ecash:
+            await checkTransactionStatus(transaction)
+        case .lightning, .onchain:
+            isCheckingStatus = transaction.id
+            defer { isCheckingStatus = nil }
+            await walletManager.refreshPendingMintQuote(quoteId: transaction.id)
+        }
+    }
+
+    private func checkTransactionStatus(_ transaction: WalletTransaction) async {
+        guard let token = transaction.token else { return }
+        isCheckingStatus = transaction.id
+        defer { isCheckingStatus = nil }
+
+        let isSpent = await walletManager.checkTokenSpendable(token: token, mintUrl: transaction.mintUrl)
+        if isSpent {
+            walletManager.removePendingToken(tokenId: transaction.id)
+            await walletManager.loadTransactions()
+        }
     }
 
     // MARK: - Helpers
