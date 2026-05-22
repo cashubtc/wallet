@@ -1,0 +1,258 @@
+package org.cashu.wallet.ui.history
+
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.IosShare
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
+import org.cashu.wallet.Core.AmountFormatter
+import org.cashu.wallet.Core.OnchainExplorer
+import org.cashu.wallet.Core.SettingsManager
+import org.cashu.wallet.Core.TransactionDisplay
+import org.cashu.wallet.Core.WalletManager
+import org.cashu.wallet.Models.TransactionKind
+import org.cashu.wallet.Models.TransactionStatus
+import org.cashu.wallet.Models.TransactionType
+import org.cashu.wallet.Models.WalletTransaction
+import org.cashu.wallet.ui.components.AmountText
+import org.cashu.wallet.ui.components.CanvasDivider
+import org.cashu.wallet.ui.components.EmptyState
+import org.cashu.wallet.ui.components.InspectorRow
+import org.cashu.wallet.ui.components.PrimaryButton
+import org.cashu.wallet.ui.components.QrCard
+import org.cashu.wallet.ui.components.SectionHeader
+import org.cashu.wallet.ui.components.shareText
+import org.cashu.wallet.ui.theme.CashuTheme
+import org.cashu.wallet.ui.theme.withMonoDigits
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TransactionDetailScreen(
+    walletManager: WalletManager,
+    settingsManager: SettingsManager,
+    transactionId: String,
+    onClose: () -> Unit,
+) {
+    val walletState by walletManager.state.collectAsState()
+    val settings by settingsManager.state.collectAsState()
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    val formatter = remember { AmountFormatter() }
+
+    val transaction = walletState.transactions.firstOrNull { it.id == transactionId }
+    var copied by remember { mutableStateOf(false) }
+    LaunchedEffect(copied) {
+        if (copied) {
+            delay(2000)
+            copied = false
+        }
+    }
+
+    val qrContent = transaction?.let { TransactionDisplay.qrContent(it) }
+    val title = transaction?.let { TransactionDisplay.title(it) } ?: ""
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(title, style = MaterialTheme.typography.titleMedium) },
+                navigationIcon = {
+                    IconButton(onClick = onClose) {
+                        Icon(Icons.Outlined.Close, contentDescription = "Close")
+                    }
+                },
+                actions = {
+                    if (qrContent != null) {
+                        IconButton(onClick = {
+                            context.shareText(qrContent, subject = title)
+                        }) {
+                            Icon(Icons.Outlined.IosShare, contentDescription = "Share")
+                        }
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                ),
+            )
+        },
+    ) { padding ->
+        if (transaction == null) {
+            EmptyState(
+                icon = Icons.Outlined.Close,
+                title = "Transaction not found",
+                modifier = Modifier.padding(padding),
+            )
+            return@Scaffold
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Spacer(Modifier.height(8.dp))
+            if (qrContent != null) {
+                QrCard(
+                    content = qrContent,
+                    staticOnly = transaction.kind != TransactionKind.Ecash,
+                    shareSubject = title,
+                )
+            }
+            HeroAmount(
+                transaction = transaction,
+                formatter = formatter,
+                useBitcoinSymbol = settings.useBitcoinSymbol,
+            )
+            Text(
+                text = TransactionDisplay.statusText(transaction),
+                style = MaterialTheme.typography.bodyMedium,
+                color = when (transaction.status) {
+                    TransactionStatus.Completed -> CashuTheme.colors.received
+                    TransactionStatus.Pending -> CashuTheme.colors.pending
+                    TransactionStatus.Failed -> MaterialTheme.colorScheme.error
+                },
+            )
+            SectionHeader("Details")
+            Column(modifier = Modifier.fillMaxWidth()) {
+                val fields = remember(transaction) { TransactionDisplay.detailFields(transaction) }
+                fields.forEachIndexed { index, field ->
+                    InspectorRow(
+                        label = field.label,
+                        value = field.value,
+                        valueMonospaced = field.value.length > 24 ||
+                            field.label in MonospacedLabels,
+                    )
+                    if (index != fields.lastIndex) CanvasDivider(leadingInset = 16)
+                }
+            }
+
+            val explorerUrl = remember(transaction) { transaction.explorerUrl() }
+            if (explorerUrl != null) {
+                Spacer(Modifier.height(8.dp))
+                ExplorerLinkRow(url = explorerUrl, onOpen = { context.openInBrowser(it) })
+            }
+
+            if (qrContent != null) {
+                Spacer(Modifier.height(8.dp))
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
+                ) {
+                    PrimaryButton(
+                        text = if (copied) "Copied" else "Copy ${TransactionDisplay.qrLabel(transaction).lowercase()}",
+                        onClick = {
+                            clipboard.setText(AnnotatedString(qrContent))
+                            copied = true
+                        },
+                    )
+                }
+            }
+            Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
+private val MonospacedLabels = setOf("Request", "Address", "Payment Proof", "Transaction ID", "Quote ID", "Mint")
+
+@Composable
+private fun HeroAmount(
+    transaction: WalletTransaction,
+    formatter: AmountFormatter,
+    useBitcoinSymbol: Boolean,
+) {
+    val prefix = if (transaction.type == TransactionType.Incoming) "+" else "−"
+    val color = when (transaction.status) {
+        TransactionStatus.Completed -> CashuTheme.colors.received
+        TransactionStatus.Pending -> MaterialTheme.colorScheme.onSurfaceVariant
+        TransactionStatus.Failed -> MaterialTheme.colorScheme.onSurface
+    }
+    AmountText(
+        text = "$prefix${formatter.formatWalletSats(transaction.amount, useBitcoinSymbol)}",
+        style = MaterialTheme.typography.displayMedium.withMonoDigits(),
+        color = color,
+    )
+}
+
+@Composable
+private fun ExplorerLinkRow(url: String, onOpen: (String) -> Unit) {
+    androidx.compose.foundation.layout.Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(
+            imageVector = Icons.AutoMirrored.Outlined.OpenInNew,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(18.dp),
+        )
+        Text(
+            text = "View in block explorer",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f),
+        )
+        IconButton(onClick = { onOpen(url) }) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Outlined.OpenInNew,
+                contentDescription = "Open",
+            )
+        }
+    }
+}
+
+private fun WalletTransaction.explorerUrl(): String? {
+    if (kind != TransactionKind.Onchain) return null
+    return preimage?.let {
+        OnchainExplorer.transactionWebUrl(txid = it, address = invoice, mintUrl = mintUrl)
+    } ?: invoice?.let {
+        OnchainExplorer.addressWebUrl(address = it, mintUrl = mintUrl)
+    }
+}
+
+private fun Context.openInBrowser(url: String) {
+    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    startActivity(intent)
+}

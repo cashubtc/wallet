@@ -14,8 +14,9 @@ import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
-import org.cashu.wallet.Views.History.HistoryView
 import org.cashu.wallet.Views.Settings.SettingsView
+import org.cashu.wallet.ui.history.HistoryScreen
+import org.cashu.wallet.ui.history.TransactionDetailScreen
 import org.cashu.wallet.ui.home.HomeScreen
 import org.cashu.wallet.ui.home.ReceiveAction
 import org.cashu.wallet.ui.home.SendAction
@@ -117,12 +118,30 @@ fun CashuNavHost(
                 onClose = { navController.popBackStack() },
             )
         }
+        composable(
+            route = Routes.TRANSACTION_DETAIL,
+            arguments = listOf(navArgument("transactionId") { type = NavType.StringType }),
+        ) { entry ->
+            val encoded = entry.arguments?.getString("transactionId").orEmpty()
+            val txId = URLDecoder.decode(encoded, StandardCharsets.UTF_8.name())
+            TransactionDetailScreen(
+                walletManager = container.walletManager,
+                settingsManager = container.settingsManager,
+                transactionId = txId,
+                onClose = { navController.popBackStack() },
+            )
+        }
     }
 }
 
 internal fun mintDetailRouteFor(mintUrl: String): String {
     val encoded = URLEncoder.encode(mintUrl, StandardCharsets.UTF_8.name())
     return Routes.MINT_DETAIL.replace("{mintUrl}", encoded)
+}
+
+internal fun transactionDetailRouteFor(transactionId: String): String {
+    val encoded = URLEncoder.encode(transactionId, StandardCharsets.UTF_8.name())
+    return Routes.TRANSACTION_DETAIL.replace("{transactionId}", encoded)
 }
 
 private fun NavGraphBuilder.tabDestinations(
@@ -142,7 +161,9 @@ private fun NavGraphBuilder.tabDestinations(
             priceService = container.priceService,
             onOpenMints = { navController.navigateToTab(TopTab.Mints) },
             onOpenHistory = { navController.navigateToTab(TopTab.History) },
-            onOpenTransaction = { _ -> navController.navigateToTab(TopTab.History) },
+            onOpenTransaction = { tx ->
+                navController.navigate(transactionDetailRouteFor(tx.id))
+            },
             onReceive = { action ->
                 val route = when (action) {
                     ReceiveAction.Ecash -> Routes.RECEIVE_ECASH
@@ -164,7 +185,15 @@ private fun NavGraphBuilder.tabDestinations(
         )
     }
     composable(Routes.HISTORY) {
-        HistoryView(container.walletManager, contentPadding)
+        HistoryScreen(
+            walletManager = container.walletManager,
+            settingsManager = container.settingsManager,
+            priceService = container.priceService,
+            onOpenTransaction = { tx ->
+                navController.navigate(transactionDetailRouteFor(tx.id))
+            },
+            contentPadding = contentPadding,
+        )
     }
     composable(Routes.MINTS) {
         MintsScreen(
