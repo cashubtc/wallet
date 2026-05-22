@@ -56,7 +56,7 @@ struct MainTabView: View {
     
     var body: some View {
         TabView(selection: $selectedTab) {
-            MainWalletView()
+            MainWalletView(onViewAllHistory: { selectedTab = .history })
                 .tabItem {
                     Label("Wallet", systemImage: "creditcard.fill")
                 }

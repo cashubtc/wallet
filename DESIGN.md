@@ -625,6 +625,18 @@ and look wrong without one. Small inline copy chips (Settings rows, the
 truncated Lightning-address chip on the main wallet) also keep their icons
 — there, the SF Symbol *is* the affordance because there is no text label.
 
+**The Mint Card Exception (retired 2026-05-22).** The home screen no longer
+carries a horizontal mint-card switcher. Mint browsing, active-mint selection,
+and adding mints all live in the Mints tab; the home canvas now renders only
+balance + actions + recent activity. With the carve-out gone, the
+Flat-By-Default Rule applies uniformly across the app — no card stack is
+permitted on any in-app surface. The only home-screen mint-related affordance
+that remains is whatever the Mints tab itself surfaces. The home screen's
+fixed top section (BTC chip, balance, fiat line, Receive/Send) is pinned via
+`.safeAreaInset(edge: .top)` while the recent-activity list scrolls beneath
+it, with a `LinearGradient` opacity mask fading rows to clear before they
+reach the buttons. See `MainWalletView.swift` for the current implementation.
+
 **The Share-At-Top Rule.** Any sheet that displays a shareable QR artifact —
 Lightning Invoice (`ReceiveLightningView`), Cashu Request
 (`CashuRequestDetailView`), generated ecash token (`SendView`), historical
@@ -751,9 +763,15 @@ No bounce, no elastic, no custom cubic-bezier, no `.interactiveSpring`.
   literally floats over the canvas — see the Floating-Toast Exception.
 - **Don't** ship the **hero-metric SaaS panel**: big number on tinted card,
   small label below, supporting stats around it. The balance is the only
-  hero number the wallet gets, and it lives on the bare canvas.
+  hero number the wallet gets, and it lives on the bare canvas. *Mint
+  cards (see The Mint Card Exception in §5) are not stats — they are
+  first-class account surfaces, and they earn the carve-out for that
+  reason. No other "supporting tile" pattern qualifies.*
 - **Don't** wrap a screen's content in nested cards or in a single full-bleed
   container with `cornerRadius: 16`. Use the bare canvas + `CanvasDivider`.
+  *The mint card row on home is a horizontally-scrolling row of Liquid Glass
+  tiles, not a container wrapping content — the canvas underneath is still
+  bare, and the transactions list below sits on it directly.*
 - **Don't** introduce a display font, a serif pairing, a custom-loaded `.otf`,
   or a `Font.system(size: N)` for body text. SF system styles only.
 - **Don't** reach for `.fullScreenCover` for a confirmation, a settings flow,

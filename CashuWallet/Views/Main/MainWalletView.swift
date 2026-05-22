@@ -2,52 +2,95 @@ import CoreNFC
 import SwiftUI
 
 struct MainWalletView: View {
+    /// Called when the user taps "View all activity" — switches the tab
+    /// container to the History tab. Lives at the call-site so
+    /// MainWalletView stays decoupled from the Tab enum.
+    var onViewAllHistory: () -> Void = {}
+
     @EnvironmentObject var walletManager: WalletManager
     @EnvironmentObject var navigationManager: NavigationManager
     @ObservedObject var settings = SettingsManager.shared
     @ObservedObject var priceService = PriceService.shared
-    @ObservedObject var npcService = NPCService.shared
-    @ObservedObject var nostrService = NostrService.shared
+    @ObservedObject private var requestStore = CashuRequestStore.shared
 
     @State private var activeSheet: WalletSheet?
     @State private var notification: (message: String, amount: UInt64?, fee: UInt64?)?
     @State private var showNotification = false
-    @State private var isRefreshing = false
-    @State private var copiedLightningAddress = false
     @State private var receiveEcashDetent: PresentationDetent = .medium
     @State private var contactlessCoordinator = ContactlessPaymentCoordinator()
+    @State private var selectedTransaction: WalletTransaction?
+    @State private var selectedRequest: CashuRequest?
+    @State private var topInsetHeight: CGFloat = 0
+
+    private let recentRowCap = 5
+    private let scrollFadeBand: CGFloat = 24
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                // Notification Badge
-                if showNotification, let notif = notification {
-                    NotificationBadgeView(
-                        message: notif.message,
-                        amount: notif.amount,
-                        fee: notif.fee,
-                        onDismiss: {
-                            withAnimation { showNotification = false }
+            ScrollView {
+                VStack(spacing: 0) {
+                    // Notification banner (in-flow at top, slides in/out)
+                    if showNotification, let notif = notification {
+                        NotificationBadgeView(
+                            message: notif.message,
+                            amount: notif.amount,
+                            fee: notif.fee,
+                            onDismiss: {
+                                withAnimation { showNotification = false }
+                            }
+                        )
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 12)
+                        .zIndex(100)
+                    }
+
+                    recentSection
+                        .padding(.top, 8)
+                        .padding(.horizontal, 16)
+
+                    // Tail spacer so the last row can scroll under the
+                    // Liquid Glass tab bar without sitting flush against it.
+                    Color.clear.frame(height: 32)
+                }
+            }
+            .scrollIndicators(.hidden)
+            .mask(scrollFadeMask)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                fixedTopSection
+                    .background(
+                        GeometryReader { proxy in
+                            Color.clear.preference(
+                                key: TopInsetHeightKey.self,
+                                value: proxy.size.height
+                            )
                         }
                     )
-                    .padding(.top, 10)
-                    .padding(.horizontal)
-                    .zIndex(100)
+            }
+            .onPreferenceChange(TopInsetHeightKey.self) { topInsetHeight = $0 }
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        activeSheet = .scanner
+                    } label: {
+                        Image(systemName: "viewfinder")
+                            .font(.body.weight(.semibold))
+                    }
+                    .accessibilityLabel("Scan QR code")
+                    .accessibilityHint("Opens the QR scanner")
                 }
-
-                Spacer()
-
-                // Balance + action buttons grouped together
-                balanceSection
-
-                actionButtons
-                    .padding(.top, 32)
-
-                Spacer()
             }
             .sheet(item: $activeSheet) { sheet in
                 sheetView(for: sheet)
             }
+            .sheet(item: $selectedTransaction) { transaction in
+                TransactionDetailView(transaction: transaction)
+                    .environmentObject(walletManager)
+            }
+            .navigationDestination(item: $selectedRequest) { request in
+                CashuRequestDetailView(request: request)
+                    .environmentObject(walletManager)
+            }
+            .task { await walletManager.loadTransactions() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .cashuTokenReceived)) { notification in
             if let userInfo = notification.userInfo,
@@ -68,6 +111,43 @@ struct MainWalletView: View {
                 activeSheet = .flow(.sendLightningWithInvoice(invoice))
                 navigationManager.pendingMeltInvoice = nil
             }
+        }
+    }
+
+    // MARK: - Fixed Top Section
+
+    // Pinned above the scroll. Sits on the bare canvas so the masked scroll
+    // content reads as floating beneath it.
+    private var fixedTopSection: some View {
+        VStack(spacing: 0) {
+            balanceSection
+                .padding(.top, 8)
+
+            actionButtons
+                .padding(.top, 28)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 16)
+        }
+    }
+
+    // Fades scroll content to clear under the fixed top section so rows
+    // visibly dissolve as they approach the buttons.
+    private var scrollFadeMask: some View {
+        GeometryReader { proxy in
+            let total = max(proxy.size.height, 1)
+            let inset = max(topInsetHeight, 1)
+            let clearEnd = min(inset / total, 1)
+            let opaqueAt = min((inset + scrollFadeBand) / total, 1)
+            LinearGradient(
+                stops: [
+                    .init(color: .clear, location: 0),
+                    .init(color: .clear, location: clearEnd),
+                    .init(color: .black, location: opaqueAt),
+                    .init(color: .black, location: 1)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
         }
     }
 
@@ -92,9 +172,10 @@ struct MainWalletView: View {
             VStack(spacing: 6) {
                 Text(formatBalanceWithUnit(walletManager.balance))
                     .font(.largeTitle.bold())
+                    .monospacedDigit()
                     .minimumScaleFactor(0.5)
                     .lineLimit(1)
-                    .contentTransition(.numericText())
+                    .contentTransition(.numericText(value: Double(walletManager.balance)))
                     .accessibilityLabel("Balance: \(formatBalanceWithUnit(walletManager.balance))")
 
                 if settings.showFiatBalance && priceService.btcPriceUSD > 0 {
@@ -103,42 +184,13 @@ struct MainWalletView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .padding(.top, 24)
-
-            // Mint info
-            if let mint = walletManager.activeMint {
-                Text(mint.name)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .padding(.top, 20)
-            }
+            .padding(.top, 18)
         }
     }
 
-    // MARK: - Lightning Address Badge
+    // MARK: - Action Buttons (Receive + Send)
 
-    private var lightningAddressBadge: some View {
-        Button(action: copyLightningAddress) {
-            HStack(spacing: 6) {
-                Image(systemName: "bolt.fill")
-                    .font(.caption2)
-                    .accessibilityHidden(true)
-                Text(truncatedLightningAddress())
-                    .font(.system(.caption2, design: .monospaced))
-                    .lineLimit(1)
-                Image(systemName: copiedLightningAddress ? "checkmark" : "doc.on.doc")
-                    .font(.caption2)
-                    .accessibilityHidden(true)
-            }
-            .foregroundStyle(.secondary)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Lightning address: \(npcService.lightningAddress)")
-        .accessibilityHint("Copies lightning address to clipboard")
-    }
-
-    // MARK: - Action Buttons
-
+    /// Scan moved to the toolbar; the action row is now a two-button pair.
     private var actionButtons: some View {
         Group {
             if #available(iOS 26, *) {
@@ -149,7 +201,6 @@ struct MainWalletView: View {
                 actionButtonsContent
             }
         }
-        .padding(.horizontal, 24)
     }
 
     private var actionButtonsContent: some View {
@@ -162,14 +213,6 @@ struct MainWalletView: View {
                     .liquidGlass(in: Capsule(), interactive: true)
             }
             .accessibilityHint("Opens options to receive ecash or lightning payments")
-
-            Button { activeSheet = .scanner } label: {
-                Image(systemName: "viewfinder")
-                    .font(.body.weight(.semibold))
-                    .frame(width: 44, height: 44)
-                    .liquidGlass(in: Circle(), interactive: true)
-            }
-            .accessibilityLabel("Scan QR code")
 
             Button { activeSheet = .chooser(.send) } label: {
                 Text("Send")
@@ -184,36 +227,339 @@ struct MainWalletView: View {
         .foregroundStyle(.primary)
     }
 
+    // MARK: - Recent Activity
+
+    @ViewBuilder
+    private var recentSection: some View {
+        let items = recentItems
+        VStack(alignment: .leading, spacing: 0) {
+            sectionHeader("Recent")
+
+            if items.isEmpty {
+                emptyRecentRow
+            } else {
+                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                    row(for: item)
+
+                    if index < items.count - 1 {
+                        CanvasDivider()
+                    }
+                }
+
+                Button(action: onViewAllHistory) {
+                    HStack(spacing: 4) {
+                        Text("View all activity")
+                        Image(systemName: "chevron.right").font(.caption2.weight(.semibold))
+                    }
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Switches to the History tab")
+            }
+        }
+    }
+
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .textCase(.uppercase)
+            .tracking(1.2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 4)
+            .padding(.top, 16)
+            .padding(.bottom, 14)
+    }
+
+    private var emptyRecentRow: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "clock")
+                .font(.body)
+                .foregroundStyle(.secondary)
+            Text("No activity yet")
+                .font(.body)
+                .foregroundStyle(.secondary)
+            Spacer()
+        }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 14)
+    }
+
+    // MARK: - Recent items pipeline (mirrors HistoryView, capped at 5)
+
+    private enum HomeItem: Identifiable {
+        case transaction(WalletTransaction)
+        case request(CashuRequest)
+
+        var id: String {
+            switch self {
+            case .transaction(let t): return "tx-\(t.id)"
+            case .request(let r):     return "req-\(r.id)"
+            }
+        }
+
+        var date: Date {
+            switch self {
+            case .transaction(let t): return t.date
+            case .request(let r):     return r.createdAt
+            }
+        }
+    }
+
+    /// Suppress transactions that are already represented by a Cashu Request
+    /// row, then merge requests + transactions, sort desc, cap.
+    private var recentItems: [HomeItem] {
+        let claimedTxIds = Set(requestStore.requests.flatMap { $0.receivedPayments.map(\.transactionId) })
+        let txItems: [HomeItem] = walletManager.transactions
+            .filter { !claimedTxIds.contains($0.id) }
+            .map(HomeItem.transaction)
+        let reqItems: [HomeItem] = requestStore.requests.map(HomeItem.request)
+        return (txItems + reqItems)
+            .sorted { $0.date > $1.date }
+            .prefix(recentRowCap)
+            .map { $0 }
+    }
+
+    @ViewBuilder
+    private func row(for item: HomeItem) -> some View {
+        switch item {
+        case .transaction(let tx):
+            transactionRow(transaction: tx)
+        case .request(let req):
+            cashuRequestRow(request: req)
+        }
+    }
+
+    // MARK: - Transaction row (slimmer than HistoryView's variant)
+
+    private func transactionRow(transaction: WalletTransaction) -> some View {
+        Button {
+            HapticFeedback.selection()
+            selectedTransaction = transaction
+        } label: {
+            HStack(spacing: 14) {
+                rowIcon(for: transaction)
+                    .frame(width: 36, height: 36)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(rowTitle(for: transaction))
+                        .font(.body.weight(.medium))
+                        .lineLimit(1)
+
+                    Text(formatRelativeDate(transaction.date))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: 8)
+
+                Text(formatAmount(transaction))
+                    .font(.system(.body, design: .rounded).weight(.semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(amountColor(transaction))
+                    .contentTransition(.numericText(value: Double(transaction.amount)))
+            }
+            .padding(.horizontal, 4)
+            .padding(.vertical, 16)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(rowTitle(for: transaction)), \(formatAmount(transaction)) sats, \(transaction.status == .pending ? "pending" : "completed"), \(formatRelativeDate(transaction.date))")
+        .accessibilityHint("Opens transaction details")
+    }
+
+    @ViewBuilder
+    private func rowIcon(for transaction: WalletTransaction) -> some View {
+        ZStack(alignment: .bottomTrailing) {
+            kindIcon(transaction.kind)
+                .frame(width: 36, height: 36)
+
+            Image(systemName: badgeSymbol(for: transaction))
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(badgeColor(for: transaction))
+                .background(Color(.systemBackground), in: Circle())
+                .offset(x: 4, y: 4)
+                .contentTransition(.symbolEffect(.replace.downUp))
+                .animation(.snappy(duration: 0.28), value: transaction.status)
+                .animation(.snappy(duration: 0.28), value: transaction.type)
+                .accessibilityHidden(true)
+        }
+    }
+
+    @ViewBuilder
+    private func kindIcon(_ kind: WalletTransaction.TransactionKind) -> some View {
+        switch kind {
+        case .ecash:
+            EcashIcon()
+        case .lightning:
+            LightningIcon()
+        case .onchain:
+            Image(systemName: "bitcoinsign.circle.fill")
+                .font(.title3)
+                .foregroundStyle(.orange)
+        }
+    }
+
+    private func rowTitle(for transaction: WalletTransaction) -> String {
+        switch (transaction.kind, transaction.type) {
+        case (.ecash,     .incoming): return "Received ecash"
+        case (.ecash,     .outgoing): return "Sent ecash"
+        case (.lightning, .incoming): return "Lightning received"
+        case (.lightning, .outgoing): return "Lightning paid"
+        case (.onchain,   .incoming): return "Bitcoin received"
+        case (.onchain,   .outgoing): return "Bitcoin sent"
+        }
+    }
+
+    private func formatAmount(_ transaction: WalletTransaction) -> String {
+        let prefix = transaction.type == .incoming ? "+" : "−"
+        return "\(prefix)\(settings.formatAmountShort(transaction.amount))"
+    }
+
+    private func amountColor(_ transaction: WalletTransaction) -> Color {
+        if transaction.status == .pending { return .secondary }
+        if transaction.status == .completed { return .green }
+        return .primary
+    }
+
+    private func badgeSymbol(for transaction: WalletTransaction) -> String {
+        if transaction.status == .pending { return "clock.circle.fill" }
+        return transaction.type == .incoming ? "arrow.down.circle.fill" : "arrow.up.circle.fill"
+    }
+
+    private func badgeColor(for transaction: WalletTransaction) -> Color {
+        if transaction.status == .pending { return .orange }
+        return transaction.type == .incoming ? .green : .primary
+    }
+
+    // MARK: - Cashu Request row
+
+    private func cashuRequestRow(request: CashuRequest) -> some View {
+        let isReceived = !request.receivedPayments.isEmpty
+        return Button {
+            HapticFeedback.selection()
+            selectedRequest = request
+        } label: {
+            HStack(spacing: 14) {
+                ZStack(alignment: .bottomTrailing) {
+                    EcashIcon()
+                        .frame(width: 36, height: 36)
+
+                    Image(systemName: isReceived ? "arrow.down.circle.fill" : "clock.circle.fill")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(isReceived ? Color.green : Color.orange)
+                        .background(Color(.systemBackground), in: Circle())
+                        .offset(x: 4, y: 4)
+                        .contentTransition(.symbolEffect(.replace.downUp))
+                        .animation(.snappy(duration: 0.28), value: isReceived)
+                        .accessibilityHidden(true)
+                }
+                .frame(width: 36, height: 36)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Cashu Request")
+                        .font(.body.weight(.medium))
+                        .lineLimit(1)
+
+                    Text(formatRelativeDate(request.createdAt))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: 8)
+
+                requestTrailingAmount(request: request, received: isReceived)
+            }
+            .padding(.horizontal, 4)
+            .padding(.vertical, 16)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Cashu Request, \(isReceived ? "received" : "waiting for payment"), \(formatRelativeDate(request.createdAt))")
+        .accessibilityHint("Opens request details")
+    }
+
+    @ViewBuilder
+    private func requestTrailingAmount(request: CashuRequest, received: Bool) -> some View {
+        if received {
+            let receivedAmount = totalReceived(for: request)
+            Text("+\(settings.formatAmountShort(receivedAmount))")
+                .font(.system(.body, design: .rounded).weight(.semibold))
+                .monospacedDigit()
+                .foregroundStyle(Color.green)
+                .contentTransition(.numericText(value: Double(receivedAmount)))
+        } else if let amount = request.amount, amount > 0 {
+            HStack(spacing: 4) {
+                Image(systemName: "clock")
+                    .font(.caption2.weight(.semibold))
+                Text(settings.formatAmountShort(amount))
+                    .font(.system(.body, design: .rounded).weight(.medium))
+                    .monospacedDigit()
+            }
+            .foregroundStyle(.secondary)
+        }
+    }
+
+    private func totalReceived(for request: CashuRequest) -> UInt64 {
+        let ids = Set(request.receivedPayments.map(\.transactionId))
+        guard !ids.isEmpty else { return 0 }
+        return walletManager.transactions
+            .filter { ids.contains($0.id) }
+            .reduce(UInt64(0)) { $0 + $1.amount }
+    }
+
+    // MARK: - Relative date
+
+    private static let shortTimeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .none
+        f.timeStyle = .short
+        return f
+    }()
+
+    private static let sameYearDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.setLocalizedDateFormatFromTemplate("MMMd")
+        return f
+    }()
+
+    private static let otherYearDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.setLocalizedDateFormatFromTemplate("MMMdyyyy")
+        return f
+    }()
+
+    private func formatRelativeDate(_ date: Date) -> String {
+        let now = Date()
+        let delta = now.timeIntervalSince(date)
+        if delta < 60 { return "Now" }
+
+        let calendar = Calendar.current
+        if calendar.isDateInToday(date) {
+            if delta < 3600 {
+                let minutes = max(1, Int(delta / 60))
+                return "\(minutes) min ago"
+            }
+            return Self.shortTimeFormatter.string(from: date)
+        }
+        if calendar.isDateInYesterday(date) {
+            return "Yesterday \(Self.shortTimeFormatter.string(from: date))"
+        }
+        let sameYear = calendar.component(.year, from: date) == calendar.component(.year, from: now)
+        return (sameYear ? Self.sameYearDateFormatter : Self.otherYearDateFormatter).string(from: date)
+    }
+
     // MARK: - Helpers
-
-    private func truncatedLightningAddress() -> String {
-        let address = npcService.lightningAddress
-        let parts = address.split(separator: "@")
-        if parts.count == 2, let pubkey = parts.first, pubkey.count > 16 {
-            return "\(pubkey.prefix(8))…\(pubkey.suffix(4))@\(parts[1])"
-        }
-        return address
-    }
-
-    private func copyLightningAddress() {
-        UIPasteboard.general.string = npcService.lightningAddress
-        withAnimation { copiedLightningAddress = true }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            withAnimation { copiedLightningAddress = false }
-        }
-    }
 
     private func formatBalanceWithUnit(_ sats: UInt64) -> String {
         let formatted = settings.formatAmountBalance(sats)
         return settings.useBitcoinSymbol ? "₿\(formatted)" : "\(formatted) sat"
-    }
-
-    private func refreshWallet() async {
-        isRefreshing = true
-        await walletManager.refreshBalance()
-        await walletManager.loadTransactions()
-        try? await Task.sleep(nanoseconds: 500_000_000)
-        isRefreshing = false
     }
 
     @ViewBuilder
@@ -226,9 +572,6 @@ struct MainWalletView: View {
                 onScan: { activeSheet = .scanner },
                 onSelect: { flow in
                     if case .contactlessPay = flow {
-                        // Contactless has no custom SwiftUI sheet — iOS's native
-                        // NFC scan sheet is the entire surface. Dismiss the
-                        // chooser and start the reader directly.
                         activeSheet = nil
                         contactlessCoordinator.start(
                             walletManager: walletManager,
@@ -247,6 +590,11 @@ struct MainWalletView: View {
                 .presentationDetents([.large])
         case .flow(let flow):
             flowView(for: flow)
+        case .discoverMints:
+            MintDiscoverySheet { url in
+                Task { try? await walletManager.addMint(url: url) }
+            }
+            .environmentObject(walletManager)
         }
     }
 
@@ -275,9 +623,6 @@ struct MainWalletView: View {
                 .environmentObject(walletManager)
                 .presentationDetents([.large])
         case .contactlessPay:
-            // Routed via ContactlessPaymentCoordinator before activeSheet
-            // is ever set; this branch is unreachable but kept so the enum
-            // remains exhaustive without a default clause.
             EmptyView()
         }
     }
@@ -348,6 +693,7 @@ private enum WalletSheet: Identifiable {
     case chooser(WalletActionSheet)
     case scanner
     case flow(WalletFlow)
+    case discoverMints
 
     var id: String {
         switch self {
@@ -357,6 +703,8 @@ private enum WalletSheet: Identifiable {
             return "scanner"
         case .flow(let flow):
             return "flow-\(flow.id)"
+        case .discoverMints:
+            return "discoverMints"
         }
     }
 }
@@ -458,6 +806,13 @@ private struct WalletActionSheetView: View {
         .padding(.vertical, 14)
         .foregroundStyle(.primary)
         .contentShape(Rectangle())
+    }
+}
+
+private struct TopInsetHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }
 
