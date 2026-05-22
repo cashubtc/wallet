@@ -41,9 +41,8 @@ struct MainWalletView: View {
                 balanceSection
 
                 actionButtons
-                    .padding(.top, 24)
+                    .padding(.top, 32)
 
-                Spacer()
                 Spacer()
             }
             .sheet(item: $activeSheet) { sheet in
@@ -75,7 +74,7 @@ struct MainWalletView: View {
     // MARK: - Balance Section
 
     private var balanceSection: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 0) {
             // Unit toggle
             Button(action: { settings.useBitcoinSymbol.toggle() }) {
                 Text(settings.unitLabel)
@@ -104,28 +103,16 @@ struct MainWalletView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            .padding(.top, 24)
 
             // Mint info
             if let mint = walletManager.activeMint {
                 Text(mint.name)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-            }
-
-            // Status badges
-            if walletManager.pendingBalance > 0 || !walletManager.pendingTokens.isEmpty {
-                pendingBadge
+                    .padding(.top, 20)
             }
         }
-    }
-
-    // MARK: - Pending Badge
-
-    private var pendingBadge: some View {
-        Label("Pending: \(formatPendingAmount())", systemImage: "arrow.triangle.2.circlepath")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .accessibilityLabel("Pending balance: \(formatPendingAmount())")
     }
 
     // MARK: - Lightning Address Badge
@@ -178,8 +165,8 @@ struct MainWalletView: View {
 
             Button { activeSheet = .scanner } label: {
                 Image(systemName: "viewfinder")
-                    .font(.title3.weight(.semibold))
-                    .padding(18)
+                    .font(.body.weight(.semibold))
+                    .frame(width: 44, height: 44)
                     .liquidGlass(in: Circle(), interactive: true)
             }
             .accessibilityLabel("Scan QR code")
@@ -219,12 +206,6 @@ struct MainWalletView: View {
     private func formatBalanceWithUnit(_ sats: UInt64) -> String {
         let formatted = settings.formatAmountBalance(sats)
         return settings.useBitcoinSymbol ? "₿\(formatted)" : "\(formatted) sat"
-    }
-
-    private func formatPendingAmount() -> String {
-        let pendingFromTokens = walletManager.pendingTokens.reduce(UInt64(0)) { $0 + $1.amount }
-        let totalPending = max(walletManager.pendingBalance, pendingFromTokens)
-        return settings.useBitcoinSymbol ? "₿\(totalPending)" : "\(totalPending) sat"
     }
 
     private func refreshWallet() async {
@@ -441,7 +422,7 @@ private struct WalletActionSheetView: View {
 
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(action: onScan) {
-                        Image(systemName: "qrcode.viewfinder")
+                        Image(systemName: "viewfinder")
                     }
                     .accessibilityLabel("Scan")
                 }

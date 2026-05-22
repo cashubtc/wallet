@@ -41,7 +41,7 @@ struct ReceiveView: View {
                                     .foregroundStyle(.secondary)
                             }
                         } icon: {
-                            Image(systemName: "qrcode.viewfinder")
+                            Image(systemName: "viewfinder")
                                 .foregroundStyle(Color.accentColor)
                         }
                     }
