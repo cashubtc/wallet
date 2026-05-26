@@ -27,7 +27,14 @@ class TokenService: ObservableObject {
         self.walletRepository = walletRepository
         self.getActiveMint = getActiveMint
     }
-    
+
+    // MARK: - State
+
+    /// Reset transient state (called when the wallet is locked/reset).
+    func clearState() {
+        isLoading = false
+    }
+
     // MARK: - Send Operations
     
     /// Send tokens (create ecash token string)
@@ -35,15 +42,24 @@ class TokenService: ObservableObject {
     ///   - amount: Amount to send in satoshis
     ///   - memo: Optional memo to include
     /// - Returns: Result containing token string and fee paid
-    func sendTokens(amount: UInt64, memo: String? = nil, p2pkPubkey: String? = nil) async throws -> SendTokenResult {
-        guard let repo = walletRepository(), let activeMint = getActiveMint() else {
+    func sendTokens(
+        amount: UInt64,
+        memo: String? = nil,
+        p2pkPubkey: String? = nil,
+        mintUrl preferredMintURL: String? = nil
+    ) async throws -> SendTokenResult {
+        guard let repo = walletRepository() else {
             throw WalletError.notInitialized
         }
-        
+
+        guard let mintURLString = preferredMintURL ?? getActiveMint()?.url else {
+            throw WalletError.notInitialized
+        }
+
         isLoading = true
         defer { isLoading = false }
-        
-        let mintUrl = MintUrl(url: activeMint.url)
+
+        let mintUrl = MintUrl(url: mintURLString)
         let wallet = try await repo.getWallet(mintUrl: mintUrl, unit: .sat)
         
         let sendMemo = memo.map { SendMemo(memo: $0, includeMemo: true) }
