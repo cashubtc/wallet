@@ -59,7 +59,7 @@ class TokenService: ObservableObject {
         isLoading = true
         defer { isLoading = false }
 
-    func sendTokens(amount: UInt64, memo: String? = nil, p2pkPubkey: String? = nil, mintUrl preferredMintURL: String? = nil) async throws -> SendTokenResult {
+        let mintUrl = MintUrl(url: mintUrlString)
         let wallet = try await repo.getWallet(mintUrl: mintUrl, unit: .sat)
         
         let sendMemo = memo.map { SendMemo(memo: $0, includeMemo: true) }
