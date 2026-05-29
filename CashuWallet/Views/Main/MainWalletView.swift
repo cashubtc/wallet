@@ -222,6 +222,7 @@ struct MainWalletView: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 7)
                 .liquidGlass(in: Capsule(), interactive: true)
+                .contentShape(Capsule())
             }
             .accessibilityLabel("Active mint: \(active.name)")
             .accessibilityHint("Choose a different active mint")
@@ -276,6 +277,7 @@ struct MainWalletView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 18)
                     .liquidGlass(in: Capsule(), interactive: true)
+                    .contentShape(Capsule())
             }
             .accessibilityHint("Opens options to receive ecash or lightning payments")
 
@@ -285,6 +287,7 @@ struct MainWalletView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 18)
                     .liquidGlass(in: Capsule(), interactive: true)
+                    .contentShape(Capsule())
             }
             .accessibilityHint("Opens options to send ecash or pay lightning invoices")
         }
