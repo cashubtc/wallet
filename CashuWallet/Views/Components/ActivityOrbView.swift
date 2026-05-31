@@ -65,6 +65,119 @@ struct LoadingSpinnerView: View {
     }
 }
 
+// MARK: - Native Empty State
+
+struct NativeEmptyState: View {
+    enum Style {
+        case fullScreen
+        case section
+        case compact
+
+        var iconSize: CGFloat {
+            switch self {
+            case .fullScreen: return 56
+            case .section: return 42
+            case .compact: return 30
+            }
+        }
+
+        var titleFont: Font {
+            switch self {
+            case .fullScreen: return .title2.weight(.semibold)
+            case .section: return .headline.weight(.semibold)
+            case .compact: return .subheadline.weight(.semibold)
+            }
+        }
+
+        var descriptionFont: Font {
+            switch self {
+            case .fullScreen: return .body
+            case .section, .compact: return .subheadline
+            }
+        }
+
+        var spacing: CGFloat {
+            switch self {
+            case .fullScreen: return 12
+            case .section: return 10
+            case .compact: return 8
+            }
+        }
+
+        var verticalPadding: CGFloat {
+            switch self {
+            case .fullScreen: return 0
+            case .section: return 32
+            case .compact: return 24
+            }
+        }
+
+        var maxHeight: CGFloat? {
+            switch self {
+            case .fullScreen: return .infinity
+            case .section, .compact: return nil
+            }
+        }
+    }
+
+    let title: String
+    let systemImage: String
+    var description: String?
+    var style: Style = .fullScreen
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isPresented = false
+    @State private var symbolTrigger = false
+
+    var body: some View {
+        VStack(spacing: style.spacing) {
+            animatedIcon
+
+            VStack(spacing: 4) {
+                Text(title)
+                    .font(style.titleFont)
+                    .multilineTextAlignment(.center)
+
+                if let description {
+                    Text(description)
+                        .font(style.descriptionFont)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: style.maxHeight)
+        .padding(.horizontal, 32)
+        .padding(.vertical, style.verticalPadding)
+        .opacity(isPresented ? 1 : 0)
+        .scaleEffect(reduceMotion ? 1 : (isPresented ? 1 : 0.96))
+        .offset(y: reduceMotion ? 0 : (isPresented ? 0 : 8))
+        .animation(.spring(response: 0.36, dampingFraction: 0.82), value: isPresented)
+        .task {
+            isPresented = true
+            guard !reduceMotion else { return }
+            symbolTrigger.toggle()
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder
+    private var animatedIcon: some View {
+        let icon = Image(systemName: systemImage)
+            .font(.system(size: style.iconSize, weight: .semibold))
+            .symbolRenderingMode(.hierarchical)
+            .foregroundStyle(.secondary)
+            .opacity(0.62)
+
+        if #available(iOS 17.0, macOS 14.0, *) {
+            icon.symbolEffect(.bounce, value: symbolTrigger)
+        } else {
+            icon
+        }
+    }
+}
+
 // MARK: - Global Mutex Lock Overlay
 /// Overlay shown when wallet is performing critical operations
 

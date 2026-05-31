@@ -325,17 +325,12 @@ struct MainWalletView: View {
     }
 
     private var emptyRecentRow: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "clock")
-                .font(.body)
-                .foregroundStyle(.secondary)
-            Text("No activity yet")
-                .font(.body)
-                .foregroundStyle(.secondary)
-            Spacer()
-        }
-        .padding(.horizontal, 4)
-        .padding(.vertical, 14)
+        NativeEmptyState(
+            title: "No activity yet",
+            systemImage: "clock.arrow.circlepath",
+            description: "Your activity will show up here.",
+            style: .compact
+        )
     }
 
     // MARK: - Recent items pipeline (mirrors HistoryView, capped at 5)

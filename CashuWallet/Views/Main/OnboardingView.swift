@@ -746,17 +746,11 @@ struct OnboardingView: View {
                 }
                 .frame(maxHeight: 280)
             } else {
-                // Empty state
-                VStack(spacing: 12) {
-                    Image(systemName: "bitcoinsign.bank.building")
-                        .font(.title)
-                        .foregroundStyle(.secondary.opacity(0.5))
-                    Text("No mints added yet")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 40)
+                NativeEmptyState(
+                    title: "No mints added yet",
+                    systemImage: "bitcoinsign.bank.building",
+                    style: .compact
+                )
             }
 
             // Error display
