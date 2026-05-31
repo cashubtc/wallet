@@ -157,7 +157,7 @@ struct MintsListView: View {
         }
         .contextMenu {
             Button { setActive(mint) } label: {
-                Label("Set as Active", systemImage: "checkmark.circle")
+                Label("Set as Default", systemImage: "checkmark.circle")
             }
             Button(role: .destructive) {
                 mintToRemove = mint
@@ -179,7 +179,7 @@ struct MintsListView: View {
                 Button {
                     setActive(mint)
                 } label: {
-                    Label("Set Active", systemImage: "checkmark.circle.fill")
+                    Label("Set as Default", systemImage: "checkmark.circle.fill")
                 }
                 .tint(.green)
             }
