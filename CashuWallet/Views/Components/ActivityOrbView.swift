@@ -209,6 +209,102 @@ struct MutexLockOverlay: View {
     }
 }
 
+// MARK: - Suggested Mints (restore recognition aid)
+
+/// A known public mint surfaced as a one-tap quick-add during onboarding and
+/// seed-restore.
+struct RecommendedMint: Identifiable {
+    let name: String
+    let url: String
+    var id: String { url }
+
+    /// The curated shortlist offered when a user has no mints to type from memory.
+    static let suggested: [RecommendedMint] = [
+        RecommendedMint(name: "Minibits", url: "https://mint.minibits.cash/Bitcoin"),
+        RecommendedMint(name: "Coinos", url: "https://mint.coinos.io"),
+        RecommendedMint(name: "Macadamia", url: "https://mint.macadamia.cash")
+    ]
+}
+
+/// Quick-add suggestion rows shown in the restore-mints empty state. Converts
+/// the "type a mint URL from memory" recall task into recognition: tap a known
+/// mint to stage it for restore. Rows sit on the bare canvas with hairline
+/// dividers — the same shape as the staged-mint list, no card.
+struct SuggestedMintsSection: View {
+    /// URLs already staged or restored — filtered out of the suggestions.
+    let existingURLs: Set<String>
+    let onAdd: (String) -> Void
+
+    private var available: [RecommendedMint] {
+        RecommendedMint.suggested.filter { !existingURLs.contains($0.url) }
+    }
+
+    var body: some View {
+        if !available.isEmpty {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Suggested mints")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(1.2)
+                    .padding(.horizontal, 4)
+                    .padding(.bottom, 8)
+
+                ForEach(Array(available.enumerated()), id: \.element.id) { index, mint in
+                    Button {
+                        onAdd(mint.url)
+                        HapticFeedback.selection()
+                    } label: {
+                        row(for: mint)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Add \(mint.name)")
+                    .accessibilityHint("Stages \(displayHost(mint.url)) for recovery")
+
+                    if index < available.count - 1 {
+                        CanvasDivider()
+                    }
+                }
+            }
+            .padding(.horizontal)
+        }
+    }
+
+    private func row(for mint: RecommendedMint) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: "bitcoinsign.bank.building")
+                .foregroundStyle(.secondary)
+                .frame(width: 24, height: 24)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(mint.name)
+                    .font(.subheadline.weight(.medium))
+                Text(displayHost(mint.url))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer()
+
+            Image(systemName: "plus.circle.fill")
+                .font(.title3)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 12)
+        .contentShape(Rectangle())
+    }
+
+    private func displayHost(_ url: String) -> String {
+        var host = url
+            .replacingOccurrences(of: "https://", with: "")
+            .replacingOccurrences(of: "http://", with: "")
+        if host.hasSuffix("/") { host = String(host.dropLast()) }
+        return host
+    }
+}
+
 // MARK: - Preview
 
 #Preview("Activity Orb") {

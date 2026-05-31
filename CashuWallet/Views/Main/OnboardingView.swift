@@ -45,17 +45,7 @@ struct OnboardingView: View {
         case restoreMints
     }
 
-    private struct RecommendedMint: Identifiable {
-        let name: String
-        let url: String
-        var id: String { url }
-    }
-
-    private let recommendedMints: [RecommendedMint] = [
-        RecommendedMint(name: "Minibits", url: "https://mint.minibits.cash/Bitcoin"),
-        RecommendedMint(name: "Coinos", url: "https://mint.coinos.io"),
-        RecommendedMint(name: "Macadamia", url: "https://mint.macadamia.cash")
-    ]
+    private let recommendedMints: [RecommendedMint] = RecommendedMint.suggested
 
     var body: some View {
         ZStack {
@@ -678,45 +668,40 @@ struct OnboardingView: View {
     // MARK: - Restore Mints View
 
     private var restoreMintsView: some View {
-        VStack(spacing: 20) {
+        let isEmpty = mintsToRestore.isEmpty && restoreResults.isEmpty
+
+        return VStack(spacing: 20) {
             Text("Restore Ecash")
                 .font(.title2)
-                .fontWeight(.bold)
+                .fontWeight(.semibold)
 
-            Text("Add the mints you used before to recover your ecash.")
+            Text("Add the mints you used before to recover ecash from this seed.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal)
 
-            GroupBox {
-                TextField("https://mint.example.com", text: $mintUrlInput)
-                    .textInputAutocapitalization(.never)
-                    .disableAutocorrection(true)
-                    .keyboardType(.URL)
-            }
-            .padding(.horizontal)
+            TextField("mint.example.com", text: $mintUrlInput)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .keyboardType(.URL)
+                .textContentType(.URL)
+                .onSubmit(addMintUrl)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 14)
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
+                .padding(.horizontal)
 
             HStack(spacing: 8) {
                 Button(action: addMintUrl) {
-                    Label("Add", systemImage: "plus")
-                        .font(.subheadline.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(.thinMaterial, in: Capsule())
-                        .foregroundStyle(.primary)
+                    restoreCapsuleChip("Add", systemImage: "plus")
                 }
                 .buttonStyle(.plain)
-                .disabled(mintUrlInput.isEmpty)
-                .opacity(mintUrlInput.isEmpty ? 0.4 : 1)
+                .disabled(mintUrlInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .opacity(mintUrlInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.4 : 1)
 
                 Button(action: pasteMintUrlsFromClipboard) {
-                    Label("Paste", systemImage: "doc.on.clipboard")
-                        .font(.subheadline.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(.thinMaterial, in: Capsule())
-                        .foregroundStyle(.primary)
+                    restoreCapsuleChip("Paste", systemImage: "doc.on.clipboard")
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Paste mint URLs from clipboard")
@@ -746,10 +731,9 @@ struct OnboardingView: View {
                 }
                 .frame(maxHeight: 280)
             } else {
-                NativeEmptyState(
-                    title: "No mints added yet",
-                    systemImage: "bitcoinsign.bank.building",
-                    style: .compact
+                SuggestedMintsSection(
+                    existingURLs: Set(mintsToRestore).union(restoreResults.map(\.mintUrl)),
+                    onAdd: { addMintUrlToRestoreList($0, showDuplicateError: false, showValidationError: false) }
                 )
             }
 
@@ -771,6 +755,7 @@ struct OnboardingView: View {
                     if totalRecovered > 0 {
                         Label("Recovered: \(totalRecovered) sats", systemImage: "checkmark.circle.fill")
                             .font(.subheadline.weight(.semibold))
+                            .monospacedDigit()
                             .foregroundStyle(.green)
                             .contentTransition(.numericText(value: Double(totalRecovered)))
                     }
@@ -778,6 +763,7 @@ struct OnboardingView: View {
                         Label("Pending: \(totalPending) sats", systemImage: "clock")
                             .symbolEffect(.pulse, options: .repeating)
                             .font(.subheadline)
+                            .monospacedDigit()
                             .foregroundStyle(.orange)
                     }
                     if totalRecovered == 0 && totalPending == 0 {
@@ -792,7 +778,7 @@ struct OnboardingView: View {
 
             Spacer()
 
-            VStack(spacing: 10) {
+            VStack(spacing: 12) {
                 if !mintsToRestore.isEmpty {
                     Button(action: startRestore) {
                         if isRestoringMints {
@@ -801,8 +787,7 @@ struct OnboardingView: View {
                                 Text("Restoring...")
                             }
                         } else {
-                            Label("Restore from \(mintsToRestore.count) mint\(mintsToRestore.count == 1 ? "" : "s")",
-                                  systemImage: "arrow.counterclockwise")
+                            Text("Restore from \(mintsToRestore.count) mint\(mintsToRestore.count == 1 ? "" : "s")")
                         }
                     }
                     .glassButton()
@@ -810,12 +795,25 @@ struct OnboardingView: View {
                     .padding(.horizontal)
                 }
 
-                Button(action: finishRestore) {
-                    Text(restoreResults.isEmpty && mintsToRestore.isEmpty ? "Skip" : "Continue")
+                if isEmpty {
+                    Button(action: finishRestore) {
+                        Text("Skip")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isRestoringMints)
+                } else {
+                    Button(action: finishRestore) {
+                        Text("Continue")
+                    }
+                    .glassButton()
+                    .disabled(isRestoringMints)
+                    .padding(.horizontal)
                 }
-                .glassButton()
-                .disabled(isRestoringMints)
-                .padding(.horizontal)
             }
 
             // Back button
@@ -832,6 +830,19 @@ struct OnboardingView: View {
             .padding(.bottom, 20)
         }
         .padding(.top)
+    }
+
+    /// Inline Liquid-Glass capsule chip (Add / Paste) for the restore flow.
+    /// Non-interactive glass so taps land on the plain Button label; falls back
+    /// to `.quaternary` below iOS 26.
+    private func restoreCapsuleChip(_ title: String, systemImage: String) -> some View {
+        Label(title, systemImage: systemImage)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.primary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .liquidGlass(in: Capsule())
+            .contentShape(Capsule())
     }
 
     // MARK: - Mint Row
@@ -874,10 +885,12 @@ struct OnboardingView: View {
                         Text("\(result.unspent) sats")
                             .font(.subheadline)
                             .fontWeight(.semibold)
+                            .monospacedDigit()
                             .foregroundStyle(.green)
                     } else {
                         Text("0 sats")
                             .font(.subheadline)
+                            .monospacedDigit()
                             .foregroundStyle(.secondary)
                     }
                 } else if !isRestoring {
@@ -953,6 +966,7 @@ struct OnboardingView: View {
     private func addMintUrl() {
         if addMintUrlToRestoreList(mintUrlInput, showDuplicateError: true, showValidationError: true) {
             mintUrlInput = ""
+            HapticFeedback.selection()
         }
     }
 
