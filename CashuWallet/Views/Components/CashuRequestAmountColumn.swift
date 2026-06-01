@@ -1,11 +1,11 @@
 import SwiftUI
 
 // Shared trailing region for Cashu Request rows on Home and History.
-// - Received: green +amount + fiat sub-line.
-// - Waiting (fixed amount): clock to the LEFT, amount + fiat to the right.
+// - Received: .primary +amount + fiat sub-line (settled reads white).
+// - Waiting (fixed amount): muted amount + fiat, no indicator (gray = waiting).
 // - Waiting (any amount, no fixed expected total): no trailing element.
-// See DESIGN.md — The Amount Column Rule, The One Green Rule,
-// The Fiat Sub-Amount Rule.
+// All amounts share the .semibold weight. See DESIGN.md —
+// The Amount Column Rule, The One Green Rule, The Fiat Sub-Amount Rule.
 struct CashuRequestAmountColumn: View {
     let request: CashuRequest
     let received: Bool
@@ -14,27 +14,14 @@ struct CashuRequestAmountColumn: View {
     @ObservedObject var settings: SettingsManager = .shared
     @ObservedObject var priceService: PriceService = .shared
 
-    var body: some View {
-        HStack(spacing: 10) {
-            if shouldShowClock {
-                Image(systemName: "clock")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
-            }
-
-            amountStack
-        }
-    }
-
     @ViewBuilder
-    private var amountStack: some View {
+    var body: some View {
         if received {
             VStack(alignment: .trailing, spacing: 2) {
                 Text("+\(settings.formatAmountShort(receivedAmount))")
                     .font(.system(.body, design: .rounded).weight(.semibold))
                     .monospacedDigit()
-                    .foregroundStyle(Color.green)
+                    .foregroundStyle(.primary)
                     .contentTransition(.numericText(value: Double(receivedAmount)))
 
                 if showFiat {
@@ -47,7 +34,7 @@ struct CashuRequestAmountColumn: View {
         } else if let amount = request.amount, amount > 0 {
             VStack(alignment: .trailing, spacing: 2) {
                 Text(settings.formatAmountShort(amount))
-                    .font(.system(.body, design: .rounded).weight(.medium))
+                    .font(.system(.body, design: .rounded).weight(.semibold))
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
 
@@ -60,12 +47,6 @@ struct CashuRequestAmountColumn: View {
             }
         }
         // "any amount" + waiting: no trailing element.
-    }
-
-    private var shouldShowClock: Bool {
-        guard !received else { return false }
-        if let amount = request.amount, amount > 0 { return true }
-        return false
     }
 
     private var showFiat: Bool {

@@ -24,7 +24,6 @@ struct HistoryView: View {
     @State private var selectedTransaction: WalletTransaction?
     @State private var selectedRequest: CashuRequest?
     @State private var requestPendingDeletion: CashuRequest?
-    @State private var isCheckingStatus: String? = nil
     @State private var transactionUpdateRevision = 0
     @State private var hasAppearedOnce = false
 
@@ -58,7 +57,9 @@ struct HistoryView: View {
     private let maxStaggerIndex = 8
     private let staggerDelay: Double = 0.035
     private let rowHorizontalPadding: CGFloat = 4
-    private let rowVerticalPadding: CGFloat = 10
+    // Match MainWalletView's recent-list row metrics so spacing reads the
+    // same from Home → History (16pt vertical padding, 4pt title/time gap).
+    private let rowVerticalPadding: CGFloat = 16
 
     var body: some View {
         NavigationStack {
@@ -101,9 +102,11 @@ struct HistoryView: View {
                 TransactionDetailView(transaction: transaction)
                     .environmentObject(walletManager)
             }
-            .navigationDestination(item: $selectedRequest) { request in
-                CashuRequestDetailView(request: request)
-                    .environmentObject(walletManager)
+            .sheet(item: $selectedRequest) { request in
+                NavigationStack {
+                    CashuRequestDetailView(request: request)
+                        .environmentObject(walletManager)
+                }
             }
             .confirmationDialog(
                 "Remove this Cashu Request from history?",
@@ -379,7 +382,7 @@ struct HistoryView: View {
             HStack(spacing: 14) {
                 TransactionIcon(direction: .incoming)
 
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text("Cashu Request")
                         .font(.body.weight(.medium))
                         .lineLimit(1)
@@ -430,7 +433,7 @@ struct HistoryView: View {
                 rowIcon(for: transaction)
                     .frame(width: 36, height: 36)
 
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text(rowTitle(for: transaction))
                         .font(.body.weight(.medium))
                         .lineLimit(1)
@@ -442,11 +445,7 @@ struct HistoryView: View {
 
                 Spacer(minLength: 8)
 
-                TransactionAmountColumn(
-                    transaction: transaction,
-                    isCheckingStatus: isCheckingStatus,
-                    onRefresh: { Task { await refreshPendingTransaction(transaction) } }
-                )
+                TransactionAmountColumn(transaction: transaction)
             }
             .padding(.horizontal, rowHorizontalPadding)
             .padding(.vertical, rowVerticalPadding)
@@ -469,14 +468,7 @@ struct HistoryView: View {
     }
 
     private func rowTitle(for transaction: WalletTransaction) -> String {
-        switch (transaction.kind, transaction.type) {
-        case (.ecash,     .incoming): return "Received ecash"
-        case (.ecash,     .outgoing): return "Sent ecash"
-        case (.lightning, .incoming): return "Lightning received"
-        case (.lightning, .outgoing): return "Lightning paid"
-        case (.onchain,   .incoming): return "Bitcoin received"
-        case (.onchain,   .outgoing): return "Bitcoin sent"
-        }
+        transaction.displayTitle
     }
 
     // MARK: - Formatting
@@ -526,32 +518,6 @@ struct HistoryView: View {
         let sameYear = calendar.component(.year, from: date) == calendar.component(.year, from: now)
         return (sameYear ? Self.sameYearDateFormatter : Self.otherYearDateFormatter).string(from: date)
     }
-
-    // MARK: - Actions
-
-    private func refreshPendingTransaction(_ transaction: WalletTransaction) async {
-        switch transaction.kind {
-        case .ecash:
-            await checkTransactionStatus(transaction)
-        case .lightning, .onchain:
-            isCheckingStatus = transaction.id
-            defer { isCheckingStatus = nil }
-            await walletManager.refreshPendingMintQuote(quoteId: transaction.id)
-        }
-    }
-
-    private func checkTransactionStatus(_ transaction: WalletTransaction) async {
-        guard let token = transaction.token else { return }
-        isCheckingStatus = transaction.id
-        defer { isCheckingStatus = nil }
-
-        let isSpent = await walletManager.checkTokenSpendable(token: token, mintUrl: transaction.mintUrl)
-        if isSpent {
-            walletManager.removePendingToken(tokenId: transaction.id)
-            await walletManager.loadTransactions()
-        }
-    }
-
 
 }
 

@@ -808,9 +808,13 @@ struct ReceiveLightningView: View {
             case .pending:
                 return
             case .paid:
-                await mintQuoteIfReady(updatedQuote)
+                // Payment detected. Finish the UX immediately and mint in the
+                // background so a slow/transiently-failing mint never hangs the
+                // sheet (the balance credits a beat later).
+                await completeReceivedQuote(mintInBackground: true)
             case .issued:
-                await completeReceivedQuote(refreshWalletState: true)
+                // Mint already issued the ecash — just refresh + finish.
+                await completeReceivedQuote(mintInBackground: false)
             }
         } catch {
             // Ignore transient polling failures and keep monitoring.
@@ -844,10 +848,10 @@ struct ReceiveLightningView: View {
 
         do {
             let _ = try await walletManager.mintTokens(quoteId: quote.id)
-            await completeReceivedQuote(refreshWalletState: false)
+            await completeReceivedQuote(mintInBackground: false)
         } catch {
             if isAlreadyIssuedMintError(error) {
-                await completeReceivedQuote(refreshWalletState: true)
+                await completeReceivedQuote(mintInBackground: false)
                 return
             }
 
@@ -861,24 +865,35 @@ struct ReceiveLightningView: View {
         }
     }
 
+    /// Finish the receive UX as soon as the payment is *detected*. When
+    /// `mintInBackground` is true the quote is `.paid` but not yet minted: we
+    /// claim it in a detached task so a slow mint never holds the sheet open.
+    /// When false the ecash is already issued and we just refresh.
     @MainActor
-    private func completeReceivedQuote(refreshWalletState: Bool) async {
+    private func completeReceivedQuote(mintInBackground: Bool) async {
         guard !isPaid else { return }
 
         isPaid = true
         HapticFeedback.notification(.success)
-        quoteStatusTask?.cancel()
         expiryTimer?.invalidate()
 
-        if refreshWalletState {
-            await walletManager.refreshBalance()
-            await walletManager.loadTransactions()
+        let quoteId = mintQuote?.id
+
+        // Run the mint/refresh in an UNSTRUCTURED task that outlives this view
+        // and the (about-to-be-cancelled) poll task, so it completes after the
+        // sheet slides away.
+        if mintInBackground, let quoteId {
+            Task { await walletManager.claimPaidMintQuote(quoteId: quoteId) }
+        } else {
+            Task { @MainActor in
+                await walletManager.refreshBalance()
+                await walletManager.loadTransactions()
+            }
         }
 
         // Fire the home-screen toast (same notification the NPC mint flow
-        // posts from WalletManager). Without this the user lands on the
-        // home screen after dismiss with no confirmation that the mint
-        // succeeded.
+        // posts from WalletManager) so the user sees the receipt on the home
+        // screen after dismiss.
         if let amount = mintQuote?.amount {
             NotificationCenter.default.post(
                 name: .cashuTokenReceived,
@@ -887,9 +902,12 @@ struct ReceiveLightningView: View {
             )
         }
 
-        // Brief dwell so the user sees the "Payment Received!" badge flip
-        // before the sheet dismisses and the home-screen toast appears.
-        try? await Task.sleep(nanoseconds: 2_000_000_000)
+        // Brief dwell so the user registers the "Payment Received!" badge, then
+        // auto-dismiss. Cancel the poll AFTER the dwell — this method runs
+        // inside `quoteStatusTask`, so cancelling first would abort the sleep
+        // and dismiss instantly. The mint finishes in the background.
+        try? await Task.sleep(nanoseconds: 1_200_000_000)
+        quoteStatusTask?.cancel()
         dismiss()
     }
 

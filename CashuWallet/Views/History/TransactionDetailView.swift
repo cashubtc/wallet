@@ -60,9 +60,14 @@ struct TransactionDetailView: View {
                                 }
                             }
                         } else {
-                            Image(systemName: kindIcon)
-                                .font(.system(size: 64))
-                                .foregroundStyle(Color.accentColor)
+                            // Hero mirrors the list's directional-arrow language
+                            // (down = received, up = sent), muted on a soft
+                            // circle — same recipe as TransactionIcon, scaled up.
+                            Image(systemName: transaction.type == .incoming ? "arrow.down" : "arrow.up")
+                                .font(.system(size: 32, weight: .medium))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 72, height: 72)
+                                .background(Color(.secondarySystemFill), in: Circle())
                                 .padding(.top, 32)
                                 .accessibilityHidden(true)
                         }
@@ -78,21 +83,18 @@ struct TransactionDetailView: View {
                         // Animated status.
                         statusBadge
 
-                        // Detail rows on canvas with hairline dividers.
+                        // Detail rows on canvas with hairline dividers. Type and
+                        // State are intentionally omitted — the nav title already
+                        // names the kind/direction and the status badge above
+                        // carries the state.
                         VStack(spacing: 0) {
-                            detailRow(icon: "arrow.left.arrow.right", label: "Type",
-                                      value: transaction.kind.displayName)
                             if transaction.fee > 0 {
-                                canvasDivider
                                 detailRow(icon: "arrow.up.arrow.down", label: "Fee",
                                           value: "\(transaction.fee) sat")
+                                canvasDivider
                             }
-                            canvasDivider
                             detailRow(icon: "banknote", label: "Unit",
                                       value: settings.unitLabel.uppercased())
-                            canvasDivider
-                            detailRow(icon: "info.circle", label: "State",
-                                      value: transaction.displayStatusText)
                             if let mintUrl = transaction.mintUrl {
                                 canvasDivider
                                 detailRow(icon: "bitcoinsign.bank.building", label: "Mint",
@@ -151,7 +153,7 @@ struct TransactionDetailView: View {
                     .accessibilityLabel("Close")
                 }
                 ToolbarItem(placement: .principal) {
-                    Text(titleForTransaction).font(.headline)
+                    Text(transaction.displayTitle).font(.headline)
                 }
                 if qrContent != nil {
                     ToolbarItem(placement: .topBarTrailing) {
@@ -212,25 +214,6 @@ struct TransactionDetailView: View {
     }
 
     // MARK: - Helpers
-
-    private var titleForTransaction: String {
-        switch transaction.kind {
-        case .lightning:
-            return transaction.type == .incoming ? "Lightning request" : "Lightning payment"
-        case .onchain:
-            return transaction.type == .incoming ? "On-chain receive" : "On-chain payment"
-        case .ecash:
-            return transaction.status == .pending ? "Pending Ecash" : "Ecash"
-        }
-    }
-
-    private var kindIcon: String {
-        switch transaction.kind {
-        case .lightning: return "bolt.fill"
-        case .onchain:   return "bitcoinsign.circle.fill"
-        case .ecash:     return "link.circle"
-        }
-    }
 
     private var statusIcon: String {
         switch transaction.status {

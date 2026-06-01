@@ -112,7 +112,7 @@ components:
     rounded: "circle"
     iconSymbol: "arrow.down (incoming) / arrow.up (outgoing)"
     iconSize: "16px"
-    note: "Leading 36x36 history-row glyph (TransactionIcon). Pure directional arrow, always muted; direction is the arrow's orientation, never colour. The amount alone carries state colour (One Green Rule). Carve-out: supersedes the prior kind-glyph + corner directional badge model."
+    note: "Leading 36x36 history-row glyph (TransactionIcon). Pure directional arrow, always muted; direction is the arrow's orientation, never colour. The amount carries settled/pending state via .primary / .secondary — never green (One Green Rule). Carve-out: supersedes the prior kind-glyph + corner directional badge model."
   row-inspector-editable:
     backgroundColor: "transparent"
     textColor: "{colors.primary-text}"
@@ -206,20 +206,24 @@ State colors are iOS system semantics, never custom hex. They appear at full
 opacity for foreground (icon, status text) and at low opacity (10–18%) when used
 as a tinted background.
 
-- **Confirmed Green** (`Color.green`, ≈ `#34C759` / `#30D158`): the colour of a
-  completed transaction's *amount text* (both directions — money landed is money
-  landed, on the page green is "this row settled"), and of the
-  `arrow.down.circle.fill` directional badge for confirmed **incoming**
-  transactions, the `checkmark.seal.fill` "N payments received" status on a
-  Cashu Request, and the `checkmark.circle.fill` payment-received toast inside
-  the Cashu Request detail. **Nothing else is allowed to be green.** Outgoing
-  rows render their directional badge (`arrow.up.circle.fill`) in
-  `Color.primary`, never green — green belongs to the receiver.
-- **Pending Orange** (`Color.orange`, ≈ `#FF9500` / `#FF9F0A`): the
-  `clock.circle.fill` directional badge while a transaction is pending,
-  foreground for "pending" status text, and foreground for the "Waiting for
-  payment…" clock on a Cashu Request. When used as a background it lives at
-  `.opacity(0.1)` — the quiet-pending principle made visual.
+- **Confirmed Green** (`Color.green`, ≈ `#34C759` / `#30D158`): green is the
+  receiver's reward, but **no longer on a ledger amount** — *as of 2026-06-01
+  in-row amount green is retired* (see the amended One Green Rule; transaction
+  and Cashu Request row amounts are `.primary` when settled, `.secondary` when
+  pending). Green now lives only in **off-row / detail-surface success states**:
+  the transient home received-delta beat (`✓ +amount`), the default-mint
+  indicator dot, the `checkmark.seal.fill` "N payments received" status and the
+  `checkmark.circle.fill` payment-received toast inside `CashuRequestDetailView`,
+  and the transaction detail-sheet completed checkmark. **Nothing on a list row
+  is green.** The leading directional arrow is always `.secondary` regardless of
+  direction or state — green belongs to receipt-confirmation surfaces, not the
+  ledger line.
+- **Pending Orange** (`Color.orange`, ≈ `#FF9500` / `#FF9F0A`): foreground for
+  the detail-sheet "pending" status badge (`TransactionDetailView`) and for the
+  "Waiting for payment…" clock on a Cashu Request. It does **not** appear on a
+  transaction *row* — a pending row is the muted `.secondary` amount alone
+  (amended 2026-06-01). When used as a background it lives at `.opacity(0.1)` —
+  the quiet-pending principle made visual.
 - **Error Red** (`Color.red`, ≈ `#FF3B30` / `#FF453A`): the `.failed` status
   foreground and destructive-action accents. As a tint background it appears at
   `.opacity(0.18)` (e.g. the authorizing-overlay destructive surface).
@@ -240,29 +244,50 @@ as a tinted background.
 `Color(.separator)`) or one of three state hues at a stated opacity. There is no
 fourth case.
 
-**The One Green Rule.** Green is the reward for *receipt*. The directional
-badge gets it **only when arrow points down**, and the row's amount text gets
-it **only when the row settled incoming** — `transaction.status == .completed
-&& transaction.type == .incoming`, or a Cashu Request that has received
-payment. Outgoing completed amounts render `.primary` so the row reads as
-cleared but neutral. Pending amounts stay `.secondary` in both directions.
-Nothing else on the row, anywhere, ever, gets to be green. The shared
-`TransactionAmountColumn` (`CashuWallet/Views/Components/`) is the canonical
-implementation; do not re-derive the color elsewhere. The one off-row exception
-is the home-screen received-delta beat (the transient `✓ +amount` under the
-balance), which is green-on-receipt by the same logic — and it carries **no
-directional arrow**, keeping the down-arrow vocabulary exclusive to row badges.
-The **second off-row exception is the default-mint indicator dot** — a small green
-dot on a mint's icon (Mints list `MintsListView` and the mint profile
-`MintDetailView`) marking the user's currently-selected default mint. This is a
-deliberate, documented carve-out: the dot is a *selection* marker (the same axis as
-"Set as Default"), carries no amount or arrow, and never appears on a transaction
-row, so it does not dilute the receipt vocabulary (added 2026-05-31).
+**The One Green Rule.** *Amended 2026-06-01: in-row amount green is retired —
+amounts are never green.* A transaction row's amount is now a **two-state
+ledger signal**: `.secondary` while `transaction.status == .pending`, `.primary`
+once settled (both directions, both kinds — incoming, outgoing, ecash,
+Lightning, on-chain). A received Cashu Request renders `.primary` too. The
+shared `TransactionAmountColumn` (`CashuWallet/Views/Components/`) is the
+canonical implementation: `amountColor` is exactly
+`transaction.status == .pending ? .secondary : .primary`; do not re-derive the
+color elsewhere. *Rationale for the carve-out:* mixing green/white/gray amounts
+at mixed weights read as noisy rather than calm; a single white-settles /
+gray-pends language is more aligned with the "System Utility" North Star, and
+direction is already carried by the leading arrow + the `+`/`−` prefix.
+Green now survives in **two off-row places only**, neither of which is a
+transaction-row amount:
+1. The home-screen received-delta beat (the transient `✓ +amount` under the
+   balance, `AnimatedBalanceView`), green-on-receipt — a momentary celebratory
+   confirmation that carries **no directional arrow** and fades in ~1s.
+2. The **default-mint indicator dot** — a small green dot on a mint's icon
+   (Mints list `MintsListView`, mint profile `MintDetailView`) marking the
+   user's selected default mint. A *selection* marker (same axis as "Set as
+   Default"), carries no amount or arrow, never appears on a transaction row
+   (added 2026-05-31).
+The detail sheet (`TransactionDetailView`) keeps its own *status-badge* colour
+vocabulary (orange pending / green completed checkmark) — that is a labelled
+status pill, a different surface from the ledger amount, and is intentionally
+left untouched. Its **hero** (shown when there is no QR to display, e.g. a
+received ecash) is the same muted directional arrow the list uses
+(`arrow.down`/`arrow.up`, `.secondary`, on a `Color(.secondarySystemFill)`
+circle) scaled up to 72pt — *not* a per-kind glyph (the old `link.circle` /
+`bolt.fill` set was retired 2026-06-01). The **Type** and **State** rows are
+omitted: the nav title (`WalletTransaction.displayTitle`) names the
+kind/direction and the status badge carries the state, so repeating them as rows
+is redundant.
 
-**The Quiet Pending Rule.** Pending is `Color.orange` muted to `.opacity(0.1)`
-as a background and the clock SF Symbol as a leading badge. Never a full-saturation
-pill, never a loud "PENDING" wordmark. The recent commit "Quiet pending row state
-in History — clock badge, drop orange pill" is the standing law.
+**The Quiet Pending Rule.** *Amended 2026-06-01.* On **any list row** —
+transaction or Cashu Request — pending/waiting is conveyed by the muted
+`.secondary` amount **alone**: no badge, no icon, no orange. (The
+`arrow.triangle.2.circlepath` per-row refresh button *and* the waiting-request
+leading `clock` were both removed; manual re-check lives on History
+pull-to-refresh — `.refreshable { syncPendingMintQuotes(); checkAllPendingTokens() }`.)
+The muted-orange pending language survives only off the list: the detail-sheet
+status badge (`TransactionDetailView`) and the "Waiting for payment…" status
+clock inside `CashuRequestDetailView`. Never a full-saturation pill, never a
+loud "PENDING" wordmark.
 
 **The Fiat Sub-Amount Rule.** When
 `settings.showFiatBalance && priceService.btcPriceUSD > 0`, any row that
@@ -273,13 +298,12 @@ trailing element and therefore no fiat. Fiat re-renders silently on price
 ticks; no `.contentTransition`. Same gate as the hero balance fiat line, so
 turning fiat off in Settings clears the entire app uniformly.
 
-**The Amount Column Rule.** Pending/waiting trailing indicators (the
-`arrow.triangle.2.circlepath` refresh button, the `clock` SF Symbol on a
-waiting Cashu Request) sit to the **left** of the amount column. Amounts
-always anchor to the trailing edge of the row so the column reads as one
-straight vertical line down the list, regardless of which rows have
-indicators. The `Spacer(minLength:)` before the amount column pushes both
-indicator and amount right; the trailing edge stays fixed.
+**The Amount Column Rule.** No list row has a left-of-amount indicator anymore
+— both the transaction `arrow.triangle.2.circlepath` refresh button and the
+waiting-Cashu-Request `clock` were removed (2026-06-01). Every row's amount
+anchors to the trailing edge so the column reads as one straight vertical line
+down the list. The `Spacer(minLength:)` before the amount column pushes the
+amount right; the trailing edge stays fixed.
 
 ## 3. Typography
 
@@ -430,18 +454,24 @@ The canonical list pattern. Defined in
   corner directional badge model. Rationale: a single quiet arrow is more
   aligned with the "System Utility" North Star and removes redundant colour
   (the amount already signals direction and confirmation).
-- **Title**: left-aligned, `.body.weight(.medium)`, single line, derived from
-  `(kind, type)` — e.g. "Lightning received", "Bitcoin sent", "Sent ecash".
+- **Title**: left-aligned, `.body.weight(.medium)`, single line. **Kind-first,
+  capitalized kind, lowercase verb** across all six cases — "Ecash received",
+  "Ecash sent", "Lightning received", "Lightning paid", "Bitcoin received",
+  "Bitcoin sent". Single source of truth: `WalletTransaction.displayTitle`
+  (Models.swift), reused by the History/Home rows **and** the transaction detail
+  nav title, so a row and the sheet it opens always read identically. *(2026-06-01:
+  was verb-first lowercase "Received ecash"; unified to kind-first.)*
 - **Timestamp**: `.caption`, `Color.secondary`, immediately under the title.
   Formatted with `RelativeDateTimeFormatter(.abbreviated)` ("2 hr ago", "3 d ago").
 - **Trailing amount**: `.system(.body, design: .rounded).weight(.semibold)
   .monospacedDigit()`, `.contentTransition(.numericText(value:))`, prefixed
-  with `+` or `−`. Pending → `Color.secondary`. Completed → `Color.green`
-  (both incoming and outgoing — see the One Green Rule). Failed → `.primary`.
-- **Trailing pending refresh**: while a row is pending, a borderless
-  `arrow.triangle.2.circlepath` button sits to the right of the amount and
-  swaps for `ProgressView().controlSize(.small)` while checking. This is the
-  only borderless `Button` in a row.
+  with `+` or `−`. Two-state colour: pending → `Color.secondary`, everything
+  settled → `.primary` (both directions, both kinds; never green — see the
+  amended One Green Rule).
+- **Pending indicator**: none on the row. Pending is the muted `.secondary`
+  amount alone (the `arrow.triangle.2.circlepath` refresh button was removed
+  2026-06-01). Manual re-check is History pull-to-refresh
+  (`syncPendingMintQuotes()` + `checkAllPendingTokens()`).
 - **Separator**: `CanvasDivider()` with the default 28pt leading inset.
 - **Entrance**: row stagger via `.smooth(duration: 0.32).delay(index * 0.035s)`,
   capped at `maxStaggerIndex = 8`. The first eight rows cascade in; everything
@@ -466,13 +496,13 @@ section. Defined in `HistoryView.swift` → `cashuRequestRow(request:, staggerIn
   `.secondary` — matches transaction rows exactly. The payment count
   ("3 payments received") is no longer surfaced on the row; it lives in
   `CashuRequestDetailView`.
-- **Trailing amount**:
-  - Fixed-amount + waiting: `+amount` in `.secondary` (the target is
-    visible while pending — parallel to a Lightning invoice).
-  - Fixed-amount + received: `+amount` in `Color.green`, monospaced digit,
+- **Trailing amount** (all `.semibold`, matching every other amount):
+  - Fixed-amount + waiting: `amount` in `.secondary`, no indicator — the muted
+    amount alone signals waiting (the target is visible while pending).
+  - Fixed-amount + received: `+amount` in `.primary`, monospaced digit,
     `.contentTransition(.numericText(value:))`. Cumulative for multi-payment.
   - Any-amount + waiting: no trailing element at all.
-  - Any-amount + received: `+\(totalReceived)` in `Color.green`, cumulative.
+  - Any-amount + received: `+\(totalReceived)` in `.primary`, cumulative.
 - **Duplicate suppression**: when a payment lands, `WalletManager
   .receiveCashuRequestPayment` diffs the mint's incoming transaction ids
   before/after the receive, identifies the new CDK tx id, and stores it on
@@ -537,9 +567,13 @@ camera scanner only.
 
 The signature surface of the NUT-18 receive flow.
 `CashuWallet/Views/Receive/CashuRequestDetailView.swift`. The view runs in two
-contexts: pushed inside a `.medium`/`.large` sheet from `ReceiveEcashView`, or
-pushed as a `NavigationLink` destination from the History "Cashu Requests"
-section. The same content scales to both.
+contexts: as the receive-flow face inside a `.medium`/`.large` sheet from
+`ReceiveEcashView`, or — from History/Home — presented as its **own bottom
+`.sheet`** (wrapped in a `NavigationStack` at the call site for its toolbar).
+**Detail surfaces are always bottom sheets, never pushed** — tapping any
+history/recent item (transaction *or* Cashu Request) slides up the same way, so
+the two never diverge into a push vs. sheet split. The same content scales to
+both contexts.
 
 - **QR**: 280×280 `QRCodeView(content:, showControls: false, staticOnly: true)`
   on a `Color.white` `RoundedRectangle(cornerRadius: 20)` with 16pt padding.
@@ -555,8 +589,12 @@ section. The same content scales to both.
     + "Waiting for payment…", `Color.orange`, no animation on appearance.
   - Received (live) → `checkmark.circle.fill` with `.symbolEffect(.bounce)` +
     "Payment received!", `Color.green`, slid in via
-    `.scale.combined(with: .opacity)` under `.spring(0.5, 0.7)`. Holds for
-    2.5s then reverts to the persistent count.
+    `.scale.combined(with: .opacity)` under `.spring(0.5, 0.7)`. Gated to the
+    on-screen request (the `.cashuTokenReceived` notification carries the
+    `requestId`). In the **receive flow** (watching a fresh request, `onClose`
+    set) it dwells ~1.2s then the sheet auto-dismisses — mirroring the Lightning
+    invoice. When **inspecting** an existing request from History/Home it holds
+    2.5s then reverts to the persistent count (no dismiss).
   - Received (persistent) → `checkmark.seal.fill` + "N payments received",
     `Color.green`. Quiet — no symbol effect, no animation.
 - **Editable inspector rows** (Mint, Amount): see `row-inspector-editable`
@@ -704,9 +742,12 @@ code must be).
    — the green `✓ +amount` that takes over the balance's fiat slot on receipt.
    All three are instances of this one named animation, not new motions. The
    *singular* allowed celebration vocabulary — never confetti, never a haptic
-   stronger than `.success`, never a sustained-color flash. Holds 2.5s,
-   then quietly steps back to the persistent line (N-payments-received, or the
-   fiat sub-amount on the home balance).
+   stronger than `.success`, never a sustained-color flash. **Resolution is
+   context-dependent:** in a receive flow (Lightning invoice, or a fresh Cashu
+   Request being watched) the badge dwells ~1.2s then the sheet slides down and
+   dismisses; when *inspecting* an existing Cashu Request it instead holds 2.5s
+   then steps back to the persistent line (N-payments-received). The home-balance
+   delta beat steps back to the fiat sub-amount.
 7. **Waiting-pulse** — `.symbolEffect(.pulse, options: .repeating)` on a
    single SF Symbol while a system is waiting on external state: the empty-
    state History bolt, the Cashu Request "Waiting for payment…" clock, the

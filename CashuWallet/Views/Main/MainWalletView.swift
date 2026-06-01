@@ -22,7 +22,6 @@ struct MainWalletView: View {
     @State private var selectedTransaction: WalletTransaction?
     @State private var selectedRequest: CashuRequest?
     @State private var topInsetHeight: CGFloat = 0
-    @State private var isCheckingStatus: String? = nil
 
     private let recentRowCap = 5
     private let scrollFadeBand: CGFloat = 24
@@ -73,9 +72,11 @@ struct MainWalletView: View {
                 TransactionDetailView(transaction: transaction)
                     .environmentObject(walletManager)
             }
-            .navigationDestination(item: $selectedRequest) { request in
-                CashuRequestDetailView(request: request)
-                    .environmentObject(walletManager)
+            .sheet(item: $selectedRequest) { request in
+                NavigationStack {
+                    CashuRequestDetailView(request: request)
+                        .environmentObject(walletManager)
+                }
             }
             .task { await walletManager.loadTransactions() }
         }
@@ -445,11 +446,7 @@ struct MainWalletView: View {
 
                 Spacer(minLength: 8)
 
-                TransactionAmountColumn(
-                    transaction: transaction,
-                    isCheckingStatus: isCheckingStatus,
-                    onRefresh: { Task { await refreshPendingTransaction(transaction) } }
-                )
+                TransactionAmountColumn(transaction: transaction)
             }
             .padding(.horizontal, 4)
             .padding(.vertical, 16)
@@ -467,14 +464,7 @@ struct MainWalletView: View {
     }
 
     private func rowTitle(for transaction: WalletTransaction) -> String {
-        switch (transaction.kind, transaction.type) {
-        case (.ecash,     .incoming): return "Received ecash"
-        case (.ecash,     .outgoing): return "Sent ecash"
-        case (.lightning, .incoming): return "Lightning received"
-        case (.lightning, .outgoing): return "Lightning paid"
-        case (.onchain,   .incoming): return "Bitcoin received"
-        case (.onchain,   .outgoing): return "Bitcoin sent"
-        }
+        transaction.displayTitle
     }
 
     private func formatAmount(_ transaction: WalletTransaction) -> String {
@@ -568,32 +558,6 @@ struct MainWalletView: View {
         }
         let sameYear = calendar.component(.year, from: date) == calendar.component(.year, from: now)
         return (sameYear ? Self.sameYearDateFormatter : Self.otherYearDateFormatter).string(from: date)
-    }
-
-    // MARK: - Refresh pending transactions
-    // Mirror of HistoryView so behavior matches across surfaces.
-
-    private func refreshPendingTransaction(_ transaction: WalletTransaction) async {
-        switch transaction.kind {
-        case .ecash:
-            await checkTransactionStatus(transaction)
-        case .lightning, .onchain:
-            isCheckingStatus = transaction.id
-            defer { isCheckingStatus = nil }
-            await walletManager.refreshPendingMintQuote(quoteId: transaction.id)
-        }
-    }
-
-    private func checkTransactionStatus(_ transaction: WalletTransaction) async {
-        guard let token = transaction.token else { return }
-        isCheckingStatus = transaction.id
-        defer { isCheckingStatus = nil }
-
-        let isSpent = await walletManager.checkTokenSpendable(token: token, mintUrl: transaction.mintUrl)
-        if isSpent {
-            walletManager.removePendingToken(tokenId: transaction.id)
-            await walletManager.loadTransactions()
-        }
     }
 
     // MARK: - Helpers

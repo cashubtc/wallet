@@ -11,7 +11,13 @@ actor NostrInboxClient {
     private var sessions: [URLSession] = []
     private var tasks: [URLSessionWebSocketTask] = []
     private var running = false
-    private var sinceTimestamp: Int64
+    // Fixed for the life of the subscription. NIP-59 gift wraps carry a
+    // randomized, backdated `created_at` (up to ~2 days in the past), so we must
+    // NOT advance the relay `since` filter to received timestamps — doing so
+    // would push the floor above later backdated payments and drop them. The
+    // caller picks a generous lookback window; de-duplication happens upstream
+    // by gift-wrap event id.
+    private let sinceTimestamp: Int64
 
     init(
         pubkeyHex: String,
@@ -43,10 +49,6 @@ actor NostrInboxClient {
             session.invalidateAndCancel()
         }
         sessions.removeAll()
-    }
-
-    func updateSince(_ ts: Int64) {
-        if ts > sinceTimestamp { sinceTimestamp = ts }
     }
 
     // MARK: - Connect / reconnect
@@ -126,7 +128,6 @@ actor NostrInboxClient {
             guard array.count >= 3,
                   let event = array[2] as? [String: Any],
                   let parsed = parseEvent(event) else { return }
-            updateSince(parsed.createdAt)
             await onEvent(parsed)
         case "EOSE", "OK", "NOTICE", "CLOSED":
             return

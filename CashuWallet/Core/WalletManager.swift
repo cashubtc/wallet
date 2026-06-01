@@ -815,6 +815,23 @@ class WalletManager: ObservableObject {
         await loadTransactions()
         return amount
     }
+
+    /// Fire-and-forget: keep trying to mint a paid quote so a slow/transiently
+    /// failing mint never blocks the receive sheet. `mintTokens` already
+    /// refreshes balance + history on success, so the wallet credits the moment
+    /// it lands; `syncPendingMintQuotes()` (History pull-to-refresh) is the
+    /// ultimate backstop if all attempts here fail.
+    func claimPaidMintQuote(quoteId: String) async {
+        for _ in 0..<8 {
+            do {
+                _ = try await mintTokens(quoteId: quoteId)
+                return
+            } catch {
+                try? await Task.sleep(nanoseconds: 2_500_000_000)
+            }
+        }
+        AppLogger.wallet.error("claimPaidMintQuote: gave up minting \(quoteId, privacy: .public)")
+    }
     
     func createMeltQuote(
         request: String,
@@ -1051,10 +1068,12 @@ class WalletManager: ObservableObject {
             )
         }
 
+        var userInfo: [String: Any] = ["amount": amount, "source": "cashu-request"]
+        if let requestId { userInfo["requestId"] = requestId }
         NotificationCenter.default.post(
             name: .cashuTokenReceived,
             object: nil,
-            userInfo: ["amount": amount, "source": "cashu-request"]
+            userInfo: userInfo
         )
         return amount
     }
@@ -1146,17 +1165,6 @@ class WalletManager: ObservableObject {
     func checkAllPendingTokens() async {
         for token in pendingTokens {
             await checkPendingTokenStatus(pendingToken: token)
-        }
-        await loadTransactions()
-    }
-
-    func refreshPendingMintQuote(quoteId: String) async {
-        let minted = await syncPendingMintQuote(
-            quoteId: quoteId,
-            allowPendingOnchainMintAttempt: true
-        )
-        if minted {
-            await refreshBalance()
         }
         await loadTransactions()
     }

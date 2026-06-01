@@ -12,7 +12,17 @@ final class CashuRequestListener: ObservableObject {
 
     private var client: NostrInboxClient?
     private weak var walletManager: WalletManager?
-    private let sinceKey = "cashuRequests.nip17.since.v1"
+
+    // Gift wraps are fetched over a generous fixed lookback window. NIP-59
+    // backdates each gift wrap's `created_at` up to ~2 days, so a tight or
+    // forward-advancing `since` floor silently drops later payments. We instead
+    // re-scan a wide window every start and prevent re-processing by remembering
+    // the gift-wrap event ids we've already handled.
+    private let lookbackWindow: TimeInterval = 7 * 24 * 60 * 60
+    private let processedIdsKey = "cashuRequests.nip17.processedIds.v1"
+    private let maxProcessedIds = 1000
+    private var processedIds: Set<String> = []
+    private var processedOrder: [String] = []
 
     private init() {}
 
@@ -31,9 +41,12 @@ final class CashuRequestListener: ObservableObject {
             return
         }
         let relays = SettingsManager.shared.nostrRelays
-        guard !relays.isEmpty else { return }
-        let since = UserDefaults.standard.object(forKey: sinceKey) as? Int64
-            ?? Int64(Date().timeIntervalSince1970) - (48 * 60 * 60)  // 48h backfill on first run
+        guard !relays.isEmpty else {
+            AppLogger.wallet.error("CashuRequestListener: no Nostr relays configured — cannot receive Cashu Request payments")
+            return
+        }
+        loadProcessedIds()
+        let since = Int64(Date().timeIntervalSince1970 - lookbackWindow)
 
         let pubkeyHex = nostr.publicKeyHex
         let client = NostrInboxClient(
@@ -46,7 +59,7 @@ final class CashuRequestListener: ObservableObject {
         self.client = client
         await client.start()
         isRunning = true
-        AppLogger.wallet.info("CashuRequestListener: started on \(relays.count) relays since=\(since)")
+        AppLogger.wallet.notice("CashuRequestListener: started on \(relays.count) relays, pubkey=\(String(pubkeyHex.prefix(8)), privacy: .public), since=\(since)")
     }
 
     func stop() async {
@@ -60,55 +73,95 @@ final class CashuRequestListener: ObservableObject {
 
     private func handle(event: NostrIncomingEvent, recipientPrivateKey: Data) async {
         guard event.kind == 1059 else { return }
-        UserDefaults.standard.set(event.createdAt, forKey: sinceKey)
+        guard !processedIds.contains(event.id) else { return }
+        AppLogger.wallet.notice("CashuRequestListener: gift wrap received id=\(String(event.id.prefix(8)), privacy: .public) createdAt=\(event.createdAt)")
 
         let rumor: NostrRumor
         do {
             rumor = try NIP17.unwrap(giftWrap: event, recipientPrivateKey: recipientPrivateKey)
         } catch {
-            AppLogger.wallet.debug("CashuRequestListener: NIP-17 unwrap failed: \(String(describing: error))")
+            // Not encrypted for us (or an unrelated DM) — it can never succeed,
+            // so mark it handled and stop reconsidering it.
+            AppLogger.wallet.notice("CashuRequestListener: NIP-17 unwrap failed for \(String(event.id.prefix(8)), privacy: .public): \(String(describing: error), privacy: .public)")
+            markProcessed(event.id)
             return
         }
-        guard rumor.kind == 14 else { return }
-        await tryClaim(rumorContent: rumor.content)
+        guard rumor.kind == 14 else {
+            markProcessed(event.id)
+            return
+        }
+        switch await tryClaim(rumorContent: rumor.content) {
+        case .claimed, .unclaimable:
+            markProcessed(event.id)
+        case .transientFailure:
+            break  // leave unmarked so a later run retries
+        }
     }
 
-    private func tryClaim(rumorContent content: String) async {
+    private enum ClaimOutcome {
+        case claimed            // redeemed successfully
+        case unclaimable        // malformed / un-redeemable payload — never retry
+        case transientFailure   // redeem failed (mint/network) — retry later
+    }
+
+    private func tryClaim(rumorContent content: String) async -> ClaimOutcome {
         guard let data = content.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return
+            return .unclaimable
         }
         // NUT-18 PaymentRequestPayload:
         // { "id": "<request_uuid>", "memo": "...", "mint": "<url>", "unit": "sat", "proofs": [ ... ] }
         let requestId = json["id"] as? String
         guard let mintUrl = json["mint"] as? String,
               let proofs = json["proofs"] as? [[String: Any]] else {
-            AppLogger.wallet.debug("CashuRequestListener: malformed PaymentRequestPayload")
-            return
+            AppLogger.wallet.notice("CashuRequestListener: malformed PaymentRequestPayload")
+            return .unclaimable
         }
         let unit = (json["unit"] as? String) ?? "sat"
         let memo = json["memo"] as? String
-        let tokenString = buildV3Token(mint: mintUrl, proofs: proofs, unit: unit, memo: memo)
-        guard let tokenString else { return }
+        guard let tokenString = buildV3Token(mint: mintUrl, proofs: proofs, unit: unit, memo: memo) else {
+            AppLogger.wallet.notice("CashuRequestListener: could not build token from payload")
+            return .unclaimable
+        }
         guard let walletManager else {
             AppLogger.wallet.error("CashuRequestListener: walletManager not attached")
-            return
+            return .transientFailure
         }
         do {
-            try await walletManager.receiveCashuRequestPayment(
+            let amount = try await walletManager.receiveCashuRequestPayment(
                 tokenString: tokenString,
                 requestId: requestId
             )
+            AppLogger.wallet.notice("CashuRequestListener: claimed \(amount) sat for request \(requestId ?? "—", privacy: .public)")
+            return .claimed
         } catch {
-            AppLogger.wallet.error("CashuRequestListener: redeem failed: \(String(describing: error))")
+            AppLogger.wallet.error("CashuRequestListener: redeem failed (will retry): \(String(describing: error), privacy: .public)")
+            return .transientFailure
         }
+    }
+
+    // MARK: - De-duplication
+
+    private func loadProcessedIds() {
+        let stored = UserDefaults.standard.stringArray(forKey: processedIdsKey) ?? []
+        processedOrder = stored
+        processedIds = Set(stored)
+    }
+
+    private func markProcessed(_ id: String) {
+        guard processedIds.insert(id).inserted else { return }
+        processedOrder.append(id)
+        if processedOrder.count > maxProcessedIds {
+            let overflow = processedOrder.count - maxProcessedIds
+            for removed in processedOrder.prefix(overflow) { processedIds.remove(removed) }
+            processedOrder.removeFirst(overflow)
+        }
+        UserDefaults.standard.set(processedOrder, forKey: processedIdsKey)
     }
 
     /// Build a NUT-00 V3 cashu token string from a mint + proofs payload.
     /// Format: `cashuA` + base64url(no padding)(JSON({token:[{mint, proofs}], unit, memo})).
     private func buildV3Token(mint: String, proofs: [[String: Any]], unit: String?, memo: String?) -> String? {
-        var entry: [String: Any] = ["mint": mint, "proofs": proofs]
-        _ = entry
         var token: [String: Any] = ["token": [["mint": mint, "proofs": proofs]]]
         if let unit { token["unit"] = unit }
         if let memo { token["memo"] = memo }

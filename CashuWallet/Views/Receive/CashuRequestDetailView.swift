@@ -14,6 +14,8 @@ struct CashuRequestDetailView: View {
     @State private var paymentJustReceived = false
     @State private var showMintPicker = false
     @State private var showAmountPicker = false
+    @State private var receiveBaselineBalance: UInt64?
+    @State private var didAutoComplete = false
 
     init(request: CashuRequest, onClose: (() -> Void)? = nil) {
         self._requestId = State(initialValue: request.id)
@@ -81,13 +83,48 @@ struct CashuRequestDetailView: View {
                 }
             )
         }
+        .onAppear {
+            // Baseline for the receive-flow balance watcher below.
+            receiveBaselineBalance = walletManager.balance
+        }
         .onReceive(NotificationCenter.default.publisher(for: .cashuTokenReceived)) { note in
             guard let source = note.userInfo?["source"] as? String,
                   source == "cashu-request" else { return }
-            paymentJustReceived = true
-            HapticFeedback.notification(.success)
+            // Ignore a payment that names a *different* request, but if the payer
+            // didn't echo the request id back (common — many wallets omit it),
+            // assume the payment is for the request we're watching.
+            if let paidId = note.userInfo?["requestId"] as? String, paidId != requestId { return }
+            AppLogger.wallet.notice("CashuRequestDetailView: payment via notification")
+            markPaymentReceived()
+        }
+        .onChange(of: walletManager.balance) { _, newBalance in
+            // Robust fallback: the transient .cashuTokenReceived notification can
+            // be missed, but the listener's redeem always bumps the @Published
+            // balance on the main thread. In the receive flow, any balance
+            // increase while we're watching the QR is the payment landing.
+            guard onClose != nil, let baseline = receiveBaselineBalance, newBalance > baseline else { return }
+            AppLogger.wallet.notice("CashuRequestDetailView: payment via balance bump \(baseline)->\(newBalance)")
+            markPaymentReceived()
+        }
+    }
+
+    /// Single-fire transition into the "Payment received!" state. In the receive
+    /// flow it dwells ~1.2s then slides the sheet down (mirrors the Lightning
+    /// invoice); when inspecting it flashes then reverts to the persistent count.
+    private func markPaymentReceived() {
+        guard !didAutoComplete else { return }
+        didAutoComplete = true
+        paymentJustReceived = true
+        HapticFeedback.notification(.success)
+
+        if let onClose {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                onClose()
+            }
+        } else {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
                 paymentJustReceived = false
+                didAutoComplete = false
             }
         }
     }

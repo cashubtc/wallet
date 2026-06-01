@@ -778,7 +778,22 @@ struct WalletTransaction: Identifiable {
 
         return status.displayText
     }
-    
+
+    /// Canonical row/detail title — kind-first, capitalized kind, lowercase
+    /// verb, parallel across all kinds (e.g. "Ecash received", "Lightning
+    /// paid"). Single source of truth for the History/Home rows and the
+    /// transaction detail nav title.
+    var displayTitle: String {
+        switch (kind, type) {
+        case (.ecash,     .incoming): return "Ecash received"
+        case (.ecash,     .outgoing): return "Ecash sent"
+        case (.lightning, .incoming): return "Lightning received"
+        case (.lightning, .outgoing): return "Lightning paid"
+        case (.onchain,   .incoming): return "Bitcoin received"
+        case (.onchain,   .outgoing): return "Bitcoin sent"
+        }
+    }
+
     enum TransactionType {
         case incoming   // Mint or receive
         case outgoing   // Send or melt
