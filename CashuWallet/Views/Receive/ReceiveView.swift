@@ -206,7 +206,6 @@ struct ReceiveEcashView: View {
                     }
                     .glassButton()
                     .disabled(tokenInput.isEmpty)
-                    .animation(.easeOut(duration: 0.2), value: tokenInput.isEmpty)
                     .accessibilityHint("Validates the token and proceeds to details")
 
                     Button(action: createNewRequest) {
