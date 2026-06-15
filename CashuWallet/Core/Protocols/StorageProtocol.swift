@@ -107,8 +107,6 @@ enum StorageKeys {
     static let useWebsockets = "settings.useWebsockets"
     static let enablePaymentRequests = "settings.enablePaymentRequests"
     static let receivePaymentRequestsAutomatically = "settings.receivePaymentRequestsAutomatically"
-    static let enableNWC = "settings.enableNWC"
-    static let nwcConnections = "settings.nwcConnections"
     static let showP2PKButtonInDrawer = "settings.showP2PKButtonInDrawer"
     static let p2pkKeys = "settings.p2pkKeys"
     static let checkIncomingInvoices = "settings.checkIncomingInvoices"
@@ -134,8 +132,6 @@ enum StorageKeys {
         static let useWebsockets = "useWebsockets"
         static let enablePaymentRequests = "enablePaymentRequests"
         static let receivePaymentRequestsAutomatically = "receivePaymentRequestsAutomatically"
-        static let enableNWC = "enableNWC"
-        static let nwcConnections = "nwcConnections"
         static let showP2PKButtonInDrawer = "showP2PKButtonInDrawer"
         static let p2pkKeys = "p2pkKeys"
         static let checkIncomingInvoices = "checkIncomingInvoices"
@@ -203,8 +199,6 @@ enum StorageKeys {
     static let walletScopedSettingsKeys = [
         enablePaymentRequests,
         receivePaymentRequestsAutomatically,
-        enableNWC,
-        nwcConnections,
         showP2PKButtonInDrawer,
         p2pkKeys,
         nostrSignerType,
@@ -217,8 +211,6 @@ enum StorageKeys {
     static let walletScopedSettingsLegacyKeys = [
         Legacy.enablePaymentRequests,
         Legacy.receivePaymentRequestsAutomatically,
-        Legacy.enableNWC,
-        Legacy.nwcConnections,
         Legacy.showP2PKButtonInDrawer,
         Legacy.p2pkKeys,
         Legacy.nostrSignerType

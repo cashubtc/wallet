@@ -21,8 +21,6 @@ class SettingsManager: ObservableObject {
         "wss://relay.primal.net"
     ]
 
-    static let defaultNWCAllowance = 1_000
-    
     // MARK: - Published Settings
     
     @Published var useBitcoinSymbol: Bool {
@@ -67,21 +65,6 @@ class SettingsManager: ObservableObject {
     @Published var useWebsockets: Bool {
         didSet {
             settingsStore.useWebsockets = useWebsockets
-        }
-    }
-
-    @Published var enableNWC: Bool {
-        didSet {
-            settingsStore.enableNWC = enableNWC
-            if enableNWC {
-                _ = generateNWCConnection()
-            }
-        }
-    }
-
-    @Published var nwcConnections: [NWCConnection] {
-        didSet {
-            persistNWCConnections()
         }
     }
 
@@ -133,8 +116,6 @@ class SettingsManager: ObservableObject {
         self.checkSentTokens = settingsStore.checkSentTokens
         self.autoPasteEcashReceive = settingsStore.autoPasteEcashReceive
         self.useWebsockets = settingsStore.useWebsockets
-        self.enableNWC = settingsStore.enableNWC
-        self.nwcConnections = Self.loadNWCConnections()
         self.showP2PKButtonInDrawer = settingsStore.showP2PKButtonInDrawer
         self.p2pkKeys = Self.loadP2PKKeys()
         self.checkIncomingInvoices = settingsStore.checkIncomingInvoices
@@ -142,7 +123,6 @@ class SettingsManager: ObservableObject {
         self.nostrRelays = settingsStore.nostrRelays
         self.amountDisplayPrimary = AmountDisplayPrimary(rawValue: settingsStore.amountDisplayPrimary) ?? .fiat
 
-        persistNWCConnections()
         persistP2PKKeys()
         
         let priceService = PriceService.shared
@@ -168,55 +148,6 @@ class SettingsManager: ObservableObject {
 
     func resetNostrRelaysToDefault() {
         nostrRelays = Self.defaultNostrRelays
-    }
-
-    @discardableResult
-    func generateNWCConnection() -> NWCConnection? {
-        if let existingConnection = nwcConnections.first {
-            return existingConnection
-        }
-
-        do {
-            let walletKeypair = try generateKeypairHex()
-            let connectionKeypair = try generateKeypairHex()
-            let connection = NWCConnection(
-                walletPublicKey: walletKeypair.publicKeyHex,
-                walletPrivateKey: walletKeypair.privateKeyHex,
-                connectionSecret: connectionKeypair.privateKeyHex,
-                connectionPublicKey: connectionKeypair.publicKeyHex,
-                allowanceLeft: Self.defaultNWCAllowance
-            )
-            nwcConnections.append(connection)
-            return connection
-        } catch {
-            return nil
-        }
-    }
-
-    func nwcConnectionString(for connection: NWCConnection) -> String {
-        let relayParams = nostrRelays
-            .map { relay in
-                let value = relay.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? relay
-                return "relay=\(value)"
-            }
-            .joined(separator: "&")
-
-        if relayParams.isEmpty {
-            return "nostr+walletconnect://\(connection.walletPublicKey)?secret=\(connection.connectionSecret)"
-        }
-
-        return "nostr+walletconnect://\(connection.walletPublicKey)?\(relayParams)&secret=\(connection.connectionSecret)"
-    }
-
-    func updateNWCAllowance(connectionId: UUID, allowanceLeft: Int) {
-        guard let index = nwcConnections.firstIndex(where: { $0.id == connectionId }) else { return }
-        nwcConnections[index].allowanceLeft = max(0, allowanceLeft)
-    }
-
-    func removeNWCConnection(_ connection: NWCConnection) {
-        try? KeychainService().deleteSecret(forKey: Self.secureNWCWalletPrivateKey(connection.id))
-        try? KeychainService().deleteSecret(forKey: Self.secureNWCConnectionSecret(connection.id))
-        nwcConnections.removeAll { $0.id == connection.id }
     }
 
     @discardableResult
@@ -264,19 +195,12 @@ class SettingsManager: ObservableObject {
     func resetWalletScopedData(resetRuntimeServices: Bool = true) {
         let keychain = KeychainService()
 
-        for connection in nwcConnections {
-            try? keychain.deleteSecret(forKey: Self.secureNWCWalletPrivateKey(connection.id))
-            try? keychain.deleteSecret(forKey: Self.secureNWCConnectionSecret(connection.id))
-        }
-
         for key in p2pkKeys {
             try? keychain.deleteSecret(forKey: Self.secureP2PKPrivateKey(key.id))
         }
 
         try? keychain.deleteNostrPrivateKey()
 
-        enableNWC = false
-        nwcConnections = []
         showP2PKButtonInDrawer = false
         p2pkKeys = []
 
@@ -287,40 +211,6 @@ class SettingsManager: ObservableObject {
         settingsStore.clearWalletScopedData()
     }
     
-    private static func loadNWCConnections() -> [NWCConnection] {
-        let decoded = SettingsStore.shared.nwcConnections
-        let keychain = KeychainService()
-        return decoded.map { connection in
-            let walletPrivateKey = secureSecret(
-                key: secureNWCWalletPrivateKey(connection.id),
-                legacyValue: connection.walletPrivateKey,
-                keychain: keychain
-            )
-            let connectionSecret = secureSecret(
-                key: secureNWCConnectionSecret(connection.id),
-                legacyValue: connection.connectionSecret,
-                keychain: keychain
-            )
-            return NWCConnection(
-                id: connection.id,
-                walletPublicKey: connection.walletPublicKey,
-                walletPrivateKey: walletPrivateKey,
-                connectionSecret: connectionSecret,
-                connectionPublicKey: connection.connectionPublicKey,
-                allowanceLeft: connection.allowanceLeft
-            )
-        }
-    }
-
-    private func persistNWCConnections() {
-        let keychain = KeychainService()
-        for connection in nwcConnections {
-            try? keychain.saveSecret(connection.walletPrivateKey, forKey: Self.secureNWCWalletPrivateKey(connection.id))
-            try? keychain.saveSecret(connection.connectionSecret, forKey: Self.secureNWCConnectionSecret(connection.id))
-        }
-        settingsStore.nwcConnections = nwcConnections
-    }
-
     private static func loadP2PKKeys() -> [P2PKKey] {
         let decoded = SettingsStore.shared.p2pkKeys
         let keychain = KeychainService()
@@ -356,14 +246,6 @@ class SettingsManager: ObservableObject {
             try? keychain.saveSecret(legacyValue, forKey: key)
         }
         return legacyValue
-    }
-
-    private static func secureNWCWalletPrivateKey(_ id: UUID) -> String {
-        "settings.nwc.\(id.uuidString).walletPrivateKey"
-    }
-
-    private static func secureNWCConnectionSecret(_ id: UUID) -> String {
-        "settings.nwc.\(id.uuidString).connectionSecret"
     }
 
     private static func secureP2PKPrivateKey(_ id: UUID) -> String {
@@ -439,60 +321,6 @@ class SettingsManager: ObservableObject {
     
     var unitLabel: String {
         useBitcoinSymbol ? "BTC" : "SAT"
-    }
-}
-
-// MARK: - Theme Color Model
-
-struct NWCConnection: Identifiable, Codable, Hashable {
-    let id: UUID
-    let walletPublicKey: String
-    let walletPrivateKey: String
-    let connectionSecret: String
-    let connectionPublicKey: String
-    var allowanceLeft: Int
-
-    init(
-        id: UUID = UUID(),
-        walletPublicKey: String,
-        walletPrivateKey: String,
-        connectionSecret: String,
-        connectionPublicKey: String,
-        allowanceLeft: Int
-    ) {
-        self.id = id
-        self.walletPublicKey = walletPublicKey
-        self.walletPrivateKey = walletPrivateKey
-        self.connectionSecret = connectionSecret
-        self.connectionPublicKey = connectionPublicKey
-        self.allowanceLeft = allowanceLeft
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case id
-        case walletPublicKey
-        case walletPrivateKey
-        case connectionSecret
-        case connectionPublicKey
-        case allowanceLeft
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        self.id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
-        self.walletPublicKey = try container.decode(String.self, forKey: .walletPublicKey)
-        self.walletPrivateKey = try container.decodeIfPresent(String.self, forKey: .walletPrivateKey) ?? ""
-        self.connectionSecret = try container.decodeIfPresent(String.self, forKey: .connectionSecret) ?? ""
-        self.connectionPublicKey = try container.decode(String.self, forKey: .connectionPublicKey)
-        self.allowanceLeft = try container.decode(Int.self, forKey: .allowanceLeft)
-    }
-
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(id, forKey: .id)
-        try container.encode(walletPublicKey, forKey: .walletPublicKey)
-        try container.encode(connectionPublicKey, forKey: .connectionPublicKey)
-        try container.encode(allowanceLeft, forKey: .allowanceLeft)
     }
 }
 

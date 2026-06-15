@@ -63,7 +63,6 @@
 		BB00000000000004 /* LightningService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00000000000014 /* LightningService.swift */; };
 		CC00000000000001 /* ThemeSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC00000000000011 /* ThemeSettingsSection.swift */; };
 		CC00000000000002 /* BackupSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC00000000000012 /* BackupSettingsSection.swift */; };
-		CC00000000000003 /* NWCSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC00000000000013 /* NWCSettingsSection.swift */; };
 		CC00000000000004 /* P2PKSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC00000000000014 /* P2PKSettingsSection.swift */; };
 		CC00000000000005 /* NostrSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC00000000000015 /* NostrSettingsSection.swift */; };
 		CC00000000000006 /* PrivacySettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC00000000000016 /* PrivacySettingsSection.swift */; };
@@ -146,7 +145,6 @@
 		BB00000000000014 /* LightningService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LightningService.swift; sourceTree = "<group>"; };
 		CC00000000000011 /* ThemeSettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeSettingsSection.swift; sourceTree = "<group>"; };
 		CC00000000000012 /* BackupSettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupSettingsSection.swift; sourceTree = "<group>"; };
-		CC00000000000013 /* NWCSettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NWCSettingsSection.swift; sourceTree = "<group>"; };
 		CC00000000000014 /* P2PKSettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = P2PKSettingsSection.swift; sourceTree = "<group>"; };
 		CC00000000000015 /* NostrSettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NostrSettingsSection.swift; sourceTree = "<group>"; };
 		CC00000000000016 /* PrivacySettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacySettingsSection.swift; sourceTree = "<group>"; };
@@ -348,7 +346,6 @@
 				CC00000000000012 /* BackupSettingsSection.swift */,
 				CC00000000000018 /* LightningAddressSettingsSection.swift */,
 				CC00000000000015 /* NostrSettingsSection.swift */,
-				CC00000000000013 /* NWCSettingsSection.swift */,
 				CC00000000000014 /* P2PKSettingsSection.swift */,
 				CC00000000000016 /* PrivacySettingsSection.swift */,
 				CC00000000000011 /* ThemeSettingsSection.swift */,
@@ -553,7 +550,6 @@
 				BB00000000000004 /* LightningService.swift in Sources */,
 				CC00000000000001 /* ThemeSettingsSection.swift in Sources */,
 				CC00000000000002 /* BackupSettingsSection.swift in Sources */,
-				CC00000000000003 /* NWCSettingsSection.swift in Sources */,
 				CC00000000000004 /* P2PKSettingsSection.swift in Sources */,
 				CC00000000000005 /* NostrSettingsSection.swift in Sources */,
 				CC00000000000006 /* PrivacySettingsSection.swift in Sources */,

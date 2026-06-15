@@ -25,10 +25,8 @@ struct SettingsView: View {
     @State private var p2pkImportText = ""
     @State private var showImportP2PK = false
     @State private var p2pkError: String?
-    @State private var nwcError: String?
     @State private var expandedP2PKKeys = false
     @State private var activeQRPayload: QRPayload?
-    @State private var copiedNWCConnectionId: UUID?
     @State private var copiedP2PKPublicKey: String?
     @State private var walletActionError: String?
 
@@ -55,10 +53,6 @@ struct SettingsView: View {
                     sectionGroup(title: "Integrations") {
                         navRow("Nostr", icon: "person.circle") {
                             nostrDetailView
-                        }
-                        CanvasDivider()
-                        navRow("Nostr Wallet Connect", icon: "link") {
-                            nwcDetailView
                         }
                     }
 
@@ -272,22 +266,6 @@ struct SettingsView: View {
         }
         .listStyle(.plain)
         .navigationTitle("Nostr")
-        .toolbarBackground(.hidden, for: .navigationBar)
-    }
-
-    private var nwcDetailView: some View {
-        List {
-            Section {
-                NWCSettingsSection(
-                    nwcError: $nwcError,
-                    copiedNWCConnectionId: $copiedNWCConnectionId,
-                    activeQRPayload: $activeQRPayload
-                )
-            }
-            .listRowSeparator(.hidden)
-        }
-        .listStyle(.plain)
-        .navigationTitle("Nostr Wallet Connect")
         .toolbarBackground(.hidden, for: .navigationBar)
     }
 

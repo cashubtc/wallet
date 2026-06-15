@@ -50,16 +50,6 @@ final class SettingsStore {
         set { set(newValue, forKey: StorageKeys.useWebsockets) }
     }
 
-    var enableNWC: Bool {
-        get { bool(StorageKeys.enableNWC, legacy: StorageKeys.Legacy.enableNWC, default: false) }
-        set { set(newValue, forKey: StorageKeys.enableNWC) }
-    }
-
-    var nwcConnections: [NWCConnection] {
-        get { value(StorageKeys.nwcConnections, legacy: StorageKeys.Legacy.nwcConnections) ?? [] }
-        set { set(newValue, forKey: StorageKeys.nwcConnections) }
-    }
-
     var showP2PKButtonInDrawer: Bool {
         get { bool(StorageKeys.showP2PKButtonInDrawer, legacy: StorageKeys.Legacy.showP2PKButtonInDrawer, default: false) }
         set { set(newValue, forKey: StorageKeys.showP2PKButtonInDrawer) }
