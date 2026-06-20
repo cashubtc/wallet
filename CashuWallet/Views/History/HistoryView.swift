@@ -347,12 +347,14 @@ struct HistoryView: View {
         case .transaction(let tx):
             if rowTitle(for: tx).lowercased().contains(query) { return true }
             if "\(tx.amount)".contains(query) { return true }
+            if let memo = tx.memo, memo.lowercased().contains(query) { return true }
             return false
         case .request(let req):
             if "cashu request".contains(query) { return true }
             if let amount = req.amount, "\(amount)".contains(query) { return true }
             let received = totalReceived(for: req)
             if received > 0, "\(received)".contains(query) { return true }
+            if let memo = req.memo, memo.lowercased().contains(query) { return true }
             return false
         }
     }
