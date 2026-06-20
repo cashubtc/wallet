@@ -1161,7 +1161,7 @@ struct MeltView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(mint.name)
                         .font(.subheadline.weight(.medium))
-                    Text("\(mint.balance) sat")
+                    Text(formatBalance(mint.balance))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
