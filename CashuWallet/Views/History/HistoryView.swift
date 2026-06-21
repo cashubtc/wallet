@@ -26,6 +26,7 @@ struct HistoryView: View {
     @State private var requestPendingDeletion: CashuRequest?
     @State private var transactionUpdateRevision = 0
     @State private var hasAppearedOnce = false
+    @State private var checkingTxId: String?
 
     // Unified timeline item — Cashu Requests and transactions share a sort key
     // and live in the same date-grouped sections.
@@ -464,6 +465,26 @@ struct HistoryView: View {
 
                 Spacer(minLength: 8)
 
+                if transaction.status == .pending {
+                    Button {
+                        refreshTransaction(transaction)
+                    } label: {
+                        Group {
+                            if checkingTxId == transaction.id {
+                                ProgressView()
+                                    .scaleEffect(0.65)
+                            } else {
+                                Image(systemName: "arrow.clockwise")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .frame(width: 24, height: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Refresh transaction status")
+                }
+
                 TransactionAmountColumn(transaction: transaction)
             }
             .padding(.horizontal, rowHorizontalPadding)
@@ -488,6 +509,18 @@ struct HistoryView: View {
 
     private func rowTitle(for transaction: WalletTransaction) -> String {
         transaction.displayTitle
+    }
+
+    private func refreshTransaction(_ transaction: WalletTransaction) {
+        guard checkingTxId == nil else { return }
+        checkingTxId = transaction.id
+        Task { @MainActor in
+            defer { checkingTxId = nil }
+            await walletManager.loadTransactions()
+            if transaction.isPendingToken {
+                await walletManager.checkAllPendingTokens()
+            }
+        }
     }
 
     // MARK: - Formatting
