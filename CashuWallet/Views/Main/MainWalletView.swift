@@ -790,6 +790,16 @@ private struct WalletActionSheetView: View {
         action == .send && walletManager.balance == 0
     }
 
+    /// The single piece of state the sheet body switches on, so phase changes
+    /// (e.g. connecting → "nothing to send yet") cross-fade rather than hard-cut.
+    private enum SendEmptyPhase: Equatable { case options, connecting, noMints, noBalance }
+
+    private var phase: SendEmptyPhase {
+        guard isSendEmptyState else { return .options }
+        if addingMintUrl != nil { return .connecting }
+        return walletManager.mints.isEmpty ? .noMints : .noBalance
+    }
+
     private var secondaryOptionTitle: String {
         // Lightning + on-chain are both "Bitcoin" from the user's mental model;
         // the protocol choice happens inside the flow itself.
@@ -817,16 +827,18 @@ private struct WalletActionSheetView: View {
     var body: some View {
         NavigationStack {
             Group {
-                if isSendEmptyState {
-                    if walletManager.mints.isEmpty {
-                        noMintsState
-                    } else {
-                        noBalanceState
-                    }
-                } else {
-                    optionsList
+                switch phase {
+                case .options:
+                    optionsList.transition(.opacity)
+                case .connecting:
+                    connectingState.transition(.opacity)
+                case .noMints:
+                    noMintsState.transition(.opacity)
+                case .noBalance:
+                    noBalanceState.transition(.opacity)
                 }
             }
+            .animation(.smooth(duration: 0.35), value: phase)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             // Drop the "Send" title for the empty state — the headline carries it.
             .navigationTitle(isSendEmptyState ? "" : action.title)
@@ -865,59 +877,60 @@ private struct WalletActionSheetView: View {
 
     // MARK: - Send empty states
 
+    /// Transient state while a tapped suggested mint is being added. Held in its
+    /// own phase so it cross-fades into state B once the mint connects.
+    private var connectingState: some View {
+        VStack(spacing: 14) {
+            ProgressView()
+            Text("Connecting to \(displayHost(addingMintUrl ?? ""))…")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
     /// State A — no mints. Embeds the onboarding suggested-mints picker so the
     /// prerequisite is resolved in place; adding a mint auto-advances to state B.
-    @ViewBuilder
     private var noMintsState: some View {
-        if let adding = addingMintUrl {
-            VStack(spacing: 14) {
-                ProgressView()
-                Text("Connecting to \(displayHost(adding))…")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Connect a mint first")
-                            .font(.title3.weight(.medium))
-                        Text("Mints issue the ecash you send and receive. Add one to get started.")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 12)
-
-                    SuggestedMintsSection(
-                        existingURLs: Set(walletManager.mints.map(\.url)),
-                        onAdd: { addMint($0) }
-                    )
-
-                    if let addMintError {
-                        Text(addMintError)
-                            .font(.caption)
-                            .foregroundStyle(.red)
-                            .padding(.horizontal, 20)
-                            .padding(.top, 8)
-                    }
-
-                    Button(action: onAddCustomMint) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "plus")
-                            Text("Add custom mint URL")
-                        }
-                        .padding(.vertical, 12)
-                        .frame(maxWidth: .infinity)
-                    }
-                    .textLinkButton()
-                    .padding(.top, 4)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Connect a mint first")
+                        .font(.title3.weight(.medium))
+                    Text("Mints issue the ecash you send and receive. Add one to get started.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(.top, 8)
-                .padding(.bottom, 16)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 12)
+
+                SuggestedMintsSection(
+                    existingURLs: Set(walletManager.mints.map(\.url)),
+                    onAdd: { addMint($0) }
+                )
+
+                if let addMintError {
+                    Text(addMintError)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 8)
+                }
+
+                Button(action: onAddCustomMint) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "plus")
+                        Text("Add custom mint URL")
+                    }
+                    .padding(.vertical, 12)
+                    .frame(maxWidth: .infinity)
+                }
+                .textLinkButton()
+                .padding(.top, 4)
             }
+            .padding(.top, 8)
+            .padding(.bottom, 16)
         }
     }
 
