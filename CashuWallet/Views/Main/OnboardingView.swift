@@ -16,6 +16,7 @@ struct OnboardingView: View {
     @State private var isRestoringMints = false
     @State private var currentRestoringMint: String?
     @State private var restoreMintError: String?
+    @State private var previousWalletMintSuggestions: [RecommendedMint] = []
 
     // Seed phrase reveal / acknowledge state
     @State private var seedRevealed = false
@@ -735,7 +736,7 @@ struct OnboardingView: View {
             SuggestedMintsSection(
                 existingURLs: Set(mintsToRestore).union(restoreResults.map(\.mintUrl)),
                 onAdd: { addMintUrlToRestoreList($0, showDuplicateError: false, showValidationError: false) },
-                walletMints: walletManager.mints.map { RecommendedMint(name: $0.name, url: $0.url) }
+                walletMints: previousWalletMintSuggestions
             )
 
             // Error display
@@ -944,6 +945,9 @@ struct OnboardingView: View {
             .lowercased()
             .split(separator: " ")
             .joined(separator: " ")
+        let currentMintSuggestions = walletManager.mints.map {
+            RecommendedMint(name: $0.name, url: $0.url)
+        }
 
         guard walletManager.validateMnemonic(cleanedMnemonic) else {
             errorMessage = "That seed phrase doesn't look right. Check the spelling and try again."
@@ -956,6 +960,9 @@ struct OnboardingView: View {
         Task {
             do {
                 try await walletManager.initializeRestoredWallet(mnemonic: cleanedMnemonic)
+                if !currentMintSuggestions.isEmpty {
+                    previousWalletMintSuggestions = currentMintSuggestions
+                }
                 advance(to: .restoreMints)
             } catch {
                 errorMessage = "Couldn't open the wallet. \(error.userFacingWalletMessage)"
