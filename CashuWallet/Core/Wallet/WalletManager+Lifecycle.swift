@@ -151,6 +151,7 @@ extension WalletManager {
         try removeWalletDatabaseFiles()
         walletStore.removeAllWalletData()
         SettingsManager.shared.resetWalletScopedData()
+        NWCManager.shared.resetForWalletBoundary()
         CashuRequestStore.shared.resetForWalletBoundary()
         CashuRequestListener.shared.resetForWalletBoundary()
         MintLogoCache.shared.clear()
@@ -184,6 +185,7 @@ extension WalletManager {
             SettingsStore.shared.clearWalletScopedData()
             NostrService.shared.resetForWalletBoundary(deleteStoredKey: false)
             NPCService.shared.resetForWalletBoundary()
+            NWCManager.shared.resetForWalletBoundary()
             CashuRequestStore.shared.resetForWalletBoundary()
             CashuRequestListener.shared.resetForWalletBoundary()
             SettingsStore.shared.clearWalletScopedData()
@@ -221,6 +223,7 @@ extension WalletManager {
 
         initializeNostrKeypairLocally(mnemonic: mnemonic)
         setupNPCQuoteListener()
+        await NWCManager.shared.startIfEnabled()
     }
 
     private func initializeWalletForCreation(mnemonic: String) throws {

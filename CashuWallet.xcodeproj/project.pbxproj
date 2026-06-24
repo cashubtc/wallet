@@ -40,6 +40,8 @@
 		6A8EC94A2F2590000058C21B /* PriceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A8EC94B2F2590000058C21B /* PriceService.swift */; };
 		6A8EC94C2F25A0000058C21B /* NostrService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A8EC94D2F25A0000058C21B /* NostrService.swift */; };
 		6A8EC94E2F25A0000058C21B /* NPCService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A8EC94F2F25A0000058C21B /* NPCService.swift */; };
+		CC000000000000A1 /* NWCManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000000000000A2 /* NWCManager.swift */; };
+		CC000000000000B1 /* NWCSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000000000000B2 /* NWCSettingsSection.swift */; };
 		6A8EC95B2F26983E0058C21B /* P256K in Frameworks */ = {isa = PBXBuildFile; productRef = 6A8EC95A2F26983E0058C21B /* P256K */; };
 		720E47A62FEC721E00E02CD0 /* Cdk in Frameworks */ = {isa = PBXBuildFile; productRef = 720E47A52FEC721E00E02CD0 /* Cdk */; };
 		72AF0EF32FEF2165001AD6AC /* Sentry in Frameworks */ = {isa = PBXBuildFile; productRef = AACC000000000002 /* Sentry */; };
@@ -184,6 +186,8 @@
 		6A8EC94B2F2590000058C21B /* PriceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PriceService.swift; sourceTree = "<group>"; };
 		6A8EC94D2F25A0000058C21B /* NostrService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NostrService.swift; sourceTree = "<group>"; };
 		6A8EC94F2F25A0000058C21B /* NPCService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NPCService.swift; sourceTree = "<group>"; };
+		CC000000000000A2 /* NWCManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NWCManager.swift; sourceTree = "<group>"; };
+		CC000000000000B2 /* NWCSettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NWCSettingsSection.swift; sourceTree = "<group>"; };
 		72AF0EF42FEF2300001AD6AC /* SentryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SentryService.swift; sourceTree = "<group>"; };
 		72DD529F60A8D9D1A81E3FBB /* NutshellIntegrationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NutshellIntegrationTests.swift; path = CI/IntegrationTests/Tests/NutshellIntegrationTests.swift; sourceTree = "<group>"; };
 		99846FC03810AE4BE904466F /* WalletIntegrationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = WalletIntegrationTests.swift; path = CashuWalletUITests/WalletIntegrationTests.swift; sourceTree = "<group>"; };
@@ -380,6 +384,7 @@
 				6A8EC9312F2448B60058C21B /* MintDiscoveryManager.swift */,
 				6A8EC94D2F25A0000058C21B /* NostrService.swift */,
 				6A8EC94F2F25A0000058C21B /* NPCService.swift */,
+				CC000000000000A2 /* NWCManager.swift */,
 				AC00000000000002 /* CashuRequestStore.swift */,
 				6A8EC94B2F2590000058C21B /* PriceService.swift */,
 				6A8EC92F2F2442EF0058C21B /* SettingsManager.swift */,
@@ -497,6 +502,7 @@
 				CC00000000000012 /* BackupSettingsSection.swift */,
 				CC00000000000018 /* LightningAddressSettingsSection.swift */,
 				CC00000000000015 /* NostrSettingsSection.swift */,
+				CC000000000000B2 /* NWCSettingsSection.swift */,
 				CC00000000000014 /* P2PKSettingsSection.swift */,
 				CC00000000000016 /* PrivacySettingsSection.swift */,
 				CC00000000000011 /* ThemeSettingsSection.swift */,
@@ -912,6 +918,7 @@
 				6A8EC94A2F2590000058C21B /* PriceService.swift in Sources */,
 				6A8EC94C2F25A0000058C21B /* NostrService.swift in Sources */,
 				6A8EC94E2F25A0000058C21B /* NPCService.swift in Sources */,
+				CC000000000000A1 /* NWCManager.swift in Sources */,
 				AB00000000000002 /* CashuRequestStore.swift in Sources */,
 				AA00000000000001 /* PaymentMethodProtocol.swift in Sources */,
 				72AF0EF52FEF2300001AD6AC /* SentryService.swift in Sources */,
@@ -927,6 +934,7 @@
 				CC00000000000002 /* BackupSettingsSection.swift in Sources */,
 				CC00000000000004 /* P2PKSettingsSection.swift in Sources */,
 				CC00000000000005 /* NostrSettingsSection.swift in Sources */,
+				CC000000000000B1 /* NWCSettingsSection.swift in Sources */,
 				CC00000000000006 /* PrivacySettingsSection.swift in Sources */,
 				CC00000000000007 /* AdvancedSettingsSection.swift in Sources */,
 				CC00000000000020 /* PressableButtonStyle.swift in Sources */,

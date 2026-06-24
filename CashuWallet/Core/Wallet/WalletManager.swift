@@ -147,6 +147,31 @@ class WalletManager: ObservableObject {
     init() {
         processedQuotes = Set(walletStore.loadProcessedNPCQuotes())
         bindServiceChanges()
+        configureNWCManager()
+    }
+
+    /// Connect the NWC service to the live CDK wallet and this wallet's
+    /// deterministic seed material. The providers deliberately capture the
+    /// manager weakly so the singleton never retains a discarded wallet.
+    private func configureNWCManager() {
+        NWCManager.shared.configure(
+            walletProvider: { [weak self] mintURL in
+                guard let self, let walletRepository = self.walletRepository else {
+                    throw WalletError.notInitialized
+                }
+                let mintURL = MintUrl(url: mintURL)
+                try? await walletRepository.createWallet(
+                    mintUrl: mintURL,
+                    unit: .sat,
+                    targetProofCount: nil
+                )
+                return try await walletRepository.getWallet(mintUrl: mintURL, unit: .sat)
+            },
+            seedProvider: { [weak self] in
+                guard let mnemonic = self?.mnemonic else { return nil }
+                return Data(mnemonic.utf8).sha512()
+            }
+        )
     }
 
     private func bindServiceChanges() {

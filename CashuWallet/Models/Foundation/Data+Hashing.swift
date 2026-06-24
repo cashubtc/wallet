@@ -7,4 +7,8 @@ extension Data {
         let hash = SHA256.hash(data: self)
         return Data(hash)
     }
+
+    func sha512() -> Data {
+        Data(SHA512.hash(data: self))
+    }
 }
