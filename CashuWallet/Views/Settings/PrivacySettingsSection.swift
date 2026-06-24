@@ -14,10 +14,6 @@ struct PrivacySettingsSection: View {
                 Text("Check incoming invoice")
             }
 
-            Toggle(isOn: $settings.checkPendingOnStartup) {
-                Text("Check pending invoices on startup")
-            }
-
             Toggle(isOn: $settings.periodicallyCheckIncomingInvoices) {
                 Text("Check all invoices")
             }

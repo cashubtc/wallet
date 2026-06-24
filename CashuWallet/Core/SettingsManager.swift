@@ -44,12 +44,6 @@ class SettingsManager: ObservableObject {
         }
     }
 
-    @Published var checkPendingOnStartup: Bool {
-        didSet {
-            settingsStore.checkPendingOnStartup = checkPendingOnStartup
-        }
-    }
-
     @Published var checkSentTokens: Bool {
         didSet {
             settingsStore.checkSentTokens = checkSentTokens
@@ -112,7 +106,6 @@ class SettingsManager: ObservableObject {
         self.useBitcoinSymbol = settingsStore.useBitcoinSymbol
         self.showFiatBalance = settingsStore.showFiatBalance
         self.bitcoinPriceCurrency = settingsStore.bitcoinPriceCurrency
-        self.checkPendingOnStartup = settingsStore.checkPendingOnStartup
         self.checkSentTokens = settingsStore.checkSentTokens
         self.autoPasteEcashReceive = settingsStore.autoPasteEcashReceive
         self.useWebsockets = settingsStore.useWebsockets

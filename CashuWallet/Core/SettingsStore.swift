@@ -30,11 +30,6 @@ final class SettingsStore {
         set { set(newValue, forKey: StorageKeys.bitcoinPriceCurrency) }
     }
 
-    var checkPendingOnStartup: Bool {
-        get { bool(StorageKeys.checkPendingOnStartup, legacy: StorageKeys.Legacy.checkPendingOnStartup, default: true) }
-        set { set(newValue, forKey: StorageKeys.checkPendingOnStartup) }
-    }
-
     var checkSentTokens: Bool {
         get { bool(StorageKeys.checkSentTokens, legacy: StorageKeys.Legacy.checkSentTokens, default: true) }
         set { set(newValue, forKey: StorageKeys.checkSentTokens) }

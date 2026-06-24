@@ -710,7 +710,8 @@ struct ReceiveLightningView: View {
         paymentMethod: PaymentMethodKind
     ) async {
         do {
-            if let subscription = try await walletManager.subscribeToMintQuote(
+            if SettingsManager.shared.useWebsockets,
+               let subscription = try await walletManager.subscribeToMintQuote(
                 quoteId: quoteId,
                 paymentMethod: paymentMethod
             ) {
