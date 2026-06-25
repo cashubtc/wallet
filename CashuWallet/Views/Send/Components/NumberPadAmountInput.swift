@@ -6,22 +6,19 @@ import SwiftUI
 /// Per-keypress selection haptics, long-press on delete clears the whole value.
 struct NumberPadAmountInput: View {
     @Binding var amountString: String
-    /// The active entry unit. In fiat mode the empty bottom-left slot becomes a
-    /// locale decimal-separator key; in sats mode it stays blank (integer only).
+    /// The active entry unit. Sats is an integer; fiat is a cents accumulator
+    /// (digits shift in from the right). Either way the bottom-left slot stays
+    /// blank — there is no decimal key, the fiat decimal is implied.
     var unit: AmountDisplayPrimary = .sats
 
     @ScaledMetric(relativeTo: .title) private var keyHeight: CGFloat = 64
-
-    private var decimalKey: String {
-        unit == .fiat ? AmountFormatter.decimalSeparator : ""
-    }
 
     private var rows: [[String]] {
         [
             ["1", "2", "3"],
             ["4", "5", "6"],
             ["7", "8", "9"],
-            [decimalKey, "0", "⌫"]
+            ["", "0", "⌫"]
         ]
     }
 
@@ -66,7 +63,7 @@ struct NumberPadAmountInput: View {
             }
             .buttonStyle(.plain)
             .frame(height: keyHeight)
-            .accessibilityLabel(key == AmountFormatter.decimalSeparator ? "decimal separator" : key)
+            .accessibilityLabel(key)
         }
     }
 
@@ -78,9 +75,10 @@ struct NumberPadAmountInput: View {
     }
 
     private func backspace() {
-        guard !amountString.isEmpty else { return }
+        let updated = AmountFormatter.entryBackspace(amountString, unit: unit)
+        guard updated != amountString else { return }
         HapticFeedback.selection()
-        amountString.removeLast()
+        amountString = updated
     }
 
     private func clearAll() {

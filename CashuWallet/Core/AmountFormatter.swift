@@ -49,28 +49,40 @@ enum AmountFormatter {
         }
     }
 
-    /// Append a keypad key under entry rules: digits always; the decimal
-    /// separator only in fiat mode; reject a second separator and a third
-    /// fraction digit; collapse leading zeros. Returns the new raw string
-    /// (unchanged if the key is rejected, so the caller can skip the haptic).
+    /// Append a keypad digit under entry rules. Sats mode is an integer append
+    /// that collapses a lone leading zero. Fiat mode is a cents accumulator:
+    /// the digit shifts in at the right (cents), so the value is always a
+    /// complete two-decimal amount and a pre-filled/converted figure stays
+    /// editable (there is no decimal key in fiat mode). Returns the new raw
+    /// string (unchanged if the key is rejected, so the caller can skip the
+    /// haptic).
     static func entryAppend(_ key: String, to raw: String, unit: AmountDisplayPrimary) -> String {
-        let sep = decimalSeparator
-
-        if key == sep {
-            guard unit == .fiat, !raw.contains(sep) else { return raw }
-            return raw.isEmpty ? "0" + sep : raw + sep
-        }
-
         guard key.count == 1, let ch = key.first, ch.isNumber else { return raw }
 
-        // Typing into the fractional part: cap at 2 digits.
-        if unit == .fiat, let sepIndex = raw.firstIndex(of: Character(sep)) {
-            let fraction = raw[raw.index(after: sepIndex)...]
-            return fraction.count >= 2 ? raw : raw + key
+        switch unit {
+        case .sats:
+            // Integer part — collapse a lone leading zero ("0" + "5" -> "5").
+            return raw == "0" ? key : raw + key
+        case .fiat:
+            let cents = parseFiatCents(raw)
+            guard cents < maxFiatCents else { return raw }
+            let updated = cents * 10 + UInt64(ch.wholeNumberValue ?? 0)
+            return updated == 0 ? "" : centsToFiatString(updated)
         }
+    }
 
-        // Integer part — collapse a lone leading zero ("0" + "5" -> "5").
-        return raw == "0" ? key : raw + key
+    /// Remove the last keypad input. Sats drops the trailing digit; fiat shifts
+    /// the cents accumulator right by one (14.54 -> 1.45 -> 0.14 -> ""). Returns
+    /// the new raw string (unchanged if empty, so the caller can skip the haptic).
+    static func entryBackspace(_ raw: String, unit: AmountDisplayPrimary) -> String {
+        guard !raw.isEmpty else { return raw }
+        switch unit {
+        case .sats:
+            return String(raw.dropLast())
+        case .fiat:
+            let cents = parseFiatCents(raw) / 10
+            return cents == 0 ? "" : centsToFiatString(cents)
+        }
     }
 
     /// Re-express a typed string when the entry unit flips, preserving the
@@ -114,6 +126,10 @@ enum AmountFormatter {
 
     // MARK: - Fiat parsing / formatting helpers
 
+    /// Ceiling on the integer part of a typed fiat amount (~$1B), so the cents
+    /// accumulator can't run away past sane bounds.
+    private static let maxFiatCents: UInt64 = 99_999_999_999
+
     /// Parse a typed fiat string (locale separator) into a `Double`.
     private static func parseFiat(_ raw: String) -> Double {
         guard !raw.isEmpty else { return 0 }
@@ -122,13 +138,23 @@ enum AmountFormatter {
         return Double(normalized) ?? 0
     }
 
+    /// Integer cents in a typed fiat string ("14.54" -> 1454).
+    private static func parseFiatCents(_ raw: String) -> UInt64 {
+        UInt64(raw.filter { $0.isNumber }) ?? 0
+    }
+
+    /// A locale-separated two-decimal fiat string (1454 -> "14.54"); no
+    /// grouping or symbol — those are added at display time.
+    private static func centsToFiatString(_ cents: UInt64) -> String {
+        "\(cents / 100)\(decimalSeparator)\(String(format: "%02d", cents % 100))"
+    }
+
     /// A raw entry string (locale separator, two decimals, no grouping/symbol)
     /// for a fiat value — used when converting sats -> fiat on a flip.
     private static func fiatEntryString(_ fiat: Double) -> String {
         let cents = (fiat * 100).rounded()
         guard cents.isFinite, cents > 0, cents < Double(UInt64.max) else { return "" }
-        let total = UInt64(cents)
-        return "\(total / 100)\(decimalSeparator)\(String(format: "%02d", total % 100))"
+        return centsToFiatString(UInt64(cents))
     }
 
     /// Wrap a numeric string with the selected currency's symbol in the locale's
