@@ -30,43 +30,27 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
-        
-    - name: Setup Rust
-      uses: dtolnay/rust-toolchain@stable
-      
-    - name: Cache cargo registry (faster cdk-mintd builds)
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-        key: cargo-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: |
-          cargo-${{ runner.os }}-
-          
+
+    # NOTE: CDK mint integration is temporarily disabled — cashubtc/cdk only
+    # ships Linux prebuilt binaries (no macOS arm64), and building from source
+    # on the macOS runner is too slow/flaky. Re-enable once a macOS binary
+    # is published. Nutshell remains the live mint under test.
     - name: Setup Nutshell mint (pip install)
       run: |
         cd CI
         chmod +x setup-nutshell.sh
         ./setup-nutshell.sh
-        
-    - name: Setup CDK mint
-      run: |
-        cd CI
-        chmod +x setup-cdk.sh
-        ./setup-cdk.sh
-        
+
     - name: Start mints
       run: |
         cd CI
-        chmod +x start-nutshell.sh start-cdk.sh
+        chmod +x start-nutshell.sh
         ./start-nutshell.sh
-        ./start-cdk.sh
-        
+
     - name: Wait for mints to be ready
       run: |
         echo "Waiting for mints to initialize..."
-        
+
         # Check Nutshell
         for i in {1..30}; do
           if curl -sf http://localhost:3338/v1/info > /dev/null 2>&1; then
@@ -81,22 +65,7 @@ jobs:
           echo "Waiting for Nutshell... ($i/30)"
           sleep 1
         done
-        
-        # Check CDK
-        for i in {1..30}; do
-          if curl -sf http://localhost:3339/v1/info > /dev/null 2>&1; then
-            echo "✓ CDK mint is ready"
-            break
-          fi
-          if [ $i -eq 30 ]; then
-            echo "✗ CDK mint failed to start"
-            cat CI/.cdk.log 2>/dev/null || true
-            exit 1
-          fi
-          echo "Waiting for CDK... ($i/30)"
-          sleep 1
-        done
-        
+
     - name: Build iOS app
       run: |
         xcodebuild clean build \
@@ -117,7 +86,6 @@ jobs:
     - name: Run Integration Tests
       env:
         NUTSHELL_MINT_URL: http://localhost:3338
-        CDK_MINT_URL: http://localhost:3339
       run: |
         xcodebuild test \
           -project CashuWallet.xcodeproj \
@@ -128,7 +96,6 @@ jobs:
     - name: Run UI Integration Tests
       env:
         NUTSHELL_MINT_URL: http://localhost:3338
-        CDK_MINT_URL: http://localhost:3339
       run: |
         xcodebuild test \
           -project CashuWallet.xcodeproj \
@@ -141,9 +108,8 @@ jobs:
       if: always()
       run: |
         cd CI
-        chmod +x stop-nutshell.sh stop-cdk.sh
+        chmod +x stop-nutshell.sh
         ./stop-nutshell.sh
-        ./stop-cdk.sh
         
     - name: Upload test results
       if: failure()
@@ -160,4 +126,3 @@ jobs:
         name: mint-logs-${{ github.sha }}
         path: |
           CI/.nutshell.log
-          CI/.cdk.log
