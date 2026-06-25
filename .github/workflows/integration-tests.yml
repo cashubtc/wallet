@@ -4,7 +4,6 @@ on:
   push:
     branches: [main, develop]
   pull_request:
-    branches: [main, develop]
   workflow_dispatch:
 
 concurrency:
@@ -66,6 +65,14 @@ jobs:
           sleep 1
         done
 
+    - name: Run CDK Swift Integration Tests (SPM)
+      env:
+        NUTSHELL_MINT_URL: http://localhost:3338
+      run: |
+        set -o pipefail
+        cd CI/IntegrationTests
+        swift test 2>&1 | tee ../../spm-integration-test-output.log
+
     # Ad-hoc signing ("-") on the simulator applies the app entitlements
     # (keychain-access-groups) without a team/profile — required so the wallet
     # can write its mnemonic to the Keychain during UI tests.
@@ -119,6 +126,7 @@ jobs:
         name: test-results-${{ github.sha }}
         path: |
           *-test-output.log
+          spm-integration-test-output.log
           
     - name: Upload mint logs
       if: failure()
