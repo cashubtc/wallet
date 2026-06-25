@@ -34,7 +34,7 @@ This directory contains the complete CI infrastructure for running end-to-end in
 **No more 20+ minute builds!** These scripts use prebuilt binaries:
 
 - **CDK**: Downloads `cdk-mintd-0.17.1` from [GitHub releases](https://github.com/cashubtc/cdk/releases/tag/v0.17.1)
-- **Nutshell**: Installs via `pip install cashu-nutshell` from PyPI
+- **Nutshell**: Installs via `pip install cashu` from PyPI (exposes the `mint` binary)
 
 ## Quick Start
 
@@ -99,7 +99,7 @@ The integration tests verify **CDK-Swift ↔ real mint** compatibility:
 
 ```
 CI/
-├── setup-nutshell.sh      # pip install cashu-nutshell (downloads wheels)
+├── setup-nutshell.sh      # pip install cashu (downloads wheels)
 ├── start-nutshell.sh      # Launch Nutshell with FakeWallet on port 3338
 ├── stop-nutshell.sh       # Stop Nutshell mint
 │
