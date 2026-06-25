@@ -72,6 +72,22 @@ struct ReceiveLightningView: View {
                         }
                         .accessibilityLabel("Share request")
                     }
+                } else if shouldShowMethodPicker {
+                    // Liquid Glass method switcher. On iOS 26 the toolbar renders
+                    // bar buttons as glass, so this reads as a sibling of the
+                    // close button by construction. Replaces the old inline
+                    // `methodChip` text affordance.
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            HapticFeedback.selection()
+                            showMethodPicker = true
+                        } label: {
+                            Image(systemName: selectedMethod.navSymbol)
+                                .contentTransition(.symbolEffect(.replace))
+                        }
+                        .accessibilityLabel("Receive method: \(selectedMethod.friendlyTitle)")
+                        .accessibilityHint("Opens the receive method picker")
+                    }
                 }
             }
             .sheet(isPresented: $showMintPicker) {
@@ -83,9 +99,8 @@ struct ReceiveLightningView: View {
                 MethodPickerSheet(
                     selectedMethod: $selectedMethod,
                     methods: availableMintMethods,
-                    onSelect: { method in
-                        // Amountless only applies to BOLT12 — never let it leak.
-                        if method != .bolt12 { isAmountless = false }
+                    onSelect: { _ in
+                        // `onChange(of: selectedMethod)` owns the amountless rule.
                     }
                 )
                 .presentationDetents([.medium])
@@ -99,7 +114,15 @@ struct ReceiveLightningView: View {
             .onChange(of: selectedMethod) {
                 errorMessage = nil
                 onchainObservation = nil
-                if selectedMethod != .bolt12 { isAmountless = false }
+                // Reusable invoices open amountless (sender chooses) when no
+                // amount is typed; any carried-over amount keeps it off, and
+                // every non-BOLT12 method is always amount-bearing.
+                isAmountless = (selectedMethod == .bolt12) && amountString.isEmpty
+            }
+            .onChange(of: entryUnit) { oldUnit, newUnit in
+                // Flip (or a price load that changes the effective unit): carry
+                // the typed amount across, converted, so it stays equivalent.
+                amountString = AmountFormatter.entryConverted(raw: amountString, from: oldUnit, to: newUnit)
             }
             .onDisappear {
                 quoteStatusTask?.cancel()
@@ -130,13 +153,20 @@ struct ReceiveLightningView: View {
         case .bolt11:
             return "Lightning Invoice"
         case .bolt12:
-            return "BOLT12 Offer"
+            return "Reusable Invoice"
         case .onchain:
             return "Bitcoin Address"
         }
     }
 
-    private var amountValue: UInt64? { UInt64(amountString) }
+    /// The unit the keypad is entering in: fiat only when fiat is primary AND a
+    /// price is loaded, else sats (mirrors `CurrencyAmountDisplay.effectivePrimary`).
+    private var entryUnit: AmountDisplayPrimary {
+        (settings.amountDisplayPrimary == .fiat && priceService.btcPriceUSD > 0) ? .fiat : .sats
+    }
+
+    /// Satoshis represented by the typed amount, interpreted per `entryUnit`.
+    private var amountSats: UInt64 { AmountFormatter.entrySats(raw: amountString, unit: entryUnit) }
 
     /// The one path that submits no amount: a BOLT12 offer with "Any amount" lit.
     /// Everything else (BOLT11, on-chain, a BOLT12 offer with a typed amount)
@@ -148,7 +178,7 @@ struct ReceiveLightningView: View {
     private var canCreateRequest: Bool {
         guard !isCreatingRequest else { return false }
         if isAmountlessOffer { return true }
-        return (amountValue ?? 0) > 0
+        return amountSats > 0
     }
 
     // MARK: - Amount Input View
@@ -157,12 +187,6 @@ struct ReceiveLightningView: View {
         VStack(spacing: 0) {
             if let mint = walletManager.activeMint {
                 mintSelector(mint: mint)
-                    .padding(.horizontal)
-                    .padding(.top, 12)
-            }
-
-            if shouldShowMethodPicker {
-                methodChip
                     .padding(.horizontal)
                     .padding(.top, 12)
             }
@@ -181,7 +205,7 @@ struct ReceiveLightningView: View {
 
             Spacer()
 
-            NumberPadAmountInput(amountString: $amountString)
+            NumberPadAmountInput(amountString: $amountString, unit: entryUnit)
                 .padding(.horizontal, 24)
                 .onChange(of: amountString) { _, newValue in
                     // Typing a digit takes over from the amountless offer.
@@ -203,34 +227,17 @@ struct ReceiveLightningView: View {
         }
     }
 
-    /// Quiet, left-aligned menu trigger that opens the method picker sheet.
-    /// Replaces the old segmented pill bar — a Plain-Button affordance, not a
-    /// capsule, so it never reads as a tab.
-    private var methodChip: some View {
-        Button(action: {
-            HapticFeedback.selection()
-            showMethodPicker = true
-        }) {
-            HStack(spacing: 4) {
-                Text(selectedMethod.friendlyTitle)
-                    .font(.subheadline.weight(.medium))
-                Image(systemName: "chevron.down")
-                    .font(.caption2.weight(.semibold))
-            }
-            .foregroundStyle(.secondary)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityLabel("Receive method: \(selectedMethod.friendlyTitle)")
-        .accessibilityHint("Opens the receive method picker")
-    }
-
     private var amountHero: some View {
         VStack(spacing: 12) {
+            if selectedMethod == .onchain {
+                methodBadge
+                    .transition(.opacity)
+            }
+
             CurrencyAmountDisplay(
-                sats: amountValue ?? 0,
-                primary: $settings.amountDisplayPrimary
+                sats: amountSats,
+                primary: $settings.amountDisplayPrimary,
+                entryRaw: amountString
             )
             .opacity(isAmountlessOffer ? 0.35 : 1)
             .accessibilityElement(children: .combine)
@@ -245,8 +252,22 @@ struct ReceiveLightningView: View {
         .animation(.snappy, value: selectedMethod)
     }
 
-    /// BOLT12-only toggle. Lit = the offer carries no amount (sender chooses).
-    /// Typing any digit clears it (handled in `amountInputView`).
+    /// All-caps "ON-CHAIN" label sitting above the amount. On-chain receive is
+    /// unusual enough to warrant the callout; Lightning and reusable invoices
+    /// rely on the nav-bar glyph alone, so this only renders for on-chain.
+    private var methodBadge: some View {
+        Text(selectedMethod.displayName.uppercased())
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(.quaternary, in: Capsule())
+            .accessibilityLabel("Method: \(selectedMethod.friendlyTitle)")
+    }
+
+    /// BOLT12-only toggle. Lit = the invoice carries no amount (sender chooses).
+    /// Only available while the field is empty: typing a digit clears it (handled
+    /// in `amountInputView`) and greys it out until the amount is cleared again.
     private var anyAmountChip: some View {
         Button(action: {
             HapticFeedback.selection()
@@ -268,6 +289,8 @@ struct ReceiveLightningView: View {
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
+        .disabled(!amountString.isEmpty)
+        .opacity(amountString.isEmpty ? 1 : 0.35)
         .accessibilityLabel("Any amount")
         .accessibilityHint("The sender chooses the amount")
         .accessibilityAddTraits(isAmountless ? .isSelected : [])
@@ -604,7 +627,7 @@ struct ReceiveLightningView: View {
     private func syncSelectedMethodWithActiveMint() {
         guard availableMintMethods.contains(selectedMethod) else {
             selectedMethod = availableMintMethods.first ?? .bolt11
-            isAmountless = false
+            isAmountless = (selectedMethod == .bolt12) && amountString.isEmpty
             return
         }
     }
@@ -615,7 +638,7 @@ struct ReceiveLightningView: View {
         let requestMethod = selectedMethod
         // Only a BOLT12 amountless offer submits no amount; BOLT11, on-chain,
         // and a BOLT12 offer with a typed amount all require a positive value.
-        let requestAmount: UInt64? = isAmountlessOffer ? nil : amountValue
+        let requestAmount: UInt64? = isAmountlessOffer ? nil : (amountSats > 0 ? amountSats : nil)
 
         if !isAmountlessOffer, (requestAmount ?? 0) == 0 {
             return

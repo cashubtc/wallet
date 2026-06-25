@@ -610,6 +610,17 @@ struct MainWalletView: View {
         return settings.useBitcoinSymbol ? "₿\(formatted)" : "\(formatted) sat"
     }
 
+    /// Detent for the action chooser. The Send chooser grows into a taller
+    /// empty-state when there's nothing to send: no mints → the suggested-mints
+    /// picker; mints but zero balance → the "receive first" prompt. Reactive to
+    /// `mints`/`balance` so it shrinks once a mint is added (no mints → mints).
+    private func chooserHeight(for action: WalletActionSheet) -> CGFloat {
+        if action == .send, walletManager.balance == 0 {
+            return walletManager.mints.isEmpty ? 470 : 260
+        }
+        return action.detentHeight
+    }
+
     @ViewBuilder
     private func sheetView(for sheet: WalletSheet) -> some View {
         switch sheet {
@@ -627,10 +638,13 @@ struct MainWalletView: View {
                     } else {
                         activeSheet = .flow(flow)
                     }
-                }
+                },
+                onReceive: { activeSheet = .chooser(.receive) },
+                onAddCustomMint: { activeSheet = .discoverMints }
             )
+            .environmentObject(walletManager)
             .presentationDragIndicator(.visible)
-            .modifier(ChooserSheetPresentation(height: action.detentHeight))
+            .modifier(ChooserSheetPresentation(height: chooserHeight(for: action)))
         case .scanner:
             ScannerWrapperView()
                 .environmentObject(walletManager)
@@ -760,8 +774,31 @@ private struct WalletActionSheetView: View {
     let action: WalletActionSheet
     let onClose: () -> Void
     let onSelect: (WalletFlow) -> Void
+    /// Open the Receive chooser (state B's CTA — the way out of an empty wallet).
+    let onReceive: () -> Void
+    /// Route to the custom-mint add surface (state A's "Add custom mint URL").
+    let onAddCustomMint: () -> Void
 
+    @EnvironmentObject private var walletManager: WalletManager
     @State private var revealed = false
+    @State private var addingMintUrl: String?
+    @State private var addMintError: String?
+
+    /// Send is impossible with nothing to spend — intercept before the chooser.
+    /// Receive is never gated (it's the cure), so this only fires for `.send`.
+    private var isSendEmptyState: Bool {
+        action == .send && walletManager.balance == 0
+    }
+
+    /// The single piece of state the sheet body switches on, so phase changes
+    /// (e.g. connecting → "nothing to send yet") cross-fade rather than hard-cut.
+    private enum SendEmptyPhase: Equatable { case options, connecting, noMints, noBalance }
+
+    private var phase: SendEmptyPhase {
+        guard isSendEmptyState else { return .options }
+        if addingMintUrl != nil { return .connecting }
+        return walletManager.mints.isEmpty ? .noMints : .noBalance
+    }
 
     private var secondaryOptionTitle: String {
         // Lightning + on-chain are both "Bitcoin" from the user's mental model;
@@ -789,22 +826,22 @@ private struct WalletActionSheetView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(options.enumerated()), id: \.element.id) { index, option in
-                    optionButton(title: option.title, icon: option.icon, action: option.flow)
-                        .opacity(revealed ? 1 : 0)
-                        .offset(x: revealed ? 0 : -12)
-                        .animation(
-                            .smooth(duration: 0.32).delay(Double(index) * 0.07),
-                            value: revealed
-                        )
+            Group {
+                switch phase {
+                case .options:
+                    optionsList.transition(.opacity)
+                case .connecting:
+                    connectingState.transition(.opacity)
+                case .noMints:
+                    noMintsState.transition(.opacity)
+                case .noBalance:
+                    noBalanceState.transition(.opacity)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .topLeading)
-            .padding(.horizontal, 20)
-            .padding(.top, 12)
-            .padding(.bottom, 12)
-            .navigationTitle(action.title)
+            .animation(.smooth(duration: 0.35), value: phase)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            // Drop the "Send" title for the empty state — the headline carries it.
+            .navigationTitle(isSendEmptyState ? "" : action.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -816,6 +853,131 @@ private struct WalletActionSheetView: View {
             }
         }
         .onAppear { revealed = true }
+    }
+
+    // MARK: - Normal chooser (Ecash / Bitcoin / …)
+
+    private var optionsList: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(options.enumerated()), id: \.element.id) { index, option in
+                optionButton(title: option.title, icon: option.icon, action: option.flow)
+                    .opacity(revealed ? 1 : 0)
+                    .offset(x: revealed ? 0 : -12)
+                    .animation(
+                        .smooth(duration: 0.32).delay(Double(index) * 0.07),
+                        value: revealed
+                    )
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .padding(.horizontal, 20)
+        .padding(.top, 12)
+        .padding(.bottom, 12)
+    }
+
+    // MARK: - Send empty states
+
+    /// Transient state while a tapped suggested mint is being added. Held in its
+    /// own phase so it cross-fades into state B once the mint connects.
+    private var connectingState: some View {
+        VStack(spacing: 14) {
+            ProgressView()
+            Text("Connecting to \(displayHost(addingMintUrl ?? ""))…")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// State A — no mints. Embeds the onboarding suggested-mints picker so the
+    /// prerequisite is resolved in place; adding a mint auto-advances to state B.
+    private var noMintsState: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Connect a mint first")
+                        .font(.title3.weight(.medium))
+                    Text("Mints issue the ecash you send and receive. Add one to get started.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 12)
+
+                SuggestedMintsSection(
+                    existingURLs: Set(walletManager.mints.map(\.url)),
+                    onAdd: { addMint($0) }
+                )
+
+                if let addMintError {
+                    Text(addMintError)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 8)
+                }
+
+                Button(action: onAddCustomMint) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "plus")
+                        Text("Add custom mint URL")
+                    }
+                    .padding(.vertical, 12)
+                    .frame(maxWidth: .infinity)
+                }
+                .textLinkButton()
+                .padding(.top, 4)
+            }
+            .padding(.top, 8)
+            .padding(.bottom, 16)
+        }
+    }
+
+    /// State B — mints connected but zero balance. The way forward is funds.
+    private var noBalanceState: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "banknote")
+                .font(.system(size: 40))
+                .foregroundStyle(.secondary)
+
+            VStack(spacing: 6) {
+                Text("Nothing to send yet")
+                    .font(.title3.weight(.medium))
+                Text("Receive some ecash before you can send.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+
+            Button("Receive", action: onReceive)
+                .glassButton()
+                .padding(.top, 4)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 24)
+        .padding(.top, 24)
+    }
+
+    private func addMint(_ url: String) {
+        addMintError = nil
+        addingMintUrl = url
+        Task {
+            do {
+                try await walletManager.addMint(url: url)
+            } catch {
+                addMintError = "Couldn't connect to that mint. Try another."
+            }
+            addingMintUrl = nil
+        }
+    }
+
+    private func displayHost(_ url: String) -> String {
+        var host = url
+            .replacingOccurrences(of: "https://", with: "")
+            .replacingOccurrences(of: "http://", with: "")
+        if host.hasSuffix("/") { host = String(host.dropLast()) }
+        return host
     }
 
     private func optionButton(title: String, icon: String, action flow: WalletFlow) -> some View {

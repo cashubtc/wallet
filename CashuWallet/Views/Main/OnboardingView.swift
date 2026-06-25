@@ -170,11 +170,9 @@ struct OnboardingView: View {
                     showConceptSheet = true
                 }) {
                     Text("What is ecash?")
-                        .font(.footnote.weight(.medium))
-                        .foregroundStyle(.secondary)
                         .padding(.top, 4)
                 }
-                .buttonStyle(.plain)
+                .textLinkButton()
             }
             .padding(.horizontal, 24)
             .padding(.bottom, 40)
@@ -262,10 +260,8 @@ struct OnboardingView: View {
 
             Button(action: copyMnemonic) {
                 Text(seedCopied ? "Copied" : "Copy")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.secondary)
             }
-            .buttonStyle(.plain)
+            .textLinkButton()
 
             Spacer()
 
@@ -376,12 +372,10 @@ struct OnboardingView: View {
                             Image(systemName: "plus")
                             Text("Add custom mint URL")
                         }
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(.secondary)
                         .padding(.vertical, 14)
                         .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.plain)
+                    .textLinkButton()
                     .padding(.top, 4)
                 }
 
@@ -423,11 +417,9 @@ struct OnboardingView: View {
 
                 Button(action: skipFirstMint) {
                     Text("Skip for now")
-                        .font(.footnote.weight(.medium))
-                        .foregroundStyle(.secondary)
                         .padding(.top, 2)
                 }
-                .buttonStyle(.plain)
+                .textLinkButton()
                 .disabled(isAddingFirstMints)
             }
             .padding(.horizontal, 24)
@@ -451,53 +443,65 @@ struct OnboardingView: View {
             }
         }) {
             HStack(spacing: 12) {
+                MintAvatarView(iconUrl: recommended?.iconUrl, name: recommended?.name ?? shortenUrl(url))
+
                 VStack(alignment: .leading, spacing: 2) {
                     Text(recommended?.name ?? shortenUrl(url))
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
 
-                    Text(url)
+                    Text(shortenUrl(url))
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+                        .truncationMode(.middle)
                 }
 
                 Spacer()
 
                 Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                    .font(.title3)
-                    .foregroundStyle(selected ? .primary : Color.primary.opacity(0.25))
+                    .font(.title2)
+                    .foregroundStyle(selected ? .primary : Color.primary.opacity(0.22))
                     .symbolRenderingMode(.hierarchical)
             }
-            .padding(.vertical, 14)
+            .padding(.vertical, 12)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
 
     private var customMintInputRow: some View {
-        HStack(spacing: 8) {
-            TextField("https://mint.example.com", text: $customMintInput)
+        HStack(spacing: 10) {
+            TextField("", text: $customMintInput)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .keyboardType(.URL)
                 .font(.system(.subheadline, design: .monospaced))
-                .padding(.vertical, 12)
-                .padding(.horizontal, 14)
-                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                .foregroundStyle(.primary)
+                .tint(.primary)
+                .overlay(alignment: .leading) {
+                    if customMintInput.isEmpty {
+                        Text("https://mint.example.com")
+                            .font(.system(.subheadline, design: .monospaced))
+                            .foregroundStyle(.tertiary)
+                            .allowsHitTesting(false)
+                    }
+                }
 
             Button(action: commitCustomMintInput) {
                 Image(systemName: customMintInput.isEmpty ? "doc.on.clipboard" : "arrow.right.circle.fill")
-                    .font(.title3)
-                    .foregroundStyle(.primary)
-                    .padding(8)
+                    .font(.title3.weight(.medium))
+                    .foregroundStyle(customMintInput.isEmpty ? .secondary : .primary)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel(customMintInput.isEmpty ? "Paste from clipboard" : "Add mint")
             .accessibilityHint(customMintInput.isEmpty ? "Pastes mint URL from clipboard" : "Adds mint to restore list")
         }
+        .padding(.vertical, 12)
+        .padding(.horizontal, 14)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
     }
 
     private func commitCustomMintInput() {

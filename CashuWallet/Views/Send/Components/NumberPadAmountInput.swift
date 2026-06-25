@@ -6,15 +6,21 @@ import SwiftUI
 /// Per-keypress selection haptics, long-press on delete clears the whole value.
 struct NumberPadAmountInput: View {
     @Binding var amountString: String
+    /// The active entry unit. Sats is an integer; fiat is a cents accumulator
+    /// (digits shift in from the right). Either way the bottom-left slot stays
+    /// blank — there is no decimal key, the fiat decimal is implied.
+    var unit: AmountDisplayPrimary = .sats
 
     @ScaledMetric(relativeTo: .title) private var keyHeight: CGFloat = 64
 
-    private let rows: [[String]] = [
-        ["1", "2", "3"],
-        ["4", "5", "6"],
-        ["7", "8", "9"],
-        ["", "0", "⌫"]
-    ]
+    private var rows: [[String]] {
+        [
+            ["1", "2", "3"],
+            ["4", "5", "6"],
+            ["7", "8", "9"],
+            ["", "0", "⌫"]
+        ]
+    }
 
     var body: some View {
         VStack(spacing: 10) {
@@ -61,19 +67,18 @@ struct NumberPadAmountInput: View {
         }
     }
 
-    private func append(_ digit: String) {
+    private func append(_ key: String) {
+        let updated = AmountFormatter.entryAppend(key, to: amountString, unit: unit)
+        guard updated != amountString else { return }
         HapticFeedback.selection()
-        if amountString == "0" {
-            amountString = digit
-        } else {
-            amountString.append(digit)
-        }
+        amountString = updated
     }
 
     private func backspace() {
-        guard !amountString.isEmpty else { return }
+        let updated = AmountFormatter.entryBackspace(amountString, unit: unit)
+        guard updated != amountString else { return }
         HapticFeedback.selection()
-        amountString.removeLast()
+        amountString = updated
     }
 
     private func clearAll() {
