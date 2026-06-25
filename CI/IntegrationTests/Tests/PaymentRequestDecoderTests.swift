@@ -174,7 +174,7 @@ final class PaymentRequestDecoderTests: XCTestCase {
     // MARK: - decode — onchain
 
     func testDecodeP2PKHBitcoinAddress() {
-        let result = PaymentRequestDecoder.decode("1A1zP1eP5QGefi2DMPTfTL5SLmv7Divf")
+        let result = PaymentRequestDecoder.decode("1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa")
         if case .onchain = result {
             // pass
         } else {

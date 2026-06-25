@@ -104,10 +104,13 @@ struct CurrencyAmount: Equatable {
     /// Formatted string for display
     func formatted(showSymbol: Bool = true) -> String {
         let formatter = NumberFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.numberStyle = .decimal
         formatter.minimumFractionDigits = currency.decimals
         formatter.maximumFractionDigits = currency.decimals
+        formatter.usesGroupingSeparator = true
         formatter.groupingSeparator = ","
+        formatter.decimalSeparator = "."
         
         let formattedValue = formatter.string(from: NSNumber(value: displayValue)) ?? "\(displayValue)"
         

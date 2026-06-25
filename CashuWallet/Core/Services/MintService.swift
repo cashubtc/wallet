@@ -312,7 +312,7 @@ class MintService: ObservableObject {
     /// Normalize a mint URL
     private func normalizeUrl(_ url: String) -> String {
         var normalized = url.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !normalized.hasPrefix("http://") && !normalized.hasPrefix("https://") {
+        if explicitUrlScheme(in: normalized) == nil {
             normalized = "https://" + normalized
         }
         if normalized.hasSuffix("/") {
@@ -323,14 +323,59 @@ class MintService: ObservableObject {
 
     /// Validate that a mint URL uses http or https
     func validateMintUrl(_ url: String) -> String? {
-        let normalized = normalizeUrl(url)
-        guard let parsedUrl = URL(string: normalized), parsedUrl.host != nil else {
-            return "Invalid URL format."
-        }
-        guard parsedUrl.scheme == "https" || parsedUrl.scheme == "http" else {
+        let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let scheme = explicitUrlScheme(in: trimmed),
+           scheme != "https" && scheme != "http" {
             return "Mint URL must use http or https."
         }
+
+        let normalized = normalizeUrl(url)
+        guard let components = URLComponents(string: normalized),
+              let scheme = components.scheme?.lowercased(),
+              let host = components.host,
+              !host.isEmpty else {
+            return "Invalid URL format."
+        }
+        guard scheme == "https" || scheme == "http" else {
+            return "Mint URL must use http or https."
+        }
+        guard isValidMintHost(host) else {
+            return "Invalid URL format."
+        }
         return nil
+    }
+
+    private func explicitUrlScheme(in url: String) -> String? {
+        guard let schemeSeparator = url.range(of: "://") else {
+            return nil
+        }
+
+        let scheme = String(url[..<schemeSeparator.lowerBound]).lowercased()
+        guard !scheme.isEmpty,
+              scheme.range(
+                of: #"^[a-z][a-z0-9+.-]*$"#,
+                options: .regularExpression
+              ) != nil else {
+            return nil
+        }
+
+        return scheme
+    }
+
+    private func isValidMintHost(_ host: String) -> Bool {
+        let normalizedHost = host.lowercased()
+        if normalizedHost == "localhost" || normalizedHost.contains(":") {
+            return true
+        }
+
+        if normalizedHost.range(
+            of: #"^\d{1,3}(\.\d{1,3}){3}$"#,
+            options: .regularExpression
+        ) != nil {
+            return true
+        }
+
+        return normalizedHost.split(separator: ".").count >= 2
     }
     
     /// Save mints to persistent storage
