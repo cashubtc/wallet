@@ -31,6 +31,13 @@ extension View {
         self.buttonStyle(FullWidthCapsuleButtonStyle())
     }
 
+    /// Canonical borderless text-link button for tertiary actions
+    /// ("Skip", "What is ecash?", "Copy", "Add custom mint URL"). The single
+    /// text-link vocabulary in the app — see `TextLinkButtonStyle`.
+    func textLinkButton() -> some View {
+        self.buttonStyle(TextLinkButtonStyle())
+    }
+
 }
 
 // MARK: - Canvas Divider
@@ -136,5 +143,26 @@ struct FullWidthCapsuleButtonStyle: ButtonStyle {
         }
         .opacity(isEnabled ? (configuration.isPressed ? 0.85 : 1) : 0.4)
         .animation(.snappy(duration: 0.18), value: configuration.isPressed)
+    }
+}
+
+// MARK: - Text Link Button Style
+
+/// Borderless, text-only tertiary action ("Skip", "What is ecash?", "Copy",
+/// "Add custom mint URL"). The single canonical style for plain text links —
+/// `.subheadline.weight(.medium)`, `.secondary`, with a press-dim and disabled
+/// fade that match the rest of the button family. Layout (full-width, padding,
+/// optional leading SF Symbol) stays at the call site, since text links vary
+/// from inline ("Copy") to full-width ("Add custom mint URL").
+struct TextLinkButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(.secondary)
+            .contentShape(Rectangle())
+            .opacity(isEnabled ? (configuration.isPressed ? 0.6 : 1) : 0.4)
+            .animation(.snappy(duration: 0.18), value: configuration.isPressed)
     }
 }

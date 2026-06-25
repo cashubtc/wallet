@@ -216,14 +216,71 @@ struct MutexLockOverlay: View {
 struct RecommendedMint: Identifiable {
     let name: String
     let url: String
+    /// Curated logo for the suggestion avatar. These mints aren't tracked yet,
+    /// so there's no fetched `MintInfo.iconUrl` to fall back on — we ship the
+    /// published `/v1/info` icon for each. A miss degrades to the monogram in
+    /// `MintAvatarView`, so a stale URL never breaks the row.
+    var iconUrl: String? = nil
     var id: String { url }
 
     /// The curated shortlist offered when a user has no mints to type from memory.
     static let suggested: [RecommendedMint] = [
-        RecommendedMint(name: "Minibits", url: "https://mint.minibits.cash/Bitcoin"),
-        RecommendedMint(name: "Coinos", url: "https://mint.coinos.io"),
-        RecommendedMint(name: "Macadamia", url: "https://mint.macadamia.cash")
+        RecommendedMint(name: "Minibits", url: "https://mint.minibits.cash/Bitcoin", iconUrl: "https://minibits.cash/icon-192.png"),
+        RecommendedMint(name: "Coinos", url: "https://mint.coinos.io", iconUrl: "https://coinos.io/images/icon.png"),
+        RecommendedMint(name: "Macadamia", url: "https://mint.macadamia.cash", iconUrl: "https://cypherbase.cc/images/logo_w256.png")
     ]
+}
+
+// MARK: - Mint Avatar
+
+/// Circular mint avatar — the mint's published logo when available, otherwise a
+/// tinted monogram of its initial (the Contacts / Wallet idiom) rather than a
+/// generic glyph, so each mint reads as distinct. Loads via `AsyncImage`,
+/// matching the app's other mint-icon sites; the monogram also covers the
+/// loading and failure phases. Used by the onboarding first-mint picker and the
+/// suggested-mints quick-add.
+struct MintAvatarView: View {
+    let iconUrl: String?
+    let name: String
+    var size: CGFloat = 36
+
+    private var monogram: String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let first = trimmed.first else { return "#" }
+        return String(first).uppercased()
+    }
+
+    var body: some View {
+        Group {
+            if let iconUrl, let url = URL(string: iconUrl) {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image.resizable().aspectRatio(contentMode: .fill)
+                    default:
+                        placeholder
+                    }
+                }
+            } else {
+                placeholder
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(Circle())
+        .overlay(
+            Circle().strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
+        )
+    }
+
+    private var placeholder: some View {
+        Circle()
+            .fill(.quaternary)
+            .overlay(
+                Text(monogram)
+                    .font(.system(size: size * 0.42, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.secondary)
+            )
+    }
 }
 
 /// Quick-add suggestion rows shown in the restore-mints flow. Converts the
@@ -306,9 +363,7 @@ struct SuggestedMintsSection: View {
 
     private func row(for mint: RecommendedMint) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: "bitcoinsign.bank.building")
-                .foregroundStyle(.secondary)
-                .frame(width: 24, height: 24)
+            MintAvatarView(iconUrl: mint.iconUrl, name: mint.name)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(mint.name)

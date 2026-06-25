@@ -333,6 +333,10 @@ because every layout uses `.frame(maxWidth: .infinity)` rather than fixed widths
 - **Body Emphasis** (`.body.weight(.semibold)`): primary button labels (inside
   `glassButton()` / `FullWidthCapsuleButtonStyle`), history row title.
 - **Body** (`.body`): default for prose, settings rows, detail values.
+- **Text Link** (`.subheadline.weight(.medium)`, `.secondary`): borderless
+  tertiary actions — "Skip" / "Skip for now", "What is ecash?", "Copy" /
+  "Copied", "Add custom mint URL". Always applied via `.textLinkButton()`
+  (`TextLinkButtonStyle`), never hand-rolled per site.
 - **Callout** (`.callout`): supporting descriptive text under hero headings,
   e.g. "An ecash wallet for Bitcoin and Lightning." `OnboardingView.swift:135`.
 - **Caption Emphasis** (`.caption.weight(.semibold)`, tracking `0.06em`,
@@ -420,11 +424,21 @@ right tool for the job.
   `CashuWallet/Views/Components/LiquidGlassModifiers.swift`. Used everywhere a
   button needs a visible affordance: Create Wallet, Continue, Pay, Send,
   Receive, Copy, Restore, etc.
-- **Utility — `.buttonStyle(.plain)`** with an SF Symbol + label combo, often
-  wrapped in `.liquidGlass(in: Capsule(), interactive: true)` when the symbol
-  earns a glass surface. Used for the unit-symbol toggle on the main wallet,
-  the truncated Lightning address copy chip, "Skip", "Back", "Got it" text
-  links, and inline chevron actions.
+- **Text link — `.textLinkButton()`** (= `TextLinkButtonStyle`): the canonical
+  borderless, text-only tertiary action. `.subheadline.weight(.medium)`,
+  `.secondary`, press-dim to 0.6, disabled 0.4 — the same feedback family as
+  `glassButton()`. The style owns font + color + feedback only; layout
+  (full-width, padding, an optional leading SF Symbol like the "+" on "Add
+  custom mint URL") stays at the call site, since text links range from inline
+  ("Copy") to full-width ("Skip", "Add custom mint URL"). Used for "Skip" /
+  "Skip for now", "What is ecash?", "Copy", and "Add custom mint URL". Defined
+  in `CashuWallet/Views/Components/LiquidGlassModifiers.swift`.
+- **Utility — `.buttonStyle(.plain)`** with a bare SF Symbol (no text label),
+  often wrapped in `.liquidGlass(in: Capsule(), interactive: true)` when the
+  symbol earns a glass surface. Reserved for **icon-only** actions: the
+  unit-symbol toggle on the main wallet, the truncated Lightning address copy
+  chip, the "Back" chevron, and inline chevron disclosures. Text links go
+  through `.textLinkButton()`, not raw `.plain`.
 - **Home action row — raw `.liquidGlass(in: Capsule(), interactive: true)`**:
   the Receive / Scan / Send triptych in `MainWalletView` uses inline glass
   rather than `glassButton()` because it needs `GlassEffectContainer` (iOS 26
@@ -662,6 +676,17 @@ stroked-capsule outline variant, no inverted-ink fill variant, no
 copy, and disabled state** — never from a parallel button vocabulary. A
 "secondary" Liquid Glass button stacked under a "primary" one is intentional:
 they are siblings, not parent-and-child.
+
+**The Text-Link Rule.** A borderless, text-only tertiary action ("Skip",
+"What is ecash?", "Copy", "Add custom mint URL") always goes through
+`.textLinkButton()` — `.subheadline.weight(.medium)`, `.secondary`. Never
+hand-roll the font/color on a `.buttonStyle(.plain)` text link; that is how
+"Skip for now" drifted to `.footnote` while its twins stayed `.subheadline`.
+This is a *typography* standard, not a surface — it does not contradict the
+Singular-Button Rule, because a text link has no surface. Raw
+`.buttonStyle(.plain)` is now reserved for **icon-only** utilities (see the
+Plain-Button Rule). A leading SF Symbol on a text link (the "+" on "Add custom
+mint URL") is allowed — it lives in the call-site label, not the style.
 
 **The Iconless-CTA Rule.** Primary `glassButton()` CTAs at the bottom of a
 sheet are **text-only**. No leading SF Symbol, no `Label(_:systemImage:)`,
