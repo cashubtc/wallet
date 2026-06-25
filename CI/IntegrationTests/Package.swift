@@ -14,7 +14,16 @@ let package = Package(
                 .product(name: "Cdk", package: "cdk-swift")
             ],
             path: "Tests",
-            resources: [.copy("Resources")]
+            exclude: [
+                "AmountFormatterTests.swift",
+                "CurrencyTests.swift",
+                "PaymentRequestDecoderTests.swift",
+                "TokenParserTests.swift"
+            ],
+            sources: [
+                "IntegrationTestBase.swift",
+                "NutshellIntegrationTests.swift"
+            ]
         )
     ]
 )
