@@ -109,6 +109,7 @@ jobs:
           -scheme CashuWallet \
           -destination 'platform=iOS Simulator,name=iPhone 17' \
           -only-testing:CashuWalletUITests \
+          -parallel-testing-enabled NO \
           CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="-" \
           | tee ui-test-output.log | xcbeautify
 

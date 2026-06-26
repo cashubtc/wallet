@@ -3,51 +3,70 @@ import XCTest
 /// UI tests for the Receive flow options sheet.
 final class ReceiveUITests: UITestBase {
 
+    // MARK: - Helpers
+
+    private var receiveButton: XCUIElement {
+        app.buttons["wallet-action-receive"]
+    }
+
+    private var receiveEcashOption: XCUIElement {
+        app.buttons["wallet-flow-receiveEcash"]
+    }
+
+    private var receiveBitcoinOption: XCUIElement {
+        app.buttons["wallet-flow-receiveLightning"]
+    }
+
+    private func openReceiveChooser() {
+        XCTAssertTrue(
+            receiveButton.waitForExistence(timeout: 10),
+            "Receive button should be visible on wallet tab"
+        )
+        receiveButton.tap()
+
+        XCTAssertTrue(
+            receiveEcashOption.waitForExistence(timeout: 10),
+            "Receive chooser should show the Ecash option"
+        )
+    }
+
     // MARK: - Tests
 
     func testReceiveOptionsAppear() throws {
         createWalletAndSkipMint()
 
-        let receiveButton = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Receive'")).firstMatch
-        XCTAssertTrue(receiveButton.waitForExistence(timeout: 10), "Receive button should be visible on wallet tab")
-        receiveButton.tap()
+        openReceiveChooser()
 
-        let pasteOption = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Paste Ecash Token'")).firstMatch
-        let scanOption = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Scan QR Code'")).firstMatch
-        let paymentRequestOption = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Payment Request'")).firstMatch
-
-        XCTAssertTrue(pasteOption.waitForExistence(timeout: 10), "Paste Ecash Token option should appear")
-        XCTAssertTrue(scanOption.exists, "Scan QR Code option should appear")
-        XCTAssertTrue(paymentRequestOption.exists, "Payment Request option should appear")
+        XCTAssertTrue(
+            receiveBitcoinOption.waitForExistence(timeout: 5),
+            "Receive chooser should show the Bitcoin option"
+        )
     }
 
     func testReceiveSheetCanBeDismissed() throws {
         createWalletAndSkipMint()
 
-        let receiveButton = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Receive'")).firstMatch
-        XCTAssertTrue(receiveButton.waitForExistence(timeout: 10))
-        receiveButton.tap()
+        openReceiveChooser()
 
-        let pasteOption = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Paste Ecash Token'")).firstMatch
-        XCTAssertTrue(pasteOption.waitForExistence(timeout: 10))
-
-        app.swipeDown()
+        let closeButton = app.buttons["wallet-chooser-close"]
+        XCTAssertTrue(closeButton.waitForExistence(timeout: 5), "Receive chooser should show a close button")
+        closeButton.tap()
 
         XCTAssertTrue(app.tabBars.buttons["Wallet"].waitForExistence(timeout: 5))
     }
 
-    func testPaymentRequestOptionOpensLightningFlow() throws {
+    func testBitcoinOptionOpensLightningFlow() throws {
         createWalletWithMint()
 
-        let receiveButton = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Receive'")).firstMatch
-        XCTAssertTrue(receiveButton.waitForExistence(timeout: 10))
-        receiveButton.tap()
+        openReceiveChooser()
 
-        let paymentRequestOption = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Payment Request'")).firstMatch
-        XCTAssertTrue(paymentRequestOption.waitForExistence(timeout: 10))
-        paymentRequestOption.tap()
+        XCTAssertTrue(
+            receiveBitcoinOption.waitForExistence(timeout: 10),
+            "Receive chooser should show the Bitcoin option"
+        )
+        receiveBitcoinOption.tap()
 
-        let lightningContent = app.otherElements.matching(NSPredicate(format: "label CONTAINS 'Receive method'")).firstMatch
-        XCTAssertTrue(lightningContent.waitForExistence(timeout: 10), "Lightning receive view should open")
+        let createRequestButton = app.buttons["receive-lightning-create-request"]
+        XCTAssertTrue(createRequestButton.waitForExistence(timeout: 10), "Lightning receive view should open")
     }
 }

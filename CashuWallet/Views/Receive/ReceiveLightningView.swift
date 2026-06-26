@@ -220,6 +220,7 @@ struct ReceiveLightningView: View {
                 }
             }
             .glassButton()
+            .accessibilityIdentifier("receive-lightning-create-request")
             .disabled(!canCreateRequest)
             .padding(.horizontal)
             .padding(.top, 16)

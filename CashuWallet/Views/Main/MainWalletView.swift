@@ -318,11 +318,13 @@ struct MainWalletView: View {
                 HStack(spacing: 12) {
                     actionButton(
                         "Receive",
+                        identifier: "wallet-action-receive",
                         hint: "Opens options to receive ecash or lightning payments"
                     ) { activeSheet = .chooser(.receive) }
 
                     actionButton(
                         "Send",
+                        identifier: "wallet-action-send",
                         hint: "Opens options to send ecash or pay lightning invoices"
                     ) { activeSheet = .chooser(.send) }
                 }
@@ -333,12 +335,14 @@ struct MainWalletView: View {
                     Text("Receive")
                 }
                 .glassButton()
+                .accessibilityIdentifier("wallet-action-receive")
                 .accessibilityHint("Opens options to receive ecash or lightning payments")
 
                 Button { activeSheet = .chooser(.send) } label: {
                     Text("Send")
                 }
                 .glassButton()
+                .accessibilityIdentifier("wallet-action-send")
                 .accessibilityHint("Opens options to send ecash or pay lightning invoices")
             }
         }
@@ -349,6 +353,7 @@ struct MainWalletView: View {
     @available(iOS 26, *)
     private func actionButton(
         _ title: String,
+        identifier: String,
         hint: String,
         action: @escaping () -> Void
     ) -> some View {
@@ -361,6 +366,7 @@ struct MainWalletView: View {
         .buttonStyle(.glass)
         .controlSize(.large)
         .buttonBorderShape(.capsule)
+        .accessibilityIdentifier(identifier)
         .accessibilityHint(hint)
     }
 
@@ -849,6 +855,7 @@ private struct WalletActionSheetView: View {
                         Image(systemName: "xmark")
                     }
                     .accessibilityLabel("Close")
+                    .accessibilityIdentifier("wallet-chooser-close")
                 }
             }
         }
@@ -988,6 +995,7 @@ private struct WalletActionSheetView: View {
             optionLabel(title: title, icon: icon)
         }
         .buttonStyle(PressableButtonStyle())
+        .accessibilityIdentifier("wallet-flow-\(flow.id)")
     }
 
     private func optionLabel(title: String, icon: String) -> some View {
