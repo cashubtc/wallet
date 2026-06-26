@@ -1,7 +1,7 @@
 import Foundation
 import Cdk
 
-struct ICloudBackupInfo {
+struct ICloudBackupInfo: Sendable {
     let mintURLs: [String]
     let timestamp: Date
 }
@@ -75,6 +75,26 @@ extension WalletManager {
         let ts = store.double(forKey: ICloudKVKey.timestamp)
         let timestamp = ts > 0 ? Date(timeIntervalSince1970: ts) : Date()
         return ICloudBackupInfo(mintURLs: urls, timestamp: timestamp)
+    }
+
+    /// Off-main variant of `detectICloudBackup`, for the iCloud-restore screen's
+    /// entrance. The keychain query (`SecItemCopyMatching`) and the KV-store
+    /// `synchronize()` flush both block the calling thread; on the main actor
+    /// they stall the crossfade into the screen. `KeychainService` is stateless
+    /// (only immutable constants over the thread-safe Security framework), so a
+    /// fresh instance inside a detached task keeps the work off the main thread
+    /// with no shared-state hazard. `ICloudBackupInfo` is `Sendable`.
+    nonisolated static func detectICloudBackupOffMain() async -> ICloudBackupInfo? {
+        await Task.detached(priority: .userInitiated) {
+            guard KeychainService().hasSynchronizableMnemonic() else { return nil }
+            let store = NSUbiquitousKeyValueStore.default
+            store.synchronize()
+            guard let urls = store.array(forKey: ICloudKVKey.mintURLs) as? [String],
+                  !urls.isEmpty else { return nil }
+            let ts = store.double(forKey: ICloudKVKey.timestamp)
+            let timestamp = ts > 0 ? Date(timeIntervalSince1970: ts) : Date()
+            return ICloudBackupInfo(mintURLs: urls, timestamp: timestamp)
+        }.value
     }
 
     func performICloudBackup() {

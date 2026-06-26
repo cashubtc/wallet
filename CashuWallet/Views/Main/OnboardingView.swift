@@ -303,7 +303,7 @@ struct OnboardingView: View {
                         HapticFeedback.selection()
                         advance(to: .restoreInput)
                     }) {
-                        Text("Use seed phrase")
+                        Text("Use Seed Phrase")
                     }
                     .glassButton()
 
@@ -312,7 +312,6 @@ struct OnboardingView: View {
                     }
                     .textLinkButton()
                     .padding(.top, 4)
-                    .padding(.bottom, 32)
                 }
                 .padding(.horizontal, 24)
                 .padding(.bottom, 40)
@@ -338,8 +337,10 @@ struct OnboardingView: View {
         }
         .animation(.easeInOut(duration: 0.3), value: iCloudRestorePhase)
         .task {
-            NSUbiquitousKeyValueStore.default.synchronize()
-            detectedICloudBackup = walletManager.detectICloudBackup()
+            // Detection blocks on a keychain query + KV-store flush. Run it off
+            // the main actor so it can't hitch the crossfade into this screen.
+            let info = await WalletManager.detectICloudBackupOffMain()
+            detectedICloudBackup = info
             isDetectingICloudBackup = false
         }
     }
@@ -538,6 +539,10 @@ struct OnboardingView: View {
                         mnemonicWordsGrid(words: walletManager.getMnemonicWords())
                             .blur(radius: seedRevealed ? 0 : 9)
                             .allowsHitTesting(seedRevealed)
+                            // Keep the secret words out of the accessibility tree
+                            // until revealed — otherwise VoiceOver reads all 12
+                            // aloud while they're still blurred on screen.
+                            .accessibilityHidden(!seedRevealed)
 
                         if !seedRevealed {
                             VStack(spacing: 6) {
@@ -547,16 +552,15 @@ struct OnboardingView: View {
                                     .font(.subheadline)
                             }
                             .foregroundStyle(.secondary)
+                            .accessibilityElement(children: .ignore)
+                            .accessibilityLabel("Reveal seed phrase")
+                            .accessibilityHint("Shows your 12-word recovery phrase")
+                            .accessibilityAddTraits(.isButton)
+                            .accessibilityAction(.default, revealSeed)
                         }
                     }
                     .contentShape(Rectangle())
-                    .onTapGesture {
-                        guard !seedRevealed else { return }
-                        HapticFeedback.selection()
-                        withAnimation(.snappy(duration: 0.25)) {
-                            seedRevealed = true
-                        }
-                    }
+                    .onTapGesture(perform: revealSeed)
                     .padding(.horizontal, 28)
 
                     Button(action: copyMnemonic) {
@@ -609,6 +613,14 @@ struct OnboardingView: View {
         }
         .onAppear {
             triggerEntrance { mnemonicAppeared = true }
+        }
+    }
+
+    private func revealSeed() {
+        guard !seedRevealed else { return }
+        HapticFeedback.selection()
+        withAnimation(.snappy(duration: 0.25)) {
+            seedRevealed = true
         }
     }
 
@@ -799,6 +811,7 @@ struct OnboardingView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     private var customMintInputRow: some View {
@@ -1073,7 +1086,7 @@ struct OnboardingView: View {
                             mintsToRestore.map { ($0, nil) }
                             + restoreResults.map { ($0.mintUrl, $0) }
 
-                        ForEach(Array(allItems.enumerated()), id: \.offset) { index, item in
+                        ForEach(Array(allItems.enumerated()), id: \.element.url) { index, item in
                             mintRow(
                                 url: item.url,
                                 result: item.result,
@@ -1147,7 +1160,7 @@ struct OnboardingView: View {
                                 Text("Restoring...")
                             }
                         } else {
-                            Text("Restore from \(mintsToRestore.count) mint\(mintsToRestore.count == 1 ? "" : "s")")
+                            Text("Restore from \(mintsToRestore.count) Mint\(mintsToRestore.count == 1 ? "" : "s")")
                         }
                     }
                     .glassButton()
