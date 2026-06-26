@@ -33,17 +33,25 @@ struct OnboardingView: View {
     @State private var currentAddingMint: String?
     @State private var firstMintError: String?
 
+    // iCloud restore state
+    @State private var detectedICloudBackup: ICloudBackupInfo? = nil
+    @State private var isDetectingICloudBackup = true
+    @State private var iCloudRestorePhase = ICloudRestorePhase.preview
+
     // Transition direction for step changes
     @State private var stepDirection: StepDirection = .forward
 
     enum StepDirection { case forward, backward }
+    enum ICloudRestorePhase { case preview, restoring, success }
 
     enum OnboardingStep {
         case welcome
         case showMnemonic
         case firstMint
+        case restoreMethod
         case restoreInput
         case restoreMints
+        case iCloudRestore
     }
 
     private let recommendedMints: [RecommendedMint] = RecommendedMint.suggested
@@ -60,11 +68,17 @@ struct OnboardingView: View {
             case .firstMint:
                 firstMintView
                     .transition(stepTransition)
+            case .restoreMethod:
+                restoreMethodView
+                    .transition(stepTransition)
             case .restoreInput:
                 restoreInputView
                     .transition(stepTransition)
             case .restoreMints:
                 restoreMintsView
+                    .transition(stepTransition)
+            case .iCloudRestore:
+                iCloudRestoreView
                     .transition(stepTransition)
             }
         }
@@ -159,9 +173,9 @@ struct OnboardingView: View {
 
                 Button(action: {
                     HapticFeedback.selection()
-                    advance(to: .restoreInput)
+                    advance(to: .restoreMethod)
                 }) {
-                    Text("I have a seed phrase")
+                    Text("Restore Wallet")
                 }
                 .glassButton()
                 .disabled(isCreating)
@@ -213,6 +227,222 @@ struct OnboardingView: View {
         .padding(28)
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
+    }
+
+    // MARK: - Restore Method Chooser
+
+    private var restoreMethodView: some View {
+        VStack(spacing: 0) {
+            Spacer()
+
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Restore Wallet")
+                    .font(.largeTitle.weight(.heavy))
+                    .tracking(-0.5)
+                    .foregroundStyle(.primary)
+
+                Text("Choose how to recover your wallet.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 28)
+
+            Spacer()
+
+            VStack(spacing: 12) {
+                Button(action: {
+                    HapticFeedback.selection()
+                    isDetectingICloudBackup = true
+                    detectedICloudBackup = nil
+                    advance(to: .iCloudRestore)
+                }) {
+                    Label("Restore from iCloud", systemImage: "icloud")
+                }
+                .glassButton()
+
+                Button(action: {
+                    HapticFeedback.selection()
+                    advance(to: .restoreInput)
+                }) {
+                    Text("Use seed phrase")
+                }
+                .glassButton()
+
+                Button(action: { retreat(to: .welcome) }) {
+                    Text("Back")
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.bottom, 32)
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 40)
+        }
+    }
+
+    // MARK: - iCloud Restore View
+
+    private var iCloudRestoreView: some View {
+        Group {
+            switch iCloudRestorePhase {
+            case .preview:
+                iCloudRestorePreviewView
+            case .restoring:
+                iCloudRestoringView
+            case .success:
+                iCloudRestoreSuccessView
+            }
+        }
+        .task {
+            NSUbiquitousKeyValueStore.default.synchronize()
+            detectedICloudBackup = walletManager.detectICloudBackup()
+            isDetectingICloudBackup = false
+        }
+    }
+
+    private var iCloudRestorePreviewView: some View {
+        VStack(spacing: 0) {
+            Spacer()
+
+            VStack(alignment: .leading, spacing: 14) {
+                Image(systemName: "icloud.and.arrow.down")
+                    .font(.largeTitle)
+                    .foregroundStyle(.secondary)
+                    .padding(.bottom, 4)
+
+                Text("Wallet found\nin iCloud.")
+                    .font(.largeTitle.weight(.heavy))
+                    .tracking(-0.5)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Group {
+                    if isDetectingICloudBackup {
+                        HStack(spacing: 8) {
+                            ProgressView().scaleEffect(0.75)
+                            Text("Checking iCloud…")
+                        }
+                    } else if let backup = detectedICloudBackup {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(backup.timestamp.formatted(date: .abbreviated, time: .shortened))
+                            Text("\(backup.mintURLs.count) mint\(backup.mintURLs.count == 1 ? "" : "s")")
+                        }
+                    } else {
+                        Text("No backup found. Make sure you're signed in to the same Apple ID with iCloud Keychain enabled.")
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .padding(.top, 4)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 28)
+
+            Spacer()
+
+            if let error = errorMessage {
+                ErrorBannerView(message: error, type: .error)
+                    .padding(.horizontal)
+                    .padding(.bottom, 8)
+            }
+
+            VStack(spacing: 12) {
+                Button(action: runICloudRestore) {
+                    Text("Restore Wallet")
+                }
+                .glassButton()
+                .disabled(isDetectingICloudBackup || detectedICloudBackup == nil)
+
+                Button(action: { retreat(to: .restoreMethod) }) {
+                    Text("Back")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 40)
+        }
+    }
+
+    private var iCloudRestoringView: some View {
+        let mintCount = detectedICloudBackup?.mintURLs.count ?? 0
+        return VStack(spacing: 20) {
+            Spacer()
+
+            ProgressView()
+                .scaleEffect(1.5)
+
+            VStack(spacing: 8) {
+                Text("Restoring Wallet")
+                    .font(.title2.weight(.semibold))
+
+                Text("Recovering your ecash from \(mintCount) mint\(mintCount == 1 ? "" : "s")…")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+
+            Spacer()
+        }
+        .padding(.horizontal, 28)
+    }
+
+    private var iCloudRestoreSuccessView: some View {
+        VStack(spacing: 0) {
+            Spacer()
+
+            VStack(alignment: .leading, spacing: 14) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 72))
+                    .foregroundStyle(.green)
+                    .padding(.bottom, 4)
+
+                Text("Wallet\nRestored.")
+                    .font(.largeTitle.weight(.heavy))
+                    .tracking(-0.5)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text("Your ecash is ready.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 4)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 28)
+
+            Spacer()
+
+            Button(action: openRestoredWallet) {
+                Text("Open Wallet")
+            }
+            .glassButton()
+            .padding(.horizontal, 24)
+            .padding(.bottom, 40)
+        }
+    }
+
+    private func runICloudRestore() {
+        guard detectedICloudBackup != nil else { return }
+        iCloudRestorePhase = .restoring
+        errorMessage = nil
+        Task { @MainActor in
+            do {
+                try await walletManager.restoreFromICloudBackup()
+                withAnimation(.snappy(duration: 0.4)) {
+                    iCloudRestorePhase = .success
+                }
+            } catch {
+                iCloudRestorePhase = .preview
+                errorMessage = error.userFacingWalletMessage
+            }
+        }
+    }
+
+    private func openRestoredWallet() {
+        Task { @MainActor in
+            await walletManager.completeRestore()
+        }
     }
 
     // MARK: - Show Mnemonic View

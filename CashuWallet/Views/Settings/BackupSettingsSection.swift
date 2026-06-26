@@ -26,6 +26,19 @@ struct BackupSettingsSection: View {
                 systemImage: "arrow.counterclockwise.circle.fill"
             )
         }
+
+        NavigationLink {
+            ICloudBackupSettingsView()
+                .environmentObject(walletManager)
+        } label: {
+            backupRestoreRow(
+                title: "iCloud Backup",
+                subtitle: walletManager.iCloudBackupEnabled
+                    ? "On · Seed phrase synced to iCloud Keychain."
+                    : "Auto-backup your seed phrase and mints.",
+                systemImage: "icloud"
+            )
+        }
     }
 
     private func backupRestoreRow(title: String, subtitle: String, systemImage: String) -> some View {

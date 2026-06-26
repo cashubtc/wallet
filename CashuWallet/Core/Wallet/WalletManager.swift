@@ -34,6 +34,9 @@ class WalletManager: ObservableObject {
     /// Active unit (sat, usd, etc.)
     @Published var activeUnit: String = "sat"
 
+    /// iCloud backup detected at launch (no local wallet exists, but iCloud has one)
+    @Published var pendingICloudBackup: ICloudBackupInfo? = nil
+
     var mintQuoteSyncsInFlight: Set<String> = []
 
     /// Throttle state for passive mint-quote syncs (opening History, app

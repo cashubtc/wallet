@@ -7,11 +7,13 @@ extension WalletManager {
     func addMint(url: String) async throws {
         try await mintService.addMint(url: url)
         await refreshBalance()
+        performICloudBackup()
     }
 
     func removeMint(at offsets: IndexSet) async {
         await mintService.removeMint(at: offsets)
         await refreshBalance()
+        performICloudBackup()
     }
 
     func setActiveMint(_ mint: MintInfo) async throws {

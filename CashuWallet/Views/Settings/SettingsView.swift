@@ -1224,6 +1224,114 @@ struct BackupView: View {
     }
 }
 
+// MARK: - iCloud Backup Settings
+
+struct ICloudBackupSettingsView: View {
+    @EnvironmentObject var walletManager: WalletManager
+    @State private var showEnableConfirm = false
+    @State private var showDisableConfirm = false
+    @State private var didBackUp = false
+
+    var body: some View {
+        List {
+            Section {
+                iCloudRow(
+                    title: "Seed phrase",
+                    detail: "iCloud Keychain · End-to-end encrypted",
+                    systemImage: "key.fill"
+                )
+                iCloudRow(
+                    title: "Mint list",
+                    detail: "iCloud · Apple-encrypted",
+                    systemImage: "bitcoinsign.bank.building"
+                )
+            } header: {
+                Text("What's backed up")
+            }
+
+            Section {
+                if !walletManager.iCloudAvailable() {
+                    Text("Sign in to iCloud in Settings to enable backup.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Toggle("Back up to iCloud", isOn: enabledBinding)
+                }
+            } footer: {
+                Text("Your seed phrase is stored in iCloud Keychain, protected by Apple's end-to-end encryption. Mint URLs are stored in iCloud and encrypted by Apple.")
+            }
+
+            if walletManager.iCloudBackupEnabled {
+                Section {
+                    if let date = walletManager.lastICloudBackupDate {
+                        LabeledContent("Last backed up") {
+                            Text(date.formatted(date: .abbreviated, time: .shortened))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Button(action: backUpNow) {
+                        if didBackUp {
+                            Label("Backed up", systemImage: "checkmark")
+                                .foregroundStyle(.green)
+                        } else {
+                            Text("Back Up Now")
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle("iCloud Backup")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.hidden, for: .navigationBar)
+        .alert("Enable iCloud Backup?", isPresented: $showEnableConfirm) {
+            Button("Enable") { walletManager.iCloudBackupEnabled = true }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Your seed phrase will be stored in iCloud Keychain, which is end-to-end encrypted and inaccessible to Apple. Mint URLs will be stored in iCloud encrypted by Apple.")
+        }
+        .alert("Disable iCloud Backup?", isPresented: $showDisableConfirm) {
+            Button("Disable", role: .destructive) { walletManager.iCloudBackupEnabled = false }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Your backup will be removed from iCloud Keychain and iCloud. Your local wallet is not affected.")
+        }
+    }
+
+    private var enabledBinding: Binding<Bool> {
+        Binding(
+            get: { walletManager.iCloudBackupEnabled },
+            set: { newValue in
+                if newValue { showEnableConfirm = true }
+                else { showDisableConfirm = true }
+            }
+        )
+    }
+
+    private func backUpNow() {
+        walletManager.performICloudBackup()
+        didBackUp = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+            didBackUp = false
+        }
+    }
+
+    private func iCloudRow(title: String, detail: String, systemImage: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 24)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 2)
+    }
+}
+
 // MARK: - Mint Picker Sheet
 
 struct MintPickerSheet: View {

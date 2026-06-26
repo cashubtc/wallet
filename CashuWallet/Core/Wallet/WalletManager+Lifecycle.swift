@@ -31,14 +31,18 @@ extension WalletManager {
 
     private func loadWalletState() async {
         do {
+            NSUbiquitousKeyValueStore.default.synchronize()
             Cdk.initLogging(level: "info")
-            
+
             if let storedMnemonic = try keychainService.loadMnemonic() {
                 mnemonic = storedMnemonic
                 try await initializeWalletForLaunch(mnemonic: storedMnemonic)
                 needsOnboarding = false
                 isInitialized = true
             } else {
+                if let backup = detectICloudBackup() {
+                    pendingICloudBackup = backup
+                }
                 needsOnboarding = true
                 isInitialized = true
             }
@@ -144,6 +148,10 @@ extension WalletManager {
         SettingsManager.shared.resetWalletScopedData()
         MintLogoCache.shared.clear()
         processedQuotes.removeAll()
+        // iCloud backup survives a local deletion — on re-open the user can restore from it
+        if let backup = detectICloudBackup() {
+            pendingICloudBackup = backup
+        }
         needsOnboarding = true
         isInitialized = true
     }
@@ -177,6 +185,7 @@ extension WalletManager {
             mnemonic = newMnemonic
             SettingsManager.shared.resetWalletScopedData(resetRuntimeServices: false)
             try removeWalletFileBackups(fileBackups)
+            performICloudBackup()
         } catch {
             resetRuntimeState()
             restoreWalletBoundaryDefaults(defaultsSnapshot)
