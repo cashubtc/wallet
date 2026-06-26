@@ -139,7 +139,7 @@ struct TransactionDetailView: View {
 
                 if let explorerURL = onchainExplorerURL {
                     Link("View in block explorer", destination: explorerURL)
-                        .font(.subheadline.weight(.medium))
+                        .textLinkButton()
                         .padding(.vertical, 12)
                 }
 
