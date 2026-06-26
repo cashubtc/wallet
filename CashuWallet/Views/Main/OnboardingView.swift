@@ -21,6 +21,11 @@ struct OnboardingView: View {
     @State private var restoringMints: [String] = []
     @State private var restorePhases: [String: MintRestorePhase] = [:]
 
+    // Best-effort mint identity (name + logo) fetched the moment a URL is staged,
+    // so rows show the mint's own profile pic instead of a monogram.
+    @State private var stagedMintIconUrls: [String: String] = [:]
+    @State private var stagedMintNames: [String: String] = [:]
+
     // Seed phrase reveal / acknowledge state
     @State private var seedRevealed = false
     @State private var seedAcknowledged = false
@@ -1178,10 +1183,10 @@ struct OnboardingView: View {
 
     private func stagedMintRow(url: String) -> some View {
         HStack(spacing: 12) {
-            MintAvatarView(iconUrl: nil, name: shortenUrl(url))
+            MintAvatarView(iconUrl: stagedMintIconUrls[url], name: stagedMintNames[url] ?? shortenUrl(url))
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(shortenUrl(url))
+                Text(stagedMintNames[url] ?? shortenUrl(url))
                     .font(.subheadline)
                     .fontWeight(.medium)
                     .lineLimit(1)
@@ -1316,10 +1321,13 @@ struct OnboardingView: View {
         }()
 
         return HStack(spacing: 12) {
-            MintAvatarView(iconUrl: recovered?.iconUrl, name: recovered?.mintName ?? shortenUrl(url))
+            MintAvatarView(
+                iconUrl: recovered?.iconUrl ?? stagedMintIconUrls[url],
+                name: recovered?.mintName ?? stagedMintNames[url] ?? shortenUrl(url)
+            )
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(recovered?.mintName ?? shortenUrl(url))
+                Text(recovered?.mintName ?? stagedMintNames[url] ?? shortenUrl(url))
                     .font(.subheadline)
                     .fontWeight(.medium)
                     .lineLimit(1)
@@ -1476,7 +1484,20 @@ struct OnboardingView: View {
 
         mintsToRestore.append(url)
         restoreMintError = nil
+        fetchStagedMintInfo(url)
         return true
+    }
+
+    /// Pull the mint's name + logo from its `/v1/info` so the staged row shows the
+    /// mint's own profile pic. Best-effort and side-effect-free — failures leave
+    /// the monogram fallback in place.
+    private func fetchStagedMintInfo(_ url: String) {
+        guard stagedMintIconUrls[url] == nil, stagedMintNames[url] == nil else { return }
+        Task { @MainActor in
+            guard let info = await walletManager.fetchMintPreviewInfo(url: url) else { return }
+            if let icon = info.iconUrl, !icon.isEmpty { stagedMintIconUrls[url] = icon }
+            if let name = info.name, !name.isEmpty { stagedMintNames[url] = name }
+        }
     }
 
     private func normalizedMintURL(from rawUrl: String) -> String? {
