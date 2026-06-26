@@ -114,6 +114,7 @@ extension WalletManager {
         return RestoreMintResult(
             mintUrl: normalizedUrl,
             mintName: mintName,
+            iconUrl: info?.iconUrl,
             spent: restored.spent.value,
             unspent: restored.unspent.value,
             pending: restored.pending.value

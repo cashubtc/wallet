@@ -448,15 +448,18 @@ struct RestoreWalletView: View {
 
     @State private var mintUrlInput = ""
     @State private var mintsToRestore: [String] = []
-    @State private var restoreResults: [RestoreMintResult] = []
-    @State private var isRestoringMints = false
-    @State private var currentRestoringMint: String?
     @State private var mintError: String?
-    @State private var previousWalletMintSuggestions: [RecommendedMint] = []
+    @FocusState private var mintFieldFocused: Bool
+
+    // Dedicated restore/results screen (forward-only): a snapshot of the staged
+    // mints plus each one's phase, driving the progress rows + live total.
+    @State private var restoringMints: [String] = []
+    @State private var restorePhases: [String: MintRestorePhase] = [:]
 
     private enum RestoreStep {
         case seed
         case mints
+        case progress
     }
 
     var body: some View {
@@ -468,6 +471,9 @@ struct RestoreWalletView: View {
             case .mints:
                 mintStep
                     .transition(.opacity.combined(with: .move(edge: .trailing)))
+            case .progress:
+                progressStep
+                    .transition(.opacity.combined(with: .move(edge: .trailing)))
             }
         }
         .animation(.snappy(duration: 0.28), value: step)
@@ -478,11 +484,14 @@ struct RestoreWalletView: View {
         .toolbar(.hidden, for: .tabBar)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
-                Button(action: handleBackNavigation) {
-                    Image(systemName: "chevron.left")
+                // Forward-only on the restore/results screen — no back chevron there.
+                if step != .progress {
+                    Button(action: handleBackNavigation) {
+                        Image(systemName: "chevron.left")
+                    }
+                    .disabled(isRestoringSeed)
+                    .accessibilityLabel(step == .seed ? "Back" : "Back to seed phrase")
                 }
-                .disabled(isRestoringMints || isRestoringSeed)
-                .accessibilityLabel(step == .seed ? "Back" : "Back to seed phrase")
             }
         }
     }
@@ -574,9 +583,8 @@ struct RestoreWalletView: View {
     }
 
     private var mintStep: some View {
-        let isEmpty = mintsToRestore.isEmpty && restoreResults.isEmpty
-
-        return VStack(spacing: 20) {
+        VStack(spacing: 0) {
+            // Fixed header — stays put below the nav bar / top safe area.
             VStack(spacing: 6) {
                 Text("Restore Ecash")
                     .font(.title2.weight(.semibold))
@@ -587,93 +595,83 @@ struct RestoreWalletView: View {
                     .multilineTextAlignment(.center)
                     .padding(.horizontal)
             }
+            .frame(maxWidth: .infinity)
             .padding(.top, 12)
+            .padding(.bottom, 16)
 
-            VStack(spacing: 12) {
-                TextField("mint.example.com", text: $mintUrlInput)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .keyboardType(.URL)
-                    .textContentType(.URL)
-                    .onSubmit(addMintUrl)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 14)
-                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
+            // Scrollable body — input + the staged mints the user has added.
+            ScrollView {
+                VStack(spacing: 20) {
+                    VStack(spacing: 12) {
+                        TextField("mint.example.com", text: $mintUrlInput)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .keyboardType(.URL)
+                            .textContentType(.URL)
+                            .focused($mintFieldFocused)
+                            .onSubmit(addMintUrl)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 14)
+                            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
 
-                HStack(spacing: 8) {
-                    Button(action: addMintUrl) {
-                        capsuleChipLabel("Add", systemImage: "plus")
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(mintUrlInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    .opacity(mintUrlInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.4 : 1)
-
-                    Button(action: pasteMintUrlsFromClipboard) {
-                        capsuleChipLabel("Paste", systemImage: "doc.on.clipboard")
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Paste mint URLs from clipboard")
-                }
-            }
-            .padding(.horizontal)
-
-            restoreMintList
-
-            SuggestedMintsSection(
-                existingURLs: Set(mintsToRestore).union(restoreResults.map(\.mintUrl)),
-                onAdd: { addMintUrlToRestoreList($0, showDuplicateError: false, showValidationError: false) },
-                walletMints: previousWalletMintSuggestions
-            )
-
-            if let mintError {
-                Text(mintError)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal)
-            }
-
-            restoreSummary
-
-            Spacer(minLength: 0)
-
-            VStack(spacing: 12) {
-                if !mintsToRestore.isEmpty {
-                    Button(action: startRestore) {
-                        if isRestoringMints {
-                            HStack(spacing: 8) {
-                                ProgressView()
-                                    .controlSize(.small)
-                                Text("Restoring...")
+                        HStack(spacing: 8) {
+                            Button(action: addMintUrl) {
+                                capsuleChipLabel("Add", systemImage: "plus")
                             }
-                        } else {
-                            Text("Restore from \(mintsToRestore.count) mint\(mintsToRestore.count == 1 ? "" : "s")")
+                            .buttonStyle(.plain)
+                            .disabled(mintUrlInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                            .opacity(mintUrlInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.4 : 1)
+
+                            Button(action: pasteMintUrlsFromClipboard) {
+                                capsuleChipLabel("Paste", systemImage: "doc.on.clipboard")
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Paste mint URLs from clipboard")
                         }
                     }
-                    .glassButton()
-                    .disabled(isRestoringMints)
                     .padding(.horizontal)
-                }
 
-                if isEmpty {
-                    Button(action: finishRestore) {
-                        Text("Skip")
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
+                    restoreMintList
+
+                    if let mintError {
+                        Text(mintError)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal)
                     }
-                    .textLinkButton()
-                    .disabled(isRestoringMints)
-                } else {
-                    Button(action: finishRestore) {
-                        Text("Continue")
-                    }
-                    .glassButton()
-                    .disabled(isRestoringMints)
-                    .padding(.horizontal)
                 }
+                .padding(.bottom, 8)
             }
-            .padding(.bottom, 24)
+            .scrollDismissesKeyboard(.interactively)
+            // Tap anywhere off the field dismisses the keyboard. Guarded so the
+            // first tap that focuses the field isn't immediately revoked.
+            .simultaneousGesture(
+                TapGesture().onEnded {
+                    if mintFieldFocused { mintFieldFocused = false }
+                }
+            )
         }
+        // Pinned footer — one Restore CTA, enabled once a mint is staged. Back is
+        // the nav-bar chevron.
+        .safeAreaInset(edge: .bottom) {
+            VStack(spacing: 12) {
+                Button(action: startRestoreFlow) {
+                    Text(mintsToRestore.isEmpty
+                         ? "Restore"
+                         : "Restore from \(mintsToRestore.count) mint\(mintsToRestore.count == 1 ? "" : "s")")
+                }
+                .glassButton()
+                .disabled(mintsToRestore.isEmpty)
+                .padding(.horizontal)
+            }
+            .padding(.horizontal)
+            .padding(.top, 8)
+            .padding(.bottom, 16)
+            .background(.background)
+        }
+        .animation(.snappy, value: mintError)
+        .onAppear { mintFieldFocused = false }
     }
 
     /// Inline Liquid-Glass capsule chip (Add / Paste). Non-interactive glass so
@@ -692,83 +690,25 @@ struct RestoreWalletView: View {
 
     @ViewBuilder
     private var restoreMintList: some View {
-        if !mintsToRestore.isEmpty || !restoreResults.isEmpty {
-            ScrollView {
-                VStack(spacing: 0) {
-                    let allItems: [(url: String, result: RestoreMintResult?)] =
-                        mintsToRestore.map { ($0, nil) }
-                        + restoreResults.map { ($0.mintUrl, $0) }
-
-                    ForEach(Array(allItems.enumerated()), id: \.offset) { index, item in
-                        restoreMintRow(
-                            url: item.url,
-                            result: item.result,
-                            isRestoring: item.result == nil && currentRestoringMint == item.url
-                        )
-
-                        if index < allItems.count - 1 {
-                            CanvasDivider()
-                        }
+        if !mintsToRestore.isEmpty {
+            VStack(spacing: 0) {
+                ForEach(Array(mintsToRestore.enumerated()), id: \.element) { index, url in
+                    stagedMintRow(url: url)
+                    if index < mintsToRestore.count - 1 {
+                        CanvasDivider()
                     }
-                }
-                .padding(.horizontal)
-            }
-            .frame(maxHeight: 260)
-        }
-    }
-
-    @ViewBuilder
-    private var restoreSummary: some View {
-        if !restoreResults.isEmpty {
-            let totalRecovered = restoreResults.reduce(UInt64(0)) { $0 + $1.unspent }
-            let totalPending = restoreResults.reduce(UInt64(0)) { $0 + $1.pending }
-
-            VStack(spacing: 8) {
-                if totalRecovered > 0 {
-                    Label("Recovered: \(totalRecovered) sats", systemImage: "checkmark.circle.fill")
-                        .font(.subheadline.weight(.semibold))
-                        .monospacedDigit()
-                        .foregroundStyle(.green)
-                        .contentTransition(.numericText(value: Double(totalRecovered)))
-                }
-
-                if totalPending > 0 {
-                    Label("Pending: \(totalPending) sats", systemImage: "clock")
-                        .symbolEffect(.pulse, options: .repeating)
-                        .font(.subheadline)
-                        .monospacedDigit()
-                        .foregroundStyle(.orange)
-                }
-
-                if totalRecovered == 0 && totalPending == 0 {
-                    Label("No ecash to recover from these mints.", systemImage: "info.circle")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
                 }
             }
             .padding(.horizontal)
-            .padding(.top, 4)
         }
     }
 
-    private func restoreMintRow(url: String, result: RestoreMintResult?, isRestoring: Bool) -> some View {
+    private func stagedMintRow(url: String) -> some View {
         HStack(spacing: 12) {
-            if isRestoring {
-                ProgressView()
-                    .scaleEffect(0.8)
-                    .frame(width: 24, height: 24)
-            } else if let result {
-                Image(systemName: result.totalRecovered > 0 ? "checkmark.circle.fill" : "minus.circle")
-                    .foregroundStyle(result.totalRecovered > 0 ? .green : .secondary)
-                    .frame(width: 24, height: 24)
-            } else {
-                Image(systemName: "bitcoinsign.bank.building")
-                    .foregroundStyle(.secondary)
-                    .frame(width: 24, height: 24)
-            }
+            MintAvatarView(iconUrl: nil, name: shortenedURL(url))
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(result?.mintName ?? shortenedURL(url))
+                Text(shortenedURL(url))
                     .font(.subheadline.weight(.medium))
                     .lineLimit(1)
 
@@ -780,20 +720,164 @@ struct RestoreWalletView: View {
 
             Spacer()
 
-            if let result {
-                Text(result.unspent > 0 ? "\(result.unspent) sats" : "0 sats")
-                    .font(.subheadline.weight(result.unspent > 0 ? .semibold : .regular))
-                    .monospacedDigit()
-                    .foregroundStyle(result.unspent > 0 ? .green : .secondary)
-            } else if !isRestoring {
-                Button {
-                    mintsToRestore.removeAll { $0 == url }
-                } label: {
-                    Image(systemName: "xmark.circle")
-                        .foregroundStyle(.secondary)
+            Button {
+                mintsToRestore.removeAll { $0 == url }
+            } label: {
+                Image(systemName: "xmark.circle")
+                    .foregroundStyle(.secondary)
+            }
+            .accessibilityLabel("Remove mint")
+            .accessibilityHint("Removes this mint before restoring")
+        }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 12)
+        .contentShape(Rectangle())
+    }
+
+    // MARK: - Restore Progress / Results (forward-only)
+
+    private var restoreTotalRecovered: UInt64 {
+        restorePhases.values.reduce(UInt64(0)) { acc, phase in
+            if case .recovered(let result) = phase { return acc + result.unspent }
+            return acc
+        }
+    }
+
+    private var restoreAllSettled: Bool {
+        restorePhases.values.allSatisfy { phase in
+            switch phase {
+            case .recovered, .failed: return true
+            case .pending, .restoring: return false
+            }
+        }
+    }
+
+    /// First mint currently restoring — used to keep it scrolled into view.
+    private var currentRestoringUrl: String? {
+        restoringMints.first { url in
+            if case .restoring = restorePhases[url] { return true }
+            return false
+        }
+    }
+
+    private var restoreSubhead: String {
+        if !restoreAllSettled { return "Recovering ecash from your mints…" }
+        return restoreTotalRecovered > 0
+            ? "Here's what we recovered."
+            : "No ecash found on these mints."
+    }
+
+    private var progressStep: some View {
+        VStack(spacing: 0) {
+            VStack(spacing: 6) {
+                Text(restoreAllSettled ? "Restore Complete" : "Restoring…")
+                    .font(.title2.weight(.semibold))
+                    .contentTransition(.opacity)
+
+                Text(restoreSubhead)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal)
+
+                if restoreTotalRecovered > 0 {
+                    Label("Recovered: \(restoreTotalRecovered) sats", systemImage: "checkmark.circle.fill")
+                        .font(.subheadline.weight(.semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(.green)
+                        .contentTransition(.numericText(value: Double(restoreTotalRecovered)))
+                        .padding(.top, 2)
                 }
-                .accessibilityLabel("Remove mint")
-                .accessibilityHint("Skips this mint during restore")
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.top, 12)
+            .padding(.bottom, 16)
+            .animation(.snappy, value: restoreTotalRecovered)
+            .animation(.snappy, value: restoreAllSettled)
+
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(spacing: 0) {
+                        ForEach(restoringMints, id: \.self) { url in
+                            restoreProgressRow(url: url, phase: restorePhases[url] ?? .pending)
+                                .id(url)
+                            if url != restoringMints.last {
+                                CanvasDivider()
+                            }
+                        }
+                    }
+                    .padding(.horizontal)
+                    .padding(.bottom, 8)
+                }
+                .onChange(of: currentRestoringUrl) { _, active in
+                    guard let active else { return }
+                    withAnimation(.snappy) { proxy.scrollTo(active, anchor: .center) }
+                }
+            }
+        }
+        .safeAreaInset(edge: .bottom) {
+            // Forward-only — Continue enables once every mint has settled.
+            VStack(spacing: 12) {
+                Button(action: finishRestore) {
+                    Text("Continue")
+                }
+                .glassButton()
+                .disabled(!restoreAllSettled)
+                .padding(.horizontal)
+            }
+            .padding(.horizontal)
+            .padding(.top, 8)
+            .padding(.bottom, 16)
+            .background(.background)
+        }
+    }
+
+    private func restoreProgressRow(url: String, phase: MintRestorePhase) -> some View {
+        let recovered: RestoreMintResult? = {
+            if case .recovered(let result) = phase { return result }
+            return nil
+        }()
+
+        return HStack(spacing: 12) {
+            MintAvatarView(iconUrl: recovered?.iconUrl, name: recovered?.mintName ?? shortenedURL(url))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(recovered?.mintName ?? shortenedURL(url))
+                    .font(.subheadline.weight(.medium))
+                    .lineLimit(1)
+
+                if case .failed(let message) = phase {
+                    Text(message)
+                        .font(.caption2)
+                        .foregroundStyle(.red)
+                        .lineLimit(2)
+                } else {
+                    Text(url)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer()
+
+            switch phase {
+            case .pending, .restoring:
+                ProgressView()
+                    .controlSize(.small)
+            case .recovered(let result):
+                HStack(spacing: 6) {
+                    Image(systemName: result.totalRecovered > 0 ? "checkmark.circle.fill" : "minus.circle")
+                        .foregroundStyle(result.totalRecovered > 0 ? .green : .secondary)
+                        .contentTransition(.symbolEffect(.replace))
+                    Text("\(result.unspent) sats")
+                        .font(.subheadline.weight(result.unspent > 0 ? .semibold : .regular))
+                        .monospacedDigit()
+                        .foregroundStyle(result.unspent > 0 ? .primary : .secondary)
+                }
+            case .failed:
+                Button("Retry") { retry(url) }
+                    .textLinkButton()
             }
         }
         .padding(.horizontal, 4)
@@ -816,9 +900,6 @@ struct RestoreWalletView: View {
 
     private func initializeAndProceed() {
         let cleanedMnemonic = normalizedWords(from: restoreMnemonic).joined(separator: " ")
-        let currentMintSuggestions = walletManager.mints.map {
-            RecommendedMint(name: $0.name, url: $0.url)
-        }
 
         guard walletManager.validateMnemonic(cleanedMnemonic) else {
             seedError = "That seed phrase doesn't look right. Check the spelling and try again."
@@ -833,9 +914,6 @@ struct RestoreWalletView: View {
 
             do {
                 try await walletManager.initializeRestoredWallet(mnemonic: cleanedMnemonic)
-                if !currentMintSuggestions.isEmpty {
-                    previousWalletMintSuggestions = currentMintSuggestions
-                }
                 step = .mints
             } catch {
                 seedError = "Couldn't open the wallet. \(error.userFacingWalletMessage)"
@@ -846,6 +924,7 @@ struct RestoreWalletView: View {
     private func addMintUrl() {
         if addMintUrlToRestoreList(mintUrlInput, showDuplicateError: true, showValidationError: true) {
             mintUrlInput = ""
+            mintFieldFocused = false
             HapticFeedback.selection()
         }
     }
@@ -893,8 +972,7 @@ struct RestoreWalletView: View {
             return false
         }
 
-        guard !mintsToRestore.contains(url),
-              !restoreResults.contains(where: { $0.mintUrl == url }) else {
+        guard !mintsToRestore.contains(url) else {
             if showDuplicateError {
                 mintError = "This mint is already in the list."
             }
@@ -906,28 +984,41 @@ struct RestoreWalletView: View {
         return true
     }
 
-    private func startRestore() {
-        isRestoringMints = true
-        mintError = nil
+    /// Snapshot the staged mints and move to the dedicated restore screen, which
+    /// runs the recovery and shows per-mint progress + results.
+    private func startRestoreFlow() {
+        mintFieldFocused = false
+        restoringMints = mintsToRestore
+        restorePhases = Dictionary(uniqueKeysWithValues: mintsToRestore.map { ($0, .pending) })
+        step = .progress
+        runRestore()
+    }
 
+    private func runRestore() {
         Task { @MainActor in
-            defer {
-                currentRestoringMint = nil
-                isRestoringMints = false
-            }
-
-            let urls = mintsToRestore
-            for url in urls {
-                currentRestoringMint = url
-
+            for url in restoringMints {
+                if case .recovered = restorePhases[url] { continue }   // keep successes on retry-all
+                withAnimation(.snappy) { restorePhases[url] = .restoring }
                 do {
                     let result = try await walletManager.restoreFromMint(url: url)
-                    restoreResults.append(result)
-                    mintsToRestore.removeAll { $0 == url }
+                    withAnimation(.snappy) { restorePhases[url] = .recovered(result) }
                 } catch {
-                    mintError = "Couldn't reach \(shortenedURL(url)). \(error.userFacingWalletMessage)"
+                    withAnimation(.snappy) { restorePhases[url] = .failed(error.userFacingWalletMessage) }
                     AppLogger.wallet.error("Restore error for \(url): \(error)")
                 }
+            }
+        }
+    }
+
+    private func retry(_ url: String) {
+        Task { @MainActor in
+            withAnimation(.snappy) { restorePhases[url] = .restoring }
+            do {
+                let result = try await walletManager.restoreFromMint(url: url)
+                withAnimation(.snappy) { restorePhases[url] = .recovered(result) }
+            } catch {
+                withAnimation(.snappy) { restorePhases[url] = .failed(error.userFacingWalletMessage) }
+                AppLogger.wallet.error("Retry restore error for \(url): \(error)")
             }
         }
     }
@@ -950,7 +1041,6 @@ struct RestoreWalletView: View {
 
     private func goBackToSeed() {
         mintsToRestore.removeAll()
-        restoreResults.removeAll()
         mintError = nil
         step = .seed
     }
