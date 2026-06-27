@@ -603,13 +603,23 @@ class LightningService: ObservableObject {
             ?? (quote.amountPaid.value > 0 ? quote.amountPaid.value : nil)
             ?? fallbackAmount
 
+        // Reusable BOLT12 offers (amountless or fixed) have no CDK creation field;
+        // the amountless one is also reused across opens. Stamp the first time we
+        // materialize each offer, then read it back so the "Created" row stays put.
+        // Keyed by quote id, so a fixed offer minted from the Amount pencil gets
+        // its own stable date.
+        let createdAt: Date? = paymentMethod == .bolt12
+            ? MintQuoteCreatedAtStore.recordIfAbsent(quoteId: quote.id, date: Date())
+            : nil
+
         return MintQuoteInfo(
             id: quote.id,
             request: quote.request,
             amount: resolvedAmount,
             paymentMethod: paymentMethod,
             state: mintQuoteState(from: quote, paymentMethod: paymentMethod),
-            expiry: displayExpiry(quote.expiry)
+            expiry: displayExpiry(quote.expiry),
+            createdAt: createdAt
         )
     }
 

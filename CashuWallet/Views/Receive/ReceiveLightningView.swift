@@ -19,6 +19,8 @@ struct ReceiveLightningView: View {
     @State private var isPaid = false
     @State private var errorMessage: String?
     @State private var showMintPicker = false
+    /// Reusable BOLT12 offer: drives the Amount-row pencil → amount picker sheet.
+    @State private var showReusableAmountPicker = false
     @State private var copiedRequest = false
     @State private var quoteStatusTask: Task<Void, Never>?
     @State private var expiryTimeRemaining: TimeInterval = 0
@@ -338,7 +340,109 @@ struct ReceiveLightningView: View {
 
     // MARK: - Request Display View
 
+    /// Routes the result screen by rail. Every reusable BOLT12 offer (amountless
+    /// or fixed) gets the calm, Cashu-Request-style metadata layout; BOLT11 and
+    /// on-chain keep the amount-hero + expiry-countdown layout in
+    /// `standardRequestDisplayView`.
+    @ViewBuilder
     private func requestDisplayView(quote: MintQuoteInfo) -> some View {
+        if quote.paymentMethod == .bolt12 {
+            reusableOfferDisplayView(quote: quote)
+                .onAppear { startQuoteMonitoring(for: quote) }
+                .onChange(of: mintQuote?.id) { _, _ in
+                    if let quote = mintQuote { startQuoteMonitoring(for: quote) }
+                }
+        } else {
+            standardRequestDisplayView(quote: quote)
+        }
+    }
+
+    /// Cashu-Request-style screen for a reusable BOLT12 offer: QR → (amount hero,
+    /// if fixed) → status → read-only Mint / editable Amount / Created rows → Copy.
+    /// Editing the Amount row mints a fresh fixed-amount offer (or reverts to the
+    /// amountless one) — that's how a fixed-amount reusable invoice is made.
+    /// No expiry countdown, no rotate affordance.
+    private func reusableOfferDisplayView(quote: MintQuoteInfo) -> some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(spacing: 24) {
+                    QRCodeView(content: quote.request, showControls: false, staticOnly: true)
+                        .frame(width: 280, height: 280)
+                        .padding(16)
+                        .background(Color.white, in: RoundedRectangle(cornerRadius: 20))
+                        .padding(.top, 8)
+                        .contextMenu {
+                            Button(action: { copyRequest(quote.request) }) {
+                                Label("Copy", systemImage: "doc.on.doc")
+                            }
+                            ShareLink(item: quote.request) {
+                                Label("Share", systemImage: "square.and.arrow.up")
+                            }
+                        }
+
+                    if let amount = quote.amount, amount > 0 {
+                        CurrencyAmountDisplay(
+                            sats: amount,
+                            primary: $settings.amountDisplayPrimary,
+                            primarySize: 32
+                        )
+                        .accessibilityLabel("Offer amount: \(amount) sats")
+                    }
+
+                    statusBadge
+
+                    VStack(spacing: 0) {
+                        detailRow(
+                            icon: "bitcoinsign.bank.building",
+                            label: "Mint",
+                            value: reusableMintDisplayValue
+                        )
+                        canvasDivider
+                        editableRow(
+                            icon: "bitcoinsign",
+                            label: "Amount",
+                            value: quote.amount.flatMap { $0 > 0 ? formatBalance($0) : nil } ?? "Any",
+                            action: { showReusableAmountPicker = true }
+                        )
+                        if let created = quote.createdAt {
+                            canvasDivider
+                            detailRow(
+                                icon: "calendar",
+                                label: "Created",
+                                value: created.formatted(date: .abbreviated, time: .shortened)
+                            )
+                        }
+                    }
+                    .padding(.top, 8)
+                    .padding(.horizontal, 4)
+                }
+                .padding(.horizontal)
+            }
+
+            Button(action: { copyRequest(quote.request) }) {
+                Text(copyButtonTitle(for: quote))
+            }
+            .glassButton()
+            .padding(.horizontal)
+            .padding(.bottom, 16)
+        }
+        .sheet(isPresented: $showReusableAmountPicker) {
+            CashuRequestAmountPickerSheet(
+                currentAmount: quote.amount,
+                onSelect: { setReusableOfferAmount($0) }
+            )
+        }
+    }
+
+    /// Friendly name of the offer's issuing mint for the read-only Mint row. A
+    /// BOLT12 offer is bound to one mint, so this never shows "Any mint" in
+    /// practice — the fallback only guards a missing active mint.
+    private var reusableMintDisplayValue: String {
+        guard let mint = walletManager.activeMint else { return "Any mint" }
+        return mint.name.isEmpty ? extractMintHost(mint.url) : mint.name
+    }
+
+    private func standardRequestDisplayView(quote: MintQuoteInfo) -> some View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(spacing: 24) {
@@ -441,14 +545,6 @@ struct ReceiveLightningView: View {
                     }
                     .accessibilityLabel("Use new address")
                     .accessibilityHint("Generates a fresh deposit address and replaces the current QR code")
-                } else {
-                    Button { createRequest(method: .bolt12, amountless: true) } label: {
-                        Label("Generate new invoice", systemImage: "arrow.clockwise")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                    .accessibilityLabel("Generate new invoice")
-                    .accessibilityHint("Creates a new reusable invoice and replaces the current QR code")
                 }
             }
         }
@@ -470,6 +566,33 @@ struct ReceiveLightningView: View {
         .font(.subheadline)
         .padding(.horizontal, 4)
         .padding(.vertical, 14)
+    }
+
+    /// Same as `detailRow` but tappable, with a trailing pencil — used for the
+    /// Amount row on the reusable offer screen (mirrors the Cashu Request screen).
+    private func editableRow(icon: String, label: String, value: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack {
+                Label(label, systemImage: icon)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text(value)
+                    .fontWeight(.medium)
+                    .multilineTextAlignment(.trailing)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Image(systemName: "pencil")
+                    .font(.footnote)
+                    .foregroundStyle(.tertiary)
+                    .padding(.leading, 4)
+            }
+            .font(.subheadline)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 14)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Edits the \(label.lowercased())")
     }
 
     private var canvasDivider: some View {
@@ -643,10 +766,13 @@ struct ReceiveLightningView: View {
 
     private func syncSelectedMethodWithActiveMint() {
         guard availableMintMethods.contains(selectedMethod) else {
-            selectedMethod = availableMintMethods.first ?? .bolt11
-            // The picker (not this reset) is where the user opts into "any
-            // amount", so a fallback always lands on an amount-bearing method.
-            isAmountless = false
+            let fallback = availableMintMethods.first ?? .bolt11
+            selectedMethod = fallback
+            // BOLT12 is now exclusively amountless (the fixed-amount row was
+            // retired), so a fallback onto bolt12 — e.g. a mint that supports
+            // only bolt12 — must land on the amountless path, not a keypad.
+            // Every other rail enters its amount on the keypad.
+            isAmountless = (fallback == .bolt12)
             return
         }
     }
@@ -681,6 +807,39 @@ struct ReceiveLightningView: View {
 
     private func createRequest() {
         createRequest(method: selectedMethod, amountless: isAmountlessOffer)
+    }
+
+    /// Re-mints the reusable BOLT12 offer at a new amount, driven by the Amount-row
+    /// pencil. nil / 0 → amountless (reuses the existing offer); a positive value →
+    /// a fresh fixed-amount offer. Setting an amount is how the user turns an "Any"
+    /// reusable invoice into a fixed-amount one. The old QR stays on screen until
+    /// the new offer is ready, so the keypad never flashes back in.
+    private func setReusableOfferAmount(_ amount: UInt64?) {
+        let target: UInt64? = (amount ?? 0) > 0 ? amount : nil
+        isAmountless = (target == nil)
+
+        guard let target else {
+            loadOrCreateAmountlessOffer()
+            return
+        }
+
+        isCreatingRequest = true
+        errorMessage = nil
+        isPaid = false
+        isExpired = false
+        copiedRequest = false
+        onchainObservation = nil
+        monitoredQuoteId = nil
+        quoteStatusTask?.cancel()
+
+        Task { @MainActor in
+            do {
+                mintQuote = try await walletManager.createMintQuote(amount: target, method: .bolt12)
+            } catch {
+                errorMessage = "Failed. \(error.userFacingWalletMessage)"
+            }
+            isCreatingRequest = false
+        }
     }
 
     private func loadOrCreateAmountlessOffer() {
