@@ -349,7 +349,7 @@ struct HistoryView: View {
             if "\(tx.amount)".contains(query) { return true }
             return false
         case .request(let req):
-            if "cashu request".contains(query) { return true }
+            if req.displayTitle.lowercased().contains(query) { return true }
             if let amount = req.amount, "\(amount)".contains(query) { return true }
             let received = totalReceived(for: req)
             if received > 0, "\(received)".contains(query) { return true }
@@ -400,7 +400,7 @@ struct HistoryView: View {
                 TransactionIcon(direction: .incoming)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Cashu Request")
+                    Text(request.displayTitle)
                         .font(.body.weight(.medium))
                         .lineLimit(1)
 
@@ -426,7 +426,7 @@ struct HistoryView: View {
         .offset(y: hasAppearedOnce ? 0 : 6)
         .animation(.smooth(duration: 0.32).delay(delay), value: hasAppearedOnce)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Cashu Request, \(isReceived ? "received" : "waiting for payment"), \(formatRelativeDate(request.createdAt))")
+        .accessibilityLabel("\(request.displayTitle), \(isReceived ? "received" : "waiting for payment"), \(formatRelativeDate(request.createdAt))")
         .accessibilityHint("Opens request details")
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button(role: .destructive) {

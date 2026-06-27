@@ -348,9 +348,15 @@ struct ReceiveLightningView: View {
     private func requestDisplayView(quote: MintQuoteInfo) -> some View {
         if quote.paymentMethod == .bolt12 {
             reusableOfferDisplayView(quote: quote)
-                .onAppear { startQuoteMonitoring(for: quote) }
+                .onAppear {
+                    persistReceiveIntent(for: quote)
+                    startQuoteMonitoring(for: quote)
+                }
                 .onChange(of: mintQuote?.id) { _, _ in
-                    if let quote = mintQuote { startQuoteMonitoring(for: quote) }
+                    if let quote = mintQuote {
+                        persistReceiveIntent(for: quote)
+                        startQuoteMonitoring(for: quote)
+                    }
                 }
         } else {
             standardRequestDisplayView(quote: quote)
@@ -807,6 +813,34 @@ struct ReceiveLightningView: View {
 
     private func createRequest() {
         createRequest(method: selectedMethod, amountless: isAmountlessOffer)
+    }
+
+    /// Persist a receive-intent for the quote so it appears in History as a
+    /// first-class, re-openable row — exactly like a Cashu Request. Reusable
+    /// BOLT12 offers aggregate their payments and keep collecting; the one-shot
+    /// BOLT11 / on-chain rails are wired in a later step. Deduped by `quoteId`,
+    /// so re-opening the single reusable offer never spawns a second row.
+    private func persistReceiveIntent(for quote: MintQuoteInfo) {
+        let rail: CashuRequest.Rail
+        let reusable: Bool
+        switch quote.paymentMethod {
+        case .bolt12:
+            rail = .bolt12
+            reusable = true
+        case .bolt11, .onchain:
+            return
+        }
+
+        let expiry = quote.expiry.flatMap { $0 > 0 ? Date(timeIntervalSince1970: Double($0)) : nil }
+        CashuRequestStore.shared.upsertQuoteIntent(
+            rail: rail,
+            quoteId: quote.id,
+            encoded: quote.request,
+            amount: quote.amount,
+            mints: walletManager.activeMint.map { [$0.url] } ?? [],
+            reusable: reusable,
+            expiry: expiry
+        )
     }
 
     /// Re-mints the reusable BOLT12 offer at a new amount, driven by the Amount-row

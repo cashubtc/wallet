@@ -530,7 +530,7 @@ struct MainWalletView: View {
                 TransactionIcon(direction: .incoming)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Cashu Request")
+                    Text(request.displayTitle)
                         .font(.body.weight(.medium))
                         .lineLimit(1)
 
@@ -553,7 +553,7 @@ struct MainWalletView: View {
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Cashu Request, \(isReceived ? "received" : "waiting for payment"), \(formatRelativeDate(request.createdAt))")
+        .accessibilityLabel("\(request.displayTitle), \(isReceived ? "received" : "waiting for payment"), \(formatRelativeDate(request.createdAt))")
         .accessibilityHint("Opens request details")
     }
 
