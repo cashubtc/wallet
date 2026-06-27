@@ -29,8 +29,6 @@ struct SendView: View {
     // More-options flows (Pay Cashu Request / Lock Ecash)
     @State private var showPayRequestScanner = false
     @State private var showLockScanner = false
-    @State private var pendingCashuRequest: CashuPaymentRequestSummary?
-    @State private var showCashuRequestPay = false
 
     @ObservedObject private var priceService = PriceService.shared
 
@@ -74,7 +72,6 @@ struct SendView: View {
                         Menu {
                             Button {
                                 HapticFeedback.selection()
-                                pendingCashuRequest = nil
                                 showPayRequestScanner = true
                             } label: {
                                 Label("Pay Cashu Request", systemImage: "qrcode.viewfinder")
@@ -119,10 +116,16 @@ struct SendView: View {
                     CashuTokenShareSheet(token: token)
                 }
             }
-            .sheet(isPresented: $showPayRequestScanner, onDismiss: presentPendingCashuRequestIfNeeded) {
+            .sheet(isPresented: $showPayRequestScanner) {
+                // Pay Cashu Request routes the request through the scanner's own
+                // cover (on top of the still-open scanner), mirroring the home
+                // page. `onComplete` dismisses the whole Send flow so Pay "takes
+                // over" and returns to the wallet. Presenting the pay cover from
+                // SendView after dismissing this sheet yielded a black screen.
                 ScannerWrapperView(
-                    onScanned: handleScannedRequest,
                     promptText: "Scan a Cashu request",
+                    cashuRequestOnly: true,
+                    onComplete: { dismiss() },
                     quickFills: payRequestQuickFills
                 )
                 .environmentObject(walletManager)
@@ -134,16 +137,6 @@ struct SendView: View {
                     quickFills: lockQuickFills
                 )
                 .environmentObject(walletManager)
-            }
-            .fullScreenCover(isPresented: $showCashuRequestPay, onDismiss: { pendingCashuRequest = nil }) {
-                if let request = pendingCashuRequest {
-                    CashuPaymentRequestPayView(request: request, onComplete: {
-                        // Pay Cashu Request "takes over": once it completes,
-                        // leave the Send flow entirely and return to the wallet.
-                        dismiss()
-                    })
-                    .environmentObject(walletManager)
-                }
             }
             .onDisappear {
                 checkingTask?.cancel()
@@ -614,34 +607,6 @@ struct SendView: View {
     }
 
     // MARK: - More Options (Pay Cashu Request / Lock Ecash)
-
-    /// Pay-flow intake: a scanned/pasted `creqA` routes to the Cashu request
-    /// pay screen; anything else is rejected so the labeled action stays honest.
-    private func handleScannedRequest(_ scanned: String) {
-        let trimmed = scanned.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-
-        if case .cashuPaymentRequest(let summary) = PaymentRequestDecoder.decode(
-            trimmed,
-            includeCashuPaymentRequests: true,
-            preferCashuPaymentRequests: true
-        ) {
-            // Stash the request; the scanner sheet's onDismiss presents the pay
-            // screen *after* the sheet finishes dismissing. Presenting a cover
-            // mid-dismiss yields a black screen.
-            pendingCashuRequest = summary
-        } else {
-            errorMessage = "That's not a Cashu request."
-            HapticFeedback.notification(.error)
-        }
-    }
-
-    /// Called from the Pay scanner sheet's `onDismiss`. By now the scanner is
-    /// fully gone, so it's safe to present the Cashu request pay cover.
-    private func presentPendingCashuRequestIfNeeded() {
-        guard pendingCashuRequest != nil else { return }
-        showCashuRequestPay = true
-    }
 
     /// Lock-flow intake: a scanned/pasted public key arms P2PK locking for the
     /// next send; invalid input (junk, or an `npub`) is rejected.

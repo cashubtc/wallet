@@ -76,6 +76,18 @@ struct ScannerWrapperView: View {
     /// Optional override for the instruction shown under the viewfinder.
     var promptText: String? = nil
 
+    /// When true, only Cashu payment requests are accepted; anything else shows
+    /// an inline error and re-arms. Used by Send → Pay Cashu Request so the
+    /// labeled action stays honest. Routes the request through the scanner's own
+    /// `.fullScreenCover` (on top of the still-open scanner) rather than asking
+    /// the caller to dismiss-then-present — which yields a black screen.
+    var cashuRequestOnly: Bool = false
+
+    /// Invoked when an internally-routed pay flow completes, so a presenter can
+    /// fully tear down (e.g. SendView leaving the whole Send flow back to the
+    /// wallet). Nil for the home page, where dismissing the scanner suffices.
+    var onComplete: (() -> Void)? = nil
+
     /// Optional quick-fill chips rendered over the camera (e.g. "Paste",
     /// "Use my latest key"). Tapping one routes its `value` through the same
     /// pipeline as a scanned code. Evaluated once on appear so the caller can
@@ -224,7 +236,15 @@ struct ScannerWrapperView: View {
             .fullScreenCover(isPresented: $navigateToCashuPaymentRequest) {
                 if let request = scannedCashuPaymentRequest {
                     CashuPaymentRequestPayView(request: request, onComplete: {
-                        dismiss()
+                        // Mutually exclusive so the Send path fires the same
+                        // number of dismissals as the home page: either the
+                        // presenter tears down the whole stack, or we just
+                        // dismiss the scanner sheet.
+                        if let onComplete {
+                            onComplete()
+                        } else {
+                            dismiss()
+                        }
                     })
                     .environmentObject(walletManager)
                 }
@@ -273,6 +293,29 @@ struct ScannerWrapperView: View {
             generator.notificationOccurred(.success)
             onScanned(content)
             dismiss()
+            return
+        }
+
+        // Restricted intake: the caller (Send → Pay Cashu Request) only accepts
+        // Cashu requests. Route a match through the scanner's own cover; reject
+        // anything else inline and re-arm so the labeled action stays honest.
+        if cashuRequestOnly {
+            if case .cashuPaymentRequest(let request) = PaymentRequestDecoder.decode(
+                content,
+                includeCashuPaymentRequests: true,
+                preferCashuPaymentRequests: true
+            ) {
+                let generator = UINotificationFeedbackGenerator()
+                generator.notificationOccurred(.success)
+                scannedCashuPaymentRequest = request
+                navigateToCashuPaymentRequest = true
+            } else {
+                scannerModel.errorMessage = "That's not a Cashu request."
+                HapticFeedback.notification(.error)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                    scannerModel.reset()
+                }
+            }
             return
         }
 
