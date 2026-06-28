@@ -27,8 +27,7 @@ struct SendView: View {
     @State private var lockWithP2PK = false
     @State private var p2pkPubkeyInput = ""
 
-    // More-options flows (Pay Cashu Request / Lock Ecash)
-    @State private var showPayRequestScanner = false
+    // Lock-ecash flow (scan a public key to lock the token to)
     @State private var showLockScanner = false
 
     @ObservedObject private var priceService = PriceService.shared
@@ -70,27 +69,14 @@ struct SendView: View {
 
                 if generatedToken == nil {
                     ToolbarItem(placement: .topBarTrailing) {
-                        Menu {
-                            Button {
-                                HapticFeedback.selection()
-                                showPayRequestScanner = true
-                            } label: {
-                                Label("Pay Cashu Request", systemImage: "qrcode.viewfinder")
-                            }
-
-                            Button {
-                                HapticFeedback.selection()
-                                showLockScanner = true
-                            } label: {
-                                Label("Lock Ecash", systemImage: "lock")
-                            }
+                        Button {
+                            HapticFeedback.selection()
+                            showLockScanner = true
                         } label: {
-                            Image(systemName: "ellipsis")
-                                .font(.body.weight(.semibold))
-                                .foregroundStyle(.secondary)
+                            Image(systemName: "lock")
                         }
-                        .accessibilityLabel("More options")
-                        .accessibilityHint("Pay a Cashu request or lock ecash to a public key")
+                        .accessibilityLabel("Lock ecash")
+                        .accessibilityHint("Lock this ecash to a public key")
                     }
                 }
 
@@ -117,21 +103,6 @@ struct SendView: View {
                 if let token = generatedToken {
                     CashuTokenShareSheet(token: token)
                 }
-            }
-            .sheet(isPresented: $showPayRequestScanner) {
-                // Pay Cashu Request routes the request through the scanner's own
-                // cover (on top of the still-open scanner), mirroring the home
-                // page. `onComplete` dismisses the whole Send flow so Pay "takes
-                // over" and returns to the wallet. Presenting the pay cover from
-                // SendView after dismissing this sheet yielded a black screen.
-                ScannerWrapperView(
-                    promptText: "Scan a Cashu request",
-                    cashuRequestOnly: true,
-                    onComplete: { dismiss() },
-                    quickFills: payRequestQuickFills
-                )
-                .environmentObject(walletManager)
-                .canvasSheetBackground()
             }
             .sheet(isPresented: $showLockScanner) {
                 ScannerWrapperView(
@@ -570,7 +541,7 @@ struct SendView: View {
         return trimmed
     }
 
-    // MARK: - More Options (Pay Cashu Request / Lock Ecash)
+    // MARK: - Lock Ecash
 
     /// Lock-flow intake: a scanned/pasted public key arms P2PK locking for the
     /// next send; invalid input (junk, or an `npub`) is rejected.
@@ -584,18 +555,6 @@ struct SendView: View {
         lockWithP2PK = true
         errorMessage = nil
         HapticFeedback.notification(.success)
-    }
-
-    private func payRequestQuickFills() -> [ScannerWrapperView.ScannerQuickFill] {
-        guard let clip = UIPasteboard.general.string?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !clip.isEmpty,
-              case .cashuPaymentRequest = PaymentRequestDecoder.decode(
-                clip,
-                includeCashuPaymentRequests: true,
-                preferCashuPaymentRequests: true
-              )
-        else { return [] }
-        return [.init(title: "Paste request", systemImage: "doc.on.clipboard", value: clip)]
     }
 
     private func lockQuickFills() -> [ScannerWrapperView.ScannerQuickFill] {
@@ -937,6 +896,7 @@ struct UnifiedSendView: View {
                         icon: "qrcode.viewfinder",
                         title: "Scan QR Code",
                         subtitle: "Pay or receive by scanning",
+                        showsChevron: false,
                         action: openScanner
                     )
 
@@ -944,6 +904,7 @@ struct UnifiedSendView: View {
                         icon: "banknote",
                         title: "Create ecash",
                         subtitle: "Generate a bearer token to share",
+                        showsChevron: false,
                         action: {
                             HapticFeedback.selection()
                             route = .ecash
@@ -955,6 +916,7 @@ struct UnifiedSendView: View {
                             icon: "wave.3.right.circle.fill",
                             title: "Contactless",
                             subtitle: "Tap to pay nearby",
+                            showsChevron: false,
                             action: {
                                 HapticFeedback.selection()
                                 onContactless()
@@ -1890,6 +1852,7 @@ struct UnifiedSendView: View {
         icon: String,
         title: String,
         subtitle: String,
+        showsChevron: Bool = true,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
@@ -1913,9 +1876,14 @@ struct UnifiedSendView: View {
 
                 Spacer(minLength: 8)
 
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.tertiary)
+                // The "ways to send" rows are actions (invoke a tool/mode/sheet),
+                // not navigation pushes, so they omit the disclosure chevron. The
+                // Matching / Receive-this rows keep it — they advance the pay flow.
+                if showsChevron {
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                }
             }
             .contentShape(Rectangle())
         }
