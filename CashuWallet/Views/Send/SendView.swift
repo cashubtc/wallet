@@ -1268,36 +1268,40 @@ struct UnifiedSendView: View {
     /// (on-chain) destination sit beneath as equal-weight detail rows.
     private var meltConfirmBody: some View {
         VStack(spacing: 0) {
-            ScrollView {
-                VStack(spacing: 0) {
-                    if let quote = meltQuote {
-                        CurrencyAmountDisplay(sats: quote.amount, primary: $settings.amountDisplayPrimary)
-                            .padding(.top, 32)
+            Group {
+                if let quote = meltQuote {
+                    ScrollView {
+                        VStack(spacing: 0) {
+                            CurrencyAmountDisplay(sats: quote.amount, primary: $settings.amountDisplayPrimary)
+                                .padding(.top, 32)
 
-                        meltConfirmRows(quote)
+                            meltConfirmRows(quote)
 
-                        if !hasSufficientBalance(for: quote),
-                           let balance = mintInfo(for: quote)?.balance {
-                            InlineNotice(
-                                message: "This mint holds \(AmountFormatter.sats(balance, useBitcoinSymbol: settings.useBitcoinSymbol)); the payment reserves up to \(AmountFormatter.sats(quote.totalAmount, useBitcoinSymbol: settings.useBitcoinSymbol)).",
-                                severity: .caution
-                            )
-                            .padding(.top, 12)
-                            .padding(.horizontal)
+                            if !hasSufficientBalance(for: quote),
+                               let balance = mintInfo(for: quote)?.balance {
+                                InlineNotice(
+                                    message: "This mint holds \(AmountFormatter.sats(balance, useBitcoinSymbol: settings.useBitcoinSymbol)); the payment reserves up to \(AmountFormatter.sats(quote.totalAmount, useBitcoinSymbol: settings.useBitcoinSymbol)).",
+                                    severity: .caution
+                                )
+                                .padding(.top, 12)
+                                .padding(.horizontal)
+                            }
+
+                            if let errorMessage {
+                                errorNotice(errorMessage)
+                                    .padding(.top, 12)
+                                    .padding(.horizontal)
+                            }
                         }
-                    } else if isWorking {
-                        ProgressView()
-                            .padding(.top, 80)
+                        .padding(.top, 12)
                     }
-
-                    if let errorMessage {
-                        errorNotice(errorMessage)
-                            .padding(.top, meltQuote == nil ? 48 : 12)
-                            .padding(.horizontal)
-                    }
+                } else if let errorMessage {
+                    meltDeadEndState(errorMessage)
+                } else {
+                    ProgressView()
                 }
-                .padding(.top, 12)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             if let quote = meltQuote {
                 Button(action: payMelt) {
@@ -1317,8 +1321,45 @@ struct UnifiedSendView: View {
                 .glassButton()
                 .padding(.horizontal)
                 .padding(.bottom, 16)
+            } else if errorMessage != nil {
+                Button {
+                    HapticFeedback.selection()
+                    fetchMeltQuote()
+                } label: {
+                    Text("Try again")
+                }
+                .glassButton()
+                .padding(.horizontal)
+                .padding(.bottom, 16)
             }
         }
+    }
+
+    /// Centered "can't proceed" state for the melt-confirm dead-end (no quote could
+    /// be built — e.g. insufficient balance). Mirrors `noBalanceState`'s composition
+    /// so it reads as an intentional, balanced state rather than a stray line; the
+    /// recovery action lives in the bottom CTA.
+    private func meltDeadEndState(_ message: String) -> some View {
+        VStack(spacing: 16) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 38))
+                .foregroundStyle(Color(.systemRed))
+
+            VStack(spacing: 6) {
+                Text(message.hasSuffix(".") ? String(message.dropLast()) : message)
+                    .font(.title3.weight(.semibold))
+                    .multilineTextAlignment(.center)
+
+                if errorShowsMintAction, let detail = meltInsufficientDetail {
+                    Text(detail)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 24)
     }
 
     private var meltCompatibleMints: [MintInfo] {
