@@ -99,6 +99,11 @@ enum PaymentRequestDecodeResult: Equatable, Sendable {
     case unrecognized
 }
 
+enum PaymentRequestMode: String, Equatable, Sendable {
+    case lightning
+    case onchain
+}
+
 /// Centralized payment-request decoder. Wraps `PaymentRequestParser` +
 /// CashuDevKit's `decodeInvoice` so the chip preview, recents tap, scan
 /// callback, and live decode feedback all share a single classification path.
@@ -266,6 +271,17 @@ enum PaymentRequestDecoder {
     static func amountLabel(for summary: CashuPaymentRequestSummary) -> String? {
         guard let amount = summary.amount else { return nil }
         return "\(amount) \(summary.unit ?? "sat")"
+    }
+
+    static func suggestedMode(_ result: PaymentRequestDecodeResult) -> PaymentRequestMode? {
+        switch result {
+        case .bolt11, .bolt12, .lightningAddress:
+            return .lightning
+        case .onchain:
+            return .onchain
+        case .cashuPaymentRequest, .unrecognized:
+            return nil
+        }
     }
 
     static func unitDescription(_ unit: Cdk.CurrencyUnit) -> String {

@@ -630,6 +630,15 @@ struct MeltView: View {
         case lightning
         case onchain
 
+        init(paymentRequestMode: PaymentRequestMode) {
+            switch paymentRequestMode {
+            case .lightning:
+                self = .lightning
+            case .onchain:
+                self = .onchain
+            }
+        }
+
         var displayName: String {
             switch self {
             case .lightning:
@@ -985,17 +994,6 @@ struct MeltView: View {
             getQuote()
         case .lightningAddress, .onchain, .cashuPaymentRequest, .unrecognized:
             break
-        }
-    }
-
-    private static func suggestedMode(for result: PaymentRequestDecodeResult) -> MeltMode? {
-        switch result {
-        case .onchain:
-            return .onchain
-        case .bolt11, .bolt12, .lightningAddress:
-            return .lightning
-        case .cashuPaymentRequest, .unrecognized:
-            return nil
         }
     }
 
@@ -1549,10 +1547,12 @@ struct MeltView: View {
         autoQuoteAmountLocked: Bool = true
     ) async {
         // Choose mode based on suggestion (if we can switch).
-        if let suggested = Self.suggestedMode(for: result),
-           suggested != meltMode,
-           suggested != .onchain || supportsOnchainMelt {
-            withAnimation(.snappy) { meltMode = suggested }
+        if let mode = PaymentRequestDecoder.suggestedMode(result) {
+            let suggested = MeltMode(paymentRequestMode: mode)
+            if suggested != meltMode,
+               suggested != .onchain || supportsOnchainMelt {
+                withAnimation(.snappy) { meltMode = suggested }
+            }
         }
 
         // Fill input with normalized request.
