@@ -102,14 +102,29 @@ struct ScannerWrapperView: View {
 
     @StateObject private var scannerModel = ScannerViewModel()
     @State private var resolvedQuickFills: [ScannerQuickFill] = []
-    @State private var scannedToken: String?
-    @State private var scannedMeltRequest: String?
-    @State private var scannedCashuPaymentRequest: CashuPaymentRequestSummary?
-    @State private var scannedMeltMode: MeltView.MeltMode = .lightning
-    @State private var scannedMeltAutoQuote = false
-    @State private var navigateToDetail = false
-    @State private var navigateToMelt = false
-    @State private var navigateToCashuPaymentRequest = false
+    // Item-driven presentation: content derives from the same state that
+    // triggers it, so the cover can never open on a nil payload (which renders
+    // an empty — black — screen until the scene is rebuilt).
+    private struct ScannedTokenItem: Identifiable {
+        let id = UUID()
+        let token: String
+    }
+
+    private struct ScannedMeltItem: Identifiable {
+        let id = UUID()
+        let request: String
+        let mode: MeltView.MeltMode
+        let autoQuote: Bool
+    }
+
+    private struct ScannedCashuRequestItem: Identifiable {
+        let id = UUID()
+        let request: CashuPaymentRequestSummary
+    }
+
+    @State private var scannedToken: ScannedTokenItem?
+    @State private var scannedMelt: ScannedMeltItem?
+    @State private var scannedCashuPaymentRequest: ScannedCashuRequestItem?
     @State private var routingTask: Task<Void, Never>?
 
     init(
@@ -219,52 +234,45 @@ struct ScannerWrapperView: View {
             .onAppear {
                 resolvedQuickFills = quickFills?() ?? []
             }
-            .sheet(isPresented: $navigateToDetail, onDismiss: {
+            .sheet(item: $scannedToken, onDismiss: {
                 // Sheet closed without completing the receive: re-arm the scanner
                 // so the next QR code is processed.
-                scannedToken = nil
                 scannerModel.reset()
-            }) {
-                if let token = scannedToken {
-                    ReceiveTokenDetailView(tokenString: token, onComplete: {
-                        // Dismiss the entire scanner sheet
+            }) { item in
+                ReceiveTokenDetailView(tokenString: item.token, onComplete: {
+                    // Dismiss the entire scanner sheet
+                    dismiss()
+                })
+                .environmentObject(walletManager)
+                .presentationDetents([.medium, .large])
+                .canvasSheetBackground()
+            }
+            .fullScreenCover(item: $scannedMelt) { melt in
+                MeltView(
+                    initialRequest: melt.request,
+                    initialMode: melt.mode,
+                    autoQuoteOnAppear: melt.autoQuote,
+                    onComplete: {
                         dismiss()
-                    })
-                    .environmentObject(walletManager)
-                    .presentationDetents([.medium, .large])
-                    .canvasSheetBackground()
-                }
+                    }
+                )
+                .environmentObject(walletManager)
+                .canvasSheetBackground()
             }
-            .fullScreenCover(isPresented: $navigateToMelt) {
-                if let meltRequest = scannedMeltRequest {
-                    MeltView(
-                        initialRequest: meltRequest,
-                        initialMode: scannedMeltMode,
-                        autoQuoteOnAppear: scannedMeltAutoQuote,
-                        onComplete: {
-                            dismiss()
-                        }
-                    )
-                    .environmentObject(walletManager)
-                    .canvasSheetBackground()
-                }
-            }
-            .fullScreenCover(isPresented: $navigateToCashuPaymentRequest) {
-                if let request = scannedCashuPaymentRequest {
-                    CashuPaymentRequestPayView(request: request, onComplete: {
-                        // Mutually exclusive so the Send path fires the same
-                        // number of dismissals as the home page: either the
-                        // presenter tears down the whole stack, or we just
-                        // dismiss the scanner sheet.
-                        if let onComplete {
-                            onComplete()
-                        } else {
-                            dismiss()
-                        }
-                    })
-                    .environmentObject(walletManager)
-                    .canvasSheetBackground()
-                }
+            .fullScreenCover(item: $scannedCashuPaymentRequest) { item in
+                CashuPaymentRequestPayView(request: item.request, onComplete: {
+                    // Mutually exclusive so the Send path fires the same
+                    // number of dismissals as the home page: either the
+                    // presenter tears down the whole stack, or we just
+                    // dismiss the scanner sheet.
+                    if let onComplete {
+                        onComplete()
+                    } else {
+                        dismiss()
+                    }
+                })
+                .environmentObject(walletManager)
+                .canvasSheetBackground()
             }
             .onDisappear {
                 routingTask?.cancel()
@@ -316,8 +324,7 @@ struct ScannerWrapperView: View {
             ) {
                 let generator = UINotificationFeedbackGenerator()
                 generator.notificationOccurred(.success)
-                scannedCashuPaymentRequest = request
-                navigateToCashuPaymentRequest = true
+                scannedCashuPaymentRequest = ScannedCashuRequestItem(request: request)
             } else {
                 scannerModel.errorMessage = "That's not a Cashu request."
                 HapticFeedback.notification(.error)
@@ -335,8 +342,7 @@ struct ScannerWrapperView: View {
             let generator = UINotificationFeedbackGenerator()
             generator.notificationOccurred(.success)
             
-            scannedToken = token
-            navigateToDetail = true
+            scannedToken = ScannedTokenItem(token: token)
 
         } else {
             routingTask?.cancel()
@@ -360,10 +366,14 @@ struct ScannerWrapperView: View {
 
         if case .cashuPaymentRequest(let request) = cashuResult,
            request.isSatUnit || lightningFallback == nil {
-            scannedCashuPaymentRequest = request
-            navigateToCashuPaymentRequest = true
-            notifySuccessfulScan()
-            return
+            // BIP-321 payloads can carry a Lightning invoice alongside the creq.
+            // When the user holds none of the requested mints the ecash leg is
+            // unpayable, so prefer the Lightning leg over a dead-end pay screen.
+            if lightningFallback == nil || holdsCompatibleMint(for: request) {
+                scannedCashuPaymentRequest = ScannedCashuRequestItem(request: request)
+                notifySuccessfulScan()
+                return
+            }
         }
 
         let decodedPaymentRequest = await CdkRuntime.shared.decodePaymentRequest(content)
@@ -371,25 +381,28 @@ struct ScannerWrapperView: View {
 
         switch decodedPaymentRequest {
         case .bolt11, .bolt12:
-            scannedMeltRequest = lightningFallback
-                ?? PaymentRequestParser.normalizeLightningRequest(content)
-            scannedMeltMode = .lightning
-            scannedMeltAutoQuote = true
-            navigateToMelt = true
+            scannedMelt = ScannedMeltItem(
+                request: lightningFallback
+                    ?? PaymentRequestParser.normalizeLightningRequest(content),
+                mode: .lightning,
+                autoQuote: true
+            )
             notifySuccessfulScan()
 
         case .onchain:
-            scannedMeltRequest = PaymentRequestParser.normalizeBitcoinRequest(content)
-            scannedMeltMode = .onchain
-            scannedMeltAutoQuote = false
-            navigateToMelt = true
+            scannedMelt = ScannedMeltItem(
+                request: PaymentRequestParser.normalizeBitcoinRequest(content),
+                mode: .onchain,
+                autoQuote: false
+            )
             notifySuccessfulScan()
 
         case .lightningAddress:
-            scannedMeltRequest = content
-            scannedMeltMode = .lightning
-            scannedMeltAutoQuote = false
-            navigateToMelt = true
+            scannedMelt = ScannedMeltItem(
+                request: content,
+                mode: .lightning,
+                autoQuote: false
+            )
             notifySuccessfulScan()
 
         case .cashuPaymentRequest, .unrecognized:
@@ -400,6 +413,23 @@ struct ScannerWrapperView: View {
     private func notifySuccessfulScan() {
         let generator = UINotificationFeedbackGenerator()
         generator.notificationOccurred(.success)
+    }
+
+    private func holdsCompatibleMint(for request: CashuPaymentRequestSummary) -> Bool {
+        guard !request.mints.isEmpty else { return !walletManager.mints.isEmpty }
+        let requested = Set(request.mints.map(scannerNormalizedMintURL))
+        return walletManager.mints.contains { requested.contains(scannerNormalizedMintURL($0.url)) }
+    }
+
+    private func scannerNormalizedMintURL(_ urlString: String) -> String {
+        let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: trimmed), let host = url.host?.lowercased() else {
+            return trimmed.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        }
+        var normalized = host
+        if let port = url.port { normalized += ":\(port)" }
+        normalized += url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        return normalized
     }
 
     private func processUnsupportedContent(_ content: String) {

@@ -1139,6 +1139,19 @@ struct UnifiedSendView: View {
             lockMelt(request: PaymentRequestParser.normalizeBitcoinRequest(raw), mode: .onchain, decoded: result)
             goToAmount()
         case .cashuPaymentRequest(let summary):
+            // BIP-321 payloads can carry a Lightning invoice alongside the creq.
+            // When the user holds none of the requested mints the ecash leg is
+            // unpayable, so route to the fallback instead of a dead-end confirm.
+            if compatibleMints(for: summary).isEmpty {
+                let fallback = PaymentRequestDecoder.decode(raw)
+                switch fallback {
+                case .bolt11, .bolt12, .lightningAddress, .onchain:
+                    advance(fallback, raw: raw)
+                    return
+                case .cashuPaymentRequest, .unrecognized:
+                    break
+                }
+            }
             locked = .cashuRequest(summary)
             selectedMint = nil
             errorMessage = nil
@@ -1722,6 +1735,10 @@ struct UnifiedSendView: View {
 
     private var candidateMints: [MintInfo] {
         guard let creq = currentCreq else { return [] }
+        return compatibleMints(for: creq)
+    }
+
+    private func compatibleMints(for creq: CashuPaymentRequestSummary) -> [MintInfo] {
         guard !creq.mints.isEmpty else { return walletManager.mints }
         let requested = Set(creq.mints.map(normalizedMintURL))
         return walletManager.mints.filter { requested.contains(normalizedMintURL($0.url)) }

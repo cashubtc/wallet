@@ -49,6 +49,7 @@ import org.cashu.wallet.Core.PaymentRequestDecodeResult
 import org.cashu.wallet.Core.PaymentRequestDecoder
 import org.cashu.wallet.Core.SettingsManager
 import org.cashu.wallet.Core.WalletManager
+import org.cashu.wallet.Core.compatibleMintsForCashuPaymentRequest
 import org.cashu.wallet.Models.MeltPaymentResult
 import org.cashu.wallet.ui.components.AmountText
 import org.cashu.wallet.ui.components.CanvasDivider
@@ -101,7 +102,7 @@ fun SendLightningScreen(
             errorText = "Paste an invoice or address."
             return
         }
-        val decoded = PaymentRequestDecoder.decode(
+        var decoded = PaymentRequestDecoder.decode(
             trimmed,
             includeCashuPaymentRequests = true,
             preferCashuPaymentRequests = true,
@@ -110,8 +111,31 @@ fun SendLightningScreen(
             errorText = "Couldn't read that. Paste a Lightning invoice, BOLT12 offer, on-chain address, Lightning address, or Cashu request."
             return
         }
+        var request = trimmed
+        if (decoded is PaymentRequestDecodeResult.CashuPaymentRequest &&
+            compatibleMintsForCashuPaymentRequest(decoded.summary, walletState.mints).isEmpty()
+        ) {
+            // BIP-321 payloads can carry a Lightning invoice alongside the creq.
+            // When the user holds none of the requested mints the ecash leg is
+            // unpayable, so fall back to the Lightning/on-chain leg if present.
+            val summary = decoded.summary
+            val fallback = PaymentRequestDecoder.decode(trimmed)
+            if (fallback is PaymentRequestDecodeResult.Unrecognized) {
+                val required = summary.mints.joinToString()
+                errorText = if (required.isEmpty()) {
+                    "Add a mint before paying this Cashu request."
+                } else {
+                    "This Cashu request requires a mint you don't have: $required"
+                }
+                return
+            }
+            decoded = fallback
+            if (fallback is PaymentRequestDecodeResult.Bolt11 || fallback is PaymentRequestDecodeResult.Bolt12) {
+                request = PaymentRequestDecoder.encodedLightningRequest(trimmed) ?: trimmed
+            }
+        }
         val knownAmount = decoded.knownAmountSats()
-        face = PayFace.Confirm(raw = trimmed, decoded = decoded, amount = knownAmount)
+        face = PayFace.Confirm(raw = request, decoded = decoded, amount = knownAmount)
         if (knownAmount != null) amount = knownAmount.toString()
     }
 
