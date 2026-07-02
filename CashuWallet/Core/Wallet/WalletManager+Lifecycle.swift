@@ -149,6 +149,8 @@ extension WalletManager {
         try removeWalletDatabaseFiles()
         walletStore.removeAllWalletData()
         SettingsManager.shared.resetWalletScopedData()
+        CashuRequestStore.shared.resetForWalletBoundary()
+        CashuRequestListener.shared.resetForWalletBoundary()
         MintLogoCache.shared.clear()
         processedQuotes.removeAll()
         // iCloud backup survives a local deletion — the user can restore it from
@@ -180,6 +182,8 @@ extension WalletManager {
             SettingsStore.shared.clearWalletScopedData()
             NostrService.shared.resetForWalletBoundary(deleteStoredKey: false)
             NPCService.shared.resetForWalletBoundary()
+            CashuRequestStore.shared.resetForWalletBoundary()
+            CashuRequestListener.shared.resetForWalletBoundary()
             SettingsStore.shared.clearWalletScopedData()
 
             try initializeWalletForCreation(mnemonic: newMnemonic)
@@ -192,6 +196,7 @@ extension WalletManager {
             SentryService.capture(error)
             resetRuntimeState()
             restoreWalletBoundaryDefaults(defaultsSnapshot)
+            CashuRequestStore.shared.reloadFromDefaults()
             try? removeWalletDatabaseFiles()
             try? restoreWalletFileBackups(fileBackups)
 

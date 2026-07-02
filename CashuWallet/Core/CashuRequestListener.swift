@@ -19,7 +19,7 @@ final class CashuRequestListener: ObservableObject {
     // re-scan a wide window every start and prevent re-processing by remembering
     // the gift-wrap event ids we've already handled.
     private let lookbackWindow: TimeInterval = 7 * 24 * 60 * 60
-    private let processedIdsKey = "cashuRequests.nip17.processedIds.v1"
+    private let processedIdsKey = StorageKeys.cashuRequestsProcessedNIP17Ids
     private let maxProcessedIds = 1000
     private var processedIds: Set<String> = []
     private var processedOrder: [String] = []
@@ -67,6 +67,15 @@ final class CashuRequestListener: ObservableObject {
         await client.stop()
         self.client = nil
         isRunning = false
+    }
+
+    /// Forget processed gift-wrap ids at a wallet boundary. The ids belong to
+    /// the previous wallet's Nostr inbox; a new wallet has a new keypair, and a
+    /// re-restored seed should re-attempt claims rather than skip them.
+    func resetForWalletBoundary() {
+        processedIds = []
+        processedOrder = []
+        UserDefaults.standard.removeObject(forKey: processedIdsKey)
     }
 
     // MARK: - Event handling

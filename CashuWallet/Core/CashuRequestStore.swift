@@ -8,8 +8,8 @@ class CashuRequestStore: ObservableObject {
     @Published private(set) var requests: [CashuRequest] = []
     @Published var currentRequestId: String?
 
-    private let storageKey = "cashuRequests.v1"
-    private let currentIdKey = "cashuRequests.currentId.v1"
+    private let storageKey = StorageKeys.cashuRequests
+    private let currentIdKey = StorageKeys.cashuRequestsCurrentId
     private let userDefaults: UserDefaults
 
     var currentRequest: CashuRequest? {
@@ -144,6 +144,24 @@ class CashuRequestStore: ObservableObject {
 
     func request(withId id: String) -> CashuRequest? {
         requests.first(where: { $0.id == id })
+    }
+
+    /// Wipe all request intents at a wallet boundary (delete / create / restore).
+    /// Requests belong to the wallet that created them; without this they
+    /// survive `deleteWallet()` and resurface in the next wallet's History.
+    func resetForWalletBoundary() {
+        requests = []
+        currentRequestId = nil
+        userDefaults.removeObject(forKey: storageKey)
+        userDefaults.removeObject(forKey: currentIdKey)
+    }
+
+    /// Re-read persisted state after wallet-boundary defaults were rolled back
+    /// (failed `installCleanWallet`), so memory matches the restored defaults.
+    func reloadFromDefaults() {
+        requests = []
+        currentRequestId = nil
+        load()
     }
 
 
