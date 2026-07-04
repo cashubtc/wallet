@@ -1743,21 +1743,14 @@ struct UnifiedSendView: View {
             .disabled(!creqCanPay)
             .padding(.horizontal)
             .padding(.bottom, 16)
-            .confirmationDialog(
-                "Add a mint to pay",
-                isPresented: $addMintChooserPresented,
-                titleVisibility: .visible
-            ) {
-                if let creq = currentCreq {
-                    ForEach(creq.mints, id: \.self) { mintURL in
-                        Button(extractMintHost(mintURL)) {
-                            selectedAddMintURL = mintURL
-                            if let amount = paymentAmountForCreq, amount > 0 {
-                                runCreqAcquireAndPay(targetMintURL: mintURL, amount: amount)
-                            }
-                        }
+            .sheet(isPresented: $addMintChooserPresented) {
+                AddMintToPaySheet(mints: currentCreq?.mints ?? []) { mintURL in
+                    selectedAddMintURL = mintURL
+                    if let amount = paymentAmountForCreq, amount > 0 {
+                        runCreqAcquireAndPay(targetMintURL: mintURL, amount: amount)
                     }
                 }
+                .environmentObject(walletManager)
             }
         }
     }
@@ -1924,7 +1917,7 @@ struct UnifiedSendView: View {
         guard needsAcquire else { return "Pay" }
         if acquireAddsNewMint {
             if let creq = currentCreq, creq.mints.count > 1, selectedAddMintURL == nil {
-                return "Choose mint & pay"
+                return "Add a mint & pay"
             }
             return acquireTargetHost.map { "Add \($0) & pay" } ?? "Add mint & pay"
         }
@@ -2024,8 +2017,8 @@ struct UnifiedSendView: View {
         case .unavailable(let hosts):
             // Recoverable: add the required mint and fund it — a neutral action, not a warning.
             if needsAcquire {
-                let host = hosts.count == 1 ? (hosts.first ?? "a mint") : "Choose a mint"
-                let subtitle = hosts.count == 1 ? "Tap Add & pay to fund it" : "Add one of \(hosts.count) to pay"
+                let host = hosts.count == 1 ? (hosts.first ?? "a mint") : "Add a mint"
+                let subtitle = hosts.count == 1 ? "Tap Add & pay to fund it" : "This request accepts \(hosts.count) mints"
                 creqActionableMintRow(host: host, subtitle: subtitle)
             } else {
                 HStack(spacing: 8) {
@@ -3278,10 +3271,9 @@ struct MintSelectorSheet: View {
         .navigationTitle("Select Mint")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
+            ToolbarItem(placement: .cancellationAction) {
                 Button(action: { dismiss() }) {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
+                    Image(systemName: "xmark")
                 }
                 .accessibilityLabel("Close")
             }
@@ -3466,6 +3458,135 @@ struct MintSelectorSheet: View {
     }
 }
 
+// MARK: - Add Mint To Pay Sheet
+
+/// Medium-detent picker shown when a Cashu Request can only be paid by adding a
+/// mint the user doesn't hold yet. Lists the request's accepted mint URLs as
+/// rich rows — real name + icon fetched non-persistingly from each mint's
+/// `/v1/info` (`WalletManager.fetchMintPreviewInfo`), degrading to host +
+/// monogram when offline. Tapping a row hands the URL back to the caller, which
+/// runs the acquire-then-pay flow (and owns its own haptic). Replaces the old
+/// `.confirmationDialog` balloon so this matches the app's other mint pickers.
+struct AddMintToPaySheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var walletManager: WalletManager
+
+    let mints: [String]
+    let onSelect: (String) -> Void
+
+    /// Non-persisting `/v1/info` previews keyed by mint URL. Rows show host +
+    /// monogram immediately and upgrade to real name + icon as these land.
+    @State private var previews: [String: MintPreview] = [:]
+
+    private struct MintPreview {
+        let name: String?
+        let iconUrl: String?
+    }
+
+    /// Measured height of the rows, driving a content-fit detent so the sheet
+    /// hugs its mints instead of stretching to `.medium`.
+    @State private var rowsHeight: CGFloat = 0
+
+    /// Fixed sheet chrome around the measured rows: drag indicator + inline nav
+    /// bar + a little bottom breathing room. Device- and width-independent — it's
+    /// system chrome, not per-row or per-device layout padding.
+    private static let navChrome: CGFloat = 96
+
+    private var detentHeight: CGFloat {
+        // Estimate the first frame (before measurement lands) so the sheet opens
+        // near the right size instead of growing up from zero.
+        let rows = rowsHeight > 0 ? rowsHeight : CGFloat(mints.count) * 68
+        return rows + Self.navChrome
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 0) {
+                    ForEach(mints, id: \.self) { url in
+                        Button {
+                            dismiss()
+                            onSelect(url)
+                        } label: {
+                            row(for: url)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .onGeometryChange(for: CGFloat.self) { proxy in
+                    proxy.size.height
+                } action: { newHeight in
+                    rowsHeight = newHeight
+                }
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            .navigationTitle("Add a mint to pay")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(action: { dismiss() }) {
+                        Image(systemName: "xmark")
+                    }
+                    .accessibilityLabel("Close")
+                }
+            }
+        }
+        .presentationDetents([.height(detentHeight)])
+        .presentationDragIndicator(.visible)
+        .onAppear(perform: loadPreviews)
+    }
+
+    @ViewBuilder
+    private func row(for url: String) -> some View {
+        let host = mintHost(url)
+        let name = resolvedName(for: url)
+        HStack(spacing: 12) {
+            MintAvatarView(iconUrl: previews[url]?.iconUrl, name: name ?? host, size: 40)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(name ?? host)
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text(name == nil ? "Not in your wallet yet" : host)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            Spacer()
+
+            Image(systemName: "chevron.right")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(name ?? host)
+        .accessibilityHint("Adds this mint and pays")
+    }
+
+    private func resolvedName(for url: String) -> String? {
+        guard let name = previews[url]?.name, !name.isEmpty else { return nil }
+        return name
+    }
+
+    private func mintHost(_ url: String) -> String { URL(string: url)?.host ?? url }
+
+    private func loadPreviews() {
+        for url in mints where previews[url] == nil {
+            Task { @MainActor in
+                guard let info = await walletManager.fetchMintPreviewInfo(url: url) else { return }
+                previews[url] = MintPreview(name: info.name, iconUrl: info.iconUrl)
+            }
+        }
+    }
+}
+
 // MARK: - Method Picker Sheet
 
 /// Medium-detent picker for choosing a receive/send rail. Mirrors
@@ -3514,10 +3635,9 @@ struct MethodPickerSheet: View {
             .navigationTitle("Receive with")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .cancellationAction) {
                     Button(action: { dismiss() }) {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.secondary)
+                        Image(systemName: "xmark")
                     }
                     .accessibilityLabel("Close")
                 }

@@ -513,19 +513,14 @@ struct CashuPaymentRequestPayView: View {
                 .padding(.horizontal)
                 .padding(.top, 16)
                 .padding(.bottom, 16)
-                .confirmationDialog(
-                    "Add a mint to pay",
-                    isPresented: $addMintChooserPresented,
-                    titleVisibility: .visible
-                ) {
-                    ForEach(request.mints, id: \.self) { mintURL in
-                        Button(extractMintHost(mintURL)) {
-                            selectedAddMintURL = mintURL
-                            if let amount = paymentAmount, amount > 0 {
-                                runAcquireAndPay(targetMintURL: mintURL, amount: amount)
-                            }
+                .sheet(isPresented: $addMintChooserPresented) {
+                    AddMintToPaySheet(mints: request.mints) { mintURL in
+                        selectedAddMintURL = mintURL
+                        if let amount = paymentAmount, amount > 0 {
+                            runAcquireAndPay(targetMintURL: mintURL, amount: amount)
                         }
                     }
+                    .environmentObject(walletManager)
                 }
             }
             .navigationTitle("Pay Cashu Request")
@@ -697,7 +692,7 @@ struct CashuPaymentRequestPayView: View {
                 if hosts.count == 1, let host = hosts.first {
                     return (.generic, host, "Tap Add & pay to fund it", false)
                 }
-                return (.generic, "Choose a mint", "Add one of \(hosts.count) to pay", false)
+                return (.generic, "Add a mint", "This request accepts \(hosts.count) mints", false)
             }
             if hosts.isEmpty {
                 return (.generic, "Any mint", "Add a mint to pay", true)
@@ -926,7 +921,7 @@ struct CashuPaymentRequestPayView: View {
         guard needsAcquire else { return "Pay" }
         if acquireAddsNewMint {
             if request.mints.count > 1 && selectedAddMintURL == nil {
-                return "Choose mint & pay"
+                return "Add a mint & pay"
             }
             return acquireTargetHost.map { "Add \($0) & pay" } ?? "Add mint & pay"
         }
