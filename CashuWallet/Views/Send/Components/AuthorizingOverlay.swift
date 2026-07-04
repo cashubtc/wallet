@@ -54,9 +54,11 @@ struct PaymentStatusView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            Spacer(minLength: 0)
-
+        // Same vertical scaffold as the confirm screens (`PayFlowScaffold`), so the
+        // details block sits at the SAME Y across confirm → processing → success and
+        // never jumps as the state changes. The morphing icon + title occupy the hero
+        // band where the amount hero sits on the confirm screen.
+        PayFlowScaffold {
             VStack(spacing: 16) {
                 iconSlot
 
@@ -77,9 +79,7 @@ struct PaymentStatusView: View {
                         .frame(minHeight: 44)
                 }
             }
-
-            Spacer(minLength: 0)
-
+        } details: {
             if !details.isEmpty {
                 VStack(spacing: 0) {
                     ForEach(Array(details.enumerated()), id: \.element.id) { index, row in
@@ -88,9 +88,8 @@ struct PaymentStatusView: View {
                     }
                 }
                 .padding(.horizontal)
-                .padding(.bottom, 12)
             }
-
+        } footer: {
             actionButton
                 .padding(.horizontal)
                 .padding(.bottom, 16)
@@ -198,5 +197,69 @@ private struct SpinnerRing: View {
             .animation(.linear(duration: 0.9).repeatForever(autoreverses: false), value: spinning)
             .onAppear { spinning = true }
             .accessibilityLabel("Processing")
+    }
+}
+
+/// Shared vertical scaffold for every Pay flow's confirm + status screens, so the
+/// payment-details block sits at the **same** vertical position across confirm →
+/// processing → success (no jump as the state changes). Layout contract:
+///
+///     [ topAccessory ]   ← overlaid at the top (e.g. mint chip); does NOT shift the anchor
+///     [ fixed top inset — upper-middle anchor ]
+///     [ HERO BAND — fixed min-height, content centered ]   ← amount hero | spinner/check + title
+///     [ DETAILS BLOCK — its top edge starts at one locked Y everywhere ]
+///     [ flexible gap ]
+///     [ FOOTER ]         ← Pay / Done, pinned at the bottom
+///
+/// The hero band is a fixed height, so both the hero **and** the details-block top
+/// stay stationary regardless of how many detail rows a given phase shows. Content
+/// scrolls if it exceeds the viewport (small devices / large Dynamic Type) rather
+/// than clipping. The caller still owns the toolbar header.
+struct PayFlowScaffold<TopAccessory: View, Hero: View, Details: View, Footer: View>: View {
+    /// Fraction of the available height reserved above the hero band (upper-middle anchor).
+    private static var topFraction: CGFloat { 0.16 }
+    /// Hero-band height — sized to the tallest hero (Cashu mint-identity + amount).
+    /// A floor, not a clamp: it grows for oversized Dynamic Type instead of clipping.
+    private static var heroBandHeight: CGFloat { 220 }
+    private static var heroDetailsGap: CGFloat { 8 }
+
+    private let topAccessory: TopAccessory
+    private let hero: Hero
+    private let details: Details
+    private let footer: Footer
+
+    init(
+        @ViewBuilder hero: () -> Hero,
+        @ViewBuilder details: () -> Details,
+        @ViewBuilder footer: () -> Footer,
+        @ViewBuilder topAccessory: () -> TopAccessory = { EmptyView() }
+    ) {
+        self.hero = hero()
+        self.details = details()
+        self.footer = footer()
+        self.topAccessory = topAccessory()
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            VStack(spacing: 0) {
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(spacing: 0) {
+                        Color.clear
+                            .frame(height: geo.size.height * Self.topFraction)
+                        hero
+                            .frame(maxWidth: .infinity)
+                            .frame(minHeight: Self.heroBandHeight)
+                        details
+                            .padding(.top, Self.heroDetailsGap)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                footer
+            }
+            // The top accessory floats above the anchored content so its presence
+            // (confirm) or absence (status) never shifts the details-block Y.
+            .overlay(alignment: .top) { topAccessory }
+        }
     }
 }

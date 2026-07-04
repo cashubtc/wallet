@@ -461,73 +461,72 @@ struct CashuPaymentRequestPayView: View {
                 // pill (matching Pay Lightning) and just the amount hero; a request
                 // pinned to one required mint keeps the centered mint-identity header
                 // above the amount. Read-only request facts (Memo / Fees) sit beneath.
-                VStack(spacing: 0) {
-                // Top mint pill — any/multi (.picker) requests only. Pinned to the
-                // top like the Pay Lightning selector; the picker behind it is
-                // already constrained to the acceptable set (candidateMints).
-                if request.isSatUnit, let selected = pickerSelectedMint {
-                    MintConfirmSelectorRow(mint: selected, onTap: { showingMintPicker = true })
-                        .padding(.horizontal)
-                        .padding(.top, 8)
-                }
+                // Shared Pay-flow scaffold (see `PayFlowScaffold`) so the request
+                // facts sit at the same Y here as on the processing / success
+                // screens. Any/multi-mint requests show the switchable mint pill as
+                // the top accessory; a required mint keeps its centered identity
+                // header inside the hero band, above the amount.
+                PayFlowScaffold {
+                    VStack(spacing: 12) {
+                        if request.isSatUnit, pickerSelectedMint == nil {
+                            mintHeader
+                                .padding(.horizontal)
+                        }
+                        amountSection
+                    }
+                } details: {
+                    requestDetailsSection
 
-                Spacer()
-
-                // Centered identity hero — the pinned mint (.fixed) and recovery
-                // (.unavailable) cases only. Any/multi requests use the top pill.
-                if request.isSatUnit, pickerSelectedMint == nil {
-                    mintHeader
-                        .padding(.horizontal)
-                        .padding(.bottom, request.amount == nil ? 16 : 24)
-                }
-
-                amountSection
-
-                requestDetailsSection
-
-                if !request.isSatUnit {
-                    InlineNotice(
-                        message: "This wallet can only pay sat-denominated Cashu requests.",
-                        severity: .caution
-                    )
-                    .padding(.top, 12)
-                    .padding(.horizontal)
-                }
-
-                if let errorMessage {
-                    InlineNotice(message: errorMessage, severity: errorSeverity)
+                    // Transient warnings sit below the request facts (flexible zone)
+                    // so they never push the details anchor.
+                    if !request.isSatUnit {
+                        InlineNotice(
+                            message: "This wallet can only pay sat-denominated Cashu requests.",
+                            severity: .caution
+                        )
                         .padding(.top, 12)
                         .padding(.horizontal)
-                }
-
-                Spacer()
-
-                if request.amount == nil {
-                    NumberPadAmountInput(amountString: $customAmountString, unit: entryUnit)
-                        .padding(.horizontal, 24)
-                }
-
-                Button(action: payRequest) {
-                    if isPaying {
-                        ProgressView()
-                    } else {
-                        Text(payButtonTitle)
                     }
-                }
-                .glassButton()
-                .disabled(!canPay)
-                .padding(.horizontal)
-                .padding(.top, 16)
-                .padding(.bottom, 16)
-                .sheet(isPresented: $addMintChooserPresented) {
-                    AddMintToPaySheet(mints: request.mints) { mintURL in
-                        selectedAddMintURL = mintURL
-                        if let amount = paymentAmount, amount > 0 {
-                            runAcquireAndPay(targetMintURL: mintURL, amount: amount)
+
+                    if let errorMessage {
+                        InlineNotice(message: errorMessage, severity: errorSeverity)
+                            .padding(.top, 12)
+                            .padding(.horizontal)
+                    }
+                } footer: {
+                    VStack(spacing: 16) {
+                        if request.amount == nil {
+                            NumberPadAmountInput(amountString: $customAmountString, unit: entryUnit)
+                                .padding(.horizontal, 24)
+                        }
+
+                        Button(action: payRequest) {
+                            if isPaying {
+                                ProgressView()
+                            } else {
+                                Text(payButtonTitle)
+                            }
+                        }
+                        .glassButton()
+                        .disabled(!canPay)
+                        .padding(.horizontal)
+                        .padding(.bottom, 16)
+                        .sheet(isPresented: $addMintChooserPresented) {
+                            AddMintToPaySheet(mints: request.mints) { mintURL in
+                                selectedAddMintURL = mintURL
+                                if let amount = paymentAmount, amount > 0 {
+                                    runAcquireAndPay(targetMintURL: mintURL, amount: amount)
+                                }
+                            }
+                            .environmentObject(walletManager)
                         }
                     }
-                    .environmentObject(walletManager)
-                }
+                } topAccessory: {
+                    if request.isSatUnit, let selected = pickerSelectedMint {
+                        MintConfirmSelectorRow(mint: selected, onTap: { showingMintPicker = true })
+                            .padding(.horizontal)
+                            .padding(.top, 8)
+                    }
                 }
               }
             }

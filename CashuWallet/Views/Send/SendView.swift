@@ -1346,30 +1346,31 @@ struct UnifiedSendView: View {
         VStack(spacing: 0) {
             Group {
                 if let quote = meltQuote {
-                    ScrollView {
-                        VStack(spacing: 0) {
-                            CurrencyAmountDisplay(sats: quote.amount, primary: $settings.amountDisplayPrimary)
-                                .padding(.top, 32)
+                    // Shared Pay-flow scaffold so the amount + fact rows sit at the
+                    // same Y as the processing / success screens. The Pay CTA stays in
+                    // the shared footer below (kept for the dead-end / retry states).
+                    PayFlowScaffold {
+                        CurrencyAmountDisplay(sats: quote.amount, primary: $settings.amountDisplayPrimary)
+                    } details: {
+                        meltConfirmRows(quote)
 
-                            meltConfirmRows(quote)
+                        if !hasSufficientBalance(for: quote),
+                           let balance = mintInfo(for: quote)?.balance {
+                            InlineNotice(
+                                message: "This mint holds \(AmountFormatter.sats(balance, useBitcoinSymbol: settings.useBitcoinSymbol)); the payment reserves up to \(AmountFormatter.sats(quote.totalAmount, useBitcoinSymbol: settings.useBitcoinSymbol)).",
+                                severity: .caution
+                            )
+                            .padding(.top, 12)
+                            .padding(.horizontal)
+                        }
 
-                            if !hasSufficientBalance(for: quote),
-                               let balance = mintInfo(for: quote)?.balance {
-                                InlineNotice(
-                                    message: "This mint holds \(AmountFormatter.sats(balance, useBitcoinSymbol: settings.useBitcoinSymbol)); the payment reserves up to \(AmountFormatter.sats(quote.totalAmount, useBitcoinSymbol: settings.useBitcoinSymbol)).",
-                                    severity: .caution
-                                )
+                        if let errorMessage {
+                            errorNotice(errorMessage)
                                 .padding(.top, 12)
                                 .padding(.horizontal)
-                            }
-
-                            if let errorMessage {
-                                errorNotice(errorMessage)
-                                    .padding(.top, 12)
-                                    .padding(.horizontal)
-                            }
                         }
-                        .padding(.top, 12)
+                    } footer: {
+                        EmptyView()
                     }
                 } else if let errorMessage {
                     meltDeadEndState(errorMessage)
@@ -1755,35 +1756,31 @@ struct UnifiedSendView: View {
     }
 
     private func creqConfirmBody(_ creq: CashuPaymentRequestSummary) -> some View {
-        VStack(spacing: 0) {
-            ScrollView {
-                VStack(spacing: 0) {
-                    CurrencyAmountDisplay(
-                        sats: paymentAmountForCreq ?? 0,
-                        primary: $settings.amountDisplayPrimary
-                    )
-                    .padding(.top, 32)
+        // Shared Pay-flow scaffold so the request facts sit at the same Y as the
+        // processing / success screens.
+        PayFlowScaffold {
+            CurrencyAmountDisplay(
+                sats: paymentAmountForCreq ?? 0,
+                primary: $settings.amountDisplayPrimary
+            )
+        } details: {
+            creqRequestDetails(creq)
 
-                    creqRequestDetails(creq)
-
-                    if !creq.isSatUnit {
-                        InlineNotice(
-                            message: "This wallet can only pay sat-denominated Cashu requests.",
-                            severity: .caution
-                        )
-                        .padding(.top, 12)
-                        .padding(.horizontal)
-                    }
-
-                    if let errorMessage {
-                        errorNotice(errorMessage)
-                            .padding(.top, 12)
-                            .padding(.horizontal)
-                    }
-                }
+            if !creq.isSatUnit {
+                InlineNotice(
+                    message: "This wallet can only pay sat-denominated Cashu requests.",
+                    severity: .caution
+                )
                 .padding(.top, 12)
+                .padding(.horizontal)
             }
 
+            if let errorMessage {
+                errorNotice(errorMessage)
+                    .padding(.top, 12)
+                    .padding(.horizontal)
+            }
+        } footer: {
             Button(action: payCreq) {
                 Text(creqPayButtonTitle)
             }
@@ -2862,61 +2859,55 @@ struct MeltView: View {
 
 
     private func quoteConfirmView(quote: MeltQuoteInfo) -> some View {
-        VStack(spacing: 0) {
-            ScrollView {
-                VStack(spacing: 24) {
-                    if let mint = mintInfo(for: quote) {
-                        MintConfirmSelectorRow(mint: mint, onTap: { showingMintPicker = true })
-                            .padding(.horizontal)
-                            .padding(.top, 12)
-                    }
-
-                    CurrencyAmountDisplay(
-                        sats: quote.amount,
-                        primary: $settings.amountDisplayPrimary
+        // Shared Pay-flow scaffold (see `PayFlowScaffold`) so the details block sits
+        // at the same Y here as on the processing / success screens.
+        PayFlowScaffold {
+            CurrencyAmountDisplay(
+                sats: quote.amount,
+                primary: $settings.amountDisplayPrimary
+            )
+        } details: {
+            VStack(spacing: 0) {
+                meltDetailRow(icon: "bolt", label: "Method", value: quote.paymentMethod.displayName)
+                meltDivider
+                if quote.paymentMethod == .onchain {
+                    meltDetailRow(
+                        icon: "arrow.up.right",
+                        label: "To",
+                        value: PaymentRequestParser.normalizeBitcoinRequest(requestInput)
                     )
-                    .padding(.top, 24)
-
-                    VStack(spacing: 0) {
-                        meltDetailRow(icon: "bolt", label: "Method", value: quote.paymentMethod.displayName)
-                        meltDivider
-                        if quote.paymentMethod == .onchain {
-                            meltDetailRow(
-                                icon: "arrow.up.right",
-                                label: "To",
-                                value: PaymentRequestParser.normalizeBitcoinRequest(requestInput)
-                            )
-                            meltDivider
-                        }
-                        meltDetailRow(icon: "bitcoinsign", label: "Amount", value: "\(quote.amount) sat")
-                        meltDivider
-                        meltDetailRow(icon: "arrow.up.arrow.down", label: "Max fee", value: "\(quote.feeReserve) sat")
-                        if quote.feeReserve > 0 {
-                            meltDivider
-                            meltDetailRow(icon: "creditcard", label: "Required balance", value: "\(quote.totalAmount) sat")
-                        }
-                        // The paying mint is already shown in the selector chip
-                        // above (with balance + switch), so no redundant "Mint" row.
-                    }
-                    .padding(.horizontal)
-
-                    if !hasSufficientBalance(for: quote),
-                       let balance = mintInfo(for: quote)?.balance {
-                        InlineNotice(
-                            message: "Selected mint has \(balance) sat; this quote can reserve up to \(quote.totalAmount) sat.",
-                            severity: .caution
-                        )
-                        .padding(.horizontal)
-                    }
-
-                    if let error = errorMessage {
-                        errorNotice(error)
-                            .padding(.top, meltQuote == nil ? 48 : 12)
-                            .padding(.horizontal)
-                    }
+                    meltDivider
                 }
+                meltDetailRow(icon: "bitcoinsign", label: "Amount", value: "\(quote.amount) sat")
+                meltDivider
+                meltDetailRow(icon: "arrow.up.arrow.down", label: "Max fee", value: "\(quote.feeReserve) sat")
+                if quote.feeReserve > 0 {
+                    meltDivider
+                    meltDetailRow(icon: "creditcard", label: "Required balance", value: "\(quote.totalAmount) sat")
+                }
+                // The paying mint is already shown in the selector chip above (with
+                // balance + switch), so no redundant "Mint" row.
+            }
+            .padding(.horizontal)
+
+            // Transient notices sit below the details block (the flexible zone) so
+            // they never push the details anchor.
+            if !hasSufficientBalance(for: quote),
+               let balance = mintInfo(for: quote)?.balance {
+                InlineNotice(
+                    message: "Selected mint has \(balance) sat; this quote can reserve up to \(quote.totalAmount) sat.",
+                    severity: .caution
+                )
+                .padding(.horizontal)
+                .padding(.top, 12)
             }
 
+            if let error = errorMessage {
+                errorNotice(error)
+                    .padding(.top, 12)
+                    .padding(.horizontal)
+            }
+        } footer: {
             Button(action: payRequest) {
                 if isPaying {
                     ProgressView()
@@ -2928,6 +2919,12 @@ struct MeltView: View {
             .disabled(isPaying || !hasSufficientBalance(for: quote))
             .padding(.horizontal)
             .padding(.bottom, 16)
+        } topAccessory: {
+            if let mint = mintInfo(for: quote) {
+                MintConfirmSelectorRow(mint: mint, onTap: { showingMintPicker = true })
+                    .padding(.horizontal)
+                    .padding(.top, 12)
+            }
         }
     }
 
