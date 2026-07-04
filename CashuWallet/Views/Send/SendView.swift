@@ -757,6 +757,47 @@ struct MintAmountSelectorRow: View {
     }
 }
 
+/// The shared mint pill for the single-screen payment confirms (Pay Lightning and
+/// Pay Cashu Request). A tappable mint identity — avatar + name + balance — with a
+/// switch chevron, on Liquid Glass; tapping opens the mint picker via `onTap`. Keeps
+/// the two scanner confirms visually identical without duplicating the pill.
+struct MintConfirmSelectorRow: View {
+    let mint: MintInfo
+    var balanceText: String? = nil
+    let onTap: () -> Void
+
+    private var resolvedBalance: String { balanceText ?? "\(mint.balance) sat" }
+
+    var body: some View {
+        Button(action: {
+            HapticFeedback.selection()
+            onTap()
+        }) {
+            HStack(spacing: 12) {
+                MintAvatarView(iconUrl: mint.iconUrl, name: mint.name, size: 40)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(mint.name)
+                        .font(.subheadline.weight(.medium))
+                        .lineLimit(1)
+                    Text(resolvedBalance)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(12)
+        .liquidGlass(in: RoundedRectangle(cornerRadius: 12))
+        .accessibilityLabel("Paying mint: \(mint.name), \(resolvedBalance)")
+        .accessibilityHint("Double-tap to choose the mint to pay from")
+    }
+}
+
 // MARK: - Unified destination-first Send
 
 /// The single entry point for sending — one grounded screen modeled on the Family
@@ -795,6 +836,11 @@ struct UnifiedSendView: View {
     @State private var feeState: FeeState = .idle
     @State private var feePpkByMint: [String: UInt64] = [:]
     @State private var feeTask: Task<Void, Never>?
+
+    // Cashu-request "add mint & pay" recovery (mirrors CashuPaymentRequestPayView)
+    @State private var selectedAddMintURL: String?
+    @State private var addMintChooserPresented = false
+    @State private var topUpContext: TopUpContext?
 
     // Flow control
     @State private var isWorking = false
@@ -915,6 +961,14 @@ struct UnifiedSendView: View {
                     .canvasSheetBackground()
             }
             .sheet(isPresented: $showingMintPicker) { mintPickerSheet }
+            .sheet(item: $topUpContext) { context in
+                CashuTopUpInvoiceSheet(context: context, onComplete: {
+                    topUpContext = nil
+                    onClose()
+                })
+                .environmentObject(walletManager)
+                .canvasSheetBackground()
+            }
             .fullScreenCover(item: $route) { routeView($0).canvasSheetBackground() }
             .onChange(of: destination) { handleDestinationChange() }
             .onChange(of: entryUnit) { oldUnit, newUnit in
@@ -1139,15 +1193,23 @@ struct UnifiedSendView: View {
             lockMelt(request: PaymentRequestParser.normalizeBitcoinRequest(raw), mode: .onchain, decoded: result)
             goToAmount()
         case .cashuPaymentRequest(let summary):
-            locked = .cashuRequest(summary)
-            selectedMint = nil
-            errorMessage = nil
-            HapticFeedback.selection()
-            if summary.amount != nil {
-                withAnimation { step = .confirm }
-                recomputeFee()
-            } else {
-                goToAmount()
+            // Prefer ecash when a held mint can pay; otherwise fall back to a
+            // bundled bolt11 (BIP-321) rather than dead-ending on an unheld mint.
+            switch walletManager.routeForCashuPaymentRequest(summary, rawContent: raw) {
+            case .payWithEcash, .acquireThenPay:
+                locked = .cashuRequest(summary)
+                selectedMint = nil
+                errorMessage = nil
+                HapticFeedback.selection()
+                if summary.amount != nil {
+                    withAnimation { step = .confirm }
+                    recomputeFee()
+                } else {
+                    goToAmount()
+                }
+            case .payBolt11Fallback(let bolt11):
+                lockMelt(request: bolt11, mode: .lightning, decoded: PaymentRequestDecoder.decode(bolt11))
+                startMeltConfirm()
             }
         case .unrecognized:
             if let token = TokenParser.normalizedToken(from: raw) {
@@ -1675,16 +1737,43 @@ struct UnifiedSendView: View {
             }
 
             Button(action: payCreq) {
-                Text("Pay")
+                Text(creqPayButtonTitle)
             }
             .glassButton()
             .disabled(!creqCanPay)
             .padding(.horizontal)
             .padding(.bottom, 16)
+            .confirmationDialog(
+                "Add a mint to pay",
+                isPresented: $addMintChooserPresented,
+                titleVisibility: .visible
+            ) {
+                if let creq = currentCreq {
+                    ForEach(creq.mints, id: \.self) { mintURL in
+                        Button(extractMintHost(mintURL)) {
+                            selectedAddMintURL = mintURL
+                            if let amount = paymentAmountForCreq, amount > 0 {
+                                runCreqAcquireAndPay(targetMintURL: mintURL, amount: amount)
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
     private func payCreq() {
+        // Can't pay from current ecash — add/fund the target mint, then pay.
+        if needsAcquire {
+            if acquireAddsNewMint, let creq = currentCreq, creq.mints.count > 1, selectedAddMintURL == nil {
+                addMintChooserPresented = true
+                return
+            }
+            guard let target = acquireTargetURL, let amount = paymentAmountForCreq, amount > 0 else { return }
+            runCreqAcquireAndPay(targetMintURL: target, amount: amount)
+            return
+        }
+
         guard let creq = currentCreq, creqCanPay, let mint = selectedPaymentMint else { return }
         HapticFeedback.impact(.medium)
         errorMessage = nil
@@ -1708,6 +1797,49 @@ struct UnifiedSendView: View {
         }
     }
 
+    /// Add/fund the target mint over Lightning, then pay the request. Falls back
+    /// to a top-up QR (`NeedsExternalTopUp`) when no held mint can bankroll it.
+    private func runCreqAcquireAndPay(targetMintURL: String, amount: UInt64) {
+        guard let creq = currentCreq else { return }
+        HapticFeedback.impact(.medium)
+        errorMessage = nil
+        withAnimation { step = .sending }
+        Task { @MainActor in
+            do {
+                try await walletManager.addMintAndPayCashuRequest(
+                    creq,
+                    amount: amount,
+                    targetMintURL: targetMintURL,
+                    onStage: { _ in }
+                )
+                HapticFeedback.notification(.success)
+                withAnimation { step = .sent }
+                try? await Task.sleep(nanoseconds: 1_300_000_000)
+                onClose()
+            } catch let topUp as NeedsExternalTopUp {
+                withAnimation { step = .confirm }
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                topUpContext = TopUpContext(
+                    summary: creq,
+                    amount: amount,
+                    targetMintURL: topUp.targetMintURL,
+                    quote: topUp.targetQuote
+                )
+            } catch is MintSettling {
+                HapticFeedback.notification(.error)
+                presentError(
+                    "Still settling — your balance will update shortly. Try again in a moment.",
+                    severity: .caution
+                )
+                withAnimation { step = .confirm }
+            } catch {
+                HapticFeedback.notification(.error)
+                presentError(from: error)
+                withAnimation { step = .confirm }
+            }
+        }
+    }
+
     private var paymentAmountForCreq: UInt64? {
         guard let creq = currentCreq else { return nil }
         return creq.amount ?? (amountSats > 0 ? amountSats : nil)
@@ -1716,6 +1848,7 @@ struct UnifiedSendView: View {
     private var creqCanPay: Bool {
         guard let creq = currentCreq, creq.isSatUnit, !isWorking else { return false }
         guard let amount = paymentAmountForCreq, amount > 0 else { return false }
+        if needsAcquire { return true }
         guard let mint = selectedPaymentMint else { return false }
         return mint.balance >= amount
     }
@@ -1765,6 +1898,38 @@ struct UnifiedSendView: View {
     }
 
     private func extractMintHost(_ url: String) -> String { URL(string: url)?.host ?? url }
+
+    // creq "add mint & pay" recovery
+
+    /// The mint URL to acquire ecash at when the request can't be paid from current
+    /// ecash: a held-but-underfunded required mint → that mint; nothing held → a
+    /// requested mint to add. Nil when already payable or when there's nothing to
+    /// target (any-mint request with nothing held).
+    private var acquireTargetURL: String? {
+        guard let creq = currentCreq, creq.isSatUnit,
+              let amount = paymentAmountForCreq, amount > 0 else { return nil }
+        if let mint = selectedPaymentMint {
+            return mint.balance >= amount ? nil : mint.url
+        }
+        guard !creq.mints.isEmpty else { return nil }
+        if creq.mints.count == 1 { return creq.mints.first }
+        return selectedAddMintURL ?? creq.mints.first
+    }
+
+    private var acquireTargetHost: String? { acquireTargetURL.map(extractMintHost) }
+    private var needsAcquire: Bool { acquireTargetURL != nil }
+    private var acquireAddsNewMint: Bool { selectedPaymentMint == nil }
+
+    private var creqPayButtonTitle: String {
+        guard needsAcquire else { return "Pay" }
+        if acquireAddsNewMint {
+            if let creq = currentCreq, creq.mints.count > 1, selectedAddMintURL == nil {
+                return "Choose mint & pay"
+            }
+            return acquireTargetHost.map { "Add \($0) & pay" } ?? "Add mint & pay"
+        }
+        return acquireTargetHost.map { "Fund \($0) & pay" } ?? "Fund mint & pay"
+    }
 
     // creq fee
 
@@ -1851,24 +2016,60 @@ struct UnifiedSendView: View {
         case .picker(let selected):
             mintDetailRow(label: "From", mint: selected, switchable: true)
         case .fixed(let mint):
-            mintDetailRow(label: "Mint", mint: mint, switchable: false)
+            if needsAcquire {
+                creqActionableMintRow(host: mint.name, subtitle: "Balance too low — fund to pay")
+            } else {
+                mintDetailRow(label: "Mint", mint: mint, switchable: false)
+            }
         case .unavailable(let hosts):
-            HStack(spacing: 8) {
-                Label("Mint", systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(.orange)
-                Spacer()
-                Text(hosts.isEmpty ? "Add a mint to pay"
-                        : (hosts.count == 1 ? hosts[0] : "You hold none of these"))
+            // Recoverable: add the required mint and fund it — a neutral action, not a warning.
+            if needsAcquire {
+                let host = hosts.count == 1 ? (hosts.first ?? "a mint") : "Choose a mint"
+                let subtitle = hosts.count == 1 ? "Tap Add & pay to fund it" : "Add one of \(hosts.count) to pay"
+                creqActionableMintRow(host: host, subtitle: subtitle)
+            } else {
+                HStack(spacing: 8) {
+                    Label("Mint", systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.orange)
+                    Spacer()
+                    Text(hosts.isEmpty ? "Add a mint to pay"
+                            : (hosts.count == 1 ? hosts[0] : "You hold none of these"))
+                        .fontWeight(.medium)
+                        .foregroundStyle(.orange)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                .font(.subheadline)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 14)
+                .accessibilityElement(children: .combine)
+            }
+        }
+    }
+
+    /// The mint row when the request isn't payable from ecash yet but is
+    /// recoverable — names the target mint with a quiet "what to do" subtitle,
+    /// no alarming color (the CTA does the work).
+    private func creqActionableMintRow(host: String, subtitle: String) -> some View {
+        HStack(spacing: 8) {
+            Label("Mint", systemImage: "bitcoinsign.bank.building")
+                .foregroundStyle(.secondary)
+            Spacer()
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(host)
                     .fontWeight(.medium)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(.primary)
                     .lineLimit(1)
                     .truncationMode(.middle)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-            .font(.subheadline)
-            .padding(.horizontal, 4)
-            .padding(.vertical, 14)
-            .accessibilityElement(children: .combine)
         }
+        .font(.subheadline)
+        .padding(.horizontal, 4)
+        .padding(.vertical, 14)
+        .accessibilityElement(children: .combine)
     }
 
     private var creqFeesRow: some View {
@@ -1886,16 +2087,22 @@ struct UnifiedSendView: View {
 
     @ViewBuilder
     private var creqFeeValueText: some View {
-        switch feeState {
-        case .loading:
-            ProgressView().controlSize(.mini)
-        case .free:
-            Text("No fee").fontWeight(.medium)
-        case .amount(let fee):
-            Text(AmountFormatter.sats(fee, useBitcoinSymbol: settings.useBitcoinSymbol))
-                .fontWeight(.medium)
-        case .idle, .unavailable:
-            Text("—").foregroundStyle(.secondary)
+        if needsAcquire {
+            // Funding the mint routes over Lightning, which always carries a fee;
+            // the exact reserve is confirmed during the transfer and in History.
+            Text("Network fee").fontWeight(.medium).foregroundStyle(.secondary)
+        } else {
+            switch feeState {
+            case .loading:
+                ProgressView().controlSize(.mini)
+            case .free:
+                Text("No fee").fontWeight(.medium)
+            case .amount(let fee):
+                Text(AmountFormatter.sats(fee, useBitcoinSymbol: settings.useBitcoinSymbol))
+                    .fontWeight(.medium)
+            case .idle, .unavailable:
+                Text("—").foregroundStyle(.secondary)
+            }
         }
     }
 
@@ -2424,12 +2631,6 @@ struct MeltView: View {
             ?? (walletManager.activeMint?.url == quote.mintUrl ? walletManager.activeMint : nil)
     }
 
-    private func mintDisplayName(for quote: MeltQuoteInfo) -> String {
-        mintInfo(for: quote)?.name
-            ?? URL(string: quote.mintUrl)?.host
-            ?? quote.mintUrl
-    }
-
     private func hasSufficientBalance(for quote: MeltQuoteInfo) -> Bool {
         guard let balance = mintInfo(for: quote)?.balance else { return true }
         return balance >= quote.totalAmount
@@ -2447,7 +2648,7 @@ struct MeltView: View {
     private var requestInputView: some View {
         VStack(spacing: 0) {
             if let mint = displayMeltMint {
-                meltMintSelector(mint: mint)
+                MintConfirmSelectorRow(mint: mint, onTap: { showingMintPicker = true })
                     .padding(.horizontal)
                     .padding(.top, 12)
             }
@@ -2633,55 +2834,13 @@ struct MeltView: View {
         .accessibilityValue("\(amountString.isEmpty ? "0" : amountString) sats")
     }
 
-    private func meltMintSelector(mint: MintInfo) -> some View {
-        Button(action: {
-            HapticFeedback.selection()
-            showingMintPicker = true
-        }) {
-            HStack(spacing: 12) {
-                if let iconUrl = mint.iconUrl, let url = URL(string: iconUrl) {
-                    CachedAsyncImage(url: url) { image in
-                        image.resizable().aspectRatio(contentMode: .fill)
-                    } placeholder: {
-                        Image(systemName: "bitcoinsign.bank.building").foregroundStyle(.secondary)
-                    }
-                    .frame(width: 40, height: 40)
-                    .clipShape(Circle())
-                } else {
-                    Image(systemName: "bitcoinsign.bank.building")
-                        .foregroundStyle(.secondary)
-                        .frame(width: 40, height: 40)
-                }
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(mint.name)
-                        .font(.subheadline.weight(.medium))
-                    Text("\(mint.balance) sat")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .padding(12)
-        .liquidGlass(in: RoundedRectangle(cornerRadius: 12))
-        .accessibilityLabel("Paying mint: \(mint.name), \(mint.balance) sats")
-        .accessibilityHint("Double-tap to choose the mint to pay from")
-    }
 
     private func quoteConfirmView(quote: MeltQuoteInfo) -> some View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(spacing: 24) {
                     if let mint = mintInfo(for: quote) {
-                        meltMintSelector(mint: mint)
+                        MintConfirmSelectorRow(mint: mint, onTap: { showingMintPicker = true })
                             .padding(.horizontal)
                             .padding(.top, 12)
                     }
@@ -2693,27 +2852,26 @@ struct MeltView: View {
                     .padding(.top, 24)
 
                     VStack(spacing: 0) {
-                        meltDetailRow(label: "Method", value: quote.paymentMethod.displayName)
-                        Divider().padding(.leading)
+                        meltDetailRow(icon: "bolt", label: "Method", value: quote.paymentMethod.displayName)
+                        meltDivider
                         if quote.paymentMethod == .onchain {
                             meltDetailRow(
+                                icon: "arrow.up.right",
                                 label: "To",
                                 value: PaymentRequestParser.normalizeBitcoinRequest(requestInput)
                             )
-                            Divider().padding(.leading)
+                            meltDivider
                         }
-                        meltDetailRow(label: "Amount", value: "\(quote.amount) sat")
-                        Divider().padding(.leading)
-                        meltDetailRow(label: "Max fee", value: "\(quote.feeReserve) sat")
+                        meltDetailRow(icon: "bitcoinsign", label: "Amount", value: "\(quote.amount) sat")
+                        meltDivider
+                        meltDetailRow(icon: "arrow.up.arrow.down", label: "Max fee", value: "\(quote.feeReserve) sat")
                         if quote.feeReserve > 0 {
-                            Divider().padding(.leading)
-                            meltDetailRow(label: "Required balance", value: "\(quote.totalAmount) sat")
+                            meltDivider
+                            meltDetailRow(icon: "creditcard", label: "Required balance", value: "\(quote.totalAmount) sat")
                         }
-                        Divider().padding(.leading)
-                        meltDetailRow(label: "Mint", value: mintDisplayName(for: quote))
+                        // The paying mint is already shown in the selector chip
+                        // above (with balance + switch), so no redundant "Mint" row.
                     }
-                    .padding(.vertical, 4)
-                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
                     .padding(.horizontal)
 
                     if !hasSufficientBalance(for: quote),
@@ -2747,9 +2905,9 @@ struct MeltView: View {
         }
     }
 
-    private func meltDetailRow(label: String, value: String) -> some View {
+    private func meltDetailRow(icon: String, label: String, value: String) -> some View {
         HStack {
-            Text(label)
+            Label(label, systemImage: icon)
                 .foregroundStyle(.secondary)
             Spacer()
             Text(value)
@@ -2759,8 +2917,18 @@ struct MeltView: View {
                 .truncationMode(.middle)
         }
         .font(.subheadline)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 4)
+        .padding(.vertical, 14)
+        .accessibilityElement(children: .combine)
+    }
+
+    /// Hairline row separator matching CashuPaymentRequestPayView's `canvasDivider`
+    /// so the two pay screens read as one system (no boxed background).
+    private var meltDivider: some View {
+        Rectangle()
+            .fill(Color(.separator))
+            .frame(height: 0.5)
+            .padding(.horizontal, 4)
     }
 
     private var paymentSuccessView: some View {

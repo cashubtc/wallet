@@ -77,6 +77,20 @@ final class NFCPaymentService {
             if let creq = PaymentRequestDecoder.encodedCashuPaymentRequest(from: input) {
                 do {
                     let request = try decodePaymentRequest(encoded: creq)
+                    // Same decision as scanner/Send: pay from ecash when a held
+                    // mint can; else use the bundled bolt11. Tap-to-pay has no
+                    // "add mint & fund" UI, so an unfundable creq falls back to
+                    // the invoice, or surfaces the no-matching-mint error later.
+                    if let summary = PaymentRequestDecoder.cashuPaymentRequestSummary(from: creq) {
+                        switch walletManager.routeForCashuPaymentRequest(summary, rawContent: input) {
+                        case .payWithEcash:
+                            return .creq(request)
+                        case .payBolt11Fallback(let bolt11):
+                            return .bolt11(bolt11)
+                        case .acquireThenPay:
+                            return .creq(request)
+                        }
+                    }
                     if Self.canPrepareInBandToken(for: request) || lightningFallback == nil {
                         return .creq(request)
                     }

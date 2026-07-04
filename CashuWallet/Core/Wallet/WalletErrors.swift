@@ -308,10 +308,18 @@ enum WalletErrorMessage {
     }
 
     private static func looksLikeRawCDKError(_ message: String) -> Bool {
-        message.contains("FfiError")
+        let lowered = message.lowercased()
+        return message.contains("FfiError")
             || message.contains("CashuDevKit")
             || message.contains("errorMessage:")
             || message.contains("CALL_ERROR")
+            // Raw Rust panics (e.g. a failed stderr write inside the CDK FFI). These carry
+            // no useful user-facing detail, so route them to the generic fallback instead
+            // of showing the panic text verbatim.
+            || lowered.contains("failed printing to std")
+            || lowered.contains("os error")
+            || lowered.contains("panicked at")
+            || lowered.contains("rustpanic")
     }
 }
 
