@@ -421,8 +421,9 @@ struct CashuPaymentRequestPayView: View {
     @State private var isPaying = false
     @State private var errorMessage: String?
     @State private var errorSeverity: ErrorSeverity = .error
-    @State private var showAuthorizingOverlay = false
-    @State private var authorizingState: AuthorizingOverlay.FlowState = .authorizing
+    /// Drives the full-screen processing → success → failure status screen.
+    /// nil while the user is still on the confirm screen.
+    @State private var paymentPhase: PaymentStatusView.Phase?
     @State private var showingMintPicker = false
     @State private var selectedMint: MintInfo?
 
@@ -451,11 +452,16 @@ struct CashuPaymentRequestPayView: View {
 
     var body: some View {
         NavigationStack {
-            // Family-style confirm layout. Any/multi-mint requests get a top mint
-            // pill (matching Pay Lightning) and just the amount hero; a request
-            // pinned to one required mint keeps the centered mint-identity header
-            // above the amount. Read-only request facts (Memo / Fees) sit beneath.
-            VStack(spacing: 0) {
+            Group {
+              if let paymentPhase {
+                statusView(paymentPhase)
+                    .transition(.opacity)
+              } else {
+                // Family-style confirm layout. Any/multi-mint requests get a top mint
+                // pill (matching Pay Lightning) and just the amount hero; a request
+                // pinned to one required mint keeps the centered mint-identity header
+                // above the amount. Read-only request facts (Memo / Fees) sit beneath.
+                VStack(spacing: 0) {
                 // Top mint pill — any/multi (.picker) requests only. Pinned to the
                 // top like the Pay Lightning selector; the picker behind it is
                 // already constrained to the acceptable set (candidateMints).
@@ -522,32 +528,22 @@ struct CashuPaymentRequestPayView: View {
                     }
                     .environmentObject(walletManager)
                 }
+                }
+              }
             }
+            .animation(.snappy(duration: 0.35), value: paymentPhase != nil)
             .navigationTitle("Pay Cashu Request")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(action: { dismiss() }) {
-                        Image(systemName: "xmark")
+                    // No dismissing mid-authorization (payment is in flight).
+                    if paymentPhase != .processing {
+                        Button(action: { dismiss() }) {
+                            Image(systemName: "xmark")
+                        }
+                        .accessibilityLabel("Close")
                     }
-                    .accessibilityLabel("Close")
                 }
-            }
-            .sheet(isPresented: $showAuthorizingOverlay, onDismiss: resetAuthorizingState) {
-                AuthorizingOverlay(
-                    amountSats: paymentAmount ?? 0,
-                    recipient: recipientLabel,
-                    recipientCaption: "Cashu payment request",
-                    state: $authorizingState,
-                    onDismiss: {
-                        showAuthorizingOverlay = false
-                        onComplete?()
-                        dismiss()
-                    }
-                )
-                .presentationDetents([.height(340)])
-                .presentationBackgroundInteraction(.disabled)
-                .interactiveDismissDisabled()
             }
             .sheet(isPresented: $showingMintPicker) {
                 MintSelectorSheet(
@@ -951,10 +947,6 @@ struct CashuPaymentRequestPayView: View {
         request.amount ?? (customAmountSats > 0 ? customAmountSats : nil)
     }
 
-    private var recipientLabel: String {
-        request.description?.isEmpty == false ? request.description! : "Cashu request"
-    }
-
     private var candidateMints: [MintInfo] {
         guard !request.mints.isEmpty else {
             return walletManager.mints
@@ -1039,9 +1031,8 @@ struct CashuPaymentRequestPayView: View {
 
         isPaying = true
         errorMessage = nil
-        authorizingState = .authorizing
-        showAuthorizingOverlay = true
         HapticFeedback.impact(.medium)
+        withAnimation { paymentPhase = .processing }
 
         Task { @MainActor in
             do {
@@ -1050,14 +1041,16 @@ struct CashuPaymentRequestPayView: View {
                     customAmountSats: request.amount == nil ? paymentAmount : nil,
                     preferredMintURL: mint.url
                 )
-                authorizingState = .sent
+                // The consistency fix: every creq payment now lands on the shared
+                // full-screen success screen, same as Lightning/on-chain.
+                withAnimation { paymentPhase = .success }
             } catch {
                 let walletMessage = error.walletMessage
                 errorMessage = walletMessage.text
                 errorSeverity = walletMessage.severity
-                authorizingState = .error(walletMessage.text)
-                try? await Task.sleep(nanoseconds: 2_000_000_000)
-                showAuthorizingOverlay = false
+                withAnimation {
+                    paymentPhase = .failure(message: walletMessage.text, isCaution: walletMessage.severity == .caution)
+                }
             }
 
             isPaying = false
@@ -1069,9 +1062,8 @@ struct CashuPaymentRequestPayView: View {
     private func runAcquireAndPay(targetMintURL: String, amount: UInt64) {
         isPaying = true
         errorMessage = nil
-        authorizingState = .authorizing
-        showAuthorizingOverlay = true
         HapticFeedback.impact(.medium)
+        withAnimation { paymentPhase = .processing }
 
         Task { @MainActor in
             do {
@@ -1081,10 +1073,11 @@ struct CashuPaymentRequestPayView: View {
                     targetMintURL: targetMintURL,
                     onStage: { _ in }
                 )
-                authorizingState = .sent
+                withAnimation { paymentPhase = .success }
             } catch let topUp as NeedsExternalTopUp {
-                // No held mint can fund it — show a Lightning invoice to top up.
-                showAuthorizingOverlay = false
+                // No held mint can fund it — clear the status screen first, then show
+                // the Lightning top-up invoice sheet.
+                withAnimation { paymentPhase = nil }
                 try? await Task.sleep(nanoseconds: 350_000_000)
                 topUpContext = TopUpContext(
                     summary: request,
@@ -1096,24 +1089,63 @@ struct CashuPaymentRequestPayView: View {
                 let text = "Still settling — your balance will update shortly. Try again in a moment."
                 errorMessage = text
                 errorSeverity = .caution
-                authorizingState = .error(text)
-                try? await Task.sleep(nanoseconds: 2_200_000_000)
-                showAuthorizingOverlay = false
+                withAnimation { paymentPhase = .failure(message: text, isCaution: true) }
             } catch {
                 let walletMessage = error.walletMessage
                 errorMessage = walletMessage.text
                 errorSeverity = walletMessage.severity
-                authorizingState = .error(walletMessage.text)
-                try? await Task.sleep(nanoseconds: 2_000_000_000)
-                showAuthorizingOverlay = false
+                withAnimation {
+                    paymentPhase = .failure(message: walletMessage.text, isCaution: walletMessage.severity == .caution)
+                }
             }
 
             isPaying = false
         }
     }
 
-    private func resetAuthorizingState() {
-        authorizingState = .authorizing
+    /// Full-screen processing → success → failure status. Preserves the payment
+    /// facts (amount / mint / fee / memo) as rows. onDone completes like the old
+    /// overlay's onDismiss did; onRetry returns to the confirm screen.
+    private func statusView(_ phase: PaymentStatusView.Phase) -> some View {
+        var rows: [PaymentStatusView.DetailRow] = []
+        if let amount = paymentAmount {
+            rows.append(.init(icon: "bitcoinsign", label: "Amount", value: "\(amount) sat"))
+        }
+        if let mint = selectedPaymentMint {
+            rows.append(.init(icon: "bitcoinsign.bank.building", label: "Mint", value: mint.name))
+        }
+        if let feeRow = statusFeeRow {
+            rows.append(feeRow)
+        }
+        if let memo = requestMemo {
+            rows.append(.init(icon: "quote.bubble", label: "Memo", value: memo))
+        }
+        return PaymentStatusView(
+            details: rows,
+            phase: phase,
+            onDone: {
+                onComplete?()
+                dismiss()
+            },
+            onRetry: { withAnimation { paymentPhase = nil } }
+        )
+    }
+
+    /// The resolved swap fee as a detail row; nil while unknown so we don't show a
+    /// placeholder on the status screen.
+    private var statusFeeRow: PaymentStatusView.DetailRow? {
+        switch feeState {
+        case .free:
+            return .init(icon: "arrow.up.arrow.down", label: "Fees", value: "No fee")
+        case .amount(let fee):
+            return .init(
+                icon: "arrow.up.arrow.down",
+                label: "Fees",
+                value: AmountFormatter.sats(fee, useBitcoinSymbol: settings.useBitcoinSymbol)
+            )
+        case .idle, .loading, .unavailable:
+            return nil
+        }
     }
 }
 

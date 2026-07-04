@@ -896,7 +896,7 @@ struct UnifiedSendView: View {
     @State private var showingMintPicker = false
     @State private var addMintError: String?
 
-    enum Step: Equatable { case input, amount, confirm, sending, sent }
+    enum Step: Equatable { case input, amount, confirm, sending, sent, failed }
 
     enum LockedDestination: Equatable {
         case melt(request: String, mode: MeltView.MeltMode, decoded: PaymentRequestDecodeResult)
@@ -924,7 +924,7 @@ struct UnifiedSendView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                if let locked, step != .input {
+                if let locked, step != .input, statusPhase == nil {
                     toPill(locked)
                         .padding(.horizontal)
                         .padding(.top, 8)
@@ -932,12 +932,18 @@ struct UnifiedSendView: View {
                 }
 
                 Group {
-                    switch step {
-                    case .input: inputContent
-                    case .amount: amountStep
-                    case .confirm: confirmStep
-                    case .sending: sendingStep
-                    case .sent: sentStep
+                    if let statusPhase {
+                        // Single branch keeps the status screen's identity stable across
+                        // processing → sent → failed, so PaymentStatusView owns the morph.
+                        statusView(statusPhase)
+                            .transition(.opacity)
+                    } else {
+                        switch step {
+                        case .input: inputContent
+                        case .amount: amountStep
+                        case .confirm: confirmStep
+                        case .sending, .sent, .failed: EmptyView()
+                        }
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -1113,7 +1119,7 @@ struct UnifiedSendView: View {
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .disabled(step == .sending || step == .sent)
+        .disabled(statusPhase != nil)
         .accessibilityLabel("Recipient \(pillValue(locked))")
         .accessibilityHint("Double-tap to change the recipient")
     }
@@ -1499,32 +1505,68 @@ struct UnifiedSendView: View {
         }
     }
 
-    // MARK: Sending / sent
+    // MARK: Sending / sent / failed — shared full-screen status
 
-    private var sendingStep: some View {
-        VStack(spacing: 16) {
-            Spacer()
-            ProgressView().controlSize(.large)
-            Text("Sending…")
-                .font(.headline)
-                .foregroundStyle(.secondary)
-            Spacer()
+    /// Maps the three terminal steps onto the shared status screen's phase; nil for
+    /// the input/amount/confirm steps.
+    private var statusPhase: PaymentStatusView.Phase? {
+        switch step {
+        case .sending: return .processing
+        case .sent:    return .success
+        case .failed:
+            return .failure(message: errorMessage ?? "Payment failed", isCaution: errorSeverity == .caution)
+        default:       return nil
         }
-        .frame(maxWidth: .infinity)
     }
 
-    private var sentStep: some View {
-        VStack(spacing: 16) {
-            Spacer()
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 64))
-                .foregroundStyle(.green)
-                .symbolEffect(.bounce, value: step)
-            Text("Payment Sent")
-                .font(.title2.weight(.semibold))
-            Spacer()
+    /// Full-screen processing → success → failure status, preserving the payment
+    /// facts as rows. Branches on the locked destination (melt vs Cashu request).
+    private func statusView(_ phase: PaymentStatusView.Phase) -> some View {
+        var rows: [PaymentStatusView.DetailRow] = []
+        switch locked {
+        case .melt(let request, _, _):
+            if let quote = meltQuote {
+                rows.append(.init(
+                    icon: "bitcoinsign",
+                    label: "Amount",
+                    value: AmountFormatter.sats(quote.amount, useBitcoinSymbol: settings.useBitcoinSymbol)
+                ))
+                rows.append(.init(icon: "bolt", label: "Method", value: meltPaymentMethod.displayName))
+                if quote.paymentMethod == .onchain {
+                    rows.append(.init(icon: "arrow.up.right", label: "To", value: request))
+                }
+                rows.append(.init(
+                    icon: "arrow.up.arrow.down",
+                    label: "Network fee",
+                    value: AmountFormatter.sats(quote.feeReserve, useBitcoinSymbol: settings.useBitcoinSymbol)
+                ))
+                if let mint = mintInfo(for: quote) ?? activeMeltMint {
+                    rows.append(.init(icon: "bitcoinsign.bank.building", label: "Mint", value: mint.name))
+                }
+            }
+        case .cashuRequest(let creq):
+            if let amount = paymentAmountForCreq {
+                rows.append(.init(
+                    icon: "bitcoinsign",
+                    label: "Amount",
+                    value: AmountFormatter.sats(amount, useBitcoinSymbol: settings.useBitcoinSymbol)
+                ))
+            }
+            if let mint = selectedPaymentMint {
+                rows.append(.init(icon: "bitcoinsign.bank.building", label: "Mint", value: mint.name))
+            }
+            if let memo = creq.description?.trimmingCharacters(in: .whitespacesAndNewlines), !memo.isEmpty {
+                rows.append(.init(icon: "quote.bubble", label: "Memo", value: memo))
+            }
+        case nil:
+            break
         }
-        .frame(maxWidth: .infinity)
+        return PaymentStatusView(
+            details: rows,
+            phase: phase,
+            onDone: onClose,
+            onRetry: { withAnimation { step = .confirm } }
+        )
     }
 
     // MARK: Melt quote + pay
@@ -1578,14 +1620,12 @@ struct UnifiedSendView: View {
         Task { @MainActor in
             do {
                 _ = try await walletManager.meltTokens(quoteId: quote.id, mintUrl: quote.mintUrl)
-                HapticFeedback.notification(.success)
                 withAnimation { step = .sent }
-                try? await Task.sleep(nanoseconds: 1_300_000_000)
-                onClose()
             } catch {
-                HapticFeedback.notification(.error)
+                // Keep errorMessage set so the confirm screen's notice + switch-mint
+                // CTA reappear when the user taps Try Again.
                 presentError(from: error)
-                withAnimation { step = .confirm }
+                withAnimation { step = .failed }
             }
         }
     }
@@ -1778,14 +1818,10 @@ struct UnifiedSendView: View {
                     customAmountSats: creq.amount == nil ? paymentAmountForCreq : nil,
                     preferredMintURL: mint.url
                 )
-                HapticFeedback.notification(.success)
                 withAnimation { step = .sent }
-                try? await Task.sleep(nanoseconds: 1_300_000_000)
-                onClose()
             } catch {
-                HapticFeedback.notification(.error)
                 presentError(from: error)
-                withAnimation { step = .confirm }
+                withAnimation { step = .failed }
             }
         }
     }
@@ -1805,11 +1841,9 @@ struct UnifiedSendView: View {
                     targetMintURL: targetMintURL,
                     onStage: { _ in }
                 )
-                HapticFeedback.notification(.success)
                 withAnimation { step = .sent }
-                try? await Task.sleep(nanoseconds: 1_300_000_000)
-                onClose()
             } catch let topUp as NeedsExternalTopUp {
+                // No held mint can fund it — return to confirm, then show the top-up QR.
                 withAnimation { step = .confirm }
                 try? await Task.sleep(nanoseconds: 300_000_000)
                 topUpContext = TopUpContext(
@@ -1819,16 +1853,14 @@ struct UnifiedSendView: View {
                     quote: topUp.targetQuote
                 )
             } catch is MintSettling {
-                HapticFeedback.notification(.error)
                 presentError(
                     "Still settling — your balance will update shortly. Try again in a moment.",
                     severity: .caution
                 )
-                withAnimation { step = .confirm }
+                withAnimation { step = .failed }
             } catch {
-                HapticFeedback.notification(.error)
                 presentError(from: error)
-                withAnimation { step = .confirm }
+                withAnimation { step = .failed }
             }
         }
     }
@@ -2341,14 +2373,13 @@ struct MeltView: View {
     @State private var meltQuote: MeltQuoteInfo?
     @State private var isGettingQuote = false
     @State private var isPaying = false
-    @State private var isPaid = false
     @State private var errorMessage: String?
     @State private var errorSeverity: ErrorSeverity = .error
     @State private var errorShowsMintAction = false
 
-    // Authorizing overlay state
-    @State private var showAuthorizingOverlay = false
-    @State private var authorizingState: AuthorizingOverlay.FlowState = .authorizing
+    /// Drives the full-screen processing → success → failure status screen.
+    /// nil while the user is still on input/confirm.
+    @State private var paymentPhase: PaymentStatusView.Phase?
 
     private func presentError(_ message: String, severity: ErrorSeverity = .error) {
         errorMessage = message
@@ -2386,22 +2417,11 @@ struct MeltView: View {
     @State private var dismissedClipboardSuggestion = false
 
     private var meltViewStateKey: String {
-        if isPaid { return "paid" }
+        // All three payment phases share one key so switching between them doesn't
+        // re-insert the status screen — the icon morph is owned by PaymentStatusView.
+        if paymentPhase != nil { return "status" }
         if meltQuote != nil { return "quote" }
         return "input"
-    }
-
-    private var shortRecipient: String {
-        let trimmed = requestInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.count > 24 else { return trimmed }
-        let prefix = trimmed.prefix(10)
-        let suffix = trimmed.suffix(10)
-        return "\(prefix)…\(suffix)"
-    }
-
-    private func handleAuthorizingDismiss() {
-        // Reset state so the overlay can be presented again cleanly next time.
-        authorizingState = .authorizing
     }
 
     init(
@@ -2421,9 +2441,9 @@ struct MeltView: View {
     var body: some View {
         NavigationStack {
             Group {
-                if isPaid {
-                    paymentSuccessView
-                        .transition(.scale.combined(with: .opacity))
+                if let paymentPhase {
+                    statusView(paymentPhase)
+                        .transition(.opacity)
                 } else if let quote = meltQuote {
                     quoteConfirmView(quote: quote)
                         .transition(.asymmetric(
@@ -2442,28 +2462,19 @@ struct MeltView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(action: close) {
-                        Image(systemName: "xmark")
+                    // No dismissing mid-authorization (payment is in flight).
+                    if paymentPhase != .processing {
+                        Button(action: close) {
+                            Image(systemName: "xmark")
+                        }
+                        .accessibilityLabel("Close")
                     }
-                    .accessibilityLabel("Close")
                 }
 
                 ToolbarItem(placement: .principal) {
                     Text(screenTitle)
                         .font(.headline)
                 }
-            }
-            .sheet(isPresented: $showAuthorizingOverlay, onDismiss: handleAuthorizingDismiss) {
-                AuthorizingOverlay(
-                    amountSats: meltQuote?.amount ?? 0,
-                    recipient: shortRecipient,
-                    recipientCaption: meltQuote.map { $0.paymentMethod.displayName },
-                    state: $authorizingState,
-                    onDismiss: { showAuthorizingOverlay = false }
-                )
-                .presentationDetents([.height(340)])
-                .presentationBackgroundInteraction(.disabled)
-                .interactiveDismissDisabled()
             }
             .sheet(isPresented: $showingScanner) {
                 ScannerWrapperView(onScanned: handleScannedRequest)
@@ -2924,29 +2935,31 @@ struct MeltView: View {
             .padding(.horizontal, 4)
     }
 
-    private var paymentSuccessView: some View {
-        VStack(spacing: 0) {
-            Spacer()
-
-            VStack(spacing: 16) {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 64))
-                    .foregroundStyle(.green)
-                    .symbolEffect(.bounce, value: isPaid)
-
-                Text("Payment Sent!")
-                    .font(.title2.weight(.semibold))
+    /// Full-screen processing → success → failure status, preserving the payment
+    /// facts (amount / method / on-chain destination / max fee / mint) as rows.
+    private func statusView(_ phase: PaymentStatusView.Phase) -> some View {
+        var rows: [PaymentStatusView.DetailRow] = []
+        if let quote = meltQuote {
+            rows.append(.init(icon: "bitcoinsign", label: "Amount", value: "\(quote.amount) sat"))
+            rows.append(.init(icon: "bolt", label: "Method", value: quote.paymentMethod.displayName))
+            if quote.paymentMethod == .onchain {
+                rows.append(.init(
+                    icon: "arrow.up.right",
+                    label: "To",
+                    value: PaymentRequestParser.normalizeBitcoinRequest(requestInput)
+                ))
             }
-
-            Spacer()
-
-            Button(action: close) {
-                Text("Done")
+            rows.append(.init(icon: "arrow.up.arrow.down", label: "Max fee", value: "\(quote.feeReserve) sat"))
+            if let mint = mintInfo(for: quote) {
+                rows.append(.init(icon: "bitcoinsign.bank.building", label: "Mint", value: mint.name))
             }
-            .glassButton()
-            .padding(.horizontal)
-            .padding(.bottom, 16)
         }
+        return PaymentStatusView(
+            details: rows,
+            phase: phase,
+            onDone: close,
+            onRetry: { withAnimation { paymentPhase = nil } }
+        )
     }
 
     private func syncMeltModeWithAvailableMints() {
@@ -3172,25 +3185,20 @@ struct MeltView: View {
         isPaying = true
         errorMessage = nil
         HapticFeedback.impact(.medium)
-        authorizingState = .authorizing
-        showAuthorizingOverlay = true
+        withAnimation { paymentPhase = .processing }
 
         Task { @MainActor in
             do {
                 let _ = try await walletManager.meltTokens(quoteId: quote.id, mintUrl: quote.mintUrl)
-                authorizingState = .sent
-                // Overlay calls onDismiss after 1.2s; flip isPaid then so the
-                // underlying view transitions to success while the sheet dismisses.
-                try? await Task.sleep(nanoseconds: 1_200_000_000)
-                isPaid = true
-                showAuthorizingOverlay = false
+                withAnimation { paymentPhase = .success }
             } catch {
                 let walletMessage = error.walletMessage
-                authorizingState = .error(walletMessage.text)
+                // Keep errorMessage populated so the confirm screen's notice reappears
+                // if the user taps Try Again.
                 presentError(walletMessage.text, severity: walletMessage.severity)
-                // Let the user read the error in the sheet, then dismiss after 2s.
-                try? await Task.sleep(nanoseconds: 2_000_000_000)
-                showAuthorizingOverlay = false
+                withAnimation {
+                    paymentPhase = .failure(message: walletMessage.text, isCaution: walletMessage.severity == .caution)
+                }
             }
             isPaying = false
         }
