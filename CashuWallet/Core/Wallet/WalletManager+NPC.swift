@@ -80,7 +80,9 @@ extension WalletManager {
                 NotificationCenter.default.post(
                     name: .cashuTokenReceived,
                     object: nil,
-                    userInfo: ["amount": totalAmount, "source": "npub.cash"]
+                    // Background receive: no receive sheet is up to confirm it, so
+                    // ask the home beat to fire the "sats landed" haptic.
+                    userInfo: ["amount": totalAmount, "source": "npub.cash", "homeHaptic": true]
                 )
             }
         } catch {

@@ -81,7 +81,10 @@ struct MainWalletView: View {
         .onReceive(NotificationCenter.default.publisher(for: .cashuTokenReceived)) { note in
             guard let amount = note.userInfo?["amount"] as? UInt64 else { return }
             let fee = note.userInfo?["fee"] as? UInt64
-            showReceivedDelta(amount: amount, fee: fee)
+            // Only background receives (poster sets "homeHaptic") buzz here; in-flow
+            // receives own the success haptic on their confirmation surface.
+            let playHaptic = note.userInfo?["homeHaptic"] as? Bool ?? false
+            showReceivedDelta(amount: amount, fee: fee, playHaptic: playHaptic)
         }
         .onDisappear { deltaDismissTask?.cancel() }
         .onReceive(navigationManager.$pendingMeltInvoice.compactMap { $0 }) { invoice in
@@ -148,6 +151,11 @@ struct MainWalletView: View {
                         .minimumScaleFactor(0.5)
                         .lineLimit(1)
                         .contentTransition(.numericText(value: Double(walletManager.balance)))
+                        // Roll the total on any balance change (receive up, send
+                        // down) and cross-fade the ₿/sat unit swap — mirrors the
+                        // Send/Receive amount display (CurrencyAmountDisplay).
+                        .animation(.snappy, value: walletManager.balance)
+                        .animation(.snappy, value: settings.useBitcoinSymbol)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Balance: \(formatBalanceWithUnit(walletManager.balance))")
@@ -164,8 +172,8 @@ struct MainWalletView: View {
 
     // MARK: - Received Delta Beat
 
-    /// The status line beneath the balance: the transient green received-delta
-    /// beat while a payment just landed, otherwise the fiat sub-amount.
+    /// The status line beneath the balance: the transient received-delta beat
+    /// while a payment just landed, otherwise the fiat sub-amount.
     @ViewBuilder
     private var balanceStatusLine: some View {
         if let delta = receivedDelta {
@@ -179,30 +187,18 @@ struct MainWalletView: View {
         }
     }
 
-    /// Green "✓ +2,500" beat. Grouped via the canonical formatter, no unit (the
-    /// balance beside it carries it), no directional arrow (the down-arrow stays
-    /// exclusive to row badges — One Green Rule). VoiceOver-hidden; the balance
+    /// Quiet "+2,500" beat. Monochrome (`.secondary`) — no green, no checkmark,
+    /// no bounce: the rolling balance above is the primary signal, this just
+    /// names the exact amount that landed. Grouped via the canonical formatter,
+    /// no unit (the balance beside it carries it), no directional arrow (the
+    /// down-arrow stays exclusive to row badges). VoiceOver-hidden; the balance
     /// announces the new total.
     private func receivedDeltaBeat(_ delta: ReceivedDelta) -> some View {
-        Label {
-            Text("+\(settings.formatAmountShort(delta.amount))")
-                .monospacedDigit()
-        } icon: {
-            receivedDeltaCheckmark(id: delta.id)
-        }
-        .font(.body.weight(.semibold))
-        .foregroundStyle(.green)
-        .accessibilityHidden(true)
-    }
-
-    @ViewBuilder
-    private func receivedDeltaCheckmark(id: UUID) -> some View {
-        let base = Image(systemName: "checkmark.circle.fill")
-        if #available(iOS 17.0, *), !reduceMotion {
-            base.symbolEffect(.bounce, value: id)
-        } else {
-            base
-        }
+        Text("+\(settings.formatAmountShort(delta.amount))")
+            .monospacedDigit()
+            .font(.body.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .accessibilityHidden(true)
     }
 
     /// Reuses the sanctioned payment-received celebration spring (Motion §6);
@@ -212,10 +208,15 @@ struct MainWalletView: View {
     }
 
     /// Shows the beat and re-arms a 2.5s dismiss timer. Rapid receives coalesce
-    /// to last-write-wins: the prior timer is cancelled and the new amount
-    /// (fresh id) re-bounces the checkmark.
-    private func showReceivedDelta(amount: UInt64, fee: UInt64?) {
+    /// to last-write-wins: the prior timer is cancelled and the new amount takes
+    /// over. Fires the "sats landed" haptic only when the caller opts in
+    /// (`playHaptic`) — reserved for background receives no visible surface
+    /// confirms (npub.cash). In-flow receives (Lightning / ecash paste via
+    /// PaymentStatusView, a watched Cashu request) already own a success haptic,
+    /// so they leave it off to avoid a double-buzz.
+    private func showReceivedDelta(amount: UInt64, fee: UInt64?, playHaptic: Bool) {
         deltaDismissTask?.cancel()
+        if playHaptic { HapticFeedback.notification(.success) }
         withAnimation(receivedDeltaAnimation) {
             receivedDelta = ReceivedDelta(amount: amount, fee: fee)
         }
