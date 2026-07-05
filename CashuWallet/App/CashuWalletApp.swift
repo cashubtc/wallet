@@ -43,10 +43,8 @@ struct CashuWalletApp: App {
                     .environmentObject(appLockManager)
                     .task {
                         SentryService.initialize()
-                        await walletManager.initialize()
                         CashuRequestListener.shared.attach(walletManager: walletManager)
-                        await CashuRequestListener.shared.start()
-                        await walletManager.checkAllPendingTokens()
+                        await walletManager.initialize()
                     }
                     .onOpenURL { url in
                         navigationManager.handleDeepLink(url: url)

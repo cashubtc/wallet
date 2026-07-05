@@ -120,6 +120,15 @@ class SettingsManager: ObservableObject {
         }
     }
 
+    /// Whether mint traffic is routed through the embedded Tor client. The
+    /// wallet repository must be rebuilt for a change to take effect — the
+    /// settings UI triggers that via `WalletManager.applyTransportPreference()`.
+    @Published var torEnabled: Bool {
+        didSet {
+            settingsStore.torEnabled = torEnabled
+        }
+    }
+
     // MARK: - Initialization
     
     init() {
@@ -137,6 +146,7 @@ class SettingsManager: ObservableObject {
         self.amountDisplayPrimary = AmountDisplayPrimary(rawValue: settingsStore.amountDisplayPrimary) ?? .fiat
         self.appLockEnabled = settingsStore.appLockEnabled
         self.sentryEnabled = settingsStore.sentryEnabled
+        self.torEnabled = settingsStore.torEnabled
 
         persistP2PKKeys()
         

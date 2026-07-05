@@ -31,12 +31,11 @@ extension WalletManager {
 
     private func loadWalletState() async {
         do {
-            NSUbiquitousKeyValueStore.default.synchronize()
             Cdk.initLogging(level: "info")
 
             if let storedMnemonic = try keychainService.loadMnemonic() {
                 mnemonic = storedMnemonic
-                try await initializeWalletForLaunch(mnemonic: storedMnemonic)
+                initializeWalletForLaunch(mnemonic: storedMnemonic)
                 needsOnboarding = false
                 isInitialized = true
                 SentryService.breadcrumb("Wallet loaded", category: "wallet.lifecycle")
@@ -186,7 +185,7 @@ extension WalletManager {
             CashuRequestListener.shared.resetForWalletBoundary()
             SettingsStore.shared.clearWalletScopedData()
 
-            try initializeWalletForCreation(mnemonic: newMnemonic)
+            try await initializeWalletForCreation(mnemonic: newMnemonic)
             try keychainService.saveMnemonic(newMnemonic)
             mnemonic = newMnemonic
             SettingsManager.shared.resetWalletScopedData(resetRuntimeServices: false)
@@ -202,27 +201,79 @@ extension WalletManager {
 
             if let previousMnemonic {
                 mnemonic = previousMnemonic
-                try? await initializeWalletForLaunch(mnemonic: previousMnemonic)
+                initializeWalletForLaunch(mnemonic: previousMnemonic)
             }
 
             throw error
         }
     }
 
-    private func initializeWalletForLaunch(mnemonic: String) async throws {
-        try initializeWalletRepository(mnemonic: mnemonic)
-
+    private func initializeWalletForLaunch(mnemonic: String) {
         mintService.loadCachedMints()
-        await performBestEffortWalletStartupMaintenance()
-        await refreshBalance()
+        balance = mints.reduce(UInt64(0)) { $0 + $1.balance }
         transactionService.loadCachedState()
 
         initializeNostrKeypairLocally(mnemonic: mnemonic)
         setupNPCQuoteListener()
+        startWalletRepositoryForLaunch(mnemonic: mnemonic)
     }
 
-    private func initializeWalletForCreation(mnemonic: String) throws {
-        try initializeWalletRepository(mnemonic: mnemonic)
+    private func startWalletRepositoryForLaunch(mnemonic: String) {
+        walletRepositoryStartupTask?.cancel()
+        walletRepositoryStartupTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let repository = try await self.makeWalletRepository(mnemonic: mnemonic)
+                guard !Task.isCancelled, self.mnemonic == mnemonic else { return }
+
+                self.installWalletRepository(repository)
+                await self.performBestEffortWalletStartupMaintenance()
+                await self.refreshBalance()
+                await self.loadTransactions()
+                await CashuRequestListener.shared.start()
+                await self.checkAllPendingTokens()
+            } catch is CancellationError {
+                return
+            } catch {
+                guard !Task.isCancelled, self.mnemonic == mnemonic else { return }
+                AppLogger.wallet.error("Wallet repository startup failed: \(String(describing: error), privacy: .public)")
+                SentryService.capture(error)
+                self.errorMessage = error.userFacingWalletMessage
+            }
+        }
+    }
+
+    /// Rebuilds the wallet repository with the currently selected network
+    /// transport (Tor or clearnet). Call after `SettingsManager.torEnabled`
+    /// changes. The old repository keeps serving requests until the
+    /// replacement is installed; `activeTransport` is nil in between so the
+    /// UI can show a "switching" state.
+    func applyTransportPreference() {
+        guard let mnemonic, isInitialized else { return }
+
+        walletRepositoryStartupTask?.cancel()
+        activeTransport = nil
+        walletRepositoryStartupTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let repository = try await self.makeWalletRepository(mnemonic: mnemonic)
+                guard !Task.isCancelled, self.mnemonic == mnemonic else { return }
+
+                self.installWalletRepository(repository)
+                await self.refreshBalance()
+            } catch is CancellationError {
+                return
+            } catch {
+                guard !Task.isCancelled, self.mnemonic == mnemonic else { return }
+                AppLogger.wallet.error("Transport switch failed: \(String(describing: error), privacy: .public)")
+                SentryService.capture(error)
+                self.errorMessage = error.userFacingWalletMessage
+            }
+        }
+    }
+
+    private func initializeWalletForCreation(mnemonic: String) async throws {
+        try await initializeWalletRepository(mnemonic: mnemonic)
 
         mintService.loadCachedMints()
         balance = mints.reduce(UInt64(0)) { $0 + $1.balance }
@@ -269,12 +320,32 @@ extension WalletManager {
         mintService.saveMints()
     }
 
-    private func initializeWalletRepository(mnemonic: String) throws {
+    private func initializeWalletRepository(mnemonic: String) async throws {
+        let repository = try await makeWalletRepository(mnemonic: mnemonic)
+        installWalletRepository(repository)
+    }
+
+    private func makeWalletRepository(
+        mnemonic: String
+    ) async throws -> (db: WalletSqliteDatabase, repository: WalletRepository, transport: NetworkTransport) {
         let databaseURL = try walletDatabaseURL()
-        let repository = try initializeRepositoryWithRecovery(mnemonic: mnemonic, databaseURL: databaseURL)
-        
+        let transport: NetworkTransport = SettingsManager.shared.torEnabled ? .tor : .clearnet
+        let result = try await Task.detached(priority: .userInitiated) {
+            try Self.initializeRepositoryWithRecovery(
+                mnemonic: mnemonic,
+                databaseURL: databaseURL,
+                transport: transport
+            )
+        }.value
+        return (result.db, result.repository, transport)
+    }
+
+    private func installWalletRepository(
+        _ repository: (db: WalletSqliteDatabase, repository: WalletRepository, transport: NetworkTransport)
+    ) {
         db = repository.db
         walletRepository = repository.repository
+        activeTransport = repository.transport
         processedQuotes = Set(walletStore.loadProcessedNPCQuotes())
     }
 
@@ -289,10 +360,15 @@ extension WalletManager {
         }
 
         let temporaryDatabaseURL = temporaryDirectory.appendingPathComponent(walletDatabaseFilename)
-        _ = try createRepository(mnemonic: mnemonic, databaseURL: temporaryDatabaseURL)
+        // Clearnet: this repository is created only to validate the mnemonic
+        // and is discarded immediately — no reason to spin up a Tor client.
+        _ = try Self.createRepository(mnemonic: mnemonic, databaseURL: temporaryDatabaseURL, transport: .clearnet)
     }
 
     private func resetRuntimeState() {
+        walletRepositoryStartupTask?.cancel()
+        walletRepositoryStartupTask = nil
+
         if let npcQuoteObserver {
             NotificationCenter.default.removeObserver(npcQuoteObserver)
             self.npcQuoteObserver = nil
@@ -300,6 +376,7 @@ extension WalletManager {
 
         walletRepository = nil
         db = nil
+        activeTransport = nil
         mnemonic = nil
         balance = 0
         pendingBalance = 0
@@ -479,36 +556,42 @@ extension WalletManager {
         }
     }
 
-    private func initializeRepositoryWithRecovery(
+    nonisolated private static func initializeRepositoryWithRecovery(
         mnemonic: String,
-        databaseURL: URL
+        databaseURL: URL,
+        transport: NetworkTransport
     ) throws -> (db: WalletSqliteDatabase, repository: WalletRepository) {
         do {
-            return try createRepository(mnemonic: mnemonic, databaseURL: databaseURL)
+            return try Self.createRepository(mnemonic: mnemonic, databaseURL: databaseURL, transport: transport)
         } catch {
-            guard shouldAttemptDatabaseRecovery(after: error, databaseURL: databaseURL) else {
+            guard Self.shouldAttemptDatabaseRecovery(after: error, databaseURL: databaseURL) else {
                 throw error
             }
-            
-            let backupURL = try backupCorruptedDatabase(at: databaseURL)
+
+            let backupURL = try Self.backupCorruptedDatabase(at: databaseURL)
             AppLogger.wallet.info("Wallet DB recovery: moved corrupted database to \(backupURL.path)")
-            return try createRepository(mnemonic: mnemonic, databaseURL: databaseURL)
+            return try Self.createRepository(mnemonic: mnemonic, databaseURL: databaseURL, transport: transport)
         }
     }
 
-    private func createRepository(
+    nonisolated private static func createRepository(
         mnemonic: String,
-        databaseURL: URL
+        databaseURL: URL,
+        transport: NetworkTransport
     ) throws -> (db: WalletSqliteDatabase, repository: WalletRepository) {
         let database = try WalletSqliteDatabase(filePath: databaseURL.path)
-        let repository = try WalletRepository(
-            mnemonic: mnemonic,
-            store: customWalletStore(db: database)
-        )
+        let store = customWalletStore(db: database)
+        let repository: WalletRepository
+        switch transport {
+        case .tor:
+            repository = try WalletRepository.newWithTor(mnemonic: mnemonic, store: store)
+        case .clearnet:
+            repository = try WalletRepository(mnemonic: mnemonic, store: store)
+        }
         return (database, repository)
     }
 
-    private func shouldAttemptDatabaseRecovery(after error: Error, databaseURL: URL) -> Bool {
+    nonisolated private static func shouldAttemptDatabaseRecovery(after error: Error, databaseURL: URL) -> Bool {
         guard FileManager.default.fileExists(atPath: databaseURL.path) else {
             return false
         }
@@ -521,10 +604,10 @@ extension WalletManager {
             || errorDescription.contains("walletdb")
     }
 
-    private func backupCorruptedDatabase(at databaseURL: URL) throws -> URL {
+    nonisolated private static func backupCorruptedDatabase(at databaseURL: URL) throws -> URL {
         let timestamp = Int(Date().timeIntervalSince1970)
         let backupURL = databaseURL.deletingLastPathComponent()
-            .appendingPathComponent("\(walletDatabaseFilename).corrupt.\(timestamp)")
+            .appendingPathComponent("wallet.db.corrupt.\(timestamp)")
         
         if FileManager.default.fileExists(atPath: backupURL.path) {
             try FileManager.default.removeItem(at: backupURL)
@@ -594,7 +677,7 @@ extension WalletManager {
 
     private func refreshKeysetsIfNeeded(wallet: Wallet, mintUrl: String) async {
         do {
-            let keysets = try await wallet.refreshKeysets()
+            let keysets = try await wallet.keysets(policy: KeysetLoadPolicy.refresh)
             AppLogger.wallet.info(
                 "Refreshed \(keysets.count, privacy: .public) keysets for mint \(mintUrl, privacy: .public)"
             )

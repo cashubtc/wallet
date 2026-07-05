@@ -34,7 +34,14 @@ class MintDiscoveryManager: ObservableObject {
     
     @Published var discoveredMints: [DiscoveredMint] = []
     @Published var isDiscovering = false
-    
+
+    /// Resolves a mint's display name from its `/v1/info`. Injected by the UI
+    /// (backed by `WalletManager.fetchMintPreviewInfo`) so the request goes
+    /// through the wallet's configured transport (Tor) instead of a clearnet
+    /// URLSession. When unset, name backfill is skipped and the row falls back
+    /// to the hostname.
+    var mintNameResolver: ((String) async -> String?)?
+
     private var webSocketTasks: [URLSessionWebSocketTask] = []
     private var sessions: [URLSession] = []
     private let discoveryWindowNanoseconds: UInt64 = 3 * 1_000_000_000
@@ -190,29 +197,19 @@ class MintDiscoveryManager: ObservableObject {
         }
     }
 
-    /// Fetches the mint's declared name from `<url>/v1/info` and, on success,
-    /// updates the matching discovered mint in place. Failures are ignored —
+    /// Resolves the mint's declared name via the injected `mintNameResolver`
+    /// and, on success, updates the matching discovered mint in place.
+    /// Failures (or a missing resolver) are ignored —
     /// `DiscoveredMint.displayName` falls back to the hostname.
     private func resolveName(forMintAt url: String) async {
-        guard let infoURL = URL(string: "\(url)/v1/info") else { return }
-
-        var request = URLRequest(url: infoURL)
-        request.timeoutInterval = 8
-
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
-              let http = response as? HTTPURLResponse,
-              (200..<300).contains(http.statusCode),
-              let info = try? JSONDecoder().decode(MintInfoName.self, from: data),
-              let name = info.name,
-              !name.isEmpty else {
-            return
-        }
+        guard let mintNameResolver else { return }
+        guard let name = await mintNameResolver(url), !name.isEmpty else { return }
 
         if let index = discoveredMints.firstIndex(where: { $0.url == url }) {
             discoveredMints[index].name = name
         }
     }
-    
+
     private func closeAllConnections() {
         for task in webSocketTasks {
             task.cancel(with: .normalClosure, reason: nil)
@@ -229,9 +226,4 @@ class MintDiscoveryManager: ObservableObject {
         webSocketTasks.removeAll { ObjectIdentifier($0) == ObjectIdentifier(task) }
         sessions.removeAll { ObjectIdentifier($0) == ObjectIdentifier(session) }
     }
-}
-
-// Minimal decode of a mint's /v1/info response — just the display name.
-private struct MintInfoName: Decodable {
-    let name: String?
 }

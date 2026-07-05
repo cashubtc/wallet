@@ -43,23 +43,21 @@ extension WalletManager {
         return try await wallet.fetchMintInfo()
     }
 
-    /// Best-effort, side-effect-free preview of a mint's identity (name + icon),
-    /// fetched straight from its `/v1/info` endpoint. Unlike `fetchFullMintInfo`
-    /// this creates no CDK wallet and tracks nothing — it's safe to call the
-    /// moment a user stages a mint URL, before they commit to restoring. Returns
-    /// `nil` (and the caller falls back to a monogram) on any failure.
-    nonisolated func fetchMintPreviewInfo(url: String) async -> (name: String?, iconUrl: String?)? {
+    /// Best-effort, side-effect-free preview of a mint's identity (name + icon).
+    /// Unlike `fetchFullMintInfo` this creates no CDK wallet and tracks nothing —
+    /// it's safe to call the moment a user stages a mint URL, before they commit
+    /// to restoring. The request goes through the wallet repository so it uses
+    /// the configured transport (Tor) instead of a clearnet URLSession. Returns
+    /// `nil` (and the caller falls back to a monogram) on any failure, including
+    /// when the repository is not initialized yet.
+    func fetchMintPreviewInfo(url: String) async -> (name: String?, iconUrl: String?)? {
+        guard let walletRepository else { return nil }
+
         let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
             .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        guard let infoURL = URL(string: "\(trimmed)/v1/info") else { return nil }
+        guard !trimmed.isEmpty else { return nil }
 
-        var request = URLRequest(url: infoURL)
-        request.timeoutInterval = 8
-
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
-              let http = response as? HTTPURLResponse,
-              (200..<300).contains(http.statusCode),
-              let info = try? JSONDecoder().decode(MintPreviewInfo.self, from: data) else {
+        guard let info = try? await walletRepository.fetchMintInfo(mintUrl: MintUrl(url: trimmed)) else {
             return nil
         }
         return (name: info.name, iconUrl: info.iconUrl)
@@ -95,17 +93,5 @@ extension WalletManager {
         
         mintService.updateMintBalances(balancesByMintURL)
         balance = total
-    }
-}
-
-/// Minimal decode of a mint's `/v1/info` (NUT-06) — just the display identity
-/// used to preview a staged mint before it's restored.
-private struct MintPreviewInfo: Decodable {
-    let name: String?
-    let iconUrl: String?
-
-    enum CodingKeys: String, CodingKey {
-        case name
-        case iconUrl = "icon_url"
     }
 }

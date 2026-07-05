@@ -23,6 +23,13 @@ struct MintDiscoverySheet: View {
                     }
                 }
         }
+        .onAppear {
+            // Route /v1/info name lookups through the wallet's transport (Tor)
+            // instead of a clearnet URLSession.
+            discoveryManager.mintNameResolver = { [weak walletManager] url in
+                await walletManager?.fetchMintPreviewInfo(url: url)?.name
+            }
+        }
         .onDisappear { discoveryManager.clearDiscoveredMints() }
     }
 

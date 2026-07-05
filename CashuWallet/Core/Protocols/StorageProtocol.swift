@@ -122,6 +122,7 @@ enum StorageKeys {
     static let amountDisplayPrimary = "settings.amountDisplayPrimary"
     static let appLockEnabled = "settings.appLockEnabled"
     static let sentryEnabled = "settings.sentryEnabled"
+    static let torEnabled = "settings.torEnabled"
 
     enum Legacy {
         static let mints = "savedMints"
