@@ -25,7 +25,7 @@ final class NutshellIntegrationTests: IntegrationTestBase {
     }
 
     func testGetMintKeysets() async throws {
-        let keysets = try await wallet.getMintKeysets(filter: .active)
+        let keysets = try await wallet.keysets(policy: KeysetLoadPolicy.refresh)
         XCTAssertFalse(keysets.isEmpty, "Nutshell mint should have at least one active keyset")
         for keyset in keysets {
             XCTAssertEqual(keyset.unit, .sat, "Keyset unit should be sat")

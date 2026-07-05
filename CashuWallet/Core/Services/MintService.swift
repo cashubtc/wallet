@@ -427,10 +427,10 @@ class MintService: ObservableObject {
             if !meltMethods.isEmpty {
                 mintInfo.supportedMeltMethods = meltMethods
             }
-        }
 
-        if let confirmations = await fetchOnchainMintConfirmations(for: url) {
-            mintInfo.onchainMintConfirmations = confirmations
+            if let confirmations = onchainMintConfirmations(from: fetchedInfo.nuts.nut04.methods) {
+                mintInfo.onchainMintConfirmations = confirmations
+            }
         }
 
         mintInfo.lastUpdated = Date()
@@ -465,56 +465,12 @@ class MintService: ObservableObject {
         return false
     }
 
-    private func fetchOnchainMintConfirmations(for url: String) async -> Int? {
-        guard let infoURL = URL(string: "\(url)/v1/info") else {
-            AppLogger.wallet.error("Invalid mint info URL for \(url)")
-            return nil
-        }
-
-        do {
-            let (data, response) = try await URLSession.shared.data(from: infoURL)
-            guard let httpResponse = response as? HTTPURLResponse else {
-                AppLogger.wallet.error("Mint info request for \(url) returned a non-HTTP response")
-                return nil
-            }
-
-            guard (200..<300).contains(httpResponse.statusCode) else {
-                AppLogger.wallet.error("Mint info request for \(url) failed with status \(httpResponse.statusCode)")
-                return nil
-            }
-
-            let rawInfo = try JSONDecoder().decode(RawMintInfoResponse.self, from: data)
-            return rawInfo.nuts.nut04?.methods.first(where: {
-                $0.method.lowercased() == PaymentMethodKind.onchain.rawValue
-            })?.options?.confirmations
-        } catch {
-            AppLogger.wallet.error("Failed to fetch raw mint info for \(url): \(error)")
-            return nil
-        }
-    }
-}
-
-private struct RawMintInfoResponse: Decodable {
-    let nuts: Nuts
-
-    struct Nuts: Decodable {
-        let nut04: Nut04?
-
-        enum CodingKeys: String, CodingKey {
-            case nut04 = "4"
-        }
-    }
-
-    struct Nut04: Decodable {
-        let methods: [Method]
-    }
-
-    struct Method: Decodable {
-        let method: String
-        let options: Options?
-    }
-
-    struct Options: Decodable {
-        let confirmations: Int?
+    /// Minimum onchain confirmations from the mint's NUT-04 onchain method
+    /// options, taken from the already-fetched (Tor-routed) mint info.
+    private func onchainMintConfirmations(from methods: [Cdk.MintMethodSettings]) -> Int? {
+        methods
+            .first(where: { PaymentMethodKind.from($0.method) == .onchain })?
+            .onchainConfirmations
+            .map(Int.init)
     }
 }

@@ -3,6 +3,14 @@ import SwiftUI
 import Combine
 import Cdk
 
+// MARK: - Network Transport
+
+/// How the wallet repository talks to mints.
+enum NetworkTransport: String {
+    case clearnet
+    case tor
+}
+
 // MARK: - Wallet Manager
 
 /// Central wallet coordinator that orchestrates all wallet operations.
@@ -33,6 +41,11 @@ class WalletManager: ObservableObject {
 
     /// Active unit (sat, usd, etc.)
     @Published var activeUnit: String = "sat"
+
+    /// Transport the current wallet repository was built with. `nil` while no
+    /// repository is installed — i.e. before startup finishes or while the
+    /// repository is being rebuilt after a Tor/clearnet switch.
+    @Published var activeTransport: NetworkTransport?
 
     /// Outcome of the most recent `performICloudBackup()`. Lets the enable path
     /// (which runs the backup via the `iCloudBackupEnabled` setter) read the real
@@ -121,6 +134,7 @@ class WalletManager: ObservableObject {
     let keychainService = KeychainService()
     var mnemonic: String?
     var hasInitialized = false
+    var walletRepositoryStartupTask: Task<Void, Never>?
     var npcQuoteObserver: NSObjectProtocol?
     var serviceChangeCancellables: Set<AnyCancellable> = []
     let walletDatabaseDirectoryName = "cashu-swift"

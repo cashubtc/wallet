@@ -60,8 +60,8 @@ extension WalletManager {
         guard let walletRepository else { return nil }
         do {
             let wallet = try await walletRepository.getWallet(mintUrl: MintUrl(url: mintURL), unit: .sat)
-            let keysets = try await wallet.refreshKeysets()
-            let active = keysets.first(where: { $0.active }) ?? keysets.first
+            let keysets = try await wallet.keysets(policy: KeysetLoadPolicy.refresh)
+            let active = keysets.first(where: { $0.active ?? false }) ?? keysets.first
             return active?.inputFeePpk
         } catch {
             return nil

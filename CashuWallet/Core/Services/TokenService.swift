@@ -253,8 +253,16 @@ class TokenService: ObservableObject {
             let mintUrlObj = MintUrl(url: mintUrl)
 
             let wallet = try await repo.getWallet(mintUrl: mintUrlObj, unit: .sat)
-            let keysets = try await wallet.getMintKeysets(filter: .all)
-            let proofs = try tokenObj.proofs(mintKeysets: keysets)
+            let keysets = try await wallet.keysets(policy: KeysetLoadPolicy.refresh)
+            let keysetInfo = keysets.map {
+                KeySetInfo(
+                    id: $0.id,
+                    unit: $0.unit,
+                    active: $0.active ?? false,
+                    inputFeePpk: $0.inputFeePpk
+                )
+            }
+            let proofs = try tokenObj.proofs(mintKeysets: keysetInfo)
 
             let spentStates = try await wallet.checkProofsSpent(proofs: proofs)
 
