@@ -12,34 +12,42 @@ struct ReceiveTokenDetailView: View {
     @State private var tokenAmount: UInt64 = 0
     @State private var receiveFee: UInt64 = 0
     @State private var mintUrl: String = ""
-    @State private var isReceiving = false
     @State private var errorMessage: String?
     @State private var isLoadingFee = true
     @State private var p2pkPubkeys: [String] = []
     @State private var tokenLockedToKnownKey = true
     @State private var mintIsKnown = true
 
-    /// Once the token is redeemed, the page is taken over by the shared
-    /// full-screen `PaymentStatusView` success (same as every pay/receive
-    /// flow), replacing the confirm content until the user taps Done.
-    @State private var didReceive = false
+    /// Drives the shared full-screen status view once the user taps Receive:
+    /// nil = confirm screen, .processing = "Claiming…", .success = "Payment
+    /// Received!". A brief `.processing` beat lets the redeem read as an
+    /// action that happened rather than an instant jump. Mirrors the send/pay
+    /// side (`SendView.paymentPhase`).
+    @State private var phase: PaymentStatusView.Phase?
 
     var body: some View {
         NavigationStack {
             Group {
-            if didReceive {
-                successView
+            if let phase {
+                statusView(phase)
             } else {
                 confirmContent
             }
             }
-            .animation(.snappy(duration: 0.35), value: didReceive)
+            .animation(.snappy(duration: 0.35), value: phase)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(action: { if didReceive { finish() } else { dismiss() } }) {
+                    Button(action: {
+                        switch phase {
+                        case .none:    dismiss()
+                        case .success: finish()
+                        default:       break
+                        }
+                    }) {
                         Image(systemName: "xmark")
                     }
+                    .disabled(phase == .processing)
                 }
 
                 ToolbarItem(placement: .principal) {
@@ -101,14 +109,10 @@ struct ReceiveTokenDetailView: View {
         } footer: {
             VStack(spacing: 12) {
                 Button(action: receiveToken) {
-                    if isReceiving {
-                        ProgressView()
-                    } else {
-                        Text("Receive")
-                    }
+                    Text("Receive")
                 }
                 .glassButton()
-                .disabled(isReceiving || !tokenLockedToKnownKey)
+                .disabled(!tokenLockedToKnownKey)
 
                 Button(action: receiveLater) {
                     Text("Receive Later")
@@ -121,13 +125,16 @@ struct ReceiveTokenDetailView: View {
         }
     }
 
-    /// Full-screen success shown after redemption — the exact same
+    /// Full-screen status shown once the user taps Receive — the exact same
     /// `PaymentStatusView` the pay/send flows use, so receiving reads
-    /// identically to a sent payment (checkmark → title → detail block → Done).
-    private var successView: some View {
+    /// identically (spinner → checkmark → title → detail block → Done). Passing
+    /// the live `phase` through keeps one mounted instance, so the ring morphs
+    /// into the check in place and the success haptic fires exactly once.
+    private func statusView(_ phase: PaymentStatusView.Phase) -> some View {
         PaymentStatusView(
             details: successRows,
-            phase: .success,
+            phase: phase,
+            processingTitle: "Claiming…",
             successTitle: "Payment Received!",
             onDone: { finish() },
             onRetry: {}
@@ -291,26 +298,33 @@ struct ReceiveTokenDetailView: View {
             return
         }
 
-        isReceiving = true
+        errorMessage = nil
+        withAnimation { phase = .processing }
         Task {
+            // Minimum on-screen time for the "Claiming…" spinner, run
+            // concurrently with the real redeem so we wait max(network, 0.5s) —
+            // a legible beat when redemption is instant, no extra cost when it
+            // isn't. Not a fake delay: the redeem itself hits the mint.
+            async let minHold: Void = Task.sleep(nanoseconds: 500_000_000)
             do {
                 let receivedAmount = try await walletManager.receiveTokens(tokenString: tokenString)
+                try? await minHold
                 await MainActor.run {
                     // Post the home-screen receipt toast (seen after Done), then
-                    // hand the sheet over to the shared full-screen success. It
-                    // owns the success haptic on appear, so don't buzz here.
+                    // morph the spinner into the shared full-screen success. It
+                    // owns the success haptic on the transition, so don't buzz here.
                     NotificationCenter.default.post(
                         name: .cashuTokenReceived,
                         object: nil,
                         userInfo: ["amount": receivedAmount, "fee": UInt64(0)]
                     )
-                    isReceiving = false
-                    didReceive = true
+                    withAnimation { phase = .success }
                 }
             } catch {
+                try? await minHold   // let the spinner settle before the error
                 await MainActor.run {
                     errorMessage = error.userFacingWalletMessage
-                    isReceiving = false
+                    withAnimation { phase = nil }   // back to confirm + inline notice
                     HapticFeedback.notification(.error)
                 }
             }
