@@ -98,7 +98,13 @@ struct ReceiveTokenDetailView: View {
                 .padding(.horizontal)
 
                 if !mintIsKnown && !mintUrl.isEmpty {
-                    newMintBadge
+                    InlineNotice(
+                        message: "You haven't used \(shortMintUrl(mintUrl)) before. Receiving adds it to your wallet — only continue if you trust it.",
+                        title: "New mint",
+                        severity: .caution,
+                        tinted: true
+                    )
+                    .padding(.horizontal)
                 }
 
                 if let error = errorMessage {
@@ -168,26 +174,6 @@ struct ReceiveTokenDetailView: View {
         } else {
             dismiss()
         }
-    }
-
-    private var newMintBadge: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "exclamationmark.shield.fill")
-                .font(.caption)
-                .foregroundStyle(.orange)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("New mint")
-                    .font(.caption.weight(.semibold))
-                Text("You haven't used \(shortMintUrl(mintUrl)) before. Receiving adds it to your wallet — only continue if you trust it.")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(10)
-        .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
-        .padding(.horizontal)
     }
 
     // MARK: - Helpers
