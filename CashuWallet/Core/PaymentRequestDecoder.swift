@@ -270,8 +270,16 @@ enum PaymentRequestDecoder {
         }
     }
 
-    /// `prefix(6)…suffix(6)` short representation for invoices and addresses;
-    /// human-readable addresses are returned in full.
+    /// `prefix(8)…suffix(6)` middle-truncation for opaque destination blobs (invoices,
+    /// on-chain addresses, encoded Cashu requests). Short strings are returned in full.
+    static func middleTruncated(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count > 16 else { return trimmed }
+        return "\(trimmed.prefix(8))…\(trimmed.suffix(6))"
+    }
+
+    /// Short representation for invoices and addresses; human-readable addresses are
+    /// returned in full.
     static func shortRepresentation(_ raw: String, result: PaymentRequestDecodeResult) -> String {
         switch result {
         case .lightningAddress(let address):
@@ -279,9 +287,7 @@ enum PaymentRequestDecoder {
         case .cashuPaymentRequest(let summary):
             return summary.description ?? amountLabel(for: summary) ?? "Cashu payment request"
         case .bolt11, .bolt12, .onchain, .unrecognized:
-            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard trimmed.count > 16 else { return trimmed }
-            return "\(trimmed.prefix(8))…\(trimmed.suffix(6))"
+            return middleTruncated(raw)
         }
     }
 

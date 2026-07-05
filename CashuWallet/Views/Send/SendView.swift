@@ -970,7 +970,9 @@ struct UnifiedSendView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                if let locked, step != .input, statusPhase == nil {
+                // Amount-keypad step keeps the "To" pill up here; the confirm step renders
+                // its own mint + "To" header in the scaffold's floating topAccessory.
+                if let locked, step == .amount, statusPhase == nil {
                     toPill(locked)
                         .padding(.horizontal)
                         .padding(.top, 8)
@@ -1163,19 +1165,33 @@ struct UnifiedSendView: View {
         .accessibilityHint("Double-tap to change the recipient")
     }
 
+    /// Confirm-step header: the standard top mint selector stacked over the "To" pill.
+    /// Lives in the scaffold's floating `topAccessory` so neither pill shifts the
+    /// anchored amount hero (see `PayFlowScaffold`). The mint is `nil` for Cashu-request
+    /// states with no held mint — those keep an actionable row in the details instead.
+    @ViewBuilder
+    private func confirmHeader(mint: MintInfo?, locked: LockedDestination?) -> some View {
+        if let locked {
+            VStack(spacing: 8) {
+                if let mint {
+                    MintConfirmSelectorRow(mint: mint, onTap: { showingMintPicker = true })
+                }
+                toPill(locked)
+            }
+            .padding(.horizontal)
+            .padding(.top, 12)
+        }
+    }
+
     private func pillValue(_ locked: LockedDestination) -> String {
         switch locked {
         case .melt(let request, _, let decoded):
             if case .lightningAddress(let addr) = decoded { return addr }
             return PaymentRequestDecoder.shortRepresentation(request, result: decoded)
         case .cashuRequest(let summary):
-            if let memo = summary.description?.trimmingCharacters(in: .whitespacesAndNewlines), !memo.isEmpty {
-                return memo
-            }
-            if let host = summary.mints.first.flatMap({ URL(string: $0)?.host }) {
-                return host
-            }
-            return "Cashu request"
+            // Mirror the Lightning pill: show the opaque request string, truncated. The
+            // memo still surfaces in the confirm's dedicated Memo detail row.
+            return PaymentRequestDecoder.middleTruncated(summary.encoded)
         }
     }
 
@@ -1409,11 +1425,19 @@ struct UnifiedSendView: View {
                         }
                     } footer: {
                         EmptyView()
+                    } topAccessory: {
+                        confirmHeader(mint: mintInfo(for: quote) ?? activeMeltMint, locked: locked)
                     }
                 } else {
                     // Quote fetch in flight; a fetch failure routes to the shared
                     // full-screen status (see `statusPhase`), not a bespoke dead-end.
-                    ProgressView()
+                    // Keep the header pinned so the mint + "To" pills don't blink out.
+                    VStack(spacing: 0) {
+                        confirmHeader(mint: activeMeltMint, locked: locked)
+                        Spacer(minLength: 0)
+                        ProgressView()
+                        Spacer(minLength: 0)
+                    }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1434,15 +1458,11 @@ struct UnifiedSendView: View {
         availableMeltMints.filter { $0.supportedMeltMethods.contains(meltPaymentMethod) }
     }
 
-    /// Read-only summary rows: the source mint (switchable when there's a choice),
-    /// the on-chain destination (where the pill truncates), the network fee, and the
-    /// total that leaves the balance — all equal-weight details beneath the amount.
+    /// Read-only summary rows: the on-chain destination (where the pill truncates), the
+    /// network fee, and the total that leaves the balance — all equal-weight details
+    /// beneath the amount. The source mint now lives in the top header pill.
     private func meltConfirmRows(_ quote: MeltQuoteInfo) -> some View {
         VStack(spacing: 0) {
-            if let mint = mintInfo(for: quote) ?? activeMeltMint {
-                mintDetailRow(label: "From", mint: mint, switchable: meltCompatibleMints.count > 1)
-                creqDivider
-            }
             if quote.paymentMethod == .onchain, case let .melt(request, _, _) = locked {
                 creqDetailRow(icon: "arrow.up.right", label: "To", value: request)
                 creqDivider
@@ -1827,6 +1847,8 @@ struct UnifiedSendView: View {
                 }
                 .environmentObject(walletManager)
             }
+        } topAccessory: {
+            confirmHeader(mint: creqTopMint(creq), locked: .cashuRequest(creq))
         }
     }
 
@@ -2042,21 +2064,32 @@ struct UnifiedSendView: View {
         return .picker(selected: selected)
     }
 
+    /// The mint shown in the top header pill — only the switchable `.picker` state, since
+    /// that pill is tappable-to-change. A `.fixed` required mint (can't switch) stays a
+    /// read-only "Mint" detail row, and the acquire/unavailable states keep their
+    /// actionable rows; a plain mint pill can't honestly represent any of those.
+    private func creqTopMint(_ creq: CashuPaymentRequestSummary) -> MintInfo? {
+        if case .picker(let selected) = creqMintPresentation(creq) { return selected }
+        return nil
+    }
+
     private func creqMemo(_ creq: CashuPaymentRequestSummary) -> String? {
         guard let description = creq.description?.trimmingCharacters(in: .whitespacesAndNewlines),
               !description.isEmpty else { return nil }
         return description
     }
 
-    /// Detail rows beneath the amount: the source mint (switchable when the request
-    /// accepts more than one), the memo, and the live fee — equal-weight details, no
-    /// prominent header.
+    /// Detail rows beneath the amount: the memo and the live fee. The source mint now
+    /// lives in the top header pill for the payable states; only the acquire/unavailable
+    /// states (no held mint) keep their actionable mint row here.
     @ViewBuilder
     private func creqRequestDetails(_ creq: CashuPaymentRequestSummary) -> some View {
         if creq.isSatUnit {
             VStack(spacing: 0) {
-                creqMintRow(creq)
-                creqDivider
+                if creqTopMint(creq) == nil {
+                    creqMintRow(creq)
+                    creqDivider
+                }
                 if let memo = creqMemo(creq) {
                     creqDetailRow(icon: "quote.bubble", label: "Memo", value: memo)
                     creqDivider
