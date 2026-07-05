@@ -5,6 +5,7 @@ struct TransactionDetailView: View {
     @EnvironmentObject var walletManager: WalletManager
     let transaction: WalletTransaction
     @ObservedObject var settings = SettingsManager.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var copyButtonText = "Copy"
     @State private var showShareSheet = false
@@ -90,6 +91,8 @@ struct TransactionDetailView: View {
                                 Text(AmountFormatter.sats(transaction.amount, useBitcoinSymbol: settings.useBitcoinSymbol))
                                     .font(.system(size: showsQR ? 32 : 48, weight: .semibold, design: .rounded))
                                     .monospacedDigit()
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.5)
                                     .accessibilityLabel("Amount: \(transaction.amount) sats")
                             } else {
                                 CurrencyAmountDisplay(
@@ -202,14 +205,14 @@ struct TransactionDetailView: View {
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 64))
                 .foregroundStyle(.green)
-                .symbolEffect(.bounce, value: didAppear)
+                .symbolEffect(.bounce, value: reduceMotion ? false : didAppear)
                 .padding(.top, 24)
                 .accessibilityLabel("Completed")
         } else if transaction.status == .failed {
             Image(systemName: "xmark.circle.fill")
                 .font(.system(size: 64))
                 .foregroundStyle(.red)
-                .symbolEffect(.bounce, value: didAppear)
+                .symbolEffect(.bounce, value: reduceMotion ? false : didAppear)
                 .padding(.top, 24)
                 .accessibilityLabel("Failed")
         }

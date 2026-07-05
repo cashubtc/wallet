@@ -17,6 +17,8 @@ struct MintDetailView: View {
     @State private var nutsExpanded = false
     @State private var aboutExpanded = false
     @State private var showNavTitle = false
+    @State private var isSettingDefault = false
+    @State private var actionError: String?
 
     private var isDefaultMint: Bool {
         walletManager.activeMint?.url == mint.url
@@ -501,11 +503,33 @@ struct MintDetailView: View {
 
     private var actions: some View {
         VStack(spacing: 4) {
+            if let actionError {
+                InlineNotice(message: actionError, severity: .error)
+                    .padding(.bottom, 8)
+            }
             if !isDefaultMint {
-                Button("Set as Default") {
-                    Task { try? await walletManager.setActiveMint(mint) }
+                Button {
+                    guard !isSettingDefault else { return }
+                    isSettingDefault = true
+                    actionError = nil
+                    Task {
+                        do {
+                            try await walletManager.setActiveMint(mint)
+                        } catch {
+                            actionError = error.userFacingWalletMessage
+                        }
+                        isSettingDefault = false
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        Text("Set as Default")
+                        if isSettingDefault {
+                            ProgressView().tint(.primary)
+                        }
+                    }
                 }
                 .glassButton()
+                .disabled(isSettingDefault)
             }
             Button(role: .destructive) {
                 showRemoveConfirmation = true

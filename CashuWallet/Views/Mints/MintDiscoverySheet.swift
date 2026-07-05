@@ -4,6 +4,7 @@ struct MintDiscoverySheet: View {
     let addMint: (String) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @EnvironmentObject private var walletManager: WalletManager
     @ObservedObject private var discoveryManager = MintDiscoveryManager.shared
     @ObservedObject private var settings = SettingsManager.shared
@@ -133,7 +134,7 @@ struct MintDiscoverySheet: View {
 
             Image(systemName: "checkmark.circle.fill")
                 .font(.title3)
-                .symbolEffect(.bounce, value: addedURLsThisSession.contains(mint.url))
+                .symbolEffect(.bounce, value: reduceMotion ? false : addedURLsThisSession.contains(mint.url))
                 .accessibilityLabel("Added")
         }
         .foregroundStyle(.secondary)

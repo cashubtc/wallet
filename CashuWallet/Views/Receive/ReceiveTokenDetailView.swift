@@ -298,7 +298,7 @@ struct ReceiveTokenDetailView: View {
 
     func receiveToken() {
         guard tokenLockedToKnownKey else {
-            errorMessage = "Missing matching P2PK key for this token."
+            errorMessage = "This token is locked to a key you don't have. Ask the sender to lock it to your key instead."
             return
         }
 

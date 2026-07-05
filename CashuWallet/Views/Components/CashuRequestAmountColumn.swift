@@ -22,6 +22,8 @@ struct CashuRequestAmountColumn: View {
                     .font(.system(.body, design: .rounded).weight(.semibold))
                     .monospacedDigit()
                     .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
                     .contentTransition(.numericText(value: Double(receivedAmount)))
 
                 if showFiat {
@@ -37,6 +39,8 @@ struct CashuRequestAmountColumn: View {
                     .font(.system(.body, design: .rounded).weight(.semibold))
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
 
                 if showFiat {
                     Text(priceService.formatSatsAsFiat(amount))

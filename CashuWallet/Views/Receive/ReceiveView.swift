@@ -288,7 +288,7 @@ struct ReceiveEcashView: View {
                         Image(systemName: "viewfinder")
                             .font(.body.weight(.semibold))
                     }
-                    .accessibilityLabel("Scan QR code")
+                    .accessibilityLabel("Scan QR Code")
                     .accessibilityHint("Opens the camera to scan an ecash token")
                 }
             }
@@ -332,7 +332,7 @@ struct ReceiveEcashView: View {
         HapticFeedback.selection()
         let nostr = NostrService.shared
         guard nostr.isInitialized, !nostr.publicKeyHex.isEmpty else {
-            errorMessage = "Nostr identity not initialized"
+            errorMessage = "Your Nostr identity isn't ready yet. Check Settings → Nostr, then try again."
             return
         }
         let id = CashuRequest.newId()
@@ -357,7 +357,8 @@ struct ReceiveEcashView: View {
             sheetDetent?.wrappedValue = .large
             currentRequest = request
         } catch {
-            errorMessage = "Could not build request: \(error)"
+            AppLogger.ui.error("createNewRequest failed: \(String(describing: error), privacy: .public)")
+            errorMessage = "Couldn't create the request. Please try again."
         }
     }
 

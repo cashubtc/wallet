@@ -44,6 +44,8 @@ struct PaymentStatusView: View {
     let onDone: () -> Void
     let onRetry: () -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     private var phaseKey: Int {
         switch phase {
         case .processing: return 0
@@ -125,14 +127,14 @@ struct PaymentStatusView: View {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 64))
                     .foregroundStyle(.green)
-                    .symbolEffect(.bounce, value: phaseKey)
-                    .transition(.scale(scale: 0.7).combined(with: .opacity))
+                    .symbolEffect(.bounce, value: reduceMotion ? 0 : phaseKey)
+                    .transition(reduceMotion ? .opacity : .scale(scale: 0.7).combined(with: .opacity))
             case .failure(_, let isCaution, _):
                 Image(systemName: isCaution ? "exclamationmark.triangle.fill" : "xmark.circle.fill")
                     .font(.system(size: 64))
                     .foregroundStyle(isCaution ? .orange : .red)
-                    .symbolEffect(.bounce, value: phaseKey)
-                    .transition(.scale(scale: 0.7).combined(with: .opacity))
+                    .symbolEffect(.bounce, value: reduceMotion ? 0 : phaseKey)
+                    .transition(reduceMotion ? .opacity : .scale(scale: 0.7).combined(with: .opacity))
             }
         }
         .frame(width: 72, height: 72)
@@ -206,17 +208,29 @@ struct PaymentStatusView: View {
 /// success cross-fade reads as the ring "closing" into the check rather than a
 /// small pill spinner jumping to a large glyph.
 private struct SpinnerRing: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var spinning = false
 
     var body: some View {
-        Circle()
-            .trim(from: 0.1, to: 1.0)
-            .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 6, lineCap: .round))
-            .frame(width: 64, height: 64)
-            .rotationEffect(.degrees(spinning ? 360 : 0))
-            .animation(.linear(duration: 0.9).repeatForever(autoreverses: false), value: spinning)
-            .onAppear { spinning = true }
-            .accessibilityLabel("Processing")
+        Group {
+            if reduceMotion {
+                // Reduce Motion: hand off to the system indicator rather than a
+                // hand-rolled infinite rotation. It still conveys indeterminate
+                // progress without the custom repeatForever spin.
+                ProgressView()
+                    .controlSize(.large)
+                    .tint(.accentColor)
+            } else {
+                Circle()
+                    .trim(from: 0.1, to: 1.0)
+                    .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 6, lineCap: .round))
+                    .rotationEffect(.degrees(spinning ? 360 : 0))
+                    .animation(.linear(duration: 0.9).repeatForever(autoreverses: false), value: spinning)
+                    .onAppear { spinning = true }
+            }
+        }
+        .frame(width: 64, height: 64)
+        .accessibilityLabel("Processing")
     }
 }
 

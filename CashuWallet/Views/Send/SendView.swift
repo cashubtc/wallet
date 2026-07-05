@@ -407,12 +407,15 @@ struct SendView: View {
                         if tokenClaimed {
                             HStack(spacing: 6) {
                                 Image(systemName: "checkmark.circle.fill")
-                                    .symbolEffect(.bounce, value: tokenClaimed)
+                                    .symbolEffect(.bounce, value: reduceMotion ? false : tokenClaimed)
                                 Text("Claimed")
                             }
+                            // Monochrome, not green: green is reserved for the 64pt
+                            // hero success checks (DESIGN.md retired the small worded
+                            // green ✓ badge). The settled state reads .primary.
                             .font(.subheadline.weight(.medium))
-                            .foregroundStyle(.green)
-                            .transition(.scale.combined(with: .opacity))
+                            .foregroundStyle(.primary)
+                            .transition(reduceMotion ? .opacity : .scale.combined(with: .opacity))
                         } else if isCheckingClaim {
                             HStack(spacing: 6) {
                                 ProgressView().scaleEffect(0.8)
@@ -424,7 +427,7 @@ struct SendView: View {
                         } else {
                             HStack(spacing: 6) {
                                 Image(systemName: "clock")
-                                    .symbolEffect(.pulse, options: .repeating)
+                                    .symbolEffect(.pulse, options: .repeating, isActive: !reduceMotion)
                                 Text("Pending")
                             }
                             .font(.subheadline)
@@ -432,7 +435,7 @@ struct SendView: View {
                             .transition(.opacity)
                         }
                     }
-                    .animation(.spring(response: 0.5, dampingFraction: 0.7), value: tokenClaimed)
+                    .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.5, dampingFraction: 0.7), value: tokenClaimed)
                     .animation(.easeInOut(duration: 0.2), value: isCheckingClaim)
 
                     // Detail rows on canvas with hairline dividers — same
@@ -1106,7 +1109,7 @@ struct UnifiedSendView: View {
 
     private var destinationField: some View {
         HStack(alignment: .top, spacing: 12) {
-            TextField("Address, invoice, or Cashu request", text: $destination, axis: .vertical)
+            TextField("Address, invoice, or Cashu Request", text: $destination, axis: .vertical)
                 .font(.body)
                 .lineLimit(1...4)
                 .textInputAutocapitalization(.never)
@@ -1284,7 +1287,7 @@ struct UnifiedSendView: View {
                 HapticFeedback.selection()
                 route = .receiveToken(token)
             } else {
-                inputHint = "Unrecognized — try a Lightning address, invoice, Bitcoin address, or Cashu request"
+                inputHint = "Unrecognized — try a Lightning address, invoice, Bitcoin address, or Cashu Request"
             }
         }
     }
@@ -1818,7 +1821,7 @@ struct UnifiedSendView: View {
 
             if !creq.isSatUnit {
                 InlineNotice(
-                    message: "This wallet can only pay sat-denominated Cashu requests.",
+                    message: "This wallet can only pay sat-denominated Cashu Requests.",
                     severity: .caution
                 )
                 .padding(.top, 12)
@@ -2718,7 +2721,7 @@ struct MeltView: View {
                             .foregroundStyle(.primary)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Scan QR code")
+                    .accessibilityLabel("Scan QR Code")
 
                     Button(action: pasteFromClipboard) {
                         Image(systemName: "doc.on.clipboard")

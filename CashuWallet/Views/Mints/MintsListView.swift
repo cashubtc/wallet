@@ -134,6 +134,11 @@ struct MintsListView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
+            // The green dot marks the default mint by colour alone; surface the
+            // same state to VoiceOver so it isn't encoded by colour only
+            // (DESIGN.md — never encode state with colour alone).
+            .accessibilityElement(children: .combine)
+            .accessibilityValue(isActive(mint) ? "Default mint" : "")
         }
         .contextMenu {
             Button { setActive(mint) } label: {

@@ -6,6 +6,7 @@ struct CashuRequestDetailView: View {
     @EnvironmentObject var walletManager: WalletManager
     @ObservedObject private var store = CashuRequestStore.shared
     @ObservedObject private var settings = SettingsManager.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let onClose: (() -> Void)?
 
@@ -231,12 +232,12 @@ struct CashuRequestDetailView: View {
             if paymentJustReceived {
                 HStack(spacing: 6) {
                     Image(systemName: "checkmark.circle.fill")
-                        .symbolEffect(.bounce, value: paymentJustReceived)
-                    Text("Payment received!")
+                        .symbolEffect(.bounce, value: reduceMotion ? false : paymentJustReceived)
+                    Text("Payment Received!")
                 }
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(.green)
-                .transition(.scale.combined(with: .opacity))
+                .transition(reduceMotion ? .opacity : .scale.combined(with: .opacity))
             } else if paymentCount > 0 {
                 HStack(spacing: 6) {
                     Image(systemName: "checkmark.seal.fill")
@@ -247,14 +248,14 @@ struct CashuRequestDetailView: View {
             } else {
                 HStack(spacing: 6) {
                     Image(systemName: "clock")
-                        .symbolEffect(.pulse, options: .repeating)
+                        .symbolEffect(.pulse, options: .repeating, isActive: !reduceMotion)
                     Text("Waiting for payment…")
                 }
                 .font(.subheadline)
                 .foregroundStyle(.orange)
             }
         }
-        .animation(.spring(response: 0.5, dampingFraction: 0.7), value: paymentJustReceived)
+        .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.5, dampingFraction: 0.7), value: paymentJustReceived)
         .animation(.easeInOut(duration: 0.2), value: paymentCount)
     }
 

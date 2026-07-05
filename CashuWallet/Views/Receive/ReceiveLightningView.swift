@@ -6,6 +6,7 @@ struct ReceiveLightningView: View {
     @EnvironmentObject var walletManager: WalletManager
     @ObservedObject private var settings = SettingsManager.shared
     @ObservedObject private var priceService = PriceService.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var amountString = ""
     @State private var selectedMethod: PaymentMethodKind = .bolt11
@@ -653,13 +654,13 @@ struct ReceiveLightningView: View {
             if isPaid {
                 HStack(spacing: 6) {
                     Image(systemName: "checkmark.circle.fill")
-                        .symbolEffect(.bounce, value: isPaid)
+                        .symbolEffect(.bounce, value: reduceMotion ? false : isPaid)
                         .accessibilityHidden(true)
                     Text("Payment Received!")
                 }
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(.green)
-                .transition(.scale.combined(with: .opacity))
+                .transition(reduceMotion ? .opacity : .scale.combined(with: .opacity))
             } else if isCheckingPayment || isMinting {
                 HStack(spacing: 6) {
                     ProgressView()
@@ -682,17 +683,21 @@ struct ReceiveLightningView: View {
             } else if mintQuote?.state == .paid || mintQuote?.state == .issued {
                 HStack(spacing: 6) {
                     Image(systemName: "checkmark.seal.fill")
-                        .symbolEffect(.bounce, value: mintQuote?.state)
+                        .symbolEffect(.bounce, value: reduceMotion ? nil : mintQuote?.state)
                         .accessibilityHidden(true)
                     Text("Payment detected")
                 }
+                // Quiet intermediate — payment seen but not yet minted into the
+                // balance. Monochrome (not green): green is reserved for the final
+                // "Payment Received!" celebration below (DESIGN.md — retired the
+                // small worded green success badge).
                 .font(.subheadline.weight(.medium))
-                .foregroundStyle(.green)
-                .transition(.scale.combined(with: .opacity))
+                .foregroundStyle(.secondary)
+                .transition(reduceMotion ? .opacity : .scale.combined(with: .opacity))
             } else {
                 HStack(spacing: 6) {
                     Image(systemName: "clock")
-                        .symbolEffect(.pulse, options: .repeating)
+                        .symbolEffect(.pulse, options: .repeating, isActive: !reduceMotion)
                         .accessibilityHidden(true)
                     Text(pendingStatusText)
                 }
@@ -701,7 +706,7 @@ struct ReceiveLightningView: View {
                 .transition(.opacity)
             }
         }
-        .animation(.spring(response: 0.5, dampingFraction: 0.7), value: isPaid)
+        .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.5, dampingFraction: 0.7), value: isPaid)
         .animation(.easeInOut(duration: 0.2), value: isCheckingPayment)
         .animation(.easeInOut(duration: 0.2), value: isMinting)
         .animation(.easeInOut(duration: 0.2), value: isExpired)

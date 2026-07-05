@@ -540,11 +540,16 @@ The canonical list pattern. Defined in
   2026-06-01). Manual re-check is History pull-to-refresh
   (`syncPendingMintQuotes()` + `checkAllPendingTokens()`).
 - **Separator**: `CanvasDivider()` with the default 28pt leading inset.
-- **Entrance**: row stagger via `.smooth(duration: 0.32).delay(index * 0.035s)`,
-  capped at `maxStaggerIndex = 8`. The first eight rows cascade in; everything
-  after enters immediately. Driven by `hasAppearedOnce` so only the first
-  appearance staggers — subsequent re-renders (filter change, pagination) animate
-  via `.snappy(0.25)` on `value: filter` / `value: currentPage`.
+- **Entrance**: none — rows appear in place. *(Retired 2026-07-06.)* The list
+  once staggered its first eight rows in on appearance, but the History tab is
+  swapped for `Color.clear` when unselected (`MainTabView.tabContent`, a
+  deliberate "fast boot" lazy-mount), so `HistoryView` **remounts on every
+  visit** and the `hasAppearedOnce`-gated stagger replayed each time — reading as
+  an unwanted swoop-in on every Home→History switch, not a once-only flourish.
+  Since the remount is load-bearing and can't cheaply be made to persist the
+  flag, the entrance animation was removed outright: no offset, no per-row delay,
+  no fade. Scroll-reset on filter change still animates via `.snappy(0.25)`
+  (`proxy.scrollTo`); that is a reflow, not an entrance.
 
 ### Cashu Request Rows (inline in the timeline)
 
@@ -815,10 +820,13 @@ why none of these fit before it earns its own name. All seven honor
 `accessibilityReduceMotion` (existing code is not yet uniformly compliant; new
 code must be).
 
-1. **Row stagger** — `.smooth(duration: 0.32).delay(index * 0.035s)` on
-   `value: hasAppearedOnce`, capped at index 8. Drives the History list's
-   first appearance: 6pt y-offset + opacity → final position. Only first
-   appearance staggers; filter/page changes re-render under `.snappy(0.25)`.
+1. **Row stagger** — *retired 2026-07-06.* History rows now appear in place with
+   no entrance animation. The stagger (`.smooth(0.32).delay(index * 0.035s)`,
+   gated on `hasAppearedOnce`) was meant to play once, but the History tab
+   remounts on every visit (the `Color.clear` fast-boot swap in
+   `MainTabView.tabContent`), so it replayed as a swoop-in on every visit and was
+   removed. Left here as one of the seven slots for the record; the entrance
+   vocabulary is now "appear in place." See §5 History Rows → Entrance.
 2. **Badge symbol-replace** — `.contentTransition(.symbolEffect(.replace.downUp))`
    on the history-row directional badge, `.snappy(0.28)` keyed on
    `transaction.status` and `transaction.type`. Morphs `clock.circle.fill` →
@@ -890,10 +898,11 @@ No bounce, no elastic, no custom cubic-bezier, no `.interactiveSpring`.
 - **Do** name iOS text styles (`.body`, `.largeTitle`, `.caption`) so Dynamic
   Type scales for free. Pair balance/amount text with `.minimumScaleFactor(0.5)`
   and `.lineLimit(1)` so AX5 doesn't truncate a money value.
-- **Do** stagger the first eight history rows on entrance and morph the
-  directional badge with `.contentTransition(.symbolEffect(.replace.downUp))`.
-  Those are part of the seven named animations; new screens should reuse
-  them, not invent more.
+- **Don't** add an entrance stagger (or any offset/fade swoop-in) to a list that
+  lives on a tab. The History tab remounts on every visit (`Color.clear` fast-boot
+  swap), so a "play once" entrance replays as an unwanted swoop every time. Rows
+  appear in place; reserve motion for reflows (`.snappy(0.25)` scroll-reset) and
+  explicit user actions (the chooser cascade), never for arriving at a tab.
 - **Do** swap in-sheet faces with a 0.25s opacity cross-fade
   (`.transition(.opacity)` + `.animation(.easeInOut(duration: 0.25), value:)`)
   rather than pushing a sub-view through a `NavigationLink`. Sheets are units

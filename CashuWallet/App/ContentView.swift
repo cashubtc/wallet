@@ -222,6 +222,7 @@ final class AppLockManager: ObservableObject {
 /// appear and offers a manual retry if the user cancels.
 struct AppLockView: View {
     @EnvironmentObject private var appLock: AppLockManager
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var didPrompt = false
 
     var body: some View {
@@ -234,7 +235,7 @@ struct AppLockView: View {
                 Image(systemName: Self.biometryGlyph)
                     .font(.system(size: 44, weight: .regular))
                     .foregroundStyle(.secondary)
-                    .symbolEffect(.pulse, options: .repeating, isActive: appLock.isAuthenticating)
+                    .symbolEffect(.pulse, options: .repeating, isActive: appLock.isAuthenticating && !reduceMotion)
 
                 Text("Wallet Locked")
                     .font(.title3.weight(.semibold))

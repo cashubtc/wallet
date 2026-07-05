@@ -9,11 +9,15 @@ class ScannerViewModel: ObservableObject {
     @Published var scanProgress: Double = 0
     @Published var isScanning = true
     @Published var errorMessage: String?
-    
+    /// Severity of `errorMessage`. `.error` paints the alarm-red toast; `.info`
+    /// renders a neutral material so a success confirmation (e.g. "copied") isn't
+    /// styled as a failure.
+    @Published var noticeSeverity: ErrorSeverity = .error
+
     #if canImport(URKit)
     private var decoder = URDecoder()
     #endif
-    
+
     func reset() {
         #if canImport(URKit)
         decoder = URDecoder()
@@ -21,6 +25,7 @@ class ScannerViewModel: ObservableObject {
         scanProgress = 0
         isScanning = true
         errorMessage = nil
+        noticeSeverity = .error
     }
     
     func processFragment(_ fragment: String) -> String? {
@@ -186,7 +191,11 @@ struct ScannerWrapperView: View {
                         Text(error)
                             .foregroundStyle(.primary)
                             .padding()
-                            .background(Color.red)
+                            .background(
+                                scannerModel.noticeSeverity == .error
+                                    ? AnyShapeStyle(Color.red)
+                                    : AnyShapeStyle(.regularMaterial)
+                            )
                             .clipShape(.rect(cornerRadius: 10))
                             .padding(.bottom, 100)
                     }
@@ -200,6 +209,7 @@ struct ScannerWrapperView: View {
                         Image(systemName: "xmark")
                             .foregroundStyle(.primary)
                     }
+                    .accessibilityLabel("Close")
                 }
             }
             .onAppear {
@@ -314,7 +324,7 @@ struct ScannerWrapperView: View {
                 scannedCashuPaymentRequest = request
                 navigateToCashuPaymentRequest = true
             } else {
-                scannerModel.errorMessage = "That's not a Cashu request."
+                scannerModel.errorMessage = "That's not a Cashu Request. Scan a Cashu Request code and try again."
                 HapticFeedback.notification(.error)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
                     scannerModel.reset()
@@ -395,13 +405,15 @@ struct ScannerWrapperView: View {
             let generator = UINotificationFeedbackGenerator()
             generator.notificationOccurred(.success)
 
+            // A confirmation, not a failure — render it on a neutral toast.
+            scannerModel.noticeSeverity = .info
             scannerModel.errorMessage = "Mint URL copied to clipboard"
 
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                 self.dismiss()
             }
         } else {
-            scannerModel.errorMessage = "Unknown QR Code format"
+            scannerModel.errorMessage = "This QR code isn't a payment code we recognize. Scan a Lightning invoice, ecash token, or Cashu Request."
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
                 scannerModel.reset()
             }
@@ -482,7 +494,7 @@ struct CashuPaymentRequestPayView: View {
                     // so they never push the details anchor.
                     if !request.isSatUnit {
                         InlineNotice(
-                            message: "This wallet can only pay sat-denominated Cashu requests.",
+                            message: "This wallet can only pay sat-denominated Cashu Requests.",
                             severity: .caution
                         )
                         .padding(.top, 12)
@@ -1373,9 +1385,7 @@ struct CashuTopUpInvoiceSheet: View {
                     .frame(maxWidth: .infinity)
                 }
 
-                Button(action: copyInvoice) {
-                    Label("Copy invoice", systemImage: "doc.on.doc")
-                }
+                Button("Copy Invoice", action: copyInvoice)
                 .glassButton()
                 .disabled(phase != .awaitingPayment)
                 .padding(.horizontal)
@@ -1425,9 +1435,11 @@ struct CashuTopUpInvoiceSheet: View {
                     .foregroundStyle(.secondary)
             }
         case .done:
+            // Monochrome, not green — green is reserved for the 64pt hero success
+            // checks (DESIGN.md retired the small worded green ✓ badge).
             Label("Sent", systemImage: "checkmark.circle.fill")
                 .font(.subheadline)
-                .foregroundStyle(.green)
+                .foregroundStyle(.primary)
         }
     }
 

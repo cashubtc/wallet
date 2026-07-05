@@ -57,7 +57,7 @@ struct MainWalletView: View {
                         Image(systemName: "viewfinder")
                             .font(.body.weight(.semibold))
                     }
-                    .accessibilityLabel("Scan QR code")
+                    .accessibilityLabel("Scan QR Code")
                     .accessibilityHint("Opens the QR scanner")
                 }
             }
@@ -161,9 +161,10 @@ struct MainWalletView: View {
                 .accessibilityLabel("Balance: \(formatBalanceWithUnit(walletManager.balance))")
                 .accessibilityHint("Tap to toggle between Bitcoin and Satoshi")
 
-                // Status line under the balance: a transient green received-delta
-                // beat takes over the fiat slot for 2.5s on receipt, then fiat
-                // fades back. Same slot, so the swap doesn't reflow the balance.
+                // Status line under the balance: a transient monochrome
+                // received-delta beat takes over the fiat slot for 2.5s on receipt,
+                // then fiat fades back. Same slot, so the swap doesn't reflow the
+                // balance. (De-greened 2026-07-05 — the balance roll carries the moment.)
                 balanceStatusLine
             }
             .padding(.top, 18)
@@ -374,7 +375,7 @@ struct MainWalletView: View {
             // "Recent" header here: with nothing to label it's redundant, and
             // dropping it matches History's clean full-screen empty state.
             NativeEmptyState(
-                title: "No activity yet",
+                title: "No Activity Yet",
                 systemImage: "tray",
                 description: "Your recent payments will show up here."
             )
@@ -816,6 +817,7 @@ private struct WalletActionSheetView: View {
     let onAddCustomMint: () -> Void
 
     @EnvironmentObject private var walletManager: WalletManager
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var revealed = false
     @State private var addingMintUrl: String?
     @State private var addMintError: String?
@@ -899,9 +901,11 @@ private struct WalletActionSheetView: View {
             ForEach(Array(options.enumerated()), id: \.element.id) { index, option in
                 optionButton(title: option.title, icon: option.icon, action: option.flow)
                     .opacity(revealed ? 1 : 0)
-                    .offset(x: revealed ? 0 : -12)
+                    .offset(x: reduceMotion ? 0 : (revealed ? 0 : -12))
                     .animation(
-                        .smooth(duration: 0.32).delay(Double(index) * 0.07),
+                        reduceMotion
+                            ? .easeInOut(duration: 0.2)
+                            : .smooth(duration: 0.32).delay(Double(index) * 0.07),
                         value: revealed
                     )
             }

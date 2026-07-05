@@ -1607,7 +1607,7 @@ struct ImportNsecSheet: View {
             return false
         }
         guard trimmed.count >= 59 else {
-            errorMessage = "nsec is too short"
+            errorMessage = "That doesn't look like a complete nsec. Check you copied the whole key and try again."
             return false
         }
         return true

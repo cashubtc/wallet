@@ -19,6 +19,8 @@ struct TransactionAmountColumn: View {
                 .font(.system(.body, design: .rounded).weight(.semibold))
                 .monospacedDigit()
                 .foregroundStyle(amountColor)
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
                 .contentTransition(.numericText(value: Double(transaction.amount)))
 
             if showFiat {
