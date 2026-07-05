@@ -58,9 +58,9 @@ struct ReceiveTokenDetailView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(action: {
                         switch phase {
-                        case .none:    dismiss()
-                        case .success: finish()
-                        default:       break
+                        case .none:              dismiss()
+                        case .success, .failure: finish()
+                        default:                 break   // .processing — button stays disabled
                         }
                     }) {
                         Image(systemName: "xmark")
@@ -160,8 +160,9 @@ struct ReceiveTokenDetailView: View {
             phase: phase,
             processingTitle: "Claiming…",
             successTitle: "Payment Received!",
+            failureTitle: "Couldn't Receive",
             onDone: { finish() },
-            onRetry: {}
+            onRetry: { withAnimation { self.phase = nil } }   // back to the confirm screen
         )
     }
 
@@ -324,11 +325,20 @@ struct ReceiveTokenDetailView: View {
                     withAnimation { phase = .success }
                 }
             } catch {
-                try? await minHold   // let the spinner settle before the error
+                try? await minHold   // let the spinner settle before the failure
                 await MainActor.run {
-                    errorMessage = error.userFacingWalletMessage
-                    withAnimation { phase = nil }   // back to confirm + inline notice
-                    HapticFeedback.notification(.error)
+                    // Route redeem failures through the SAME full-screen status view
+                    // as success (red X + terminal-aware CTA), mirroring the send/pay
+                    // side — not the inline confirm-screen notice. PaymentStatusView
+                    // owns the error haptic, so don't buzz here.
+                    let message = error.walletMessage
+                    withAnimation {
+                        phase = .failure(
+                            message: message.text,
+                            isCaution: message.severity == .caution,
+                            isTerminal: message.recoverability == .terminal
+                        )
+                    }
                 }
             }
         }
