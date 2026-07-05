@@ -1568,15 +1568,18 @@ struct UnifiedSendView: View {
         switch locked {
         case .melt(let request, _, _):
             if let quote = meltQuote {
+                // Same row order as MeltView's status screen (Method → To → Amount →
+                // fee → Mint) so both Lightning/on-chain pay screens read alike and the
+                // rows stay stable through processing.
+                rows.append(.init(icon: "bolt", label: "Method", value: meltPaymentMethod.displayName))
+                if quote.paymentMethod == .onchain {
+                    rows.append(.init(icon: "arrow.up.right", label: "To", value: request))
+                }
                 rows.append(.init(
                     icon: "bitcoinsign",
                     label: "Amount",
                     value: AmountFormatter.sats(quote.amount, useBitcoinSymbol: settings.useBitcoinSymbol)
                 ))
-                rows.append(.init(icon: "bolt", label: "Method", value: meltPaymentMethod.displayName))
-                if quote.paymentMethod == .onchain {
-                    rows.append(.init(icon: "arrow.up.right", label: "To", value: request))
-                }
                 rows.append(.init(
                     icon: "arrow.up.arrow.down",
                     label: "Network fee",
@@ -1596,16 +1599,19 @@ struct UnifiedSendView: View {
                 ))
             }
         case .cashuRequest(let creq):
-            if let amount = paymentAmountForCreq {
-                rows.append(.init(
-                    icon: "bitcoinsign",
-                    label: "Amount",
-                    value: AmountFormatter.sats(amount, useBitcoinSymbol: settings.useBitcoinSymbol)
-                ))
-            }
-            if let mint = selectedPaymentMint {
-                rows.append(.init(icon: "bitcoinsign.bank.building", label: "Mint", value: mint.name))
-            }
+            // Fixed slot order (matches CashuPaymentRequestPayView) so late-resolving
+            // values (the fee, or the mint in the acquire path) fill their reserved slot
+            // in place instead of inserting mid-list and shoving the rows below down.
+            rows.append(.init(
+                icon: "bitcoinsign",
+                label: "Amount",
+                value: paymentAmountForCreq.map {
+                    AmountFormatter.sats($0, useBitcoinSymbol: settings.useBitcoinSymbol)
+                } ?? "",
+                isPending: paymentAmountForCreq == nil
+            ))
+            rows.append(creqStatusMintRow)
+            rows.append(creqStatusFeeRow)
             if let memo = creq.description?.trimmingCharacters(in: .whitespacesAndNewlines), !memo.isEmpty {
                 rows.append(.init(icon: "quote.bubble", label: "Memo", value: memo))
             }
@@ -2048,6 +2054,44 @@ struct UnifiedSendView: View {
             let fee = await walletManager.estimateCashuPaymentFee(amountSats: amount, mintURL: mintURL)
             if Task.isCancelled { return }
             feeState = fee.map { $0 == 0 ? .free : .amount($0) } ?? .unavailable
+        }
+    }
+
+    /// The paying mint as a status detail row, always present so its slot is reserved:
+    /// the held mint's name; in the acquire path the target host; a spinner only if
+    /// neither is known yet.
+    private var creqStatusMintRow: PaymentStatusView.DetailRow {
+        let icon = "bitcoinsign.bank.building"
+        if let mint = selectedPaymentMint {
+            return .init(icon: icon, label: "Mint", value: mint.name)
+        }
+        if let host = acquireTargetHost {
+            return .init(icon: icon, label: "Mint", value: host)
+        }
+        return .init(icon: icon, label: "Mint", value: "", isPending: true)
+    }
+
+    /// The swap fee as a status detail row, always present so its slot is reserved.
+    /// Mirrors `creqFeeValueText`: a spinner while the fee computes, then the value;
+    /// acquiring a mint routes over Lightning, whose reserve is confirmed later.
+    private var creqStatusFeeRow: PaymentStatusView.DetailRow {
+        let icon = "arrow.up.arrow.down"
+        if needsAcquire {
+            return .init(icon: icon, label: "Fees", value: "Network fee")
+        }
+        switch feeState {
+        case .loading:
+            return .init(icon: icon, label: "Fees", value: "", isPending: true)
+        case .free:
+            return .init(icon: icon, label: "Fees", value: "No fee")
+        case .amount(let fee):
+            return .init(
+                icon: icon,
+                label: "Fees",
+                value: AmountFormatter.sats(fee, useBitcoinSymbol: settings.useBitcoinSymbol)
+            )
+        case .idle, .unavailable:
+            return .init(icon: icon, label: "Fees", value: "—")
         }
     }
 
@@ -2965,7 +3009,10 @@ struct MeltView: View {
     private func statusView(_ phase: PaymentStatusView.Phase) -> some View {
         var rows: [PaymentStatusView.DetailRow] = []
         if let quote = meltQuote {
-            rows.append(.init(icon: "bitcoinsign", label: "Amount", value: "\(quote.amount) sat"))
+            // Same row order as `quoteConfirmView` so the rows hold their positions on
+            // the confirm → processing transition (only the amount hero morphs into the
+            // spinner). The mint — a top chip on confirm, which the status scaffold has
+            // no room for — becomes the trailing row here.
             rows.append(.init(icon: "bolt", label: "Method", value: quote.paymentMethod.displayName))
             if quote.paymentMethod == .onchain {
                 rows.append(.init(
@@ -2974,6 +3021,7 @@ struct MeltView: View {
                     value: PaymentRequestParser.normalizeBitcoinRequest(requestInput)
                 ))
             }
+            rows.append(.init(icon: "bitcoinsign", label: "Amount", value: "\(quote.amount) sat"))
             rows.append(.init(icon: "arrow.up.arrow.down", label: "Max fee", value: "\(quote.feeReserve) sat"))
             if let mint = mintInfo(for: quote) {
                 rows.append(.init(icon: "bitcoinsign.bank.building", label: "Mint", value: mint.name))

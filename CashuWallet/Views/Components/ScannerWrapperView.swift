@@ -1127,16 +1127,19 @@ struct CashuPaymentRequestPayView: View {
     /// facts (amount / mint / fee / memo) as rows. onDone completes like the old
     /// overlay's onDismiss did; onRetry returns to the confirm screen.
     private func statusView(_ phase: PaymentStatusView.Phase) -> some View {
-        var rows: [PaymentStatusView.DetailRow] = []
-        if let amount = paymentAmount {
-            rows.append(.init(icon: "bitcoinsign", label: "Amount", value: "\(amount) sat"))
-        }
-        if let mint = selectedPaymentMint {
-            rows.append(.init(icon: "bitcoinsign.bank.building", label: "Mint", value: mint.name))
-        }
-        if let feeRow = statusFeeRow {
-            rows.append(feeRow)
-        }
+        // Fixed slot order — every row is present from the first frame, so values that
+        // resolve late (the fee, or the mint in the acquire path) fill their reserved
+        // slot in place instead of inserting and shoving the rows below them.
+        var rows: [PaymentStatusView.DetailRow] = [
+            .init(
+                icon: "bitcoinsign",
+                label: "Amount",
+                value: paymentAmount.map { "\($0) sat" } ?? "",
+                isPending: paymentAmount == nil
+            ),
+            statusMintRow,
+            statusFeeRow,
+        ]
         if let memo = requestMemo {
             rows.append(.init(icon: "quote.bubble", label: "Memo", value: memo))
         }
@@ -1151,20 +1154,41 @@ struct CashuPaymentRequestPayView: View {
         )
     }
 
-    /// The resolved swap fee as a detail row; nil while unknown so we don't show a
-    /// placeholder on the status screen.
-    private var statusFeeRow: PaymentStatusView.DetailRow? {
+    /// The paying mint as a detail row, always present so its slot is reserved. Shows
+    /// the held mint's name; in the acquire path (mint not held yet) it shows the
+    /// target host so the slot still has a real value, and only spins if neither is known.
+    private var statusMintRow: PaymentStatusView.DetailRow {
+        let icon = "bitcoinsign.bank.building"
+        if let mint = selectedPaymentMint {
+            return .init(icon: icon, label: "Mint", value: mint.name)
+        }
+        if let host = acquireTargetHost {
+            return .init(icon: icon, label: "Mint", value: host)
+        }
+        return .init(icon: icon, label: "Mint", value: "", isPending: true)
+    }
+
+    /// The swap fee as a detail row, always present so its slot is reserved. Mirrors
+    /// the confirm screen's `feeValueText`: a spinner while the fee computes, then the
+    /// value; acquiring a mint routes over Lightning, whose reserve is confirmed later.
+    private var statusFeeRow: PaymentStatusView.DetailRow {
+        let icon = "arrow.up.arrow.down"
+        if needsAcquire {
+            return .init(icon: icon, label: "Fees", value: "Network fee")
+        }
         switch feeState {
+        case .loading:
+            return .init(icon: icon, label: "Fees", value: "", isPending: true)
         case .free:
-            return .init(icon: "arrow.up.arrow.down", label: "Fees", value: "No fee")
+            return .init(icon: icon, label: "Fees", value: "No fee")
         case .amount(let fee):
             return .init(
-                icon: "arrow.up.arrow.down",
+                icon: icon,
                 label: "Fees",
                 value: AmountFormatter.sats(fee, useBitcoinSymbol: settings.useBitcoinSymbol)
             )
-        case .idle, .loading, .unavailable:
-            return nil
+        case .idle, .unavailable:
+            return .init(icon: icon, label: "Fees", value: "—")
         }
     }
 }

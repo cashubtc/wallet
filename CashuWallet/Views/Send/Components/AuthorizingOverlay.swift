@@ -27,13 +27,16 @@ struct PaymentStatusView: View {
         let icon: String
         let label: String
         let value: String
+        /// When true the value slot shows a mini spinner instead of `value`, so a row
+        /// whose datum is still resolving keeps its slot reserved (no pop-in / reflow).
+        var isPending: Bool = false
         var id: String { label }
     }
 
     let details: [DetailRow]
     let phase: Phase
 
-    var processingTitle: String = "Authorizing…"
+    var processingTitle: String = "Processing…"
     var successTitle: String = "Payment Sent!"
     var failureTitle: String = "Payment Failed"
 
@@ -172,11 +175,19 @@ struct PaymentStatusView: View {
             Label(row.label, systemImage: row.icon)
                 .foregroundStyle(.secondary)
             Spacer()
-            Text(row.value)
-                .fontWeight(.medium)
-                .multilineTextAlignment(.trailing)
-                .lineLimit(1)
-                .truncationMode(.middle)
+            if row.isPending {
+                // Value not resolved yet — hold the slot with a mini spinner (matches
+                // the confirm screen's loading-fee treatment) rather than dropping the
+                // row, so nothing below it shifts when the value arrives.
+                ProgressView().controlSize(.mini)
+            } else {
+                Text(row.value)
+                    .fontWeight(.medium)
+                    .multilineTextAlignment(.trailing)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .contentTransition(.opacity)
+            }
         }
         .font(.subheadline)
         .padding(.horizontal, 4)
