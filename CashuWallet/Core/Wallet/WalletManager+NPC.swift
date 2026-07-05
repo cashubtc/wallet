@@ -1,4 +1,5 @@
 import Foundation
+import CommonCrypto
 import Cdk
 
 extension WalletManager {
@@ -9,12 +10,45 @@ extension WalletManager {
         do {
             let seedData = Data(mnemonic.utf8).sha256()
             try NostrService.shared.deriveKeypair(from: seedData)
-            try NPCService.shared.initializeWithSeed(seedData)
+            // CDK derives the NpubCash key via NIP-06 from the wallet's
+            // 64-byte BIP39 seed (the same seed WalletRepository uses), and
+            // rejects anything shorter — the 32-byte sha256 seed above is
+            // only for the legacy NostrService identity.
+            let walletSeed = try Self.bip39Seed(mnemonic: mnemonic)
+            try NPCService.shared.initializeWithSeed(walletSeed)
             return true
         } catch {
             AppLogger.security.error("Failed to initialize Nostr keypair: \(error)")
             return false
         }
+    }
+
+    /// BIP39 seed (PBKDF2-HMAC-SHA512, 2048 rounds, empty passphrase),
+    /// matching cdk's `Mnemonic::to_seed_normalized("")`.
+    private static func bip39Seed(mnemonic: String, passphrase: String = "") throws -> Data {
+        let password = Array(mnemonic.decomposedStringWithCompatibilityMapping.utf8)
+        let salt = Array(("mnemonic" + passphrase).decomposedStringWithCompatibilityMapping.utf8)
+        var seed = [UInt8](repeating: 0, count: 64)
+
+        let status = password.withUnsafeBytes { passwordBytes in
+            CCKeyDerivationPBKDF(
+                CCPBKDFAlgorithm(kCCPBKDF2),
+                passwordBytes.bindMemory(to: CChar.self).baseAddress,
+                password.count,
+                salt,
+                salt.count,
+                CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA512),
+                2048,
+                &seed,
+                seed.count
+            )
+        }
+
+        guard status == kCCSuccess else {
+            throw WalletError.notInitialized
+        }
+
+        return Data(seed)
     }
 
     func setupNPCQuoteListener() {
