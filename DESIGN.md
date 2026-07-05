@@ -210,20 +210,22 @@ as a tinted background.
   receiver's reward, but **no longer on a ledger amount** — *as of 2026-06-01
   in-row amount green is retired* (see the amended One Green Rule; transaction
   and Cashu Request row amounts are `.primary` when settled, `.secondary` when
-  pending). Green now lives only in **off-row / detail-surface success states**:
-  the transient home received-delta beat (`✓ +amount`), the default-mint
-  indicator dot, the `checkmark.seal.fill` "N payments received" status and the
-  `checkmark.circle.fill` payment-received toast inside `CashuRequestDetailView`,
-  and the transaction detail-sheet completed checkmark. **Nothing on a list row
-  is green.** The leading directional arrow is always `.secondary` regardless of
-  direction or state — green belongs to receipt-confirmation surfaces, not the
-  ledger line.
-- **Pending Orange** (`Color.orange`, ≈ `#FF9500` / `#FF9F0A`): foreground for
-  the detail-sheet "pending" status badge (`TransactionDetailView`) and for the
-  "Waiting for payment…" clock on a Cashu Request. It does **not** appear on a
-  transaction *row* — a pending row is the muted `.secondary` amount alone
-  (amended 2026-06-01). When used as a background it lives at `.opacity(0.1)` —
-  the quiet-pending principle made visual.
+  pending). Green lives in **off-row / detail-surface success states**: the
+  default-mint indicator dot; the `checkmark.seal.fill` "N payments received"
+  status and `checkmark.circle.fill` toast inside `CashuRequestDetailView`; the
+  64pt `checkmark.circle.fill` success icon on `PaymentStatusView`; and the same
+  64pt completed check on the transaction detail sheet (`TransactionDetailView`).
+  *As of 2026-07-05 the home received-delta beat is no longer green* (see the One
+  Green Rule). **Nothing on a list row is green.** The leading directional arrow
+  is always `.secondary` regardless of direction or state — green belongs to
+  receipt-confirmation surfaces, not the ledger line.
+- **Pending Orange** (`Color.orange`, ≈ `#FF9500` / `#FF9F0A`): foreground for the
+  "Waiting for payment…" clock on a Cashu Request and the amber
+  `exclamationmark.triangle.fill` caution on `PaymentStatusView`. It does **not**
+  appear on a transaction *row* — a pending row is the muted `.secondary` amount
+  alone (amended 2026-06-01) — nor on the transaction detail sheet, whose pending
+  state is a monochrome "Pending" `Status` row (2026-07-05(c)). When used as a
+  background it lives at `.opacity(0.1)` — the quiet-pending principle made visual.
 - **Error Red** (`Color.red`, ≈ `#FF3B30` / `#FF453A`): the `.failed` status
   foreground and destructive-action accents. As a tint background it appears at
   `.opacity(0.18)` (e.g. the authorizing-overlay destructive surface).
@@ -256,27 +258,60 @@ color elsewhere. *Rationale for the carve-out:* mixing green/white/gray amounts
 at mixed weights read as noisy rather than calm; a single white-settles /
 gray-pends language is more aligned with the "System Utility" North Star, and
 direction is already carried by the leading arrow + the `+`/`−` prefix.
-Green now survives in **two off-row places only**, neither of which is a
+Green now survives in **one off-row place only**, which is not a
 transaction-row amount:
-1. The home-screen received-delta beat (the transient `✓ +amount` under the
-   balance, `AnimatedBalanceView`), green-on-receipt — a momentary celebratory
-   confirmation that carries **no directional arrow** and fades in ~1s.
-2. The **default-mint indicator dot** — a small green dot on a mint's icon
+1. The **default-mint indicator dot** — a small green dot on a mint's icon
    (Mints list `MintsListView`, mint profile `MintDetailView`) marking the
    user's selected default mint. A *selection* marker (same axis as "Set as
    Default"), carries no amount or arrow, never appears on a transaction row
    (added 2026-05-31).
-The detail sheet (`TransactionDetailView`) keeps its own *status-badge* colour
-vocabulary (orange pending / green completed checkmark) — that is a labelled
-status pill, a different surface from the ledger amount, and is intentionally
-left untouched. Its **hero** (shown when there is no QR to display, e.g. a
-received ecash) is the same muted directional arrow the list uses
-(`arrow.down`/`arrow.up`, `.secondary`, on a `Color(.secondarySystemFill)`
-circle) scaled up to 72pt — *not* a per-kind glyph (the old `link.circle` /
-`bolt.fill` set was retired 2026-06-01). The **Type** and **State** rows are
-omitted: the nav title (`WalletTransaction.displayTitle`) names the
-kind/direction and the status badge carries the state, so repeating them as rows
-is redundant.
+*Amended 2026-07-05: the home-screen received-delta beat is no longer green.* The
+green `✓ +amount` celebration under the balance was retired as corny; the hero
+balance now rolls upward (`.contentTransition(.numericText())`) and a **monochrome**
+`+amount` (`.secondary`, in `MainWalletView.receivedDeltaBeat`) confirms the exact
+receipt in the fiat slot, with a `.success` haptic for background receipts.
+
+*Amended 2026-07-05(b)→(c): what was "corny" was the **small** green
+`checkmark.circle.fill` + "Received" **worded badge**, not green itself.* The brief
+2026-07-05(b) removal of the green check from `PaymentStatusView` and the detail
+sheet was **reverted**. `PaymentStatusView` success keeps its 64pt green
+`checkmark.circle.fill` (`.symbolEffect(.bounce)`) with the amount as a detail row
+— unchanged from before. The detail sheet regains a green check too, but as the
+**large** 64pt one (below); only the small worded "✓ Received" badge stays retired.
+`CashuRequestDetailView`'s green pills + "N payments received" seal are unchanged
+(their own later pass).
+
+The detail sheet (`TransactionDetailView`) is a **hero state slot above a crisp
+`.primary` amount hero**. The slot resolves by state: an **actionable request**
+shows its QR (unclaimed outgoing token — gated on `status == .pending` since the
+token string is retained after claim — a pending invoice, or a reusable BOLT12
+offer, `lno` prefix); a **completed** transaction shows the 64pt green
+`checkmark.circle.fill`; a **failed** one shows the 64pt red `xmark.circle.fill`;
+both bounce in on open (`.symbolEffect(.bounce, value: didAppear)`), matching the
+payment-success entrance. A **pending, no-QR** transaction shows no glyph. The old
+directional-arrow-on-a-circle hero and the small green "✓ Received" badge are gone.
+State also rides an explicit **`Status` row** — the first detail row, monochrome
+value (the hero glyph already carries the colour): completed → **Claimed** (ecash)
+/ **Paid** (lightning) / **Confirmed** (on-chain); pending → **Pending**; failed →
+**Failed**. A **`Date` row** follows. Remaining rows are conditional essentials —
+**Fee** when `> 0`, **Mint** always; the **Unit** row and the settled **Request**
+row stay dropped (`unitLabel` is always BTC/SAT; the live request is the QR/Copy).
+On-chain keeps **Address** / **Transaction ID** and its address QR. The **Type**
+row stays omitted (the nav title names kind/direction).
+
+**The Settled-Ecash Receipt carve-out.** *Added 2026-07-05.* A **settled ecash
+token** (completed, either direction) additionally exposes the **bottom Copy
+button as a receipt** — it copies the raw token string as a *record* of what was
+received/sent. This is a deliberate exception to the actionability gate above: a
+claimed token is spent, so the QR hero and top **Share stay retired** for it (the
+green-check "done" hero and the "Claimed" Status row already read the screen as
+settled). Only the *passive* Copy is extended, via a `copyableContent` slot
+distinct from `showsQR` — a spent token must never be re-presented as a scannable
+or shareable payment code. Consistent with the Share-At-Top Rule below, which
+governs sheets that *display a shareable QR artifact* (a settled ecash row shows
+none). Received tokens are persisted at redeem time for this — Copy surfaces only
+on rows received/sent after this shipped, since older received tokens were
+discarded and can't be recovered.
 
 **The Quiet Pending Rule.** *Amended 2026-06-01.* On **any list row** —
 transaction or Cashu Request — pending/waiting is conveyed by the muted
@@ -284,10 +319,10 @@ transaction or Cashu Request — pending/waiting is conveyed by the muted
 `arrow.triangle.2.circlepath` per-row refresh button *and* the waiting-request
 leading `clock` were both removed; manual re-check lives on History
 pull-to-refresh — `.refreshable { syncPendingMintQuotes(); checkAllPendingTokens() }`.)
-The muted-orange pending language survives only off the list: the detail-sheet
-status badge (`TransactionDetailView`) and the "Waiting for payment…" status
-clock inside `CashuRequestDetailView`. Never a full-saturation pill, never a
-loud "PENDING" wordmark.
+The muted-orange pending language survives only off the list, on the
+"Waiting for payment…" status clock inside `CashuRequestDetailView`. (The detail
+sheet's pending state is now a monochrome "Pending" `Status` row — no orange,
+2026-07-05(c).) Never a full-saturation pill, never a loud "PENDING" wordmark.
 
 *Amended 2026-06-27: the leading `+`/`−` sign is itself a settled-ledger
 signal. A pending row — either direction — renders a **bare, unsigned** amount;
@@ -653,17 +688,20 @@ both contexts.
 ### Notifications
 
 - **Received delta beat** (home screen): when `cashuTokenReceived` fires, the
-  hero balance rolls upward via `.contentTransition(.numericText())` and a
-  transient green `✓ +amount` (grouped through `AmountFormatter`, no unit, no
-  directional arrow) takes over the fiat sub-amount slot beneath the balance,
-  scaling in, holding 2.5s, then fading as the fiat line returns. Reuses the
-  payment-received celebration vocabulary (Motion §6): `checkmark.circle.fill`
-  with `.symbolEffect(.bounce)`, `.scale.combined(with: .opacity)`,
-  `.spring(response: 0.5, dampingFraction: 0.7)`; reduce-motion collapses it to
-  an opacity cross-fade. Defined in `MainWalletView` (`balanceStatusLine` /
-  `receivedDeltaBeat`). This replaced the retired floating toast — the receive
-  confirmation now lives on the balance, in the canvas, with no shadow and no
-  floating surface.
+  hero balance rolls upward via `.contentTransition(.numericText())` +
+  `.animation(.snappy, value:)` (the same numeric roll as the Send/Receive
+  `CurrencyAmountDisplay`) and a transient **monochrome** `+amount` (`.secondary`,
+  grouped through `AmountFormatter`, no unit, no directional arrow, no checkmark)
+  takes over the fiat sub-amount slot beneath the balance, scaling in via
+  `.scale.combined(with: .opacity)` / `.spring(0.5, 0.7)`, holding 2.5s, then
+  fading as the fiat line returns; reduce-motion collapses it to an opacity
+  cross-fade. The rolling total is the primary signal — the `+amount` just names
+  the exact receipt. A `.success` haptic fires only for background receives whose
+  poster sets `"homeHaptic"` (e.g. npub.cash); in-flow receives own their haptic on
+  `PaymentStatusView` / `CashuRequestDetailView`, so the home beat stays silent to
+  avoid a double-buzz. Defined in `MainWalletView` (`balanceStatusLine` /
+  `receivedDeltaBeat`). *Amended 2026-07-05: de-greened — the green `✓` celebration
+  was retired as corny; the balance roll now carries the moment.*
 - **`ErrorBannerView`**: inline red banner for in-context errors.
 
 ### Signature: ActivityOrb
@@ -796,12 +834,13 @@ code must be).
    Cashu Request status badge for 2.5s with `.spring(response: 0.5,
    dampingFraction: 0.7)`. The checkmark uses `.symbolEffect(.bounce, value:)`
    and the entire badge transitions in via `.scale.combined(with: .opacity)`.
-   Same pattern is mirrored in `ReceiveLightningView` for `isPaid`, and on the
-   home screen as the **received-delta beat** (`MainWalletView.receivedDeltaBeat`)
-   — the green `✓ +amount` that takes over the balance's fiat slot on receipt.
-   All three are instances of this one named animation, not new motions. The
-   *singular* allowed celebration vocabulary — never confetti, never a haptic
-   stronger than `.success`, never a sustained-color flash. **Resolution is
+   Same pattern is mirrored in `ReceiveLightningView` for `isPaid`. *Amended
+   2026-07-05:* on the **home screen** the celebration is quieter — the hero
+   balance rolls up (`.contentTransition(.numericText())`) and a **monochrome**
+   `+amount` beat (`MainWalletView.receivedDeltaBeat`, no green, no checkmark)
+   takes over the fiat slot; the green `✓` was retired here as corny. The badge
+   instances share the *singular* allowed celebration vocabulary — never confetti,
+   never a haptic stronger than `.success`, never a sustained-color flash. **Resolution is
    context-dependent:** in a receive flow (Lightning invoice, or a fresh Cashu
    Request being watched) the badge dwells ~1.2s then the sheet slides down and
    dismisses; when *inspecting* an existing Cashu Request it instead holds 2.5s
