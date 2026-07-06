@@ -115,6 +115,31 @@ class CashuRequestStore: ObservableObject {
         )
     }
 
+    /// Re-parameterize an existing intent in place (amount / mint-filter edits).
+    /// The NUT-18 id stays stable across edits, so every handed-out copy of the
+    /// request — the original amountless one and any later amounted re-encoding —
+    /// keeps attaching payments to this single row instead of spawning a new
+    /// request (and a new thing to track) per edit.
+    func update(id: String, amount: UInt64?, mints: [String], encoded: String) {
+        guard let index = requests.firstIndex(where: { $0.id == id }) else { return }
+        let old = requests[index]
+        requests[index] = CashuRequest(
+            id: old.id,
+            encoded: encoded,
+            amount: amount,
+            unit: old.unit,
+            mints: mints,
+            memo: old.memo,
+            createdAt: old.createdAt,
+            receivedPayments: old.receivedPayments,
+            rail: old.rail,
+            reusable: old.reusable,
+            quoteId: old.quoteId,
+            expiry: old.expiry
+        )
+        persist()
+    }
+
     func attachPayment(requestId: String, transactionId: String, amount: UInt64) {
         guard let index = requests.firstIndex(where: { $0.id == requestId }) else { return }
         attachPayment(at: index, transactionId: transactionId, amount: amount)

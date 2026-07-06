@@ -318,4 +318,30 @@ final class CashuRequestStoreTests: XCTestCase {
         XCTAssertEqual(reloaded.currentRequestId, "request-id")
         XCTAssertEqual(reloaded.request(withId: "request-id")?.receivedPayments.first?.amount, 42)
     }
+
+    func testUpdateReparameterizesInPlaceWithoutNewRow() {
+        let store = CashuRequestStore(userDefaults: defaults)
+
+        _ = store.createNew(id: "request-id", encoded: "creqAamountless")
+        store.attachPayment(requestId: "request-id", transactionId: "tx-1", amount: 21)
+
+        store.update(
+            id: "request-id",
+            amount: 42,
+            mints: ["https://mint.example.com"],
+            encoded: "creqAamounted"
+        )
+
+        XCTAssertEqual(store.requests.count, 1)
+        let updated = store.request(withId: "request-id")
+        XCTAssertEqual(updated?.amount, 42)
+        XCTAssertEqual(updated?.mints, ["https://mint.example.com"])
+        XCTAssertEqual(updated?.encoded, "creqAamounted")
+        XCTAssertEqual(updated?.receivedPayments.first?.transactionId, "tx-1")
+        XCTAssertEqual(store.currentRequestId, "request-id")
+
+        let reloaded = CashuRequestStore(userDefaults: defaults)
+        XCTAssertEqual(reloaded.requests.count, 1)
+        XCTAssertEqual(reloaded.request(withId: "request-id")?.encoded, "creqAamounted")
+    }
 }

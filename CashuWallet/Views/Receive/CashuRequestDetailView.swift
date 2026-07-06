@@ -334,7 +334,11 @@ struct CashuRequestDetailView: View {
         }
     }
 
-    /// Rotates the displayed request with optional overrides. Defaults preserve the current request's params.
+    /// Re-encodes the displayed request with optional overrides, keeping the same
+    /// NUT-18 id. Defaults preserve the current request's params. Amount / mint
+    /// edits re-parameterize the one live request in place — payments to any
+    /// previously shared copy still land on this row, and history never grows a
+    /// second entry for the same receive intent.
     private func regenerate(amount: UInt64?? = nil, mints: [String]? = nil) {
         HapticFeedback.selection()
         let nostr = NostrService.shared
@@ -346,10 +350,9 @@ struct CashuRequestDetailView: View {
         case .some(let inner): nextAmount = inner
         }
         let nextMints = mints ?? existing.mints
-        let id = CashuRequest.newId()
         do {
             let encoded = try PaymentRequestBuilder.build(
-                id: id,
+                id: existing.id,
                 amount: nextAmount,
                 unit: existing.unit,
                 mints: nextMints,
@@ -357,15 +360,7 @@ struct CashuRequestDetailView: View {
                 nostrPubkeyHex: nostr.publicKeyHex,
                 relays: SettingsManager.shared.nostrRelays
             )
-            let newRequest = store.createNew(
-                id: id,
-                amount: nextAmount,
-                unit: existing.unit,
-                mints: nextMints,
-                memo: existing.memo,
-                encoded: encoded
-            )
-            requestId = newRequest.id
+            store.update(id: existing.id, amount: nextAmount, mints: nextMints, encoded: encoded)
         } catch {
             AppLogger.wallet.error("Could not regenerate request: \(String(describing: error))")
         }
