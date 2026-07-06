@@ -82,6 +82,7 @@ dependencies {
     implementation(libs.bcur.kotlin)
     implementation(libs.cdk.kotlin)
     implementation(libs.coil.compose)
+    implementation(libs.sentry.android)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

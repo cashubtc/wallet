@@ -80,6 +80,10 @@ class SettingsStore(
         get() = store.string(StorageKeys.settingsAmountDisplayPrimary) ?: "fiat"
         set(value) = store.putString(StorageKeys.settingsAmountDisplayPrimary, value)
 
+    var sentryEnabled: Boolean
+        get() = store.boolean(StorageKeys.settingsSentryEnabled, false)
+        set(value) = store.putBoolean(StorageKeys.settingsSentryEnabled, value)
+
     var checkIncomingInvoices: Boolean
         get() = store.boolean(StorageKeys.settingsCheckIncomingInvoices, true)
         set(value) = store.putBoolean(StorageKeys.settingsCheckIncomingInvoices, value)

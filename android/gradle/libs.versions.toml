@@ -21,6 +21,7 @@ androidxJunit = "1.2.1"
 espresso = "3.6.1"
 cdkKotlin = "0.17.0-rc.2-onchain"
 coil = "2.7.0"
+sentry = "8.16.0"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
@@ -50,6 +51,7 @@ bcprov = { module = "org.bouncycastle:bcprov-jdk18on", version.ref = "bcprov" }
 bcur-kotlin = { module = "com.gorunjinian:bcur-kotlin", version.ref = "bcurKotlin" }
 cdk-kotlin = { module = "org.cashudevkit:cdk-kotlin", version.ref = "cdkKotlin" }
 coil-compose = { module = "io.coil-kt:coil-compose", version.ref = "coil" }
+sentry-android = { module = "io.sentry:sentry-android", version.ref = "sentry" }
 junit = { module = "junit:junit", version.ref = "junit" }
 androidx-junit = { module = "androidx.test.ext:junit", version.ref = "androidxJunit" }
 androidx-espresso-core = { module = "androidx.test.espresso:espresso-core", version.ref = "espresso" }
