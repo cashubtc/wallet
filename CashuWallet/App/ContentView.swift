@@ -4,7 +4,10 @@ import LocalAuthentication
 struct ContentView: View {
     @EnvironmentObject var walletManager: WalletManager
     @EnvironmentObject var navigationManager: NavigationManager
-    
+    @ObservedObject private var cashuRequestListener = CashuRequestListener.shared
+    /// Unknown-mint payment currently on the approval screen (fullScreenCover item).
+    @State private var claimApproval: PendingCashuClaimApproval?
+
     var body: some View {
         // ZStack (not Group) so the outgoing and incoming roots overlap and truly
         // cross-dissolve. The animation is value-scoped to `needsOnboarding` only,
@@ -37,6 +40,52 @@ struct ContentView: View {
                 .environmentObject(walletManager)
             }
         }
+        // Incoming NUT-18 payment from a mint the wallet doesn't track yet.
+        // Claiming adds the mint, so it needs an explicit user decision —
+        // presented on the standard receive screen, whose built-in "New mint"
+        // caution notice covers the trust warning.
+        .fullScreenCover(item: $claimApproval) { approval in
+            ReceiveTokenDetailView(
+                tokenString: approval.tokenString,
+                onComplete: { claimApproval = nil },
+                claim: { try await cashuRequestListener.claimApproved(approval) },
+                secondaryActionTitle: "Decline",
+                onSecondaryAction: {
+                    cashuRequestListener.decline(approval)
+                    claimApproval = nil
+                }
+            )
+            .environmentObject(walletManager)
+        }
+        .onChange(of: cashuRequestListener.pendingApprovals) { _, approvals in
+            presentNextApprovalIfIdle(approvals)
+        }
+        .onChange(of: claimApproval) { previous, current in
+            // Screen just closed. Advance to the next queued approval only when
+            // the shown one was resolved (claimed or declined — it left the
+            // queue). A plain dismissal or a failed claim leaves it queued:
+            // stop prompting for this session; it re-offers on the next scan.
+            guard current == nil, let previous else { return }
+            let wasResolved = !cashuRequestListener.pendingApprovals.contains { $0.id == previous.id }
+            guard wasResolved else { return }
+            Task {
+                // Let the cover's dismiss animation settle before re-presenting.
+                try? await Task.sleep(nanoseconds: 600_000_000)
+                presentNextApprovalIfIdle(cashuRequestListener.pendingApprovals)
+            }
+        }
+        .onAppear {
+            presentNextApprovalIfIdle(cashuRequestListener.pendingApprovals)
+        }
+    }
+
+    /// Present the next queued unknown-mint payment, one at a time. Skips while
+    /// another approval (or onboarding) is on screen.
+    private func presentNextApprovalIfIdle(_ approvals: [PendingCashuClaimApproval]) {
+        guard claimApproval == nil,
+              !walletManager.needsOnboarding,
+              let next = approvals.first else { return }
+        claimApproval = next
     }
 }
 

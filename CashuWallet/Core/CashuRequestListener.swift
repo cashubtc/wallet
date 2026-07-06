@@ -1,6 +1,19 @@
 import Foundation
 import SwiftUI
 
+/// An incoming NUT-18 payment from a mint the wallet doesn't track yet, held
+/// for explicit user approval — claiming it would silently add that mint.
+struct PendingCashuClaimApproval: Identifiable, Equatable {
+    /// Gift-wrap event id; doubles as the processed-ids key.
+    let id: String
+    let tokenString: String
+    let requestId: String?
+    let mintUrl: String
+    /// Sum of the payload's proof amounts, for display in the prompt.
+    let amount: UInt64
+    let memo: String?
+}
+
 /// NUT-18 receive-side listener. Foreground-only: opens a NIP-17 relay subscription
 /// at app launch, decrypts gift wraps, parses PaymentRequestPayload from the inner
 /// rumor, and forwards to the auto-claim path in WalletManager.
@@ -9,6 +22,9 @@ final class CashuRequestListener: ObservableObject {
     static let shared = CashuRequestListener()
 
     @Published private(set) var isRunning: Bool = false
+
+    /// Payments from unknown mints waiting for the user's claim/decline decision.
+    @Published private(set) var pendingApprovals: [PendingCashuClaimApproval] = []
 
     private var client: NostrInboxClient?
     private weak var walletManager: WalletManager?
@@ -32,6 +48,10 @@ final class CashuRequestListener: ObservableObject {
 
     func start() async {
         guard !isRunning else { return }
+        guard SettingsManager.shared.enablePaymentRequests else {
+            AppLogger.wallet.notice("CashuRequestListener: payment requests disabled in settings — not starting")
+            return
+        }
         let nostr = NostrService.shared
         guard nostr.isInitialized,
               !nostr.publicKeyHex.isEmpty,
@@ -75,6 +95,7 @@ final class CashuRequestListener: ObservableObject {
     func resetForWalletBoundary() {
         processedIds = []
         processedOrder = []
+        pendingApprovals = []
         UserDefaults.standard.removeObject(forKey: processedIdsKey)
     }
 
@@ -99,11 +120,17 @@ final class CashuRequestListener: ObservableObject {
             markProcessed(event.id)
             return
         }
-        switch await tryClaim(rumorContent: rumor.content) {
+        guard SettingsManager.shared.receivePaymentRequestsAutomatically else {
+            // Auto-claim is off: leave the gift wrap unprocessed so re-enabling
+            // the setting claims it on a later scan (within the lookback window).
+            AppLogger.wallet.notice("CashuRequestListener: auto-claim disabled — leaving \(String(event.id.prefix(8)), privacy: .public) unclaimed")
+            return
+        }
+        switch await tryClaim(rumorContent: rumor.content, eventId: event.id) {
         case .claimed, .unclaimable:
             markProcessed(event.id)
-        case .transientFailure:
-            break  // leave unmarked so a later run retries
+        case .transientFailure, .awaitingApproval:
+            break  // leave unmarked so a later run retries / re-offers
         }
     }
 
@@ -111,9 +138,10 @@ final class CashuRequestListener: ObservableObject {
         case claimed            // redeemed successfully
         case unclaimable        // malformed / un-redeemable payload — never retry
         case transientFailure   // redeem failed (mint/network) — retry later
+        case awaitingApproval   // unknown mint — queued for explicit user approval
     }
 
-    private func tryClaim(rumorContent content: String) async -> ClaimOutcome {
+    private func tryClaim(rumorContent content: String, eventId: String) async -> ClaimOutcome {
         guard let data = content.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return .unclaimable
@@ -136,6 +164,32 @@ final class CashuRequestListener: ObservableObject {
             AppLogger.wallet.error("CashuRequestListener: walletManager not attached")
             return .transientFailure
         }
+
+        // Claiming from a mint creates a CDK wallet for it and adds it to the
+        // tracked mint list — never do that silently for a mint the user hasn't
+        // chosen. Queue the payment for explicit approval instead.
+        guard walletManager.isMintKnown(url: mintUrl) else {
+            enqueueApproval(
+                PendingCashuClaimApproval(
+                    id: eventId,
+                    tokenString: tokenString,
+                    requestId: requestId,
+                    mintUrl: mintUrl,
+                    amount: proofsTotalAmount(proofs),
+                    memo: memo
+                )
+            )
+            return .awaitingApproval
+        }
+
+        return await claimNow(tokenString: tokenString, requestId: requestId)
+    }
+
+    private func claimNow(tokenString: String, requestId: String?) async -> ClaimOutcome {
+        guard let walletManager else {
+            AppLogger.wallet.error("CashuRequestListener: walletManager not attached")
+            return .transientFailure
+        }
         do {
             // A gift wrap can arrive exactly as the app backgrounds; hold a background-task
             // assertion so this SQLite-writing redeem finishes before suspension.
@@ -150,6 +204,74 @@ final class CashuRequestListener: ObservableObject {
         } catch {
             AppLogger.wallet.error("CashuRequestListener: redeem failed (will retry): \(String(describing: error), privacy: .public)")
             return .transientFailure
+        }
+    }
+
+    // MARK: - Unknown-mint approval
+
+    /// Cap so a spammer pushing payments from throwaway mints can't grow the
+    /// queue without bound. Overflow events stay unprocessed and are re-offered
+    /// on a later scan once the queue drains.
+    private static let maxPendingApprovals = 10
+
+    private func enqueueApproval(_ approval: PendingCashuClaimApproval) {
+        guard !pendingApprovals.contains(where: { $0.id == approval.id }) else { return }
+        guard pendingApprovals.count < Self.maxPendingApprovals else {
+            AppLogger.wallet.notice("CashuRequestListener: approval queue full — deferring \(String(approval.id.prefix(8)), privacy: .public)")
+            return
+        }
+        AppLogger.wallet.notice("CashuRequestListener: payment from unknown mint \(approval.mintUrl, privacy: .public) — awaiting user approval")
+        pendingApprovals.append(approval)
+    }
+
+    /// User accepted from the receive screen: claim the payment (this adds the
+    /// mint to the wallet), then auto-claim any other queued payments from
+    /// mints that are now known. Throws so the screen's failure state handles
+    /// retry; the approval stays queued and unprocessed until a claim succeeds
+    /// or the user declines.
+    func claimApproved(_ approval: PendingCashuClaimApproval) async throws -> UInt64 {
+        guard let walletManager else {
+            throw WalletError.notInitialized
+        }
+        let amount = try await withBackgroundWriteAssertion("cashu-request-claim") {
+            try await walletManager.receiveCashuRequestPayment(
+                tokenString: approval.tokenString,
+                requestId: approval.requestId
+            )
+        }
+        pendingApprovals.removeAll { $0.id == approval.id }
+        markProcessed(approval.id)
+        AppLogger.wallet.notice("CashuRequestListener: user approved claim of \(amount) sat from \(approval.mintUrl, privacy: .public)")
+        await claimApprovalsFromKnownMints()
+        return amount
+    }
+
+    /// User declined: drop the payment and never ask about this event again.
+    func decline(_ approval: PendingCashuClaimApproval) {
+        pendingApprovals.removeAll { $0.id == approval.id }
+        markProcessed(approval.id)
+        AppLogger.wallet.notice("CashuRequestListener: user declined payment from \(approval.mintUrl, privacy: .public)")
+    }
+
+    /// Drain queued approvals whose mint became known (e.g. the user just
+    /// approved another payment from the same mint, or added it manually).
+    private func claimApprovalsFromKnownMints() async {
+        guard let walletManager else { return }
+        for approval in pendingApprovals where walletManager.isMintKnown(url: approval.mintUrl) {
+            pendingApprovals.removeAll { $0.id == approval.id }
+            switch await claimNow(tokenString: approval.tokenString, requestId: approval.requestId) {
+            case .claimed, .unclaimable:
+                markProcessed(approval.id)
+            case .transientFailure, .awaitingApproval:
+                break
+            }
+        }
+    }
+
+    private func proofsTotalAmount(_ proofs: [[String: Any]]) -> UInt64 {
+        proofs.reduce(UInt64(0)) { total, proof in
+            let amount = (proof["amount"] as? NSNumber)?.uint64Value ?? 0
+            return total &+ amount
         }
     }
 

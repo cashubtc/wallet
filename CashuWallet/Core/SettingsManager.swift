@@ -88,6 +88,30 @@ class SettingsManager: ObservableObject {
         }
     }
 
+    /// Master switch for the NUT-18 Cashu Request listener (incoming ecash over
+    /// Nostr). Off tears the relay subscription down entirely.
+    @Published var enablePaymentRequests: Bool {
+        didSet {
+            settingsStore.enablePaymentRequests = enablePaymentRequests
+            guard enablePaymentRequests != oldValue else { return }
+            Task { @MainActor in
+                if enablePaymentRequests {
+                    await CashuRequestListener.shared.start()
+                } else {
+                    await CashuRequestListener.shared.stop()
+                }
+            }
+        }
+    }
+
+    /// Whether incoming Cashu Request payments are redeemed without asking.
+    /// Off leaves gift wraps unprocessed so they can be claimed after re-enabling.
+    @Published var receivePaymentRequestsAutomatically: Bool {
+        didSet {
+            settingsStore.receivePaymentRequestsAutomatically = receivePaymentRequestsAutomatically
+        }
+    }
+
     @Published var nostrRelays: [String] {
         didSet {
             settingsStore.nostrRelays = nostrRelays
@@ -133,6 +157,8 @@ class SettingsManager: ObservableObject {
         self.p2pkKeys = Self.loadP2PKKeys()
         self.checkIncomingInvoices = settingsStore.checkIncomingInvoices
         self.periodicallyCheckIncomingInvoices = settingsStore.periodicallyCheckIncomingInvoices
+        self.enablePaymentRequests = settingsStore.enablePaymentRequests
+        self.receivePaymentRequestsAutomatically = settingsStore.receivePaymentRequestsAutomatically
         self.nostrRelays = settingsStore.nostrRelays
         self.amountDisplayPrimary = AmountDisplayPrimary(rawValue: settingsStore.amountDisplayPrimary) ?? .fiat
         self.appLockEnabled = settingsStore.appLockEnabled
@@ -218,6 +244,8 @@ class SettingsManager: ObservableObject {
 
         showP2PKButtonInDrawer = false
         p2pkKeys = []
+        enablePaymentRequests = true
+        receivePaymentRequestsAutomatically = true
 
         if resetRuntimeServices {
             NostrService.shared.resetForWalletBoundary()
