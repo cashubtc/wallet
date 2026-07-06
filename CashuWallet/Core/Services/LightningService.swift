@@ -51,9 +51,14 @@ class LightningService: ObservableObject {
     ///   - amount: Amount in satoshis when required by the payment method
     ///   - method: The payment method to use for the quote
     /// - Returns: Mint quote with request details
+    /// - Parameter targetMintURL: mint the quote is created at. Defaults to the
+    ///   active mint (existing callers). Pass an explicit URL to mint at a
+    ///   specific mint — e.g. funding a freshly-added mint to pay a Cashu request.
+    ///   Only honored for the bolt11 path; onchain still uses the active mint.
     func createMintQuote(
         amount: UInt64?,
-        method: PaymentMethodKind = .bolt11
+        method: PaymentMethodKind = .bolt11,
+        targetMintURL: String? = nil
     ) async throws -> MintQuoteInfo {
         guard let activeMint = getActiveMint() else {
             throw WalletError.notInitialized
@@ -76,7 +81,7 @@ class LightningService: ObservableObject {
             throw WalletError.notInitialized
         }
 
-        let mintUrl = MintUrl(url: activeMint.url)
+        let mintUrl = MintUrl(url: targetMintURL ?? activeMint.url)
         let wallet = try await repo.getWallet(mintUrl: mintUrl, unit: .sat)
 
         let quote = try await wallet.mintQuote(

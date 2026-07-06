@@ -29,15 +29,7 @@ struct MainWalletView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 0) {
-                    recentSection
-                        .padding(.top, 8)
-                        .padding(.horizontal, 16)
-
-                    // Tail spacer so the last row can scroll under the
-                    // Liquid Glass tab bar without sitting flush against it.
-                    Color.clear.frame(height: 32)
-                }
+                recentContent
             }
             .scrollIndicators(.hidden)
             .mask(scrollFadeMask)
@@ -65,7 +57,7 @@ struct MainWalletView: View {
                         Image(systemName: "viewfinder")
                             .font(.body.weight(.semibold))
                     }
-                    .accessibilityLabel("Scan QR code")
+                    .accessibilityLabel("Scan QR Code")
                     .accessibilityHint("Opens the QR scanner")
                 }
             }
@@ -89,7 +81,10 @@ struct MainWalletView: View {
         .onReceive(NotificationCenter.default.publisher(for: .cashuTokenReceived)) { note in
             guard let amount = note.userInfo?["amount"] as? UInt64 else { return }
             let fee = note.userInfo?["fee"] as? UInt64
-            showReceivedDelta(amount: amount, fee: fee)
+            // Only background receives (poster sets "homeHaptic") buzz here; in-flow
+            // receives own the success haptic on their confirmation surface.
+            let playHaptic = note.userInfo?["homeHaptic"] as? Bool ?? false
+            showReceivedDelta(amount: amount, fee: fee, playHaptic: playHaptic)
         }
         .onDisappear { deltaDismissTask?.cancel() }
         .onReceive(navigationManager.$pendingMeltInvoice.compactMap { $0 }) { invoice in
@@ -156,14 +151,20 @@ struct MainWalletView: View {
                         .minimumScaleFactor(0.5)
                         .lineLimit(1)
                         .contentTransition(.numericText(value: Double(walletManager.balance)))
+                        // Roll the total on any balance change (receive up, send
+                        // down) and cross-fade the ₿/sat unit swap — mirrors the
+                        // Send/Receive amount display (CurrencyAmountDisplay).
+                        .animation(.snappy, value: walletManager.balance)
+                        .animation(.snappy, value: settings.useBitcoinSymbol)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Balance: \(formatBalanceWithUnit(walletManager.balance))")
                 .accessibilityHint("Tap to toggle between Bitcoin and Satoshi")
 
-                // Status line under the balance: a transient green received-delta
-                // beat takes over the fiat slot for 2.5s on receipt, then fiat
-                // fades back. Same slot, so the swap doesn't reflow the balance.
+                // Status line under the balance: a transient monochrome
+                // received-delta beat takes over the fiat slot for 2.5s on receipt,
+                // then fiat fades back. Same slot, so the swap doesn't reflow the
+                // balance. (De-greened 2026-07-05 — the balance roll carries the moment.)
                 balanceStatusLine
             }
             .padding(.top, 18)
@@ -172,13 +173,13 @@ struct MainWalletView: View {
 
     // MARK: - Received Delta Beat
 
-    /// The status line beneath the balance: the transient green received-delta
-    /// beat while a payment just landed, otherwise the fiat sub-amount.
+    /// The status line beneath the balance: the transient received-delta beat
+    /// while a payment just landed, otherwise the fiat sub-amount.
     @ViewBuilder
     private var balanceStatusLine: some View {
         if let delta = receivedDelta {
             receivedDeltaBeat(delta)
-                .transition(reduceMotion ? .opacity : .scale.combined(with: .opacity))
+                .transition(reduceMotion ? .opacity : .asymmetric(insertion: .scale(scale: 0.9).combined(with: .opacity), removal: .opacity))
         } else if settings.showFiatBalance && priceService.btcPriceUSD > 0 {
             Text(priceService.formatSatsAsFiat(walletManager.balance))
                 .font(.body)
@@ -187,30 +188,18 @@ struct MainWalletView: View {
         }
     }
 
-    /// Green "✓ +2,500" beat. Grouped via the canonical formatter, no unit (the
-    /// balance beside it carries it), no directional arrow (the down-arrow stays
-    /// exclusive to row badges — One Green Rule). VoiceOver-hidden; the balance
+    /// Quiet "+2,500" beat. Monochrome (`.secondary`) — no green, no checkmark,
+    /// no bounce: the rolling balance above is the primary signal, this just
+    /// names the exact amount that landed. Grouped via the canonical formatter,
+    /// no unit (the balance beside it carries it), no directional arrow (the
+    /// down-arrow stays exclusive to row badges). VoiceOver-hidden; the balance
     /// announces the new total.
     private func receivedDeltaBeat(_ delta: ReceivedDelta) -> some View {
-        Label {
-            Text("+\(settings.formatAmountShort(delta.amount))")
-                .monospacedDigit()
-        } icon: {
-            receivedDeltaCheckmark(id: delta.id)
-        }
-        .font(.body.weight(.semibold))
-        .foregroundStyle(.green)
-        .accessibilityHidden(true)
-    }
-
-    @ViewBuilder
-    private func receivedDeltaCheckmark(id: UUID) -> some View {
-        let base = Image(systemName: "checkmark.circle.fill")
-        if #available(iOS 17.0, *), !reduceMotion {
-            base.symbolEffect(.bounce, value: id)
-        } else {
-            base
-        }
+        Text("+\(settings.formatAmountShort(delta.amount))")
+            .monospacedDigit()
+            .font(.body.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .accessibilityHidden(true)
     }
 
     /// Reuses the sanctioned payment-received celebration spring (Motion §6);
@@ -220,10 +209,15 @@ struct MainWalletView: View {
     }
 
     /// Shows the beat and re-arms a 2.5s dismiss timer. Rapid receives coalesce
-    /// to last-write-wins: the prior timer is cancelled and the new amount
-    /// (fresh id) re-bounces the checkmark.
-    private func showReceivedDelta(amount: UInt64, fee: UInt64?) {
+    /// to last-write-wins: the prior timer is cancelled and the new amount takes
+    /// over. Fires the "sats landed" haptic only when the caller opts in
+    /// (`playHaptic`) — reserved for background receives no visible surface
+    /// confirms (npub.cash). In-flow receives (Lightning / ecash paste via
+    /// PaymentStatusView, a watched Cashu request) already own a success haptic,
+    /// so they leave it off to avoid a double-buzz.
+    private func showReceivedDelta(amount: UInt64, fee: UInt64?, playHaptic: Bool) {
         deltaDismissTask?.cancel()
+        if playHaptic { HapticFeedback.notification(.success) }
         withAnimation(receivedDeltaAnimation) {
             receivedDelta = ReceivedDelta(amount: amount, fee: fee)
         }
@@ -372,36 +366,59 @@ struct MainWalletView: View {
     // MARK: - Recent Activity
 
     @ViewBuilder
-    private var recentSection: some View {
+    private var recentContent: some View {
         let items = recentItems
+        if items.isEmpty {
+            // Same shared component, size, and centered placement as the
+            // History empty state, but with its own tray icon and copy
+            // (recent-activity framing vs. History's clock + "history"). No
+            // "Recent" header here: with nothing to label it's redundant, and
+            // dropping it matches History's clean full-screen empty state.
+            NativeEmptyState(
+                title: "No Activity Yet",
+                systemImage: "tray",
+                description: "Your recent payments will show up here."
+            )
+            .containerRelativeFrame(.vertical)
+            .padding(.horizontal, 16)
+        } else {
+            VStack(spacing: 0) {
+                recentList(items)
+                    .padding(.top, 8)
+                    .padding(.horizontal, 16)
+
+                // Tail spacer so the last row can scroll under the
+                // Liquid Glass tab bar without sitting flush against it.
+                Color.clear.frame(height: 32)
+            }
+        }
+    }
+
+    private func recentList(_ items: [HomeItem]) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             sectionHeader("Recent")
 
-            if items.isEmpty {
-                emptyRecentRow
-            } else {
-                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                    row(for: item)
+            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                row(for: item)
 
-                    if index < items.count - 1 {
-                        CanvasDivider()
-                    }
+                if index < items.count - 1 {
+                    CanvasDivider()
                 }
-
-                Button(action: onViewAllHistory) {
-                    HStack(spacing: 4) {
-                        Text("View all activity")
-                        Image(systemName: "chevron.right").font(.caption2.weight(.semibold))
-                    }
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityHint("Switches to the History tab")
             }
+
+            Button(action: onViewAllHistory) {
+                HStack(spacing: 4) {
+                    Text("View all activity")
+                    Image(systemName: "chevron.right").font(.caption2.weight(.semibold))
+                }
+                .font(.body.weight(.medium))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Switches to the History tab")
         }
     }
 
@@ -415,15 +432,6 @@ struct MainWalletView: View {
             .padding(.horizontal, 4)
             .padding(.top, 16)
             .padding(.bottom, 14)
-    }
-
-    private var emptyRecentRow: some View {
-        NativeEmptyState(
-            title: "No activity yet",
-            systemImage: "clock.arrow.circlepath",
-            description: "Your activity will show up here.",
-            style: .compact
-        )
     }
 
     // MARK: - Recent items pipeline (mirrors HistoryView, capped at 5)
@@ -809,6 +817,7 @@ private struct WalletActionSheetView: View {
     let onAddCustomMint: () -> Void
 
     @EnvironmentObject private var walletManager: WalletManager
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var revealed = false
     @State private var addingMintUrl: String?
     @State private var addMintError: String?
@@ -892,9 +901,11 @@ private struct WalletActionSheetView: View {
             ForEach(Array(options.enumerated()), id: \.element.id) { index, option in
                 optionButton(title: option.title, icon: option.icon, action: option.flow)
                     .opacity(revealed ? 1 : 0)
-                    .offset(x: revealed ? 0 : -12)
+                    .offset(x: reduceMotion ? 0 : (revealed ? 0 : -12))
                     .animation(
-                        .smooth(duration: 0.32).delay(Double(index) * 0.07),
+                        reduceMotion
+                            ? .easeInOut(duration: 0.2)
+                            : .smooth(duration: 0.32).delay(Double(index) * 0.07),
                         value: revealed
                     )
             }

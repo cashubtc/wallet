@@ -47,6 +47,32 @@ extension View {
         modifier(CanvasSheetBackground())
     }
 
+    /// One-shot, opacity-only fade for a full screen's content on entry. Plays
+    /// once when the modified view first appears — not on internal state swaps —
+    /// with zero positional or scale movement (the presenting sheet/cover owns the
+    /// large motion). reduceMotion → instant, fully opaque, no animation.
+    func screenEntryFade() -> some View {
+        modifier(ScreenEntryFade())
+    }
+
+}
+
+// MARK: - Screen Entry Fade
+
+/// A subtle opacity-only entrance for a screen's content. Because it carries its
+/// own `entered` state and its own `.animation(value:)`, it fires exactly once on
+/// appear and never interferes with a sibling `.animation(value:)` (e.g. a
+/// confirm→success phase morph), which keys on a different value.
+private struct ScreenEntryFade: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var entered = false
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(reduceMotion || entered ? 1 : 0)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.22), value: entered)
+            .onAppear { entered = true }
+    }
 }
 
 // MARK: - Canvas Sheet Background

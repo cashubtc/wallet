@@ -202,7 +202,7 @@ struct OnboardingView: View {
                 ErrorBannerView(message: "Couldn't start the wallet. \(error)", severity: .error)
                     .padding(.horizontal)
                     .padding(.bottom, 8)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
             }
 
             if let error = errorMessage {
@@ -456,7 +456,7 @@ struct OnboardingView: View {
                     if let error = errorMessage {
                         ErrorBannerView(message: error, severity: .error)
                             .padding(.horizontal)
-                            .transition(.opacity.combined(with: .move(edge: .top)))
+                            .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
                     }
 
                     Button(action: runICloudRestore) {
@@ -635,6 +635,17 @@ struct OnboardingView: View {
                     // Mnemonic words — plain on canvas, blurred until revealed
                     ZStack {
                         mnemonicWordsGrid(words: walletManager.getMnemonicWords())
+                            // Hide the seed at the CONTENT level, not just visually.
+                            // A bare `.blur` is animatable, and on this screen's
+                            // entrance transition SwiftUI ramps the radius up from its
+                            // identity (0 = fully legible), briefly exposing the phrase
+                            // before it settles at 9 — the "flicker" users reported.
+                            // Redaction can't be defeated by an animation: while
+                            // unrevealed the real characters are never drawn, so no
+                            // animation timing can leak them. The blur stays purely for
+                            // the reveal aesthetic and animates 9 → 0 on tap; the
+                            // simultaneous un-redact is masked under that blur.
+                            .redacted(reason: seedRevealed ? [] : .placeholder)
                             .blur(radius: seedRevealed ? 0 : 9)
                             .allowsHitTesting(seedRevealed)
                             // Keep the secret words out of the accessibility tree
@@ -791,7 +802,7 @@ struct OnboardingView: View {
                     customMintInputRow
                         .padding(.horizontal, 28)
                         .padding(.top, 12)
-                        .transition(.opacity.combined(with: .move(edge: .top)))
+                        .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
                 } else {
                     Button(action: {
                         HapticFeedback.selection()
@@ -1079,7 +1090,7 @@ struct OnboardingView: View {
             if let error = errorMessage {
                 ErrorBannerView(message: error, severity: .error)
                     .padding(.horizontal)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
             }
 
             stagger(appeared: restoreInputAppeared, index: 1) {

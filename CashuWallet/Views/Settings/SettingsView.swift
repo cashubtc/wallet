@@ -13,17 +13,9 @@ struct SettingsView: View {
     @State private var showMintPicker = false
     @State private var showCurrencySheet = false
 
-    // Nostr Key Management
-    @State private var showNsec = false
-    @State private var copiedNsec = false
-    @State private var showImportNsec = false
-    @State private var importNsecText = ""
-    @State private var showGenerateKeyConfirm = false
-    @State private var showResetKeyConfirm = false
-    @State private var nostrKeyError: String?
-    @State private var relayInput = ""
-    @State private var relayError: String?
-    @State private var copiedRelay: String?
+    // Nostr key + relay state is owned by the sections themselves
+    // (NostrKeysSettingsSection / NostrRelaysSettingsSection), matching the
+    // self-contained P2PKSettingsSection.
     @State private var walletActionError: String?
 
     var body: some View {
@@ -99,8 +91,6 @@ struct SettingsView: View {
                 .padding(.horizontal)
             }
             .navigationTitle("Settings")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.hidden, for: .navigationBar)
             .sheet(isPresented: $showBackup) {
                 BackupView()
                     .environmentObject(walletManager)
@@ -297,24 +287,17 @@ struct SettingsView: View {
     private var nostrDetailView: some View {
         ScrollView {
             LazyVStack(spacing: 0) {
-                SettingsSectionGroup("Keys") {
-                    NostrKeysSettingsSection(
-                        showNsec: $showNsec,
-                        copiedNsec: $copiedNsec,
-                        showImportNsec: $showImportNsec,
-                        importNsecText: $importNsecText,
-                        showGenerateKeyConfirm: $showGenerateKeyConfirm,
-                        showResetKeyConfirm: $showResetKeyConfirm,
-                        nostrKeyError: $nostrKeyError
-                    )
-                }
-                SettingsSectionGroup("Relays") {
-                    NostrRelaysSettingsSection(
-                        relayInput: $relayInput,
-                        relayError: $relayError,
-                        copiedRelay: $copiedRelay
-                    )
-                }
+                Text("Nostr powers your Lightning address, npub.cash requests, and encrypted backups.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 4)
+                    .padding(.top, 8)
+                    .padding(.bottom, 28)
+
+                NostrKeysSettingsSection()
+                NostrRelaysSettingsSection()
             }
             .padding(.horizontal)
             .padding(.bottom, 32)
@@ -492,19 +475,23 @@ struct RestoreWalletView: View {
 
     var body: some View {
         ZStack {
+            // Quiet cross-fade between restore steps — no lateral slide. This mirrors
+            // OnboardingView's restore twin (which documents the horizontal push as
+            // "jarring here"), and honors DESIGN.md rule #6: an in-place flow swap
+            // cross-fades; only cross-screen pushes slide.
             switch step {
             case .seed:
                 seedStep
-                    .transition(.opacity.combined(with: .move(edge: .leading)))
+                    .transition(.opacity)
             case .mints:
                 mintStep
-                    .transition(.opacity.combined(with: .move(edge: .trailing)))
+                    .transition(.opacity)
             case .progress:
                 progressStep
-                    .transition(.opacity.combined(with: .move(edge: .trailing)))
+                    .transition(.opacity)
             }
         }
-        .animation(.snappy(duration: 0.28), value: step)
+        .animation(.easeInOut(duration: 0.28), value: step)
         .navigationTitle("Restore")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
@@ -1332,6 +1319,8 @@ struct BackupView: View {
                                 Button(action: copyToClipboard) {
                                     Image(systemName: copiedToClipboard ? "checkmark" : "doc.on.doc")
                                         .foregroundStyle(copiedToClipboard ? .green : Color.accentColor)
+                                        .contentTransition(.symbolEffect(.replace))
+                                        .animation(.snappy(duration: 0.18), value: copiedToClipboard)
                                 }
                             }
                         }
@@ -1622,7 +1611,7 @@ struct ImportNsecSheet: View {
             return false
         }
         guard trimmed.count >= 59 else {
-            errorMessage = "nsec is too short"
+            errorMessage = "That doesn't look like a complete nsec. Check you copied the whole key and try again."
             return false
         }
         return true

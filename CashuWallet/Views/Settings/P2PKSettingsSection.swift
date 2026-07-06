@@ -193,9 +193,9 @@ struct P2PKSettingsSection: View {
     private func copy(_ value: String, label: String) {
         UIPasteboard.general.string = value
         HapticFeedback.selection()
-        withAnimation { copiedValue = label }
+        withAnimation(.snappy(duration: 0.18)) { copiedValue = label }
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            if copiedValue == label { withAnimation { copiedValue = nil } }
+            if copiedValue == label { withAnimation(.snappy(duration: 0.18)) { copiedValue = nil } }
         }
     }
 }
@@ -205,8 +205,9 @@ struct P2PKSettingsSection: View {
 /// The canonical card for a single key, used for both the primary key (on the
 /// hub) and a device-only key (on its detail screen) so they read as one family:
 /// a key glyph, a name, a backup-status line, the tap-to-copy npub, and up to two
-/// action buttons.
-private struct KeyCard: View {
+/// action buttons. Also reused by the Nostr settings hub (`NostrKeysSettingsSection`)
+/// so the two key surfaces stay identical.
+struct KeyCard: View {
     enum Status {
         case seedBacked     // recoverable from the seed phrase
         case custom         // a custom key the user must back up themselves
@@ -246,6 +247,9 @@ private struct KeyCard: View {
     let copiedValue: String?
     let onCopy: () -> Void
     let actions: [Action]
+    /// Overrides the displayed short value. The Nostr hub passes a pre-truncated
+    /// npub so a bech32 key isn't routed through the P2PK compressed-hex formatter.
+    var displayLabel: String? = nil
 
     private var isCopied: Bool { copiedValue == "key" || copiedValue == pubkey }
 
@@ -273,7 +277,7 @@ private struct KeyCard: View {
 
             Button(action: onCopy) {
                 HStack(spacing: 8) {
-                    Text(P2PKKeyDisplay.shortLabel(forPubkey: pubkey))
+                    Text(displayLabel ?? P2PKKeyDisplay.shortLabel(forPubkey: pubkey))
                         .font(.system(.subheadline, design: .monospaced))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -553,9 +557,9 @@ private struct DeviceKeyDetailView: View {
     private func copy(_ value: String, label: String) {
         UIPasteboard.general.string = value
         HapticFeedback.selection()
-        withAnimation { copiedValue = label }
+        withAnimation(.snappy(duration: 0.18)) { copiedValue = label }
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            if copiedValue == label { withAnimation { copiedValue = nil } }
+            if copiedValue == label { withAnimation(.snappy(duration: 0.18)) { copiedValue = nil } }
         }
     }
 }
@@ -625,10 +629,13 @@ private struct LockedEcashExplainerSheet: View {
 // MARK: - Private-key reveal sheet
 
 /// Reveals a key's nsec behind authentication, mirroring the seed-phrase backup
-/// pattern: hidden by default, reveal and copy both require auth.
-private struct PrivateKeyRevealSheet: View {
+/// pattern: hidden by default, reveal and copy both require auth. Shared by the
+/// Locked Ecash hub and the Nostr settings hub — the caveat line is caller-supplied
+/// so each reads accurately (ecash-claim vs. Lightning-address control).
+struct PrivateKeyRevealSheet: View {
     let title: String
     let nsec: String
+    var warning: String = "Anyone with this key can claim ecash locked to it. Never share it."
 
     @Environment(\.dismiss) private var dismiss
     @State private var revealed = false
@@ -648,7 +655,7 @@ private struct PrivateKeyRevealSheet: View {
                             .foregroundStyle(.orange)
                         Text("Keep this key secret")
                             .font(.headline)
-                        Text("Anyone with this key can claim ecash locked to it. Never share it.")
+                        Text(warning)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
@@ -674,6 +681,8 @@ private struct PrivateKeyRevealSheet: View {
                                 Button(action: copyKey) {
                                     Image(systemName: copied ? "checkmark" : "doc.on.doc")
                                         .foregroundStyle(copied ? .green : Color.accentColor)
+                                        .contentTransition(.symbolEffect(.replace))
+                                        .animation(.snappy(duration: 0.18), value: copied)
                                 }
                             }
                         }

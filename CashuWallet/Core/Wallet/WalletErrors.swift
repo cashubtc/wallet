@@ -7,12 +7,23 @@ import Cdk
 /// should render it at. The text follows the contract **{what broke}. {what to
 /// try next}** in the app's quiet, native voice.
 struct WalletMessage {
+    /// Whether re-attempting the identical action could plausibly succeed. `.terminal`
+    /// marks a permanent outcome (already paid, already issued) where a retry is futile,
+    /// so the UI can offer "Done" instead of "Try Again".
+    enum Recoverability { case retryable, terminal }
+
     let text: String
     let severity: ErrorSeverity
+    var recoverability: Recoverability = .retryable
 
     static func error(_ text: String) -> WalletMessage { .init(text: text, severity: .error) }
     static func caution(_ text: String) -> WalletMessage { .init(text: text, severity: .caution) }
     static func info(_ text: String) -> WalletMessage { .init(text: text, severity: .info) }
+
+    /// Mark this message as a permanent outcome that a retry cannot change.
+    func terminal() -> WalletMessage {
+        WalletMessage(text: text, severity: severity, recoverability: .terminal)
+    }
 }
 
 // MARK: - Error Types
@@ -121,13 +132,13 @@ enum WalletErrorMessage {
             || normalized.contains("already minted")
             || normalized.contains("quote is issued")
             || normalized.contains("tokens already issued") {
-            return .error("Ecash has already been issued for this quote.")
+            return .error("Ecash has already been issued for this quote.").terminal()
         }
 
         if normalized.contains("already paid")
             || normalized.contains("request already paid")
             || normalized.contains("invoice already paid") {
-            return .error("This invoice has already been paid.")
+            return .error("This invoice has already been paid.").terminal()
         }
 
         if normalized.contains("not paid")
@@ -163,6 +174,15 @@ enum WalletErrorMessage {
             return .caution("The fee is higher than this wallet allows. Lower the amount or try another mint.")
         }
 
+        // Raw CDK "Incorrect quote amount": the mint declined the amount for this quote
+        // (amount drift / MPP / amountless mismatch). Curate it into the app's voice
+        // rather than leaking the jargon; switching mints is the reliable recovery.
+        if normalized.contains("incorrect quote amount")
+            || normalized.contains("quote amount mismatch")
+            || normalized.contains("mismatched quote amount") {
+            return .error("The mint declined the payment amount. Try again or use another mint.")
+        }
+
         if normalized.contains("insufficient")
             || normalized.contains("not enough")
             || normalized.contains("no spendable")
@@ -171,11 +191,22 @@ enum WalletErrorMessage {
             return .error("Not enough balance.")
         }
 
+        // Stale NUT-13 keyset counter: the wallet asked the mint to re-sign blinded
+        // outputs it already signed for this seed. TokenService auto-recovers on
+        // receive (restore + retry); this copy is the fallback if that recovery is
+        // exhausted, and stays non-terminal so "Try Again" (which re-runs the
+        // recovery) remains available.
+        if normalized.contains("duplicate outputs")
+            || normalized.contains("already signed")
+            || normalized.contains("outputs already signed") {
+            return .error("The wallet fell out of sync with this mint. Tap Try Again to resync and receive.")
+        }
+
         if normalized.contains("token already spent")
             || normalized.contains("proof already used")
             || normalized.contains("already redeemed")
             || normalized.contains("proofs are spent") {
-            return .error("This token was already redeemed.")
+            return .error("This token was already redeemed.").terminal()
         }
 
         if normalized.contains("token not verified")
@@ -213,10 +244,12 @@ enum WalletErrorMessage {
             return .error("This mint can't issue ecash for that amount right now. Try another mint.")
         }
 
-        if normalized.contains("amountless invoice")
+        if normalized.contains("invoice has no amount")
+            || normalized.contains("has no amount")
+            || normalized.contains("amountless invoice")
             || normalized.contains("invoice amount undefined")
             || normalized.contains("amount is required") {
-            return .caution("This request doesn't include an amount. Enter one to continue.")
+            return .caution("This invoice doesn't set an amount. Ask the sender for one with the amount set.")
         }
 
         if normalized.contains("amount out")
@@ -308,10 +341,23 @@ enum WalletErrorMessage {
     }
 
     private static func looksLikeRawCDKError(_ message: String) -> Bool {
-        message.contains("FfiError")
+        let lowered = message.lowercased()
+        return message.contains("FfiError")
             || message.contains("CashuDevKit")
             || message.contains("errorMessage:")
             || message.contains("CALL_ERROR")
+            // Generic CDK "Unknown error response: `code: N, detail: …`" wrappers. Any
+            // detail we recognize is already mapped above in classified(forRawMessage:);
+            // anything left carries only a numeric code + internal detail, so route it to
+            // the clean generic fallback instead of leaking `code: 0` / `code: 50000`.
+            || lowered.contains("unknown error response")
+            // Raw Rust panics (e.g. a failed stderr write inside the CDK FFI). These carry
+            // no useful user-facing detail, so route them to the generic fallback instead
+            // of showing the panic text verbatim.
+            || lowered.contains("failed printing to std")
+            || lowered.contains("os error")
+            || lowered.contains("panicked at")
+            || lowered.contains("rustpanic")
     }
 }
 

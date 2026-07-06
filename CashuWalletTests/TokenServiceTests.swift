@@ -171,4 +171,51 @@ final class TokenServiceTests: XCTestCase {
         let error = TokenServiceError.missingP2PKSigningKey
         XCTAssertFalse(error.errorDescription?.isEmpty ?? true)
     }
+
+    // MARK: - isCounterDesyncError (stale NUT-13 keyset counter detection)
+    //
+    // The receive retry loop only fires when this returns true, so it must match
+    // every wording mints use for the same "you asked me to re-sign an output I
+    // already signed" rejection — notably macadamia's "Blinded Message is already
+    // signed", which the original "duplicate outputs"-only check missed (the bug).
+
+    private struct StubError: Error, CustomStringConvertible {
+        let description: String
+    }
+
+    func testCounterDesyncMatchesBlindedMessageAlreadySigned() {
+        XCTAssertTrue(TokenService.isCounterDesyncError(
+            StubError(description: "Blinded Message is already signed")))
+    }
+
+    func testCounterDesyncMatchesDuplicateOutputs() {
+        XCTAssertTrue(TokenService.isCounterDesyncError(
+            StubError(description: "NUT03: Duplicate outputs")))
+    }
+
+    func testCounterDesyncMatchesOutputsAlreadySigned() {
+        XCTAssertTrue(TokenService.isCounterDesyncError(
+            StubError(description: "outputs already signed")))
+    }
+
+    func testCounterDesyncIsCaseInsensitive() {
+        XCTAssertTrue(TokenService.isCounterDesyncError(
+            StubError(description: "BLINDED MESSAGE IS ALREADY SIGNED")))
+    }
+
+    func testCounterDesyncDoesNotMatchAlreadySpent() {
+        // "already spent" / "already redeemed" is a real, distinct terminal error
+        // — it must NOT be treated as a recoverable counter desync.
+        XCTAssertFalse(TokenService.isCounterDesyncError(
+            StubError(description: "Token already spent")))
+        XCTAssertFalse(TokenService.isCounterDesyncError(
+            StubError(description: "proofs are already redeemed")))
+    }
+
+    func testCounterDesyncDoesNotMatchUnrelatedErrors() {
+        XCTAssertFalse(TokenService.isCounterDesyncError(
+            StubError(description: "insufficient funds")))
+        XCTAssertFalse(TokenService.isCounterDesyncError(
+            StubError(description: "Could not connect to the server.")))
+    }
 }

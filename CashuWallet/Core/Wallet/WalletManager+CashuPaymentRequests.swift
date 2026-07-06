@@ -1,8 +1,81 @@
 import Foundation
 import Cdk
 
+/// How a scanned/pasted Cashu payment request should be paid, decided against
+/// what the wallet currently holds. Shared by the home scanner, the Send flow,
+/// and NFC so all three route identically.
+enum CashuRequestRoute {
+    /// A held mint can satisfy the request now — land on the creq pay screen.
+    case payWithEcash(CashuPaymentRequestSummary)
+    /// Can't pay from ecash, but a BIP-321 bolt11 fallback rides along — hand the
+    /// normalized invoice to the existing Lightning melt flow (the recipient
+    /// offered it for exactly this).
+    case payBolt11Fallback(String)
+    /// Can't pay from ecash and no bolt11 fallback — land on the creq screen so
+    /// the user can add the required mint and fund it ("Add & pay").
+    case acquireThenPay(CashuPaymentRequestSummary)
+}
+
+/// Progress checkpoints for the "Add mint & pay" flow, driven back to the
+/// confirm screen's overlay so the user sees what's happening.
+enum AddMintPayStage: Equatable {
+    case addingMint, preparingTransfer, waitingForPayment, minting, paying
+}
+
+/// Thrown by the acquire-then-pay flow when no held mint can bankroll the
+/// transfer. Carries the already-created target mint quote so the caller can
+/// present a Lightning top-up QR and finish once it's paid.
+struct NeedsExternalTopUp: Error {
+    let targetQuote: MintQuoteInfo
+    let targetMintURL: String
+    let mintAmount: UInt64
+}
+
+/// Thrown when the Lightning payment landed but the mint hasn't issued proofs
+/// yet — a soft, self-healing state (History refresh / claim retries finish it).
+struct MintSettling: Error {}
+
 extension WalletManager {
     // MARK: - Cashu Payment Requests
+
+    /// Whether a held mint can satisfy `summary` from ecash right now. Mirrors the
+    /// candidate selection in `selectMint(forCashuPaymentRequest:...)`: filter
+    /// held mints to the requested hosts (empty = any mint), then check balance.
+    /// Amountless requests are fulfillable as long as some candidate is held —
+    /// the pay screen enforces per-mint affordability once an amount is entered.
+    func canFulfillFromEcash(_ summary: CashuPaymentRequestSummary) -> Bool {
+        guard summary.isSatUnit else { return false }
+
+        let candidates: [MintInfo]
+        if summary.mints.isEmpty {
+            candidates = mints
+        } else {
+            let requestedHosts = Set(summary.mints.map(normalizedMintURL))
+            candidates = mints.filter { requestedHosts.contains(normalizedMintURL($0.url)) }
+        }
+
+        guard !candidates.isEmpty else { return false }
+
+        if let amount = summary.amount, amount > 0 {
+            return candidates.contains { $0.balance >= amount }
+        }
+        return true
+    }
+
+    /// The single routing decision: prefer ecash when a held mint can pay; else
+    /// fall back to a bundled bolt11; else offer to add the mint and fund it.
+    func routeForCashuPaymentRequest(
+        _ summary: CashuPaymentRequestSummary,
+        rawContent: String
+    ) -> CashuRequestRoute {
+        if canFulfillFromEcash(summary) {
+            return .payWithEcash(summary)
+        }
+        if let bolt11 = PaymentRequestDecoder.encodedLightningRequest(from: rawContent) {
+            return .payBolt11Fallback(bolt11)
+        }
+        return .acquireThenPay(summary)
+    }
 
     func payCashuPaymentRequest(
         encoded: String,
@@ -156,5 +229,121 @@ extension WalletManager {
         }
         normalized += url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         return normalized
+    }
+
+    // MARK: - Add mint & pay (acquire ecash at an unheld mint, then pay)
+
+    /// A held mint (other than the target) that can bankroll a Lightning transfer
+    /// of `amount` into the target mint. Highest balance first; final
+    /// affordability (incl. the melt fee reserve) is confirmed by `createMeltQuote`.
+    private func fundingSourceMint(excluding targetMintURL: String, amount: UInt64) -> MintInfo? {
+        let targetHost = normalizedMintURL(targetMintURL)
+        return mints
+            .filter { normalizedMintURL($0.url) != targetHost }
+            .filter { $0.supportedMeltMethods.contains(.bolt11) }
+            .filter { $0.balance >= amount }
+            .max { $0.balance < $1.balance }
+    }
+
+    /// Whether some held mint could fund an `amount`-sat transfer into `targetMintURL`.
+    /// Lets the confirm screen choose between the cross-mint path and a top-up QR
+    /// (and word the fee row) before committing.
+    func hasFundingSource(excluding targetMintURL: String, amount: UInt64) -> Bool {
+        fundingSourceMint(excluding: targetMintURL, amount: amount) != nil
+    }
+
+    /// Add the required mint, acquire `amount` sats of ecash there, then pay the
+    /// request. Funds the target by transferring from a held mint over Lightning
+    /// (cross-mint swap). If no held mint can fund it, throws `NeedsExternalTopUp`
+    /// carrying the target mint quote so the caller can show a top-up QR instead.
+    /// `onStage` drives the caller's progress UI.
+    func addMintAndPayCashuRequest(
+        _ summary: CashuPaymentRequestSummary,
+        amount: UInt64,
+        targetMintURL: String,
+        onStage: (AddMintPayStage) -> Void
+    ) async throws {
+        // 1. Commit the mint to the wallet so the final pay can select it.
+        onStage(.addingMint)
+        await mintService.ensureMintTracked(url: targetMintURL)
+
+        // 2. Cover the target's input fee (if any) so the minted proofs can still
+        //    send exactly `amount`. Virtually all mints charge 0 → no buffer.
+        let ppk = await mintInputFeePpk(mintURL: targetMintURL) ?? 0
+        let mintAmount = ppk == 0 ? amount : amount + max(1, (ppk * 32 + 999) / 1000)
+
+        // 3. Mint quote at the TARGET mint → the bolt11 we must pay.
+        onStage(.preparingTransfer)
+        let targetQuote = try await createMintQuote(
+            amount: mintAmount, method: .bolt11, targetMintURL: targetMintURL
+        )
+
+        // 4-5. Fund it from a held mint, or hand off to an external top-up.
+        guard let source = fundingSourceMint(excluding: targetMintURL, amount: mintAmount) else {
+            throw NeedsExternalTopUp(targetQuote: targetQuote, targetMintURL: targetMintURL, mintAmount: mintAmount)
+        }
+
+        let meltQuote: MeltQuoteInfo
+        do {
+            meltQuote = try await createMeltQuote(request: targetQuote.request, preferredMintURL: source.url)
+        } catch let error as NFCPaymentError {
+            // Source can't actually cover amount + fee reserve → top up externally.
+            if case .insufficientBalance = error {
+                throw NeedsExternalTopUp(targetQuote: targetQuote, targetMintURL: targetMintURL, mintAmount: mintAmount)
+            }
+            throw error
+        }
+
+        // 6. Pay the target's invoice from the source mint.
+        onStage(.waitingForPayment)
+        _ = try await meltTokens(quoteId: meltQuote.id, mintUrl: source.url)
+
+        // 7-9. Mint the proofs at the target and pay the request (shared tail).
+        onStage(.minting)
+        try await finishTopUpAndPayCashuRequest(
+            summary,
+            amount: amount,
+            targetMintURL: targetMintURL,
+            targetQuoteId: targetQuote.id
+        )
+    }
+
+    /// Mint the proofs for a now-paid target quote and pay the request. Shared by
+    /// the cross-mint path and the external top-up (`CashuTopUpInvoiceSheet`). If
+    /// the mint hasn't issued proofs in time, the pay fails with insufficient
+    /// balance → surfaced as `MintSettling` so the caller shows a soft "settling"
+    /// state rather than a hard error (the pending quote mints later).
+    func finishTopUpAndPayCashuRequest(
+        _ summary: CashuPaymentRequestSummary,
+        amount: UInt64,
+        targetMintURL: String,
+        targetQuoteId: String
+    ) async throws {
+        _ = await mintWithRetries(quoteId: targetQuoteId)
+        do {
+            try await payCashuPaymentRequest(
+                encoded: summary.encoded,
+                customAmountSats: summary.amount == nil ? amount : nil,
+                preferredMintURL: targetMintURL
+            )
+        } catch {
+            if error.isInsufficientBalanceError { throw MintSettling() }
+            throw error
+        }
+    }
+
+    /// Mint proofs for a paid quote, retrying so a slow/settling mint doesn't fail
+    /// the whole flow. Returns false if all attempts are exhausted (the pending
+    /// quote is minted later by `claimPaidMintQuote`/History refresh).
+    private func mintWithRetries(quoteId: String) async -> Bool {
+        for attempt in 0..<8 {
+            do {
+                _ = try await mintTokens(quoteId: quoteId)
+                return true
+            } catch {
+                if attempt < 7 { try? await Task.sleep(nanoseconds: 2_500_000_000) }
+            }
+        }
+        return false
     }
 }

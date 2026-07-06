@@ -29,10 +29,20 @@ func withBackgroundWriteAssertion<T>(
 
 @main
 struct CashuWalletApp: App {
-    @StateObject private var walletManager = WalletManager()
-    @StateObject private var navigationManager = NavigationManager()
-    @StateObject private var appLockManager = AppLockManager.shared
+    @StateObject private var walletManager: WalletManager
+    @StateObject private var navigationManager: NavigationManager
+    @StateObject private var appLockManager: AppLockManager
     @Environment(\.scenePhase) private var scenePhase
+
+    init() {
+        // Repair stdout/stderr before anything can touch the CDK FFI, so a broken
+        // stderr can't turn a Rust log write into a bogus "failed printing to stderr"
+        // panic that masks the real error. See AppLogger for the full rationale.
+        AppLogger.redirectStandardStreamsIfNeeded()
+        _walletManager = StateObject(wrappedValue: WalletManager())
+        _navigationManager = StateObject(wrappedValue: NavigationManager())
+        _appLockManager = StateObject(wrappedValue: AppLockManager.shared)
+    }
 
     var body: some Scene {
         WindowGroup {

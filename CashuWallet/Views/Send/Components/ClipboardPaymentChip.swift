@@ -8,6 +8,7 @@ struct ClipboardPaymentChip: View {
     let result: PaymentRequestDecodeResult
     let onTap: () -> Void
     let onDismiss: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var amountSats: UInt64? {
         switch result {
@@ -70,7 +71,7 @@ struct ClipboardPaymentChip: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
-        .transition(.opacity.combined(with: .move(edge: .top)))
+        .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
     }
 
     private var accessibilityLabel: String {

@@ -6,9 +6,14 @@ extension WalletManager {
 
     func createMintQuote(
         amount: UInt64?,
-        method: PaymentMethodKind = .bolt11
+        method: PaymentMethodKind = .bolt11,
+        targetMintURL: String? = nil
     ) async throws -> MintQuoteInfo {
-        let quote = try await lightningService.createMintQuote(amount: amount, method: method)
+        let quote = try await lightningService.createMintQuote(
+            amount: amount,
+            method: method,
+            targetMintURL: targetMintURL
+        )
         await loadTransactions()
         return quote
     }

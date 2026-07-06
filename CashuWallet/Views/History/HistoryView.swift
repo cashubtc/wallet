@@ -25,7 +25,7 @@ struct HistoryView: View {
     @State private var selectedRequest: CashuRequest?
     @State private var requestPendingDeletion: CashuRequest?
     @State private var transactionUpdateRevision = 0
-    @State private var hasAppearedOnce = false
+    @State private var didInitialLoad = false
 
     // Unified timeline item — Cashu Requests and transactions share a sort key
     // and live in the same date-grouped sections.
@@ -53,9 +53,6 @@ struct HistoryView: View {
     private let pageStep: Int = 30
     private let prefetchLead: Int = 5
 
-    // Cap stagger so a full page enters in ~300ms regardless of row count.
-    private let maxStaggerIndex = 8
-    private let staggerDelay: Double = 0.035
     private let rowHorizontalPadding: CGFloat = 4
     // Match MainWalletView's recent-list row metrics so spacing reads the
     // same from Home → History (16pt vertical padding, 4pt title/time gap).
@@ -65,7 +62,17 @@ struct HistoryView: View {
         NavigationStack {
             Group {
                 if filteredItems.isEmpty {
-                    emptyStateView
+                    // Don't show the "No History Yet" empty state until the first
+                    // load finishes: on the very first tab visit the transaction
+                    // service is empty (still loading), and rendering the animated
+                    // empty state here made it swoop in for a beat before the list
+                    // arrived. A brief blank canvas during the (fast, local) load
+                    // reads as nothing happening — then the list or the real empty
+                    // state settles in place. Later visits already have cached data,
+                    // so this branch isn't taken.
+                    if didInitialLoad {
+                        emptyStateView
+                    }
                 } else {
                     historyList
                 }
@@ -134,6 +141,7 @@ struct HistoryView: View {
                 // pending mint quotes (throttled) so a paid BOLT12 offer lands
                 // in history just by opening the tab — no pull-to-refresh.
                 await walletManager.loadTransactions()
+                didInitialLoad = true
                 await walletManager.syncPendingMintQuotesIfStale()
             }
             .onReceive(NotificationCenter.default.publisher(for: .cashuTransactionsUpdated)) { _ in
@@ -163,7 +171,7 @@ struct HistoryView: View {
                     ForEach(Array(entry.group.items.enumerated()), id: \.element.id) { index, item in
                         let globalIndex = entry.startIndex + index
                         VStack(spacing: 0) {
-                            row(for: item, staggerIndex: globalIndex)
+                            row(for: item)
 
                             if index < entry.group.items.count - 1 {
                                 CanvasDivider()
@@ -188,7 +196,6 @@ struct HistoryView: View {
                 await walletManager.syncPendingMintQuotes()
                 await walletManager.checkAllPendingTokens()
             }
-            .onAppear { hasAppearedOnce = true }
             .onChange(of: scrollResetToken) { _, _ in
                 if let firstId = visibleItems.first?.id {
                     withAnimation(.snappy(duration: 0.25)) {
@@ -217,12 +224,12 @@ struct HistoryView: View {
     }
 
     @ViewBuilder
-    private func row(for item: HistoryItem, staggerIndex: Int) -> some View {
+    private func row(for item: HistoryItem) -> some View {
         switch item {
         case .transaction(let tx):
-            transactionRow(transaction: tx, staggerIndex: staggerIndex)
+            transactionRow(transaction: tx)
         case .request(let req):
-            cashuRequestRow(request: req, staggerIndex: staggerIndex)
+            cashuRequestRow(request: req)
         }
     }
 
@@ -375,24 +382,26 @@ struct HistoryView: View {
             )
         } else if filter != .all {
             NativeEmptyState(
-                title: "Nothing here",
+                title: "Nothing Here",
                 systemImage: "line.3.horizontal.decrease.circle",
                 description: "No transactions match this filter."
             )
         } else {
+            // Shares the Wallet empty state's size + centered placement (one
+            // component), but keeps its own clock icon and history-specific
+            // copy so the two screens read as deliberate siblings, not
+            // accidental duplicates.
             NativeEmptyState(
-                title: "No activity yet",
+                title: "No History Yet",
                 systemImage: "clock.arrow.circlepath",
-                description: "Your first payment will show up here."
+                description: "Your payments will appear here."
             )
         }
     }
 
     // MARK: - Cashu Request Row
 
-    private func cashuRequestRow(request: CashuRequest, staggerIndex: Int) -> some View {
-        let clampedIndex = min(staggerIndex, maxStaggerIndex)
-        let delay = Double(clampedIndex) * staggerDelay
+    private func cashuRequestRow(request: CashuRequest) -> some View {
         let isReceived = !request.receivedPayments.isEmpty
         return Button {
             HapticFeedback.selection()
@@ -424,9 +433,6 @@ struct HistoryView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .opacity(hasAppearedOnce ? 1 : 0)
-        .offset(y: hasAppearedOnce ? 0 : 6)
-        .animation(.smooth(duration: 0.32).delay(delay), value: hasAppearedOnce)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(request.displayTitle), \(isReceived ? "received" : "waiting for payment"), \(formatRelativeDate(request.createdAt))")
         .accessibilityHint("Opens request details")
@@ -441,9 +447,7 @@ struct HistoryView: View {
 
     // MARK: - Transaction Row
 
-    private func transactionRow(transaction: WalletTransaction, staggerIndex: Int) -> some View {
-        let clampedIndex = min(staggerIndex, maxStaggerIndex)
-        let delay = Double(clampedIndex) * staggerDelay
+    private func transactionRow(transaction: WalletTransaction) -> some View {
         return Button {
             HapticFeedback.selection()
             selectedTransaction = transaction
@@ -471,9 +475,6 @@ struct HistoryView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .opacity(hasAppearedOnce ? 1 : 0)
-        .offset(y: hasAppearedOnce ? 0 : 6)
-        .animation(.smooth(duration: 0.32).delay(delay), value: hasAppearedOnce)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(rowTitle(for: transaction)), \(formatAmount(transaction)) sats, \(transaction.status == .pending ? transaction.displayStatusText.lowercased() : "completed"), \(formatRelativeDate(transaction.date))")
         .accessibilityHint("Opens transaction details")

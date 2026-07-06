@@ -21,7 +21,7 @@ struct ActivityOrbView: View {
                     .font(.title3)
                     .foregroundStyle(Color.accentColor)
                     .rotationEffect(.degrees(rotation))
-                    .transition(.opacity.combined(with: .scale))
+                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale))
             }
         }
         .accessibilityHidden(true)
@@ -154,13 +154,17 @@ struct NativeEmptyState: View {
                 }
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: style.maxHeight)
         .padding(.horizontal, 32)
         .padding(.vertical, style.verticalPadding)
         .opacity(isPresented ? 1 : 0)
         .scaleEffect(reduceMotion ? 1 : (isPresented ? 1 : 0.96))
         .offset(y: reduceMotion ? 0 : (isPresented ? 0 : 8))
         .animation(.spring(response: 0.36, dampingFraction: 0.82), value: isPresented)
+        // Centering frame lives OUTSIDE the .animation scope: on a fresh mount
+        // (e.g. the History tab remounting) the spring must not interpolate this
+        // full-screen frame's origin, or the whole block flies in from the
+        // top-left corner while layout settles. Only the content fades/rises.
+        .frame(maxWidth: .infinity, maxHeight: style.maxHeight)
         .task {
             isPresented = true
             guard !reduceMotion else { return }

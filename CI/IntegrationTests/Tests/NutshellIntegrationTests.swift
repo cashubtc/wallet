@@ -245,6 +245,80 @@ final class NutshellIntegrationTests: IntegrationTestBase {
         try? FileManager.default.removeItem(atPath: receiverDbPath)
     }
 
+    func testStaleCounterReceiveRecoversAfterRestore() async throws {
+        // Reproduces the production "Blinded Message is already signed" bug and the
+        // fix's core mechanism. A wallet whose NUT-13 keyset counter is behind what
+        // the mint has already signed for its seed (same seed, fresh DB — e.g. a
+        // reinstall, or the seed running on another wallet) derives blinded receive
+        // outputs the mint has already signed, so the swap is rejected. A restore()
+        // rescan fast-forwards the counter past those indices, and the retry lands
+        // on unused outputs. TokenService.receiveTokens automates exactly this.
+        let sharedMnemonic = try generateMnemonic()
+        let mintUrl = MintUrl(url: mintUrlStr)
+        let opts = ReceiveOptions(
+            amountSplitTarget: .none, p2pkSigningKeys: [], preimages: [], metadata: [:]
+        )
+
+        // Wallet A — shared seed, own DB. Minting 63 (= 32+16+8+4+2+1) signs blinded
+        // outputs at contiguous low counter indices for this seed; the mint
+        // remembers them for its lifetime.
+        let walletADbPath = NSTemporaryDirectory().appending("staleA_\(UUID().uuidString).sqlite")
+        let walletARepo = try WalletRepository(mnemonic: sharedMnemonic, store: .sqlite(path: walletADbPath))
+        try await walletARepo.createWallet(mintUrl: mintUrl, unit: .sat, targetProofCount: nil)
+        let walletA = try await walletARepo.getWallet(mintUrl: mintUrl, unit: .sat)
+        _ = try await mintSats(63, wallet: walletA)
+
+        // Sender — a *different* seed, funds a token for the receiver to claim.
+        let senderDbPath = NSTemporaryDirectory().appending("staleSender_\(UUID().uuidString).sqlite")
+        let senderRepo = try WalletRepository(mnemonic: try generateMnemonic(), store: .sqlite(path: senderDbPath))
+        try await senderRepo.createWallet(mintUrl: mintUrl, unit: .sat, targetProofCount: nil)
+        let senderWallet = try await senderRepo.getWallet(mintUrl: mintUrl, unit: .sat)
+        _ = try await mintSats(40, wallet: senderWallet)
+        let prepared = try await senderWallet.prepareSend(
+            amount: Amount(value: 20),
+            options: SendOptions(
+                memo: nil, conditions: nil, amountSplitTarget: .none,
+                sendKind: .onlineExact, includeFee: false, useP2bk: false,
+                maxProofs: nil, metadata: [:], p2pkSigningKeys: [],
+                p2pkLockedProofSendMode: .swap
+            )
+        )
+        let tokenString = try await prepared.confirm(memo: nil).encode()
+
+        // Wallet B — SAME seed as A, but a fresh DB → keyset counter at 0, behind
+        // the mint's memory. Its receive-swap must collide at counter 0.
+        let walletBDbPath = NSTemporaryDirectory().appending("staleB_\(UUID().uuidString).sqlite")
+        let walletBRepo = try WalletRepository(mnemonic: sharedMnemonic, store: .sqlite(path: walletBDbPath))
+        try await walletBRepo.createWallet(mintUrl: mintUrl, unit: .sat, targetProofCount: nil)
+        let walletB = try await walletBRepo.getWallet(mintUrl: mintUrl, unit: .sat)
+
+        do {
+            _ = try await walletB.receive(token: try Token.decode(encodedToken: tokenString), options: opts)
+            XCTFail("Expected a stale-counter collision (Blinded Message is already signed)")
+        } catch {
+            let msg = String(describing: error).lowercased()
+            XCTAssertTrue(
+                msg.contains("already signed") || msg.contains("duplicate outputs")
+                    || msg.contains("outputs already signed"),
+                "Expected a NUT-13 counter-desync rejection, got: \(error)"
+            )
+        }
+
+        // restore() resyncs the counter past the already-signed indices…
+        _ = try await walletB.restore()
+
+        // …so the retry now lands on unused outputs and succeeds. The token's input
+        // proofs were never spent by the failed swap, so it is still claimable.
+        let received = try await walletB.receive(
+            token: try Token.decode(encodedToken: tokenString), options: opts
+        )
+        XCTAssertEqual(received.value, 20, "Receive should succeed after restore resyncs the counter")
+
+        try? FileManager.default.removeItem(atPath: walletADbPath)
+        try? FileManager.default.removeItem(atPath: senderDbPath)
+        try? FileManager.default.removeItem(atPath: walletBDbPath)
+    }
+
     func testMintQuoteBalanceZeroWithoutPayment() async throws {
         let quote = try await wallet.mintQuote(
             paymentMethod: .bolt11,

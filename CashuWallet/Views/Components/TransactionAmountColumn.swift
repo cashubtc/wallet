@@ -19,6 +19,11 @@ struct TransactionAmountColumn: View {
                 .font(.system(.body, design: .rounded).weight(.semibold))
                 .monospacedDigit()
                 .foregroundStyle(amountColor)
+                .lineLimit(1)
+                // No `.minimumScaleFactor` here: it collides with `.numericText`
+                // (the numeric renderer reports a tiny intermediate width and the
+                // scale factor then shrinks short amounts toward 50%). Row amounts
+                // are abbreviated by `formatAmountShort`, so they never truncate.
                 .contentTransition(.numericText(value: Double(transaction.amount)))
 
             if showFiat {

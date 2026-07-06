@@ -1,99 +1,71 @@
 import SwiftUI
+import Cdk
 
 struct ReceiveTokenDetailView: View {
     let tokenString: String
-    let onComplete: (() -> Void)?
+    var onComplete: (() -> Void)? = nil
     @EnvironmentObject var walletManager: WalletManager
     @Environment(\.dismiss) var dismiss
     @ObservedObject private var settings = SettingsManager.shared
 
-    @State private var tokenAmount: UInt64 = 0
+    @State private var decodedToken: Token?
+    @State private var tokenAmount: UInt64
     @State private var receiveFee: UInt64 = 0
     @State private var mintUrl: String = ""
-    @State private var isReceiving = false
     @State private var errorMessage: String?
     @State private var isLoadingFee = true
     @State private var p2pkPubkeys: [String] = []
     @State private var tokenLockedToKnownKey = true
     @State private var mintIsKnown = true
 
+    /// Drives the shared full-screen status view once the user taps Receive:
+    /// nil = confirm screen, .processing = "Claiming…", .success = "Payment
+    /// Received!". A brief `.processing` beat lets the redeem read as an
+    /// action that happened rather than an instant jump. Mirrors the send/pay
+    /// side (`SendView.paymentPhase`).
+    @State private var phase: PaymentStatusView.Phase?
+
+    init(tokenString: String, onComplete: (() -> Void)? = nil) {
+        self.tokenString = tokenString
+        self.onComplete = onComplete
+        // Parse the amount eagerly so the hero shows its FINAL value on frame 1.
+        // Token.decode is a pure Cdk call (no wallet/settings env), so this is
+        // safe in init. Deriving it here avoids the 0 → N flip that parseToken()
+        // in .onAppear would otherwise make, which fires CurrencyAmountDisplay's
+        // .animation(value: sats) while PayFlowScaffold's GeometryReader is still
+        // resolving — sliding the hero in from the top-left. Env-dependent state
+        // (mintIsKnown / tokenLockedToKnownKey / fee) still resolves in onAppear.
+        let amount = (try? Token.decode(encodedToken: tokenString).value().value) ?? 0
+        _tokenAmount = State(initialValue: amount)
+    }
+
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                ScrollView {
-                    VStack(spacing: 16) {
-                        // Amount
-                        CurrencyAmountDisplay(
-                            sats: tokenAmount,
-                            primary: $settings.amountDisplayPrimary
-                        )
-                        .padding(.top, 12)
-
-                        // Details
-                        VStack(spacing: 0) {
-                            if isLoadingFee {
-                                HStack {
-                                    Label("Fee", systemImage: "arrow.up.arrow.down")
-                                        .foregroundStyle(.secondary)
-                                    Spacer()
-                                    ProgressView().scaleEffect(0.8)
-                                }
-                                .font(.subheadline)
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 12)
-                            } else {
-                                detailRow(icon: "arrow.up.arrow.down", label: "Fee", value: "\(receiveFee) sat")
-                            }
-                            Divider().padding(.leading)
-                            detailRow(icon: "bitcoinsign.bank.building", label: "Mint", value: shortMintUrl(mintUrl))
-                            if !p2pkPubkeys.isEmpty {
-                                Divider().padding(.leading)
-                                lockedToRow
-                            }
-                        }
-                        .padding(.vertical, 4)
-                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
-                        .padding(.horizontal)
-
-                        if !mintIsKnown && !mintUrl.isEmpty {
-                            newMintBadge
-                        }
-
-                        if let error = errorMessage {
-                            InlineNotice(message: error, severity: .error)
-                                .padding(.horizontal)
-                        }
-                    }
-                    .padding(.bottom, 16)
-                }
-
-                // Buttons
-                VStack(spacing: 12) {
-                    Button(action: receiveToken) {
-                        if isReceiving {
-                            ProgressView()
-                        } else {
-                            Text("Receive")
-                        }
-                    }
-                    .glassButton()
-                    .disabled(isReceiving || !tokenLockedToKnownKey)
-
-                    Button(action: receiveLater) {
-                        Text("Receive Later")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .padding(.horizontal)
-                .padding(.bottom, 16)
+            Group {
+            if let phase {
+                statusView(phase)
+            } else {
+                confirmContent
             }
+            }
+            .animation(.smooth(duration: 0.3), value: phase)
+            // Opacity-only fade on screen entry (once). Sits OUTSIDE the phase-morph
+            // scope above; each .animation keys on a different value, so the entry
+            // fade and the confirm→success morph never cross-animate each other.
+            .screenEntryFade()
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(action: { dismiss() }) {
+                    Button(action: {
+                        switch phase {
+                        case .none:              dismiss()
+                        case .success, .failure: finish()
+                        default:                 break   // .processing — button stays disabled
+                        }
+                    }) {
                         Image(systemName: "xmark")
                     }
+                    .disabled(phase == .processing)
                 }
 
                 ToolbarItem(placement: .principal) {
@@ -102,34 +74,125 @@ struct ReceiveTokenDetailView: View {
                 }
             }
         }
-        .task(id: tokenString) {
-            await loadTokenPreview()
+        .onAppear {
+            parseToken()
         }
     }
 
-    init(tokenString: String, onComplete: (() -> Void)? = nil) {
-        self.tokenString = tokenString
-        self.onComplete = onComplete
-    }
+    /// The confirm step, on the shared `PayFlowScaffold` so its details block
+    /// sits at the SAME locked Y as the success screen (`PaymentStatusView`
+    /// uses the same scaffold). Tapping Receive then morphs the hero
+    /// (amount → checkmark + title) in place, with no layout jump — and the
+    /// rows are hairline-on-canvas, matching every other detail surface.
+    private var confirmContent: some View {
+        PayFlowScaffold {
+            CurrencyAmountDisplay(
+                sats: tokenAmount,
+                primary: $settings.amountDisplayPrimary
+            )
+        } details: {
+            VStack(spacing: 16) {
+                VStack(spacing: 0) {
+                    if isLoadingFee {
+                        HStack {
+                            Label("Fee", systemImage: "arrow.up.arrow.down")
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            ProgressView().scaleEffect(0.8)
+                        }
+                        .font(.subheadline)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 14)
+                    } else {
+                        detailRow(icon: "arrow.up.arrow.down", label: "Fee", value: "\(receiveFee) sat")
+                    }
+                    canvasDivider
+                    detailRow(icon: "bitcoinsign.bank.building", label: "Mint", value: shortMintUrl(mintUrl))
+                    if !p2pkPubkeys.isEmpty {
+                        canvasDivider
+                        lockedToRow
+                    }
+                }
+                .padding(.horizontal)
 
-    private var newMintBadge: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "exclamationmark.shield.fill")
-                .font(.caption)
-                .foregroundStyle(.orange)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("New mint")
-                    .font(.caption.weight(.semibold))
-                Text("You haven't used \(shortMintUrl(mintUrl)) before. Receiving adds it to your wallet — only continue if you trust it.")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                if !mintIsKnown && !mintUrl.isEmpty {
+                    InlineNotice(
+                        message: "You haven't used \(shortMintUrl(mintUrl)) before. Receiving adds it to your wallet — only continue if you trust it.",
+                        title: "New mint",
+                        severity: .caution,
+                        tinted: true
+                    )
+                    .padding(.horizontal)
+                }
+
+                if let error = errorMessage {
+                    InlineNotice(message: error, severity: .error)
+                        .padding(.horizontal)
+                }
             }
-            Spacer(minLength: 0)
+        } footer: {
+            VStack(spacing: 12) {
+                Button(action: receiveToken) {
+                    Text("Receive")
+                }
+                .glassButton()
+                .disabled(!tokenLockedToKnownKey)
+
+                Button(action: receiveLater) {
+                    Text("Receive Later")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal)
+            .padding(.bottom, 16)
         }
-        .padding(10)
-        .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
-        .padding(.horizontal)
+    }
+
+    /// Full-screen status shown once the user taps Receive — the exact same
+    /// `PaymentStatusView` the pay/send flows use, so receiving reads
+    /// identically (spinner → checkmark → title → detail block → Done). Passing
+    /// the live `phase` through keeps one mounted instance, so the ring morphs
+    /// into the check in place and the success haptic fires exactly once.
+    private func statusView(_ phase: PaymentStatusView.Phase) -> some View {
+        PaymentStatusView(
+            details: successRows,
+            phase: phase,
+            processingTitle: "Claiming…",
+            successTitle: "Payment Received!",
+            failureTitle: "Couldn't Receive",
+            onDone: { finish() },
+            onRetry: { withAnimation(.smooth(duration: 0.3)) { self.phase = nil } }   // back to the confirm screen
+        )
+    }
+
+    private var successRows: [PaymentStatusView.DetailRow] {
+        var rows: [PaymentStatusView.DetailRow] = [
+            .init(
+                icon: "bitcoinsign",
+                label: "Amount",
+                value: AmountFormatter.sats(tokenAmount, useBitcoinSymbol: settings.useBitcoinSymbol)
+            ),
+            .init(icon: "arrow.up.arrow.down", label: "Fee", value: "\(receiveFee) sat"),
+        ]
+        if !mintUrl.isEmpty {
+            rows.append(.init(
+                icon: "bitcoinsign.bank.building",
+                label: "Mint",
+                value: shortMintUrl(mintUrl)
+            ))
+        }
+        return rows
+    }
+
+    /// Finalize the flow (Done / close after success): hand control back to the
+    /// presenter if it owns dismissal, otherwise dismiss directly.
+    private func finish() {
+        if let onComplete = onComplete {
+            onComplete()
+        } else {
+            dismiss()
+        }
     }
 
     // MARK: - Helpers
@@ -152,8 +215,8 @@ struct ReceiveTokenDetailView: View {
             }
         }
         .font(.subheadline)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 4)
+        .padding(.vertical, 14)
     }
 
     private var lockedKeyLabel: String {
@@ -173,8 +236,17 @@ struct ReceiveTokenDetailView: View {
                 .truncationMode(.middle)
         }
         .font(.subheadline)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 4)
+        .padding(.vertical, 14)
+    }
+
+    /// Hairline separator on the flat canvas — matches the pay/receive detail
+    /// surfaces (no boxed background).
+    private var canvasDivider: some View {
+        Rectangle()
+            .fill(Color(.separator))
+            .frame(height: 0.5)
+            .padding(.leading, 28)
     }
 
     func shortMintUrl(_ url: String) -> String {
@@ -183,20 +255,18 @@ struct ReceiveTokenDetailView: View {
 
     // MARK: - Actions
 
-    @MainActor
-    private func loadTokenPreview() async {
-        isLoadingFee = true
-        errorMessage = nil
-
+    func parseToken() {
         do {
-            let preview = try await CdkRuntime.shared.tokenPreview(from: tokenString)
-            guard !Task.isCancelled else { return }
+            let token = try walletManager.decodeToken(tokenString: tokenString)
+            self.decodedToken = token
+            // `tokenAmount` is parsed eagerly in init (same Token.decode path), so
+            // the hero already holds the final value — no reassignment here, which
+            // would be a no-op at best and re-trigger the entry animation at worst.
+            let mint = try token.mintUrl()
+            self.mintUrl = mint.url
+            self.mintIsKnown = walletManager.isMintKnown(url: mint.url)
 
-            self.tokenAmount = preview.amount
-            self.mintUrl = preview.mintUrl
-            self.mintIsKnown = walletManager.isMintKnown(url: preview.mintUrl)
-
-            let tokenP2PKPubkeys = preview.p2pkPubkeys
+            let tokenP2PKPubkeys = token.p2pkPubkeys()
             self.p2pkPubkeys = tokenP2PKPubkeys
             let hasMatch = tokenP2PKPubkeys.contains { settings.isKnownP2PKPublicKey($0) }
             self.tokenLockedToKnownKey = tokenP2PKPubkeys.isEmpty || hasMatch
@@ -204,56 +274,71 @@ struct ReceiveTokenDetailView: View {
                 errorMessage = "This ecash is locked to a key you don't hold. Ask the sender to lock it to your key instead."
             }
 
-            await calculateFee()
+            Task { await calculateFee() }
         } catch {
-            guard !Task.isCancelled else { return }
             errorMessage = "Invalid token. \(error.userFacingWalletMessage)"
             isLoadingFee = false
         }
     }
 
-    @MainActor
-    private func calculateFee() async {
+    func calculateFee() async {
         do {
             let fee = try await walletManager.calculateReceiveFee(tokenString: tokenString)
-            guard !Task.isCancelled else { return }
-            self.receiveFee = fee
-            self.isLoadingFee = false
+            await MainActor.run {
+                self.receiveFee = fee
+                self.isLoadingFee = false
+            }
         } catch {
-            guard !Task.isCancelled else { return }
-            self.receiveFee = 0
-            self.isLoadingFee = false
+            await MainActor.run {
+                self.receiveFee = 0
+                self.isLoadingFee = false
+            }
         }
     }
 
     func receiveToken() {
         guard tokenLockedToKnownKey else {
-            errorMessage = "Missing matching P2PK key for this token."
+            errorMessage = "This token is locked to a key you don't have. Ask the sender to lock it to your key instead."
             return
         }
 
-        isReceiving = true
+        errorMessage = nil
+        withAnimation(.smooth(duration: 0.3)) { phase = .processing }
         Task {
+            // Minimum on-screen time for the "Claiming…" spinner, run
+            // concurrently with the real redeem so we wait max(network, 0.5s) —
+            // a legible beat when redemption is instant, no extra cost when it
+            // isn't. Not a fake delay: the redeem itself hits the mint.
+            async let minHold: Void = Task.sleep(nanoseconds: 500_000_000)
             do {
                 let receivedAmount = try await walletManager.receiveTokens(tokenString: tokenString)
+                try? await minHold
                 await MainActor.run {
-                    HapticFeedback.notification(.success)
+                    // Post the home-screen receipt toast (seen after Done), then
+                    // morph the spinner into the shared full-screen success. It
+                    // owns the success haptic on the transition, so don't buzz here.
                     NotificationCenter.default.post(
                         name: .cashuTokenReceived,
                         object: nil,
                         userInfo: ["amount": receivedAmount, "fee": UInt64(0)]
                     )
-                    if let onComplete = onComplete {
-                        onComplete()
-                    } else {
-                        dismiss()
-                    }
+                    withAnimation(.smooth(duration: 0.3)) { phase = .success }
                 }
             } catch {
+                try? await minHold   // let the spinner settle before the failure
                 await MainActor.run {
-                    errorMessage = error.userFacingWalletMessage
-                    isReceiving = false
-                    HapticFeedback.notification(.error)
+                    // Route redeem failures through the SAME full-screen status view
+                    // as success (red X + terminal-aware CTA), mirroring the send/pay
+                    // side — not the inline confirm-screen notice. PaymentStatusView
+                    // owns the error haptic, so don't buzz here.
+                    let message = error.walletMessage
+                    withAnimation(.smooth(duration: 0.3)) {
+                        phase = .failure(
+                            message: message.text,
+                            isCaution: message.severity == .caution,
+                            isTerminal: message.recoverability == .terminal
+                        )
+                    }
                 }
             }
         }

@@ -99,6 +99,23 @@ enum PaymentRequestDecodeResult: Equatable, Sendable {
     case unrecognized
 }
 
+extension PaymentRequestDecodeResult {
+    /// Clean caution copy when this is a Lightning request that carries no amount,
+    /// so every melt entry point surfaces identical, plain-language wording instead
+    /// of a failing quote round-trip that leaks raw CDK codes. Nil for anything that
+    /// isn't an amountless BOLT11 invoice or BOLT12 offer.
+    var amountlessMeltCaution: String? {
+        switch self {
+        case .bolt11(let amountSats, _) where amountSats == nil:
+            return "This invoice doesn't set an amount. Ask the sender for one with the amount set."
+        case .bolt12(let amountSats, _) where amountSats == nil:
+            return "This offer doesn't set an amount. Ask the sender for one with the amount set."
+        default:
+            return nil
+        }
+    }
+}
+
 enum PaymentRequestMode: String, Equatable, Sendable {
     case lightning
     case onchain
@@ -253,8 +270,16 @@ enum PaymentRequestDecoder {
         }
     }
 
-    /// `prefix(6)…suffix(6)` short representation for invoices and addresses;
-    /// human-readable addresses are returned in full.
+    /// `prefix(8)…suffix(6)` middle-truncation for opaque destination blobs (invoices,
+    /// on-chain addresses, encoded Cashu requests). Short strings are returned in full.
+    static func middleTruncated(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count > 16 else { return trimmed }
+        return "\(trimmed.prefix(8))…\(trimmed.suffix(6))"
+    }
+
+    /// Short representation for invoices and addresses; human-readable addresses are
+    /// returned in full.
     static func shortRepresentation(_ raw: String, result: PaymentRequestDecodeResult) -> String {
         switch result {
         case .lightningAddress(let address):
@@ -262,9 +287,7 @@ enum PaymentRequestDecoder {
         case .cashuPaymentRequest(let summary):
             return summary.description ?? amountLabel(for: summary) ?? "Cashu payment request"
         case .bolt11, .bolt12, .onchain, .unrecognized:
-            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard trimmed.count > 16 else { return trimmed }
-            return "\(trimmed.prefix(8))…\(trimmed.suffix(6))"
+            return middleTruncated(raw)
         }
     }
 
@@ -273,7 +296,7 @@ enum PaymentRequestDecoder {
         return "\(amount) \(summary.unit ?? "sat")"
     }
 
-    static func suggestedMode(_ result: PaymentRequestDecodeResult) -> PaymentRequestMode? {
+    static func suggestedMode(_ result: PaymentRequestDecodeResult) -> MeltView.MeltMode? {
         switch result {
         case .bolt11, .bolt12, .lightningAddress:
             return .lightning

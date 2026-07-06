@@ -6,6 +6,7 @@ struct ReceiveLightningView: View {
     @EnvironmentObject var walletManager: WalletManager
     @ObservedObject private var settings = SettingsManager.shared
     @ObservedObject private var priceService = PriceService.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var amountString = ""
     @State private var selectedMethod: PaymentMethodKind = .bolt11
@@ -33,9 +34,14 @@ struct ReceiveLightningView: View {
     var body: some View {
         NavigationStack {
             Group {
-                if let quote = mintQuote {
+                if isPaid, let quote = mintQuote {
+                    // Payment received → the same full-screen success the pay/send
+                    // flows use, replacing the (now-useless) QR entirely.
+                    receiveSuccessView(quote: quote)
+                        .transition(.opacity)
+                } else if let quote = mintQuote {
                     requestDisplayView(quote: quote)
-                        .transition(.asymmetric(
+                        .transition(reduceMotion ? .opacity : .asymmetric(
                             insertion: .move(edge: .trailing).combined(with: .opacity),
                             removal: .opacity
                         ))
@@ -46,13 +52,14 @@ struct ReceiveLightningView: View {
                         .transition(.opacity)
                 } else {
                     amountInputView
-                        .transition(.asymmetric(
+                        .transition(reduceMotion ? .opacity : .asymmetric(
                             insertion: .move(edge: .leading).combined(with: .opacity),
                             removal: .move(edge: .leading).combined(with: .opacity)
                         ))
                 }
             }
-            .animation(.snappy(duration: 0.35), value: mintQuote != nil)
+            .animation(.smooth(duration: 0.3), value: mintQuote != nil)
+            .animation(.smooth(duration: 0.3), value: isPaid)
             .navigationBarTitleDisplayMode(.inline)
             // No nav bar chrome — the title + close button float over the
             // black canvas. This kills the secondary gray bar the user was
@@ -72,7 +79,7 @@ struct ReceiveLightningView: View {
                         .font(.headline)
                 }
 
-                if let quote = mintQuote {
+                if let quote = mintQuote, !isPaid {
                     ToolbarItem(placement: .topBarTrailing) {
                         ShareLink(item: quote.request) {
                             Image(systemName: "square.and.arrow.up")
@@ -446,6 +453,39 @@ struct ReceiveLightningView: View {
         return mint.name.isEmpty ? extractMintHost(mint.url) : mint.name
     }
 
+    /// Full-screen success shown once payment is detected — the exact same
+    /// `PaymentStatusView` the pay/send flows use, so a received payment reads
+    /// identically to a sent one (checkmark → title → detail block → Done).
+    /// Stays until the user taps Done; the mint/refresh runs in the background.
+    private func receiveSuccessView(quote: MintQuoteInfo) -> some View {
+        PaymentStatusView(
+            details: receiveSuccessRows(quote: quote),
+            phase: .success,
+            successTitle: "Payment Received!",
+            onDone: { dismiss() },
+            onRetry: {}
+        )
+    }
+
+    private func receiveSuccessRows(quote: MintQuoteInfo) -> [PaymentStatusView.DetailRow] {
+        var rows: [PaymentStatusView.DetailRow] = []
+        if let amount = quote.amount {
+            rows.append(.init(
+                icon: "bitcoinsign",
+                label: "Amount",
+                value: AmountFormatter.sats(amount, useBitcoinSymbol: settings.useBitcoinSymbol)
+            ))
+        }
+        if let mint = walletManager.activeMint {
+            rows.append(.init(
+                icon: "bitcoinsign.bank.building",
+                label: "Mint",
+                value: extractMintHost(mint.url)
+            ))
+        }
+        return rows
+    }
+
     private func standardRequestDisplayView(quote: MintQuoteInfo) -> some View {
         VStack(spacing: 0) {
             ScrollView {
@@ -614,13 +654,13 @@ struct ReceiveLightningView: View {
             if isPaid {
                 HStack(spacing: 6) {
                     Image(systemName: "checkmark.circle.fill")
-                        .symbolEffect(.bounce, value: isPaid)
+                        .symbolEffect(.bounce, value: reduceMotion ? false : isPaid)
                         .accessibilityHidden(true)
                     Text("Payment Received!")
                 }
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(.green)
-                .transition(.scale.combined(with: .opacity))
+                .transition(reduceMotion ? .opacity : .asymmetric(insertion: .scale(scale: 0.9).combined(with: .opacity), removal: .opacity))
             } else if isCheckingPayment || isMinting {
                 HStack(spacing: 6) {
                     ProgressView()
@@ -643,17 +683,21 @@ struct ReceiveLightningView: View {
             } else if mintQuote?.state == .paid || mintQuote?.state == .issued {
                 HStack(spacing: 6) {
                     Image(systemName: "checkmark.seal.fill")
-                        .symbolEffect(.bounce, value: mintQuote?.state)
+                        .symbolEffect(.bounce, value: reduceMotion ? nil : mintQuote?.state)
                         .accessibilityHidden(true)
                     Text("Payment detected")
                 }
+                // Quiet intermediate — payment seen but not yet minted into the
+                // balance. Monochrome (not green): green is reserved for the final
+                // "Payment Received!" celebration below (DESIGN.md — retired the
+                // small worded green success badge).
                 .font(.subheadline.weight(.medium))
-                .foregroundStyle(.green)
-                .transition(.scale.combined(with: .opacity))
+                .foregroundStyle(.secondary)
+                .transition(reduceMotion ? .opacity : .asymmetric(insertion: .scale(scale: 0.9).combined(with: .opacity), removal: .opacity))
             } else {
                 HStack(spacing: 6) {
                     Image(systemName: "clock")
-                        .symbolEffect(.pulse, options: .repeating)
+                        .symbolEffect(.pulse, options: .repeating, isActive: !reduceMotion)
                         .accessibilityHidden(true)
                     Text(pendingStatusText)
                 }
@@ -662,7 +706,7 @@ struct ReceiveLightningView: View {
                 .transition(.opacity)
             }
         }
-        .animation(.spring(response: 0.5, dampingFraction: 0.7), value: isPaid)
+        .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.5, dampingFraction: 0.7), value: isPaid)
         .animation(.easeInOut(duration: 0.2), value: isCheckingPayment)
         .animation(.easeInOut(duration: 0.2), value: isMinting)
         .animation(.easeInOut(duration: 0.2), value: isExpired)
@@ -1146,8 +1190,10 @@ struct ReceiveLightningView: View {
     private func completeReceivedQuote(mintInBackground: Bool) async {
         guard !isPaid else { return }
 
+        // Flipping `isPaid` swaps the body to the full-screen success. The
+        // success haptic is owned by `PaymentStatusView` on appear (don't
+        // double-buzz here).
         isPaid = true
-        HapticFeedback.notification(.success)
         expiryTimer?.invalidate()
 
         let quoteId = mintQuote?.id
@@ -1175,13 +1221,10 @@ struct ReceiveLightningView: View {
             )
         }
 
-        // Brief dwell so the user registers the "Payment Received!" badge, then
-        // auto-dismiss. Cancel the poll AFTER the dwell — this method runs
-        // inside `quoteStatusTask`, so cancelling first would abort the sleep
-        // and dismiss instantly. The mint finishes in the background.
-        try? await Task.sleep(nanoseconds: 1_200_000_000)
+        // Payment is in — stop polling. The full-screen success now owns the
+        // screen and stays until the user taps Done (no auto-dismiss); the
+        // mint finishes in the background.
         quoteStatusTask?.cancel()
-        dismiss()
     }
 
     private func isAlreadyIssuedMintError(_ error: Error) -> Bool {

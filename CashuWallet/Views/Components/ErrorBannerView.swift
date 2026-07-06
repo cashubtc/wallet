@@ -118,6 +118,10 @@ struct ErrorBannerView: View {
 /// balance notice carrying amounts and an action).
 struct InlineNotice: View {
     let message: String
+    /// Optional bold leading line (e.g. "New mint"). When present the `message`
+    /// drops to a secondary explanatory body — turning the notice into a titled
+    /// callout instead of a single tinted caption. Keep it to a few words.
+    var title: String? = nil
     var severity: ErrorSeverity = .error
     /// Optional second line, always secondary — for amounts / supporting detail.
     var detail: String? = nil
@@ -136,9 +140,18 @@ struct InlineNotice: View {
             }
 
             VStack(alignment: .leading, spacing: 2) {
+                if let title {
+                    Text(title)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                // With a title the message becomes the calm secondary body;
+                // untitled it carries the severity hue as the primary line.
                 Text(message)
-                    .font(.caption)
-                    .foregroundStyle(severity.foreground)
+                    .font(title == nil ? .caption : .caption2)
+                    .foregroundStyle(title == nil ? severity.foreground : Color.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 
                 if let detail {
@@ -162,7 +175,7 @@ struct InlineNotice: View {
     }
 
     private var accessibilityText: String {
-        var parts = [severity.announcementPrefix + message]
+        var parts = [severity.announcementPrefix + (title.map { "\($0). " } ?? "") + message]
         if let detail { parts.append(detail) }
         return parts.joined(separator: " ")
     }
@@ -199,14 +212,20 @@ private struct ErrorBannerModifier: ViewModifier {
                         message: message,
                         severity: severity,
                         retry: retry,
-                        onDismiss: { withAnimation { self.message = nil } }
+                        onDismiss: { withAnimation(.snappy) { self.message = nil } }
                     )
                     .padding(.horizontal)
                     .padding(.bottom, 8)
+                    // Enter slides up from the bottom edge; exit is a quiet fade only
+                    // (Jakub: exits are subtler than entrances — the user's focus has
+                    // already moved on). See DESIGN.md §6 exit convention.
                     .transition(
                         reduceMotion
                             ? .opacity
-                            : .move(edge: .bottom).combined(with: .opacity)
+                            : .asymmetric(
+                                insertion: .move(edge: .bottom).combined(with: .opacity),
+                                removal: .opacity
+                            )
                     )
                 }
             }

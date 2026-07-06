@@ -4,6 +4,7 @@ struct MintDiscoverySheet: View {
     let addMint: (String) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @EnvironmentObject private var walletManager: WalletManager
     @ObservedObject private var discoveryManager = MintDiscoveryManager.shared
     @ObservedObject private var settings = SettingsManager.shared
@@ -85,7 +86,7 @@ struct MintDiscoverySheet: View {
                     .listRowBackground(Color.clear)
                 }
             }
-            .animation(.default, value: addedURLsThisSession)
+            .animation(.smooth(duration: 0.3), value: addedURLsThisSession)
             .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search mints")
             .refreshable { await discoveryManager.discoverMints() }
             .task {
@@ -133,7 +134,7 @@ struct MintDiscoverySheet: View {
 
             Image(systemName: "checkmark.circle.fill")
                 .font(.title3)
-                .symbolEffect(.bounce, value: addedURLsThisSession.contains(mint.url))
+                .symbolEffect(.bounce, value: reduceMotion ? false : addedURLsThisSession.contains(mint.url))
                 .accessibilityLabel("Added")
         }
         .foregroundStyle(.secondary)
@@ -157,7 +158,7 @@ struct MintDiscoverySheet: View {
             Spacer(minLength: 8)
 
             Button {
-                withAnimation {
+                withAnimation(.smooth(duration: 0.3)) {
                     addedURLsThisSession.insert(mint.url)
                 }
                 addMint(mint.url)

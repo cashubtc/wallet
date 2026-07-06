@@ -1,123 +1,70 @@
 import SwiftUI
 
+// MARK: - Nostr Keys Section
+
+/// The Nostr key hub, built on the shared single-canvas settings recipe so it
+/// reads as one family with the Locked Ecash hub: a `KeyCard` for the active key,
+/// a house-styled key-source picker, and plain action rows. Self-contained — owns
+/// its own sheets and alerts, mirroring `P2PKSettingsSection`.
 struct NostrKeysSettingsSection: View {
     @ObservedObject var nostrService = NostrService.shared
 
-    @Binding var showNsec: Bool
-    @Binding var copiedNsec: Bool
-    @Binding var showImportNsec: Bool
-    @Binding var importNsecText: String
-    @Binding var showGenerateKeyConfirm: Bool
-    @Binding var showResetKeyConfirm: Bool
-    @Binding var nostrKeyError: String?
+    @State private var showImportNsec = false
+    @State private var importNsecText = ""
+    @State private var showGenerateKeyConfirm = false
+    @State private var showResetKeyConfirm = false
+    @State private var nostrKeyError: String?
+    @State private var showNsecReveal = false
+    @State private var copiedValue: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Your Lightning address is derived from your Nostr public key. Choose which key to use.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+        VStack(spacing: 0) {
+            SettingsSectionGroup("Nostr key") {
+                keyCard
+            }
+            SettingsSectionFooter {
+                Text("Your Lightning address and npub.cash come from this key.")
+            }
 
-            // Signer type selection
-            ForEach(NostrSignerType.allCases, id: \.self) { type in
-                Button(action: {
-                    switchSignerType(to: type)
-                }) {
-                    HStack {
-                        Image(systemName: nostrService.signerType == type ? "largecircle.fill.circle" : "circle")
-                            .foregroundStyle(nostrService.signerType == type ? Color.accentColor : .secondary)
+            SettingsSectionGroup("Key source") {
+                ForEach(Array(NostrSignerType.allCases.enumerated()), id: \.element) { index, type in
+                    if index > 0 { CanvasDivider() }
+                    keySourceRow(type)
+                }
+            }
 
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(type.displayName)
-                                .font(.subheadline)
-                            Text(type.description)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-
-                        Spacer()
-                    }
+            SettingsSectionGroup(nil) {
+                Button(action: { HapticFeedback.selection(); nostrKeyError = nil; showGenerateKeyConfirm = true }) {
+                    settingsActionRow("Generate new key", systemImage: "plus.circle")
                 }
                 .buttonStyle(.plain)
-            }
 
-            // Current key info
-            if nostrService.isInitialized {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Current Public Key")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text(nostrService.npub)
-                        .font(.system(.caption, design: .monospaced))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                CanvasDivider()
+
+                Button(action: { nostrKeyError = nil; importNsecText = ""; showImportNsec = true }) {
+                    settingsActionRow("Import key", systemImage: "square.and.arrow.down")
                 }
+                .buttonStyle(.plain)
 
-                // nsec reveal/copy
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Private Key (nsec)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        if showNsec {
-                            Text(nostrService.nsec)
-                                .font(.system(.caption, design: .monospaced))
-                                .foregroundStyle(.orange)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                        } else {
-                            Text(String(repeating: "*", count: 20))
-                                .font(.system(.caption, design: .monospaced))
-                                .foregroundStyle(.secondary)
-                        }
+                if nostrService.signerType == .privateKey {
+                    CanvasDivider()
+                    Button(action: { HapticFeedback.selection(); showResetKeyConfirm = true }) {
+                        settingsActionRow("Reset to wallet seed", systemImage: "arrow.counterclockwise")
                     }
-
-                    Spacer()
-
-                    Button(action: { showNsec.toggle() }) {
-                        Image(systemName: showNsec ? "eye.slash" : "eye")
-                            .foregroundStyle(Color.accentColor)
-                    }
-
-                    Button(action: copyNsec) {
-                        Image(systemName: copiedNsec ? "checkmark" : "doc.on.doc")
-                            .foregroundStyle(copiedNsec ? .green : Color.accentColor)
-                    }
-                }
-
-                Text("Keep your private key secret. Anyone with it can control your Lightning address.")
-                    .font(.caption2)
-                    .foregroundStyle(.orange)
-            }
-
-            // Action buttons
-            Button(action: { showGenerateKeyConfirm = true }) {
-                HStack {
-                    Image(systemName: "plus.circle")
-                    Text("Generate New Key")
+                    .buttonStyle(.plain)
                 }
             }
 
-            Button(action: { showImportNsec = true }) {
-                HStack {
-                    Image(systemName: "square.and.arrow.down")
-                    Text("Import Key")
-                }
-            }
-
-            if nostrService.signerType == .privateKey {
-                Button(action: { showResetKeyConfirm = true }) {
-                    HStack {
-                        Image(systemName: "arrow.counterclockwise")
-                        Text("Reset to Wallet Seed")
-                    }
-                    .foregroundStyle(.orange)
-                }
-            }
-
-            if let error = nostrKeyError {
-                InlineNotice(message: error, severity: .error)
+            if let nostrKeyError {
+                InlineNotice(message: nostrKeyError, severity: .error)
+                    .padding(.horizontal, 6)
+                    .padding(.top, 4)
+                    .transition(.opacity)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .animation(.easeInOut(duration: 0.2), value: nostrService.signerType)
+        .animation(.easeInOut(duration: 0.2), value: nostrKeyError)
         .alert("Generate New Key", isPresented: $showGenerateKeyConfirm) {
             Button("Cancel", role: .cancel) {}
             Button("Generate", role: .destructive) {
@@ -140,15 +87,85 @@ struct NostrKeysSettingsSection: View {
                 onImport: importNsec
             )
         }
+        .sheet(isPresented: $showNsecReveal) {
+            PrivateKeyRevealSheet(
+                title: "Nostr Private Key",
+                nsec: nostrService.getNsec(),
+                warning: "Anyone with this key can control your Lightning address. Never share it."
+            )
+            .canvasSheetBackground()
+        }
+    }
+
+    // MARK: Key card
+
+    @ViewBuilder
+    private var keyCard: some View {
+        if nostrService.isInitialized && !nostrService.npub.isEmpty {
+            KeyCard(
+                title: "Nostr key",
+                pubkey: nostrService.npub,
+                status: nostrService.signerType == .seed ? .seedBacked : .custom,
+                copiedValue: copiedValue,
+                onCopy: { copyNpub() },
+                actions: [
+                    .init(title: "Reveal nsec", systemImage: "eye") {
+                        showNsecReveal = true
+                    }
+                ],
+                displayLabel: P2PKKeyDisplay.middleTruncate(nostrService.npub, lead: 12, tail: 12)
+            )
+        } else {
+            HStack(spacing: 12) {
+                Image(systemName: "key")
+                    .foregroundStyle(.secondary)
+                    .frame(width: 34, height: 34)
+                    .background(.thinMaterial, in: Circle())
+                Text("Your Nostr key appears once your wallet finishes setting up.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+            .padding(14)
+            .liquidGlass(in: RoundedRectangle(cornerRadius: 14))
+        }
+    }
+
+    private func keySourceRow(_ type: NostrSignerType) -> some View {
+        Button(action: { switchSignerType(to: type) }) {
+            HStack(spacing: 14) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(type.displayName)
+                        .font(.body)
+                        .foregroundStyle(.primary)
+                    Text(type.description)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+                if nostrService.signerType == type {
+                    Image(systemName: "checkmark")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(.primary)
+                }
+            }
+            .padding(.horizontal, 4)
+            .padding(.vertical, 14)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Actions
 
-    private func copyNsec() {
-        UIPasteboard.general.string = nostrService.getNsec()
-        copiedNsec = true
+    private func copyNpub() {
+        UIPasteboard.general.string = nostrService.npub
+        HapticFeedback.selection()
+        withAnimation(.snappy(duration: 0.18)) { copiedValue = "key" }
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            copiedNsec = false
+            if copiedValue == "key" { withAnimation(.snappy(duration: 0.18)) { copiedValue = nil } }
         }
     }
 
@@ -188,6 +205,7 @@ struct NostrKeysSettingsSection: View {
 
     private func switchSignerType(to type: NostrSignerType) {
         guard nostrService.signerType != type else { return }
+        HapticFeedback.selection()
         nostrKeyError = nil
         if type == .privateKey && !nostrService.hasCustomPrivateKey() {
             showGenerateKeyConfirm = true
@@ -203,69 +221,109 @@ struct NostrKeysSettingsSection: View {
 
 // MARK: - Nostr Relays Section
 
+/// The Nostr relay list, on the same single-canvas recipe: a glass input field
+/// (matching `ImportP2PKSheet`) over a divider-separated list of relay rows.
+/// Self-contained — owns its own input/error state.
 struct NostrRelaysSettingsSection: View {
     @ObservedObject var settings = SettingsManager.shared
 
-    @Binding var relayInput: String
-    @Binding var relayError: String?
-    @Binding var copiedRelay: String?
+    @State private var relayInput = ""
+    @State private var relayError: String?
+    @State private var copiedRelay: String?
+
+    private var canAdd: Bool {
+        !relayInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Manage your Nostr relay list for compatible features like npub.cash and backups.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+        VStack(spacing: 0) {
+            SettingsSectionGroup("Relays") {
+                HStack(spacing: 10) {
+                    TextField("wss://relay.example.com", text: $relayInput)
+                        .font(.system(.body, design: .monospaced))
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .onSubmit(addRelay)
 
-            HStack(spacing: 12) {
-                TextField("wss://relay.example.com", text: $relayInput)
-                    .textInputAutocapitalization(.never)
-                    .disableAutocorrection(true)
-                    .font(.system(.caption, design: .monospaced))
-                    .textFieldStyle(.roundedBorder)
-
-                Button(action: addRelay) {
-                    Image(systemName: "plus.circle.fill")
-                        .font(.title3)
-                        .foregroundStyle(relayInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .secondary : Color.accentColor)
+                    Button(action: addRelay) {
+                        Image(systemName: "arrow.up.circle.fill")
+                            .font(.title3)
+                            .foregroundStyle(canAdd ? Color.primary : Color.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!canAdd)
+                    .accessibilityLabel("Add relay")
                 }
-                .disabled(relayInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                .accessibilityLabel("Add relay")
-            }
+                .padding(14)
+                .liquidGlass(in: RoundedRectangle(cornerRadius: 14))
 
-            ForEach(settings.nostrRelays, id: \.self) { relay in
-                HStack(spacing: 12) {
-                    Text(relay)
-                        .font(.system(.caption, design: .monospaced))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-
-                    Spacer()
-
-                    Button(action: { copyRelay(relay) }) {
-                        Image(systemName: copiedRelay == relay ? "checkmark" : "doc.on.doc")
-                            .foregroundStyle(copiedRelay == relay ? .green : Color.accentColor)
+                if !settings.nostrRelays.isEmpty {
+                    Color.clear.frame(height: 10)
+                    ForEach(Array(settings.nostrRelays.enumerated()), id: \.element) { index, relay in
+                        if index > 0 { CanvasDivider() }
+                        relayRow(relay)
                     }
-                    .accessibilityLabel("Copy relay URL")
-
-                    Button(action: { settings.removeNostrRelay(relay) }) {
-                        Image(systemName: "trash")
-                            .foregroundStyle(.red)
-                    }
-                    .accessibilityLabel("Remove relay")
                 }
             }
 
             if let relayError {
                 InlineNotice(message: relayError, severity: .error)
+                    .padding(.horizontal, 6)
+                    .padding(.top, 4)
+                    .transition(.opacity)
             }
 
-            Button(action: {
-                settings.resetNostrRelaysToDefault()
-                relayError = nil
-            }) {
-                Text("Reset default relays")
+            SettingsSectionFooter {
+                Text("Relays sync your Nostr data for compatible features like npub.cash and backups.")
+            }
+
+            SettingsSectionGroup(nil) {
+                Button(action: {
+                    HapticFeedback.selection()
+                    settings.resetNostrRelaysToDefault()
+                    relayError = nil
+                }) {
+                    settingsActionRow("Reset to default relays", systemImage: "arrow.counterclockwise")
+                }
+                .buttonStyle(.plain)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .animation(.easeInOut(duration: 0.2), value: settings.nostrRelays)
+        .animation(.easeInOut(duration: 0.2), value: relayError)
+    }
+
+    private func relayRow(_ relay: String) -> some View {
+        HStack(spacing: 14) {
+            SettingsRowIcon(systemName: "antenna.radiowaves.left.and.right")
+            Text(relay)
+                .font(.system(.subheadline, design: .monospaced))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 8)
+            HStack(spacing: 18) {
+                Button(action: { copyRelay(relay) }) {
+                    Image(systemName: copiedRelay == relay ? "checkmark" : "doc.on.doc")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(copiedRelay == relay ? Color.green : Color.secondary)
+                        .contentTransition(.symbolEffect(.replace))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Copy relay URL")
+
+                Button(action: { HapticFeedback.selection(); settings.removeNostrRelay(relay) }) {
+                    Image(systemName: "trash")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.red)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Remove relay")
+            }
+        }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 14)
+        .contentShape(Rectangle())
     }
 
     // MARK: - Actions
@@ -288,11 +346,29 @@ struct NostrRelaysSettingsSection: View {
 
     private func copyRelay(_ relay: String) {
         UIPasteboard.general.string = relay
-        copiedRelay = relay
+        HapticFeedback.selection()
+        withAnimation(.snappy(duration: 0.18)) { copiedRelay = relay }
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
             if copiedRelay == relay {
-                copiedRelay = nil
+                withAnimation(.snappy(duration: 0.18)) { copiedRelay = nil }
             }
         }
     }
+}
+
+// MARK: - Shared row helper
+
+/// A plain single-canvas settings action row (leading glyph + title), matching
+/// `AdvancedKeysView.actionRow`. Shared by both Nostr sections in this file.
+private func settingsActionRow(_ title: String, systemImage: String) -> some View {
+    HStack(spacing: 14) {
+        SettingsRowIcon(systemName: systemImage)
+        Text(title)
+            .font(.body)
+            .foregroundStyle(.primary)
+        Spacer(minLength: 8)
+    }
+    .padding(.horizontal, 4)
+    .padding(.vertical, 14)
+    .contentShape(Rectangle())
 }

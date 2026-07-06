@@ -43,7 +43,19 @@ extension WalletManager {
         // this desyncs the counter and makes the mint reject "duplicate outputs"
         // on the first attempt. Track/enrich the mint only after a successful
         // receive, so an unredeemed token never adds the mint either.
+        let beforeIds = await incomingTxIds(forTokenString: tokenString)
         let amount = try await tokenService.receiveTokens(tokenString: tokenString)
+
+        // Persist the redeemed token, keyed to the CDK tx id this receive just
+        // created (found by the same before/after diff receiveCashuRequestPayment
+        // uses), so History can offer Copy-as-receipt on the settled row. The
+        // token's proofs are now spent — this is a record, not a reofferable
+        // payment code. Save before loadTransactions() so the new row picks it up.
+        if let newTxId = (await incomingTxIds(forTokenString: tokenString))
+            .subtracting(beforeIds).first {
+            transactionService.saveToken(txId: newTxId, token: tokenString)
+        }
+
         try? await ensureMintTrackedForToken(tokenString)
         await refreshBalance()
         await loadTransactions()
