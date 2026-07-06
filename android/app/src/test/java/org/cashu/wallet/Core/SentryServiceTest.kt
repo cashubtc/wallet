@@ -85,6 +85,23 @@ class SentryServiceTest {
     }
 
     @Test
+    fun toggleContractStartsOnEnableAndClosesOnDisable() {
+        val gateway = FakeSentryGateway()
+        var enabled = false
+        val service = SentryService(gateway, isEnabled = { enabled })
+
+        // Mirrors SettingsManager.setSentryEnabled: on -> initialize, off -> shutdown.
+        enabled = true
+        service.initialize()
+        enabled = false
+        service.shutdown()
+
+        assertEquals(1, gateway.startedDsns.size)
+        assertEquals(1, gateway.closeCount)
+        assertTrue(gateway.captured.isEmpty())
+    }
+
+    @Test
     fun flagFlipsAreHonoredPerCall() {
         val gateway = FakeSentryGateway()
         var enabled = false

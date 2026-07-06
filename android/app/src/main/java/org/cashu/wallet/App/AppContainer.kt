@@ -12,6 +12,7 @@ import org.cashu.wallet.Core.Platform.AndroidConnectivityObserver
 import org.cashu.wallet.Core.Platform.AndroidSecureStorage
 import org.cashu.wallet.Core.Platform.WalletDatabasePathManager
 import org.cashu.wallet.Core.PriceService
+import org.cashu.wallet.Core.SentryService
 import org.cashu.wallet.Core.SettingsManager
 import org.cashu.wallet.Core.SettingsStore
 import org.cashu.wallet.Core.WalletManager
@@ -24,6 +25,7 @@ class AppContainer(context: Context) {
     val cashuRequestStore = CashuRequestStore(walletStore)
     val settingsStore = SettingsStore(appContext)
     val settingsManager = SettingsManager(settingsStore, secureStorage)
+    val sentryService = SentryService(appContext, settingsStore)
     val nostrService = NostrService(secureStorage, settingsStore)
     val navigationManager = NavigationManager()
     val connectivityObserver = AndroidConnectivityObserver(appContext)
@@ -51,5 +53,6 @@ class AppContainer(context: Context) {
 
     init {
         npcService.quoteClaimHandler = walletManager
+        settingsManager.sentryService = sentryService
     }
 }
