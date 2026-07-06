@@ -44,7 +44,7 @@ struct PrivacySettingsSection: View {
                 Toggle(isOn: $settings.receivePaymentRequestsAutomatically) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Claim received ecash automatically")
-                        Text("Off keeps incoming payments unclaimed until you turn it back on.")
+                        Text("Off asks you to confirm each incoming payment before it's claimed.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
