@@ -131,6 +131,11 @@ struct NativeEmptyState: View {
     let systemImage: String
     var description: String?
     var style: Style = .fullScreen
+    // Optional text-only glass CTA grouped inside the centered cluster (e.g. Send's
+    // zero-balance "Receive"). Both nil by default, so icon+title+description call sites
+    // are unaffected.
+    var actionTitle: String? = nil
+    var action: (() -> Void)? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isPresented = false
@@ -138,20 +143,31 @@ struct NativeEmptyState: View {
 
     var body: some View {
         VStack(spacing: style.spacing) {
-            animatedIcon
+            VStack(spacing: style.spacing) {
+                animatedIcon
 
-            VStack(spacing: 4) {
-                Text(title)
-                    .font(style.titleFont)
-                    .multilineTextAlignment(.center)
-
-                if let description {
-                    Text(description)
-                        .font(style.descriptionFont)
-                        .foregroundStyle(.secondary)
+                VStack(spacing: 4) {
+                    Text(title)
+                        .font(style.titleFont)
                         .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
+
+                    if let description {
+                        Text(description)
+                            .font(style.descriptionFont)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
+            }
+            // Combine only the glyph + copy; the CTA below stays a separate,
+            // activatable accessibility element.
+            .accessibilityElement(children: .combine)
+
+            if let actionTitle, let action {
+                Button(actionTitle, action: action)
+                    .glassButton()
+                    .padding(.top, 8)
             }
         }
         .padding(.horizontal, 32)
@@ -170,7 +186,6 @@ struct NativeEmptyState: View {
             guard !reduceMotion else { return }
             symbolTrigger.toggle()
         }
-        .accessibilityElement(children: .combine)
     }
 
     @ViewBuilder

@@ -2595,27 +2595,13 @@ struct UnifiedSendView: View {
     }
 
     private var noBalanceState: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "banknote")
-                .font(.system(size: 40))
-                .foregroundStyle(.secondary)
-
-            VStack(spacing: 6) {
-                Text("Nothing to send yet")
-                    .font(.title3.weight(.medium))
-                Text("Receive some ecash before you can send.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-
-            Button("Receive", action: onReceive)
-                .glassButton()
-                .padding(.top, 4)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, 24)
-        .padding(.top, 24)
+        NativeEmptyState(
+            title: "Nothing to send yet",
+            systemImage: "arrow.down.circle",
+            description: "Receive some ecash before you can send.",
+            actionTitle: "Receive",
+            action: onReceive
+        )
     }
 
     private func addMint(_ url: String) {
