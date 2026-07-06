@@ -191,6 +191,17 @@ enum WalletErrorMessage {
             return .error("Not enough balance.")
         }
 
+        // Stale NUT-13 keyset counter: the wallet asked the mint to re-sign blinded
+        // outputs it already signed for this seed. TokenService auto-recovers on
+        // receive (restore + retry); this copy is the fallback if that recovery is
+        // exhausted, and stays non-terminal so "Try Again" (which re-runs the
+        // recovery) remains available.
+        if normalized.contains("duplicate outputs")
+            || normalized.contains("already signed")
+            || normalized.contains("outputs already signed") {
+            return .error("The wallet fell out of sync with this mint. Tap Try Again to resync and receive.")
+        }
+
         if normalized.contains("token already spent")
             || normalized.contains("proof already used")
             || normalized.contains("already redeemed")

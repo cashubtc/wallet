@@ -158,12 +158,19 @@ class TokenService: ObservableObject {
         // The receive performs a swap whose blinded outputs are derived
         // deterministically from the keyset counter (NUT-13). If that counter is
         // behind what the mint has already signed (e.g. the same seed received
-        // from this mint before), the mint rejects the swap with "Duplicate
-        // outputs". A failed swap advances the persisted counter, so re-fetching
-        // a fresh wallet and retrying lands on unused outputs — the same thing a
-        // manual rescan does. Retry a few times before surfacing the error.
+        // from this mint before, or a reinstall/DB reset that kept the seed), the
+        // mint rejects the swap — worded either "Duplicate outputs" (Nutshell) or
+        // "Blinded Message is already signed" (macadamia et al.), both matched by
+        // isCounterDesyncError.
+        //
+        // Two recovery levers, both advancing the counter past already-signed
+        // indices: (1) a one-shot restore() rescan on the first collision jumps
+        // past the bulk in a single step, and (2) each failed swap also advances
+        // the persisted counter, so re-fetching a fresh wallet and retrying mops
+        // up any residual. Retry a few times before surfacing the error.
         let maxAttempts = 4
         var lastError: Error?
+        var didRestore = false
         for attempt in 0..<maxAttempts {
             let wallet = try await repo.getWallet(mintUrl: tokenMintUrl, unit: .sat)
             do {
@@ -174,19 +181,36 @@ class TokenService: ObservableObject {
                 return amount.value
             } catch {
                 lastError = error
-                guard Self.isDuplicateOutputsError(error), attempt < maxAttempts - 1 else {
+                guard Self.isCounterDesyncError(error), attempt < maxAttempts - 1 else {
                     throw error
                 }
-                AppLogger.wallet.warning("Receive rejected with duplicate outputs; retrying with a fresh wallet (attempt \(attempt + 1)/\(maxAttempts))")
+                if !didRestore {
+                    // One-shot NUT-13 restore fast-forwards the keyset counter past
+                    // every index the mint has already signed. Safe here: it doesn't
+                    // consume the pending token, and it recovers any other unspent
+                    // proofs for this mint as a bonus. Best-effort — if it fails we
+                    // still fall back to the per-attempt counter bump below.
+                    didRestore = true
+                    AppLogger.wallet.warning("Receive hit NUT-13 counter desync; restoring to resync the counter")
+                    _ = try? await wallet.restore()
+                } else {
+                    AppLogger.wallet.warning("Receive still colliding after restore; retrying with a fresh wallet (attempt \(attempt + 1)/\(maxAttempts))")
+                }
             }
         }
         throw lastError ?? WalletError.notInitialized
     }
 
-    /// Whether an error is the mint's NUT-03 "Duplicate outputs" rejection,
-    /// which is recoverable by retrying with an advanced keyset counter.
-    private static func isDuplicateOutputsError(_ error: Error) -> Bool {
-        String(describing: error).lowercased().contains("duplicate outputs")
+    /// Whether an error is a mint rejection caused by a stale NUT-13 keyset
+    /// counter — i.e. the wallet asked the mint to sign blinded outputs it has
+    /// already signed for this seed. Mints word this differently ("Duplicate
+    /// outputs" on Nutshell, "Blinded Message is already signed" on macadamia and
+    /// others); all are recoverable by advancing the counter and retrying.
+    static func isCounterDesyncError(_ error: Error) -> Bool {
+        let message = String(describing: error).lowercased()
+        return message.contains("duplicate outputs")
+            || message.contains("already signed")            // "Blinded Message is already signed"
+            || message.contains("outputs already signed")
     }
     
     // MARK: - Token Utilities
