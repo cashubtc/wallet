@@ -20,6 +20,9 @@ struct MainWalletView: View {
     @State private var receiveEcashDetent: PresentationDetent = .medium
     @State private var contactlessCoordinator = ContactlessPaymentCoordinator()
     @State private var selectedTransaction: WalletTransaction?
+    /// Unclaimed incoming token being claimed (rows open the claim flow
+    /// directly — one Receive tap, no intermediate detail sheet).
+    @State private var claimReceiveToken: PendingReceiveToken?
     @State private var selectedRequest: CashuRequest?
     @State private var topInsetHeight: CGFloat = 0
     /// Last-viewed home balance unit, persisted so the wallet reopens on it.
@@ -98,6 +101,18 @@ struct MainWalletView: View {
                 TransactionDetailView(transaction: transaction)
                     .environmentObject(walletManager)
                     .canvasSheetBackground()
+            }
+            // Claim flow for an unclaimed incoming token. `item:` captures the
+            // pending token at presentation, so the content stays stable while
+            // the claim removes it from the store (a live lookup here would go
+            // nil mid-flow and blank the screen).
+            .fullScreenCover(item: $claimReceiveToken) { pending in
+                ReceiveTokenDetailView(
+                    tokenString: pending.token,
+                    onComplete: { claimReceiveToken = nil },
+                    claim: { try await walletManager.claimPendingReceiveToken(pending) }
+                )
+                .environmentObject(walletManager)
             }
             .sheet(item: $selectedRequest) { request in
                 NavigationStack {
@@ -568,7 +583,14 @@ struct MainWalletView: View {
     private func transactionRow(transaction: WalletTransaction) -> some View {
         Button {
             HapticFeedback.selection()
-            selectedTransaction = transaction
+            // Unclaimed incoming ecash goes straight to the claim flow — one
+            // Receive tap, no intermediate detail sheet.
+            if transaction.isPendingReceiveToken,
+               let pending = walletManager.pendingReceiveTokens.first(where: { $0.tokenId == transaction.id }) {
+                claimReceiveToken = pending
+            } else {
+                selectedTransaction = transaction
+            }
         } label: {
             HStack(spacing: 14) {
                 rowIcon(for: transaction)

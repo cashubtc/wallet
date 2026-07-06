@@ -6,7 +6,7 @@ struct ContentView: View {
     @EnvironmentObject var navigationManager: NavigationManager
     @ObservedObject private var cashuRequestListener = CashuRequestListener.shared
     /// Payment currently on the approval screen (fullScreenCover item).
-    @State private var claimApproval: PendingCashuClaimApproval?
+    @State private var claimApproval: PendingReceiveToken?
 
     var body: some View {
         // ZStack (not Group) so the outgoing and incoming roots overlap and truly
@@ -43,49 +43,41 @@ struct ContentView: View {
         // Incoming NUT-18 payment that needs an explicit user decision (mint
         // not tracked yet, or auto-claim disabled) — presented on the standard
         // receive screen, whose built-in "New mint" caution notice covers the
-        // trust warning when it applies.
-        .fullScreenCover(item: $claimApproval) { approval in
+        // trust warning when it applies. The prompt is one-shot: closing it
+        // without deciding keeps the payment claimable from its History row.
+        .fullScreenCover(item: $claimApproval) { pending in
             ReceiveTokenDetailView(
-                tokenString: approval.tokenString,
+                tokenString: pending.token,
                 onComplete: { claimApproval = nil },
-                claim: { try await cashuRequestListener.claimApproved(approval) },
+                claim: { try await cashuRequestListener.claimHeldPayment(pending) },
                 secondaryActionTitle: "Decline",
                 onSecondaryAction: {
-                    cashuRequestListener.decline(approval)
+                    cashuRequestListener.declineHeldPayment(pending)
                     claimApproval = nil
                 }
             )
             .environmentObject(walletManager)
         }
-        .onChange(of: cashuRequestListener.pendingApprovals) { _, approvals in
-            presentNextApprovalIfIdle(approvals)
+        .onChange(of: cashuRequestListener.heldForApproval) { _, held in
+            presentHeldPaymentIfIdle(held)
         }
-        .onChange(of: claimApproval) { previous, current in
-            // Screen just closed. Advance to the next queued approval only when
-            // the shown one was resolved (claimed or declined — it left the
-            // queue). A plain dismissal or a failed claim leaves it queued:
-            // stop prompting for this session; it re-offers on the next scan.
-            guard current == nil, let previous else { return }
-            let wasResolved = !cashuRequestListener.pendingApprovals.contains { $0.id == previous.id }
-            guard wasResolved else { return }
-            Task {
-                // Let the cover's dismiss animation settle before re-presenting.
-                try? await Task.sleep(nanoseconds: 600_000_000)
-                presentNextApprovalIfIdle(cashuRequestListener.pendingApprovals)
-            }
+        .onChange(of: claimApproval) { _, current in
+            // Screen closed without a decision ("not now"): drop the prompt.
+            // The payment stays in the pending-receive store and History.
+            if current == nil { cashuRequestListener.dismissHeldPayment() }
         }
         .onAppear {
-            presentNextApprovalIfIdle(cashuRequestListener.pendingApprovals)
+            presentHeldPaymentIfIdle(cashuRequestListener.heldForApproval)
         }
     }
 
-    /// Present the next queued unknown-mint payment, one at a time. Skips while
-    /// another approval (or onboarding) is on screen.
-    private func presentNextApprovalIfIdle(_ approvals: [PendingCashuClaimApproval]) {
+    /// Present the just-arrived held payment. Skips while another approval (or
+    /// onboarding) is on screen — skipped payments remain in History.
+    private func presentHeldPaymentIfIdle(_ held: PendingReceiveToken?) {
         guard claimApproval == nil,
               !walletManager.needsOnboarding,
-              let next = approvals.first else { return }
-        claimApproval = next
+              let held else { return }
+        claimApproval = held
     }
 }
 

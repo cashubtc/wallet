@@ -43,6 +43,9 @@ struct TransactionDetailView: View {
             // A claimed token is spent, so only an unclaimed (pending) send is
             // still worth re-presenting. The passive Copy button is separate — it
             // extends to settled tokens as a receipt via `copyableContent`.
+            // An unclaimed *incoming* token is money to claim, not a payment
+            // code to hand out — its detail leads with the Receive button.
+            if transaction.isPendingReceiveToken { return false }
             return transaction.token != nil && transaction.status == .pending
         case .lightning:
             guard transaction.invoice != nil else { return false }
