@@ -15,7 +15,12 @@ class WalletManager: ObservableObject {
     
     /// Total wallet balance in satoshis
     @Published var balance: UInt64 = 0
-    
+
+    /// Per-unit balance totals summed across all mints, in each unit's base
+    /// units (sat, or eur/usd cents, …). Drives the multi-unit home hero;
+    /// `balance` mirrors `balancesByUnit["sat"]`.
+    @Published var balancesByUnit: [String: UInt64] = [:]
+
     /// Pending balance (invoices not yet claimed)
     @Published var pendingBalance: UInt64 = 0
     

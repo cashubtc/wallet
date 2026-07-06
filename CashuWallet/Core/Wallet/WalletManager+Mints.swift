@@ -73,28 +73,47 @@ extension WalletManager {
         
         guard !mintUrls.isEmpty else {
             balance = 0
+            balancesByUnit = [:]
             return
         }
-        
+
         var total: UInt64 = 0
         var balancesByMintURL: [String: UInt64] = [:]
-        
+        // Per-unit totals across all mints (sat plus any held eur/usd/custom).
+        var unitTotals: [String: UInt64] = [:]
+
         for mintUrlString in mintUrls {
+            let mintUrl = MintUrl(url: mintUrlString)
             do {
-                let mintUrl = MintUrl(url: mintUrlString)
                 let wallet = try await walletRepository.getWallet(mintUrl: mintUrl, unit: .sat)
                 let walletBalance = try await wallet.totalBalance()
-                
+
                 total += walletBalance.value
                 balancesByMintURL[mintUrlString] = walletBalance.value
+                unitTotals["sat", default: 0] += walletBalance.value
             } catch {
                 balancesByMintURL[mintUrlString] = 0
                 AppLogger.wallet.error("Failed to refresh balance for mint \(mintUrlString): \(error)")
             }
+
+            // Add this mint's non-sat unit balances. Only the units it advertises
+            // are queried; a never-used unit wallet throws getWallet → skipped as
+            // zero (no createWallet — the sat wallet above is reused for sat).
+            let nonSatUnits = mintService.mints
+                .first(where: { $0.url == mintUrlString })?
+                .units.filter { $0.lowercased() != "sat" } ?? []
+            for unit in nonSatUnits {
+                let currencyUnit = PaymentRequestDecoder.currencyUnit(from: unit)
+                if let unitWallet = try? await walletRepository.getWallet(mintUrl: mintUrl, unit: currencyUnit),
+                   let unitBalance = try? await unitWallet.totalBalance() {
+                    unitTotals[unit, default: 0] += unitBalance.value
+                }
+            }
         }
-        
+
         mintService.updateMintBalances(balancesByMintURL)
         balance = total
+        balancesByUnit = unitTotals
     }
 }
 

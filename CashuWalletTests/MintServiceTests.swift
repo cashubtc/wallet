@@ -255,6 +255,75 @@ final class MultiUnitSupportTests: XCTestCase {
         XCTAssertEqual(mint(units: ["sat", "eur"], mintUnits: ["sat"]).resolvedMintUnit("eur"), "sat")
     }
 
+    // MARK: - Home balance pager ordering
+
+    func testHomeBalanceSatOnly() {
+        XCTAssertEqual(HomeBalance.homeBalanceUnits(["sat": 1000]), ["sat"])
+    }
+
+    func testHomeBalanceEmptyIsSat() {
+        XCTAssertEqual(HomeBalance.homeBalanceUnits([:]), ["sat"])
+    }
+
+    func testHomeBalanceIncludesHeldNonSatSorted() {
+        XCTAssertEqual(
+            HomeBalance.homeBalanceUnits(["sat": 1000, "usd": 500, "eur": 200]),
+            ["sat", "eur", "usd"]
+        )
+    }
+
+    func testHomeBalanceExcludesZeroNonSat() {
+        // A unit the mint lists but the user doesn't hold gets no page.
+        XCTAssertEqual(
+            HomeBalance.homeBalanceUnits(["sat": 1000, "eur": 0, "usd": 300]),
+            ["sat", "usd"]
+        )
+    }
+
+    func testHomeBalanceAllZeroNonSatIsSat() {
+        XCTAssertEqual(HomeBalance.homeBalanceUnits(["sat": 0, "eur": 0]), ["sat"])
+    }
+
+    func testResolvedHomeUnitKeepsAvailable() {
+        XCTAssertEqual(HomeBalance.resolvedUnit("eur", in: ["sat", "eur"]), "eur")
+    }
+
+    func testResolvedHomeUnitFallsBackToSat() {
+        // Stored unit dropped to zero balance and left the pager → back to sat.
+        XCTAssertEqual(HomeBalance.resolvedUnit("eur", in: ["sat"]), "sat")
+    }
+
+    // MARK: - Pager gate (active/default mint)
+
+    func testShowsPagerWhenMultiUnitDefaultAndNonSatHeld() {
+        XCTAssertTrue(HomeBalance.showsUnitPager(
+            activeMintSupportsMultipleUnits: true,
+            balancesByUnit: ["sat": 100, "eur": 5]
+        ))
+    }
+
+    func testNoPagerWhenDefaultMintIsSingleUnit() {
+        // Non-sat balance held elsewhere, but the default mint is single-unit.
+        XCTAssertFalse(HomeBalance.showsUnitPager(
+            activeMintSupportsMultipleUnits: false,
+            balancesByUnit: ["sat": 100, "eur": 5]
+        ))
+    }
+
+    func testNoPagerWhenNoNonSatBalance() {
+        XCTAssertFalse(HomeBalance.showsUnitPager(
+            activeMintSupportsMultipleUnits: true,
+            balancesByUnit: ["sat": 100]
+        ))
+    }
+
+    func testNoPagerWhenNonSatBalanceIsZero() {
+        XCTAssertFalse(HomeBalance.showsUnitPager(
+            activeMintSupportsMultipleUnits: true,
+            balancesByUnit: ["sat": 100, "eur": 0]
+        ))
+    }
+
     func testResolvedUnitNilUsesDefault() {
         XCTAssertEqual(mint(units: ["eur", "usd"]).resolvedUnit(nil), "eur")
     }

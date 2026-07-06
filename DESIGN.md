@@ -809,6 +809,28 @@ fixed top section (BTC chip, balance, fiat line, Receive/Send) is pinned via
 it, with a `LinearGradient` opacity mask fading rows to clear before they
 reach the buttons. See `MainWalletView.swift` for the current implementation.
 
+*Carve-out (Multi-unit balance pager, 2026-07-06).* When the wallet holds a
+balance in more than one **unit** (sat + eur/usd/custom — mints can advertise
+multiple units, NUT-04/05), the balance hero becomes a horizontal **pager**:
+one unit's balance per page, swipeable, with system page dots
+(`TabView`/`.tabViewStyle(.page)` in `MainWalletView.unitBalanceHero`). This is a
+**deliberate, user-chosen** re-introduction of a horizontal swiper on the home
+balance — surfaced against this retired-mint-card precedent with two flat
+alternatives (a unit-chip menu, a supplementary sub-line) before the swipe idiom
+was picked. It does **not** revive the mint-card switcher: it browses *units of
+the same wallet*, not accounts; there is exactly **one hero number visible at a
+time** (the Only-Hero-Number rule holds — no stat panel, no card stack); the
+canvas underneath stays bare; and the pager appears **only** when the **active
+(default) mint** advertises multiple units **and** a non-sat balance is held
+(`HomeBalance.showsUnitPager`, 2026-07-06 refinement). A sat-only default mint
+renders the single hero verbatim — no pager, no dots — even if a non-sat balance
+is held at another mint (that balance still shows on Send + Mint Detail); switching
+the default mint chip re-evaluates the gate live. Each page keeps the Tabular
+Figure Rule (`.monospacedDigit()` +
+`.contentTransition(.numericText())`); the sat page keeps its ₿/sat tap-toggle
+and fiat sub-line, non-sat pages show the amount in its own currency (no fiat
+conversion — eur is already fiat).
+
 **The Share-At-Top Rule.** Any sheet that displays a shareable QR artifact —
 Lightning Invoice (`ReceiveLightningView`), Cashu Request
 (`CashuRequestDetailView`), generated ecash token (`SendView`), historical

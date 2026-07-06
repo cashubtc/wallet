@@ -22,9 +22,38 @@ struct MainWalletView: View {
     @State private var selectedTransaction: WalletTransaction?
     @State private var selectedRequest: CashuRequest?
     @State private var topInsetHeight: CGFloat = 0
+    /// Last-viewed home balance unit, persisted so the wallet reopens on it.
+    /// Clamped back to "sat" whenever that unit no longer carries a balance.
+    @AppStorage("homeBalanceUnit") private var storedHomeUnit: String = "sat"
 
     private let recentRowCap = 5
     private let scrollFadeBand: CGFloat = 24
+    /// Fixed height for the multi-unit balance pager so the pinned-top inset
+    /// measurement (and the scroll-fade mask) stays stable across unit swipes.
+    private let heroPagerHeight: CGFloat = 118
+
+    /// Units the home hero can page through: sat, then each held non-sat unit.
+    private var homeUnits: [String] {
+        HomeBalance.homeBalanceUnits(walletManager.balancesByUnit)
+    }
+
+    /// Whether to show the swipe/dots pager: only when the active (default) mint
+    /// is multi-unit AND a non-sat balance is held. A single-unit default mint
+    /// keeps the single sat hero.
+    private var showsUnitPager: Bool {
+        HomeBalance.showsUnitPager(
+            activeMintSupportsMultipleUnits: walletManager.activeMint?.supportsMultipleUnits ?? false,
+            balancesByUnit: walletManager.balancesByUnit
+        )
+    }
+
+    /// TabView selection clamped to the currently available units.
+    private var selectedHomeUnit: Binding<String> {
+        Binding(
+            get: { HomeBalance.resolvedUnit(storedHomeUnit, in: homeUnits) },
+            set: { storedHomeUnit = $0 }
+        )
+    }
 
     var body: some View {
         NavigationStack {
@@ -145,26 +174,59 @@ struct MainWalletView: View {
         VStack(spacing: 0) {
             mintChip
 
-            // Primary balance — tap to toggle Bitcoin / Satoshi display
-            VStack(spacing: 6) {
+            Group {
+                let units = homeUnits
+                if !showsUnitPager {
+                    // Single-unit default mint, or no non-sat balance held: the
+                    // single hero, unchanged.
+                    unitBalanceHero("sat")
+                } else {
+                    // Multi-unit: a swipeable pager, one unit's balance per page
+                    // (Apple Wallet-card idiom). Carve-out to the retired
+                    // home mint-card swiper — this is a single-hero *unit*
+                    // switcher, canvas stays bare. See DESIGN.md.
+                    TabView(selection: selectedHomeUnit) {
+                        ForEach(units, id: \.self) { unit in
+                            unitBalanceHero(unit)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                                .tag(unit)
+                        }
+                    }
+                    .tabViewStyle(.page(indexDisplayMode: .always))
+                    .frame(height: heroPagerHeight)
+                }
+            }
+            .padding(.top, 18)
+        }
+    }
+
+    /// One unit's balance hero. Sat keeps the ₿/sat tap-toggle + fiat/received
+    /// sub-line; other units render their amount directly in that currency
+    /// (no fiat conversion — eur is already fiat) with a reserved sub-line slot
+    /// so every page is the same height and the page dots don't jump.
+    @ViewBuilder
+    private func unitBalanceHero(_ unit: String) -> some View {
+        VStack(spacing: 6) {
+            if unit.lowercased() == "sat" {
+                let sats = walletManager.balancesByUnit["sat"] ?? walletManager.balance
                 Button(action: {
                     HapticFeedback.selection()
                     settings.useBitcoinSymbol.toggle()
                 }) {
-                    Text(formatBalanceWithUnit(walletManager.balance))
+                    Text(formatBalanceWithUnit(sats))
                         .font(.system(size: 44, weight: .bold))
                         .monospacedDigit()
                         .minimumScaleFactor(0.5)
                         .lineLimit(1)
-                        .contentTransition(.numericText(value: Double(walletManager.balance)))
+                        .contentTransition(.numericText(value: Double(sats)))
                         // Roll the total on any balance change (receive up, send
                         // down) and cross-fade the ₿/sat unit swap — mirrors the
                         // Send/Receive amount display (CurrencyAmountDisplay).
-                        .animation(.snappy, value: walletManager.balance)
+                        .animation(.snappy, value: sats)
                         .animation(.snappy, value: settings.useBitcoinSymbol)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Balance: \(formatBalanceWithUnit(walletManager.balance))")
+                .accessibilityLabel("Balance: \(formatBalanceWithUnit(sats))")
                 .accessibilityHint("Tap to toggle between Bitcoin and Satoshi")
 
                 // Status line under the balance: a transient monochrome
@@ -172,8 +234,23 @@ struct MainWalletView: View {
                 // then fiat fades back. Same slot, so the swap doesn't reflow the
                 // balance. (De-greened 2026-07-05 — the balance roll carries the moment.)
                 balanceStatusLine
+            } else {
+                let amount = walletManager.balancesByUnit[unit] ?? 0
+                let formatted = CurrencyAmount(
+                    value: amount,
+                    currency: CurrencyRegistry.currency(forMintUnit: unit)
+                ).formatted()
+                Text(formatted)
+                    .font(.system(size: 44, weight: .bold))
+                    .monospacedDigit()
+                    .minimumScaleFactor(0.5)
+                    .lineLimit(1)
+                    .contentTransition(.numericText(value: Double(amount)))
+                    .animation(.snappy, value: amount)
+                    .accessibilityLabel("Balance: \(formatted)")
+                // Reserve the sub-line height so pages match the sat page.
+                Color.clear.frame(height: 22)
             }
-            .padding(.top, 18)
         }
     }
 

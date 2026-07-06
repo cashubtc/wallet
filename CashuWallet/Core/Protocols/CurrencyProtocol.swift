@@ -148,6 +148,37 @@ struct CurrencyAmount: Equatable {
     }
 }
 
+// MARK: - Home Balance Ordering
+
+/// Ordering for the multi-unit home balance pager. Sat is always first (the
+/// wallet's base unit and identity); every other unit the user actually holds a
+/// positive balance in follows, sorted. A wallet with only sat — or no non-sat
+/// balance — yields just `["sat"]`, so the home shows its single hero unchanged.
+enum HomeBalance {
+    static func homeBalanceUnits(_ balancesByUnit: [String: UInt64]) -> [String] {
+        let nonSat = balancesByUnit
+            .filter { $0.key.lowercased() != "sat" && $0.value > 0 }
+            .keys
+            .sorted()
+        return ["sat"] + nonSat
+    }
+
+    /// Resolves a stored/last-viewed unit against the currently available units,
+    /// falling back to "sat" when that unit no longer carries a balance.
+    static func resolvedUnit(_ unit: String, in units: [String]) -> String {
+        units.contains(unit) ? unit : "sat"
+    }
+
+    /// The home hero pages (swipe/dots) only when the active/default mint is
+    /// multi-unit AND the wallet holds a non-sat balance. A single-unit default
+    /// mint keeps the single sat hero even if a non-sat balance exists at another
+    /// mint (that balance stays visible on Send + Mint Detail).
+    static func showsUnitPager(activeMintSupportsMultipleUnits: Bool,
+                               balancesByUnit: [String: UInt64]) -> Bool {
+        activeMintSupportsMultipleUnits && homeBalanceUnits(balancesByUnit).count > 1
+    }
+}
+
 // MARK: - Currency Registry
 
 /// Registry for looking up currencies by code
