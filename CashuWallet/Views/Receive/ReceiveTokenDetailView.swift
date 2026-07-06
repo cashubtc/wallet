@@ -48,7 +48,7 @@ struct ReceiveTokenDetailView: View {
                 confirmContent
             }
             }
-            .animation(.snappy(duration: 0.35), value: phase)
+            .animation(.smooth(duration: 0.3), value: phase)
             // Opacity-only fade on screen entry (once). Sits OUTSIDE the phase-morph
             // scope above; each .animation keys on a different value, so the entry
             // fade and the confirm→success morph never cross-animate each other.

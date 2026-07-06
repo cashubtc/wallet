@@ -237,7 +237,7 @@ struct CashuRequestDetailView: View {
                 }
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(.green)
-                .transition(reduceMotion ? .opacity : .scale.combined(with: .opacity))
+                .transition(reduceMotion ? .opacity : .scale(scale: 0.9).combined(with: .opacity))
             } else if paymentCount > 0 {
                 HStack(spacing: 6) {
                     Image(systemName: "checkmark.seal.fill")

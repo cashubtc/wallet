@@ -58,8 +58,8 @@ struct ReceiveLightningView: View {
                         ))
                 }
             }
-            .animation(.snappy(duration: 0.35), value: mintQuote != nil)
-            .animation(.snappy(duration: 0.35), value: isPaid)
+            .animation(.smooth(duration: 0.3), value: mintQuote != nil)
+            .animation(.smooth(duration: 0.3), value: isPaid)
             .navigationBarTitleDisplayMode(.inline)
             // No nav bar chrome — the title + close button float over the
             // black canvas. This kills the secondary gray bar the user was
@@ -660,7 +660,7 @@ struct ReceiveLightningView: View {
                 }
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(.green)
-                .transition(reduceMotion ? .opacity : .scale.combined(with: .opacity))
+                .transition(reduceMotion ? .opacity : .scale(scale: 0.9).combined(with: .opacity))
             } else if isCheckingPayment || isMinting {
                 HStack(spacing: 6) {
                     ProgressView()
@@ -693,7 +693,7 @@ struct ReceiveLightningView: View {
                 // small worded green success badge).
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(.secondary)
-                .transition(reduceMotion ? .opacity : .scale.combined(with: .opacity))
+                .transition(reduceMotion ? .opacity : .scale(scale: 0.9).combined(with: .opacity))
             } else {
                 HStack(spacing: 6) {
                     Image(systemName: "clock")

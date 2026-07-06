@@ -672,7 +672,7 @@ both contexts.
     + "Waiting for payment…", `Color.orange`, no animation on appearance.
   - Received (live) → `checkmark.circle.fill` with `.symbolEffect(.bounce)` +
     "Payment received!", `Color.green`, slid in via
-    `.scale.combined(with: .opacity)` under `.spring(0.5, 0.7)`. Gated to the
+    `.scale(scale: 0.9).combined(with: .opacity)` under `.spring(0.5, 0.7)`. Gated to the
     on-screen request (the `.cashuTokenReceived` notification carries the
     `requestId`). In the **receive flow** (watching a fresh request, `onClose`
     set) it dwells ~1.2s then the sheet auto-dismisses — mirroring the Lightning
@@ -707,7 +707,7 @@ both contexts.
   `CurrencyAmountDisplay`) and a transient **monochrome** `+amount` (`.secondary`,
   grouped through `AmountFormatter`, no unit, no directional arrow, no checkmark)
   takes over the fiat sub-amount slot beneath the balance, scaling in via
-  `.scale.combined(with: .opacity)` / `.spring(0.5, 0.7)`, holding 2.5s, then
+  `.scale(scale: 0.9).combined(with: .opacity)` / `.spring(0.5, 0.7)`, holding 2.5s, then
   fading as the fiat line returns; reduce-motion collapses it to an opacity
   cross-fade. The rolling total is the primary signal — the `+amount` just names
   the exact receipt. A `.success` haptic fires only for background receives whose
@@ -850,7 +850,9 @@ code must be).
 6. **Payment-received celebration** — `paymentJustReceived` lights up the
    Cashu Request status badge for 2.5s with `.spring(response: 0.5,
    dampingFraction: 0.7)`. The checkmark uses `.symbolEffect(.bounce, value:)`
-   and the entire badge transitions in via `.scale.combined(with: .opacity)`.
+   and the entire badge transitions in via `.scale(scale: 0.9).combined(with: .opacity)`
+   — a gentle grow-in, not a scale-from-zero pop (the `.symbolEffect(.bounce)` is the
+   single delight beat; the badge scale-in stays subtle so it doesn't compound).
    Same pattern is mirrored in `ReceiveLightningView` for `isPaid`. *Amended
    2026-07-05:* on the **home screen** the celebration is quieter — the hero
    balance rolls up (`.contentTransition(.numericText())`) and a **monochrome**

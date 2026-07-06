@@ -59,8 +59,8 @@ struct SendView: View {
                         ))
                 }
             }
-            .animation(.snappy(duration: 0.35), value: generatedToken != nil)
-            .animation(.snappy(duration: 0.35), value: tokenClaimed)
+            .animation(.smooth(duration: 0.3), value: generatedToken != nil)
+            .animation(.smooth(duration: 0.3), value: tokenClaimed)
             .navigationBarTitleDisplayMode(.inline)
             // Match the Lightning Invoice screen: float the title + chrome
             // over the black canvas, no secondary gray strip.
@@ -415,7 +415,7 @@ struct SendView: View {
                             // green ✓ badge). The settled state reads .primary.
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(.primary)
-                            .transition(reduceMotion ? .opacity : .scale.combined(with: .opacity))
+                            .transition(reduceMotion ? .opacity : .scale(scale: 0.9).combined(with: .opacity))
                         } else if isCheckingClaim {
                             HStack(spacing: 6) {
                                 ProgressView().scaleEffect(0.8)
@@ -1000,8 +1000,8 @@ struct UnifiedSendView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .animation(.snappy(duration: 0.35), value: step)
-            .animation(.snappy(duration: 0.35), value: locked != nil)
+            .animation(.smooth(duration: 0.3), value: step)
+            .animation(.smooth(duration: 0.3), value: locked != nil)
             .navigationTitle("Send")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -1675,7 +1675,7 @@ struct UnifiedSendView: View {
             } catch {
                 // Animate the confirm → full-screen failure swap (statusPhase flips
                 // without a `step` change, so the implicit step animation won't fire).
-                withAnimation(.snappy(duration: 0.35)) { presentError(from: error) }
+                withAnimation(.smooth(duration: 0.3)) { presentError(from: error) }
             }
         }
     }
@@ -2544,7 +2544,7 @@ struct MeltView: View {
                         ))
                 }
             }
-            .animation(.snappy(duration: 0.35), value: meltViewStateKey)
+            .animation(.smooth(duration: 0.3), value: meltViewStateKey)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

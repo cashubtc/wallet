@@ -112,7 +112,7 @@ struct PaymentStatusView: View {
                 .padding(.bottom, 16)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .animation(.snappy(duration: 0.35), value: phaseKey)
+        .animation(.smooth(duration: 0.3), value: phaseKey)
         .onChange(of: phase) { _, newPhase in handlePhase(newPhase) }
         .onAppear { handlePhase(phase) }
     }
@@ -131,13 +131,13 @@ struct PaymentStatusView: View {
                     .font(.system(size: 64))
                     .foregroundStyle(.green)
                     .symbolEffect(.bounce, value: reduceMotion ? 0 : phaseKey)
-                    .transition(reduceMotion ? .opacity : .scale(scale: 0.7).combined(with: .opacity))
+                    .transition(reduceMotion ? .opacity : .scale(scale: 0.92).combined(with: .opacity))
             case .failure(_, let isCaution, _):
                 Image(systemName: isCaution ? "exclamationmark.triangle.fill" : "xmark.circle.fill")
                     .font(.system(size: 64))
                     .foregroundStyle(isCaution ? .orange : .red)
                     .symbolEffect(.bounce, value: reduceMotion ? 0 : phaseKey)
-                    .transition(reduceMotion ? .opacity : .scale(scale: 0.7).combined(with: .opacity))
+                    .transition(reduceMotion ? .opacity : .scale(scale: 0.92).combined(with: .opacity))
             }
         }
         .frame(width: 72, height: 72)

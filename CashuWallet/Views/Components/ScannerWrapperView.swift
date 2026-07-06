@@ -543,7 +543,7 @@ struct CashuPaymentRequestPayView: View {
                 }
               }
             }
-            .animation(.snappy(duration: 0.35), value: paymentPhase != nil)
+            .animation(.smooth(duration: 0.3), value: paymentPhase != nil)
             .navigationTitle("Pay Cashu Request")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
