@@ -111,10 +111,10 @@ class SettingsManager: ObservableObject {
         didSet {
             settingsStore.receivePaymentRequestsAutomatically = receivePaymentRequestsAutomatically
             guard receivePaymentRequestsAutomatically, !oldValue else { return }
-            // Payments queued while auto-claim was off can claim silently now
+            // Payments held while auto-claim was off can claim silently now
             // (known mints only — unknown mints always need approval).
             Task { @MainActor in
-                await CashuRequestListener.shared.claimEligibleQueuedApprovals()
+                await CashuRequestListener.shared.claimEligibleHeldPayments()
             }
         }
     }

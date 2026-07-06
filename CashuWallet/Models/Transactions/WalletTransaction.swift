@@ -28,6 +28,11 @@ struct WalletTransaction: Identifiable {
     /// Whether this is from pending storage vs. completed transactions
     var isPendingToken: Bool = false
 
+    /// Incoming ecash the user hasn't claimed yet (a "Receive Later" token or
+    /// a NUT-18 payment held for approval). Rows with this flag open the
+    /// claim flow instead of a plain receipt.
+    var isPendingReceiveToken: Bool = false
+
     /// Source Cashu Request id when this incoming ecash transaction was
     /// auto-claimed via NUT-18. History uses this to suppress the duplicate
     /// row in favor of the request row.
@@ -51,6 +56,7 @@ struct WalletTransaction: Identifiable {
     /// paid"). Single source of truth for the History/Home rows and the
     /// transaction detail nav title.
     var displayTitle: String {
+        if isPendingReceiveToken { return "Ecash to claim" }
         switch (kind, type) {
         case (.ecash,     .incoming): return "Ecash received"
         case (.ecash,     .outgoing): return "Ecash sent"

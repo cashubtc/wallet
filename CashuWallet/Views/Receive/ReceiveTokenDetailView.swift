@@ -417,9 +417,12 @@ struct ReceiveTokenDetailView: View {
             token: tokenString,
             amount: tokenAmount,
             date: Date(),
-            mintUrl: mintUrl
+            mintUrl: mintUrl,
+            memo: decodedToken?.memo()
         )
         walletManager.savePendingReceiveToken(pendingReceive)
+        // Rebuild History so the parked token shows as a claimable row right away.
+        Task { await walletManager.loadTransactions() }
         if let onComplete = onComplete {
             onComplete()
         } else {

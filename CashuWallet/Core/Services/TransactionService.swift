@@ -136,6 +136,28 @@ class TransactionService: ObservableObject {
         // which previously produced a duplicate "Ecash sent" entry per send.
         mergeSentTokens(into: &allTransactions)
 
+        // Unclaimed incoming ecash ("Receive Later" tokens and NUT-18 payments
+        // held for approval) has no CDK counterpart until it's claimed, so each
+        // entry is its own pending incoming row. Tapping the row opens the
+        // claim flow (see TransactionDetailView).
+        allTransactions.append(contentsOf: pendingReceiveTokens.map { pending in
+            var tx = WalletTransaction(
+                id: pending.tokenId,
+                amount: pending.amount,
+                type: .incoming,
+                kind: .ecash,
+                date: pending.date,
+                memo: pending.memo,
+                status: .pending,
+                mintUrl: pending.mintUrl,
+                token: pending.token
+            )
+            tx.statusNote = "Not claimed yet"
+            tx.isPendingReceiveToken = true
+            tx.cashuRequestId = pending.cashuRequestId
+            return tx
+        })
+
         persistMintQuoteTimestamps(for: allTransactions, using: mintQuoteTimestamps)
 
         // Sort by date descending (newest first)

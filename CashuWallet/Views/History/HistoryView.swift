@@ -24,6 +24,10 @@ struct HistoryView: View {
     @State private var selectedTransaction: WalletTransaction?
     @State private var selectedRequest: CashuRequest?
     @State private var requestPendingDeletion: CashuRequest?
+    @State private var receiveTokenPendingDeletion: WalletTransaction?
+    /// Unclaimed incoming token being claimed (rows open the claim flow
+    /// directly — one Receive tap, no intermediate detail sheet).
+    @State private var claimReceiveToken: PendingReceiveToken?
     @State private var transactionUpdateRevision = 0
     @State private var didInitialLoad = false
 
@@ -110,6 +114,18 @@ struct HistoryView: View {
                     .environmentObject(walletManager)
                     .canvasSheetBackground()
             }
+            // Claim flow for an unclaimed incoming token. `item:` captures the
+            // pending token at presentation, so the content stays stable while
+            // the claim removes it from the store (a live lookup here would go
+            // nil mid-flow and blank the screen).
+            .fullScreenCover(item: $claimReceiveToken) { pending in
+                ReceiveTokenDetailView(
+                    tokenString: pending.token,
+                    onComplete: { claimReceiveToken = nil },
+                    claim: { try await walletManager.claimPendingReceiveToken(pending) }
+                )
+                .environmentObject(walletManager)
+            }
             .sheet(item: $selectedRequest) { request in
                 NavigationStack {
                     CashuRequestDetailView(request: request)
@@ -135,6 +151,26 @@ struct HistoryView: View {
                 }
             } message: { _ in
                 Text("The QR and any pending payment routing stay valid; this only removes the row from your history.")
+            }
+            .confirmationDialog(
+                "Remove this unclaimed ecash?",
+                isPresented: Binding(
+                    get: { receiveTokenPendingDeletion != nil },
+                    set: { if !$0 { receiveTokenPendingDeletion = nil } }
+                ),
+                titleVisibility: .visible,
+                presenting: receiveTokenPendingDeletion
+            ) { transaction in
+                Button("Remove", role: .destructive) {
+                    walletManager.removePendingReceiveToken(tokenId: transaction.id)
+                    receiveTokenPendingDeletion = nil
+                    Task { await walletManager.loadTransactions() }
+                }
+                Button("Cancel", role: .cancel) {
+                    receiveTokenPendingDeletion = nil
+                }
+            } message: { _ in
+                Text("This ecash hasn't been claimed. Removing it discards the token — only the sender can re-issue it.")
             }
             .task {
                 // Show the current ledger immediately, then quietly re-check
@@ -450,7 +486,15 @@ struct HistoryView: View {
     private func transactionRow(transaction: WalletTransaction) -> some View {
         return Button {
             HapticFeedback.selection()
-            selectedTransaction = transaction
+            // Unclaimed incoming ecash goes straight to the claim flow — the
+            // receive screen already shows amount, fee, mint, and memo, so an
+            // intermediate detail sheet would just add a second Receive tap.
+            if transaction.isPendingReceiveToken,
+               let pending = walletManager.pendingReceiveTokens.first(where: { $0.tokenId == transaction.id }) {
+                claimReceiveToken = pending
+            } else {
+                selectedTransaction = transaction
+            }
         } label: {
             HStack(spacing: 14) {
                 rowIcon(for: transaction)
@@ -478,6 +522,15 @@ struct HistoryView: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(rowTitle(for: transaction)), \(formatAmount(transaction)) sats, \(transaction.status == .pending ? transaction.displayStatusText.lowercased() : "completed"), \(formatRelativeDate(transaction.date))")
         .accessibilityHint("Opens transaction details")
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            if transaction.isPendingReceiveToken {
+                Button(role: .destructive) {
+                    receiveTokenPendingDeletion = transaction
+                } label: {
+                    Label("Remove", systemImage: "trash")
+                }
+            }
+        }
     }
 
     // MARK: - Row content
