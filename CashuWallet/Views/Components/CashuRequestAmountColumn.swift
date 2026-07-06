@@ -23,7 +23,9 @@ struct CashuRequestAmountColumn: View {
                     .monospacedDigit()
                     .foregroundStyle(.primary)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.5)
+                    // No `.minimumScaleFactor` — it collides with `.numericText`
+                    // (short amounts collapse toward 50%). Amounts are abbreviated,
+                    // so the trailing column never truncates them.
                     .contentTransition(.numericText(value: Double(receivedAmount)))
 
                 if showFiat {
@@ -40,7 +42,6 @@ struct CashuRequestAmountColumn: View {
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.5)
 
                 if showFiat {
                     Text(priceService.formatSatsAsFiat(amount))
