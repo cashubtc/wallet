@@ -9,7 +9,7 @@ class CashuWalletApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         container = AppContainer(this)
-        // No-op unless the user opted into crash reports (mirrors CashuWalletApp.swift:45).
+        // No-op unless the user opted into crash reports.
         container.sentryService.initialize()
     }
 }
