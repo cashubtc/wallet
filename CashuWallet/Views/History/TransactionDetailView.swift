@@ -142,10 +142,7 @@ struct TransactionDetailView: View {
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button(action: { dismiss() }) {
-                        Image(systemName: "xmark")
-                    }
-                    .accessibilityLabel("Close")
+                    SheetCloseButton()
                 }
                 ToolbarItem(placement: .principal) {
                     Text(transaction.displayTitle).font(.headline)
@@ -154,6 +151,7 @@ struct TransactionDetailView: View {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button(action: { showShareSheet = true }) {
                             Image(systemName: "square.and.arrow.up")
+                                .toolbarIconTapTarget()
                         }
                         .accessibilityLabel("Share")
                     }

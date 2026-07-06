@@ -80,13 +80,9 @@ struct CashuRequestAmountPickerSheet: View {
                 .font(.headline)
 
             HStack {
-                Button(action: { dismiss() }) {
-                    Image(systemName: "xmark")
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .contentShape(Rectangle())
-                }
-                .accessibilityLabel("Close")
+                SheetCloseButton()
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.secondary)
 
                 Spacer()
             }

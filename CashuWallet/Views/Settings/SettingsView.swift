@@ -503,6 +503,7 @@ struct RestoreWalletView: View {
                 if step != .progress {
                     Button(action: handleBackNavigation) {
                         Image(systemName: "chevron.left")
+                            .toolbarIconTapTarget()
                     }
                     .disabled(isRestoringSeed)
                     .accessibilityLabel(step == .seed ? "Back" : "Back to seed phrase")
@@ -737,6 +738,8 @@ struct RestoreWalletView: View {
             } label: {
                 Image(systemName: "xmark.circle")
                     .foregroundStyle(.secondary)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
             .accessibilityLabel("Remove mint")
             .accessibilityHint("Removes this mint before restoring")
@@ -1156,9 +1159,7 @@ struct QRCodeDetailSheet: View {
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button(action: { dismiss() }) {
-                        Image(systemName: "xmark")
-                    }
+                    SheetCloseButton()
                 }
             }
         }
@@ -1204,9 +1205,15 @@ struct ImportP2PKSheet: View {
                         .autocorrectionDisabled()
 
                     Button(action: { nsecText.isEmpty ? paste() : clear() }) {
+                        // Padding expands the hit area; the negative outer
+                        // padding cancels the layout growth so the field row
+                        // keeps its height.
                         Image(systemName: nsecText.isEmpty ? "doc.on.clipboard" : "xmark.circle.fill")
                             .font(.body.weight(.medium))
                             .foregroundStyle(.secondary)
+                            .padding(10)
+                            .contentShape(Rectangle())
+                            .padding(-10)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(nsecText.isEmpty ? "Paste" : "Clear")

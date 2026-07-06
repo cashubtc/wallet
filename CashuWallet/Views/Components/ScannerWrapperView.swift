@@ -205,11 +205,8 @@ struct ScannerWrapperView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button(action: { dismiss() }) {
-                        Image(systemName: "xmark")
-                            .foregroundStyle(.primary)
-                    }
-                    .accessibilityLabel("Close")
+                    SheetCloseButton()
+                        .foregroundStyle(.primary)
                 }
             }
             .onAppear {
@@ -550,10 +547,7 @@ struct CashuPaymentRequestPayView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     // No dismissing mid-authorization (payment is in flight).
                     if paymentPhase != .processing {
-                        Button(action: { dismiss() }) {
-                            Image(systemName: "xmark")
-                        }
-                        .accessibilityLabel("Close")
+                        SheetCloseButton()
                     }
                 }
             }
@@ -1419,10 +1413,7 @@ struct CashuTopUpInvoiceSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(action: { dismiss() }) {
-                        Image(systemName: "xmark")
-                    }
-                    .accessibilityLabel("Close")
+                    SheetCloseButton()
                 }
             }
             .onAppear { startMonitoring() }

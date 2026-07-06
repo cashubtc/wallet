@@ -91,6 +91,7 @@ struct MintDetailView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 ShareLink(item: mint.url) {
                     Image(systemName: "square.and.arrow.up")
+                        .toolbarIconTapTarget()
                 }
                 .accessibilityLabel("Share mint")
             }

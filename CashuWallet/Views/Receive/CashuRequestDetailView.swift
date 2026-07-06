@@ -49,17 +49,15 @@ struct CashuRequestDetailView: View {
                     .font(.headline)
             }
             ToolbarItem(placement: .cancellationAction) {
-                Button {
+                SheetCloseButton {
                     if let onClose { onClose() } else { dismiss() }
-                } label: {
-                    Image(systemName: "xmark")
                 }
-                .accessibilityLabel("Close")
             }
             ToolbarItem(placement: .topBarTrailing) {
                 if let request {
                     ShareLink(item: request.encoded) {
                         Image(systemName: "square.and.arrow.up")
+                            .toolbarIconTapTarget()
                     }
                     .accessibilityLabel("Share request")
                 }

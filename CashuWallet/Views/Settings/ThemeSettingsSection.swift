@@ -128,10 +128,7 @@ struct CurrencyPickerSheet: View {
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(action: { dismiss() }) {
-                        Image(systemName: "xmark")
-                    }
-                    .accessibilityLabel("Close")
+                    SheetCloseButton()
                 }
             }
             .safeAreaInset(edge: .bottom) {

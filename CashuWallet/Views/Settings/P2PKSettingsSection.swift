@@ -115,6 +115,7 @@ struct P2PKSettingsSection: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Button { HapticFeedback.selection(); showExplainer = true } label: {
                     Image(systemName: "info.circle")
+                        .toolbarIconTapTarget()
                 }
                 .accessibilityLabel("How locking works")
             }
