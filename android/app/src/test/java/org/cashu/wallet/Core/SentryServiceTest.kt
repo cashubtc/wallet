@@ -85,6 +85,20 @@ class SentryServiceTest {
     }
 
     @Test
+    fun initializeIsIdempotentUntilShutdown() {
+        val gateway = FakeSentryGateway()
+        val service = SentryService(gateway, isEnabled = { true })
+
+        service.initialize()
+        service.initialize()
+        assertEquals(1, gateway.startedDsns.size)
+
+        service.shutdown()
+        service.initialize()
+        assertEquals(2, gateway.startedDsns.size)
+    }
+
+    @Test
     fun toggleContractStartsOnEnableAndClosesOnDisable() {
         val gateway = FakeSentryGateway()
         var enabled = false

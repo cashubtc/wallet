@@ -5,6 +5,7 @@ import io.sentry.Breadcrumb
 import io.sentry.Sentry
 import io.sentry.SentryLevel
 import io.sentry.android.core.SentryAndroid
+import org.cashu.wallet.BuildConfig
 
 internal interface SentryGateway {
     fun start(dsn: String)
@@ -26,19 +27,18 @@ class SentryService internal constructor(
         isEnabled = { settingsStore.sentryEnabled },
     )
 
-    companion object {
-        // Shared with iOS (SentryService.swift) — one Sentry project for both platforms.
-        private const val DSN =
-            "https://aff293071a9e53305e76990761d4b38f@o4511625394061312.ingest.de.sentry.io/4511625402712144"
-    }
+    @Volatile
+    private var started = false
 
     fun initialize() {
-        if (!isEnabled()) return
-        gateway.start(DSN)
+        if (!isEnabled() || started) return
+        gateway.start(BuildConfig.SENTRY_DSN)
+        started = true
     }
 
     fun shutdown() {
         gateway.close()
+        started = false
     }
 
     fun capture(error: Throwable) {
