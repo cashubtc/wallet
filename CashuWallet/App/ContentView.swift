@@ -5,7 +5,7 @@ struct ContentView: View {
     @EnvironmentObject var walletManager: WalletManager
     @EnvironmentObject var navigationManager: NavigationManager
     @ObservedObject private var cashuRequestListener = CashuRequestListener.shared
-    /// Unknown-mint payment currently on the approval screen (fullScreenCover item).
+    /// Payment currently on the approval screen (fullScreenCover item).
     @State private var claimApproval: PendingCashuClaimApproval?
 
     var body: some View {
@@ -40,10 +40,10 @@ struct ContentView: View {
                 .environmentObject(walletManager)
             }
         }
-        // Incoming NUT-18 payment from a mint the wallet doesn't track yet.
-        // Claiming adds the mint, so it needs an explicit user decision —
-        // presented on the standard receive screen, whose built-in "New mint"
-        // caution notice covers the trust warning.
+        // Incoming NUT-18 payment that needs an explicit user decision (mint
+        // not tracked yet, or auto-claim disabled) — presented on the standard
+        // receive screen, whose built-in "New mint" caution notice covers the
+        // trust warning when it applies.
         .fullScreenCover(item: $claimApproval) { approval in
             ReceiveTokenDetailView(
                 tokenString: approval.tokenString,

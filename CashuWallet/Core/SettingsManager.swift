@@ -105,10 +105,17 @@ class SettingsManager: ObservableObject {
     }
 
     /// Whether incoming Cashu Request payments are redeemed without asking.
-    /// Off leaves gift wraps unprocessed so they can be claimed after re-enabling.
+    /// Off routes each payment through the approval queue (receive screen)
+    /// instead — nothing is dropped, every payment just needs a tap.
     @Published var receivePaymentRequestsAutomatically: Bool {
         didSet {
             settingsStore.receivePaymentRequestsAutomatically = receivePaymentRequestsAutomatically
+            guard receivePaymentRequestsAutomatically, !oldValue else { return }
+            // Payments queued while auto-claim was off can claim silently now
+            // (known mints only — unknown mints always need approval).
+            Task { @MainActor in
+                await CashuRequestListener.shared.claimEligibleQueuedApprovals()
+            }
         }
     }
 

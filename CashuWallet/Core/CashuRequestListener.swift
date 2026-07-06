@@ -1,8 +1,9 @@
 import Foundation
 import SwiftUI
 
-/// An incoming NUT-18 payment from a mint the wallet doesn't track yet, held
-/// for explicit user approval — claiming it would silently add that mint.
+/// An incoming NUT-18 payment held for an explicit user decision on the
+/// receive screen — because its mint isn't tracked yet (claiming would
+/// silently add it) or because auto-claim is disabled.
 struct PendingCashuClaimApproval: Identifiable, Equatable {
     /// Gift-wrap event id; doubles as the processed-ids key.
     let id: String
@@ -23,7 +24,8 @@ final class CashuRequestListener: ObservableObject {
 
     @Published private(set) var isRunning: Bool = false
 
-    /// Payments from unknown mints waiting for the user's claim/decline decision.
+    /// Payments waiting for the user's claim/decline decision (unknown mint,
+    /// or auto-claim disabled).
     @Published private(set) var pendingApprovals: [PendingCashuClaimApproval] = []
 
     private var client: NostrInboxClient?
@@ -120,12 +122,6 @@ final class CashuRequestListener: ObservableObject {
             markProcessed(event.id)
             return
         }
-        guard SettingsManager.shared.receivePaymentRequestsAutomatically else {
-            // Auto-claim is off: leave the gift wrap unprocessed so re-enabling
-            // the setting claims it on a later scan (within the lookback window).
-            AppLogger.wallet.notice("CashuRequestListener: auto-claim disabled — leaving \(String(event.id.prefix(8)), privacy: .public) unclaimed")
-            return
-        }
         switch await tryClaim(rumorContent: rumor.content, eventId: event.id) {
         case .claimed, .unclaimable:
             markProcessed(event.id)
@@ -165,10 +161,13 @@ final class CashuRequestListener: ObservableObject {
             return .transientFailure
         }
 
-        // Claiming from a mint creates a CDK wallet for it and adds it to the
-        // tracked mint list — never do that silently for a mint the user hasn't
-        // chosen. Queue the payment for explicit approval instead.
-        guard walletManager.isMintKnown(url: mintUrl) else {
+        // Silent claiming needs both: auto-claim enabled, and a mint the user
+        // already trusts (claiming creates a CDK wallet for the mint and adds
+        // it to the tracked list — never do that without consent). Everything
+        // else queues for an explicit decision on the receive screen.
+        let mintKnown = walletManager.isMintKnown(url: mintUrl)
+        let autoClaim = SettingsManager.shared.receivePaymentRequestsAutomatically
+        guard autoClaim && mintKnown else {
             enqueueApproval(
                 PendingCashuClaimApproval(
                     id: eventId,
@@ -177,7 +176,8 @@ final class CashuRequestListener: ObservableObject {
                     mintUrl: mintUrl,
                     amount: proofsTotalAmount(proofs),
                     memo: memo
-                )
+                ),
+                reason: mintKnown ? "auto-claim off" : "unknown mint"
             )
             return .awaitingApproval
         }
@@ -211,16 +211,17 @@ final class CashuRequestListener: ObservableObject {
 
     /// Cap so a spammer pushing payments from throwaway mints can't grow the
     /// queue without bound. Overflow events stay unprocessed and are re-offered
-    /// on a later scan once the queue drains.
-    private static let maxPendingApprovals = 10
+    /// on a later scan once the queue drains. Generous because with auto-claim
+    /// off every legitimate payment queues here too.
+    private static let maxPendingApprovals = 50
 
-    private func enqueueApproval(_ approval: PendingCashuClaimApproval) {
+    private func enqueueApproval(_ approval: PendingCashuClaimApproval, reason: String) {
         guard !pendingApprovals.contains(where: { $0.id == approval.id }) else { return }
         guard pendingApprovals.count < Self.maxPendingApprovals else {
             AppLogger.wallet.notice("CashuRequestListener: approval queue full — deferring \(String(approval.id.prefix(8)), privacy: .public)")
             return
         }
-        AppLogger.wallet.notice("CashuRequestListener: payment from unknown mint \(approval.mintUrl, privacy: .public) — awaiting user approval")
+        AppLogger.wallet.notice("CashuRequestListener: payment from \(approval.mintUrl, privacy: .public) queued for approval (\(reason, privacy: .public))")
         pendingApprovals.append(approval)
     }
 
@@ -242,7 +243,7 @@ final class CashuRequestListener: ObservableObject {
         pendingApprovals.removeAll { $0.id == approval.id }
         markProcessed(approval.id)
         AppLogger.wallet.notice("CashuRequestListener: user approved claim of \(amount) sat from \(approval.mintUrl, privacy: .public)")
-        await claimApprovalsFromKnownMints()
+        await claimEligibleQueuedApprovals()
         return amount
     }
 
@@ -253,9 +254,12 @@ final class CashuRequestListener: ObservableObject {
         AppLogger.wallet.notice("CashuRequestListener: user declined payment from \(approval.mintUrl, privacy: .public)")
     }
 
-    /// Drain queued approvals whose mint became known (e.g. the user just
-    /// approved another payment from the same mint, or added it manually).
-    private func claimApprovalsFromKnownMints() async {
+    /// Drain queued approvals that no longer need a decision: auto-claim is on
+    /// and the mint is known (the user just approved a payment from that mint,
+    /// added the mint manually, or re-enabled auto-claim). No-op in manual
+    /// mode — there every payment gets its own confirmation.
+    func claimEligibleQueuedApprovals() async {
+        guard SettingsManager.shared.receivePaymentRequestsAutomatically else { return }
         guard let walletManager else { return }
         for approval in pendingApprovals where walletManager.isMintKnown(url: approval.mintUrl) {
             pendingApprovals.removeAll { $0.id == approval.id }
