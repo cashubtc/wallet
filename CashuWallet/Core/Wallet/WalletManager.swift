@@ -21,6 +21,11 @@ class WalletManager: ObservableObject {
     /// `balance` mirrors `balancesByUnit["sat"]`.
     @Published var balancesByUnit: [String: UInt64] = [:]
 
+    /// True when the wallet holds spendable ecash in *any* unit (sat or
+    /// otherwise). Send gates on this rather than `balance` (sats only) so a
+    /// USD-only wallet isn't told it has "nothing to send".
+    var hasAnyBalance: Bool { balancesByUnit.values.contains { $0 > 0 } }
+
     /// Pending balance (invoices not yet claimed)
     @Published var pendingBalance: UInt64 = 0
     

@@ -80,6 +80,7 @@ struct CashuRequestDetailView: View {
         .sheet(isPresented: $showAmountPicker) {
             CashuRequestAmountPickerSheet(
                 currentAmount: request?.amount,
+                unit: request?.unit ?? "sat",
                 onSelect: { amount in
                     regenerate(amount: amount)
                 }
@@ -161,11 +162,23 @@ struct CashuRequestDetailView: View {
                         }
 
                     if let amount = request.amount, amount > 0 {
-                        CurrencyAmountDisplay(
-                            sats: amount,
-                            primary: $settings.amountDisplayPrimary,
-                            primarySize: 32
-                        )
+                        if request.unit.lowercased() == "sat" {
+                            CurrencyAmountDisplay(
+                                sats: amount,
+                                primary: $settings.amountDisplayPrimary,
+                                primarySize: 32
+                            )
+                        } else {
+                            // Non-sat unit: render in its own currency, no sats flip.
+                            Text(CurrencyAmount(
+                                value: amount,
+                                currency: CurrencyRegistry.currency(forMintUnit: request.unit)
+                            ).formatted())
+                                .font(.system(size: 32, weight: .semibold, design: .rounded))
+                                .monospacedDigit()
+                                .minimumScaleFactor(0.4)
+                                .lineLimit(1)
+                        }
                     }
 
                     statusBadge
@@ -368,11 +381,6 @@ struct CashuRequestDetailView: View {
         let nostr = NostrService.shared
         guard nostr.isInitialized, !nostr.publicKeyHex.isEmpty,
               let existing = request else { return }
-        let nextAmount: UInt64?
-        switch amount {
-        case .none: nextAmount = existing.amount
-        case .some(let inner): nextAmount = inner
-        }
         let nextMints = mints ?? existing.mints
         // Validate the unit against the (possibly newly chosen) mint: keep the
         // requested/existing unit when that mint supports it, else fall back to
@@ -380,6 +388,17 @@ struct CashuRequestDetailView: View {
         let requestedUnit = unit ?? existing.unit
         let nextUnit = walletManager.mints.first { $0.url == nextMints.first }?
             .resolvedUnit(requestedUnit) ?? requestedUnit
+        let nextAmount: UInt64?
+        switch amount {
+        case .some(let inner):
+            nextAmount = inner
+        case .none:
+            // Preserve the fixed amount only while the unit is unchanged — a
+            // stored number means different things across units (500 sat is not
+            // $5.00), so a unit change resets it to "Any" and the user re-enters
+            // in the new unit.
+            nextAmount = (nextUnit == existing.unit) ? existing.amount : nil
+        }
         do {
             let encoded = try PaymentRequestBuilder.build(
                 id: existing.id,

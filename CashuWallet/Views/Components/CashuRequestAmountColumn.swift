@@ -37,13 +37,15 @@ struct CashuRequestAmountColumn: View {
             }
         } else if let amount = request.amount, amount > 0 {
             VStack(alignment: .trailing, spacing: 2) {
-                Text(settings.formatAmountShort(amount))
+                Text(expectedAmountText(amount))
                     .font(.system(.body, design: .rounded).weight(.semibold))
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
 
-                if showFiat {
+                // Fiat sub-line only makes sense for a sat request; a non-sat
+                // unit is already shown in its own currency above.
+                if isSatRequest && showFiat {
                     Text(priceService.formatSatsAsFiat(amount))
                         .font(.caption)
                         .monospacedDigit()
@@ -52,6 +54,16 @@ struct CashuRequestAmountColumn: View {
             }
         }
         // "any amount" + waiting: no trailing element.
+    }
+
+    private var isSatRequest: Bool { request.unit.lowercased() == "sat" }
+
+    /// The waiting request's fixed amount, in its own unit: sats keep the
+    /// abbreviated style; other units render via their `Currency` (e.g. "$5.00").
+    private func expectedAmountText(_ amount: UInt64) -> String {
+        isSatRequest
+            ? settings.formatAmountShort(amount)
+            : CurrencyAmount(value: amount, currency: CurrencyRegistry.currency(forMintUnit: request.unit)).formatted()
     }
 
     private var showFiat: Bool {

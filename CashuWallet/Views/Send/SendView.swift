@@ -292,10 +292,32 @@ struct SendView: View {
     }
 
     /// The unit this send is denominated in — the user's pick when the mint
-    /// supports it, otherwise the mint's default. Auto-resets when the mint
-    /// changes to one lacking the selected unit.
+    /// supports it, otherwise a unit the wallet can actually spend. Auto-resets
+    /// when the mint changes to one lacking the selected unit.
     private var effectiveSendUnit: String {
-        unitContextMint?.resolvedUnit(selectedSendUnit) ?? "sat"
+        guard let mint = unitContextMint else { return "sat" }
+        if let selectedSendUnit, mint.units.contains(selectedSendUnit) {
+            return selectedSendUnit
+        }
+        return defaultSpendableUnit(for: mint)
+    }
+
+    /// The unit to default to when the user hasn't chosen one: the mint's
+    /// preferred unit while it holds a balance, otherwise the first supported
+    /// unit the wallet can spend — so a USD-only wallet lands on USD instead of
+    /// an empty sat form.
+    private func defaultSpendableUnit(for mint: MintInfo) -> String {
+        let preferred = mint.defaultUnit
+        if unitHasSpendableBalance(preferred, mint: mint) { return preferred }
+        return mint.units.first { unitHasSpendableBalance($0, mint: mint) } ?? preferred
+    }
+
+    /// Whether `unit` currently holds a spendable balance. Sat reads the cached
+    /// per-mint balance; other units use the wallet-wide per-unit totals (the
+    /// same source as the home hero) since non-sat per-mint balances load async.
+    private func unitHasSpendableBalance(_ unit: String, mint: MintInfo) -> Bool {
+        if unit.lowercased() == "sat" { return mint.balance > 0 }
+        return (walletManager.balancesByUnit[unit] ?? 0) > 0
     }
 
     private var isSatSend: Bool { effectiveSendUnit.lowercased() == "sat" }
@@ -1209,7 +1231,7 @@ struct UnifiedSendView: View {
     private var inputContent: some View {
         if walletManager.mints.isEmpty {
             noMintsState
-        } else if walletManager.balance == 0 {
+        } else if !walletManager.hasAnyBalance {
             noBalanceState
         } else {
             inputForm

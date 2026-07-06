@@ -544,6 +544,7 @@ struct ReceiveLightningView: View {
         .sheet(isPresented: $showReusableAmountPicker) {
             CashuRequestAmountPickerSheet(
                 currentAmount: quote.amount,
+                unit: quote.unit,
                 onSelect: { setReusableOfferAmount($0) }
             )
         }

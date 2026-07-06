@@ -710,7 +710,7 @@ struct MainWalletView: View {
     /// picker; mints but zero balance → the "receive first" prompt. Reactive to
     /// `mints`/`balance` so it shrinks once a mint is added (no mints → mints).
     private func chooserHeight(for action: WalletActionSheet) -> CGFloat {
-        if action == .send, walletManager.balance == 0 {
+        if action == .send, !walletManager.hasAnyBalance {
             return walletManager.mints.isEmpty ? 470 : 260
         }
         return action.detentHeight
@@ -908,7 +908,7 @@ private struct WalletActionSheetView: View {
     /// Send is impossible with nothing to spend — intercept before the chooser.
     /// Receive is never gated (it's the cure), so this only fires for `.send`.
     private var isSendEmptyState: Bool {
-        action == .send && walletManager.balance == 0
+        action == .send && !walletManager.hasAnyBalance
     }
 
     /// The single piece of state the sheet body switches on, so phase changes
