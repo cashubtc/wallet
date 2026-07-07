@@ -212,15 +212,10 @@ fun ReceiveLightningScreen(
     }
 
     fun persistQuoteIntent(quote: MintQuoteInfo) {
-        cashuRequestStore.upsertQuoteIntent(
-            id = quote.id,
-            quoteId = quote.id,
-            quoteKind = quote.paymentMethod.name,
-            amount = quote.amount,
-            unit = quote.unit,
-            mints = listOfNotNull(quote.mintUrl ?: activeMint?.url),
-            memo = quote.paymentMethod.quoteIntentMemo,
-            encoded = quote.request,
+        persistReceiveLightningQuoteIntent(
+            cashuRequestStore = cashuRequestStore,
+            quote = quote,
+            fallbackMintUrl = activeMint?.url,
         )
     }
 
@@ -244,19 +239,21 @@ fun ReceiveLightningScreen(
         errorText = null
         scope.launch {
             try {
-                val quote = when {
-                    !forceNew && requestMethod == PaymentMethodKind.Bolt12 && requestAmount == null ->
-                        walletManager.existingAmountlessOffer()
-                            ?: walletManager.createMintQuote(amount = null, method = PaymentMethodKind.Bolt12, unit = effectiveUnit)
-                    !forceNew && requestMethod == PaymentMethodKind.Onchain ->
-                        walletManager.existingOnchainMintQuote()
-                            ?: walletManager.createMintQuote(amount = null, method = PaymentMethodKind.Onchain, unit = "sat")
-                    else -> walletManager.createMintQuote(
-                        amount = requestAmount,
-                        method = requestMethod,
-                        unit = if (requestMethod == PaymentMethodKind.Onchain) "sat" else effectiveUnit,
-                    )
-                }
+                val quote = chooseReceiveLightningQuote(
+                    requestMethod = requestMethod,
+                    requestAmount = requestAmount,
+                    effectiveUnit = effectiveUnit,
+                    forceNew = forceNew,
+                    existingAmountlessOffer = { walletManager.existingAmountlessOffer() },
+                    existingOnchainMintQuote = { walletManager.existingOnchainMintQuote() },
+                    createMintQuote = { quoteAmount, quoteMethod, quoteUnit ->
+                        walletManager.createMintQuote(
+                            amount = quoteAmount,
+                            method = quoteMethod,
+                            unit = quoteUnit,
+                        )
+                    },
+                )
                 showQuote(quote)
             } catch (t: Throwable) {
                 errorText = t.message ?: "Could not create request."
@@ -502,24 +499,24 @@ fun ReceiveLightningScreen(
                         val terminal = liveQuote.state == MintQuoteState.Paid || liveQuote.state == MintQuoteState.Issued
                         if (!terminal || status != null) return@LaunchedEffect
                         status = ReceiveLnStatus.Processing
-                        val result = if (liveQuote.state == MintQuoteState.Issued && liveQuote.amountIssued > 0) {
-                            runCatching {
-                                walletManager.refreshBalance()
-                                walletManager.loadTransactions()
-                                liveQuote.amountIssued
-                            }
-                        } else {
-                            runCatching { walletManager.mintTokens(liveQuote.id) }
-                        }
+                        val result = settleReceiveLightningQuote(
+                            quote = liveQuote,
+                            settlementGateway = object : ReceiveLightningSettlementGateway {
+                                override suspend fun refreshBalance() {
+                                    walletManager.refreshBalance()
+                                }
+
+                                override suspend fun loadTransactions() {
+                                    walletManager.loadTransactions()
+                                }
+
+                                override suspend fun mintTokens(quoteId: String): Long =
+                                    walletManager.mintTokens(quoteId)
+                            },
+                            cashuRequestStore = cashuRequestStore,
+                        )
                         result
                                 .onSuccess { amount ->
-                                    if (amount > 0) {
-                                        cashuRequestStore.attachPaymentByQuoteId(
-                                            quoteId = liveQuote.id,
-                                            transactionId = liveQuote.id,
-                                            amount = amount,
-                                        )
-                                    }
                                     paymentJustReceived = true
                                     status = ReceiveLnStatus.Success(
                                         amountLabel = liveQuote.amount?.let {
@@ -887,13 +884,6 @@ private val PaymentMethodKind.createActionTitle: String
         PaymentMethodKind.Bolt11 -> "Create invoice"
         PaymentMethodKind.Bolt12 -> "Create invoice"
         PaymentMethodKind.Onchain -> "Create address"
-    }
-
-private val PaymentMethodKind.quoteIntentMemo: String
-    get() = when (this) {
-        PaymentMethodKind.Bolt11 -> "Lightning invoice"
-        PaymentMethodKind.Bolt12 -> "Reusable invoice"
-        PaymentMethodKind.Onchain -> "Bitcoin address"
     }
 
 private val PaymentMethodKind.receiveRequestDisplayName: String

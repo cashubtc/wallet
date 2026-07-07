@@ -170,6 +170,12 @@ Focused validation used for Android release configuration coverage:
 JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:testDebugUnitTest --tests org.cashu.wallet.App.AndroidReleaseConfigurationTest
 ```
 
+Focused validation used while extracting receive Lightning quote-flow coverage:
+
+```sh
+JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:compileDebugKotlin :app:testDebugUnitTest --tests org.cashu.wallet.ui.receive.ReceiveLightningQuoteFlowTest
+```
+
 ## Executive Summary
 
 Android is strongest in:
@@ -925,7 +931,7 @@ Major gaps:
 
 Unit test checklist:
 
-Milestone update: JVM coverage now includes payment request/locked receive encoding, dedicated `CashuRequestStore` persistence tests for quote-intent upsert, attach by quote id, duplicate suppression, update, delete, reset, reload, stale current-id cleanup, legacy payment normalization, Mint Detail display mapping tests, and Receive Lightning polling cadence tests. Compose UI, screenshot, instrumentation, integration, and CI parity remain open.
+Milestone update: JVM coverage now includes payment request/locked receive encoding, dedicated `CashuRequestStore` persistence tests for quote-intent upsert, attach by quote id, duplicate suppression, update, delete, reset, reload, stale current-id cleanup, legacy payment normalization, Mint Detail display mapping tests, Receive Lightning polling cadence tests, and Receive Lightning quote-flow tests for quote intent persistence, force-new on-chain creation, reusable BOLT12 reuse, and settlement attachment. Compose UI, screenshot, instrumentation, integration, and CI parity remain open.
 
 - [x] Add `PaymentRequestBuilder` tests for NUT-10 payload and locked receive request parse.
 - [x] Add `CashuRequestStore` tests for update/regenerate, quote-intent upsert, attach by quote id, delete/reset/reload, and duplicate suppression.
@@ -936,7 +942,8 @@ Milestone update: JVM coverage now includes payment request/locked receive encod
 - [x] Add send destination inference tests for amountless BOLT11/BOLT12 fixtures. `SendDestinationResolverTest` now covers the official amountless BOLT11 donation invoice fixture, the official amountful BOLT11 coffee invoice fixture, the BOLT12 `lno` amountless-offer branch, Lightning address amount entry, and ecash receive handoff. The resolver also fixes structural BOLT11 amount parsing to stop at the bech32 separator.
 - [x] Add receive token tests for unknown mint, locked known primary P2PK key, locked unknown key, non-sat unit, receive later, and home event payload. `ReceiveEcashReviewTest` covers review warnings and non-sat labels; `PendingReceiveTokenIdsTest` covers receive-later ids; `WalletReceiveEventTest` covers positive sat home events.
 - [x] Add receive Lightning JVM tests for expiry formatting and reusable quote selection. `QuoteExpiryFormatterTest` covers expiry text; `MintQuoteReuseTest` covers amountless BOLT12 offer reuse and on-chain quote reuse filtering.
-- [ ] Add receive Lightning tests for quote-backed request store attachment, force-new on-chain address flow, and screen/integration behavior.
+- [x] Add receive Lightning JVM tests for quote-backed request store attachment, force-new on-chain address flow, reusable BOLT12 quote reuse, and terminal settlement attachment. `ReceiveLightningQuoteFlowTest` covers stored quote intents with protocol quote kinds, force-new on-chain quote creation with `sat` units, BOLT12 reuse without duplicate creation, paid quote minting, and already-issued quote attachment without duplicate minting.
+- [ ] Add receive Lightning full screen/integration tests for method picker, BOLT11 invoice display/expiry, BOLT12 reusable offer editing, on-chain observer/link, success/failure status, and back behavior.
 - [x] Add Mint Detail tests for NUT-06-derived display mapping, contact URL mapping, and method min/max ranges. `MintDetailDisplayTest` covers capability summary, contacts, HTTPS fallback, and method range/feature labels.
 - [ ] Add Mint Detail tests for refresh-driven connection state and full screen rendering with NUT-06 metadata.
 - [x] Add Settings tests for relay validation, Sentry opt-in contract, and App Lock default state. `SettingsManagerTest` covers relay normalization/rejection, `SentryServiceTest` covers opt-in start/stop behavior, and `SettingsManagerTest` covers App Lock default state.
