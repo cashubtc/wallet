@@ -1,3 +1,5 @@
+import org.gradle.api.tasks.testing.Test
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -112,4 +114,17 @@ dependencies {
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
+}
+
+tasks.register<Test>("androidNoNetworkIntegrationTest") {
+    group = "verification"
+    description = "Runs Android JVM no-network integration coverage, including fake-gateway flows."
+    val debugUnitTest = tasks.named<Test>("testDebugUnitTest")
+    dependsOn("compileDebugUnitTestKotlin", "compileDebugUnitTestJavaWithJavac", "processDebugUnitTestJavaRes")
+    shouldRunAfter(debugUnitTest)
+    testClassesDirs = debugUnitTest.get().testClassesDirs
+    classpath = debugUnitTest.get().classpath
+    filter {
+        includeTestsMatching("org.cashu.wallet.integration.*")
+    }
 }

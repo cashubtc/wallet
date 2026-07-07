@@ -129,7 +129,8 @@ class ReceiveLightningQuoteFlowTest {
         val request = store.request("quote-paid")!!
         assertEquals(21L, amount)
         assertEquals(listOf("quote-paid"), gateway.mintCalls)
-        assertFalse(gateway.refreshBalanceCalled)
+        assertTrue(gateway.refreshBalanceCalled)
+        assertTrue(gateway.loadTransactionsCalled)
         assertEquals(1, request.receivedPayments.size)
         assertEquals("quote-paid", request.receivedPayments.single().transactionId)
         assertEquals(21L, request.totalReceived)

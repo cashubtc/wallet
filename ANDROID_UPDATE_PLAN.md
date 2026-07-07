@@ -121,6 +121,12 @@ Focused validation used during Settings selector/row-model refactoring:
 JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:compileDebugKotlin
 ```
 
+Focused validation used during Android no-network integration target setup:
+
+```sh
+JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:testDebugUnitTest --tests org.cashu.wallet.integration.NoNetworkFakeGatewayIntegrationTest :app:androidNoNetworkIntegrationTest
+```
+
 Focused validation used during bottom-sheet and segmented-label polish:
 
 ```sh
@@ -1014,9 +1020,9 @@ Compose UI and instrumentation checklist:
 
 Integration checklist:
 
-- [ ] Add an Android integration test target equivalent to `CI/IntegrationTests`.
+- [x] Add an Android integration test target equivalent to `CI/IntegrationTests`. Gradle now defines `:app:androidNoNetworkIntegrationTest` as the Android no-network JVM integration target, and CI runs it after Android JVM tests.
 - [ ] Run against local Nutshell/CDK test mints for mint, melt, restore, token parser, payment request parser, multi-unit, BOLT11, BOLT12, and on-chain where available.
-- [ ] Add fake-gateway integration tests for no-network CI paths.
+- [x] Add fake-gateway integration tests for no-network CI paths. `NoNetworkFakeGatewayIntegrationTest` covers receive-lightning quote settlement through `CashuRequestStore` and Cashu payment-request payment/refresh without real mints or network.
 - [x] Add CI jobs for JVM unit tests, lint, and release build. `.github/workflows/integration-tests.yml` now includes an Android Gradle job for `:app:testDebugUnitTest`, `:app:lintDebug`, and `:app:assembleRelease`.
 - [x] Add CI jobs for instrumentation tests on managed devices once the Android Compose/instrumentation harness exists. Gradle now defines `pixel2Api35`, and CI runs `:app:pixel2Api35DebugAndroidTest`.
 

@@ -60,12 +60,12 @@ internal suspend fun settleReceiveLightningQuote(
 ): Result<Long> =
     runCatching {
         val amount = if (quote.state == MintQuoteState.Issued && quote.amountIssued > 0) {
-            settlementGateway.refreshBalance()
-            settlementGateway.loadTransactions()
             quote.amountIssued
         } else {
             settlementGateway.mintTokens(quote.id)
         }
+        settlementGateway.refreshBalance()
+        settlementGateway.loadTransactions()
         if (amount > 0) {
             cashuRequestStore.attachPaymentByQuoteId(
                 quoteId = quote.id,
