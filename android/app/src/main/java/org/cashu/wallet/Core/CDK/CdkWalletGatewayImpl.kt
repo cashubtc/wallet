@@ -343,11 +343,11 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
         val tokenUnit = token.unit() ?: CdkCurrencyUnit.Sat
         ensureWallet(token.mintUrl().url, tokenUnit.toDomainUnit())
         val wallet = walletFor(token.mintUrl().url, tokenUnit)
-        return runCatching {
-            wallet.calculateFee(proofs.size.toUInt(), first.keysetId).value.toLong()
-        }.getOrElse {
-            wallet.getKeysetFeesById(first.keysetId).toLong() * proofs.size
-        }
+        return estimateReceiveFee(
+            proofCount = proofs.size,
+            calculateFee = { wallet.calculateFee(proofs.size.toUInt(), first.keysetId).value.toLong() },
+            keysetFee = { wallet.getKeysetFeesById(first.keysetId).toLong() },
+        )
     }
 
     override suspend fun checkTokenSpendable(token: String, mintUrl: String): Boolean {

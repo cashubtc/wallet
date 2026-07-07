@@ -24,15 +24,11 @@ internal class WalletMintQuoteSyncService(
         if (!mintQuoteSyncsInFlight.add(quoteId)) return MintQuoteSyncResult(minted = false)
         return try {
             val updatedQuote = gateway.checkMintQuote(quoteId).also { rememberMintQuoteTimestamp(it.id) }
-            val shouldAttemptMint = updatedQuote.state == MintQuoteState.Paid ||
-                updatedQuote.state == MintQuoteState.Issued ||
-                (allowPendingOnchainMintAttempt && updatedQuote.paymentMethod == PaymentMethodKind.Onchain)
-            if (!shouldAttemptMint) return MintQuoteSyncResult(minted = false, quote = updatedQuote)
+            if (!shouldAttemptMintQuoteSettlement(updatedQuote, allowPendingOnchainMintAttempt)) {
+                return MintQuoteSyncResult(minted = false, quote = updatedQuote)
+            }
 
-            if (updatedQuote.paymentMethod == PaymentMethodKind.Bolt12 &&
-                updatedQuote.amountPaid > 0 &&
-                updatedQuote.amountIssued >= updatedQuote.amountPaid
-            ) {
+            if (isMintQuoteAlreadySettledByGateway(updatedQuote)) {
                 return MintQuoteSyncResult(minted = false, quote = updatedQuote)
             }
 

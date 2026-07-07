@@ -475,12 +475,17 @@ fun UnifiedSendScreen(
                         topUpLoading = true
                         scope.launch {
                             runCatching {
-                                walletManager.createMintQuoteForMint(
+                                createExternalTopUpQuote(
                                     mintUrl = mintUrl,
-                                    amount = requestedAmount,
-                                    method = PaymentMethodKind.Bolt11,
-                                    unit = "sat",
-                                )
+                                    requestedAmountSats = requestedAmount,
+                                ) { targetMintUrl, amount, method, unit ->
+                                    walletManager.createMintQuoteForMint(
+                                        mintUrl = targetMintUrl,
+                                        amount = amount,
+                                        method = method,
+                                        unit = unit,
+                                    )
+                                }
                             }.onSuccess {
                                 topUpQuote = it
                             }.onFailure {

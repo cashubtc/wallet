@@ -592,18 +592,32 @@ class WalletManager(
 
     suspend fun payCashuPaymentRequest(encoded: String, customAmountSats: Long?, preferredMintURL: String?) {
         withLoading {
-            gateway.payCashuPaymentRequest(encoded, customAmountSats, preferredMintURL)
-            refreshBalance()
-            loadTransactions()
+            payCashuPaymentRequestAndRefresh(
+                encoded = encoded,
+                customAmountSats = customAmountSats,
+                preferredMintURL = preferredMintURL,
+                payCashuPaymentRequest = { request, amount, mintUrl ->
+                    gateway.payCashuPaymentRequest(request, amount, mintUrl)
+                },
+                refreshBalance = { refreshBalance() },
+                loadTransactions = { loadTransactions() },
+            )
         }
     }
 
     suspend fun addMintAndPayCashuPaymentRequest(encoded: String, customAmountSats: Long?, mintUrl: String) {
         withLoading {
-            val trackedMintUrl = ensureMintTracked(mintUrl)
-            gateway.payCashuPaymentRequest(encoded, customAmountSats, trackedMintUrl)
-            refreshBalance()
-            loadTransactions()
+            addMintAndPayCashuPaymentRequestAndRefresh(
+                encoded = encoded,
+                customAmountSats = customAmountSats,
+                mintUrl = mintUrl,
+                ensureMintTracked = { ensureMintTracked(it) },
+                payCashuPaymentRequest = { request, amount, trackedMintUrl ->
+                    gateway.payCashuPaymentRequest(request, amount, trackedMintUrl)
+                },
+                refreshBalance = { refreshBalance() },
+                loadTransactions = { loadTransactions() },
+            )
         }
     }
 
