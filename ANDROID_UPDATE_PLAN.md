@@ -43,6 +43,8 @@ JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:assembleDebug
 JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:testDebugUnitTest
 JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:lintDebug
 JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:assembleRelease
+JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:compileDebugAndroidTestKotlin
+JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:pixel2Api35DebugAndroidTest
 ```
 
 Focused test command used during Milestone 1:
@@ -129,6 +131,13 @@ Focused validation used during reusable receive-quote selection tests:
 
 ```sh
 JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:compileDebugKotlin :app:testDebugUnitTest --tests org.cashu.wallet.Core.MintQuoteReuseTest
+```
+
+Focused validation used while adding the Android Compose instrumentation harness:
+
+```sh
+JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:compileDebugAndroidTestKotlin
+JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:help --task :app:pixel2Api35DebugAndroidTest
 ```
 
 ## Executive Summary
@@ -822,7 +831,8 @@ Checklist:
 - [ ] Add large-font screenshot tests for Home, Unified Send, Send Ecash, Receive Ecash, Receive Lightning, Settings, Nostr, P2PK, Lightning, Mints, Mint Detail, and Transaction Detail.
 - [ ] Add compact-height screenshot tests for amount entry/keypad screens and NFC/scanner overlays.
 - [ ] Add tests that verify primary CTAs remain visible above keyboard and navigation bars.
-- [ ] Add tests for settings toggle semantics, row overflow, mint swipe/delete/open behavior, and discovery double-tap prevention.
+- [x] Add Compose tests for shared Settings row toggle semantics and compact-width row overflow. `SettingsRowsComposeTest` covers whole-row switch behavior, row text visibility, and click routing at large font.
+- [ ] Add Compose tests for mint swipe/delete/open behavior and discovery double-tap prevention.
 - [ ] Add performance benchmarks for Settings open/scroll/toggle and Home/History/Mints list scroll.
 
 Success condition:
@@ -874,7 +884,7 @@ iOS test and implementation reference files for this milestone:
 Current Android test strengths:
 
 - JVM tests exist for amount formatting, animated UR decoding, app logger, Bitcoin address validation, mint quote metadata/polling, Cashu Request listener, connectivity, haptics, history filters, home balance, mint discovery, mint URL input, mnemonic input, model parity, NIP44/NIP17, NPC, navigation deep links, Nostr, on-chain explorer, payment request builder/decoder, pending quote transactions, Sentry, secure storage, settings, token parser/history, transaction display, unit amount entry, wallet database recovery, and QR/platform actions.
-- Instrumentation currently covers storage migration and secure storage deletion.
+- Instrumentation currently covers wallet/settings storage boundary behavior, secure storage deletion, and shared Compose component behavior.
 
 Major gaps:
 
@@ -905,7 +915,8 @@ Milestone update: JVM coverage now includes payment request/locked receive encod
 
 Compose UI and instrumentation checklist:
 
-- [ ] Add `androidTest` Compose test harness with fake wallet/container dependencies.
+- [x] Add reusable `androidTest` Compose harness and first component suites. `ComposeTestHarness` wraps content in `CashuTheme` with controllable font scale, while `SettingsRowsComposeTest` and `ButtonsComposeTest` cover large-font Settings rows and CTA behavior.
+- [ ] Add fake wallet/container adapters for full app-level Compose tests without real mints, network, secure keys, or app storage.
 - [ ] Home tests: balance toggle, unit pager, received delta, recent request/transaction row, empty state, scan/send/receive actions.
 - [ ] Onboarding tests: create seed reveal/ack, first mint skip/add, restore method, staged mint restore progress/results.
 - [ ] Send tests: unified input paste/scan route, amount entry, quote loading, mint switch, success/failure status, send ecash P2PK.
@@ -924,7 +935,7 @@ Integration checklist:
 - [ ] Run against local Nutshell/CDK test mints for mint, melt, restore, token parser, payment request parser, multi-unit, BOLT11, BOLT12, and on-chain where available.
 - [ ] Add fake-gateway integration tests for no-network CI paths.
 - [x] Add CI jobs for JVM unit tests, lint, and release build. `.github/workflows/integration-tests.yml` now includes an Android Gradle job for `:app:testDebugUnitTest`, `:app:lintDebug`, and `:app:assembleRelease`.
-- [ ] Add CI jobs for instrumentation tests on managed devices once the Android Compose/instrumentation harness exists.
+- [x] Add CI jobs for instrumentation tests on managed devices once the Android Compose/instrumentation harness exists. Gradle now defines `pixel2Api35`, and CI runs `:app:pixel2Api35DebugAndroidTest`.
 
 Success condition:
 

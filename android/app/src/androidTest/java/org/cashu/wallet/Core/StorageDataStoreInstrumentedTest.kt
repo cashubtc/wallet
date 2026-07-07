@@ -67,10 +67,7 @@ class StorageDataStoreInstrumentedTest {
             putBoolean(StorageKeys.settingsUseBitcoinSymbol, true)
             putString(StorageKeys.settingsBitcoinPriceCurrency, "EUR")
             putString(StorageKeys.settingsNostrRelays, json.encodeToString(ListSerializer(String.serializer()), listOf("wss://relay.example")))
-            putString(
-                StorageKeys.settingsNwcConnections,
-                """[{"id":"nwc-1","name":"Wallet connection","walletPublicKey":"wallet-pub","connectionPublicKey":"conn-pub","allowanceSats":1000}]""",
-            )
+            putString(StorageKeys.settingsNostrSignerType, "CUSTOM")
             putString(
                 StorageKeys.settingsP2PKKeys,
                 """[{"id":"p2pk-1","publicKey":"02${"a".repeat(64)}","label":"P2PK key","createdAtEpochMillis":1,"used":false,"usedCount":0}]""",
@@ -82,14 +79,14 @@ class StorageDataStoreInstrumentedTest {
         assertEquals(true, store.useBitcoinSymbol)
         assertEquals("EUR", store.bitcoinPriceCurrency)
         assertEquals(listOf("wss://relay.example"), store.nostrRelays)
-        assertEquals(1, store.nwcConnections.size)
+        assertEquals("CUSTOM", store.nostrSignerType)
         assertEquals(1, store.p2pkKeys.size)
 
         store.clearWalletScopedData()
 
         assertEquals(true, store.useBitcoinSymbol)
         assertEquals("EUR", store.bitcoinPriceCurrency)
-        assertEquals(emptyList<Any>(), store.nwcConnections)
+        assertEquals("SEED", store.nostrSignerType)
         assertEquals(emptyList<Any>(), store.p2pkKeys)
     }
 
