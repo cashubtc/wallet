@@ -65,8 +65,8 @@ fun BackupRestoreScreen(
                 onClick = onOpenBackup,
             )
             NavRow(
-                title = "Restore",
-                subtitle = "Restore a wallet and recover ecash from mints.",
+                title = "Restore wallet",
+                subtitle = "Open the staged restore wizard and recover ecash from selected mints.",
                 leadingIcon = Icons.Outlined.Restore,
                 onClick = { confirmRestore = true },
             )
@@ -76,10 +76,10 @@ fun BackupRestoreScreen(
     if (confirmRestore) {
         AlertDialog(
             onDismissRequest = { confirmRestore = false },
-            title = { Text("Open Restore Wizard") },
+            title = { Text("Restore wallet") },
             text = {
                 Text(
-                    "This will open the restore flow used during onboarding.",
+                    "This opens the full restore wizard. It can replace the current local wallet, so make sure this wallet's seed phrase is backed up first. Android cloud backup is not available yet.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
             },

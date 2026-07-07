@@ -1,5 +1,6 @@
 package org.cashu.wallet.Core
 
+import java.net.URI
 import java.security.SecureRandom
 import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -117,6 +118,24 @@ class SettingsManager(
                 trimmed
             }
         }
+
+        fun normalizeNostrRelayUrl(relay: String): String {
+            val trimmed = relay.trim()
+            require(trimmed.isNotBlank()) { "Relay URL is required." }
+            val uri = runCatching { URI(trimmed) }.getOrNull()
+                ?: throw IllegalArgumentException("Relay URL must start with ws:// or wss://.")
+            val scheme = uri.scheme?.lowercase()
+            require(scheme == "ws" || scheme == "wss") { "Relay URL must start with ws:// or wss://." }
+            require(!uri.host.isNullOrBlank()) { "Relay URL must include a host." }
+            require(uri.userInfo == null) { "Relay URL cannot include credentials." }
+            val authority = buildString {
+                append(uri.host.lowercase())
+                if (uri.port != -1) append(":").append(uri.port)
+            }
+            val path = uri.rawPath?.takeIf { it.isNotBlank() && it != "/" }.orEmpty()
+            val query = uri.rawQuery?.let { "?$it" }.orEmpty()
+            return "$scheme://$authority$path$query"
+        }
     }
 
     init {
@@ -170,8 +189,13 @@ class SettingsManager(
     fun setHomeBalanceUnit(unit: String) = update { settingsStore.homeBalanceUnit = unit }
 
     fun addRelay(relay: String) = update {
-        val normalized = relay.trim()
-        if (normalized.isNotEmpty() && normalized !in settingsStore.nostrRelays) {
+        val normalized = normalizeNostrRelayUrl(relay)
+        val exists = settingsStore.nostrRelays.any { existing ->
+            runCatching { normalizeNostrRelayUrl(existing) }
+                .getOrDefault(existing.trim())
+                .equals(normalized, ignoreCase = true)
+        }
+        if (!exists) {
             settingsStore.nostrRelays = settingsStore.nostrRelays + normalized
         }
     }

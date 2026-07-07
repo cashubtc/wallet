@@ -12,7 +12,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.QrCode2
@@ -53,6 +55,7 @@ import org.cashu.wallet.ui.components.PrimaryButton
 import org.cashu.wallet.ui.components.QrCard
 import org.cashu.wallet.ui.components.SectionHeader
 import org.cashu.wallet.ui.components.ToggleRow
+import org.cashu.wallet.ui.components.formatRelativeTimestamp
 import org.cashu.wallet.ui.theme.CashuTheme
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -85,11 +88,31 @@ fun LightningScreen(
         },
     ) { padding ->
         Column(
-            modifier = Modifier.fillMaxSize().padding(padding),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
         ) {
             SectionHeader("Lightning address")
-            if (npcState.lightningAddress.isNotBlank()) {
+            ToggleRow(
+                title = "Enable Lightning Address",
+                subtitle = "Receive Lightning payments at a Nostr-backed @ address",
+                checked = npcState.isEnabled,
+                onCheckedChange = { npcService.setEnabled(it) },
+            )
+            if (!npcState.isEnabled) {
+                Text(
+                    text = "Receive Lightning payments to your wallet using a Lightning address.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(
+                        horizontal = CashuTheme.spacing.comfortable,
+                        vertical = CashuTheme.spacing.snug,
+                    ),
+                )
+            } else if (npcState.isInitialized && npcState.lightningAddress.isNotBlank()) {
+                CanvasDivider(leadingInset = 16)
                 LightningAddressRow(
                     address = npcState.lightningAddress,
                     statusColor = npcStatusColor(npcState),
@@ -110,9 +133,16 @@ fun LightningScreen(
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
+                if (npcState.errorMessage != null) {
+                    InlineNotice(
+                        text = npcState.errorMessage!!,
+                        modifier = Modifier.padding(horizontal = CashuTheme.spacing.comfortable),
+                    )
+                }
             } else {
+                CanvasDivider(leadingInset = 16)
                 Text(
-                    text = "No Lightning address configured. Enable below to receive at an @ address.",
+                    text = "Wallet not fully initialized. Restart the app or restore the wallet seed before enabling Lightning Address.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(
@@ -122,49 +152,53 @@ fun LightningScreen(
                 )
             }
 
-            SectionHeader("Settings")
-            ToggleRow(
-                title = "Enable Nostr-NPC bridge",
-                subtitle = "Route Lightning payments through the NPC quote handler",
-                checked = npcState.isEnabled,
-                onCheckedChange = { npcService.setEnabled(it) },
-            )
-            CanvasDivider(leadingInset = 16)
-            ToggleRow(
-                title = "Automatic claim",
-                subtitle = "Mint paid quotes without confirmation",
-                checked = npcState.automaticClaim,
-                onCheckedChange = { npcService.setAutomaticClaim(it) },
-                enabled = npcState.isEnabled,
-            )
-
-            SectionHeader("Active mint")
-            val mintLabel = walletState.mints.firstOrNull { it.url == npcState.selectedMintUrl }?.name
-                ?: walletState.activeMint?.name
-                ?: "No mint"
-            InspectorRow(
-                label = "Mint",
-                value = mintLabel,
-                editable = walletState.mints.isNotEmpty(),
-                onClick = { if (walletState.mints.isNotEmpty()) mintPickerOpen = true },
-            )
-
-            if (npcState.errorMessage != null) {
-                Spacer(Modifier.height(CashuTheme.spacing.snug))
-                InlineNotice(
-                    text = npcState.errorMessage!!,
-                    modifier = Modifier.padding(horizontal = CashuTheme.spacing.comfortable),
+            if (npcState.isEnabled && npcState.isInitialized) {
+                SectionHeader("Preferences")
+                ToggleRow(
+                    title = "Auto-claim payments",
+                    subtitle = "Mint paid quotes as ecash at the selected mint",
+                    checked = npcState.automaticClaim,
+                    onCheckedChange = { npcService.setAutomaticClaim(it) },
                 )
-            }
-
-            Spacer(Modifier.height(CashuTheme.spacing.comfortable))
-            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = CashuTheme.spacing.comfortable)) {
-                PrimaryButton(
-                    text = if (npcState.isCheckingPayments) "Checking…" else "Check for paid quotes now",
-                    onClick = { npcService.checkAndClaimPayments() },
-                    enabled = npcState.isEnabled && !npcState.isCheckingPayments,
-                    loading = npcState.isCheckingPayments,
+                CanvasDivider(leadingInset = 16)
+                val mintLabel = walletState.mints.firstOrNull { it.url == npcState.selectedMintUrl }?.name
+                    ?: walletState.activeMint?.name
+                    ?: "Select a mint"
+                InspectorRow(
+                    label = "Receiving mint",
+                    value = mintLabel,
+                    editable = walletState.mints.isNotEmpty(),
+                    onClick = { if (walletState.mints.isNotEmpty()) mintPickerOpen = true },
                 )
+                Text(
+                    text = "Incoming payments are minted as ecash at your chosen mint.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(
+                        horizontal = CashuTheme.spacing.comfortable,
+                        vertical = CashuTheme.spacing.snug,
+                    ),
+                )
+
+                SectionHeader("Payments")
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = CashuTheme.spacing.comfortable),
+                    verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
+                ) {
+                    PrimaryButton(
+                        text = if (npcState.isCheckingPayments) "Checking…" else "Check for payments",
+                        onClick = { npcService.checkAndClaimPayments() },
+                        enabled = !npcState.isCheckingPayments,
+                        loading = npcState.isCheckingPayments,
+                    )
+                    npcState.lastCheckEpochMillis?.let { lastCheck ->
+                        Text(
+                            text = "Last checked ${formatRelativeTimestamp(lastCheck)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
             }
         }
     }

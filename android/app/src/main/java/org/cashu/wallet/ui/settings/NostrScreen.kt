@@ -1,5 +1,6 @@
 package org.cashu.wallet.ui.settings
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,12 +12,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.Key
+import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Visibility
-import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -38,6 +41,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -69,7 +73,7 @@ fun NostrScreen(
     val settings by settingsManager.state.collectAsState()
     val clipboard = LocalClipboardManager.current
     val authenticate = rememberWalletAuthenticationLauncher(appLockManager)
-    var nsecRevealed by remember { mutableStateOf(false) }
+    var nsecSheetOpen by remember { mutableStateOf(false) }
     var showImport by remember { mutableStateOf(false) }
     var importError by remember { mutableStateOf<String?>(null) }
     var addRelayOpen by remember { mutableStateOf(false) }
@@ -99,6 +103,12 @@ fun NostrScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
         ) {
+            NostrKeyStatusPanel(
+                signerType = nostrState.signerType,
+                initialized = nostrState.isInitialized,
+                npub = nostrState.npub,
+            )
+
             SectionHeader("Signer")
             Column(modifier = Modifier.fillMaxWidth().padding(horizontal = CashuTheme.spacing.comfortable)) {
                 SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
@@ -155,8 +165,7 @@ fun NostrScreen(
                 horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
             ) {
                 Text(
-                    text = if (nsecRevealed) nostrState.nsec.ifBlank { "—" }
-                    else "•".repeat(12),
+                    text = "•".repeat(12),
                     style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.weight(1f),
@@ -165,19 +174,15 @@ fun NostrScreen(
                 )
                 IconButton(
                     onClick = {
-                        if (nsecRevealed) {
-                            nsecRevealed = false
-                        } else {
-                            authenticate("Reveal your Nostr private key") {
-                                nsecRevealed = true
-                            }
+                        authenticate("Reveal your Nostr private key") {
+                            nsecSheetOpen = true
                         }
                     },
+                    enabled = nostrState.nsec.isNotBlank(),
                 ) {
                     Icon(
-                        imageVector = if (nsecRevealed) Icons.Outlined.VisibilityOff
-                        else Icons.Outlined.Visibility,
-                        contentDescription = if (nsecRevealed) "Hide" else "Reveal",
+                        imageVector = Icons.Outlined.Visibility,
+                        contentDescription = "Reveal",
                     )
                 }
                 IconButton(
@@ -274,6 +279,39 @@ fun NostrScreen(
             }
             Spacer(Modifier.height(CashuTheme.spacing.section))
         }
+    }
+
+    if (nsecSheetOpen) {
+        var copied by remember { mutableStateOf(false) }
+        AlertDialog(
+            onDismissRequest = { nsecSheetOpen = false },
+            title = { Text("Nostr private key") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug)) {
+                    InlineNotice(
+                        text = "Anyone with this nsec can act as your wallet's Nostr identity. Only share it with software you trust.",
+                    )
+                    Text(
+                        text = nostrState.nsec,
+                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    authenticate("Copy your Nostr private key") {
+                        clipboard.setText(AnnotatedString(nostrState.nsec))
+                        copied = true
+                    }
+                }) {
+                    Text(if (copied) "Copied" else "Copy")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { nsecSheetOpen = false }) { Text("Done") }
+            },
+        )
     }
 
     if (showImport) {
@@ -384,5 +422,55 @@ fun NostrScreen(
                 TextButton(onClick = { addRelayOpen = false; addRelayError = null }) { Text("Cancel") }
             },
         )
+    }
+}
+
+@Composable
+private fun NostrKeyStatusPanel(
+    signerType: NostrSignerType,
+    initialized: Boolean,
+    npub: String,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(CashuTheme.spacing.comfortable)
+            .clip(RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .padding(CashuTheme.spacing.comfortable),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
+    ) {
+        Icon(
+            imageVector = if (initialized) Icons.Outlined.Security else Icons.Outlined.Key,
+            contentDescription = null,
+            tint = if (initialized) CashuTheme.colors.received else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(28.dp),
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = if (initialized) "Nostr identity ready" else "Nostr identity unavailable",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = when {
+                    !initialized -> "Unlock or restore the wallet seed to initialize Nostr."
+                    signerType == NostrSignerType.Seed -> "Using the wallet-seed key"
+                    else -> "Using a custom nsec"
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (npub.isNotBlank()) {
+                Text(
+                    text = npub.take(16) + "…" + npub.takeLast(8),
+                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.MiddleEllipsis,
+                )
+            }
+        }
     }
 }

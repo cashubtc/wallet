@@ -52,4 +52,30 @@ class SettingsManagerTest {
             SettingsManager.normalizeP2PKPublicKeyForComparison("02$xOnly"),
         )
     }
+
+    @Test
+    fun nostrRelayNormalizationAcceptsWebsocketUrls() {
+        assertEquals(
+            "wss://relay.example.com/path",
+            SettingsManager.normalizeNostrRelayUrl(" WSS://Relay.Example.com/path "),
+        )
+        assertEquals(
+            "wss://relay.example.com",
+            SettingsManager.normalizeNostrRelayUrl("wss://relay.example.com/"),
+        )
+        assertEquals(
+            "ws://localhost:8080",
+            SettingsManager.normalizeNostrRelayUrl("ws://localhost:8080"),
+        )
+    }
+
+    @Test
+    fun nostrRelayNormalizationRejectsNonWebsocketUrls() {
+        assertThrows(IllegalArgumentException::class.java) {
+            SettingsManager.normalizeNostrRelayUrl("https://relay.example.com")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            SettingsManager.normalizeNostrRelayUrl("wss://user:pass@relay.example.com")
+        }
+    }
 }

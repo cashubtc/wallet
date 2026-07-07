@@ -253,8 +253,7 @@ fun SettingsScreen(
             title = { Text("Delete Wallet") },
             text = {
                 Text(
-                    "Are you sure you want to delete your wallet? This action cannot be undone. " +
-                        "Make sure you have backed up your seed phrase!",
+                    "This permanently removes the local wallet, mint data, pending requests, Nostr identity, and locked-ecash keys from this device. Android cloud backup is not available yet, so make sure your seed phrase is backed up before deleting.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
             },

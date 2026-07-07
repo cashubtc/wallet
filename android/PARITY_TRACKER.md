@@ -27,7 +27,7 @@ Status date: 2026-07-07
 | 7 | Locked Ecash and P2PK | Complete | Milestone 7 commit on `codex/android-update-plan-implementation` | Seed-derived primary key, NUT-10/NUT-18 requests, locked receive, authenticated key reveal, focused tests. |
 | 8 | Mints and Mint Metadata | Complete | Milestone 8 commit on `codex/android-update-plan-implementation` | Full NUT-06 mint detail, discovery polish, refresh behavior, rich metadata model, focused tests. |
 | 9 | History and Transaction Detail | Complete | Milestone 9 commit on `codex/android-update-plan-implementation` | Stale sync, swipe/delete, row/detail parity, large-ledger behavior, focused tests. |
-| 10 | Settings, Integrations, and Privacy | Not started | TBD | App Lock/cloud backup settings, accurate privacy toggles, Nostr/P2PK/Lightning parity, tests. |
+| 10 | Settings, Integrations, and Privacy | Complete | Milestone 10 commit on `codex/android-update-plan-implementation` | App Lock/no-cloud backup decision, accurate privacy toggles, authenticated secrets, Nostr/Lightning parity, focused tests. |
 | 11 | Protocol, CDK, Storage, and Runtime Hardening | Not started | TBD | Latest CDK feature parity, sagas, keysets, multi-unit, privacy-safe errors/logging, tests. |
 | UI bug sweep | Android back/layout/jank/interaction bugs | Not started | TBD | Back gesture tests, large-font screenshots, settings performance benchmark, duplicate-action tests. |
 | 12 | Material UI, Accessibility, and Motion Polish | Not started | TBD | Material polish, TalkBack, dark/contrast, reduce motion, screenshot checks. |
@@ -134,3 +134,13 @@ Status date: 2026-07-07
 - Empty/search parity: search remains visible when there are no results, request search includes received amount, and empty copy now matches iOS: No Results, Nothing Here, No History Yet.
 - Transaction detail: canonical rows now include Payment Proof for non-on-chain preimages, drop Android-only Memo, and keep on-chain addresses QR/share/copy-capable after settlement.
 - Tests: focused Gradle coverage includes duplicate suppression, request received-amount search, date buckets, visible windowing, QR/share/copy rules, and explorer URL generation.
+
+## Current Milestone 10 Evidence
+
+- Settings root: section order matches iOS and exposes App Lock, Backup & Restore, Lightning, Locked Ecash, Nostr, Privacy, About, and Danger while intentionally omitting cloud backup until a real Android product exists.
+- Backup & Restore: restore copy now opens the staged restore wizard from Milestone 2 and warns that restoring can replace local wallet data; seed reveal/copy remains authenticated.
+- Nostr: settings include active key status, signer switching, public identity rows, authenticated nsec reveal sheet/copy, generate/import/reset confirmations, relay add/remove/reset, and `ws://` / `wss://` validation with dedupe.
+- Privacy: dependent toggles are disabled when their runtime path is off; inert payment-request toggles remain hidden; Sentry copy is explicit, opt-in, and excludes secrets/tokens/invoices/addresses/amounts/screenshots/view hierarchy.
+- Lightning Address: Android now follows the iOS enable/address/preferences/check structure, hides operational rows until enabled and initialized, labels the receiving mint, and shows last-check status.
+- Danger: delete wallet confirmation explains local wallet/mint/request/Nostr/P2PK deletion and the lack of Android cloud backup.
+- Tests: focused Gradle coverage includes settings relay validation, Nostr service, NPC service, and Sentry service behavior.

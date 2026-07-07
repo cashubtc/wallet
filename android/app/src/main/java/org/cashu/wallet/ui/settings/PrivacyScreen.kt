@@ -82,6 +82,7 @@ fun PrivacyScreen(
                 subtitle = "Refresh quote status on a timer",
                 checked = settings.periodicallyCheckIncomingInvoices,
                 onCheckedChange = settingsManager::setPeriodicallyCheckIncomingInvoices,
+                enabled = settings.checkIncomingInvoices,
             )
 
             SectionHeader("Network")
@@ -90,6 +91,7 @@ fun PrivacyScreen(
                 subtitle = "Required for Nostr discovery and live invoice updates",
                 checked = settings.useWebsockets,
                 onCheckedChange = settingsManager::setUseWebsockets,
+                enabled = settings.checkIncomingInvoices || settings.checkSentTokens,
             )
 
             SectionHeader("Convenience")
@@ -103,7 +105,7 @@ fun PrivacyScreen(
             SectionHeader("Diagnostics")
             ToggleRow(
                 title = "Send anonymous crash reports",
-                subtitle = "Opt-in. Screenshots and view hierarchy are never attached, and no Sentry PII is collected.",
+                subtitle = "Off by default. Never sends seeds, tokens, invoices, wallet addresses, amounts, screenshots, or view hierarchy.",
                 checked = settings.sentryEnabled,
                 onCheckedChange = settingsManager::setSentryEnabled,
             )

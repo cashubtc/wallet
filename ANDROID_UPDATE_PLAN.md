@@ -606,28 +606,29 @@ iOS implementation reference files for this milestone:
 
 Android gaps:
 
-- No App Lock row.
-- No cloud backup row.
-- Backup seed reveal is unauthenticated.
-- Nostr nsec reveal/copy is unauthenticated.
-- Some Android privacy toggles are storage-only or not fully wired to runtime behavior.
-- Nostr relay validation and key management are thinner than iOS.
+- Milestones 1 and 10 now provide the App Lock row/runtime behavior, authenticated backup seed reveal/copy, authenticated Nostr nsec reveal/copy, and Sentry opt-in wiring.
+- Android intentionally does not show a cloud backup row until a real Android backup product exists.
+- Milestone 10 update: Backup & Restore launches the staged restore wizard, Nostr exposes key status/reveal/import/generate/reset/relay management, relays validate as `ws://` or `wss://`, privacy toggles only expose runtime-backed behavior, Lightning Address settings follow the iOS enable/address/preferences/check structure, and destructive copy explains local-data deletion plus the lack of Android cloud backup.
 
 Checklist:
 
-- [ ] Add App Lock settings row and detail behavior from Milestone 1.
-- [ ] Add Android cloud backup settings row if product implements backup; otherwise do not show a backup promise.
-- [ ] Update Backup & Restore to launch a real restore wizard rather than only reopening old onboarding.
-- [ ] Require auth for Backup seed reveal/copy.
-- [ ] Require auth for Nostr private key reveal/copy.
-- [ ] Add Nostr key card/status, generate/import/reset confirmations, nsec reveal sheet, and relay validation.
-- [ ] Validate relays as `ws://` or `wss://`, deduplicate, show errors, support reset to defaults.
-- [ ] Align Lightning/NPC settings with iOS, including lightning address rows, mint selection, claim behavior, and Sentry-safe errors.
-- [ ] Hide or implement `checkPendingOnStartup` based on iOS product decision.
-- [ ] Hide or implement `enablePaymentRequests` and `receivePaymentRequestsAutomatically`; do not leave them as inert user promises.
-- [ ] Ensure Sentry opt-in copy is explicit, off by default, and never sends secrets/tokens/seeds.
-- [ ] Align Display settings: currency picker, BTC/sat symbol toggle, fiat price refresh/caching, and home balance unit persistence.
-- [ ] Align Danger Zone delete wallet confirmation and backup implications.
+- [x] Add App Lock settings row and detail behavior from Milestone 1.
+- [x] Add Android cloud backup settings row if product implements backup; otherwise do not show a backup promise.
+- [x] Update Backup & Restore to launch a real restore wizard rather than only reopening old onboarding.
+- [x] Require auth for Backup seed reveal/copy.
+- [x] Require auth for Nostr private key reveal/copy.
+- [x] Add Nostr key card/status, generate/import/reset confirmations, nsec reveal sheet, and relay validation.
+- [x] Validate relays as `ws://` or `wss://`, deduplicate, show errors, support reset to defaults.
+- [x] Align Lightning/NPC settings with iOS, including lightning address rows, mint selection, claim behavior, and Sentry-safe errors.
+- [x] Hide or implement `checkPendingOnStartup` based on iOS product decision.
+- [x] Hide or implement `enablePaymentRequests` and `receivePaymentRequestsAutomatically`; do not leave them as inert user promises.
+- [x] Ensure Sentry opt-in copy is explicit, off by default, and never sends secrets/tokens/seeds.
+- [x] Align Display settings: currency picker, BTC/sat symbol toggle, fiat price refresh/caching, and home balance unit persistence.
+- [x] Align Danger Zone delete wallet confirmation and backup implications.
+
+Focused validation:
+
+- `cd android && JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew --no-daemon :app:compileDebugKotlin :app:testDebugUnitTest --tests org.cashu.wallet.Core.SettingsManagerTest --tests org.cashu.wallet.Core.NostrServiceTest --tests org.cashu.wallet.Core.NPCServiceTest --tests org.cashu.wallet.Core.SentryServiceTest`
 
 Success condition:
 
