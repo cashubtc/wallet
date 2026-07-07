@@ -774,7 +774,8 @@ private fun ReceiveMethodPickerSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = CashuTheme.spacing.comfortable)
-                .navigationBarsPadding(),
+                .navigationBarsPadding()
+                .verticalScroll(rememberScrollState()),
         ) {
             Text(
                 text = "Receive with",
@@ -797,11 +798,18 @@ private fun ReceiveMethodPickerSheet(
                     horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(option.title, style = MaterialTheme.typography.bodyLarge)
                         Text(
-                            option.descriptor,
+                            text = option.title,
+                            style = MaterialTheme.typography.bodyLarge,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = option.descriptor,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                     Icon(

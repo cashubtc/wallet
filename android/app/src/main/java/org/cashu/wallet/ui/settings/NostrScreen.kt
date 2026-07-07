@@ -134,7 +134,7 @@ fun NostrScreen(
                             ) {
                                 Text(
                                     text = kind.displayName,
-                                    maxLines = 1,
+                                    maxLines = 2,
                                     overflow = TextOverflow.Ellipsis,
                                 )
                             }

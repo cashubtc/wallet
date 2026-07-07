@@ -1,6 +1,7 @@
 package org.cashu.wallet.ui.components
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -21,6 +23,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import org.cashu.wallet.Core.Protocols.CurrencyRegistry
 import org.cashu.wallet.ui.theme.CashuTheme
 
@@ -47,7 +50,8 @@ fun UnitPickerSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = CashuTheme.spacing.comfortable)
-                .navigationBarsPadding(),
+                .navigationBarsPadding()
+                .verticalScroll(rememberScrollState()),
         ) {
             Text(
                 text = title,
@@ -72,13 +76,19 @@ fun UnitPickerSheet(
                     horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(code, style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            text = code,
+                            style = MaterialTheme.typography.bodyLarge,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                         if (!displayName.equals(code, ignoreCase = true)) {
                             Text(
-                                displayName,
+                                text = displayName,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
                         }
                     }
