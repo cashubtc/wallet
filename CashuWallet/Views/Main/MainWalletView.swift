@@ -616,7 +616,7 @@ struct MainWalletView: View {
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(rowTitle(for: transaction)), \(formatAmount(transaction)) sats, \(transaction.status == .pending ? "pending" : "completed"), \(formatRelativeDate(transaction.date))")
+        .accessibilityLabel("\(rowTitle(for: transaction)), \(formatAmount(transaction)), \(transaction.status == .pending ? "pending" : "completed"), \(formatRelativeDate(transaction.date))")
         .accessibilityHint("Opens transaction details")
     }
 
@@ -630,8 +630,18 @@ struct MainWalletView: View {
     }
 
     private func formatAmount(_ transaction: WalletTransaction) -> String {
+        let value: String
+        if transaction.unit.lowercased() == "sat" {
+            value = AmountFormatter.sats(transaction.amount, useBitcoinSymbol: settings.useBitcoinSymbol)
+        } else {
+            value = CurrencyAmount(
+                value: transaction.amount,
+                currency: CurrencyRegistry.currency(forMintUnit: transaction.unit)
+            ).formatted()
+        }
+        guard transaction.status != .pending else { return value }
         let prefix = transaction.type == .incoming ? "+" : "−"
-        return "\(prefix)\(settings.formatAmountShort(transaction.amount))"
+        return "\(prefix)\(value)"
     }
 
     // MARK: - Cashu Request row

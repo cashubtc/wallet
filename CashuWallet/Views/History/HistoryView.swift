@@ -520,7 +520,7 @@ struct HistoryView: View {
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(rowTitle(for: transaction)), \(formatAmount(transaction)) sats, \(transaction.status == .pending ? transaction.displayStatusText.lowercased() : "completed"), \(formatRelativeDate(transaction.date))")
+        .accessibilityLabel("\(rowTitle(for: transaction)), \(formatAmount(transaction)), \(transaction.status == .pending ? transaction.displayStatusText.lowercased() : "completed"), \(formatRelativeDate(transaction.date))")
         .accessibilityHint("Opens transaction details")
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             if transaction.isPendingReceiveToken {
@@ -550,7 +550,15 @@ struct HistoryView: View {
     // pending row reads as a bare amount in VoiceOver too (status is announced
     // separately).
     private func formatAmount(_ transaction: WalletTransaction) -> String {
-        let value = settings.formatAmountShort(transaction.amount)
+        let value: String
+        if transaction.unit.lowercased() == "sat" {
+            value = AmountFormatter.sats(transaction.amount, useBitcoinSymbol: settings.useBitcoinSymbol)
+        } else {
+            value = CurrencyAmount(
+                value: transaction.amount,
+                currency: CurrencyRegistry.currency(forMintUnit: transaction.unit)
+            ).formatted()
+        }
         guard transaction.status != .pending else { return value }
         let prefix = transaction.type == .incoming ? "+" : "−"
         return "\(prefix)\(value)"

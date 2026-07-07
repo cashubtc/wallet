@@ -7,6 +7,7 @@ import P256K
 class SettingsManager: ObservableObject {
     static let shared = SettingsManager()
     private let settingsStore = SettingsStore.shared
+    private var suppressPaymentRequestSideEffects = false
     
     static let supportedFiatCurrencies: [String] = [
         "USD", "EUR", "AUD", "BRL", "CAD", "CHF", "CNY", "CZK", "DKK", "GBP",
@@ -93,6 +94,7 @@ class SettingsManager: ObservableObject {
     @Published var enablePaymentRequests: Bool {
         didSet {
             settingsStore.enablePaymentRequests = enablePaymentRequests
+            guard !suppressPaymentRequestSideEffects else { return }
             guard enablePaymentRequests != oldValue else { return }
             Task { @MainActor in
                 if enablePaymentRequests {
@@ -110,6 +112,7 @@ class SettingsManager: ObservableObject {
     @Published var receivePaymentRequestsAutomatically: Bool {
         didSet {
             settingsStore.receivePaymentRequestsAutomatically = receivePaymentRequestsAutomatically
+            guard !suppressPaymentRequestSideEffects else { return }
             guard receivePaymentRequestsAutomatically, !oldValue else { return }
             // Payments held while auto-claim was off can claim silently now
             // (known mints only — unknown mints always need approval).
@@ -251,6 +254,9 @@ class SettingsManager: ObservableObject {
 
         showP2PKButtonInDrawer = false
         p2pkKeys = []
+        let previousSuppression = suppressPaymentRequestSideEffects
+        suppressPaymentRequestSideEffects = resetRuntimeServices
+        defer { suppressPaymentRequestSideEffects = previousSuppression }
         enablePaymentRequests = true
         receivePaymentRequestsAutomatically = true
 
