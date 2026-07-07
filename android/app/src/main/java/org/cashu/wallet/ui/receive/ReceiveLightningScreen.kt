@@ -11,6 +11,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,18 +29,22 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.CurrencyBitcoin
 import androidx.compose.material.icons.outlined.IosShare
+import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.UnfoldMore
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -56,24 +62,35 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import org.cashu.wallet.Core.AmountFormatter
+import org.cashu.wallet.Core.Protocols.CurrencyAmount
+import org.cashu.wallet.Core.Protocols.CurrencyRegistry
 import org.cashu.wallet.Core.SettingsManager
+import org.cashu.wallet.Core.UnitAmountEntry
 import org.cashu.wallet.Core.WalletManager
+import org.cashu.wallet.Models.MintInfo
 import org.cashu.wallet.Models.MintQuoteInfo
 import org.cashu.wallet.Models.MintQuoteState
 import org.cashu.wallet.Models.PaymentMethodKind
 import org.cashu.wallet.ui.components.AmountText
 import org.cashu.wallet.ui.components.GhostButton
+import org.cashu.wallet.ui.components.InlineNotice
+import org.cashu.wallet.ui.components.MintAvatar
+import org.cashu.wallet.ui.components.MintPickerSheet
 import org.cashu.wallet.ui.components.NumberPad
 import org.cashu.wallet.ui.components.PrimaryButton
 import org.cashu.wallet.ui.components.QrCard
 import org.cashu.wallet.ui.components.TwoFaceScreen
+import org.cashu.wallet.ui.components.UnitPickerSheet
 import org.cashu.wallet.ui.components.shareText
+import org.cashu.wallet.ui.theme.CapsuleShape
 import org.cashu.wallet.ui.theme.CashuTheme
 import org.cashu.wallet.ui.theme.withMonoDigits
 
@@ -102,6 +119,9 @@ fun ReceiveLightningScreen(
     var creating by remember { mutableStateOf(false) }
     var errorText by remember { mutableStateOf<String?>(null) }
     var paymentJustReceived by remember { mutableStateOf(false) }
+    var selectedReceiveUnit by remember { mutableStateOf<String?>(null) }
+    var unitPickerOpen by remember { mutableStateOf(false) }
+    var mintPickerOpen by remember { mutableStateOf(false) }
 
     val activeMint = walletState.activeMint
     val supportedMethods = activeMint?.supportedMintMethods?.ifEmpty { listOf(PaymentMethodKind.Bolt11) }
@@ -109,7 +129,19 @@ fun ReceiveLightningScreen(
 
     LaunchedEffect(activeMint) {
         if (method !in supportedMethods) method = supportedMethods.first()
+        selectedReceiveUnit = null
     }
+
+    // Mint unit: NUT-04 mintable units only; on-chain always mints sat.
+    val effectiveUnit = if (method == PaymentMethodKind.Onchain) {
+        "sat"
+    } else {
+        activeMint?.resolvedMintUnit(selectedReceiveUnit) ?: "sat"
+    }
+    val currency = CurrencyRegistry.currencyForMintUnit(effectiveUnit)
+    val isSatUnit = effectiveUnit.equals("sat", ignoreCase = true)
+    val showsUnitSelector = activeMint?.supportsMultipleMintUnits == true &&
+        method != PaymentMethodKind.Onchain
 
     Scaffold(
         topBar = {
@@ -119,9 +151,9 @@ fun ReceiveLightningScreen(
                     val title = when (current) {
                         ReceiveLnFace.Input -> "Receive"
                         is ReceiveLnFace.Display -> when (current.quote.paymentMethod) {
-                            PaymentMethodKind.Bolt11 -> "Lightning invoice"
-                            PaymentMethodKind.Bolt12 -> "Lightning offer"
-                            PaymentMethodKind.Onchain -> "Bitcoin address"
+                            PaymentMethodKind.Bolt11 -> "Lightning Invoice"
+                            PaymentMethodKind.Bolt12 -> "Reusable Invoice"
+                            PaymentMethodKind.Onchain -> "Bitcoin Address"
                         }
                     }
                     Text(title, style = MaterialTheme.typography.titleMedium)
@@ -150,6 +182,47 @@ fun ReceiveLightningScreen(
                         }) {
                             Icon(Icons.Outlined.IosShare, contentDescription = "Share")
                         }
+                    } else if (current is ReceiveLnFace.Input) {
+                        // Method picker rides the top bar (iOS parity): an icon
+                        // opening a menu, shown only when >1 method exists.
+                        if (supportedMethods.size > 1) {
+                            var methodMenuOpen by remember { mutableStateOf(false) }
+                            IconButton(onClick = { methodMenuOpen = true }) {
+                                Icon(
+                                    imageVector = method.menuIcon,
+                                    contentDescription = "Payment method",
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = methodMenuOpen,
+                                onDismissRequest = { methodMenuOpen = false },
+                            ) {
+                                supportedMethods.forEach { kind ->
+                                    DropdownMenuItem(
+                                        text = { Text(kind.displayName) },
+                                        leadingIcon = { Icon(kind.menuIcon, contentDescription = null) },
+                                        trailingIcon = if (kind == method) {
+                                            { Icon(Icons.Filled.Check, contentDescription = "Selected") }
+                                        } else null,
+                                        onClick = {
+                                            methodMenuOpen = false
+                                            method = kind
+                                            amount = ""
+                                            errorText = null
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                        if (showsUnitSelector) {
+                            androidx.compose.material3.TextButton(onClick = { unitPickerOpen = true }) {
+                                Text(
+                                    text = effectiveUnit.uppercase(),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                            }
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -172,16 +245,21 @@ fun ReceiveLightningScreen(
                 ReceiveLnFace.Input -> InputFace(
                     amount = amount,
                     onAmountChange = { amount = it; errorText = null },
-                    supportedMethods = supportedMethods,
                     selectedMethod = method,
-                    onMethodChange = { method = it },
                     creating = creating,
-                    activeMintName = activeMint?.name ?: "No mint",
+                    mint = activeMint,
+                    mintBalanceText = activeMint?.let {
+                        formatter.formatWalletSats(it.balance, settings.useBitcoinSymbol)
+                    },
+                    onPickMint = { mintPickerOpen = true },
+                    unitLabel = if (isSatUnit) "sat" else effectiveUnit.uppercase(),
+                    decimals = currency.decimals,
                     errorText = errorText,
                     onCreate = {
-                        val explicit = amount.toLongOrNull()
+                        val explicit = UnitAmountEntry.baseUnits(amount, currency.decimals)
+                            .takeIf { it > 0 }
                         val needsAmount = method != PaymentMethodKind.Bolt12
-                        if (needsAmount && (explicit == null || explicit <= 0L)) {
+                        if (needsAmount && explicit == null) {
                             errorText = "Enter an amount."
                             return@InputFace
                         }
@@ -193,8 +271,9 @@ fun ReceiveLightningScreen(
                         scope.launch {
                             try {
                                 val quote = walletManager.createMintQuote(
-                                    amount = if (needsAmount) explicit else explicit?.takeIf { it > 0 },
+                                    amount = explicit,
                                     method = method,
+                                    unit = effectiveUnit,
                                 )
                                 face = ReceiveLnFace.Display(quote)
                             } catch (t: Throwable) {
@@ -225,33 +304,78 @@ fun ReceiveLightningScreen(
                         if (liveQuote.state == MintQuoteState.Paid) {
                             runCatching { walletManager.mintTokens(liveQuote.id) }
                             paymentJustReceived = true
-                            delay(2_500)
-                            paymentJustReceived = false
+                            // Receive-flow resolution: dwell on the celebration,
+                            // then the screen dismisses itself (iOS parity).
+                            delay(1_200)
+                            onClose()
                         }
                     }
                     DisplayFace(
                         quote = liveQuote,
                         amountLabel = liveQuote.amount?.let {
-                            formatter.formatWalletSats(it, settings.useBitcoinSymbol)
+                            if (liveQuote.unit.equals("sat", ignoreCase = true)) {
+                                formatter.formatWalletSats(it, settings.useBitcoinSymbol)
+                            } else {
+                                CurrencyAmount(
+                                    it,
+                                    CurrencyRegistry.currencyForMintUnit(liveQuote.unit),
+                                ).formatted()
+                            }
                         },
                         showCelebration = paymentJustReceived,
                         onCopy = { clipboard.setText(AnnotatedString(liveQuote.request)) },
+                        onDone = onClose,
                     )
                 }
             }
         }
     }
+
+    if (mintPickerOpen) {
+        MintPickerSheet(
+            mints = walletState.mints,
+            activeMintUrl = activeMint?.url,
+            onSelect = { mint ->
+                scope.launch { walletManager.setActiveMint(mint) }
+                amount = ""
+                errorText = null
+                mintPickerOpen = false
+            },
+            onDismiss = { mintPickerOpen = false },
+        )
+    }
+
+    if (unitPickerOpen) {
+        UnitPickerSheet(
+            units = activeMint?.effectiveMintUnits ?: listOf("sat"),
+            selectedUnit = effectiveUnit,
+            onSelect = {
+                selectedReceiveUnit = it
+                amount = ""
+                errorText = null
+                unitPickerOpen = false
+            },
+            onDismiss = { unitPickerOpen = false },
+        )
+    }
 }
 
+/**
+ * First face, in the iOS element order: mint selector row (top) → amount hero
+ * (with an ON-CHAIN badge for on-chain) → error → number pad → create CTA. The
+ * method picker lives in the top bar, not on the canvas.
+ */
 @Composable
 private fun InputFace(
     amount: String,
     onAmountChange: (String) -> Unit,
-    supportedMethods: List<PaymentMethodKind>,
     selectedMethod: PaymentMethodKind,
-    onMethodChange: (PaymentMethodKind) -> Unit,
     creating: Boolean,
-    activeMintName: String,
+    mint: MintInfo?,
+    mintBalanceText: String?,
+    onPickMint: () -> Unit,
+    unitLabel: String,
+    decimals: Int,
     errorText: String?,
     onCreate: () -> Unit,
 ) {
@@ -260,56 +384,56 @@ private fun InputFace(
             .fillMaxSize()
             .padding(horizontal = CashuTheme.spacing.comfortable)
             .imePadding(),
-        verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Spacer(Modifier.height(CashuTheme.spacing.snug))
-        Text(
-            text = activeMintName,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-
-        if (supportedMethods.size > 1) {
-            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                supportedMethods.forEachIndexed { index, kind ->
-                    SegmentedButton(
-                        shape = SegmentedButtonDefaults.itemShape(
-                            index = index,
-                            count = supportedMethods.size,
-                        ),
-                        selected = kind == selectedMethod,
-                        onClick = { onMethodChange(kind) },
-                    ) {
-                        Text(kind.displayName)
-                    }
-                }
-            }
+        Spacer(Modifier.height(CashuTheme.spacing.default))
+        if (mint != null) {
+            MintSelectorRow(
+                mint = mint,
+                balanceText = mintBalanceText,
+                onClick = onPickMint,
+            )
         }
-
+        Spacer(Modifier.weight(1f))
+        if (selectedMethod == PaymentMethodKind.Onchain) {
+            Text(
+                text = "ON-CHAIN",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .background(
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        shape = CapsuleShape,
+                    )
+                    .padding(
+                        horizontal = CashuTheme.spacing.default,
+                        vertical = CashuTheme.spacing.micro,
+                    ),
+            )
+            Spacer(Modifier.height(CashuTheme.spacing.snug))
+        }
         AmountText(
-            text = amount.ifEmpty { "0" },
+            text = when {
+                amount.isNotEmpty() -> amount
+                decimals > 0 -> "0." + "0".repeat(decimals)
+                else -> "0"
+            },
             style = MaterialTheme.typography.displayMedium.withMonoDigits(),
         )
         Text(
-            text = "sat",
+            text = unitLabel,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-
         if (errorText != null) {
-            Text(
-                text = errorText,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-            )
+            Spacer(Modifier.height(CashuTheme.spacing.default))
+            InlineNotice(text = errorText)
         }
-
-        Spacer(modifier = Modifier.weight(1f, fill = true))
-        NumberPad(amount = amount, onAmountChange = onAmountChange)
+        Spacer(Modifier.weight(1f))
+        NumberPad(amount = amount, onAmountChange = onAmountChange, decimals = decimals)
         Spacer(Modifier.height(CashuTheme.spacing.micro))
         PrimaryButton(
-            text = if (creating) "Creating…" else "Create request",
+            text = if (creating) "Creating…" else selectedMethod.createActionTitle,
             onClick = onCreate,
             enabled = !creating,
             loading = creating,
@@ -318,12 +442,69 @@ private fun InputFace(
     }
 }
 
+/** Mint row: avatar + name + balance + change affordance (iOS mintSelector). */
+@Composable
+private fun MintSelectorRow(
+    mint: MintInfo,
+    balanceText: String?,
+    onClick: () -> Unit,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = CashuTheme.spacing.snug),
+    ) {
+        MintAvatar(mint = mint)
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = mint.name,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (balanceText != null) {
+                Text(
+                    text = "Balance $balanceText",
+                    style = MaterialTheme.typography.bodySmall.withMonoDigits(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        Icon(
+            imageVector = Icons.Outlined.UnfoldMore,
+            contentDescription = "Change mint",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(CashuTheme.spacing.loose),
+        )
+    }
+}
+
+private val PaymentMethodKind.menuIcon
+    get() = when (this) {
+        PaymentMethodKind.Bolt11 -> Icons.Outlined.Bolt
+        PaymentMethodKind.Bolt12 -> Icons.Outlined.Repeat
+        PaymentMethodKind.Onchain -> Icons.Outlined.CurrencyBitcoin
+    }
+
+private val PaymentMethodKind.createActionTitle: String
+    get() = when (this) {
+        PaymentMethodKind.Bolt11 -> "Create Invoice"
+        PaymentMethodKind.Bolt12 -> "Create Offer"
+        PaymentMethodKind.Onchain -> "Get Address"
+    }
+
 @Composable
 private fun DisplayFace(
     quote: MintQuoteInfo,
     amountLabel: String?,
     showCelebration: Boolean,
     onCopy: () -> Unit,
+    onDone: () -> Unit,
 ) {
     val isPaid = quote.state == MintQuoteState.Paid ||
         quote.state == MintQuoteState.Issued ||
@@ -364,8 +545,7 @@ private fun DisplayFace(
         )
         GhostButton(
             text = "Done",
-            onClick = onCopy,
-            enabled = isPaid,
+            onClick = onDone,
         )
         Spacer(Modifier.navigationBarsPadding())
     }
@@ -380,9 +560,14 @@ private fun QuoteStatusRow(isPaid: Boolean, showCelebration: Boolean) {
     ) {
         Spacer(modifier = Modifier.weight(1f))
         if (isPaid) {
+            // Single celebration beat: one green check grows in gently (0.9 → 1);
+            // the label carries the moment, no doubled glyphs.
             AnimatedVisibility(
-                visible = showCelebration,
-                enter = scaleIn(animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)) + fadeIn(),
+                visible = true,
+                enter = scaleIn(
+                    animationSpec = spring(dampingRatio = 0.7f, stiffness = Spring.StiffnessMediumLow),
+                    initialScale = 0.9f,
+                ) + fadeIn(),
                 exit = fadeOut(),
             ) {
                 Icon(
@@ -392,12 +577,6 @@ private fun QuoteStatusRow(isPaid: Boolean, showCelebration: Boolean) {
                     modifier = Modifier.size(CashuTheme.spacing.loose),
                 )
             }
-            Icon(
-                imageVector = Icons.Outlined.CheckCircle,
-                contentDescription = null,
-                tint = CashuTheme.colors.received,
-                modifier = Modifier.size(CashuTheme.spacing.loose),
-            )
             Text(
                 text = if (showCelebration) "Payment received!" else "Paid",
                 style = MaterialTheme.typography.titleMedium,

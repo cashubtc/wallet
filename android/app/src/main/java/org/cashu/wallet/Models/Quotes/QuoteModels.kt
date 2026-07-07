@@ -23,6 +23,8 @@ data class MintQuoteInfo(
     val mintUrl: String? = null,
     val amountPaid: Long = 0,
     val amountIssued: Long = 0,
+    // Unit the quote mints into; poll/redeem must resolve the same-unit wallet.
+    val unit: String = "sat",
 ) {
     val isExpired: Boolean
         get() = expiryEpochSeconds != null &&

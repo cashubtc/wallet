@@ -1,8 +1,5 @@
 package org.cashu.wallet.ui.home
 
-import android.content.Context
-import android.content.pm.PackageManager
-import android.nfc.NfcAdapter
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -22,10 +19,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
-import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.outlined.AccountBalance
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.QrCodeScanner
@@ -35,6 +34,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -54,6 +54,9 @@ import androidx.compose.ui.unit.dp
 import org.cashu.wallet.Core.AmountDisplayPrimary
 import org.cashu.wallet.Core.AmountFormatter
 import org.cashu.wallet.Core.CashuRequestStore
+import org.cashu.wallet.Core.HomeBalance
+import org.cashu.wallet.Core.Protocols.CurrencyAmount
+import org.cashu.wallet.Core.Protocols.CurrencyRegistry
 import org.cashu.wallet.Core.PriceService
 import org.cashu.wallet.Core.SettingsManager
 import org.cashu.wallet.Core.TransactionDisplay
@@ -66,6 +69,7 @@ import org.cashu.wallet.ui.components.AmountText
 import org.cashu.wallet.ui.components.BalanceDisplay
 import org.cashu.wallet.ui.components.CanvasDivider
 import org.cashu.wallet.ui.components.CashuRequestRow
+import org.cashu.wallet.ui.components.requestRowAmount
 import org.cashu.wallet.ui.components.EmptyState
 import org.cashu.wallet.ui.components.GhostButton
 import org.cashu.wallet.ui.components.MintChip
@@ -88,9 +92,8 @@ fun HomeScreen(
     onOpenTransaction: (WalletTransaction) -> Unit,
     onOpenCashuRequest: (CashuRequest) -> Unit,
     onReceive: (ReceiveAction) -> Unit,
-    onSend: (SendAction) -> Unit,
+    onSend: () -> Unit,
     onScan: () -> Unit,
-    onContactless: () -> Unit,
     contentPadding: PaddingValues,
 ) {
     val walletState by walletManager.state.collectAsState()
@@ -99,12 +102,7 @@ fun HomeScreen(
     val requestState by cashuRequestStore.state.collectAsState()
     val formatter = remember { AmountFormatter() }
 
-    val context = LocalContext.current
-    val hasNfc = remember(context) { context.hasNfcFeature() }
-
     var receiveChooserOpen by remember { mutableStateOf(false) }
-    var sendChooserOpen by remember { mutableStateOf(false) }
-    var checkingTxId by remember { mutableStateOf<String?>(null) }
 
     val balanceDisplay = remember(walletState.balance, settings, priceState) {
         formatter.displayText(
@@ -163,10 +161,12 @@ fun HomeScreen(
             if (recentItems.isEmpty()) {
                 item("empty") {
                     val hasMints = walletState.mints.isNotEmpty()
+                    // iOS: a single quiet tray empty state; the add-mint CTA
+                    // survives only for the true first-run (no mints yet).
                     EmptyState(
-                        icon = if (hasMints) Icons.Filled.Bolt else Icons.Outlined.AccountBalance,
-                        title = if (hasMints) "No activity yet" else "Add a mint to get started",
-                        supporting = if (hasMints) "Your first payment will show up here."
+                        icon = if (hasMints) Icons.Outlined.Inbox else Icons.Outlined.AccountBalance,
+                        title = if (hasMints) "No Activity Yet" else "Add a mint to get started",
+                        supporting = if (hasMints) "Your recent payments will show up here."
                         else "Mints custody your ecash. Add one to begin.",
                         actionLabel = if (!hasMints) "Add mint" else null,
                         onAction = if (!hasMints) onOpenMints else null,
@@ -191,19 +191,6 @@ fun HomeScreen(
                                     else null,
                                 ),
                                 onClick = { onOpenTransaction(tx) },
-                                isChecking = checkingTxId == tx.id,
-                                onRefresh = if (tx.status == TransactionStatus.Pending) {
-                                    {
-                                        checkingTxId = tx.id
-                                        walletManager.launch {
-                                            try {
-                                                walletManager.loadTransactions()
-                                            } finally {
-                                                checkingTxId = null
-                                            }
-                                        }
-                                    }
-                                } else null,
                             )
                         }
                         is HomeRecentItem.Req -> {
@@ -211,15 +198,9 @@ fun HomeScreen(
                             CashuRequestRow(
                                 request = req,
                                 timestamp = formatRelativeTimestamp(req.createdAtEpochMillis),
-                                primaryAmountText = when {
-                                    req.totalReceived > 0L -> formatter.formatWalletSats(
-                                        req.totalReceived, settings.useBitcoinSymbol,
-                                    )
-                                    req.amount != null && req.amount > 0L -> formatter.formatWalletSats(
-                                        req.amount, settings.useBitcoinSymbol,
-                                    )
-                                    else -> null
-                                },
+                                primaryAmountText = requestRowAmount(
+                                    req, formatter, settings.useBitcoinSymbol,
+                                ),
                                 secondaryAmountText = null,
                                 onClick = { onOpenCashuRequest(req) },
                             )
@@ -258,19 +239,39 @@ fun HomeScreen(
                 )
             },
             balance = {
-                BalanceDisplay(
-                    amount = balanceDisplay,
-                    onTogglePrimary = { next ->
-                        settingsManager.setAmountDisplayPrimary(next.rawValue)
-                    },
+                val satHero: @Composable () -> Unit = {
+                    BalanceDisplay(
+                        amount = balanceDisplay,
+                        // iOS: tapping the hero toggles the ₿ symbol vs "sat".
+                        onTogglePrimary = {
+                            settingsManager.setUseBitcoinSymbol(!settings.useBitcoinSymbol)
+                        },
+                    )
+                }
+                // Multi-unit pager carve-out: one hero number at a time, only
+                // when the active mint is multi-unit AND non-sat balance is held.
+                val showsPager = HomeBalance.showsUnitPager(
+                    activeMintSupportsMultipleUnits = walletState.activeMint?.supportsMultipleUnits == true,
+                    balancesByUnit = walletState.balancesByUnit,
                 )
+                if (showsPager) {
+                    UnitBalancePager(
+                        balancesByUnit = walletState.balancesByUnit,
+                        persistedUnit = settings.homeBalanceUnit,
+                        onUnitSelected = settingsManager::setHomeBalanceUnit,
+                        satHero = satHero,
+                    )
+                } else {
+                    satHero()
+                }
             },
             triptych = {
                 ActionDuet(
                     onReceive = { receiveChooserOpen = true },
-                    onSend = { sendChooserOpen = true },
+                    // Send opens the unified surface directly — no chooser.
+                    onSend = onSend,
                     receiveEnabled = walletState.activeMint != null,
-                    sendEnabled = walletState.balance > 0,
+                    sendEnabled = walletState.hasAnyBalance,
                 )
             },
             onScan = onScan,
@@ -284,19 +285,6 @@ fun HomeScreen(
                 onReceive(action)
             },
             onDismiss = { receiveChooserOpen = false },
-        )
-    }
-    if (sendChooserOpen) {
-        SendChooserSheet(
-            showContactless = hasNfc,
-            onSelect = { action ->
-                sendChooserOpen = false
-                when (action) {
-                    SendAction.Ecash, SendAction.Bitcoin -> onSend(action)
-                    SendAction.Contactless -> onContactless()
-                }
-            },
-            onDismiss = { sendChooserOpen = false },
         )
     }
 }
@@ -354,6 +342,75 @@ private fun PinnedTop(
     }
 }
 
+/**
+ * Home balance unit pager (iOS MainWalletView.unitBalanceHero). Page order is
+ * sat first then held non-sat units sorted; the sat page keeps the ₿/fiat
+ * toggle; non-sat pages render in their own currency with no fiat conversion
+ * (eur is already fiat). Selection persists and clamps back to sat when the
+ * unit no longer holds balance.
+ */
+@Composable
+private fun UnitBalancePager(
+    balancesByUnit: Map<String, Long>,
+    persistedUnit: String,
+    onUnitSelected: (String) -> Unit,
+    satHero: @Composable () -> Unit,
+) {
+    val units = HomeBalance.homeBalanceUnits(balancesByUnit)
+    val resolvedUnit = HomeBalance.resolvedUnit(persistedUnit, units)
+    val pagerState = rememberPagerState(
+        initialPage = units.indexOf(resolvedUnit).coerceAtLeast(0),
+        pageCount = { units.size },
+    )
+    // Persist swipes; clamp when the held-unit list changes under the pager.
+    LaunchedEffect(pagerState.currentPage, units) {
+        units.getOrNull(pagerState.currentPage)?.let { current ->
+            if (current != persistedUnit) onUnitSelected(current)
+        }
+    }
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxWidth(),
+            key = { units[it] },
+        ) { page ->
+            val unit = units[page]
+            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                if (unit.equals("sat", ignoreCase = true)) {
+                    satHero()
+                } else {
+                    AmountText(
+                        text = CurrencyAmount(
+                            balancesByUnit[unit] ?: 0L,
+                            CurrencyRegistry.currencyForMintUnit(unit),
+                        ).formatted(),
+                        style = MaterialTheme.typography.displayMedium,
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(CashuTheme.spacing.snug))
+        Row(horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.tight)) {
+            units.forEachIndexed { index, unit ->
+                Box(
+                    modifier = Modifier
+                        .size(PAGE_DOT_SIZE)
+                        .background(
+                            color = if (index == pagerState.currentPage) {
+                                MaterialTheme.colorScheme.onSurface
+                            } else {
+                                MaterialTheme.colorScheme.outlineVariant
+                            },
+                            shape = CircleShape,
+                        ),
+                )
+            }
+        }
+    }
+}
+
+private val PAGE_DOT_SIZE = 6.dp
+
 @Composable
 private fun ActionDuet(
     onReceive: () -> Unit,
@@ -383,11 +440,6 @@ private fun ActionDuet(
             Text("Send", style = MaterialTheme.typography.labelLarge)
         }
     }
-}
-
-private fun Context.hasNfcFeature(): Boolean {
-    if (!packageManager.hasSystemFeature(PackageManager.FEATURE_NFC)) return false
-    return NfcAdapter.getDefaultAdapter(this) != null
 }
 
 /** Unified Home/History timeline item. Mirrors iOS HistoryItem enum. */

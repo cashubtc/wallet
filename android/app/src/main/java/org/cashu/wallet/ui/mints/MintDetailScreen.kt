@@ -31,6 +31,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -43,6 +44,8 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import org.cashu.wallet.Core.Protocols.CurrencyAmount
+import org.cashu.wallet.Core.Protocols.CurrencyRegistry
 import org.cashu.wallet.Core.WalletManager
 import org.cashu.wallet.Core.shortenMintUrl
 import org.cashu.wallet.Models.MintInfo
@@ -172,6 +175,28 @@ fun MintDetailScreen(
                 value = "${mint.balance} sat",
                 valueMonospaced = true,
             )
+            // Per-unit balances for non-sat units, loaded on demand.
+            val nonSatUnits = remember(mint.units) {
+                mint.units.filter { !it.equals("sat", ignoreCase = true) }.sorted()
+            }
+            var unitBalances by remember(mint.url) { mutableStateOf<Map<String, Long>>(emptyMap()) }
+            LaunchedEffect(mint.url, nonSatUnits) {
+                nonSatUnits.forEach { unit ->
+                    walletManager.unitBalance(mint.url, unit)?.let { balance ->
+                        unitBalances = unitBalances + (unit to balance)
+                    }
+                }
+            }
+            nonSatUnits.forEach { unit ->
+                CanvasDivider(leadingInset = 16)
+                InspectorRow(
+                    label = "Balance (${unit.uppercase()})",
+                    value = unitBalances[unit]?.let {
+                        CurrencyAmount(it, CurrencyRegistry.currencyForMintUnit(unit)).formatted()
+                    } ?: "…",
+                    valueMonospaced = true,
+                )
+            }
             CanvasDivider(leadingInset = 16)
             InspectorRow(
                 label = "Units",

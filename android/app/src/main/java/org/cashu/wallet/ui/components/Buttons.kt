@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
@@ -16,8 +15,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.unit.dp
 import org.cashu.wallet.ui.theme.CashuTheme
 
@@ -28,8 +25,10 @@ private val ButtonContentVertical = 14.dp
 private val ButtonProgressSize = 20.dp
 
 /**
- * The Singular Button: both primary and secondary CTAs use the same tonal surface.
- * Hierarchy comes from copy order and disabled state.
+ * The Singular Button: every full-width CTA — primary and secondary — is the same
+ * tonal capsule (the M3 translation of the iOS glass capsule). Hierarchy comes
+ * from order, copy, and disabled state; there is deliberately no bolder filled
+ * variant and no outline variant. Labels are text-only (Iconless-CTA Rule).
  */
 @Composable
 fun PrimaryButton(
@@ -39,12 +38,8 @@ fun PrimaryButton(
     enabled: Boolean = true,
     loading: Boolean = false,
 ) {
-    val haptics = LocalHapticFeedback.current
     FilledTonalButton(
-        onClick = {
-            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-            onClick()
-        },
+        onClick = onClick,
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = ButtonMinHeight),
@@ -65,40 +60,6 @@ fun PrimaryButton(
                     style = MaterialTheme.typography.labelLarge,
                 )
             }
-        }
-    }
-}
-
-/** The single most-prominent CTA on a screen (e.g. onboarding "Create Wallet"). */
-@Composable
-fun BoldPrimaryButton(
-    text: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    enabled: Boolean = true,
-    loading: Boolean = false,
-) {
-    val haptics = LocalHapticFeedback.current
-    Button(
-        onClick = {
-            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-            onClick()
-        },
-        modifier = modifier
-            .fillMaxWidth()
-            .heightIn(min = ButtonMinHeight),
-        enabled = enabled && !loading,
-        shape = MaterialTheme.shapes.extraLarge,
-        contentPadding = PaddingValues(horizontal = CashuTheme.spacing.section, vertical = ButtonContentVertical),
-    ) {
-        if (loading) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(ButtonProgressSize),
-                strokeWidth = 2.dp,
-                color = LocalContentColor.current,
-            )
-        } else {
-            Text(text = text, style = MaterialTheme.typography.labelLarge)
         }
     }
 }

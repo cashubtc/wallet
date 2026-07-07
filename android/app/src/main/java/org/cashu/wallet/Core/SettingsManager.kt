@@ -1,7 +1,5 @@
 package org.cashu.wallet.Core
 
-import java.net.URLEncoder
-import java.nio.charset.StandardCharsets
 import java.security.SecureRandom
 import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -9,7 +7,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.cashu.wallet.Core.Protocols.SecureStorage
 import org.cashu.wallet.Core.Protocols.StorageKeys
-import org.cashu.wallet.Models.NwcConnection
 import org.cashu.wallet.Models.P2PKKeyInfo
 
 data class SettingsState(
@@ -22,54 +19,32 @@ data class SettingsState(
     val useWebsockets: Boolean = true,
     val enablePaymentRequests: Boolean = false,
     val receivePaymentRequestsAutomatically: Boolean = false,
-    val enableNWC: Boolean = false,
     val showP2PKButtonInDrawer: Boolean = false,
     val amountDisplayPrimary: String = "fiat",
+    val homeBalanceUnit: String = "sat",
     val sentryEnabled: Boolean = false,
     val checkIncomingInvoices: Boolean = true,
     val periodicallyCheckIncomingInvoices: Boolean = true,
     val nostrSignerType: String = "SEED",
     val nostrRelays: List<String> = emptyList(),
-    val nwcConnections: List<NwcConnection> = emptyList(),
     val p2pkKeys: List<P2PKKeyInfo> = emptyList(),
 )
 
 internal data class LegacySettingsSecretMigration(
-    val nwcConnectionsToPersist: List<NwcConnection>?,
     val p2pkKeysToPersist: List<P2PKKeyInfo>?,
 )
 
 internal data class SettingsWalletScopedSnapshot(
     val preferences: PreferenceSnapshot,
-    val nwcConnections: List<NwcConnection>,
     val p2pkKeys: List<P2PKKeyInfo>,
 )
 
 internal object LegacySettingsSecretMigrator {
     fun migrate(
-        nwcRecords: List<LegacyNwcConnectionRecord>,
         p2pkRecords: List<LegacyP2PKKeyRecord>,
         loadSecret: (String) -> String?,
         saveSecret: (String, String) -> Unit,
     ): LegacySettingsSecretMigration {
-        var shouldPersistNwc = false
-        val nwcMetadata = nwcRecords.map { record ->
-            migrateSecret(
-                key = secureNWCWalletPrivateKey(record.metadata.id),
-                legacyValue = record.walletPrivateKey,
-                loadSecret = loadSecret,
-                saveSecret = saveSecret,
-            )
-            migrateSecret(
-                key = secureNWCConnectionSecret(record.metadata.id),
-                legacyValue = record.connectionSecret,
-                loadSecret = loadSecret,
-                saveSecret = saveSecret,
-            )
-            shouldPersistNwc = shouldPersistNwc || record.shouldRewriteMetadata || record.hasLegacySecret
-            record.metadata
-        }
-
         var shouldPersistP2PK = false
         val p2pkMetadata = p2pkRecords.map { record ->
             migrateSecret(
@@ -83,7 +58,6 @@ internal object LegacySettingsSecretMigrator {
         }
 
         return LegacySettingsSecretMigration(
-            nwcConnectionsToPersist = nwcMetadata.takeIf { shouldPersistNwc },
             p2pkKeysToPersist = p2pkMetadata.takeIf { shouldPersistP2PK },
         )
     }
@@ -98,8 +72,6 @@ internal object LegacySettingsSecretMigrator {
         saveSecret(key, legacyValue)
     }
 
-    fun secureNWCWalletPrivateKey(id: String): String = "settings.nwc.$id.walletPrivateKey"
-    fun secureNWCConnectionSecret(id: String): String = "settings.nwc.$id.connectionSecret"
     fun secureP2PKPrivateKey(id: String): String = "settings.p2pk.$id.privateKey"
 }
 
@@ -174,13 +146,6 @@ class SettingsManager(
     fun setReceivePaymentRequestsAutomatically(value: Boolean) = update {
         settingsStore.receivePaymentRequestsAutomatically = value
     }
-    // TODO(runtime-parity): Enabling NWC creates persisted connection metadata only, not a runtime listener.
-    fun setEnableNWC(value: Boolean) {
-        update { settingsStore.enableNWC = value }
-        if (value && settingsStore.nwcConnections.isEmpty()) {
-            createNwcConnection(name = "Wallet connection", relay = "", allowanceSats = defaultNWCAllowance)
-        }
-    }
     fun setShowP2PKButtonInDrawer(value: Boolean) = update { settingsStore.showP2PKButtonInDrawer = value }
     // Mirrors Swift SettingsManager.sentryEnabled didSet: persist, then start/stop the SDK on change.
     fun setSentryEnabled(value: Boolean) {
@@ -199,6 +164,7 @@ class SettingsManager(
     fun setAmountDisplayPrimary(value: String) = update {
         settingsStore.amountDisplayPrimary = AmountDisplayPrimary.fromRaw(value).rawValue
     }
+    fun setHomeBalanceUnit(unit: String) = update { settingsStore.homeBalanceUnit = unit }
 
     fun addRelay(relay: String) = update {
         val normalized = relay.trim()
@@ -213,46 +179,6 @@ class SettingsManager(
 
     fun resetNostrRelaysToDefault() = update {
         settingsStore.resetNostrRelaysToDefault()
-    }
-
-    fun createNwcConnection(name: String, relay: String, allowanceSats: Long?): NwcConnection {
-        settingsStore.nwcConnections.firstOrNull()?.let { return it }
-        val id = UUID.randomUUID().toString()
-        val walletKeypair = generateKeypairHex()
-        val connectionKeypair = generateKeypairHex()
-        secureStorage.saveString(secureNWCWalletPrivateKey(id), walletKeypair.first)
-        secureStorage.saveString(secureNWCConnectionSecret(id), connectionKeypair.first)
-        val connection = NwcConnection(
-            id = id,
-            name = name.ifBlank { "Wallet connection" },
-            walletPublicKey = walletKeypair.second,
-            connectionPublicKey = connectionKeypair.second,
-            allowanceSats = allowanceSats ?: defaultNWCAllowance,
-        )
-        update { settingsStore.nwcConnections = settingsStore.nwcConnections + connection }
-        return connection
-    }
-
-    fun removeNwcConnection(id: String) = update {
-        secureStorage.delete(secureNWCWalletPrivateKey(id))
-        secureStorage.delete(secureNWCConnectionSecret(id))
-        settingsStore.nwcConnections = settingsStore.nwcConnections.filterNot { it.id == id }
-    }
-
-    fun updateNwcAllowance(id: String, allowanceSats: Long) = update {
-        settingsStore.nwcConnections = settingsStore.nwcConnections.map {
-            if (it.id == id) it.copy(allowanceSats = allowanceSats.coerceAtLeast(0)) else it
-        }
-    }
-
-    fun nwcConnectionString(connection: NwcConnection): String {
-        val secret = secureStorage.loadString(secureNWCConnectionSecret(connection.id)).orEmpty()
-        val relayParams = settingsStore.nostrRelays.joinToString("&") { relay ->
-            "relay=${URLEncoder.encode(relay, StandardCharsets.UTF_8.toString())}"
-        }
-        val secretParam = "secret=$secret"
-        val query = listOf(relayParams.takeIf { it.isNotBlank() }, secretParam).filterNotNull().joinToString("&")
-        return "nostr+walletconnect://${connection.walletPublicKey}?$query"
     }
 
     fun importP2PKPublicKey(publicKey: String, label: String = "P2PK key") {
@@ -317,7 +243,6 @@ class SettingsManager(
     internal fun snapshotWalletScopedData(): SettingsWalletScopedSnapshot =
         SettingsWalletScopedSnapshot(
             preferences = settingsStore.snapshotWalletScopedData(),
-            nwcConnections = settingsStore.nwcConnections,
             p2pkKeys = settingsStore.p2pkKeys,
         )
 
@@ -335,22 +260,16 @@ class SettingsManager(
         snapshot: SettingsWalletScopedSnapshot,
         deleteNostrPrivateKey: Boolean,
     ) {
-        snapshot.nwcConnections.forEach {
-            secureStorage.delete(secureNWCWalletPrivateKey(it.id))
-            secureStorage.delete(secureNWCConnectionSecret(it.id))
-        }
         snapshot.p2pkKeys.forEach { secureStorage.delete(secureP2PKPrivateKey(it.id)) }
         if (deleteNostrPrivateKey) secureStorage.delete(StorageKeys.secureNostrPrivateKey)
     }
 
     private fun migrateLegacyStoredSecrets() {
         val migration = LegacySettingsSecretMigrator.migrate(
-            nwcRecords = settingsStore.loadNwcConnectionsWithLegacySecrets(),
             p2pkRecords = settingsStore.loadP2PKKeysWithLegacySecrets(),
             loadSecret = secureStorage::loadString,
             saveSecret = secureStorage::saveString,
         )
-        migration.nwcConnectionsToPersist?.let { settingsStore.nwcConnections = it }
         migration.p2pkKeysToPersist?.let { settingsStore.p2pkKeys = it }
     }
 
@@ -369,15 +288,14 @@ class SettingsManager(
         useWebsockets = settingsStore.useWebsockets,
         enablePaymentRequests = settingsStore.enablePaymentRequests,
         receivePaymentRequestsAutomatically = settingsStore.receivePaymentRequestsAutomatically,
-        enableNWC = settingsStore.enableNWC,
         showP2PKButtonInDrawer = settingsStore.showP2PKButtonInDrawer,
         amountDisplayPrimary = AmountDisplayPrimary.fromRaw(settingsStore.amountDisplayPrimary).rawValue,
+        homeBalanceUnit = settingsStore.homeBalanceUnit,
         sentryEnabled = settingsStore.sentryEnabled,
         checkIncomingInvoices = settingsStore.checkIncomingInvoices,
         periodicallyCheckIncomingInvoices = settingsStore.periodicallyCheckIncomingInvoices,
         nostrSignerType = settingsStore.nostrSignerType,
         nostrRelays = settingsStore.nostrRelays,
-        nwcConnections = settingsStore.nwcConnections,
         p2pkKeys = settingsStore.p2pkKeys,
     )
 
@@ -413,20 +331,8 @@ class SettingsManager(
         error("Failed to generate secure key.")
     }
 
-    private fun generateKeypairHex(): Pair<String, String> {
-        val privateKey = generateRandomPrivateKey()
-        val privateKeyHex = privateKey.toHex()
-        return privateKeyHex to NostrService.publicKeyHex(privateKeyHex)
-    }
-
-    private fun secureNWCWalletPrivateKey(id: String): String =
-        LegacySettingsSecretMigrator.secureNWCWalletPrivateKey(id)
-    private fun secureNWCConnectionSecret(id: String): String =
-        LegacySettingsSecretMigrator.secureNWCConnectionSecret(id)
     private fun secureP2PKPrivateKey(id: String): String =
         LegacySettingsSecretMigrator.secureP2PKPrivateKey(id)
 
     private fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it) }
-
-    private val defaultNWCAllowance: Long = 1_000
 }

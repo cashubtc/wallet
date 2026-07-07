@@ -22,6 +22,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.unit.dp
+import org.cashu.wallet.Core.UnitAmountEntry
 
 // NumberPad spacing intentionally matches the iOS 10pt grid — between snug (8)
 // and default (12) on the token scale. Keypad keys are 56dp (M3 button height).
@@ -29,8 +30,10 @@ private val KeyGap = 10.dp
 private val KeyHeight = 56.dp
 
 /**
- * Numeric keypad for amount entry. Output is a digit-only String.
- * "0" alone is replaced rather than appended; long-press delete clears all.
+ * Numeric keypad for amount entry. With [decimals] == 0 the output is the plain
+ * digit-only String; with decimals > 0 keys route through [UnitAmountEntry]'s
+ * minor-unit accumulator ("5" → "0.05" → "0.50" → "5.00") for unit-native
+ * fiat-ecash entry. Long-press delete clears all.
  *
  * Flat-By-Default: keys use a tonal fill, no border stroke (replaces the legacy
  * stroked outline pattern with a Material-correct surface treatment).
@@ -40,6 +43,7 @@ fun NumberPad(
     amount: String,
     onAmountChange: (String) -> Unit,
     modifier: Modifier = Modifier,
+    decimals: Int = 0,
 ) {
     val rows = listOf(
         listOf("1", "2", "3"),
@@ -63,7 +67,9 @@ fun NumberPad(
                             modifier = Modifier.weight(1f),
                             contentDescription = "Delete",
                             onClick = {
-                                if (amount.isNotEmpty()) onAmountChange(amount.dropLast(1))
+                                if (amount.isNotEmpty()) {
+                                    onAmountChange(UnitAmountEntry.backspace(amount, decimals))
+                                }
                             },
                             onLongClick = {
                                 if (amount.isNotEmpty()) onAmountChange("")
@@ -78,7 +84,7 @@ fun NumberPad(
                             modifier = Modifier.weight(1f),
                             contentDescription = key,
                             onClick = {
-                                onAmountChange(if (amount == "0") key else amount + key)
+                                onAmountChange(UnitAmountEntry.append(key, amount, decimals))
                             },
                         ) {
                             Text(

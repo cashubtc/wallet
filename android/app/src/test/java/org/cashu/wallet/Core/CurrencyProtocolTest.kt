@@ -35,6 +35,13 @@ class CurrencyProtocolTest {
         assertEquals(WalletCurrencies.Satoshi, CurrencyRegistry.currencyForMintUnit("satoshis"))
         assertEquals(WalletCurrencies.Usd, CurrencyRegistry.currencyForMintUnit("dollars"))
         assertEquals(WalletCurrencies.Eur, CurrencyRegistry.currencyForMintUnit("euros"))
-        assertNull(CurrencyRegistry.currencyForMintUnit("msat"))
+    }
+
+    @Test
+    fun registryFallsBackToGenericCodeAfterCurrencyForUnknownUnits() {
+        val generic = CurrencyRegistry.currencyForMintUnit("chf")
+        assertEquals("CHF", generic.code)
+        assertEquals(0, generic.decimals)
+        assertEquals("100 CHF", CurrencyAmount(100, generic).formatted())
     }
 }

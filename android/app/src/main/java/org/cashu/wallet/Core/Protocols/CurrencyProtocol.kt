@@ -95,12 +95,28 @@ object CurrencyRegistry {
         return supportedCurrencies.firstOrNull { it.code.equals(normalized, ignoreCase = true) }
     }
 
-    fun currencyForMintUnit(unit: String): WalletCurrency? {
+    /**
+     * Never null: unknown mint units resolve to a generic code-after currency
+     * (0 decimals, uppercase code as the unit label), mirroring iOS
+     * GenericCurrency so custom-unit mints always format.
+     */
+    fun currencyForMintUnit(unit: String): WalletCurrency {
         return when (unit.trim().lowercase()) {
             "sat", "sats", "satoshi", "satoshis" -> WalletCurrencies.Satoshi
             "usd", "dollar", "dollars" -> WalletCurrencies.Usd
             "eur", "euro", "euros" -> WalletCurrencies.Eur
-            else -> null
+            else -> genericCurrency(unit)
         }
+    }
+
+    private fun genericCurrency(unit: String): WalletCurrency {
+        val code = unit.trim().uppercase().ifEmpty { "SAT" }
+        return WalletCurrency(
+            code = code,
+            symbol = "",
+            decimals = 0,
+            displayName = code,
+            symbolPosition = CurrencySymbolPosition.After,
+        )
     }
 }

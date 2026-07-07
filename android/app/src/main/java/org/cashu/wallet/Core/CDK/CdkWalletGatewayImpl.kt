@@ -115,8 +115,17 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
     override suspend fun totalBalance(mintUrl: String): Long =
         walletFor(mintUrl).totalBalance().value.toLong()
 
-    override suspend fun createMintQuote(amount: Long?, method: PaymentMethodKind, mintUrl: String): MintQuoteInfo {
-        val wallet = walletFor(mintUrl)
+    override suspend fun unitBalance(mintUrl: String, unit: String): Long {
+        ensureWallet(mintUrl, unit)
+        return walletFor(mintUrl, cdkUnit(unit)).totalBalance().value.toLong()
+    }
+
+    override suspend fun unitBalanceIfExists(mintUrl: String, unit: String): Long? =
+        runCatching { walletFor(mintUrl, cdkUnit(unit)).totalBalance().value.toLong() }.getOrNull()
+
+    override suspend fun createMintQuote(amount: Long?, method: PaymentMethodKind, mintUrl: String, unit: String): MintQuoteInfo {
+        if (!unit.equals("sat", ignoreCase = true)) ensureWallet(mintUrl, unit)
+        val wallet = walletFor(mintUrl, cdkUnit(unit))
         val quote = wallet.mintQuote(
             paymentMethod = cdkPaymentMethod(method),
             amount = amount?.toCdkAmount(),
@@ -133,7 +142,9 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
     override suspend fun checkMintQuote(quoteId: String): MintQuoteInfo {
         val quote = database?.getMintQuote(quoteId)
             ?: throw CdkGatewayUnavailable("No stored mint quote for $quoteId.")
-        val wallet = walletFor(quote.mintUrl.url)
+        // Resolve the same-unit wallet the quote was created against, so
+        // resuming a non-sat quote never polls (or mints into) the sat wallet.
+        val wallet = walletFor(quote.mintUrl.url, quote.unit)
         val method = quote.paymentMethod.toDomain()
         val fallbackAmount = quote.amount?.value?.toLong()
         val checkedQuote = if (method == PaymentMethodKind.Onchain) {
@@ -155,7 +166,7 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
         val quote = database?.getMintQuote(quoteId)
             ?: throw CdkGatewayUnavailable("No stored mint quote for $quoteId.")
         val method = quote.paymentMethod.toDomain()
-        val subscription = walletFor(quote.mintUrl.url)
+        val subscription = walletFor(quote.mintUrl.url, quote.unit)
             .subscribeMintQuoteState(listOf(quoteId), cdkPaymentMethod(method))
         try {
             while (true) {
@@ -185,7 +196,7 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
         val method = quote.paymentMethod.toDomain()
         val fallbackAmount = quote.amount?.value?.toLong()
         val currentQuote = if (method == PaymentMethodKind.Onchain) {
-            walletFor(quote.mintUrl.url)
+            walletFor(quote.mintUrl.url, quote.unit)
                 .checkMintQuoteStatus(quoteId)
                 .preservingLocalMetadataFrom(quote)
         } else {
@@ -203,7 +214,7 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
             )
         }
         normalizedQuote.usedByOperation?.let { releaseMintQuoteReservation(it, quoteId) }
-        val proofs = walletFor(normalizedQuote.mintUrl.url).mintUnified(
+        val proofs = walletFor(normalizedQuote.mintUrl.url, normalizedQuote.unit).mintUnified(
             quoteId = quoteId,
             amountSplitTarget = CdkSplitTarget.None,
             spendingConditions = null,
@@ -280,7 +291,8 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
         )
     }
 
-    override suspend fun sendEcashToken(amount: Long, memo: String?, p2pkPubkey: String?, mintUrl: String): SendTokenResult {
+    override suspend fun sendEcashToken(amount: Long, memo: String?, p2pkPubkey: String?, mintUrl: String, unit: String): SendTokenResult {
+        if (!unit.equals("sat", ignoreCase = true)) ensureWallet(mintUrl, unit)
         val conditions = p2pkPubkey?.let { CdkSpendingConditions.P2pk(it, null) }
         val sendOptions = CdkSendOptions(
             memo = memo?.let { CdkSendMemo(it, true) },
@@ -294,7 +306,7 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
             p2pkSigningKeys = emptyList(),
             p2pkLockedProofSendMode = CdkP2pkLockedProofSendMode.SWAP,
         )
-        val prepared = walletFor(mintUrl).prepareSend(amount.toCdkAmount(), sendOptions)
+        val prepared = walletFor(mintUrl, cdkUnit(unit)).prepareSend(amount.toCdkAmount(), sendOptions)
         val fee = prepared.fee().value.toLong()
         val token = prepared.confirm(memo)
         return SendTokenResult(token = token.encode(), fee = fee)
@@ -303,8 +315,11 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
     override suspend fun receiveEcashToken(tokenString: String, p2pkSigningKeys: List<String>): Long {
         val token = CdkToken.decode(tokenString)
         val mintUrl = token.mintUrl().url
-        ensureWallet(mintUrl)
-        val amount = walletFor(mintUrl).receive(
+        // Redeem into the token's own unit — a usd/eur token must never target
+        // the sat wallet.
+        val tokenUnit = token.unit() ?: CdkCurrencyUnit.Sat
+        ensureWallet(mintUrl, tokenUnit.toDomainUnit())
+        val amount = walletFor(mintUrl, tokenUnit).receive(
             token = token,
             options = CdkReceiveOptions(
                 amountSplitTarget = CdkSplitTarget.None,
@@ -320,7 +335,9 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
         val token = CdkToken.decode(tokenString)
         val proofs = token.proofsSimple()
         val first = proofs.firstOrNull() ?: return 0
-        val wallet = walletFor(token.mintUrl().url)
+        val tokenUnit = token.unit() ?: CdkCurrencyUnit.Sat
+        ensureWallet(token.mintUrl().url, tokenUnit.toDomainUnit())
+        val wallet = walletFor(token.mintUrl().url, tokenUnit)
         return runCatching {
             wallet.calculateFee(proofs.size.toUInt(), first.keysetId).value.toLong()
         }.getOrElse {
@@ -330,7 +347,9 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
 
     override suspend fun checkTokenSpendable(token: String, mintUrl: String): Boolean {
         val tokenObj = CdkToken.decode(token)
-        val states = walletFor(mintUrl).checkProofsSpent(tokenObj.proofsSimple())
+        val tokenUnit = tokenObj.unit() ?: CdkCurrencyUnit.Sat
+        ensureWallet(mintUrl, tokenUnit.toDomainUnit())
+        val states = walletFor(mintUrl, tokenUnit).checkProofsSpent(tokenObj.proofsSimple())
         return states.any { it }
     }
 
@@ -366,8 +385,10 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
     private fun requireRepository(): CdkWalletRepository =
         repository ?: throw CdkGatewayUnavailable("Wallet repository is not initialized.")
 
-    private suspend fun walletFor(mintUrl: String): CdkWallet =
-        requireRepository().getWallet(CdkMintUrl(mintUrl), CdkCurrencyUnit.Sat)
+    private suspend fun walletFor(
+        mintUrl: String,
+        unit: CdkCurrencyUnit = CdkCurrencyUnit.Sat,
+    ): CdkWallet = requireRepository().getWallet(CdkMintUrl(mintUrl), unit)
 
     private suspend fun firstWallet(): CdkWallet =
         requireRepository().getWallets().firstOrNull()
@@ -416,8 +437,9 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
     }
 
     private fun CdkMintInfo.toDomain(mintUrl: String): MintInfo {
+        // NUT-04 methods are no longer filtered to sat — minting into usd/eur is
+        // supported. NUT-05 melt stays sat-only (pay-side non-sat is deferred).
         val mintMethods = nuts.nut04.methods
-            .filter { it.unit == CdkCurrencyUnit.Sat }
             .map { it.method.toDomain() }
             .distinct()
             .sortedBy { it.sortOrder }
@@ -433,12 +455,18 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
             .distinct()
             .sorted()
             .ifEmpty { listOf("sat") }
+        val mintUnits = nuts.mintUnits
+            .map { it.toDomainUnit() }
+            .distinct()
+            .sorted()
+            .ifEmpty { listOf("sat") }
         return MintInfo(
             url = mintUrl,
             name = name ?: "Unknown Mint",
             description = description,
             iconUrl = iconUrl,
             units = units,
+            mintUnits = mintUnits,
             supportedMintMethods = mintMethods,
             supportedMeltMethods = meltMethods,
             lastUpdatedEpochMillis = System.currentTimeMillis(),
@@ -471,6 +499,7 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
             mintUrl = mintUrl.url,
             amountPaid = paid,
             amountIssued = issued,
+            unit = unit.toDomainUnit(),
         )
     }
 

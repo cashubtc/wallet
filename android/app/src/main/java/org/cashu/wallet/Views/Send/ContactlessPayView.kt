@@ -33,8 +33,9 @@ import org.cashu.wallet.Core.Services.NFCPaymentInput
 import org.cashu.wallet.Core.Services.NFCPaymentService
 import org.cashu.wallet.Core.Services.NFCReaderDelegate
 import org.cashu.wallet.Core.WalletManager
-import org.cashu.wallet.Views.Components.PrimaryActionButton
-import org.cashu.wallet.Views.Components.SecondaryActionButton
+import org.cashu.wallet.ui.components.GhostButton
+import org.cashu.wallet.ui.components.InlineNotice
+import org.cashu.wallet.ui.components.PrimaryButton
 
 @Composable
 fun ContactlessPayView(
@@ -120,9 +121,9 @@ fun ContactlessPayView(
     ) {
         Text("Contactless", style = MaterialTheme.typography.headlineSmall)
         if (adapter == null) {
-            Text("NFC is not available on this device.", color = MaterialTheme.colorScheme.error)
+            InlineNotice(text = "NFC is not available on this device.")
         } else if (!adapter.isEnabled) {
-            Text("NFC is disabled in system settings.", color = MaterialTheme.colorScheme.error)
+            InlineNotice(text = "NFC is disabled in system settings.")
         } else {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (isProcessing) {
@@ -132,19 +133,21 @@ fun ContactlessPayView(
             }
         }
         if (paymentComplete) {
-            Text("Payment sent!", color = MaterialTheme.colorScheme.primary)
+            Text("Payment sent!", style = MaterialTheme.typography.titleMedium)
             lastPaymentAmount?.let { Text("$it sat", style = MaterialTheme.typography.headlineSmall) }
         }
-        error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            PrimaryActionButton("Close", onClick = onClose)
-            SecondaryActionButton(if (paymentComplete) "Pay again" else "Reset", enabled = !isProcessing) {
+        error?.let { InlineNotice(text = it) }
+        PrimaryButton("Close", onClick = onClose)
+        GhostButton(
+            text = if (paymentComplete) "Pay again" else "Reset",
+            enabled = !isProcessing,
+            onClick = {
                 error = null
                 paymentComplete = false
                 lastPaymentAmount = null
                 status = "Hold the phone near an NFC payment tag."
-            }
-        }
+            },
+        )
     }
 }
 

@@ -17,6 +17,8 @@ data class PendingToken(
     val dateEpochMillis: Long,
     val mintUrl: String,
     val memo: String? = null,
+    // Amount is denominated in this unit (a $5.00 token stores 500, unit "usd").
+    val unit: String = "sat",
 ) {
     val id: String get() = tokenId
 }

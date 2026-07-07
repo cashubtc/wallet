@@ -23,9 +23,34 @@ class TransactionDisplayTest {
         assertEquals("Paid", TransactionDisplay.statusText(transaction))
         assertEquals("lnbc1test", TransactionDisplay.qrContent(transaction))
 
+        // Detail canon: monochrome Status row first, Date second, Fee when > 0.
+        // The lightning preimage row stays dropped (on-chain keeps Address/TxID).
         val fields = TransactionDisplay.detailFields(transaction)
-        assertTrue(fields.any { it.label == "Payment Proof" && it.value == "proof" })
+        assertEquals("Status", fields.first().label)
+        assertEquals("Date", fields[1].label)
         assertTrue(fields.any { it.label == "Fee" && it.value == "2 sat" })
+        assertTrue(fields.none { it.label == "Payment Proof" })
+    }
+
+    @Test
+    fun settledArtifactsAreNotScannableButEcashKeepsCopyReceipt() {
+        val settledEcash = transaction(
+            kind = TransactionKind.Ecash,
+            type = TransactionType.Outgoing,
+            token = "cashu-token",
+        )
+        assertTrue(!TransactionDisplay.showsQr(settledEcash))
+        assertEquals("cashu-token", TransactionDisplay.copyableContent(settledEcash))
+
+        val pendingEcash = settledEcash.copy(status = TransactionStatus.Pending)
+        assertTrue(TransactionDisplay.showsQr(pendingEcash))
+
+        val reusableOffer = transaction(
+            kind = TransactionKind.Lightning,
+            type = TransactionType.Incoming,
+            invoice = "lno1offer",
+        )
+        assertTrue(TransactionDisplay.showsQr(reusableOffer))
     }
 
     @Test

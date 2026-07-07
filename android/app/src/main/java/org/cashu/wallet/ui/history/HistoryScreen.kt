@@ -64,6 +64,7 @@ import org.cashu.wallet.Models.TransactionStatus
 import org.cashu.wallet.Models.WalletTransaction
 import org.cashu.wallet.ui.components.CanvasDivider
 import org.cashu.wallet.ui.components.CashuRequestRow
+import org.cashu.wallet.ui.components.requestRowAmount
 import org.cashu.wallet.ui.components.CashuSearchBar
 import org.cashu.wallet.ui.components.EmptyState
 import org.cashu.wallet.ui.components.SectionHeader
@@ -95,7 +96,6 @@ fun HistoryScreen(
     var searching by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     var refreshing by remember { mutableStateOf(false) }
-    var checkingTxId by remember { mutableStateOf<String?>(null) }
     var requestPendingDelete by remember { mutableStateOf<CashuRequest?>(null) }
 
     LaunchedEffect(Unit) {
@@ -171,7 +171,10 @@ fun HistoryScreen(
             onRefresh = {
                 scope.launch {
                     refreshing = true
+                    // Manual re-check lives here (iOS parity): resume unissued
+                    // mint quotes, then re-verify pending sent tokens.
                     runCatching {
+                        walletManager.syncPendingMintQuotes()
                         walletManager.loadTransactions()
                         if (walletState.pendingTokens.isNotEmpty()) {
                             walletManager.checkAllPendingTokens()
@@ -228,35 +231,15 @@ fun HistoryScreen(
                                             else null,
                                         ),
                                         onClick = { onOpenTransaction(tx) },
-                                        isChecking = checkingTxId == tx.id,
-                                        onRefresh = if (tx.status == TransactionStatus.Pending) {
-                                            {
-                                                checkingTxId = tx.id
-                                                walletManager.launch {
-                                                    try {
-                                                        walletManager.loadTransactions()
-                                                    } finally {
-                                                        checkingTxId = null
-                                                    }
-                                                }
-                                            }
-                                        } else null,
                                     )
                                 }
                                 is HistoryItem.Req -> {
                                     CashuRequestRow(
                                         request = item.request,
                                         timestamp = formatRelativeTimestamp(item.request.createdAtEpochMillis),
-                                        primaryAmountText = when {
-                                            item.request.totalReceived > 0L -> formatter.formatWalletSats(
-                                                item.request.totalReceived, settings.useBitcoinSymbol,
-                                            )
-                                            item.request.amount != null && item.request.amount > 0L ->
-                                                formatter.formatWalletSats(
-                                                    item.request.amount, settings.useBitcoinSymbol,
-                                                )
-                                            else -> null
-                                        },
+                                        primaryAmountText = requestRowAmount(
+                                            item.request, formatter, settings.useBitcoinSymbol,
+                                        ),
                                         secondaryAmountText = null,
                                         onClick = { onOpenCashuRequest(item.request) },
                                         onLongClick = { requestPendingDelete = item.request },

@@ -12,8 +12,8 @@ data class TransactionDetailField(
 )
 
 object TransactionDisplay {
-    // Mirrors iOS HistoryView.rowTitle — pending state is conveyed by the badge
-    // and the amount color, not the title string.
+    // Kind-first, capitalized kind, lowercase verb — single source of truth for
+    // rows AND the detail title, so a row and the sheet it opens read identically.
     fun title(transaction: WalletTransaction): String = when (transaction.kind) {
         TransactionKind.Lightning -> if (transaction.type == TransactionType.Incoming) {
             "Lightning received"
@@ -26,24 +26,48 @@ object TransactionDisplay {
             "Bitcoin sent"
         }
         TransactionKind.Ecash -> if (transaction.type == TransactionType.Incoming) {
-            "Received ecash"
+            "Ecash received"
         } else {
-            "Sent ecash"
+            "Ecash sent"
         }
     }
 
+    // The Status detail row: monochrome value, the hero glyph carries colour.
     fun statusText(transaction: WalletTransaction): String = when (transaction.status) {
         TransactionStatus.Completed -> when (transaction.kind) {
-            TransactionKind.Ecash -> if (transaction.type == TransactionType.Incoming) "Received" else "Sent"
-            TransactionKind.Lightning -> if (transaction.type == TransactionType.Incoming) "Received" else "Paid"
-            TransactionKind.Onchain -> if (transaction.type == TransactionType.Incoming) "Received" else "Sent"
+            TransactionKind.Ecash -> "Claimed"
+            TransactionKind.Lightning -> "Paid"
+            TransactionKind.Onchain -> "Confirmed"
         }
-        TransactionStatus.Pending -> transaction.displayStatusText
+        TransactionStatus.Pending -> "Pending"
         TransactionStatus.Failed -> "Failed"
     }
 
     fun qrContent(transaction: WalletTransaction): String? =
         transaction.token ?: transaction.invoice
+
+    /**
+     * The QR hero appears only for an actionable request: a pending
+     * transaction (unclaimed outgoing token, unpaid invoice, pending on-chain
+     * address) or a reusable BOLT12 offer. Settled artifacts never re-present
+     * as scannable payment codes.
+     */
+    fun showsQr(transaction: WalletTransaction): Boolean {
+        if (qrContent(transaction) == null) return false
+        if (transaction.status == TransactionStatus.Pending) return true
+        return transaction.invoice?.startsWith("lno", ignoreCase = true) == true
+    }
+
+    /**
+     * Settled-ecash receipt carve-out: a completed ecash transaction keeps a
+     * passive Copy of the raw token as a record — never the QR or Share.
+     */
+    fun copyableContent(transaction: WalletTransaction): String? = when {
+        showsQr(transaction) -> qrContent(transaction)
+        transaction.kind == TransactionKind.Ecash &&
+            transaction.status == TransactionStatus.Completed -> transaction.token
+        else -> null
+    }
 
     fun qrLabel(transaction: WalletTransaction): String = when (transaction.kind) {
         TransactionKind.Ecash -> "Ecash token"
@@ -51,35 +75,28 @@ object TransactionDisplay {
         TransactionKind.Onchain -> if (transaction.preimage == null) "Bitcoin address" else "On-chain request"
     }
 
-    fun detailFields(transaction: WalletTransaction, unitLabel: String = "SAT"): List<TransactionDetailField> =
+    // Detail rows follow the iOS canon: Status first (monochrome), Date, then
+    // conditional essentials — Fee when > 0, Mint always, Memo when present,
+    // on-chain Address/Transaction ID. Type/Direction/Unit rows stay dropped
+    // (the title names kind + direction; the unit is always sat here).
+    fun detailFields(transaction: WalletTransaction): List<TransactionDetailField> =
         buildList {
-            add(TransactionDetailField("Type", transaction.kind.displayName))
-            add(TransactionDetailField("Direction", transaction.type.name))
+            add(TransactionDetailField("Status", statusText(transaction)))
+            add(TransactionDetailField("Date", formatDetailDate(transaction.dateEpochMillis)))
             if (transaction.fee > 0) add(TransactionDetailField("Fee", "${transaction.fee} sat"))
-            add(TransactionDetailField("Unit", unitLabel.uppercase()))
-            add(TransactionDetailField("State", statusText(transaction)))
             transaction.mintUrl?.let { add(TransactionDetailField("Mint", mintHost(it))) }
             transaction.memo?.takeIf { it.isNotBlank() }?.let { add(TransactionDetailField("Memo", it)) }
-            transaction.invoice?.let {
-                add(
-                    TransactionDetailField(
-                        label = if (transaction.kind == TransactionKind.Onchain) "Address" else "Request",
-                        value = it,
-                    ),
-                )
-            }
-            transaction.preimage?.let {
-                add(
-                    TransactionDetailField(
-                        label = if (transaction.kind == TransactionKind.Onchain) "Transaction ID" else "Payment Proof",
-                        value = it,
-                    ),
-                )
-            }
-            transaction.quoteId?.takeIf { it != transaction.id }?.let {
-                add(TransactionDetailField("Quote ID", it))
+            if (transaction.kind == TransactionKind.Onchain) {
+                transaction.invoice?.let { add(TransactionDetailField("Address", it)) }
+                transaction.preimage?.let { add(TransactionDetailField("Transaction ID", it)) }
             }
         }
+
+    private fun formatDetailDate(epochMillis: Long): String =
+        java.text.DateFormat.getDateTimeInstance(
+            java.text.DateFormat.MEDIUM,
+            java.text.DateFormat.SHORT,
+        ).format(java.util.Date(epochMillis))
 
     private fun mintHost(url: String): String =
         runCatching { URI.create(url).host }

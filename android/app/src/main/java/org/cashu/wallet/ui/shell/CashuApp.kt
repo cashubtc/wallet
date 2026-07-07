@@ -108,7 +108,7 @@ private fun AuthenticatedShell(container: AppContainer) {
             }
             CashuRoute.Send -> {
                 pendingSendScan = deepLink.payload.orEmpty()
-                navController.navigate(Routes.SEND_ECASH)
+                navController.navigate(Routes.SEND)
             }
             CashuRoute.Mints -> {
                 pendingMintScan = deepLink.payload.orEmpty()
@@ -131,7 +131,7 @@ private fun AuthenticatedShell(container: AppContainer) {
             onLightningRequest = { invoice ->
                 pendingSendScan = invoice
                 showContactless = false
-                navController.navigate(Routes.SEND_ECASH)
+                navController.navigate(Routes.SEND)
             },
         )
         activeScannerTarget != null -> ScannerView(
@@ -147,7 +147,7 @@ private fun AuthenticatedShell(container: AppContainer) {
                     },
                     onSend = {
                         pendingSendScan = it
-                        navController.navigate(Routes.SEND_ECASH)
+                        navController.navigate(Routes.SEND)
                     },
                     onMint = {
                         pendingMintScan = it
@@ -161,6 +161,10 @@ private fun AuthenticatedShell(container: AppContainer) {
             connectivityState = connectivityState,
             onScan = { scannerTarget = ScannerTarget.Auto },
             onContactless = { showContactless = true },
+            onOpenReceiveToken = { token ->
+                pendingReceiveScan = token
+                navController.navigate(Routes.RECEIVE_ECASH)
+            },
             pendingReceiveScan = pendingReceiveScan,
             onPendingReceiveScanConsumed = { pendingReceiveScan = null },
             pendingSendScan = pendingSendScan,

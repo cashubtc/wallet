@@ -18,18 +18,16 @@ import org.cashu.wallet.ui.history.HistoryScreen
 import org.cashu.wallet.ui.history.TransactionDetailScreen
 import org.cashu.wallet.ui.home.HomeScreen
 import org.cashu.wallet.ui.home.ReceiveAction
-import org.cashu.wallet.ui.home.SendAction
 import org.cashu.wallet.ui.mints.MintDetailScreen
 import org.cashu.wallet.ui.mints.MintsScreen
 import org.cashu.wallet.ui.receive.CashuRequestDetailScreen
 import org.cashu.wallet.ui.receive.ReceiveEcashScreen
 import org.cashu.wallet.ui.receive.ReceiveLightningScreen
 import org.cashu.wallet.ui.send.SendEcashScreen
-import org.cashu.wallet.ui.send.SendLightningScreen
-import org.cashu.wallet.ui.settings.AppearanceScreen
+import org.cashu.wallet.ui.send.UnifiedSendScreen
+import org.cashu.wallet.ui.settings.BackupRestoreScreen
 import org.cashu.wallet.ui.settings.BackupScreen
 import org.cashu.wallet.ui.settings.LightningScreen
-import org.cashu.wallet.ui.settings.NWCScreen
 import org.cashu.wallet.ui.settings.NostrScreen
 import org.cashu.wallet.ui.settings.P2PKScreen
 import org.cashu.wallet.ui.settings.PrivacyScreen
@@ -49,6 +47,7 @@ fun CashuNavHost(
     contentPadding: PaddingValues,
     onScan: () -> Unit,
     onContactless: () -> Unit,
+    onOpenReceiveToken: (String) -> Unit,
     pendingReceiveScan: String?,
     onPendingReceiveScanConsumed: () -> Unit,
     pendingSendScan: String?,
@@ -76,6 +75,13 @@ fun CashuNavHost(
             ReceiveEcashScreen(
                 walletManager = container.walletManager,
                 settingsManager = container.settingsManager,
+                nostrService = container.nostrService,
+                cashuRequestStore = container.cashuRequestStore,
+                onOpenRequest = { id ->
+                    navController.navigate(cashuRequestDetailRouteFor(id)) {
+                        popUpTo(Routes.RECEIVE_ECASH) { inclusive = true }
+                    }
+                },
                 onClose = { navController.popBackStack() },
                 onScan = onScan,
                 prefilledPayload = pendingReceiveScan,
@@ -93,14 +99,22 @@ fun CashuNavHost(
             SendEcashScreen(
                 walletManager = container.walletManager,
                 settingsManager = container.settingsManager,
+                priceService = container.priceService,
                 onClose = { navController.popBackStack() },
             )
         }
-        composable(Routes.SEND_LIGHTNING) {
-            SendLightningScreen(
+        // The Send surface (iOS UnifiedSendView): destination field + ways-to-send.
+        composable(Routes.SEND) {
+            UnifiedSendScreen(
                 walletManager = container.walletManager,
                 settingsManager = container.settingsManager,
                 onClose = { navController.popBackStack() },
+                onScan = onScan,
+                onContactless = onContactless,
+                onSendEcash = { navController.navigate(Routes.SEND_ECASH) },
+                onOpenReceiveToken = onOpenReceiveToken,
+                onOpenMints = { navController.navigateToTab(TopTab.Mints) },
+                onReceive = { navController.navigate(Routes.RECEIVE_ECASH) },
                 prefilledPayload = pendingSendScan,
                 onPrefilledConsumed = onPendingSendScanConsumed,
             )
@@ -146,6 +160,13 @@ fun CashuNavHost(
         }
 
         // Settings sub-screens
+        composable(Routes.SETTINGS_BACKUP_RESTORE) {
+            BackupRestoreScreen(
+                walletManager = container.walletManager,
+                onOpenBackup = { navController.navigate(Routes.SETTINGS_BACKUP) },
+                onClose = { navController.popBackStack() },
+            )
+        }
         composable(Routes.SETTINGS_BACKUP) {
             BackupScreen(
                 walletManager = container.walletManager,
@@ -172,21 +193,8 @@ fun CashuNavHost(
                 onClose = { navController.popBackStack() },
             )
         }
-        composable(Routes.SETTINGS_NWC) {
-            NWCScreen(
-                settingsManager = container.settingsManager,
-                onClose = { navController.popBackStack() },
-            )
-        }
         composable(Routes.SETTINGS_PRIVACY) {
             PrivacyScreen(
-                settingsManager = container.settingsManager,
-                priceService = container.priceService,
-                onClose = { navController.popBackStack() },
-            )
-        }
-        composable(Routes.SETTINGS_APPEARANCE) {
-            AppearanceScreen(
                 settingsManager = container.settingsManager,
                 onClose = { navController.popBackStack() },
             )
@@ -240,16 +248,9 @@ private fun NavGraphBuilder.tabDestinations(
                 }
                 navController.navigate(route)
             },
-            onSend = { action ->
-                val route = when (action) {
-                    SendAction.Ecash -> Routes.SEND_ECASH
-                    SendAction.Bitcoin -> Routes.SEND_LIGHTNING
-                    SendAction.Contactless -> Routes.SEND_ECASH
-                }
-                navController.navigate(route)
-            },
+            // Send goes straight to the unified surface — no chooser (iOS parity).
+            onSend = { navController.navigate(Routes.SEND) },
             onScan = onScan,
-            onContactless = onContactless,
             contentPadding = contentPadding,
         )
     }
@@ -283,13 +284,13 @@ private fun NavGraphBuilder.tabDestinations(
     composable(Routes.SETTINGS) {
         SettingsScreen(
             walletManager = container.walletManager,
-            onOpenBackup = { navController.navigate(Routes.SETTINGS_BACKUP) },
+            settingsManager = container.settingsManager,
+            priceService = container.priceService,
+            onOpenBackupRestore = { navController.navigate(Routes.SETTINGS_BACKUP_RESTORE) },
             onOpenLightning = { navController.navigate(Routes.SETTINGS_LIGHTNING) },
-            onOpenP2PK = { navController.navigate(Routes.SETTINGS_P2PK) },
+            onOpenLockedEcash = { navController.navigate(Routes.SETTINGS_P2PK) },
             onOpenNostr = { navController.navigate(Routes.SETTINGS_NOSTR) },
-            onOpenNWC = { navController.navigate(Routes.SETTINGS_NWC) },
             onOpenPrivacy = { navController.navigate(Routes.SETTINGS_PRIVACY) },
-            onOpenAppearance = { navController.navigate(Routes.SETTINGS_APPEARANCE) },
             contentPadding = contentPadding,
         )
     }

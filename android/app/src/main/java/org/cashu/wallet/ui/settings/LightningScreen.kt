@@ -46,6 +46,7 @@ import org.cashu.wallet.Core.NPCState
 import org.cashu.wallet.Core.WalletManager
 import org.cashu.wallet.ui.components.CanvasDivider
 import org.cashu.wallet.ui.components.GhostButton
+import org.cashu.wallet.ui.components.InlineNotice
 import org.cashu.wallet.ui.components.InspectorRow
 import org.cashu.wallet.ui.components.MintPickerSheet
 import org.cashu.wallet.ui.components.PrimaryButton
@@ -150,10 +151,8 @@ fun LightningScreen(
 
             if (npcState.errorMessage != null) {
                 Spacer(Modifier.height(CashuTheme.spacing.snug))
-                Text(
+                InlineNotice(
                     text = npcState.errorMessage!!,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.padding(horizontal = CashuTheme.spacing.comfortable),
                 )
             }

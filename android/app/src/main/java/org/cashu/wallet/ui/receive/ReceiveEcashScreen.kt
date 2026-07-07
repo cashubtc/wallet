@@ -14,6 +14,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.outlined.AccountBalance
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ContentPaste
@@ -43,6 +44,8 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import org.cashu.wallet.Core.AmountFormatter
+import org.cashu.wallet.Core.Protocols.CurrencyAmount
+import org.cashu.wallet.Core.Protocols.CurrencyRegistry
 import org.cashu.wallet.Core.SettingsManager
 import org.cashu.wallet.Core.TokenParser
 import org.cashu.wallet.Core.WalletManager
@@ -51,6 +54,7 @@ import org.cashu.wallet.ui.components.AmountText
 import org.cashu.wallet.ui.components.CanvasDivider
 import org.cashu.wallet.ui.components.CashuTextField
 import org.cashu.wallet.ui.components.GhostButton
+import org.cashu.wallet.ui.components.InlineNotice
 import org.cashu.wallet.ui.components.InspectorRow
 import org.cashu.wallet.ui.components.PrimaryButton
 import org.cashu.wallet.ui.components.TwoFaceCrossfade
@@ -67,6 +71,9 @@ private sealed interface ReceiveFace {
 fun ReceiveEcashScreen(
     walletManager: WalletManager,
     settingsManager: SettingsManager,
+    nostrService: org.cashu.wallet.Core.NostrService,
+    cashuRequestStore: org.cashu.wallet.Core.CashuRequestStore,
+    onOpenRequest: (String) -> Unit,
     onClose: () -> Unit,
     onScan: () -> Unit,
     prefilledPayload: String? = null,
@@ -83,6 +90,45 @@ fun ReceiveEcashScreen(
     var validating by remember { mutableStateOf(false) }
     var receiving by remember { mutableStateOf(false) }
     var errorText by remember { mutableStateOf<String?>(null) }
+
+    // Auto-paste a clipboard token on open (iOS autoPasteEcashReceive).
+    LaunchedEffect(Unit) {
+        if (settings.autoPasteEcashReceive && input.isBlank() && prefilledPayload.isNullOrBlank()) {
+            clipboard.getText()?.text?.let { clip ->
+                TokenParser.extractToken(clip)?.let { input = it }
+            }
+        }
+    }
+
+    // iOS "New Request": publish a fresh any-amount NUT-18 request over the
+    // wallet's Nostr identity and open its inspector.
+    fun createNewRequest() {
+        val nostr = nostrService.state.value
+        val relays = settings.nostrRelays
+        if (nostr.publicKeyHex.isBlank() || relays.isEmpty()) {
+            errorText = "Nostr isn't ready — check your relays in Settings."
+            return
+        }
+        errorText = null
+        runCatching {
+            val id = org.cashu.wallet.Models.CashuRequest.newId()
+            val mints = listOfNotNull(walletState.activeMint?.url)
+            val encoded = org.cashu.wallet.Core.PaymentRequestBuilder.build(
+                id = id,
+                amount = null,
+                unit = "sat",
+                mints = mints,
+                description = null,
+                nostrPubkeyHex = nostr.publicKeyHex,
+                relays = relays,
+            )
+            cashuRequestStore.createNew(id = id, mints = mints, encoded = encoded)
+        }.onSuccess { request ->
+            onOpenRequest(request.id)
+        }.onFailure {
+            errorText = it.message ?: "Couldn't create a request."
+        }
+    }
 
     fun validateAndReview(raw: String) {
         errorText = null
@@ -172,7 +218,9 @@ fun ReceiveEcashScreen(
                         val clip = clipboard.getText()?.text
                         if (!clip.isNullOrBlank()) input = clip
                     },
+                    onClear = { input = ""; errorText = null },
                     onContinue = { validateAndReview(input) },
+                    onNewRequest = ::createNewRequest,
                     busy = validating,
                     errorText = errorText,
                     canContinue = input.isNotBlank() && !validating,
@@ -217,12 +265,18 @@ fun ReceiveEcashScreen(
     }
 }
 
+/**
+ * iOS ReceiveEcashView form: a tall monospace token editor with a corner
+ * paste/clear affordance, then Continue + New Request as sibling CTAs.
+ */
 @Composable
 private fun PasteFace(
     input: String,
     onInputChange: (String) -> Unit,
     onPaste: () -> Unit,
+    onClear: () -> Unit,
     onContinue: () -> Unit,
+    onNewRequest: () -> Unit,
     busy: Boolean,
     errorText: String?,
     canContinue: Boolean,
@@ -234,35 +288,50 @@ private fun PasteFace(
             .imePadding(),
         verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
     ) {
-        Text(
-            text = "Paste an ecash token to redeem it.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        Spacer(Modifier.height(CashuTheme.spacing.micro))
         CashuTextField(
             value = input,
             onValueChange = onInputChange,
             modifier = Modifier
                 .fillMaxWidth()
-                .heightFor(180),
-            label = "cashuA… / cashuB…",
-            placeholder = "Token",
+                .weight(1f),
+            placeholder = "cashuB…",
+            textStyle = MaterialTheme.typography.bodyMedium.copy(
+                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+            ),
             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None),
+            trailingIcon = if (input.isBlank()) {
+                {
+                    IconButton(onClick = onPaste) {
+                        Icon(
+                            imageVector = Icons.Outlined.ContentPaste,
+                            contentDescription = "Paste",
+                        )
+                    }
+                }
+            } else {
+                {
+                    IconButton(onClick = onClear) {
+                        Icon(
+                            imageVector = Icons.Filled.Cancel,
+                            contentDescription = "Clear",
+                        )
+                    }
+                }
+            },
         )
-        GhostButton(text = "Paste from clipboard", onClick = onPaste)
         if (errorText != null) {
-            Text(
-                text = errorText,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-            )
+            InlineNotice(text = errorText)
         }
-        Spacer(modifier = Modifier.weight(1f, fill = true))
         PrimaryButton(
             text = if (busy) "Reading…" else "Continue",
             onClick = onContinue,
             enabled = canContinue,
             loading = busy,
+        )
+        PrimaryButton(
+            text = "New Request",
+            onClick = onNewRequest,
         )
         Spacer(Modifier.navigationBarsPadding())
     }
@@ -291,14 +360,25 @@ private fun ReviewFace(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.loose),
     ) {
+        // Amount and fee render in the token's own unit.
+        val isSatToken = info.unit.equals("sat", ignoreCase = true)
+        val tokenCurrency = CurrencyRegistry.currencyForMintUnit(info.unit)
         AmountText(
-            text = formatter.formatWalletSats(info.amount, useBitcoinSymbol),
+            text = if (isSatToken) {
+                formatter.formatWalletSats(info.amount, useBitcoinSymbol)
+            } else {
+                CurrencyAmount(info.amount, tokenCurrency).formatted()
+            },
             style = MaterialTheme.typography.displayMedium.withMonoDigits(),
         )
         Column(modifier = Modifier.fillMaxWidth()) {
             InspectorRow(
                 label = "Fee",
-                value = if (fee == 0L) "Free" else "${fee} sat",
+                value = when {
+                    fee == 0L -> "Free"
+                    isSatToken -> "$fee sat"
+                    else -> CurrencyAmount(fee, tokenCurrency).formatted()
+                },
                 leadingIcon = Icons.Outlined.Receipt,
             )
             CanvasDivider(leadingInset = 16)
@@ -324,11 +404,7 @@ private fun ReviewFace(
             }
         }
         if (errorText != null) {
-            Text(
-                text = errorText,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-            )
+            InlineNotice(text = errorText)
         }
         Spacer(modifier = Modifier.height(CashuTheme.spacing.snug))
         PrimaryButton(

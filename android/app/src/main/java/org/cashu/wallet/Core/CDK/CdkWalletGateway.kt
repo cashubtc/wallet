@@ -23,7 +23,17 @@ interface CdkWalletGateway {
     suspend fun fetchMintInfo(mintUrl: String): MintInfo?
     suspend fun restoreMint(mintUrl: String): RestoreMintResult
     suspend fun totalBalance(mintUrl: String): Long
-    suspend fun createMintQuote(amount: Long?, method: PaymentMethodKind, mintUrl: String): MintQuoteInfo
+
+    /** Balance of the (mint, unit) wallet, registering the unit wallet if needed. */
+    suspend fun unitBalance(mintUrl: String, unit: String): Long
+
+    /**
+     * Balance of the (mint, unit) wallet WITHOUT creating it — null when the
+     * wallet was never registered. Used by refreshBalance so advertising a unit
+     * never registers keysets/counters the user hasn't touched.
+     */
+    suspend fun unitBalanceIfExists(mintUrl: String, unit: String): Long?
+    suspend fun createMintQuote(amount: Long?, method: PaymentMethodKind, mintUrl: String, unit: String = "sat"): MintQuoteInfo
     suspend fun checkMintQuote(quoteId: String): MintQuoteInfo
     fun subscribeToMintQuote(quoteId: String): Flow<MintQuoteInfo>
     suspend fun listUnissuedMintQuotes(): List<MintQuoteInfo>
@@ -32,7 +42,7 @@ interface CdkWalletGateway {
     suspend fun createMeltQuote(request: String, amountSats: Long? = null, preferredMintURL: String? = null): MeltQuoteInfo
     suspend fun listMeltQuotes(): List<MeltQuoteInfo>
     suspend fun meltTokens(quoteId: String, mintUrl: String? = null): MeltPaymentResult
-    suspend fun sendEcashToken(amount: Long, memo: String?, p2pkPubkey: String?, mintUrl: String): SendTokenResult
+    suspend fun sendEcashToken(amount: Long, memo: String?, p2pkPubkey: String?, mintUrl: String, unit: String = "sat"): SendTokenResult
     suspend fun receiveEcashToken(tokenString: String, p2pkSigningKeys: List<String> = emptyList()): Long
     suspend fun calculateReceiveFee(tokenString: String): Long
     suspend fun checkTokenSpendable(token: String, mintUrl: String): Boolean

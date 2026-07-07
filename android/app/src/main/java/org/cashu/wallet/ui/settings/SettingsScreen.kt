@@ -3,8 +3,6 @@ package org.cashu.wallet.ui.settings
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,19 +12,19 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccountCircle
+import androidx.compose.material.icons.outlined.ArrowOutward
 import androidx.compose.material.icons.outlined.Bolt
+import androidx.compose.material.icons.outlined.CurrencyBitcoin
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Description
-import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.Public
-import androidx.compose.material.icons.outlined.Restore
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material.icons.outlined.VpnKey
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -34,39 +32,47 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
 import org.cashu.wallet.BuildConfig
+import org.cashu.wallet.Core.PriceService
+import org.cashu.wallet.Core.SettingsManager
 import org.cashu.wallet.Core.WalletManager
-import org.cashu.wallet.ui.components.CanvasDivider
 import org.cashu.wallet.ui.components.NavRow
 import org.cashu.wallet.ui.components.SectionHeader
+import org.cashu.wallet.ui.components.ToggleRow
 import org.cashu.wallet.ui.theme.CashuTheme
 
+/**
+ * Settings root — section order, rows, and copy mirror iOS SettingsView:
+ * Display · Backup & Security · Payments · Integrations · Privacy · About ·
+ * Danger, with the version footer. (App Lock joins Backup & Security when the
+ * feature lands on Android.)
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     walletManager: WalletManager,
-    onOpenBackup: () -> Unit,
+    settingsManager: SettingsManager,
+    priceService: PriceService,
+    onOpenBackupRestore: () -> Unit,
     onOpenLightning: () -> Unit,
-    onOpenP2PK: () -> Unit,
+    onOpenLockedEcash: () -> Unit,
     onOpenNostr: () -> Unit,
-    onOpenNWC: () -> Unit,
     onOpenPrivacy: () -> Unit,
-    onOpenAppearance: () -> Unit,
     contentPadding: PaddingValues,
 ) {
     val context = LocalContext.current
+    val settings by settingsManager.state.collectAsState()
     var confirmDelete by remember { mutableStateOf(false) }
-    var confirmRestore by remember { mutableStateOf(false) }
+    var currencyPickerOpen by remember { mutableStateOf(false) }
 
     val topBarState = rememberTopAppBarState()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(state = topBarState)
@@ -90,23 +96,34 @@ fun SettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
-            // Generous bottom inset so the last section clears the navigation bar.
+            // Generous bottom inset so the footer clears the navigation bar.
             contentPadding = PaddingValues(bottom = CashuTheme.spacing.section + CashuTheme.spacing.snug),
         ) {
-            item("backup-header") { SectionHeader("Backup") }
-            item("backup") {
+            item("display-header") { SectionHeader("Display") }
+            item("currency") {
                 NavRow(
-                    title = "Backup seed phrase",
-                    leadingIcon = Icons.Outlined.VpnKey,
-                    onClick = onOpenBackup,
+                    title = "Currency",
+                    leadingIcon = Icons.Outlined.Payments,
+                    trailingValue = if (settings.showFiatBalance) settings.bitcoinPriceCurrency else "Off",
+                    onClick = { currencyPickerOpen = true },
                 )
             }
-            item("backup-divider") { CanvasDivider(leadingInset = 16) }
-            item("restore") {
+            item("btc-symbol") {
+                ToggleRow(
+                    title = "Use ₿ symbol",
+                    subtitle = "Use ₿ symbol instead of sats.",
+                    leadingIcon = Icons.Outlined.CurrencyBitcoin,
+                    checked = settings.useBitcoinSymbol,
+                    onCheckedChange = settingsManager::setUseBitcoinSymbol,
+                )
+            }
+
+            item("backup-header") { SectionHeader("Backup & Security") }
+            item("backup-restore") {
                 NavRow(
-                    title = "Restore ecash",
-                    leadingIcon = Icons.Outlined.Restore,
-                    onClick = { confirmRestore = true },
+                    title = "Backup & Restore",
+                    leadingIcon = Icons.Outlined.VpnKey,
+                    onClick = onOpenBackupRestore,
                 )
             }
 
@@ -114,18 +131,15 @@ fun SettingsScreen(
             item("lightning") {
                 NavRow(
                     title = "Lightning",
-                    subtitle = "Lightning address",
                     leadingIcon = Icons.Outlined.Bolt,
                     onClick = onOpenLightning,
                 )
             }
-            item("payments-divider") { CanvasDivider(leadingInset = 16) }
-            item("p2pk") {
+            item("locked-ecash") {
                 NavRow(
-                    title = "P2PK",
-                    subtitle = "Lock ecash to a key",
+                    title = "Locked Ecash",
                     leadingIcon = Icons.Outlined.Lock,
-                    onClick = onOpenP2PK,
+                    onClick = onOpenLockedEcash,
                 )
             }
 
@@ -137,29 +151,13 @@ fun SettingsScreen(
                     onClick = onOpenNostr,
                 )
             }
-            item("integrations-divider") { CanvasDivider(leadingInset = 16) }
-            item("nwc") {
-                NavRow(
-                    title = "Nostr Wallet Connect",
-                    leadingIcon = Icons.Outlined.Link,
-                    onClick = onOpenNWC,
-                )
-            }
 
-            item("privacy-header") { SectionHeader("Privacy & Display") }
+            item("privacy-header") { SectionHeader("Privacy") }
             item("privacy") {
                 NavRow(
                     title = "Privacy",
                     leadingIcon = Icons.Outlined.VisibilityOff,
                     onClick = onOpenPrivacy,
-                )
-            }
-            item("privacy-divider") { CanvasDivider(leadingInset = 16) }
-            item("appearance") {
-                NavRow(
-                    title = "Appearance",
-                    leadingIcon = Icons.Outlined.Palette,
-                    onClick = onOpenAppearance,
                 )
             }
 
@@ -168,14 +166,15 @@ fun SettingsScreen(
                 NavRow(
                     title = "Learn about Cashu",
                     leadingIcon = Icons.Outlined.Public,
+                    trailingIcon = Icons.Outlined.ArrowOutward,
                     onClick = { context.openExternal("https://cashu.space") },
                 )
             }
-            item("about-divider") { CanvasDivider(leadingInset = 16) }
             item("specs") {
                 NavRow(
                     title = "Protocol Specs (NUTs)",
                     leadingIcon = Icons.Outlined.Description,
+                    trailingIcon = Icons.Outlined.ArrowOutward,
                     onClick = { context.openExternal("https://github.com/cashubtc/nuts") },
                 )
             }
@@ -193,49 +192,22 @@ fun SettingsScreen(
 
             item("footer") {
                 Spacer(Modifier.height(CashuTheme.spacing.section))
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = CashuTheme.spacing.comfortable),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(FOOTER_LINE_GAP),
-                ) {
-                    Text(
-                        text = "Cashu Wallet",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                    )
-                    Text(
-                        text = BuildConfig.VERSION_NAME,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                    )
-                }
+                Text(
+                    text = "Cashu Wallet · ${BuildConfig.VERSION_NAME}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
         }
     }
 
-    if (confirmRestore) {
-        AlertDialog(
-            onDismissRequest = { confirmRestore = false },
-            title = { Text("Open Restore Wizard") },
-            text = {
-                Text(
-                    "This will open the restore flow used during onboarding.",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    confirmRestore = false
-                    walletManager.reopenOnboarding()
-                }) { Text("Open") }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmRestore = false }) { Text("Cancel") }
-            },
+    if (currencyPickerOpen) {
+        CurrencyPickerSheet(
+            settingsManager = settingsManager,
+            priceService = priceService,
+            onDismiss = { currencyPickerOpen = false },
         )
     }
 
@@ -245,7 +217,8 @@ fun SettingsScreen(
             title = { Text("Delete Wallet") },
             text = {
                 Text(
-                    "Are you sure? This action cannot be undone. Back up your seed phrase first.",
+                    "Are you sure you want to delete your wallet? This action cannot be undone. " +
+                        "Make sure you have backed up your seed phrase!",
                     style = MaterialTheme.typography.bodyMedium,
                 )
             },
@@ -263,9 +236,6 @@ fun SettingsScreen(
         )
     }
 }
-
-// Tight pair-gap between the two footer label lines — below the spacing scale.
-private val FOOTER_LINE_GAP = 2.dp
 
 private fun Context.openExternal(url: String) {
     val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {

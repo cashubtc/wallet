@@ -41,6 +41,8 @@ fun NavRow(
     enabled: Boolean = true,
     tint: Color? = null,
     showChevron: Boolean = true,
+    trailingValue: String? = null,
+    trailingIcon: ImageVector? = null,
 ) {
     val titleColor = tint ?: MaterialTheme.colorScheme.onSurface
     val iconColor = tint ?: MaterialTheme.colorScheme.onSurface
@@ -76,7 +78,22 @@ fun NavRow(
                 )
             }
         }
-        if (showChevron) {
+        if (trailingValue != null) {
+            Text(
+                text = trailingValue,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.width(CashuTheme.spacing.tight))
+        }
+        if (trailingIcon != null) {
+            Icon(
+                imageVector = trailingIcon,
+                contentDescription = null,
+                tint = chevronColor,
+                modifier = Modifier.size(CashuTheme.spacing.loose),
+            )
+        } else if (showChevron) {
             Icon(
                 imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
                 contentDescription = null,
@@ -96,6 +113,7 @@ fun ToggleRow(
     modifier: Modifier = Modifier,
     subtitle: String? = null,
     enabled: Boolean = true,
+    leadingIcon: ImageVector? = null,
 ) {
     Row(
         modifier = modifier
@@ -106,6 +124,15 @@ fun ToggleRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
     ) {
+        if (leadingIcon != null) {
+            Icon(
+                imageVector = leadingIcon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.size(CashuTheme.spacing.loose),
+            )
+            Spacer(Modifier.width(CashuTheme.spacing.micro))
+        }
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,

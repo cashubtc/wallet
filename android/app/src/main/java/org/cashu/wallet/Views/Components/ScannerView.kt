@@ -16,8 +16,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -48,6 +50,8 @@ import java.util.concurrent.Executors
 import org.cashu.wallet.Core.AnimatedUrDecoder
 import org.cashu.wallet.Core.WalletHaptic
 import org.cashu.wallet.Core.rememberWalletHaptics
+import org.cashu.wallet.ui.components.GhostButton
+import org.cashu.wallet.ui.components.PrimaryButton
 
 @Composable
 fun ScannerView(
@@ -196,8 +200,9 @@ private fun CameraPermissionView(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text("Camera permission is required to scan QR codes.", style = MaterialTheme.typography.bodyLarge)
-        PrimaryActionButton("Allow camera", onClick = onRequestPermission)
-        SecondaryActionButton("Close", onClick = onClose)
+        Spacer(Modifier.height(24.dp))
+        PrimaryButton("Allow camera", onClick = onRequestPermission)
+        GhostButton("Close", onClick = onClose)
     }
 }
 
@@ -216,8 +221,9 @@ private fun CameraFailureView(
     ) {
         Text("Camera scanner is unavailable.", style = MaterialTheme.typography.titleMedium)
         Text(message, color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall)
-        PrimaryActionButton("Try again", onClick = onRetry)
-        SecondaryActionButton("Close", onClick = onClose)
+        Spacer(Modifier.height(24.dp))
+        PrimaryButton("Try again", onClick = onRetry)
+        GhostButton("Close", onClick = onClose)
     }
 }
 
