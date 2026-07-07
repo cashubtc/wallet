@@ -41,24 +41,28 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import kotlin.random.Random
 import kotlinx.coroutines.delay
+import org.cashu.wallet.Core.AppLockManager
 import org.cashu.wallet.Core.WalletManager
 import org.cashu.wallet.ui.components.CashuTextField
 import org.cashu.wallet.ui.components.GhostButton
 import org.cashu.wallet.ui.components.PrimaryButton
 import org.cashu.wallet.ui.components.SectionHeader
+import org.cashu.wallet.ui.security.rememberWalletAuthenticationLauncher
 import org.cashu.wallet.ui.theme.CashuTheme as CashuThemeTokens
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BackupScreen(
     walletManager: WalletManager,
+    appLockManager: AppLockManager,
     onClose: () -> Unit,
 ) {
-    val mnemonic = remember { walletManager.backupMnemonic().orEmpty() }
+    var mnemonic by remember { mutableStateOf<String?>(null) }
     val words = remember(mnemonic) {
-        mnemonic.trim().split(' ').filter { it.isNotBlank() }
+        mnemonic.orEmpty().trim().split(' ').filter { it.isNotBlank() }
     }
     val clipboard = LocalClipboardManager.current
+    val authenticate = rememberWalletAuthenticationLauncher(appLockManager)
 
     var revealed by remember { mutableStateOf(false) }
     var copied by remember { mutableStateOf(false) }
@@ -105,8 +109,13 @@ fun BackupScreen(
                     PrimaryButton(
                         text = if (copied) "Copied" else "Copy phrase",
                         onClick = {
-                            clipboard.setText(AnnotatedString(mnemonic))
-                            copied = true
+                            authenticate("Copy your seed phrase") {
+                                val phrase = mnemonic ?: walletManager.backupMnemonic().orEmpty()
+                                if (phrase.isNotBlank()) {
+                                    clipboard.setText(AnnotatedString(phrase))
+                                    copied = true
+                                }
+                            }
                         },
                         modifier = Modifier.weight(1f),
                     )
@@ -122,7 +131,12 @@ fun BackupScreen(
             } else {
                 PrimaryButton(
                     text = "Reveal phrase",
-                    onClick = { revealed = true },
+                    onClick = {
+                        authenticate("Reveal your seed phrase") {
+                            mnemonic = walletManager.backupMnemonic().orEmpty()
+                            revealed = true
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
@@ -234,4 +248,3 @@ private fun VerifyQuiz(words: List<String>) {
         }
     }
 }
-

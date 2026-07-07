@@ -45,6 +45,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import org.cashu.wallet.Core.NostrService
 import org.cashu.wallet.Core.NostrSignerType
+import org.cashu.wallet.Core.AppLockManager
 import org.cashu.wallet.Core.SettingsManager
 import org.cashu.wallet.ui.components.CanvasDivider
 import org.cashu.wallet.ui.components.CashuTextField
@@ -53,6 +54,7 @@ import org.cashu.wallet.ui.components.InlineNotice
 import org.cashu.wallet.ui.components.InspectorRow
 import org.cashu.wallet.ui.components.PrimaryButton
 import org.cashu.wallet.ui.components.SectionHeader
+import org.cashu.wallet.ui.security.rememberWalletAuthenticationLauncher
 import org.cashu.wallet.ui.theme.CashuTheme
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -60,11 +62,13 @@ import org.cashu.wallet.ui.theme.CashuTheme
 fun NostrScreen(
     nostrService: NostrService,
     settingsManager: SettingsManager,
+    appLockManager: AppLockManager,
     onClose: () -> Unit,
 ) {
     val nostrState by nostrService.state.collectAsState()
     val settings by settingsManager.state.collectAsState()
     val clipboard = LocalClipboardManager.current
+    val authenticate = rememberWalletAuthenticationLauncher(appLockManager)
     var nsecRevealed by remember { mutableStateOf(false) }
     var showImport by remember { mutableStateOf(false) }
     var importError by remember { mutableStateOf<String?>(null) }
@@ -159,7 +163,17 @@ fun NostrScreen(
                     maxLines = 1,
                     overflow = TextOverflow.MiddleEllipsis,
                 )
-                IconButton(onClick = { nsecRevealed = !nsecRevealed }) {
+                IconButton(
+                    onClick = {
+                        if (nsecRevealed) {
+                            nsecRevealed = false
+                        } else {
+                            authenticate("Reveal your Nostr private key") {
+                                nsecRevealed = true
+                            }
+                        }
+                    },
+                ) {
                     Icon(
                         imageVector = if (nsecRevealed) Icons.Outlined.VisibilityOff
                         else Icons.Outlined.Visibility,
@@ -167,7 +181,11 @@ fun NostrScreen(
                     )
                 }
                 IconButton(
-                    onClick = { clipboard.setText(AnnotatedString(nostrState.nsec)) },
+                    onClick = {
+                        authenticate("Copy your Nostr private key") {
+                            clipboard.setText(AnnotatedString(nostrState.nsec))
+                        }
+                    },
                     enabled = nostrState.nsec.isNotBlank(),
                 ) {
                     Icon(

@@ -43,12 +43,12 @@ class SentryService internal constructor(
 
     fun capture(error: Throwable) {
         if (!isEnabled()) return
-        gateway.capture(error)
+        gateway.capture(AppLogger.privacySafeThrowable(error))
     }
 
     fun breadcrumb(message: String, category: String = "wallet") {
         if (!isEnabled()) return
-        gateway.breadcrumb(message, category)
+        gateway.breadcrumb(AppLogger.privacySafeMessage(message), category)
     }
 }
 

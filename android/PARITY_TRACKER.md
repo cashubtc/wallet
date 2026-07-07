@@ -17,8 +17,8 @@ Status date: 2026-07-07
 
 | Milestone | Area | Status | Implementation PR/commit | Acceptance evidence |
 | --- | --- | --- | --- | --- |
-| 0 | Source of truth and parity guardrails | In progress on `codex/android-update-plan-implementation` | Commit after milestone completion | Tracker/docs exist, stale parity notes are corrected, route inventory exists, misleading settings are hidden or relabeled, fixtures exist. |
-| 1 | Security, App Lock, Backup, and Wallet Lifecycle | Not started | TBD | App Lock, authenticated secret reveal, cloud backup decision/implementation, startup maintenance, stale quote sync, security tests. |
+| 0 | Source of truth and parity guardrails | Complete | `afa21c7` | Tracker/docs exist, stale parity notes are corrected, route inventory exists, misleading settings are hidden or relabeled, fixtures exist. |
+| 1 | Security, App Lock, Backup, and Wallet Lifecycle | Complete | Milestone 1 commit on `codex/android-update-plan-implementation` | App Lock, authenticated secret reveal, documented no-cloud backup MVP, startup maintenance, stale quote sync, security tests. |
 | 2 | Onboarding and Restore Parity | Not started | TBD | iOS-equivalent create/restore/cloud/staged mint restore flows and UI/instrumentation tests. |
 | 3 | Home, Shell, and Foreground Behavior | Not started | TBD | Home parity, received-delta beat, foreground sync, scanner/contactless shell correctness, UI tests. |
 | 4 | Unified Send, Pay Flows, and Contactless | Not started | TBD | Full Cashu Request pay/acquire/top-up, richer status/error flows, NFC parity, tests. |
@@ -48,3 +48,13 @@ Status date: 2026-07-07
 - Stale migration-plan cleanup: the outdated Kotlin migration plan was removed so `ANDROID_UPDATE_PLAN.md` is the single authoritative Android parity plan.
 - Misleading settings cleanup: Privacy settings copy now scopes startup checks to sent-token claim checks.
 - Preview/test fixtures: `PreviewWalletFixtures` provides deterministic wallet, settings, mint, history, and request data.
+
+## Current Milestone 1 Evidence
+
+- App Lock state and manager: `AppLockManager`.
+- Full-screen gate and privacy behavior: `AppLockGate`, `PrivacyCover`, `SecureWindowEffect`, and shell lifecycle wiring.
+- App Lock setting: `settings.appLockEnabled` and Settings → Backup & Security row.
+- Secret reveal authentication: `BackupScreen` and `NostrScreen` use the shared wallet authentication launcher before reveal/copy.
+- Backup product decision: `android/SECURITY_BACKUP_MODEL.md` keeps Android cloud seed backup hidden until a restorable encryption/account model exists.
+- Startup maintenance: `WalletManager.performBestEffortWalletStartupMaintenance`, `performForegroundMaintenance`, and `syncPendingMintQuotesIfStale`.
+- Logging audit: `AppLogger` redaction coverage expanded and Sentry breadcrumbs are sanitized.

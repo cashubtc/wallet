@@ -83,6 +83,10 @@ class SettingsStore(
         get() = store.boolean(StorageKeys.settingsSentryEnabled, false)
         set(value) = store.putBoolean(StorageKeys.settingsSentryEnabled, value)
 
+    var appLockEnabled: Boolean
+        get() = store.boolean(StorageKeys.settingsAppLockEnabled, false)
+        set(value) = store.putBoolean(StorageKeys.settingsAppLockEnabled, value)
+
     var checkIncomingInvoices: Boolean
         get() = store.boolean(StorageKeys.settingsCheckIncomingInvoices, true)
         set(value) = store.putBoolean(StorageKeys.settingsCheckIncomingInvoices, value)

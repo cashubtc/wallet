@@ -2,6 +2,7 @@ package org.cashu.wallet.App
 
 import android.content.Context
 import org.cashu.wallet.Core.CDK.CdkWalletGatewayImpl
+import org.cashu.wallet.Core.AppLockManager
 import org.cashu.wallet.Core.CashuRequestListener
 import org.cashu.wallet.Core.CashuRequestStore
 import org.cashu.wallet.Core.MintDiscoveryManager
@@ -25,6 +26,7 @@ class AppContainer(context: Context) {
     val cashuRequestStore = CashuRequestStore(walletStore)
     val settingsStore = SettingsStore(appContext)
     val settingsManager = SettingsManager(settingsStore, secureStorage)
+    val appLockManager = AppLockManager(appContext, settingsManager)
     val sentryService = SentryService(appContext, settingsStore)
     val nostrService = NostrService(secureStorage, settingsStore)
     val navigationManager = NavigationManager()

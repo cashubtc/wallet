@@ -48,6 +48,7 @@ class WalletManager(
     private val transactionLoader = WalletTransactionLoader(walletStore, gateway)
     private val npcQuotesInFlight = mutableSetOf<String>()
     private var processedNPCQuotes = walletStore.loadProcessedNPCQuotes().toMutableSet()
+    private var lastPendingMintQuoteSyncAtMillis = 0L
 
     override suspend fun initialize() {
         if (mutableState.value.isInitialized) return
@@ -58,6 +59,7 @@ class WalletManager(
                 openWalletRepositoryWithRecovery(mnemonic)
                 deriveNostrKey(mnemonic)
                 loadCachedState(needsOnboarding = false)
+                performBestEffortWalletStartupMaintenance()
             } ?: update {
                 copy(
                     isInitialized = true,
@@ -298,6 +300,25 @@ class WalletManager(
             loadTransactions()
             mintedCount
         }
+
+    suspend fun syncPendingMintQuotesIfStale(staleAfterMillis: Long = 60_000): Int {
+        val now = System.currentTimeMillis()
+        if (now - lastPendingMintQuoteSyncAtMillis < staleAfterMillis) return 0
+        lastPendingMintQuoteSyncAtMillis = now
+        return syncPendingMintQuotes()
+    }
+
+    suspend fun performForegroundMaintenance() {
+        val current = mutableState.value
+        if (!current.isInitialized || current.needsOnboarding) return
+        val settings = settingsManager.state.value
+        if (settings.checkPendingOnStartup && settings.checkSentTokens) {
+            runCatching { checkAllPendingTokens() }
+                .onFailure { AppLogger.wallet.error("Pending sent-token foreground check failed", it) }
+        }
+        runCatching { syncPendingMintQuotesIfStale() }
+            .onFailure { AppLogger.wallet.error("Pending mint quote foreground sync failed", it) }
+    }
 
     override fun isNPCQuoteProcessed(quoteId: String): Boolean =
         quoteId in processedNPCQuotes || quoteId in walletStore.loadProcessedNPCQuotes()
@@ -576,6 +597,24 @@ class WalletManager(
         }
     }
 
+    private suspend fun performBestEffortWalletStartupMaintenance() {
+        val trackedMints = walletStore.loadMints()
+        trackedMints.forEach { mint ->
+            runCatching { gateway.ensureWallet(mint.url) }
+                .onFailure { AppLogger.wallet.error("Startup wallet preparation failed for mint", it) }
+            mint.units.filterNot { it.equals("sat", ignoreCase = true) }.forEach { unit ->
+                runCatching { gateway.ensureWallet(mint.url, unit) }
+                    .onFailure { AppLogger.wallet.error("Startup unit wallet preparation failed for mint", it) }
+            }
+        }
+        runCatching { refreshBalance() }
+            .onFailure { AppLogger.wallet.error("Startup balance refresh failed", it) }
+        runCatching { loadTransactions() }
+            .onFailure { AppLogger.wallet.error("Startup transaction load failed", it) }
+        runCatching { performForegroundMaintenance() }
+            .onFailure { AppLogger.wallet.error("Startup pending-state maintenance failed", it) }
+    }
+
     private fun markNPCQuoteProcessed(quoteId: String) {
         processedNPCQuotes += quoteId
         walletStore.saveProcessedNPCQuotes(processedNPCQuotes.sorted())
@@ -624,7 +663,7 @@ class WalletManager(
         val error = initialResult.exceptionOrNull() ?: return
         if (!shouldAttemptWalletDatabaseRecovery(error)) throw error
         val backup = databasePathManager.backupCorruptedDatabase() ?: throw error
-        AppLogger.wallet.info("Wallet DB recovery: moved corrupted database to ${backup.absolutePath}")
+        AppLogger.wallet.info("Wallet DB recovery: moved corrupted database to backup path")
         gateway.openWalletRepository(mnemonic, databasePath)
     }
 

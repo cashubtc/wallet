@@ -170,6 +170,7 @@ fun CashuNavHost(
         composable(Routes.SETTINGS_BACKUP) {
             BackupScreen(
                 walletManager = container.walletManager,
+                appLockManager = container.appLockManager,
                 onClose = { navController.popBackStack() },
             )
         }
@@ -190,6 +191,7 @@ fun CashuNavHost(
             NostrScreen(
                 nostrService = container.nostrService,
                 settingsManager = container.settingsManager,
+                appLockManager = container.appLockManager,
                 onClose = { navController.popBackStack() },
             )
         }
@@ -282,11 +284,12 @@ private fun NavGraphBuilder.tabDestinations(
         )
     }
     composable(Routes.SETTINGS) {
-        SettingsScreen(
-            walletManager = container.walletManager,
-            settingsManager = container.settingsManager,
-            priceService = container.priceService,
-            onOpenBackupRestore = { navController.navigate(Routes.SETTINGS_BACKUP_RESTORE) },
+            SettingsScreen(
+                walletManager = container.walletManager,
+                settingsManager = container.settingsManager,
+                appLockManager = container.appLockManager,
+                priceService = container.priceService,
+                onOpenBackupRestore = { navController.navigate(Routes.SETTINGS_BACKUP_RESTORE) },
             onOpenLightning = { navController.navigate(Routes.SETTINGS_LIGHTNING) },
             onOpenLockedEcash = { navController.navigate(Routes.SETTINGS_P2PK) },
             onOpenNostr = { navController.navigate(Routes.SETTINGS_NOSTR) },

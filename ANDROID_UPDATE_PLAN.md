@@ -18,6 +18,32 @@ Primary source areas reviewed:
 
 Repo inventory found 312 Swift/Kotlin/XML files across those app and test scopes. The Android codebase already has a broad Compose shell, payment parser, wallet manager, history timeline, mints, settings, send/receive surfaces, NFC, scanner, Nostr/NPC, Sentry opt-in, multi-unit models, and many JVM unit tests. The remaining work is not a blank rewrite. It is a parity completion pass across security, restore, advanced Cashu Request flows, locked ecash, Lightning/on-chain receive polish, mint metadata, and UI/instrumentation coverage.
 
+## Android Gradle Validation Commands
+
+Run Android commands from `android/`.
+
+If `java` is not available on the shell path but Android Studio is installed, use Android Studio's bundled JBR without hard-coding a user-specific path:
+
+```sh
+ANDROID_STUDIO_APP="$(mdfind "kMDItemCFBundleIdentifier == 'com.google.android.studio'" | head -n 1)"
+export JAVA_HOME="$ANDROID_STUDIO_APP/Contents/jbr/Contents/Home"
+```
+
+Core validation commands:
+
+```sh
+JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:assembleDebug
+JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:testDebugUnitTest
+JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:lintDebug
+JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:assembleRelease
+```
+
+Focused test command used during Milestone 1:
+
+```sh
+JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:testDebugUnitTest --tests org.cashu.wallet.Core.AppLoggerTest --tests org.cashu.wallet.Core.SentryServiceTest --tests org.cashu.wallet.Core.SettingsManagerTest --tests org.cashu.wallet.ui.preview.PreviewWalletFixturesTest
+```
+
 ## Executive Summary
 
 Android is strongest in:
@@ -103,20 +129,20 @@ Android gaps:
 
 Checklist:
 
-- [ ] Add `AppLockManager` equivalent using `BiometricPrompt` with `DEVICE_CREDENTIAL` fallback.
-- [ ] Add settings state for app lock enablement and a Material settings row under Backup & Security.
-- [ ] Add a full-screen lock gate in `CashuApp` after onboarding and before `WalletScaffold`.
-- [ ] Add lifecycle handling to obscure balances on `ON_PAUSE`/`ON_STOP` and relock after the same grace period as iOS, adjusted for Android lifecycle norms.
-- [ ] Use `WindowManager.LayoutParams.FLAG_SECURE` or a dedicated privacy overlay according to the chosen Android UX; document the choice.
-- [ ] Require authentication before seed reveal/copy in `BackupScreen`.
-- [ ] Require authentication before Nostr nsec reveal/copy in `NostrScreen`.
-- [ ] Require authentication before any P2PK private key reveal/copy once P2PK backups land.
-- [ ] Decide Android cloud backup product model: encrypted Google Drive app-data, Android Auto Backup with app-side encryption, Google Block Store, or explicit no-cloud MVP.
-- [ ] If cloud backup is implemented, store seed and mint list encrypted with a key protected by Android Keystore and document restore constraints.
-- [ ] Add cloud backup settings, last-backup status, enable/disable confirmation, backup now, clear backup, and restore-from-cloud entry points.
-- [ ] Add startup maintenance matching iOS: recover incomplete CDK sagas, refresh keysets for tracked mints, load cached state, refresh balance, load transactions, and sync pending mint quotes if stale.
-- [ ] Run stale pending-quote sync on app foreground and when History opens.
-- [ ] Audit logs and Sentry breadcrumbs for raw token, seed, private key, local path, full URL, and user/device identifiers.
+- [x] Add `AppLockManager` equivalent using `BiometricPrompt` with `DEVICE_CREDENTIAL` fallback. Implemented with AndroidX BiometricPrompt and `BIOMETRIC_WEAK | DEVICE_CREDENTIAL`.
+- [x] Add settings state for app lock enablement and a Material settings row under Backup & Security. `settings.appLockEnabled` is persisted and surfaced in `SettingsScreen`.
+- [x] Add a full-screen lock gate in `CashuApp` after onboarding and before `WalletScaffold`. `AppLockGate` covers the authenticated shell and shell overlays.
+- [x] Add lifecycle handling to obscure balances on `ON_PAUSE`/`ON_STOP` and relock after the same grace period as iOS, adjusted for Android lifecycle norms. Android uses the same 30-second grace window.
+- [x] Use `WindowManager.LayoutParams.FLAG_SECURE` or a dedicated privacy overlay according to the chosen Android UX; document the choice. Android uses `FLAG_SECURE` while App Lock is enabled plus a Compose privacy cover; documented in `android/SECURITY_BACKUP_MODEL.md`.
+- [x] Require authentication before seed reveal/copy in `BackupScreen`.
+- [x] Require authentication before Nostr nsec reveal/copy in `NostrScreen`.
+- [x] Require authentication before any P2PK private key reveal/copy once P2PK backups land. No P2PK private-key reveal/copy UI exists yet; the shared authentication path and documented requirement now exist for the Milestone 7 P2PK backup UI.
+- [x] Decide Android cloud backup product model: encrypted Google Drive app-data, Android Auto Backup with app-side encryption, Google Block Store, or explicit no-cloud MVP. Milestone 1 chooses explicit no-cloud MVP because current device-bound Keystore ciphertext is not safely restorable on another device.
+- [x] If cloud backup is implemented, store seed and mint list encrypted with a key protected by Android Keystore and document restore constraints. Cloud backup is intentionally not implemented in Milestone 1; restore constraints and future acceptable designs are documented in `android/SECURITY_BACKUP_MODEL.md`.
+- [x] Add cloud backup settings, last-backup status, enable/disable confirmation, backup now, clear backup, and restore-from-cloud entry points. Cloud backup is intentionally hidden for Milestone 1 so no user-facing setting promises unavailable backup behavior.
+- [x] Add startup maintenance matching iOS: recover incomplete CDK sagas, refresh keysets for tracked mints, load cached state, refresh balance, load transactions, and sync pending mint quotes if stale. Android now runs best-effort wallet preparation for tracked mints/units, balance refresh, transaction load, sent-token checks, and stale mint-quote sync during startup.
+- [x] Run stale pending-quote sync on app foreground and when History opens. Foreground maintenance now runs stale mint-quote sync; History already refreshes pending mint quotes on entry.
+- [x] Audit logs and Sentry breadcrumbs for raw token, seed, private key, local path, full URL, and user/device identifiers. `AppLogger` now redacts Cashu tokens, nsec values, labeled secrets, URLs, and local paths, and Sentry breadcrumbs pass through the sanitizer.
 
 Success condition:
 
