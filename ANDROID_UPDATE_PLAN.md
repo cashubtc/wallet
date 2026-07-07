@@ -57,6 +57,13 @@ JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:compileDebugKotlin
 JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:testDebugUnitTest --tests org.cashu.wallet.Core.MnemonicInputTest --tests org.cashu.wallet.Core.MintUrlInputTest --tests org.cashu.wallet.Core.SentryServiceTest
 ```
 
+Focused validation used during Milestone 3:
+
+```sh
+JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:compileDebugKotlin
+JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:testDebugUnitTest --tests org.cashu.wallet.Core.HomeBalanceTest --tests org.cashu.wallet.Core.WalletReceiveEventTest --tests org.cashu.wallet.ui.home.HomeRecentTest
+```
+
 ## Executive Summary
 
 Android is strongest in:
@@ -209,14 +216,14 @@ Android current state:
 
 Checklist:
 
-- [ ] Add home received-delta beat for sat receives, with Material motion and TalkBack-safe behavior.
-- [ ] Post receive events from ecash, Lightning, on-chain, Cashu Request, and NPC receive paths consistently.
-- [ ] Avoid showing sat delta for non-sat token receives, matching iOS.
-- [ ] Add foreground stale quote sync and pending-token checks behind the same settings/runtime semantics as iOS.
-- [ ] Ensure Home recents suppress duplicate transaction rows when a Cashu Request row represents the same payment.
-- [ ] Verify unit pager only appears when the active mint supports multiple units and a non-sat balance is held.
-- [ ] Align empty states, button enabled states, scanner routing, and refresh semantics with iOS while using Material 3 idioms.
-- [ ] Add TalkBack labels for active mint, balance toggle, Receive, Send, Scan, unit pager dots, and recent rows.
+- [x] Add home received-delta beat for sat receives, with Material motion and TalkBack-safe behavior. Home now collects `WalletReceiveEvent`, shows a short animated received chip, and announces it as a polite live region.
+- [x] Post receive events from ecash, Lightning, on-chain, Cashu Request, and NPC receive paths consistently. `WalletManager` emits typed receive events for direct ecash receives, direct quote minting, stale quote sync, Cashu Request claims, and NPC claims.
+- [x] Avoid showing sat delta for non-sat token receives, matching iOS. `WalletReceiveEvent.showsHomeSatDelta()` gates Home to positive sat-only events and has JVM coverage.
+- [x] Add foreground stale quote sync and pending-token checks behind the same settings/runtime semantics as iOS. Foreground maintenance remains app-lifecycle gated, respects pending/sent-token settings, and pending quote sync now preserves event metadata when minting succeeds.
+- [x] Ensure Home recents suppress duplicate transaction rows when a Cashu Request row represents the same payment. `unifiedRecent` suppresses request-attached transaction IDs and has JVM coverage.
+- [x] Verify unit pager only appears when the active mint supports multiple units and a non-sat balance is held. Existing `HomeBalance.showsUnitPager` logic remains covered by JVM tests.
+- [x] Align empty states, button enabled states, scanner routing, and refresh semantics with iOS while using Material 3 idioms. Existing Material empty states, pinned scanner affordance, receive/send enablement, pull refresh, and foreground maintenance are retained and wired through the shell.
+- [x] Add TalkBack labels for active mint, balance toggle, Receive, Send, Scan, unit pager dots, and recent rows. Home controls and shared timeline rows now expose explicit semantic descriptions.
 
 Success condition:
 

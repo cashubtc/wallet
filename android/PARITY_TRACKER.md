@@ -20,7 +20,7 @@ Status date: 2026-07-07
 | 0 | Source of truth and parity guardrails | Complete | `afa21c7` | Tracker/docs exist, stale parity notes are corrected, route inventory exists, misleading settings are hidden or relabeled, fixtures exist. |
 | 1 | Security, App Lock, Backup, and Wallet Lifecycle | Complete | Milestone 1 commit on `codex/android-update-plan-implementation` | App Lock, authenticated secret reveal, documented no-cloud backup MVP, startup maintenance, stale quote sync, security tests. |
 | 2 | Onboarding and Restore Parity | Complete | Milestone 2 commit on `codex/android-update-plan-implementation` | iOS-equivalent create/restore/no-cloud placeholder/staged mint restore flows, row-level add/restore progress, retry, and focused Gradle validation. |
-| 3 | Home, Shell, and Foreground Behavior | Not started | TBD | Home parity, received-delta beat, foreground sync, scanner/contactless shell correctness, UI tests. |
+| 3 | Home, Shell, and Foreground Behavior | Complete | Milestone 3 commit on `codex/android-update-plan-implementation` | Received-delta event stream/chip, sat-only gating, foreground quote metadata, recents dedupe, unit pager tests, and TalkBack labels. |
 | 4 | Unified Send, Pay Flows, and Contactless | Not started | TBD | Full Cashu Request pay/acquire/top-up, richer status/error flows, NFC parity, tests. |
 | 5 | Receive Ecash and Cashu Request Parity | Not started | TBD | Editable requests, quote-backed intents, locked/unknown mint handling, status parity, tests. |
 | 6 | Receive Lightning, BOLT12, and On-chain | Not started | TBD | BOLT11 expiry, reusable BOLT12, on-chain address reuse/observer, quote-backed history, tests. |
@@ -67,3 +67,12 @@ Status date: 2026-07-07
 - Restore flow: restore method chooser, no-cloud Android backup placeholder, mnemonic validation through `MnemonicInput`, staged mint paste parsing, preview metadata/avatar loading, reorder/remove, and row-level restore progress/results with retry.
 - Settings restore ergonomics: restore launched from an existing wallet can be exited back to the wallet.
 - Privacy-safe telemetry: onboarding emits only generic opt-in Sentry breadcrumbs via `SentryService`.
+
+## Current Milestone 3 Evidence
+
+- Receive events: `WalletReceiveEvent` and `WalletManager.receiveEvents` cover direct ecash, quote minting, pending quote sync, Cashu Request claims, and NPC claims.
+- Home delta: `HomeScreen` shows a short Material received chip only for positive sat events and exposes a polite live-region announcement.
+- Foreground maintenance: pending quote sync now returns event metadata while preserving existing minted-count behavior.
+- Timeline parity: Home recent rows continue to suppress Cashu Request-attached transactions; JVM coverage locks this behavior.
+- Unit pager parity: `HomeBalanceTest` verifies the active-mint and held non-sat balance gate.
+- Accessibility: active mint, balance toggle, Receive, Send, Scan, unit pager dots, transaction rows, and Cashu Request rows expose explicit semantic descriptions.

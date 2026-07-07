@@ -12,6 +12,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import org.cashu.wallet.Core.AmountFormatter
 import org.cashu.wallet.Core.Protocols.CurrencyAmount
@@ -62,6 +64,13 @@ fun CashuRequestRow(
     onLongClick: (() -> Unit)? = null,
 ) {
     val received = request.receivedPayments.isNotEmpty()
+    val rowDescription = buildList {
+        add("Cashu Request")
+        add(if (received) "Received" else "Waiting")
+        primaryAmountText?.let { add(if (received) "+$it" else it) }
+        secondaryAmountText?.let(::add)
+        add(timestamp)
+    }.joinToString(", ")
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -69,6 +78,7 @@ fun CashuRequestRow(
                 onClick = onClick,
                 onLongClick = onLongClick,
             )
+            .semantics { contentDescription = rowDescription }
             .padding(horizontal = CashuTheme.spacing.comfortable, vertical = CashuTheme.spacing.default),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),

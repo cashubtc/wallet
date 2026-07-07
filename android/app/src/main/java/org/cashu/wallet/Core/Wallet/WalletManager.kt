@@ -7,8 +7,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -43,6 +46,8 @@ class WalletManager(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate + exceptionHandler)
     private val mutableState = MutableStateFlow(WalletState())
     val state: StateFlow<WalletState> = mutableState.asStateFlow()
+    private val mutableReceiveEvents = MutableSharedFlow<WalletReceiveEvent>(extraBufferCapacity = 16)
+    val receiveEvents: SharedFlow<WalletReceiveEvent> = mutableReceiveEvents.asSharedFlow()
     private val mintMetadataFetcher = WalletMintMetadataFetcher()
     private val mintQuoteSyncService = WalletMintQuoteSyncService(gateway, walletStore)
     private val transactionLoader = WalletTransactionLoader(walletStore, gateway)
@@ -275,21 +280,34 @@ class WalletManager(
 
     override suspend fun mintTokens(quoteId: String): Long =
         withLoadingResult {
-            gateway.mintTokens(quoteId).also {
+            val quote = runCatching {
+                gateway.checkMintQuote(quoteId).also { mintQuoteSyncService.rememberMintQuoteTimestamp(it.id) }
+            }.getOrNull()
+            gateway.mintTokens(quoteId).also { amount ->
                 refreshBalance()
                 loadTransactions()
+                postReceiveEvent(
+                    amount = amount,
+                    unit = quote?.unit ?: "sat",
+                    source = receiveSourceFor(quote?.paymentMethod),
+                )
             }
         }
 
     suspend fun refreshPendingMintQuote(quoteId: String): Boolean =
         withLoadingResult {
-            val minted = mintQuoteSyncService.syncPendingMintQuote(
+            val result = mintQuoteSyncService.syncPendingMintQuote(
                 quoteId,
                 allowPendingOnchainMintAttempt = true,
             )
-            if (minted) refreshBalance()
+            if (result.minted) refreshBalance()
             loadTransactions()
-            minted
+            postReceiveEvent(
+                amount = result.eventAmount,
+                unit = result.quote?.unit ?: "sat",
+                source = receiveSourceFor(result.quote?.paymentMethod),
+            )
+            result.minted
         }
 
     suspend fun syncPendingMintQuotes(): Int =
@@ -298,14 +316,18 @@ class WalletManager(
                 .getOrDefault(emptyList())
             var mintedCount = 0
             pendingQuotes.forEach { quote ->
-                if (
-                    mintQuoteSyncService.syncPendingMintQuote(
-                        quote.id,
-                        allowPendingOnchainMintAttempt = false,
-                    )
-                ) {
+                val result = mintQuoteSyncService.syncPendingMintQuote(
+                    quote.id,
+                    allowPendingOnchainMintAttempt = false,
+                )
+                if (result.minted) {
                     mintedCount += 1
                 }
+                postReceiveEvent(
+                    amount = result.eventAmount,
+                    unit = result.quote?.unit ?: quote.unit,
+                    source = receiveSourceFor(result.quote?.paymentMethod ?: quote.paymentMethod),
+                )
             }
             if (mintedCount > 0) refreshBalance()
             loadTransactions()
@@ -346,6 +368,7 @@ class WalletManager(
             p2pkPubkey?.let(settingsManager::markP2PKKeyUsed)
             refreshBalance()
             loadTransactions()
+            postReceiveEvent(amount = amount, unit = "sat", source = WalletReceiveSource.NPC)
             amount > 0 || isNPCQuoteProcessed(quote.id)
         } catch (error: Throwable) {
             if (mintQuoteSyncService.isAlreadyIssuedMintError(error)) {
@@ -396,13 +419,18 @@ class WalletManager(
     }
 
     override suspend fun receiveTokens(tokenString: String): Long =
+        receiveTokens(tokenString, WalletReceiveSource.Ecash)
+
+    private suspend fun receiveTokens(tokenString: String, source: WalletReceiveSource): Long =
         withLoadingResult {
             val p2pkPubkeys = TokenParser.p2pkPubkeys(tokenString)
             val signingKeys = settingsManager.p2pkSigningKeysFor(p2pkPubkeys)
-            gateway.receiveEcashToken(tokenString, signingKeys).also {
+            val unit = TokenParser.tokenInfo(tokenString)?.unit ?: "sat"
+            gateway.receiveEcashToken(tokenString, signingKeys).also { amount ->
                 p2pkPubkeys.forEach(settingsManager::markP2PKKeyUsed)
                 refreshBalance()
                 loadTransactions()
+                postReceiveEvent(amount = amount, unit = unit, source = source)
             }
         }
 
@@ -411,7 +439,7 @@ class WalletManager(
         if (normalizedProcessedId != null && normalizedProcessedId in walletStore.loadProcessedCashuRequests()) {
             return 0
         }
-        val amount = receiveTokens(tokenString)
+        val amount = receiveTokens(tokenString, WalletReceiveSource.CashuRequest)
         normalizedProcessedId?.let { id ->
             walletStore.saveProcessedCashuRequests((walletStore.loadProcessedCashuRequests() + id).distinct().sorted())
         }
@@ -630,6 +658,24 @@ class WalletManager(
         processedNPCQuotes += quoteId
         walletStore.saveProcessedNPCQuotes(processedNPCQuotes.sorted())
     }
+
+    private fun postReceiveEvent(amount: Long, unit: String, source: WalletReceiveSource) {
+        if (amount <= 0) return
+        mutableReceiveEvents.tryEmit(
+            WalletReceiveEvent(
+                id = WalletReceiveEventIds.next(),
+                amount = amount,
+                unit = unit,
+                source = source,
+            ),
+        )
+    }
+
+    private fun receiveSourceFor(method: PaymentMethodKind?): WalletReceiveSource =
+        when (method) {
+            PaymentMethodKind.Onchain -> WalletReceiveSource.Onchain
+            else -> WalletReceiveSource.Lightning
+        }
 
     private fun activeMintFrom(mints: List<MintInfo>): MintInfo? {
         val saved = walletStore.activeMintURL

@@ -19,6 +19,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import org.cashu.wallet.Models.TransactionStatus
@@ -64,10 +66,19 @@ fun TransactionRow(
     } else {
         "${if (incoming) "+" else "−"}${model.primaryAmount}"
     }
+    val rowDescription = buildList {
+        add(model.title)
+        add(if (incoming) "Incoming" else "Outgoing")
+        add(if (pending) "Pending" else "Completed")
+        add(amountText)
+        model.secondaryAmount?.let(::add)
+        add(model.timestamp)
+    }.joinToString(", ")
     Row(
         modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
+            .semantics { contentDescription = rowDescription }
             .padding(horizontal = CashuTheme.spacing.comfortable, vertical = CashuTheme.spacing.default),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),

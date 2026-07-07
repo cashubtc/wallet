@@ -3,6 +3,8 @@ package org.cashu.wallet.ui.home
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,7 +28,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.outlined.AccountBalance
-import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
@@ -48,9 +49,15 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
 import org.cashu.wallet.Core.AmountDisplayPrimary
 import org.cashu.wallet.Core.AmountFormatter
 import org.cashu.wallet.Core.CashuRequestStore
@@ -60,8 +67,10 @@ import org.cashu.wallet.Core.Protocols.CurrencyRegistry
 import org.cashu.wallet.Core.PriceService
 import org.cashu.wallet.Core.SettingsManager
 import org.cashu.wallet.Core.TransactionDisplay
+import org.cashu.wallet.Core.WalletReceiveEvent
 import org.cashu.wallet.Core.WalletManager
 import org.cashu.wallet.Core.displayText
+import org.cashu.wallet.Core.showsHomeSatDelta
 import org.cashu.wallet.Models.CashuRequest
 import org.cashu.wallet.Models.TransactionStatus
 import org.cashu.wallet.Models.WalletTransaction
@@ -80,6 +89,7 @@ import org.cashu.wallet.ui.components.formatRelativeTimestamp
 import org.cashu.wallet.ui.theme.CashuTheme
 
 private const val RECENT_LIMIT = 5
+private const val RECEIVED_BEAT_DURATION_MS = 2600L
 
 @Composable
 fun HomeScreen(
@@ -103,6 +113,23 @@ fun HomeScreen(
     val formatter = remember { AmountFormatter() }
 
     var receiveChooserOpen by remember { mutableStateOf(false) }
+    var receivedBeat by remember { mutableStateOf<WalletReceiveEvent?>(null) }
+
+    LaunchedEffect(walletManager) {
+        walletManager.receiveEvents.collect { event ->
+            if (event.showsHomeSatDelta()) {
+                receivedBeat = event
+            }
+        }
+    }
+
+    LaunchedEffect(receivedBeat?.id) {
+        val beatId = receivedBeat?.id ?: return@LaunchedEffect
+        delay(RECEIVED_BEAT_DURATION_MS)
+        if (receivedBeat?.id == beatId) {
+            receivedBeat = null
+        }
+    }
 
     val balanceDisplay = remember(walletState.balance, settings, priceState) {
         formatter.displayText(
@@ -236,12 +263,26 @@ fun HomeScreen(
                     mints = walletState.mints,
                     onSelect = { mint -> walletManager.launch { walletManager.setActiveMint(mint) } },
                     onManage = onOpenMints,
+                    modifier = Modifier.semantics {
+                        role = Role.Button
+                        contentDescription = walletState.activeMint?.let { mint ->
+                            "Active mint ${mint.name}. Double tap to change mint."
+                        } ?: "No active mint. Double tap to add a mint."
+                    },
                 )
             },
             balance = {
                 val satHero: @Composable () -> Unit = {
                     BalanceDisplay(
                         amount = balanceDisplay,
+                        modifier = Modifier.semantics {
+                            role = Role.Button
+                            contentDescription = buildString {
+                                append("Balance ${balanceDisplay.primary}")
+                                balanceDisplay.secondary?.let { append(", $it") }
+                                append(". Double tap to toggle primary display.")
+                            }
+                        },
                         // iOS: tapping the hero toggles the ₿ symbol vs "sat".
                         onTogglePrimary = {
                             settingsManager.setUseBitcoinSymbol(!settings.useBitcoinSymbol)
@@ -254,15 +295,22 @@ fun HomeScreen(
                     activeMintSupportsMultipleUnits = walletState.activeMint?.supportsMultipleUnits == true,
                     balancesByUnit = walletState.balancesByUnit,
                 )
-                if (showsPager) {
-                    UnitBalancePager(
-                        balancesByUnit = walletState.balancesByUnit,
-                        persistedUnit = settings.homeBalanceUnit,
-                        onUnitSelected = settingsManager::setHomeBalanceUnit,
-                        satHero = satHero,
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    if (showsPager) {
+                        UnitBalancePager(
+                            balancesByUnit = walletState.balancesByUnit,
+                            persistedUnit = settings.homeBalanceUnit,
+                            onUnitSelected = settingsManager::setHomeBalanceUnit,
+                            satHero = satHero,
+                        )
+                    } else {
+                        satHero()
+                    }
+                    ReceivedDeltaBeat(
+                        event = receivedBeat,
+                        formatter = formatter,
+                        useBitcoinSymbol = settings.useBitcoinSymbol,
                     )
-                } else {
-                    satHero()
                 }
             },
             triptych = {
@@ -322,10 +370,14 @@ private fun PinnedTop(
             FilledTonalIconButton(
                 onClick = onScan,
                 shape = CircleShape,
+                modifier = Modifier.semantics {
+                    role = Role.Button
+                    contentDescription = "Scan QR code"
+                },
             ) {
                 Icon(
                     imageVector = Icons.Outlined.QrCodeScanner,
-                    contentDescription = "Scan QR",
+                    contentDescription = null,
                 )
             }
         }
@@ -395,6 +447,9 @@ private fun UnitBalancePager(
                 Box(
                     modifier = Modifier
                         .size(PAGE_DOT_SIZE)
+                        .semantics {
+                            contentDescription = "Balance page ${index + 1} of ${units.size}: $unit"
+                        }
                         .background(
                             color = if (index == pagerState.currentPage) {
                                 MaterialTheme.colorScheme.onSurface
@@ -412,6 +467,42 @@ private fun UnitBalancePager(
 private val PAGE_DOT_SIZE = 6.dp
 
 @Composable
+private fun ReceivedDeltaBeat(
+    event: WalletReceiveEvent?,
+    formatter: AmountFormatter,
+    useBitcoinSymbol: Boolean,
+) {
+    AnimatedVisibility(
+        visible = event != null,
+        enter = fadeIn() + scaleIn(initialScale = 0.94f),
+        exit = fadeOut() + scaleOut(targetScale = 0.98f),
+    ) {
+        val amount = event?.let { formatter.formatWalletSats(it.amount, useBitcoinSymbol) }.orEmpty()
+        Row(
+            modifier = Modifier
+                .padding(top = CashuTheme.spacing.snug)
+                .background(
+                    color = CashuTheme.colors.receivedContainer,
+                    shape = MaterialTheme.shapes.extraLarge,
+                )
+                .padding(horizontal = CashuTheme.spacing.default, vertical = CashuTheme.spacing.tight)
+                .semantics {
+                    liveRegion = LiveRegionMode.Polite
+                    contentDescription = "Received $amount"
+                },
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.tight),
+        ) {
+            Text(
+                text = "+$amount",
+                style = MaterialTheme.typography.labelLarge,
+                color = CashuTheme.colors.received,
+            )
+        }
+    }
+}
+
+@Composable
 private fun ActionDuet(
     onReceive: () -> Unit,
     onSend: () -> Unit,
@@ -425,7 +516,13 @@ private fun ActionDuet(
     ) {
         FilledTonalButton(
             onClick = onReceive,
-            modifier = Modifier.weight(1f).heightIn(min = ACTION_BUTTON_MIN_HEIGHT),
+            modifier = Modifier
+                .weight(1f)
+                .heightIn(min = ACTION_BUTTON_MIN_HEIGHT)
+                .semantics {
+                    role = Role.Button
+                    contentDescription = "Receive"
+                },
             shape = MaterialTheme.shapes.extraLarge,
             enabled = receiveEnabled,
         ) {
@@ -433,7 +530,13 @@ private fun ActionDuet(
         }
         FilledTonalButton(
             onClick = onSend,
-            modifier = Modifier.weight(1f).heightIn(min = ACTION_BUTTON_MIN_HEIGHT),
+            modifier = Modifier
+                .weight(1f)
+                .heightIn(min = ACTION_BUTTON_MIN_HEIGHT)
+                .semantics {
+                    role = Role.Button
+                    contentDescription = "Send"
+                },
             shape = MaterialTheme.shapes.extraLarge,
             enabled = sendEnabled,
         ) {

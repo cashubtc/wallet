@@ -1,8 +1,15 @@
 package org.cashu.wallet.Core
 
 import org.cashu.wallet.Core.CDK.CdkWalletGateway
+import org.cashu.wallet.Models.MintQuoteInfo
 import org.cashu.wallet.Models.MintQuoteState
 import org.cashu.wallet.Models.PaymentMethodKind
+
+internal data class MintQuoteSyncResult(
+    val minted: Boolean,
+    val quote: MintQuoteInfo? = null,
+    val eventAmount: Long = 0,
+)
 
 internal class WalletMintQuoteSyncService(
     private val gateway: CdkWalletGateway,
@@ -13,36 +20,38 @@ internal class WalletMintQuoteSyncService(
     suspend fun syncPendingMintQuote(
         quoteId: String,
         allowPendingOnchainMintAttempt: Boolean,
-    ): Boolean {
-        if (!mintQuoteSyncsInFlight.add(quoteId)) return false
+    ): MintQuoteSyncResult {
+        if (!mintQuoteSyncsInFlight.add(quoteId)) return MintQuoteSyncResult(minted = false)
         return try {
             val updatedQuote = gateway.checkMintQuote(quoteId).also { rememberMintQuoteTimestamp(it.id) }
             val shouldAttemptMint = updatedQuote.state == MintQuoteState.Paid ||
                 updatedQuote.state == MintQuoteState.Issued ||
                 (allowPendingOnchainMintAttempt && updatedQuote.paymentMethod == PaymentMethodKind.Onchain)
-            if (!shouldAttemptMint) return false
+            if (!shouldAttemptMint) return MintQuoteSyncResult(minted = false, quote = updatedQuote)
 
             if (updatedQuote.paymentMethod == PaymentMethodKind.Bolt12 &&
                 updatedQuote.amountPaid > 0 &&
                 updatedQuote.amountIssued >= updatedQuote.amountPaid
             ) {
-                return false
+                return MintQuoteSyncResult(minted = false, quote = updatedQuote)
             }
 
             runCatching { gateway.mintTokens(quoteId) }
                 .fold(
-                    onSuccess = { true },
+                    onSuccess = { amount ->
+                        MintQuoteSyncResult(minted = true, quote = updatedQuote, eventAmount = amount)
+                    },
                     onFailure = { error ->
                         if (isAlreadyIssuedMintError(error)) {
-                            true
+                            MintQuoteSyncResult(minted = true, quote = updatedQuote)
                         } else if (
                             updatedQuote.paymentMethod == PaymentMethodKind.Onchain &&
                             updatedQuote.state == MintQuoteState.Pending
                         ) {
-                            false
+                            MintQuoteSyncResult(minted = false, quote = updatedQuote)
                         } else {
                             AppLogger.wallet.error("Failed to mint pending quote $quoteId", error)
-                            false
+                            MintQuoteSyncResult(minted = false, quote = updatedQuote)
                         }
                     },
                 )
@@ -50,7 +59,7 @@ internal class WalletMintQuoteSyncService(
             if (!isMissingQuoteError(error)) {
                 AppLogger.wallet.error("Failed to refresh pending quote $quoteId", error)
             }
-            false
+            MintQuoteSyncResult(minted = false)
         } finally {
             mintQuoteSyncsInFlight.remove(quoteId)
         }
