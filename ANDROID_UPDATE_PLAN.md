@@ -853,8 +853,10 @@ Major gaps:
 
 Unit test checklist:
 
-- [ ] Add `PaymentRequestBuilder` tests for NUT-10 payload and locked receive request parse.
-- [ ] Add `CashuRequestStore` tests for update/regenerate, quote-intent upsert, attach by quote id, delete/reset/reload, and duplicate suppression.
+Milestone update: JVM coverage now includes payment request/locked receive encoding and dedicated `CashuRequestStore` persistence tests for quote-intent upsert, attach by quote id, duplicate suppression, update, delete, reset, reload, stale current-id cleanup, and legacy payment normalization. Compose UI, screenshot, instrumentation, integration, and CI parity remain open.
+
+- [x] Add `PaymentRequestBuilder` tests for NUT-10 payload and locked receive request parse.
+- [x] Add `CashuRequestStore` tests for update/regenerate, quote-intent upsert, attach by quote id, delete/reset/reload, and duplicate suppression.
 - [ ] Add `WalletManager` tests for startup maintenance orchestration with fake gateway.
 - [ ] Add tests for keyset refresh and incomplete saga recovery routing.
 - [ ] Add tests for `addMintAndPayCashuRequest`, external top-up, mint settling, and fee estimation.

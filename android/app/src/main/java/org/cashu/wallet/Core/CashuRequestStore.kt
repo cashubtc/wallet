@@ -14,8 +14,14 @@ data class CashuRequestStoreState(
         get() = currentRequestId?.let { id -> requests.firstOrNull { it.id == id } }
 }
 
+interface CashuRequestPersistence {
+    fun loadCashuRequests(): List<CashuRequest>
+    fun saveCashuRequests(requests: List<CashuRequest>)
+    var currentCashuRequestId: String?
+}
+
 class CashuRequestStore(
-    private val walletStore: WalletStore,
+    private val walletStore: CashuRequestPersistence,
 ) {
     private val mutableState = MutableStateFlow(loadState())
     val state: StateFlow<CashuRequestStoreState> = mutableState.asStateFlow()
