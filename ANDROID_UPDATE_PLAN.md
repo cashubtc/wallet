@@ -892,7 +892,8 @@ Milestone update: JVM coverage now includes payment request/locked receive encod
 - [ ] Add receive Lightning tests for BOLT11 expiry, reusable BOLT12 offer reuse, on-chain address reuse/new address, quote-backed request store attachment.
 - [x] Add Mint Detail tests for NUT-06-derived display mapping, contact URL mapping, and method min/max ranges. `MintDetailDisplayTest` covers capability summary, contacts, HTTPS fallback, and method range/feature labels.
 - [ ] Add Mint Detail tests for refresh-driven connection state and full screen rendering with NUT-06 metadata.
-- [ ] Add Settings tests for relay validation, storage-only toggle removal/implementation, Sentry opt-in, App Lock state.
+- [x] Add Settings tests for relay validation, Sentry opt-in contract, and App Lock default state. `SettingsManagerTest` covers relay normalization/rejection, `SentryServiceTest` covers opt-in start/stop behavior, and `SettingsManagerTest` covers App Lock default state.
+- [ ] Add Settings tests for storage-only toggle runtime behavior and full App Lock availability/authentication state transitions.
 - [x] Add logging tests that reject raw seed/token/private-key strings in privacy-safe messages. `AppLoggerTest` and `SentryServiceTest` cover seed phrases, Cashu tokens, nsec values, URLs, local paths, breadcrumbs, and captured errors.
 
 Compose UI and instrumentation checklist:
