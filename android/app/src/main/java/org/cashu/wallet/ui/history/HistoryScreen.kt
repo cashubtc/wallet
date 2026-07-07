@@ -375,7 +375,7 @@ internal fun unifiedFiltered(
         requests.forEach { req -> req.receivedPayments.forEach { add(it.transactionId) } }
     }
     val txItems = transactions
-        .filterNot { it.id in claimedTxIds }
+        .filterNot { it.id in claimedTxIds || it.quoteId in claimedTxIds }
         .filter { tx ->
             when (filter) {
                 HistoryFilter.All -> true
@@ -444,4 +444,3 @@ internal fun groupHistoryItems(
         list.takeIf { it.isNotEmpty() }?.let { HistorySection2(title, it) }
     }
 }
-

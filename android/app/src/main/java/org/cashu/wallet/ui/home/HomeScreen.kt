@@ -575,7 +575,7 @@ internal fun unifiedRecent(
         }
     }
     val txItems = transactions
-        .filterNot { it.id in claimedTxIds }
+        .filterNot { it.id in claimedTxIds || it.quoteId in claimedTxIds }
         .map { HomeRecentItem.Tx(it) as HomeRecentItem }
     val reqItems = requests.map { HomeRecentItem.Req(it) as HomeRecentItem }
     return (txItems + reqItems).sortedByDescending { it.date }.take(limit)

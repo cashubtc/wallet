@@ -71,6 +71,13 @@ JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:compileDebugKotlin
 JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:testDebugUnitTest --tests org.cashu.wallet.Core.CashuPaymentRequestMintSelectorTest --tests org.cashu.wallet.Core.Services.NFCPaymentInputDecoderTest --tests org.cashu.wallet.ui.send.SendEcashP2PKTest
 ```
 
+Focused validation used during Milestone 5:
+
+```sh
+JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:compileDebugKotlin
+JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:testDebugUnitTest --tests org.cashu.wallet.Core.PaymentRequestBuilderTest --tests org.cashu.wallet.Core.PendingReceiveTokenIdsTest --tests org.cashu.wallet.ui.home.HomeRecentTest
+```
+
 ## Executive Summary
 
 Android is strongest in:
@@ -121,6 +128,13 @@ Android is materially behind iOS in:
 
 Goal: make Android parity work traceable before changing behavior.
 
+iOS implementation reference files for this milestone:
+
+- App/shell ownership and route inventory: `CashuWallet/App/CashuWalletApp.swift`, `CashuWallet/App/ContentView.swift`, `CashuWallet/Views/Main/MainWalletView.swift`.
+- Source screen counterparts for route mapping: `CashuWallet/Views/Main/OnboardingView.swift`, `CashuWallet/Views/Send/SendView.swift`, `CashuWallet/Views/Receive/ReceiveView.swift`, `CashuWallet/Views/Receive/ReceiveTokenDetailView.swift`, `CashuWallet/Views/Receive/ReceiveLightningView.swift`, `CashuWallet/Views/Receive/CashuRequestDetailView.swift`, `CashuWallet/Views/History/HistoryView.swift`, `CashuWallet/Views/History/TransactionDetailView.swift`, `CashuWallet/Views/Mints/MintsListView.swift`, `CashuWallet/Views/Mints/MintDetailView.swift`, `CashuWallet/Views/Settings/SettingsView.swift`.
+- Runtime-backed settings reference: `CashuWallet/Core/SettingsManager.swift`, `CashuWallet/Core/SettingsStore.swift`, `CashuWallet/Views/Settings/PrivacySettingsSection.swift`, `CashuWallet/Views/Settings/SettingsView.swift`.
+- Preview/test behavior references: `CashuWalletUITests/UITestBase.swift`, `CashuWalletUITests/MainTabUITests.swift`, `CashuWalletUITests/SettingsUITests.swift`, `CashuWalletUITests/ReceiveUITests.swift`, `CashuWalletUITests/WalletIntegrationTests.swift`, `CI/IntegrationTests/Tests/IntegrationTestBase.swift`.
+
 Checklist:
 
 - [x] Treat `CashuWallet` iOS code and shared product/design docs as the behavior source of truth. Implemented in `android/PARITY_TRACKER.md`.
@@ -145,6 +159,16 @@ iOS reference:
 - Backup and private-key reveal flows require local authentication.
 - iCloud Backup stores seed in iCloud Keychain and mint URLs in iCloud; onboarding/settings can restore from it.
 - Wallet startup runs best-effort recovery, keyset refresh, cached state load, balance refresh, and pending quote maintenance.
+
+iOS implementation reference files for this milestone:
+
+- App lock, lifecycle relock, privacy cover, and shell gating: `CashuWallet/App/ContentView.swift`, `CashuWallet/App/CashuWalletApp.swift`.
+- Backup, seed handling, iCloud state, backup status, backup/restore settings copy, and restore constraints: `CashuWallet/Core/Wallet/WalletManager+Backup.swift`, `CashuWallet/Core/KeychainService.swift`, `CashuWallet/Views/Settings/BackupSettingsSection.swift`, `CashuWallet/CashuWallet.entitlements`, `ICLOUD_RECOVERY.md`.
+- Authenticated Nostr/private-key reveal and relay/key-state behavior: `CashuWallet/Views/Settings/NostrSettingsSection.swift`, `CashuWallet/Core/NostrService.swift`, `CashuWallet/Core/NIP44.swift`, `CashuWallet/Core/NIP17.swift`, `CashuWallet/Core/SettingsManager.swift`.
+- P2PK private-key reveal expectations for the later P2PK milestone: `CashuWallet/Views/Settings/P2PKSettingsSection.swift`, `CashuWallet/Core/SettingsManager.swift`, `CashuWallet/Core/Services/TokenService.swift`.
+- Startup maintenance, wallet boundary cleanup, keyset/mint preparation, stale quote sync, pending receive/sent-token recovery, and delete-wallet safety: `CashuWallet/Core/Wallet/WalletManager.swift`, `CashuWallet/Core/Wallet/WalletManager+Lifecycle.swift`, `CashuWallet/Core/Wallet/WalletManager+MintQuoteSync.swift`, `CashuWallet/Core/Wallet/WalletManager+Mints.swift`, `CashuWallet/Core/Wallet/WalletManager+Tokens.swift`, `CashuWallet/Core/WalletStore.swift`, `CashuWallet/Core/CashuRequestStore.swift`, `CashuWallet/Core/CashuRequestListener.swift`.
+- Privacy-safe logging, Sentry opt-in, and user-facing error mapping: `CashuWallet/Core/AppLogger.swift`, `CashuWallet/Core/SentryService.swift`, `CashuWallet/Core/Wallet/WalletErrors.swift`, `CashuWallet/Views/Settings/PrivacySettingsSection.swift`.
+- Tests to mirror or extend on Android: `CashuWalletTests/WalletStoreTests.swift`, `CashuWalletTests/NIP44Tests.swift`, `CashuWalletUITests/SettingsUITests.swift`, `CashuWalletUITests/WalletIntegrationTests.swift`.
 
 Android gaps:
 
@@ -185,6 +209,16 @@ iOS reference:
 - Restore flow: restore method, seed input, staged mint restore, progress, per-mint results, and iCloud restore.
 - First mint supports recommended mints, custom URLs, staged rows, skip, previews, and restore progress.
 
+iOS implementation reference files for this milestone:
+
+- Create, seed reveal, acknowledgement, restore-method choice, iCloud placeholder/restore, first mint, staged mint restore, retry, and settings-launched restore flow: `CashuWallet/Views/Main/OnboardingView.swift`.
+- Seed phrase generation/validation and word-list behavior: `CashuWallet/Core/BIP39WordList.swift`, `CashuWallet/Core/Wallet/WalletManager+Lifecycle.swift`.
+- iCloud restore source of truth and seed/mint restore mechanics: `CashuWallet/Core/Wallet/WalletManager+Backup.swift`, `CashuWallet/Core/KeychainService.swift`, `ICLOUD_RECOVERY.md`.
+- Per-mint restore domain model and NUT-09 restore result semantics: `CashuWallet/Models/WalletSupport/RestoreMintResult.swift`, `CashuWallet/Core/Wallet/WalletManager+Lifecycle.swift`.
+- First-mint add/preview/discovery support: `CashuWallet/Core/Wallet/WalletManager+Mints.swift`, `CashuWallet/Core/MintDiscoveryManager.swift`, `CashuWallet/Models/Mints/MintInfo.swift`, `CashuWallet/Views/Mints/MintDiscoverySheet.swift`.
+- Privacy-safe onboarding telemetry/error references: `CashuWallet/Core/SentryService.swift`, `CashuWallet/Core/AppLogger.swift`, `CashuWallet/Core/Wallet/WalletErrors.swift`.
+- Tests to mirror or extend on Android: `CashuWalletUITests/WalletIntegrationTests.swift`, `CashuWalletUITests/UITestBase.swift`, `CI/IntegrationTests/Tests/NutshellIntegrationTests.swift`, `CashuWalletTests/WalletStoreTests.swift`.
+
 Android gaps:
 
 - Android still includes a mnemonic quiz step that iOS no longer uses.
@@ -217,6 +251,15 @@ iOS reference:
 - Home has a pinned mint chip, unit pager, large balance, transient received-delta beat, Receive/Send actions, scanner toolbar button, recent timeline, pull-to-refresh, and stale quote sync hooks.
 - The shell respects app lock and privacy cover.
 
+iOS implementation reference files for this milestone:
+
+- Main wallet canvas, pinned mint/balance region, receive/send actions, scanner affordance, recent timeline, pull refresh, and received-delta animation: `CashuWallet/Views/Main/MainWalletView.swift`.
+- Balance formatting, animated balance, amount columns, transaction/request row affordances, and timeline icons: `CashuWallet/Views/Components/AnimatedBalanceView.swift`, `CashuWallet/Views/Components/CashuRequestAmountColumn.swift`, `CashuWallet/Views/Components/TransactionAmountColumn.swift`, `CashuWallet/Views/Components/TransactionIcon.swift`, `CashuWallet/Core/AmountFormatter.swift`, `CashuWallet/Core/Protocols/CurrencyProtocol.swift`.
+- Shell app-lock/privacy-cover and tab integration: `CashuWallet/App/ContentView.swift`, `CashuWallet/App/CashuWalletApp.swift`.
+- Receive event sources and pending-quote foreground behavior: `CashuWallet/Core/Wallet/WalletManager+Tokens.swift`, `CashuWallet/Core/Wallet/WalletManager+Lightning.swift`, `CashuWallet/Core/Wallet/WalletManager+MintQuoteSync.swift`, `CashuWallet/Core/Wallet/WalletManager+NPC.swift`, `CashuWallet/Models/Foundation/WalletNotifications.swift`.
+- Request/transaction dedupe and Home/History shared row behavior: `CashuWallet/Core/CashuRequestStore.swift`, `CashuWallet/Core/CashuRequestListener.swift`, `CashuWallet/Views/History/HistoryView.swift`, `CashuWallet/Models/Transactions/WalletTransaction.swift`, `CashuWallet/Models/Requests/CashuRequest.swift`.
+- Tests to mirror or extend on Android: `CashuWalletUITests/MainTabUITests.swift`, `CashuWalletUITests/WalletIntegrationTests.swift`, `CashuWalletTests/TransactionServiceTests.swift`, `CashuWalletTests/WalletStoreTests.swift`.
+
 Android current state:
 
 - `HomeScreen` already has pinned top content, mint chip, unit pager, scan button, action duet, unified recent timeline, empty states, and pull refresh.
@@ -245,6 +288,16 @@ iOS reference:
 - `UnifiedSendView` accepts Lightning address, BOLT11, BOLT12, on-chain address, Cashu Request, ecash token, scan, ecash creation, and NFC tap.
 - Cashu Requests can be paid from existing ecash, paid after adding/funding a requested mint, or fall back to bundled BOLT11 when appropriate.
 - Fee rows are precomputed/reserved; failures use shared status screens with useful CTAs.
+
+iOS implementation reference files for this milestone:
+
+- Unified send UX, destination inference, amount/confirm/status faces, mint switching, retry, recovery CTAs, P2PK lock input, and success/failure copy: `CashuWallet/Views/Send/SendView.swift`.
+- Shared payment status layout and processing/success/failure motion: `CashuWallet/Views/Send/Components/AuthorizingOverlay.swift`.
+- Amount entry, fiat/unit display, clipboard suggestions, and number pad behavior: `CashuWallet/Views/Send/Components/AmountEntryView.swift`, `CashuWallet/Views/Send/Components/NumberPadAmountInput.swift`, `CashuWallet/Views/Send/Components/CurrencyAmountDisplay.swift`, `CashuWallet/Views/Send/Components/ClipboardPaymentChip.swift`.
+- Cashu Request routing, BOLT11 fallback, add-mint-to-pay, target-mint top-up, fee estimation, and settling states: `CashuWallet/Core/Wallet/WalletManager+CashuPaymentRequests.swift`, `CashuWallet/Core/Wallet/WalletManager+Lightning.swift`, `CashuWallet/Core/PaymentRequestDecoder.swift`, `CashuWallet/Models/Payments/PaymentRequestParser.swift`, `CashuWallet/Core/LightningRequestParser.swift`, `CashuWallet/Models/Payments/PaymentMethodKind.swift`.
+- Ecash token creation, P2PK pubkey normalization, claim polling, and token receive handoff: `CashuWallet/Core/Wallet/WalletManager+Tokens.swift`, `CashuWallet/Core/Services/TokenService.swift`, `CashuWallet/Core/TokenParser.swift`, `CashuWallet/Models/Tokens/TokenTransferModels.swift`.
+- NFC/contactless routing, NDEF read/write, Cashu Request/BOLT11 fallback, and native iOS NFC status behavior to translate into Android NFC conventions: `CashuWallet/Core/Services/NFCPaymentService.swift`, `CashuWallet/Core/Services/ContactlessPaymentCoordinator.swift`, `CashuWallet/Core/Services/NFCReaderDelegate.swift`, `CashuWallet/Core/Services/NDEFTextRecordCoder.swift`.
+- Tests to mirror or extend on Android: `CI/IntegrationTests/Tests/PaymentRequestDecoderTests.swift`, `CI/IntegrationTests/Tests/NutshellIntegrationTests.swift`, `CashuWalletTests/TokenServiceTests.swift`, `CashuWalletTests/MintServiceTests.swift`.
 
 Android gaps:
 
@@ -284,6 +337,17 @@ iOS reference:
 - Cashu Requests are editable, regeneratable, shareable, deletable, attachable to payments, and integrated into Home/History.
 - `CashuRequestStore` supports `create`, `createNew`, `upsertQuoteIntent`, `update`, attach by request or quote id, delete, reset, and reload.
 
+iOS implementation reference files for this milestone:
+
+- Receive chooser, paste/scan entry, New Request entry, locked receive entry, and receive navigation decisions: `CashuWallet/Views/Receive/ReceiveView.swift`, `CashuWallet/App/ContentView.swift`, `CashuWallet/Core/Navigation/NavigationManager.swift`.
+- Token review, fee loading, unknown mint caution, P2PK locked-to-known-key labeling, receive later, and receive status behavior: `CashuWallet/Views/Receive/ReceiveTokenDetailView.swift`, `CashuWallet/Core/TokenParser.swift`, `CashuWallet/Models/Tokens/TokenInfo.swift`, `CashuWallet/Core/Wallet/WalletManager+Tokens.swift`, `CashuWallet/Core/Services/TokenService.swift`.
+- Shared status screen used by receive/send resolution: `CashuWallet/Views/Send/Components/AuthorizingOverlay.swift`.
+- Cashu Request detail, edit rows, QR/share/copy/delete/status, paid/waiting auto-completion, and request lifecycle copy: `CashuWallet/Views/Receive/CashuRequestDetailView.swift`, `CashuWallet/Views/Receive/CashuRequestAmountPickerSheet.swift`, `CashuWallet/Views/Receive/CashuRequestMintPickerSheet.swift`, `CashuWallet/Views/Components/QRCodeView.swift`.
+- Request store APIs, quote-backed intents, attach-by-request/quote, reset/reload, stable id regeneration, and wallet-boundary cleanup: `CashuWallet/Core/CashuRequestStore.swift`, `CashuWallet/Models/Requests/CashuRequest.swift`, `CashuWallet/Core/Wallet/WalletManager+MintQuoteSync.swift`, `CashuWallet/Core/Wallet/WalletManager+Lifecycle.swift`.
+- NUT-18 encoding/decoding and Nostr payment delivery: `CashuWallet/Core/PaymentRequestBuilder.swift`, `CashuWallet/Core/PaymentRequestDecoder.swift`, `CashuWallet/Core/CashuRequestListener.swift`, `CashuWallet/Core/NostrInboxClient.swift`, `CashuWallet/Core/NIP17.swift`, `CashuWallet/Core/NIP44.swift`.
+- Home/History integration and duplicate suppression: `CashuWallet/Views/Main/MainWalletView.swift`, `CashuWallet/Views/History/HistoryView.swift`, `CashuWallet/Models/Transactions/WalletTransaction.swift`.
+- Tests to mirror or extend on Android: `CashuWalletTests/WalletStoreTests.swift`, `CashuWalletTests/TransactionServiceTests.swift`, `CI/IntegrationTests/Tests/PaymentRequestDecoderTests.swift`, `CashuWalletUITests/ReceiveUITests.swift`.
+
 Android gaps:
 
 - Receive ecash closes directly on success rather than using the full shared status flow and home delta event.
@@ -293,21 +357,21 @@ Android gaps:
 
 Checklist:
 
-- [ ] Add shared PaymentStatus screen to receive-token flow: Claiming, Payment Received, Could Not Receive.
-- [ ] Add a minimum processing beat for instant receive, matching iOS's legibility behavior.
-- [ ] Post home received notification after successful token receive, including unit, and suppress misleading sat deltas for non-sat.
-- [ ] Add unknown mint caution before receiving a token from a mint not yet tracked.
-- [ ] Add locked-to row that distinguishes "Your key" from unknown key and disables Receive for unknown locked tokens.
-- [ ] Generate stable pending receive IDs that do not collide for repeated long tokens.
-- [ ] Decide and align default New Request mint scope with iOS. Current iOS uses any mint (`mints: []`); Android should match unless product explicitly changes both platforms.
-- [ ] Expand Android `CashuRequestStore` with create/upsert/update/attach-by-quote/reset/reload semantics.
-- [ ] Add quote-backed Cashu Request intents for BOLT12 reusable offers and on-chain/BOLT11 receive requests.
-- [ ] Add editable Cashu Request detail rows: Amount, Mint, Unit, Memo where applicable.
-- [ ] Regenerate encoded request with the same request id when amount/mint/unit changes.
-- [ ] Add Material pickers for Cashu Request amount, mint, and unit.
-- [ ] Add top-bar share action and bottom copy action rules matching iOS.
-- [ ] Add paid/waiting status behavior and auto-completion when request payment lands.
-- [ ] Add request delete confirmation copy that makes clear payment routing remains valid.
+- [x] Add shared PaymentStatus screen to receive-token flow: Claiming, Payment Received, Could Not Receive. Receive ecash now swaps into the shared Material status terminal for processing/success/failure.
+- [x] Add a minimum processing beat for instant receive, matching iOS's legibility behavior. Receive token success waits at least 650ms before resolving.
+- [x] Post home received notification after successful token receive, including unit, and suppress misleading sat deltas for non-sat. The receive path still uses `WalletManager.receiveTokens`, which emits the typed receive event added in Milestone 3.
+- [x] Add unknown mint caution before receiving a token from a mint not yet tracked. Review now flags unknown mints and shows an inline caution.
+- [x] Add locked-to row that distinguishes "Your key" from unknown key and disables Receive for unknown locked tokens. Known stored P2PK keys show "Your key"; unknown locked tokens cannot be received. Seed-derived primary-key coverage remains owned by Milestone 7.
+- [x] Generate stable pending receive IDs that do not collide for repeated long tokens. Pending receive ids now use the SHA-256 of the full normalized token and have JVM regression coverage.
+- [x] Decide and align default New Request mint scope with iOS. Current iOS uses any mint (`mints: []`); Android should match unless product explicitly changes both platforms. Android New Request now creates any-mint NUT-18 requests by default.
+- [x] Expand Android `CashuRequestStore` with create/upsert/update/attach-by-quote/reset/reload semantics. Store APIs now cover upsert, update, quote-intent upsert, attach-by-quote, reload, and reset.
+- [x] Add quote-backed Cashu Request intents for BOLT12 reusable offers and on-chain/BOLT11 receive requests. Receive Lightning now stores BOLT11, BOLT12, and on-chain mint quotes as quote-backed request rows and attaches payment by quote id when minting succeeds.
+- [x] Add editable Cashu Request detail rows: Amount, Mint, Unit, Memo where applicable. NUT-18 request detail rows are editable; quote-backed Lightning/on-chain intents are intentionally read-only protocol records.
+- [x] Regenerate encoded request with the same request id when amount/mint/unit changes. Detail edits rebuild the NUT-18 payload with the original request id.
+- [x] Add Material pickers for Cashu Request amount, mint, and unit. Amount/memo use Material dialogs; mint/unit use Material bottom-sheet pickers.
+- [x] Add top-bar share action and bottom copy action rules matching iOS. Request detail keeps top-bar share and bottom copy, with quote-aware copy labels for invoice/address/request.
+- [x] Add paid/waiting status behavior and auto-completion when request payment lands. Request detail observes store state for waiting/paid status, Nostr payments attach by request id, and quote-backed receives attach by quote id.
+- [x] Add request delete confirmation copy that makes clear payment routing remains valid. Delete confirmation now says shared payment links keep routing to the wallet.
 
 Success condition:
 
@@ -324,6 +388,17 @@ iOS reference:
 - BOLT11 has expiry countdown and expired state.
 - On-chain receive can reuse an address, request a new one, observe payment, show explorer status/link, and mint after payment.
 - Receive flows use shared success screens and update history/home.
+
+iOS implementation reference files for this milestone:
+
+- Receive Lightning/BOLT12/on-chain UI, method selection, amount editing, invoice/offer/address display, expiry, polling, success resolution, and copy/share behavior: `CashuWallet/Views/Receive/ReceiveLightningView.swift`.
+- Shared status screen used when paid quotes mint successfully or fail: `CashuWallet/Views/Send/Components/AuthorizingOverlay.swift`.
+- Lightning/on-chain quote creation, reusable BOLT12 offer reuse, quote polling/subscriptions, minting paid quotes, and receive event emission: `CashuWallet/Core/Wallet/WalletManager+Lightning.swift`, `CashuWallet/Core/Wallet/WalletManager+MintQuoteSync.swift`, `CashuWallet/Core/Services/LightningService.swift`, `CashuWallet/Core/Services/MintService.swift`, `CashuWallet/Models/Quotes/QuoteModels.swift`, `CashuWallet/Models/Quotes/QuoteStates.swift`.
+- Quote-backed Cashu Request rows for BOLT12/on-chain/BOLT11 receive intents: `CashuWallet/Core/CashuRequestStore.swift`, `CashuWallet/Models/Requests/CashuRequest.swift`, `CashuWallet/Views/Receive/CashuRequestDetailView.swift`, `CashuWallet/Views/History/HistoryView.swift`.
+- Payment method parsing, BOLT11/BOLT12/on-chain labels, amount locking, and BIP-321 handling: `CashuWallet/Core/PaymentRequestDecoder.swift`, `CashuWallet/Models/Payments/PaymentRequestParser.swift`, `CashuWallet/Core/LightningRequestParser.swift`, `CashuWallet/Models/Payments/PaymentMethodKind.swift`.
+- On-chain observation, explorer URL/status copy, and transaction-detail QR/link behavior: `CashuWallet/Models/Payments/OnchainExplorer.swift`, `CashuWallet/Views/History/TransactionDetailView.swift`, `CashuWallet/Core/Wallet/WalletErrors.swift`.
+- Multi-unit receive formatting and unit selection: `CashuWallet/Core/AmountFormatter.swift`, `CashuWallet/Core/Protocols/CurrencyProtocol.swift`, `CashuWallet/Models/Mints/MintInfo.swift`, `CashuWallet/Views/Receive/CashuRequestMintPickerSheet.swift`.
+- Tests to mirror or extend on Android: `CI/IntegrationTests/Tests/PaymentRequestDecoderTests.swift`, `CI/IntegrationTests/Tests/NutshellIntegrationTests.swift`, `CashuWalletTests/MintServiceTests.swift`, `CashuWalletTests/TransactionServiceTests.swift`.
 
 Android gaps:
 
@@ -358,6 +433,16 @@ iOS reference:
 - `LockedReceiveRequest.build()` creates a request locked to the wallet's seed-derived primary P2PK key and routed over Nostr relays.
 - Settings exposes "Your key", quick lock, advanced keys, key detail, QR, backup/reveal with auth, rename/remove/used count, and explainer.
 - Receive token validation and signing include the seed-derived primary key plus stored P2PK keys.
+
+iOS implementation reference files for this milestone:
+
+- NUT-10 encoding inside NUT-18, locked receive request builder, and parsing expectations: `CashuWallet/Core/PaymentRequestBuilder.swift`, `CashuWallet/Core/PaymentRequestDecoder.swift`, `CI/IntegrationTests/Tests/PaymentRequestDecoderTests.swift`.
+- Seed-derived primary P2PK key, stored/generated/imported keys, known-key lookup, signing-key lookup, quick-lock preference, usage tracking, and wallet-boundary cleanup: `CashuWallet/Core/SettingsManager.swift`, `CashuWallet/Core/SettingsStore.swift`, `CashuWallet/Core/KeychainService.swift`, `CashuWallet/Core/Services/TokenService.swift`.
+- Locked receive entry, receive request QR/detail, and receive-token known/unknown locked-key display: `CashuWallet/Views/Receive/ReceiveView.swift`, `CashuWallet/Views/Receive/ReceiveTokenDetailView.swift`, `CashuWallet/Views/Receive/CashuRequestDetailView.swift`.
+- Send-side lock affordance, P2PK quick fills, and recipient-key validation/copy behavior: `CashuWallet/Views/Send/SendView.swift`, `CashuWallet/Core/Wallet/WalletManager+Tokens.swift`, `CashuWallet/Core/TokenParser.swift`.
+- P2PK settings UI for "Your key", quick lock, advanced keys, key detail, QR/copy, private reveal, import, rename/remove, and explainer copy: `CashuWallet/Views/Settings/P2PKSettingsSection.swift`, `CashuWallet/Views/Components/QRCodeView.swift`.
+- Nostr relay routing used by locked receive requests: `CashuWallet/Core/NostrService.swift`, `CashuWallet/Core/NIP17.swift`, `CashuWallet/Core/NIP44.swift`, `CashuWallet/Views/Settings/NostrSettingsSection.swift`.
+- Tests to mirror or extend on Android: `CashuWalletTests/TokenServiceTests.swift`, `CI/IntegrationTests/Tests/PaymentRequestDecoderTests.swift`, `CashuWalletTests/NIP44Tests.swift`.
 
 Android gaps:
 
@@ -395,6 +480,15 @@ iOS reference:
 - Mints list refreshes mint info, supports discovery, custom/paste add, default set/remove gestures, active dot, and detailed mint pages.
 - Mint Detail fetches full NUT-06 info via CDK and renders balance, non-sat balances, connection, about, MOTD, capabilities, NUT technical details, payment method ranges, contact links, software, units, ToS, share/copy, set default/remove.
 
+iOS implementation reference files for this milestone:
+
+- Mints tab list, active/default dot, refresh behavior, add/custom/paste flows, remove/set-default gestures, empty/error states, and navigation to detail: `CashuWallet/Views/Mints/MintsListView.swift`.
+- Mint discovery over Nostr, discovered/added sections, refresh/error/session-added state, search/filtering, and WebSockets-disabled behavior: `CashuWallet/Views/Mints/MintDiscoverySheet.swift`, `CashuWallet/Core/MintDiscoveryManager.swift`, `CashuWallet/Core/NostrService.swift`, `CashuWallet/Core/NostrInboxClient.swift`.
+- Mint detail metadata rendering, full NUT-06 info, capability sections, NUT rows, contact links, ToS/software, payment method ranges, share/copy, connection state, and multi-unit balances: `CashuWallet/Views/Mints/MintDetailView.swift`, `CashuWallet/Models/Mints/MintInfo.swift`, `CashuWallet/Models/Payments/PaymentMethodKind.swift`.
+- Mint metadata fetching, full info parsing, tracked mint/unit wallet preparation, refresh, add/remove/set active, and iCloud backup trigger behavior: `CashuWallet/Core/Wallet/WalletManager+Mints.swift`, `CashuWallet/Core/Services/MintService.swift`, `CashuWallet/Core/Protocols/WalletServiceProtocol.swift`, `CashuWallet/Core/Wallet/WalletManager+Backup.swift`.
+- Formatting/copy helpers and shared UI components to translate into Material equivalents: `CashuWallet/Core/AmountFormatter.swift`, `CashuWallet/Core/Protocols/CurrencyProtocol.swift`, `CashuWallet/Views/Components/QRCodeView.swift`.
+- Tests to mirror or extend on Android: `CashuWalletTests/MintServiceTests.swift`, `CI/IntegrationTests/Tests/CurrencyTests.swift`, `CI/IntegrationTests/Tests/NutshellIntegrationTests.swift`, `CashuWalletUITests/MainTabUITests.swift`.
+
 Android gaps:
 
 - List/discovery are close but do not refresh mint info on tab open like iOS.
@@ -429,6 +523,15 @@ iOS reference:
 - History merges transactions and Cashu Requests, suppresses duplicates, filters, searches, groups by date, lazily windows large lists, syncs stale quotes on open, supports pull refresh, and offers swipe delete for request rows.
 - Transaction detail uses strict QR/share/copy rules and canonical row order.
 
+iOS implementation reference files for this milestone:
+
+- History list merge, request/transaction grouping, filters, search, date buckets, visible-count windowing, pull refresh, stale quote sync trigger, request deletion, empty/no-results copy, and row navigation: `CashuWallet/Views/History/HistoryView.swift`.
+- Transaction detail canonical row order, QR/share/copy visibility rules, settled ecash passive copy, pending/reusable/on-chain QR behavior, explorer links, and action copy: `CashuWallet/Views/History/TransactionDetailView.swift`.
+- Transaction/request row presentation and amount/icon helpers: `CashuWallet/Views/Components/TransactionAmountColumn.swift`, `CashuWallet/Views/Components/CashuRequestAmountColumn.swift`, `CashuWallet/Views/Components/TransactionIcon.swift`, `CashuWallet/Views/Components/QRCodeView.swift`.
+- Request/transaction models and duplicate-suppression inputs: `CashuWallet/Models/Transactions/WalletTransaction.swift`, `CashuWallet/Models/Requests/CashuRequest.swift`, `CashuWallet/Core/CashuRequestStore.swift`, `CashuWallet/Core/Services/TransactionService.swift`.
+- Stale quote sync, quote-to-request attachment, transaction loading, on-chain observation, and explorer URL generation: `CashuWallet/Core/Wallet/WalletManager+MintQuoteSync.swift`, `CashuWallet/Core/Wallet/WalletManager+Lightning.swift`, `CashuWallet/Models/Payments/OnchainExplorer.swift`.
+- Tests to mirror or extend on Android: `CashuWalletTests/TransactionServiceTests.swift`, `CashuWalletTests/WalletStoreTests.swift`, `CashuWalletUITests/MainTabUITests.swift`, `CashuWalletUITests/WalletIntegrationTests.swift`.
+
 Android current state:
 
 - History already merges requests and transactions, filters, searches, groups, refreshes, opens transaction/request details, and supports request deletion through long press.
@@ -461,6 +564,17 @@ iOS reference:
 - Payments includes Lightning and Locked Ecash.
 - Integrations includes Nostr.
 - Privacy includes auto-paste, WebSockets/Nostr/NPC, Sentry opt-in, and related runtime-backed toggles.
+
+iOS implementation reference files for this milestone:
+
+- Settings root grouping, section order, row copy, navigation, destructive delete wallet copy, and section-level Material translation targets: `CashuWallet/Views/Settings/SettingsView.swift`.
+- Display/theme/currency/BTC-symbol settings, price refresh/caching, and home balance unit behavior: `CashuWallet/Views/Settings/ThemeSettingsSection.swift`, `CashuWallet/Core/SettingsManager.swift`, `CashuWallet/Core/SettingsStore.swift`, `CashuWallet/Core/PriceService.swift`, `CashuWallet/Core/AmountFormatter.swift`.
+- Backup & Security, seed reveal/copy, iCloud backup status/actions, restore entry, App Lock row behavior, and delete wallet implications: `CashuWallet/Views/Settings/BackupSettingsSection.swift`, `CashuWallet/Core/Wallet/WalletManager+Backup.swift`, `CashuWallet/Core/Wallet/WalletManager+Lifecycle.swift`, `CashuWallet/Core/KeychainService.swift`, `CashuWallet/App/ContentView.swift`.
+- Nostr signer/key card, nsec reveal/copy, generate/import/reset confirmations, relay validation/reset/copy, and NIP behavior: `CashuWallet/Views/Settings/NostrSettingsSection.swift`, `CashuWallet/Core/NostrService.swift`, `CashuWallet/Core/NIP44.swift`, `CashuWallet/Core/NIP17.swift`, `CashuWallet/Core/SettingsManager.swift`.
+- P2PK settings and locked ecash settings rows: `CashuWallet/Views/Settings/P2PKSettingsSection.swift`, `CashuWallet/Core/Services/TokenService.swift`, `CashuWallet/Core/SettingsManager.swift`.
+- Lightning/NPC settings, lightning address rows, mint selection, claim behavior, and privacy-safe errors: `CashuWallet/Views/Settings/LightningAddressSettingsSection.swift`, `CashuWallet/Core/NPCService.swift`, `CashuWallet/Core/Wallet/WalletManager+NPC.swift`, `CashuWallet/Core/Wallet/WalletErrors.swift`.
+- Privacy toggles, WebSockets/Nostr/NPC/payment-request runtime settings, Sentry opt-in, and storage-only toggle decisions: `CashuWallet/Views/Settings/PrivacySettingsSection.swift`, `CashuWallet/Core/SentryService.swift`, `CashuWallet/Core/AppLogger.swift`, `CashuWallet/Core/SettingsStore.swift`.
+- Tests to mirror or extend on Android: `CashuWalletUITests/SettingsUITests.swift`, `CashuWalletUITests/WalletIntegrationTests.swift`, `CashuWalletTests/NIP44Tests.swift`, `CashuWalletTests/WalletStoreTests.swift`.
 
 Android gaps:
 
@@ -495,6 +609,15 @@ Success condition:
 
 Goal: ensure Android is not only visually caught up but also as robust against wallet edge cases as iOS.
 
+iOS implementation reference files for this milestone:
+
+- Wallet service boundaries, protocol contracts, and service split to compare with Android's current manager/typealias structure: `CashuWallet/Core/Protocols/WalletServiceProtocol.swift`, `CashuWallet/Core/Protocols/PaymentMethodProtocol.swift`, `CashuWallet/Core/Protocols/StorageProtocol.swift`, `CashuWallet/Core/Services/LightningService.swift`, `CashuWallet/Core/Services/MintService.swift`, `CashuWallet/Core/Services/TokenService.swift`, `CashuWallet/Core/Services/TransactionService.swift`, `CashuWallet/Core/Services/NFCPaymentService.swift`.
+- Startup saga recovery, wallet initialization, restore, delete wallet, wallet boundary snapshots, database backup/restore, keyset refresh, tracked mint/unit wallet preparation, and wallet-scoped settings cleanup: `CashuWallet/Core/Wallet/WalletManager.swift`, `CashuWallet/Core/Wallet/WalletManager+Lifecycle.swift`, `CashuWallet/Core/Wallet/WalletManager+Mints.swift`, `CashuWallet/Core/WalletStore.swift`, `CashuWallet/Core/SettingsStore.swift`, `CashuWallet/Core/CashuRequestStore.swift`, `CashuWallet/Core/CashuRequestListener.swift`.
+- Mint/melt/send/receive runtime paths, stale quote throttling, pending quote minting, quote-backed request metadata, NPC claims, and receive events: `CashuWallet/Core/Wallet/WalletManager+Tokens.swift`, `CashuWallet/Core/Wallet/WalletManager+Lightning.swift`, `CashuWallet/Core/Wallet/WalletManager+CashuPaymentRequests.swift`, `CashuWallet/Core/Wallet/WalletManager+MintQuoteSync.swift`, `CashuWallet/Core/Wallet/WalletManager+NPC.swift`, `CashuWallet/Core/NPCService.swift`.
+- Multi-unit, parser, formatter, latest NUT, BOLT11/BOLT12/on-chain, NUT-18, NUT-10/P2PK, NUT-20 subscriptions, and NUT-09 restore references: `CashuWallet/Core/AmountFormatter.swift`, `CashuWallet/Core/Protocols/CurrencyProtocol.swift`, `CashuWallet/Core/PaymentRequestBuilder.swift`, `CashuWallet/Core/PaymentRequestDecoder.swift`, `CashuWallet/Core/LightningRequestParser.swift`, `CashuWallet/Core/TokenParser.swift`, `CashuWallet/Models/Mints/MintInfo.swift`, `CashuWallet/Models/Payments/PaymentMethodKind.swift`, `CashuWallet/Models/Payments/PaymentRequestParser.swift`, `CashuWallet/Models/Payments/OnchainExplorer.swift`, `CashuWallet/Models/Quotes/QuoteModels.swift`, `CashuWallet/Models/Quotes/QuoteStates.swift`.
+- User-facing error mapping and privacy-safe runtime logging: `CashuWallet/Core/Wallet/WalletErrors.swift`, `CashuWallet/Core/AppLogger.swift`, `CashuWallet/Core/SentryService.swift`.
+- Integration/unit tests to mirror or extend on Android: `CI/IntegrationTests/Tests/NutshellIntegrationTests.swift`, `CI/IntegrationTests/Tests/PaymentRequestDecoderTests.swift`, `CI/IntegrationTests/Tests/TokenParserTests.swift`, `CI/IntegrationTests/Tests/AmountFormatterTests.swift`, `CI/IntegrationTests/Tests/CurrencyTests.swift`, `CashuWalletTests/MintServiceTests.swift`, `CashuWalletTests/TokenServiceTests.swift`, `CashuWalletTests/TransactionServiceTests.swift`, `CashuWalletTests/WalletStoreTests.swift`.
+
 Checklist:
 
 - [ ] Port startup saga recovery behavior or implement equivalent CDK repository recovery for incomplete mint/melt/send operations.
@@ -517,6 +640,14 @@ Success condition:
 
 This section captures Android-specific UI bugs and likely bugs found during the Compose code audit. These are not feature gaps alone; they are issues that can cause broken navigation, clipped content, lag, inaccessible controls, or surprising interactions even before full iOS parity work is complete.
 
+iOS implementation reference files for this backlog:
+
+- Back/navigation behavior and modal/sheet ownership to translate into Android `BackHandler`/predictive-back semantics: `CashuWallet/App/ContentView.swift`, `CashuWallet/Core/Navigation/NavigationManager.swift`, `CashuWallet/Views/Main/OnboardingView.swift`, `CashuWallet/Views/Send/SendView.swift`, `CashuWallet/Views/Receive/ReceiveView.swift`, `CashuWallet/Views/Receive/ReceiveTokenDetailView.swift`, `CashuWallet/Views/Receive/ReceiveLightningView.swift`, `CashuWallet/Views/Receive/CashuRequestDetailView.swift`, `CashuWallet/Views/History/HistoryView.swift`, `CashuWallet/Views/Mints/MintsListView.swift`, `CashuWallet/Views/Settings/SettingsView.swift`, `CashuWallet/Views/Components/ScannerWrapperView.swift`, `CashuWallet/Core/Services/ContactlessPaymentCoordinator.swift`.
+- Layout, clipping, safe-area, QR, amount-entry, row-overflow, and large-content references: `CashuWallet/Views/Main/MainWalletView.swift`, `CashuWallet/Views/Components/AnimatedBalanceView.swift`, `CashuWallet/Views/Components/AmountEntryView.swift`, `CashuWallet/Views/Components/QRCodeView.swift`, `CashuWallet/Views/Components/TransactionAmountColumn.swift`, `CashuWallet/Views/Components/CashuRequestAmountColumn.swift`, `CashuWallet/Views/Send/SendView.swift`, `CashuWallet/Views/Receive/ReceiveTokenDetailView.swift`, `CashuWallet/Views/Receive/ReceiveLightningView.swift`, `CashuWallet/Views/History/TransactionDetailView.swift`, `CashuWallet/Views/Settings/BackupSettingsSection.swift`, `CashuWallet/Views/Settings/NostrSettingsSection.swift`, `CashuWallet/Views/Settings/P2PKSettingsSection.swift`, `CashuWallet/Views/Settings/LightningAddressSettingsSection.swift`.
+- Settings performance/jank comparison surfaces and long-list composition targets: `CashuWallet/Views/Settings/SettingsView.swift`, `CashuWallet/Views/Settings/ThemeSettingsSection.swift`, `CashuWallet/Views/Settings/NostrSettingsSection.swift`, `CashuWallet/Views/Settings/P2PKSettingsSection.swift`, `CashuWallet/Views/Mints/MintsListView.swift`, `CashuWallet/Views/Mints/MintDiscoverySheet.swift`, `CashuWallet/Core/PriceService.swift`.
+- Interaction-state references for single-action toggles, add/delete gestures, retry flows, copy/share feedback, external links, and quote watchers: `CashuWallet/Views/Settings/PrivacySettingsSection.swift`, `CashuWallet/Views/Settings/SettingsView.swift`, `CashuWallet/Views/Mints/MintsListView.swift`, `CashuWallet/Views/Mints/MintDiscoverySheet.swift`, `CashuWallet/Views/Send/SendView.swift`, `CashuWallet/Views/Receive/ReceiveLightningView.swift`, `CashuWallet/Views/Receive/ReceiveTokenDetailView.swift`, `CashuWallet/Views/History/TransactionDetailView.swift`, `CashuWallet/Models/Payments/OnchainExplorer.swift`.
+- UI regression references for expected screen coverage and navigation smoke behavior: `CashuWalletUITests/UITestBase.swift`, `CashuWalletUITests/MainTabUITests.swift`, `CashuWalletUITests/ReceiveUITests.swift`, `CashuWalletUITests/SettingsUITests.swift`, `CashuWalletUITests/WalletIntegrationTests.swift`.
+
 ### Back Gesture And Predictive Back Bugs
 
 The Android UI currently relies heavily on top app bar back buttons and route pops. Several screens have internal steps, overlays, or modal-like states but no matching `BackHandler`, so the system back gesture can leave the flow instead of moving back one logical step.
@@ -527,7 +658,7 @@ Checklist:
 - [ ] Add `BackHandler` to `OnboardingScreen` so system back mirrors the visible back action, moves through onboarding steps predictably, and does not accidentally exit mid-create or mid-restore.
 - [ ] Add `BackHandler` to `UnifiedSendScreen` so input, amount, confirm, and status states follow the same behavior as the toolbar back button; block or confirm during in-flight sends.
 - [ ] Add `BackHandler` to `SendEcashScreen` so the generated-token state returns to input instead of closing the route.
-- [ ] Add `BackHandler` to `ReceiveEcashScreen` so review returns to paste/scan input and receive-later or in-flight states are not abandoned silently.
+- [x] Add `BackHandler` to `ReceiveEcashScreen` so review returns to paste/scan input and receive-later or in-flight states are not abandoned silently. Receive ecash now handles system back for review and status states.
 - [ ] Add `BackHandler` to `ReceiveLightningScreen` so invoice/offer/address display returns to input or confirms cancellation instead of popping the whole route.
 - [ ] Add `BackHandler` to `HistoryScreen` so back closes search mode before leaving the tab.
 - [ ] Add `BackHandler` to scanner and contactless surfaces directly, even when launched through shell state, so close/dispose logic is always executed.
@@ -597,7 +728,7 @@ Checklist:
 - [ ] Make retry quote behavior explicit in Unified Send. The current retry-by-resetting-selected-mint pattern can fail when the same mint remains selected.
 - [ ] Add user-visible confirmation/feedback for copy/share actions that currently silently write to clipboard.
 - [ ] Add safe external-link handling for explorer, contact, and support links so missing browser/activity handlers do not crash the app.
-- [ ] Ensure receive-later token ids are stable and collision-resistant; avoid using only a token prefix for pending receive identity.
+- [x] Ensure receive-later token ids are stable and collision-resistant; avoid using only a token prefix for pending receive identity. Pending receive ids now hash the full token and have JVM coverage.
 - [ ] Audit Receive Lightning polling/subscription effects to ensure only one active watcher exists per quote and watchers cancel on navigation/back.
 - [ ] Add per-screen loading state instead of reusing broad wallet loading flags for unrelated buttons, especially mint add/discovery and settings toggles.
 
@@ -624,6 +755,13 @@ Success condition:
 
 Goal: make Android feel as polished as iOS while remaining native Android.
 
+iOS implementation reference files for this milestone:
+
+- Overall polish, screen composition, tab/shell behavior, and route-level accessibility expectations to reinterpret through Material 3 rather than Liquid Glass copying: `CashuWallet/App/ContentView.swift`, `CashuWallet/Views/Main/MainWalletView.swift`, `CashuWallet/Views/Main/OnboardingView.swift`, `CashuWallet/Views/Send/SendView.swift`, `CashuWallet/Views/Receive/ReceiveView.swift`, `CashuWallet/Views/History/HistoryView.swift`, `CashuWallet/Views/Mints/MintsListView.swift`, `CashuWallet/Views/Settings/SettingsView.swift`.
+- Visual/motion components, balance animation, status motion, haptics, QR sizing, amount entry, row icons, and press feedback: `CashuWallet/Views/Components/LiquidGlassModifiers.swift`, `CashuWallet/Views/Components/AnimatedBalanceView.swift`, `CashuWallet/Views/Components/ActivityOrbView.swift`, `CashuWallet/Views/Components/PressableButtonStyle.swift`, `CashuWallet/Views/Components/QRCodeView.swift`, `CashuWallet/Views/Components/AmountEntryView.swift`, `CashuWallet/Views/Components/TransactionIcon.swift`, `CashuWallet/Views/Send/Components/AuthorizingOverlay.swift`, `CashuWallet/Core/HapticFeedback.swift`.
+- Accessibility, copy/share, destructive actions, key reveals, scanner, and settings row references: `CashuWallet/Views/Components/ScannerWrapperView.swift`, `CashuWallet/Views/Settings/BackupSettingsSection.swift`, `CashuWallet/Views/Settings/NostrSettingsSection.swift`, `CashuWallet/Views/Settings/P2PKSettingsSection.swift`, `CashuWallet/Views/History/TransactionDetailView.swift`, `CashuWallet/Views/Receive/CashuRequestDetailView.swift`.
+- Screenshot/UI behavior coverage to mirror with Android Compose/screenshot tests: `CashuWalletUITests/UITestBase.swift`, `CashuWalletUITests/MainTabUITests.swift`, `CashuWalletUITests/ReceiveUITests.swift`, `CashuWalletUITests/SettingsUITests.swift`, `CashuWalletUITests/WalletIntegrationTests.swift`.
+
 Checklist:
 
 - [ ] Complete the Android UI Bug Audit Backlog above before declaring visual polish complete.
@@ -645,6 +783,13 @@ Success condition:
 ## Milestone 13: Android Test Coverage Parity
 
 Goal: bring Android's test coverage to the same confidence level as iOS.
+
+iOS test and implementation reference files for this milestone:
+
+- iOS UI test harness and screen smoke coverage to mirror with Android Compose/instrumentation: `CashuWalletUITests/UITestBase.swift`, `CashuWalletUITests/MainTabUITests.swift`, `CashuWalletUITests/ReceiveUITests.swift`, `CashuWalletUITests/SettingsUITests.swift`, `CashuWalletUITests/WalletIntegrationTests.swift`.
+- Unit-test references for wallet storage/request boundaries, pending receive tokens, transaction/request history, mint service, token service, and Nostr crypto: `CashuWalletTests/WalletStoreTests.swift`, `CashuWalletTests/TransactionServiceTests.swift`, `CashuWalletTests/MintServiceTests.swift`, `CashuWalletTests/TokenServiceTests.swift`, `CashuWalletTests/NIP44Tests.swift`, `CashuWalletTests/InMemoryStorage.swift`.
+- Integration-test harness and live/fake mint behavior to mirror in Android CI: `CI/IntegrationTests/Package.swift`, `CI/IntegrationTests/Tests/IntegrationTestBase.swift`, `CI/IntegrationTests/Tests/NutshellIntegrationTests.swift`, `CI/IntegrationTests/Tests/PaymentRequestDecoderTests.swift`, `CI/IntegrationTests/Tests/TokenParserTests.swift`, `CI/IntegrationTests/Tests/AmountFormatterTests.swift`, `CI/IntegrationTests/Tests/CurrencyTests.swift`, `CI/setup-nutshell.sh`, `CI/start-nutshell.sh`, `CI/stop-nutshell.sh`, `CI/setup-cdk.sh`, `CI/start-cdk.sh`, `CI/stop-cdk.sh`.
+- Feature implementation files that should be paired with Android tests for each checklist area: `CashuWallet/Core/PaymentRequestBuilder.swift`, `CashuWallet/Core/PaymentRequestDecoder.swift`, `CashuWallet/Core/TokenParser.swift`, `CashuWallet/Core/Wallet/WalletManager+CashuPaymentRequests.swift`, `CashuWallet/Core/Wallet/WalletManager+Lightning.swift`, `CashuWallet/Core/Wallet/WalletManager+MintQuoteSync.swift`, `CashuWallet/Core/Wallet/WalletManager+Lifecycle.swift`, `CashuWallet/Core/CashuRequestStore.swift`, `CashuWallet/Core/SettingsManager.swift`, `CashuWallet/Core/SentryService.swift`, `CashuWallet/Core/AppLogger.swift`, `CashuWallet/Views/Main/OnboardingView.swift`, `CashuWallet/Views/Main/MainWalletView.swift`, `CashuWallet/Views/Send/SendView.swift`, `CashuWallet/Views/Receive/ReceiveTokenDetailView.swift`, `CashuWallet/Views/Receive/ReceiveLightningView.swift`, `CashuWallet/Views/Receive/CashuRequestDetailView.swift`, `CashuWallet/Views/History/HistoryView.swift`, `CashuWallet/Views/Mints/MintDetailView.swift`, `CashuWallet/Views/Settings/SettingsView.swift`, `CashuWallet/Views/Components/ScannerWrapperView.swift`, `CashuWallet/Core/Services/NFCPaymentService.swift`.
 
 Current Android test strengths:
 
@@ -701,6 +846,13 @@ Success condition:
 ## Milestone 14: Release Readiness And Manual Acceptance
 
 Goal: define the final gate for declaring Android caught up.
+
+iOS/product reference files for this milestone:
+
+- Public product promises and platform parity language to keep accurate at release: `README.md`, `PRODUCT.md`, `DESIGN.md`, `ICLOUD_RECOVERY.md`, `android/README.md`, `android/UX_SPEC.md`, `android/DESIGN-ANDROID.md`, `android/UX_MAPPING.md`.
+- iOS app behavior for final manual parity walkthrough: `CashuWallet/App/CashuWalletApp.swift`, `CashuWallet/App/ContentView.swift`, `CashuWallet/Views/Main/OnboardingView.swift`, `CashuWallet/Views/Main/MainWalletView.swift`, `CashuWallet/Views/Send/SendView.swift`, `CashuWallet/Views/Receive/ReceiveView.swift`, `CashuWallet/Views/Receive/ReceiveTokenDetailView.swift`, `CashuWallet/Views/Receive/ReceiveLightningView.swift`, `CashuWallet/Views/Receive/CashuRequestDetailView.swift`, `CashuWallet/Views/History/HistoryView.swift`, `CashuWallet/Views/History/TransactionDetailView.swift`, `CashuWallet/Views/Mints/MintsListView.swift`, `CashuWallet/Views/Mints/MintDetailView.swift`, `CashuWallet/Views/Settings/SettingsView.swift`.
+- Security/release configuration references: `CashuWallet/Info.plist`, `CashuWallet/CashuWallet.entitlements`, `CashuWallet/Core/KeychainService.swift`, `CashuWallet/Core/SentryService.swift`, `CashuWallet/Core/AppLogger.swift`, `CashuWallet/Core/Wallet/WalletManager+Backup.swift`.
+- iOS test and CI acceptance references to run before Android is declared caught up: `CashuWalletUITests/UITestBase.swift`, `CashuWalletUITests/MainTabUITests.swift`, `CashuWalletUITests/ReceiveUITests.swift`, `CashuWalletUITests/SettingsUITests.swift`, `CashuWalletUITests/WalletIntegrationTests.swift`, `CashuWalletTests/WalletStoreTests.swift`, `CashuWalletTests/TokenServiceTests.swift`, `CashuWalletTests/MintServiceTests.swift`, `CashuWalletTests/TransactionServiceTests.swift`, `CI/IntegrationTests/Tests/NutshellIntegrationTests.swift`, `CI/IntegrationTests/Tests/PaymentRequestDecoderTests.swift`, `CI/README.md`.
 
 Checklist:
 

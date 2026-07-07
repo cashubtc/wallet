@@ -22,7 +22,7 @@ Status date: 2026-07-07
 | 2 | Onboarding and Restore Parity | Complete | Milestone 2 commit on `codex/android-update-plan-implementation` | iOS-equivalent create/restore/no-cloud placeholder/staged mint restore flows, row-level add/restore progress, retry, and focused Gradle validation. |
 | 3 | Home, Shell, and Foreground Behavior | Complete | Milestone 3 commit on `codex/android-update-plan-implementation` | Received-delta event stream/chip, sat-only gating, foreground quote metadata, recents dedupe, unit pager tests, and TalkBack labels. |
 | 4 | Unified Send, Pay Flows, and Contactless | Complete | Milestone 4 commit on `codex/android-update-plan-implementation` | Cashu Request route model, add-mint/top-up recovery, amountless/non-sat notices, P2PK scan quick-fill/chip, NFC route parity, focused tests. |
-| 5 | Receive Ecash and Cashu Request Parity | Not started | TBD | Editable requests, quote-backed intents, locked/unknown mint handling, status parity, tests. |
+| 5 | Receive Ecash and Cashu Request Parity | Complete | Milestone 5 commit on `codex/android-update-plan-implementation` | Shared receive status, stable pending ids, unknown/locked token review, editable NUT-18 requests, quote-backed receive intents, focused tests. |
 | 6 | Receive Lightning, BOLT12, and On-chain | Not started | TBD | BOLT11 expiry, reusable BOLT12, on-chain address reuse/observer, quote-backed history, tests. |
 | 7 | Locked Ecash and P2PK | Not started | TBD | Seed-derived primary key, NUT-10/NUT-18 requests, locked receive, authenticated key reveal, tests. |
 | 8 | Mints and Mint Metadata | Not started | TBD | Full NUT-06 mint detail, discovery polish, refresh behavior, nickname handling, tests. |
@@ -85,3 +85,14 @@ Status date: 2026-07-07
 - Send Ecash P2PK: dedicated scanner target, scanned-key quick-fill, and locked-key chip sit above the raw public-key field.
 - Contactless: NFC preparation uses the shared route model and keeps Lightning fallback handoff to Unified Send.
 - Tests: focused Gradle coverage includes Cashu Request routing, NFC decoding, and P2PK scan normalization.
+
+## Current Milestone 5 Evidence
+
+- Receive ecash status: receive token now uses the shared `PaymentStatusScreen`, minimum processing dwell, and system back handling for review/status states.
+- Receive token review: unknown mints show a caution; P2PK locked tokens distinguish stored "Your key" from unknown keys and block unknown-key receive.
+- Receive later: pending receive ids are SHA-256 hashes of the full normalized token, with JVM collision regression coverage.
+- New Request: Android now creates any-mint NUT-18 requests by default, matching iOS's `mints: []` behavior.
+- Cashu Request store: `CashuRequestStore` supports upsert, update, quote-intent upsert, attach-by-quote, reload, and reset.
+- Request detail: NUT-18 request rows for amount, mint, unit, and memo are editable through Material dialogs/sheets and regenerate the encoded payload with the same request id.
+- Quote intents: BOLT11, BOLT12, and on-chain receive quotes are stored as quote-backed request rows, labeled in Home/History, and attach payment by quote id after minting succeeds.
+- Tests: focused Gradle coverage includes payment request encoding/model behavior, pending receive id hashing, and quote-intent row titles.

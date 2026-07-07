@@ -11,6 +11,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,29 +20,35 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.outlined.AccountBalance
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.CalendarToday
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.CurrencyExchange
 import androidx.compose.material.icons.outlined.IosShare
+import androidx.compose.material.icons.outlined.Receipt
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -55,24 +62,32 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import java.text.DateFormat
 import java.util.Date
 import kotlinx.coroutines.delay
 import org.cashu.wallet.Core.AmountFormatter
 import org.cashu.wallet.Core.CashuRequestStore
+import org.cashu.wallet.Core.NostrService
+import org.cashu.wallet.Core.PaymentRequestBuilder
 import org.cashu.wallet.Core.Protocols.CurrencyAmount
 import org.cashu.wallet.Core.Protocols.CurrencyRegistry
 import org.cashu.wallet.Core.SettingsManager
 import org.cashu.wallet.Core.WalletManager
+import org.cashu.wallet.Models.MintInfo
 import org.cashu.wallet.ui.components.AmountText
 import org.cashu.wallet.ui.components.CanvasDivider
+import org.cashu.wallet.ui.components.CashuTextField
 import org.cashu.wallet.ui.components.DestructiveTextButton
 import org.cashu.wallet.ui.components.GhostButton
 import org.cashu.wallet.ui.components.InspectorRow
+import org.cashu.wallet.ui.components.InlineNotice
 import org.cashu.wallet.ui.components.PrimaryButton
 import org.cashu.wallet.ui.components.QrCard
 import org.cashu.wallet.ui.components.SectionHeader
+import org.cashu.wallet.ui.components.UnitPickerSheet
+import org.cashu.wallet.ui.components.requestRowTitle
 import org.cashu.wallet.ui.components.shareText
 import org.cashu.wallet.ui.theme.CashuTheme
 import org.cashu.wallet.ui.theme.withMonoDigits
@@ -82,6 +97,7 @@ import org.cashu.wallet.ui.theme.withMonoDigits
 fun CashuRequestDetailScreen(
     walletManager: WalletManager,
     settingsManager: SettingsManager,
+    nostrService: NostrService,
     cashuRequestStore: CashuRequestStore,
     requestId: String,
     onClose: () -> Unit,
@@ -89,6 +105,7 @@ fun CashuRequestDetailScreen(
     val storeState by cashuRequestStore.state.collectAsState()
     val walletState by walletManager.state.collectAsState()
     val settings by settingsManager.state.collectAsState()
+    val nostrState by nostrService.state.collectAsState()
     val formatter = remember { AmountFormatter() }
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
@@ -96,6 +113,12 @@ fun CashuRequestDetailScreen(
     val request = storeState.requests.firstOrNull { it.id == requestId }
     var copied by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
+    var amountEditorOpen by remember { mutableStateOf(false) }
+    var memoEditorOpen by remember { mutableStateOf(false) }
+    var mintPickerOpen by remember { mutableStateOf(false) }
+    var unitPickerOpen by remember { mutableStateOf(false) }
+    var editError by remember { mutableStateOf<String?>(null) }
+    val screenTitle = request?.let(::requestRowTitle) ?: "Cashu Request"
 
     LaunchedEffect(copied) {
         if (copied) {
@@ -120,7 +143,7 @@ fun CashuRequestDetailScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Cashu Request", style = MaterialTheme.typography.titleMedium) },
+                title = { Text(screenTitle, style = MaterialTheme.typography.titleMedium) },
                 navigationIcon = {
                     IconButton(onClick = onClose) {
                         Icon(
@@ -132,7 +155,7 @@ fun CashuRequestDetailScreen(
                 actions = {
                     if (request != null) {
                         IconButton(onClick = {
-                            context.shareText(request.encoded, subject = "Cashu Request")
+                            context.shareText(request.encoded, subject = screenTitle)
                         }) {
                             Icon(Icons.Outlined.IosShare, contentDescription = "Share")
                         }
@@ -161,6 +184,53 @@ fun CashuRequestDetailScreen(
             }
             return@Scaffold
         }
+        val isQuoteIntent = request.quoteId != null
+
+        fun regenerateRequest(
+            amount: Long? = request.amount,
+            unit: String = request.unit,
+            mints: List<String> = request.mints,
+            memo: String? = request.memo,
+        ) {
+            val relays = settings.nostrRelays
+            if (nostrState.publicKeyHex.isBlank() || relays.isEmpty()) {
+                editError = "Nostr isn't ready. Check your relays in Settings."
+                return
+            }
+            val normalizedAmount = amount?.takeIf { it > 0 }
+            val normalizedMemo = memo?.trim()?.takeIf { it.isNotBlank() }
+            runCatching {
+                val encoded = PaymentRequestBuilder.build(
+                    id = request.id,
+                    amount = normalizedAmount,
+                    unit = unit,
+                    mints = mints,
+                    description = normalizedMemo,
+                    nostrPubkeyHex = nostrState.publicKeyHex,
+                    relays = relays,
+                )
+                cashuRequestStore.update(
+                    id = request.id,
+                    amount = normalizedAmount,
+                    unit = unit,
+                    mints = mints,
+                    memo = normalizedMemo,
+                    encoded = encoded,
+                ) ?: cashuRequestStore.upsert(
+                    request.copy(
+                        amount = normalizedAmount,
+                        unit = unit,
+                        mints = mints,
+                        memo = normalizedMemo,
+                        encoded = encoded,
+                    ),
+                )
+            }.onSuccess {
+                editError = null
+            }.onFailure {
+                editError = it.message ?: "Couldn't update request."
+            }
+        }
 
         Column(
             modifier = Modifier
@@ -172,7 +242,7 @@ fun CashuRequestDetailScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Spacer(Modifier.height(CashuTheme.spacing.snug))
-            QrCard(content = request.encoded, shareSubject = "Cashu Request", staticOnly = true)
+            QrCard(content = request.encoded, shareSubject = screenTitle, staticOnly = true)
 
             // Request amounts render in the request's own unit.
             val isSatRequest = request.unit.equals("sat", ignoreCase = true)
@@ -202,10 +272,20 @@ fun CashuRequestDetailScreen(
                 val mintLabel = activeMintUrl?.let { url ->
                     walletState.mints.firstOrNull { it.url == url }?.name ?: url
                 } ?: "Any mint"
+                if (isQuoteIntent) {
+                    InspectorRow(
+                        label = "Type",
+                        value = screenTitle,
+                        leadingIcon = Icons.Outlined.Receipt,
+                    )
+                    CanvasDivider(leadingInset = 16)
+                }
                 InspectorRow(
                     label = "Mint",
                     value = mintLabel,
                     leadingIcon = Icons.Outlined.AccountBalance,
+                    editable = !isQuoteIntent,
+                    onClick = if (isQuoteIntent) null else ({ mintPickerOpen = true }),
                 )
                 CanvasDivider(leadingInset = 16)
                 InspectorRow(
@@ -215,12 +295,23 @@ fun CashuRequestDetailScreen(
                     } ?: "Any",
                     leadingIcon = Icons.Outlined.AccountBalanceWallet,
                     valueMonospaced = true,
+                    editable = !isQuoteIntent,
+                    onClick = if (isQuoteIntent) null else ({ amountEditorOpen = true }),
                 )
                 CanvasDivider(leadingInset = 16)
                 InspectorRow(
                     label = "Unit",
                     value = request.unit.uppercase(),
                     leadingIcon = Icons.Outlined.CurrencyExchange,
+                    editable = !isQuoteIntent,
+                    onClick = if (isQuoteIntent) null else ({ unitPickerOpen = true }),
+                )
+                CanvasDivider(leadingInset = 16)
+                InspectorRow(
+                    label = "Memo",
+                    value = request.memo ?: "None",
+                    editable = !isQuoteIntent,
+                    onClick = if (isQuoteIntent) null else ({ memoEditorOpen = true }),
                 )
                 CanvasDivider(leadingInset = 16)
                 InspectorRow(
@@ -238,6 +329,9 @@ fun CashuRequestDetailScreen(
                     )
                 }
             }
+            if (editError != null) {
+                InlineNotice(text = editError!!)
+            }
 
             Spacer(Modifier.height(CashuTheme.spacing.snug))
             Column(
@@ -245,7 +339,7 @@ fun CashuRequestDetailScreen(
                 verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
             ) {
                 PrimaryButton(
-                    text = if (copied) "Copied" else "Copy request",
+                    text = if (copied) "Copied" else copyActionLabel(screenTitle),
                     onClick = {
                         clipboard.setText(AnnotatedString(request.encoded))
                         copied = true
@@ -259,6 +353,66 @@ fun CashuRequestDetailScreen(
             }
             Spacer(Modifier.height(CashuTheme.spacing.section))
         }
+
+        if (!isQuoteIntent && amountEditorOpen) {
+            RequestAmountDialog(
+                initialAmount = request.amount,
+                unit = request.unit,
+                onSave = { amount ->
+                    amountEditorOpen = false
+                    regenerateRequest(amount = amount)
+                },
+                onDismiss = { amountEditorOpen = false },
+            )
+        }
+
+        if (!isQuoteIntent && memoEditorOpen) {
+            RequestMemoDialog(
+                initialMemo = request.memo.orEmpty(),
+                onSave = { memo ->
+                    memoEditorOpen = false
+                    regenerateRequest(memo = memo)
+                },
+                onDismiss = { memoEditorOpen = false },
+            )
+        }
+
+        if (!isQuoteIntent && mintPickerOpen) {
+            RequestMintPickerSheet(
+                mints = walletState.mints,
+                selectedMintUrl = request.mints.firstOrNull(),
+                onSelectAny = {
+                    mintPickerOpen = false
+                    regenerateRequest(mints = emptyList())
+                },
+                onSelectMint = { mint ->
+                    mintPickerOpen = false
+                    val nextUnit = if (request.unit in mint.effectiveMintUnits) {
+                        request.unit
+                    } else {
+                        mint.defaultMintUnit
+                    }
+                    regenerateRequest(
+                        unit = nextUnit,
+                        mints = listOf(mint.url),
+                    )
+                },
+                onDismiss = { mintPickerOpen = false },
+            )
+        }
+
+        if (!isQuoteIntent && unitPickerOpen) {
+            UnitPickerSheet(
+                units = requestUnitOptions(walletState.mints, request.mints),
+                selectedUnit = request.unit,
+                onSelect = { unit ->
+                    unitPickerOpen = false
+                    regenerateRequest(unit = unit)
+                },
+                onDismiss = { unitPickerOpen = false },
+                title = "Choose request unit",
+            )
+        }
     }
 
     if (confirmDelete) {
@@ -267,7 +421,7 @@ fun CashuRequestDetailScreen(
             title = { Text("Remove from history?") },
             text = {
                 Text(
-                    "The request will be removed from this device. Any payments already received stay in your wallet.",
+                    "The request will be removed from this device. Shared payment links keep routing to this wallet, and any payments already received stay in your wallet.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
             },
@@ -286,6 +440,198 @@ fun CashuRequestDetailScreen(
         )
     }
 }
+
+@Composable
+private fun RequestAmountDialog(
+    initialAmount: Long?,
+    unit: String,
+    onSave: (Long?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var rawAmount by remember(initialAmount) { mutableStateOf(initialAmount?.toString().orEmpty()) }
+    var errorText by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit amount") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default)) {
+                CashuTextField(
+                    value = rawAmount,
+                    onValueChange = {
+                        rawAmount = it.filter { ch -> ch.isDigit() }
+                        errorText = null
+                    },
+                    label = "Amount",
+                    supportingText = "Leave blank for any amount. Values are in ${unit.uppercase()}.",
+                    isError = errorText != null,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                )
+                if (errorText != null) {
+                    InlineNotice(text = errorText!!)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                val parsed = rawAmount.trim().takeIf { it.isNotEmpty() }?.toLongOrNull()
+                if (rawAmount.isNotBlank() && (parsed == null || parsed <= 0)) {
+                    errorText = "Enter a positive whole number or leave it blank."
+                    return@TextButton
+                }
+                onSave(parsed)
+            }) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
+}
+
+@Composable
+private fun RequestMemoDialog(
+    initialMemo: String,
+    onSave: (String?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var memo by remember(initialMemo) { mutableStateOf(initialMemo) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit memo") },
+        text = {
+            CashuTextField(
+                value = memo,
+                onValueChange = { memo = it },
+                label = "Memo",
+                placeholder = "Optional",
+                minLines = 3,
+                maxLines = 5,
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(memo.trim().takeIf { it.isNotBlank() }) }) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RequestMintPickerSheet(
+    mints: List<MintInfo>,
+    selectedMintUrl: String?,
+    onSelectAny: () -> Unit,
+    onSelectMint: (MintInfo) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = CashuTheme.spacing.comfortable)
+                .navigationBarsPadding(),
+        ) {
+            Text(
+                text = "Choose request mint",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(
+                    horizontal = CashuTheme.spacing.snug,
+                    vertical = CashuTheme.spacing.default,
+                ),
+            )
+            RequestMintPickerRow(
+                label = "Any mint",
+                supporting = "Let the sender choose a compatible mint",
+                selected = selectedMintUrl == null,
+                onClick = onSelectAny,
+            )
+            mints.forEach { mint ->
+                RequestMintPickerRow(
+                    label = mint.name,
+                    supporting = mint.url,
+                    selected = mint.url == selectedMintUrl,
+                    onClick = { onSelectMint(mint) },
+                )
+            }
+            Spacer(Modifier.height(CashuTheme.spacing.snug))
+        }
+    }
+}
+
+@Composable
+private fun RequestMintPickerRow(
+    label: String,
+    supporting: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(
+                horizontal = CashuTheme.spacing.snug,
+                vertical = CashuTheme.spacing.default,
+            ),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
+    ) {
+        Icon(
+            imageVector = Icons.Outlined.AccountBalance,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(18.dp),
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(label, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                supporting,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+            )
+        }
+        if (selected) {
+            Icon(
+                imageVector = Icons.Filled.Check,
+                contentDescription = "Selected",
+                tint = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.size(CashuTheme.spacing.loose),
+            )
+        }
+    }
+}
+
+private fun requestUnitOptions(mints: List<MintInfo>, selectedMintUrls: List<String>): List<String> {
+    val selected = selectedMintUrls.takeIf { it.isNotEmpty() }?.toSet()
+    val source = selected?.let { urls -> mints.filter { it.url in urls } }.orEmpty()
+        .ifEmpty { mints }
+    val units = source
+        .flatMap { it.effectiveMintUnits.ifEmpty { it.units } }
+        .ifEmpty { listOf("sat") }
+        .distinct()
+    return units.sortedWith(compareBy<String> { if (it == "sat") 0 else 1 }.thenBy { it })
+}
+
+private fun copyActionLabel(title: String): String =
+    when (title) {
+        "Lightning Invoice" -> "Copy invoice"
+        "Reusable Invoice" -> "Copy invoice"
+        "Bitcoin Address" -> "Copy address"
+        else -> "Copy request"
+    }
 
 @Composable
 private fun StatusBlock(received: Boolean, paymentCount: Int, celebrate: Boolean) {

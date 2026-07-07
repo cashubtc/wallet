@@ -70,6 +70,7 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import org.cashu.wallet.Core.AmountFormatter
+import org.cashu.wallet.Core.CashuRequestStore
 import org.cashu.wallet.Core.Protocols.CurrencyAmount
 import org.cashu.wallet.Core.Protocols.CurrencyRegistry
 import org.cashu.wallet.Core.SettingsManager
@@ -104,6 +105,7 @@ private sealed interface ReceiveLnFace {
 fun ReceiveLightningScreen(
     walletManager: WalletManager,
     settingsManager: SettingsManager,
+    cashuRequestStore: CashuRequestStore,
     onClose: () -> Unit,
 ) {
     val walletState by walletManager.state.collectAsState()
@@ -275,6 +277,16 @@ fun ReceiveLightningScreen(
                                     method = method,
                                     unit = effectiveUnit,
                                 )
+                                cashuRequestStore.upsertQuoteIntent(
+                                    id = quote.id,
+                                    quoteId = quote.id,
+                                    quoteKind = quote.paymentMethod.name,
+                                    amount = quote.amount,
+                                    unit = quote.unit,
+                                    mints = listOfNotNull(quote.mintUrl ?: activeMint.url),
+                                    memo = quote.paymentMethod.quoteIntentMemo,
+                                    encoded = quote.request,
+                                )
                                 face = ReceiveLnFace.Display(quote)
                             } catch (t: Throwable) {
                                 errorText = t.message ?: "Could not create request."
@@ -303,11 +315,20 @@ fun ReceiveLightningScreen(
                     LaunchedEffect(liveQuote.state) {
                         if (liveQuote.state == MintQuoteState.Paid) {
                             runCatching { walletManager.mintTokens(liveQuote.id) }
-                            paymentJustReceived = true
-                            // Receive-flow resolution: dwell on the celebration,
-                            // then the screen dismisses itself (iOS parity).
-                            delay(1_200)
-                            onClose()
+                                .onSuccess { amount ->
+                                    if (amount > 0) {
+                                        cashuRequestStore.attachPaymentByQuoteId(
+                                            quoteId = liveQuote.id,
+                                            transactionId = liveQuote.id,
+                                            amount = amount,
+                                        )
+                                    }
+                                    paymentJustReceived = true
+                                    // Receive-flow resolution: dwell on the celebration,
+                                    // then the screen dismisses itself (iOS parity).
+                                    delay(1_200)
+                                    onClose()
+                                }
                         }
                     }
                     DisplayFace(
@@ -496,6 +517,13 @@ private val PaymentMethodKind.createActionTitle: String
         PaymentMethodKind.Bolt11 -> "Create Invoice"
         PaymentMethodKind.Bolt12 -> "Create Offer"
         PaymentMethodKind.Onchain -> "Get Address"
+    }
+
+private val PaymentMethodKind.quoteIntentMemo: String
+    get() = when (this) {
+        PaymentMethodKind.Bolt11 -> "Lightning invoice"
+        PaymentMethodKind.Bolt12 -> "Reusable invoice"
+        PaymentMethodKind.Onchain -> "Bitcoin address"
     }
 
 @Composable

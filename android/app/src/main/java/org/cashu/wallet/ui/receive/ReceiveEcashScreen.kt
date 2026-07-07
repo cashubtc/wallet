@@ -1,5 +1,6 @@
 package org.cashu.wallet.ui.receive
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -42,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.cashu.wallet.Core.AmountFormatter
 import org.cashu.wallet.Core.Protocols.CurrencyAmount
@@ -49,6 +51,7 @@ import org.cashu.wallet.Core.Protocols.CurrencyRegistry
 import org.cashu.wallet.Core.SettingsManager
 import org.cashu.wallet.Core.TokenParser
 import org.cashu.wallet.Core.WalletManager
+import org.cashu.wallet.Core.stablePendingReceiveTokenId
 import org.cashu.wallet.Models.TokenInfo
 import org.cashu.wallet.ui.components.AmountText
 import org.cashu.wallet.ui.components.CanvasDivider
@@ -57,14 +60,32 @@ import org.cashu.wallet.ui.components.GhostButton
 import org.cashu.wallet.ui.components.InlineNotice
 import org.cashu.wallet.ui.components.InspectorRow
 import org.cashu.wallet.ui.components.PrimaryButton
+import org.cashu.wallet.ui.components.PaymentStatusPhase
+import org.cashu.wallet.ui.components.PaymentStatusScreen
 import org.cashu.wallet.ui.components.TwoFaceCrossfade
 import org.cashu.wallet.ui.theme.CashuTheme
 import org.cashu.wallet.ui.theme.withMonoDigits
 
 private sealed interface ReceiveFace {
     data object Paste : ReceiveFace
-    data class Review(val token: String, val info: TokenInfo, val fee: Long, val locked: Boolean) : ReceiveFace
+    data class Review(
+        val token: String,
+        val info: TokenInfo,
+        val fee: Long,
+        val lockState: TokenLockState,
+        val unknownMint: Boolean,
+    ) : ReceiveFace
 }
+
+private enum class TokenLockState { None, YourKey, UnknownKey }
+
+private sealed interface ReceiveStatus {
+    data object Processing : ReceiveStatus
+    data class Success(val amountLabel: String) : ReceiveStatus
+    data class Failure(val reason: String) : ReceiveStatus
+}
+
+private const val MIN_RECEIVE_PROCESSING_MS = 650L
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -90,6 +111,18 @@ fun ReceiveEcashScreen(
     var validating by remember { mutableStateOf(false) }
     var receiving by remember { mutableStateOf(false) }
     var errorText by remember { mutableStateOf<String?>(null) }
+    var status by remember { mutableStateOf<ReceiveStatus?>(null) }
+
+    BackHandler(enabled = status != null || face is ReceiveFace.Review) {
+        when {
+            status != null -> {
+                status = null
+                receiving = false
+            }
+            face is ReceiveFace.Review -> face = ReceiveFace.Paste
+            else -> onClose()
+        }
+    }
 
     // Auto-paste a clipboard token on open (iOS autoPasteEcashReceive).
     LaunchedEffect(Unit) {
@@ -112,7 +145,7 @@ fun ReceiveEcashScreen(
         errorText = null
         runCatching {
             val id = org.cashu.wallet.Models.CashuRequest.newId()
-            val mints = listOfNotNull(walletState.activeMint?.url)
+            val mints = emptyList<String>()
             val encoded = org.cashu.wallet.Core.PaymentRequestBuilder.build(
                 id = id,
                 amount = null,
@@ -147,12 +180,20 @@ fun ReceiveEcashScreen(
             try {
                 val fee = runCatching { walletManager.calculateReceiveFee(token) }.getOrDefault(0L)
                 val locks = TokenParser.p2pkPubkeys(token)
-                val unlocked = if (locks.isEmpty()) {
-                    true
-                } else {
-                    settingsManager.p2pkSigningKeysFor(locks).isNotEmpty()
+                val lockState = when {
+                    locks.isEmpty() -> TokenLockState.None
+                    runCatching { settingsManager.p2pkSigningKeysFor(locks).isNotEmpty() }.getOrDefault(false) ->
+                        TokenLockState.YourKey
+                    else -> TokenLockState.UnknownKey
                 }
-                face = ReceiveFace.Review(token = token, info = info, fee = fee, locked = !unlocked)
+                val unknownMint = walletState.mints.none { it.url.trimEnd('/') == info.mint.trimEnd('/') }
+                face = ReceiveFace.Review(
+                    token = token,
+                    info = info,
+                    fee = fee,
+                    lockState = lockState,
+                    unknownMint = unknownMint,
+                )
             } catch (t: Throwable) {
                 errorText = t.message ?: "Validation failed."
             } finally {
@@ -172,19 +213,30 @@ fun ReceiveEcashScreen(
         topBar = {
             TopAppBar(
                 title = {
+                    val currentStatus = status
                     Text(
-                        when (face) {
-                            ReceiveFace.Paste -> "Receive ecash"
-                            is ReceiveFace.Review -> "Review token"
+                        when (currentStatus) {
+                            ReceiveStatus.Processing -> "Receiving token"
+                            is ReceiveStatus.Success -> "Payment received"
+                            is ReceiveStatus.Failure -> "Could not receive"
+                            null -> when (face) {
+                                ReceiveFace.Paste -> "Receive ecash"
+                                is ReceiveFace.Review -> "Review token"
+                            }
                         },
                         style = MaterialTheme.typography.titleMedium,
                     )
                 },
                 navigationIcon = {
                     IconButton(onClick = {
-                        when (face) {
-                            ReceiveFace.Paste -> onClose()
-                            is ReceiveFace.Review -> face = ReceiveFace.Paste
+                        when {
+                            status is ReceiveStatus.Success -> onClose()
+                            status != null -> {
+                                status = null
+                                receiving = false
+                            }
+                            face is ReceiveFace.Paste -> onClose()
+                            face is ReceiveFace.Review -> face = ReceiveFace.Paste
                         }
                     }) {
                         Icon(Icons.Outlined.Close, contentDescription = "Close")
@@ -203,6 +255,38 @@ fun ReceiveEcashScreen(
             )
         },
     ) { padding ->
+        when (val currentStatus = status) {
+            ReceiveStatus.Processing -> {
+                PaymentStatusScreen(
+                    phase = PaymentStatusPhase.Processing,
+                    title = "Receiving token…",
+                    modifier = Modifier.padding(padding),
+                )
+                return@Scaffold
+            }
+            is ReceiveStatus.Success -> {
+                PaymentStatusScreen(
+                    phase = PaymentStatusPhase.Success,
+                    title = "Payment received",
+                    detail = currentStatus.amountLabel,
+                    modifier = Modifier.padding(padding),
+                    onDone = onClose,
+                )
+                return@Scaffold
+            }
+            is ReceiveStatus.Failure -> {
+                PaymentStatusScreen(
+                    phase = PaymentStatusPhase.Failure,
+                    title = "Could not receive",
+                    detail = currentStatus.reason,
+                    doneLabel = "Try again",
+                    modifier = Modifier.padding(padding),
+                    onDone = { status = null },
+                )
+                return@Scaffold
+            }
+            null -> Unit
+        }
         TwoFaceCrossfade(
             targetState = face,
             modifier = Modifier
@@ -229,19 +313,32 @@ fun ReceiveEcashScreen(
                 is ReceiveFace.Review -> ReviewFace(
                     info = current.info,
                     fee = current.fee,
-                    locked = current.locked,
+                    lockState = current.lockState,
+                    unknownMint = current.unknownMint,
                     receiving = receiving,
                     formatter = formatter,
                     useBitcoinSymbol = settings.useBitcoinSymbol,
                     onReceive = {
                         receiving = true
+                        status = ReceiveStatus.Processing
                         errorText = null
                         scope.launch {
                             try {
+                                val started = System.currentTimeMillis()
                                 walletManager.receiveTokens(current.token)
-                                onClose()
+                                val elapsed = System.currentTimeMillis() - started
+                                if (elapsed < MIN_RECEIVE_PROCESSING_MS) {
+                                    delay(MIN_RECEIVE_PROCESSING_MS - elapsed)
+                                }
+                                status = ReceiveStatus.Success(
+                                    amountLabel = formatTokenAmount(
+                                        current.info,
+                                        formatter,
+                                        settings.useBitcoinSymbol,
+                                    ),
+                                )
                             } catch (t: Throwable) {
-                                errorText = t.message ?: "Could not receive."
+                                status = ReceiveStatus.Failure(t.message ?: "Could not receive.")
                             } finally {
                                 receiving = false
                             }
@@ -249,7 +346,7 @@ fun ReceiveEcashScreen(
                     },
                     onReceiveLater = {
                         val pending = org.cashu.wallet.Models.PendingReceiveToken(
-                            tokenId = current.token.take(64),
+                            tokenId = stablePendingReceiveTokenId(current.token),
                             token = current.token,
                             amount = current.info.amount,
                             mintUrl = current.info.mint,
@@ -341,7 +438,8 @@ private fun PasteFace(
 private fun ReviewFace(
     info: TokenInfo,
     fee: Long,
-    locked: Boolean,
+    lockState: TokenLockState,
+    unknownMint: Boolean,
     receiving: Boolean,
     formatter: AmountFormatter,
     useBitcoinSymbol: Boolean,
@@ -360,17 +458,12 @@ private fun ReviewFace(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.loose),
     ) {
-        // Amount and fee render in the token's own unit.
-        val isSatToken = info.unit.equals("sat", ignoreCase = true)
-        val tokenCurrency = CurrencyRegistry.currencyForMintUnit(info.unit)
         AmountText(
-            text = if (isSatToken) {
-                formatter.formatWalletSats(info.amount, useBitcoinSymbol)
-            } else {
-                CurrencyAmount(info.amount, tokenCurrency).formatted()
-            },
+            text = formatTokenAmount(info, formatter, useBitcoinSymbol),
             style = MaterialTheme.typography.displayMedium.withMonoDigits(),
         )
+        val isSatToken = info.unit.equals("sat", ignoreCase = true)
+        val tokenCurrency = CurrencyRegistry.currencyForMintUnit(info.unit)
         Column(modifier = Modifier.fillMaxWidth()) {
             InspectorRow(
                 label = "Fee",
@@ -387,11 +480,19 @@ private fun ReviewFace(
                 value = info.mint,
                 leadingIcon = Icons.Outlined.AccountBalance,
             )
-            if (locked) {
+            if (unknownMint) {
+                CanvasDivider(leadingInset = 16)
+                InspectorRow(
+                    label = "Mint status",
+                    value = "Unknown mint",
+                    leadingIcon = Icons.Outlined.AccountBalance,
+                )
+            }
+            if (lockState != TokenLockState.None) {
                 CanvasDivider(leadingInset = 16)
                 InspectorRow(
                     label = "P2PK",
-                    value = "Requires your key",
+                    value = if (lockState == TokenLockState.YourKey) "Your key" else "Unknown key",
                     leadingIcon = Icons.Outlined.Lock,
                 )
             }
@@ -406,11 +507,17 @@ private fun ReviewFace(
         if (errorText != null) {
             InlineNotice(text = errorText)
         }
+        if (unknownMint) {
+            InlineNotice(text = "This token comes from a mint that is not in your wallet yet.")
+        }
+        if (lockState == TokenLockState.UnknownKey) {
+            InlineNotice(text = "This token is locked to a P2PK key that is not stored on this device.")
+        }
         Spacer(modifier = Modifier.height(CashuTheme.spacing.snug))
         PrimaryButton(
             text = if (receiving) "Receiving…" else "Receive",
             onClick = onReceive,
-            enabled = !locked && !receiving,
+            enabled = lockState != TokenLockState.UnknownKey && !receiving,
             loading = receiving,
         )
         GhostButton(
@@ -419,6 +526,19 @@ private fun ReviewFace(
             enabled = !receiving,
         )
         Spacer(modifier = Modifier.navigationBarsPadding())
+    }
+}
+
+private fun formatTokenAmount(
+    info: TokenInfo,
+    formatter: AmountFormatter,
+    useBitcoinSymbol: Boolean,
+): String {
+    val isSatToken = info.unit.equals("sat", ignoreCase = true)
+    return if (isSatToken) {
+        formatter.formatWalletSats(info.amount, useBitcoinSymbol)
+    } else {
+        CurrencyAmount(info.amount, CurrencyRegistry.currencyForMintUnit(info.unit)).formatted()
     }
 }
 

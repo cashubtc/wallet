@@ -95,6 +95,7 @@ fun CashuNavHost(
             ReceiveLightningScreen(
                 walletManager = container.walletManager,
                 settingsManager = container.settingsManager,
+                cashuRequestStore = container.cashuRequestStore,
                 onClose = { navController.popBackStack() },
             )
         }
@@ -159,6 +160,7 @@ fun CashuNavHost(
             CashuRequestDetailScreen(
                 walletManager = container.walletManager,
                 settingsManager = container.settingsManager,
+                nostrService = container.nostrService,
                 cashuRequestStore = container.cashuRequestStore,
                 requestId = requestId,
                 onClose = { navController.popBackStack() },

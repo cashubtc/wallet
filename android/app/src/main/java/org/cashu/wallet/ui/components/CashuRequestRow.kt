@@ -44,6 +44,14 @@ fun requestRowAmount(
     }
 }
 
+fun requestRowTitle(request: CashuRequest): String =
+    when (request.quoteKind) {
+        "Bolt11" -> "Lightning Invoice"
+        "Bolt12" -> "Reusable Invoice"
+        "Onchain" -> "Bitcoin Address"
+        else -> "Cashu Request"
+    }
+
 /**
  * Cashu Request timeline row, paired with [TransactionRow] in History and Home
  * Recent. A request is structurally an incoming-ecash event in waiting, so the
@@ -64,8 +72,9 @@ fun CashuRequestRow(
     onLongClick: (() -> Unit)? = null,
 ) {
     val received = request.receivedPayments.isNotEmpty()
+    val title = requestRowTitle(request)
     val rowDescription = buildList {
-        add("Cashu Request")
+        add(title)
         add(if (received) "Received" else "Waiting")
         primaryAmountText?.let { add(if (received) "+$it" else it) }
         secondaryAmountText?.let(::add)
@@ -86,7 +95,7 @@ fun CashuRequestRow(
         DirectionIcon(incoming = true)
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = "Cashu Request",
+                text = title,
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurface,

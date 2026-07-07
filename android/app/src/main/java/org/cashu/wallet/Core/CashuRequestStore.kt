@@ -41,6 +41,55 @@ class CashuRequestStore(
         return request
     }
 
+    fun upsert(request: CashuRequest, makeCurrent: Boolean = true): CashuRequest {
+        val updated = listOf(request) + mutableState.value.requests.filterNot { it.id == request.id }
+        persist(updated, if (makeCurrent) request.id else mutableState.value.currentRequestId)
+        return request
+    }
+
+    fun update(
+        id: String,
+        amount: Long?,
+        unit: String,
+        mints: List<String>,
+        memo: String?,
+        encoded: String,
+    ): CashuRequest? {
+        val existing = request(id) ?: return null
+        val updatedRequest = existing.copy(
+            amount = amount,
+            unit = unit,
+            mints = mints,
+            memo = memo?.takeIf { it.isNotBlank() },
+            encoded = encoded,
+        )
+        upsert(updatedRequest, makeCurrent = mutableState.value.currentRequestId == id)
+        return updatedRequest
+    }
+
+    fun upsertQuoteIntent(
+        id: String = CashuRequest.newId(),
+        quoteId: String,
+        quoteKind: String,
+        amount: Long?,
+        unit: String = "sat",
+        mints: List<String> = emptyList(),
+        memo: String? = null,
+        encoded: String,
+    ): CashuRequest =
+        upsert(
+            CashuRequest(
+                id = id,
+                encoded = encoded,
+                amount = amount,
+                unit = unit,
+                mints = mints,
+                memo = memo?.takeIf { it.isNotBlank() },
+                quoteId = quoteId,
+                quoteKind = quoteKind,
+            ),
+        )
+
     fun attachPayment(requestId: String, transactionId: String, amount: Long) {
         val current = mutableState.value
         val updated = current.requests.map { request ->
@@ -59,6 +108,11 @@ class CashuRequestStore(
         persist(updated, current.currentRequestId)
     }
 
+    fun attachPaymentByQuoteId(quoteId: String, transactionId: String, amount: Long) {
+        val request = mutableState.value.requests.firstOrNull { it.quoteId == quoteId } ?: return
+        attachPayment(request.id, transactionId, amount)
+    }
+
     fun delete(id: String) {
         val current = mutableState.value
         val updated = current.requests.filterNot { it.id == id }
@@ -68,6 +122,14 @@ class CashuRequestStore(
 
     fun request(id: String): CashuRequest? =
         mutableState.value.requests.firstOrNull { it.id == id }
+
+    fun reload() {
+        mutableState.value = loadState()
+    }
+
+    fun reset() {
+        persist(emptyList(), null)
+    }
 
     private fun loadState(): CashuRequestStoreState {
         val requests = walletStore.loadCashuRequests()
