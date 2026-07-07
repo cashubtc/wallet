@@ -77,8 +77,6 @@ private sealed interface ReceiveFace {
     ) : ReceiveFace
 }
 
-private enum class TokenLockState { None, YourKey, UnknownKey }
-
 private sealed interface ReceiveStatus {
     data object Processing : ReceiveStatus
     data class Success(val amountLabel: String) : ReceiveStatus
@@ -180,19 +178,20 @@ fun ReceiveEcashScreen(
             try {
                 val fee = runCatching { walletManager.calculateReceiveFee(token) }.getOrDefault(0L)
                 val locks = TokenParser.p2pkPubkeys(token)
-                val lockState = when {
-                    locks.isEmpty() -> TokenLockState.None
-                    locks.any { settingsManager.isKnownP2PKPublicKey(it) } ->
-                        TokenLockState.YourKey
-                    else -> TokenLockState.UnknownKey
-                }
-                val unknownMint = walletState.mints.none { it.url.trimEnd('/') == info.mint.trimEnd('/') }
+                val reviewFlags = receiveEcashReviewFlags(
+                    info = info,
+                    tokenLockPubkeys = locks,
+                    knownP2PKPubkeys = locks
+                        .filter(settingsManager::isKnownP2PKPublicKey)
+                        .toSet(),
+                    walletMintUrls = walletState.mints.map { it.url },
+                )
                 face = ReceiveFace.Review(
                     token = token,
                     info = info,
                     fee = fee,
-                    lockState = lockState,
-                    unknownMint = unknownMint,
+                    lockState = reviewFlags.lockState,
+                    unknownMint = reviewFlags.unknownMint,
                 )
             } catch (t: Throwable) {
                 errorText = t.message ?: "Validation failed."
@@ -526,19 +525,6 @@ private fun ReviewFace(
             enabled = !receiving,
         )
         Spacer(modifier = Modifier.navigationBarsPadding())
-    }
-}
-
-private fun formatTokenAmount(
-    info: TokenInfo,
-    formatter: AmountFormatter,
-    useBitcoinSymbol: Boolean,
-): String {
-    val isSatToken = info.unit.equals("sat", ignoreCase = true)
-    return if (isSatToken) {
-        formatter.formatWalletSats(info.amount, useBitcoinSymbol)
-    } else {
-        CurrencyAmount(info.amount, CurrencyRegistry.currencyForMintUnit(info.unit)).formatted()
     }
 }
 

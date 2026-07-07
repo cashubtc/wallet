@@ -15,6 +15,14 @@ class WalletReceiveEventTest {
                 source = WalletReceiveSource.Ecash,
             ).showsHomeSatDelta(),
         )
+        assertTrue(
+            WalletReceiveEvent(
+                id = 4,
+                amount = 1,
+                unit = "SAT",
+                source = WalletReceiveSource.CashuRequest,
+            ).showsHomeSatDelta(),
+        )
         assertFalse(
             WalletReceiveEvent(
                 id = 2,

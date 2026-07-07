@@ -22,4 +22,12 @@ class PendingReceiveTokenIdsTest {
             stablePendingReceiveTokenId(sharedPrefix + "b"),
         )
     }
+
+    @Test
+    fun stablePendingReceiveTokenIdIsAHashSafeForStorageKeys() {
+        val tokenId = stablePendingReceiveTokenId("cashuA-token")
+
+        assertEquals(64, tokenId.length)
+        assertEquals(tokenId.lowercase(), tokenId)
+    }
 }
