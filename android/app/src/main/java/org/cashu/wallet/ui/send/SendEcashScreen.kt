@@ -107,10 +107,12 @@ private sealed interface SendFace {
 fun SendEcashScreen(
     walletManager: WalletManager,
     settingsManager: SettingsManager,
+    priceService: org.cashu.wallet.Core.PriceService,
     onClose: () -> Unit,
 ) {
     val walletState by walletManager.state.collectAsState()
     val settings by settingsManager.state.collectAsState()
+    val priceState by priceService.state.collectAsState()
     val formatter = remember { AmountFormatter() }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -191,8 +193,8 @@ fun SendEcashScreen(
                 title = {
                     Text(
                         when (face) {
-                            SendFace.Input -> "Send ecash"
-                            is SendFace.Generated -> "Pending ecash"
+                            SendFace.Input -> "Send Ecash"
+                            is SendFace.Generated -> "Pending Ecash"
                         },
                         style = MaterialTheme.typography.titleMedium,
                     )
@@ -344,6 +346,7 @@ fun SendEcashScreen(
                     result = current.result,
                     mintUrl = current.mintUrl,
                     unit = current.unit,
+                    amountSats = current.amount,
                     pollingEnabled = settings.checkSentTokens,
                     amountLabel = if (current.unit.equals("sat", ignoreCase = true)) {
                         formatter.formatWalletSats(current.amount, settings.useBitcoinSymbol)
@@ -353,7 +356,18 @@ fun SendEcashScreen(
                             CurrencyRegistry.currencyForMintUnit(current.unit),
                         ).formatted()
                     },
-                    onSendAnother = { face = SendFace.Input },
+                    fiatLabel = if (current.unit.equals("sat", ignoreCase = true) &&
+                        settings.showFiatBalance && priceState.btcPrice > 0
+                    ) {
+                        formatter.formatFiat(
+                            current.amount,
+                            priceState.btcPrice,
+                            settings.bitcoinPriceCurrency,
+                        )
+                    } else {
+                        null
+                    },
+                    onDone = onClose,
                 )
             }
         }
@@ -576,9 +590,11 @@ private fun GeneratedFace(
     result: SendTokenResult,
     mintUrl: String,
     unit: String,
+    amountSats: Long,
     pollingEnabled: Boolean,
     amountLabel: String,
-    onSendAnother: () -> Unit,
+    fiatLabel: String?,
+    onDone: () -> Unit,
 ) {
     val clipboard = LocalClipboardManager.current
     var copied by remember { mutableStateOf(false) }
@@ -604,6 +620,18 @@ private fun GeneratedFace(
             }
         }
     }
+
+    // Claimed resolves to the shared full-screen terminal (iOS parity).
+    if (claimState == ClaimState.Claimed) {
+        org.cashu.wallet.ui.components.PaymentStatusScreen(
+            phase = org.cashu.wallet.ui.components.PaymentStatusPhase.Success,
+            title = "Claimed",
+            detail = amountLabel,
+            onDone = onDone,
+        )
+        return
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -621,35 +649,49 @@ private fun GeneratedFace(
         )
         Text(
             text = amountLabel,
-            style = MaterialTheme.typography.headlineSmall.withMonoDigits(),
+            style = MaterialTheme.typography.headlineMedium.withMonoDigits(),
             color = MaterialTheme.colorScheme.onSurface,
         )
-        if (result.fee > 0L) {
-            val feeLabel = if (unit.equals("sat", ignoreCase = true)) {
-                "${result.fee} sat"
-            } else {
-                CurrencyAmount(result.fee, CurrencyRegistry.currencyForMintUnit(unit)).formatted()
-            }
-            Text(
-                text = "Fee $feeLabel",
-                style = MaterialTheme.typography.bodySmall.withMonoDigits(),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
         ClaimStatusRow(claimState = claimState)
-        Spacer(modifier = Modifier.height(CashuTheme.spacing.micro))
-        if (claimState != ClaimState.Claimed) {
-            PrimaryButton(
-                text = if (copied) "Copied" else "Copy token",
-                onClick = {
-                    clipboard.setText(AnnotatedString(result.token))
-                    copied = true
-                },
+        // Detail rows: Fee -> Unit -> Fiat (sat-only) -> Mint (iOS order).
+        Column(modifier = Modifier.fillMaxWidth()) {
+            if (result.fee > 0L) {
+                org.cashu.wallet.ui.components.InspectorRow(
+                    label = "Fee",
+                    value = if (unit.equals("sat", ignoreCase = true)) {
+                        "${result.fee} sat"
+                    } else {
+                        CurrencyAmount(result.fee, CurrencyRegistry.currencyForMintUnit(unit)).formatted()
+                    },
+                    valueMonospaced = true,
+                )
+                org.cashu.wallet.ui.components.CanvasDivider(leadingInset = 16)
+            }
+            org.cashu.wallet.ui.components.InspectorRow(
+                label = "Unit",
+                value = unit.uppercase(),
+            )
+            if (fiatLabel != null) {
+                org.cashu.wallet.ui.components.CanvasDivider(leadingInset = 16)
+                org.cashu.wallet.ui.components.InspectorRow(
+                    label = "Fiat",
+                    value = fiatLabel,
+                    valueMonospaced = true,
+                )
+            }
+            org.cashu.wallet.ui.components.CanvasDivider(leadingInset = 16)
+            org.cashu.wallet.ui.components.InspectorRow(
+                label = "Mint",
+                value = org.cashu.wallet.Core.shortenMintUrl(mintUrl),
             )
         }
+        Spacer(modifier = Modifier.height(CashuTheme.spacing.micro))
         PrimaryButton(
-            text = "Send another",
-            onClick = onSendAnother,
+            text = if (copied) "Copied" else "Copy",
+            onClick = {
+                clipboard.setText(AnnotatedString(result.token))
+                copied = true
+            },
         )
         Spacer(modifier = Modifier.navigationBarsPadding())
     }
@@ -688,7 +730,7 @@ private fun ClaimStatusRow(claimState: ClaimState) {
                         modifier = Modifier.size(STATUS_ICON_SMALL),
                     )
                     Text(
-                        text = "Waiting for recipient",
+                        text = "Pending",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
@@ -711,34 +753,7 @@ private fun ClaimStatusRow(claimState: ClaimState) {
                     )
                 }
             }
-            ClaimState.Claimed -> {
-                // Single gentle celebration beat: green lives on the glyph only,
-                // the text stays primary (One Green Rule).
-                AnimatedVisibility(
-                    visible = true,
-                    enter = scaleIn(
-                        animationSpec = spring(dampingRatio = 0.7f, stiffness = Spring.StiffnessMediumLow),
-                        initialScale = 0.9f,
-                    ) + fadeIn(),
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.tight),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.CheckCircle,
-                            contentDescription = null,
-                            tint = org.cashu.wallet.ui.theme.CashuTheme.colors.received,
-                            modifier = Modifier.size(CashuTheme.spacing.loose),
-                        )
-                        Text(
-                            text = "Claimed",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                    }
-                }
-            }
+            ClaimState.Claimed -> Unit
         }
     }
 }

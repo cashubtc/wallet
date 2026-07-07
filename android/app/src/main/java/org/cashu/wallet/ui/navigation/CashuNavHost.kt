@@ -92,6 +92,7 @@ fun CashuNavHost(
             SendEcashScreen(
                 walletManager = container.walletManager,
                 settingsManager = container.settingsManager,
+                priceService = container.priceService,
                 onClose = { navController.popBackStack() },
             )
         }
