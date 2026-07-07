@@ -847,7 +847,7 @@ Checklist:
 - [x] Add `imePadding` and scroll support to all text-entry dialogs and sheets: Nostr relay add/import, P2PK import/generate labels, mint add/discovery filters, restore seed/mint input, and send destination entry. Nostr and P2PK dialogs, mint add/discovery, onboarding restore, Receive Lightning reusable amount editing, and Unified Send destination entry now have scroll/IME or bottom-inset coverage.
 - [x] Add max-lines, overflow, and width constraints to `SettingsRows.NavRow`, `ToggleRow`, mint rows, history rows, QR detail rows, and public-key rows so long titles, trailing values, mint URLs, relay URLs, Lightning addresses, and P2PK keys cannot push controls off-screen.
 - [x] Add large-font wrapping/bounds to segmented and picker labels. Nostr signer segmented labels can wrap to two lines; Receive Method picker labels/descriptions are bounded.
-- [ ] Verify segmented controls in Nostr and receive method pickers at large font sizes with rendered screenshots; labels should wrap or adapt instead of clipping.
+- [x] Verify segmented controls in Nostr and receive method pickers at large font sizes with rendered screenshots; labels should wrap or adapt instead of clipping. `LargeFontPickerComposeTest` renders and captures the Nostr signer picker plus Receive Method picker at `fontScale = 2f` and compact widths, while asserting the key labels remain visible.
 - [x] Keep modal bottom sheet content scrollable and inset-aware, especially currency picker, mint discovery, receive chooser, and method picker sheets. Shared chooser, mint picker, unit picker, Receive Method picker, Add Mint to Pay, Top-up, currency picker, and mint discovery sheet content now have scroll and/or inset-aware containers.
 
 Success condition:

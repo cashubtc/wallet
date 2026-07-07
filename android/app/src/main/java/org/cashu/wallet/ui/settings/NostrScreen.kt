@@ -119,37 +119,11 @@ fun NostrScreen(
 
             item("signer-header") { SectionHeader("Signer") }
             item("signer") {
-                Column(modifier = Modifier.fillMaxWidth().padding(horizontal = CashuTheme.spacing.comfortable)) {
-                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                        NostrSignerType.entries.forEachIndexed { index, kind ->
-                            SegmentedButton(
-                                shape = SegmentedButtonDefaults.itemShape(
-                                    index = index,
-                                    count = NostrSignerType.entries.size,
-                                ),
-                                selected = kind == nostrState.signerType,
-                                onClick = {
-                                    runCatching { nostrService.switchSignerType(kind) }
-                                },
-                            ) {
-                                Text(
-                                    text = kind.displayName,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                        }
-                    }
-                    Spacer(Modifier.height(CashuTheme.spacing.snug))
-                    Text(
-                        text = when (nostrState.signerType) {
-                            NostrSignerType.Seed -> "Keys are derived from your wallet seed."
-                            NostrSignerType.PrivateKey -> "Custom key stored in secure storage."
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                NostrSignerPicker(
+                    signerType = nostrState.signerType,
+                    onSelect = { kind -> runCatching { nostrService.switchSignerType(kind) } },
+                    modifier = Modifier.padding(horizontal = CashuTheme.spacing.comfortable),
+                )
             }
 
             item("public-header") { SectionHeader("Public identity") }
@@ -448,6 +422,43 @@ fun NostrScreen(
             dismissButton = {
                 TextButton(onClick = { addRelayOpen = false; addRelayError = null }) { Text("Cancel") }
             },
+        )
+    }
+}
+
+@Composable
+fun NostrSignerPicker(
+    signerType: NostrSignerType,
+    onSelect: (NostrSignerType) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier.fillMaxWidth()) {
+        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+            NostrSignerType.entries.forEachIndexed { index, kind ->
+                SegmentedButton(
+                    shape = SegmentedButtonDefaults.itemShape(
+                        index = index,
+                        count = NostrSignerType.entries.size,
+                    ),
+                    selected = kind == signerType,
+                    onClick = { onSelect(kind) },
+                ) {
+                    Text(
+                        text = kind.displayName,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(CashuTheme.spacing.snug))
+        Text(
+            text = when (signerType) {
+                NostrSignerType.Seed -> "Keys are derived from your wallet seed."
+                NostrSignerType.PrivateKey -> "Custom key stored in secure storage."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }

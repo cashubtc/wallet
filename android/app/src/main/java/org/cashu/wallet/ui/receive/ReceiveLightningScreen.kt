@@ -117,7 +117,7 @@ private sealed interface ReceiveLnFace {
     data class Display(val quote: MintQuoteInfo) : ReceiveLnFace
 }
 
-private enum class ReceiveMethodOption(
+enum class ReceiveMethodOption(
     val method: PaymentMethodKind,
     val title: String,
     val descriptor: String,
@@ -777,62 +777,76 @@ private fun ReceiveMethodPickerSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
     ) {
-        Column(
+        ReceiveMethodPickerContent(
+            options = options,
+            selectedOption = selectedOption,
+            onSelect = onSelect,
             modifier = Modifier
-                .fillMaxWidth()
                 .padding(horizontal = CashuTheme.spacing.comfortable)
                 .navigationBarsPadding()
                 .verticalScroll(rememberScrollState()),
-        ) {
-            Text(
-                text = "Receive with",
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(
-                    horizontal = CashuTheme.spacing.snug,
-                    vertical = CashuTheme.spacing.default,
-                ),
-            )
-            options.forEach { option ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onSelect(option) }
-                        .padding(
-                            horizontal = CashuTheme.spacing.snug,
-                            vertical = CashuTheme.spacing.default,
-                        ),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = option.title,
-                            style = MaterialTheme.typography.bodyLarge,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            text = option.descriptor,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    Icon(
-                        imageVector = option.method.menuIcon,
-                        contentDescription = if (option == selectedOption) "Selected" else null,
-                        tint = if (option == selectedOption) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                        modifier = Modifier.size(CashuTheme.spacing.loose),
+        )
+    }
+}
+
+@Composable
+fun ReceiveMethodPickerContent(
+    options: List<ReceiveMethodOption>,
+    selectedOption: ReceiveMethodOption,
+    onSelect: (ReceiveMethodOption) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Text(
+            text = "Receive with",
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.padding(
+                horizontal = CashuTheme.spacing.snug,
+                vertical = CashuTheme.spacing.default,
+            ),
+        )
+        options.forEach { option ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onSelect(option) }
+                    .padding(
+                        horizontal = CashuTheme.spacing.snug,
+                        vertical = CashuTheme.spacing.default,
+                    ),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = option.title,
+                        style = MaterialTheme.typography.bodyLarge,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = option.descriptor,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
+                Icon(
+                    imageVector = option.method.menuIcon,
+                    contentDescription = if (option == selectedOption) "Selected" else null,
+                    tint = if (option == selectedOption) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    modifier = Modifier.size(CashuTheme.spacing.loose),
+                )
             }
-            Spacer(Modifier.height(CashuTheme.spacing.snug))
         }
+        Spacer(Modifier.height(CashuTheme.spacing.snug))
     }
 }
 
