@@ -21,6 +21,7 @@ This inventory maps the current Android navigation graph to the iOS screen or fl
 | `send/ecash` | `ui/send/SendEcashScreen.kt` | `Views/Send/SendView.swift` ecash flow | Milestone 4, Milestone 7 | Ecash send, memo, unit, mint, P2PK lock, token display, claim polling. |
 | `receive/ecash` | `ui/receive/ReceiveEcashScreen.kt` | `Views/Receive/ReceiveView.swift`, `ReceiveTokenDetailView.swift` | Milestone 5, Milestone 7 | Paste/scan token, review/receive later, Cashu Request creation entry, locked receive handling. |
 | `receive/lightning` | `ui/receive/ReceiveLightningScreen.kt` | `Views/Receive/ReceiveLightningView.swift` | Milestone 6 | BOLT11/BOLT12/on-chain quote creation, QR/copy/share, expiry/status, minting paid quotes. |
+| `receive/locked-ecash` | `ui/receive/ReceiveLockedEcashScreen.kt` | `Views/Receive/ReceiveView.swift` locked-key sheet | Milestone 7 | NUT-18 locked receive request QR, copy, share, regenerate, and unavailable state. |
 
 ## Detail Routes
 

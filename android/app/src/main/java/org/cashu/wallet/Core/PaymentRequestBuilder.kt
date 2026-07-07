@@ -1,5 +1,6 @@
 package org.cashu.wallet.Core
 
+import org.cashu.wallet.Models.CashuRequest
 import java.util.Base64
 
 object PaymentRequestBuilder {
@@ -13,6 +14,7 @@ object PaymentRequestBuilder {
         nostrPubkeyHex: String,
         relays: List<String>,
         nip: String = "17",
+        p2pkPubkeyHex: String? = null,
     ): String {
         val nprofile = makeNprofile(nostrPubkeyHex, relays)
         val transport = listOf(
@@ -33,6 +35,16 @@ object PaymentRequestBuilder {
             if (singleUse != null) add(Nut18Key.Text("s") to Nut18Value.Bool(singleUse))
             if (mints.isNotEmpty()) add(Nut18Key.Text("m") to Nut18Value.Array(mints.map { Nut18Value.Text(it) }))
             if (!description.isNullOrBlank()) add(Nut18Key.Text("d") to Nut18Value.Text(description))
+            if (!p2pkPubkeyHex.isNullOrBlank()) {
+                add(
+                    Nut18Key.Text("nut10") to Nut18Value.Map(
+                        listOf(
+                            Nut18Key.Text("k") to Nut18Value.Text("P2PK"),
+                            Nut18Key.Text("d") to Nut18Value.Text(p2pkPubkeyHex),
+                        ),
+                    ),
+                )
+            }
             add(Nut18Key.Text("t") to Nut18Value.Array(listOf(Nut18Value.Map(transport))))
         }
         val cbor = Nut18Cbor.encode(Nut18Value.Map(request))
@@ -55,6 +67,43 @@ object PaymentRequestBuilder {
             }
         }
         return Bech32.encode("nprofile", tlv.toByteArray())
+    }
+}
+
+object LockedReceiveRequest {
+    fun build(
+        settingsManager: SettingsManager,
+        nostrService: NostrService,
+        amount: Long? = null,
+    ): String? = build(
+        id = CashuRequest.newId(),
+        amount = amount,
+        primaryP2pkPubkeyHex = settingsManager.primaryP2PKPublicKey(),
+        nostrPubkeyHex = nostrService.state.value.publicKeyHex,
+        relays = settingsManager.state.value.nostrRelays,
+    )
+
+    internal fun build(
+        id: String,
+        amount: Long? = null,
+        primaryP2pkPubkeyHex: String?,
+        nostrPubkeyHex: String,
+        relays: List<String>,
+    ): String? {
+        val p2pk = primaryP2pkPubkeyHex?.takeIf { it.isNotBlank() } ?: return null
+        if (nostrPubkeyHex.isBlank() || relays.isEmpty()) return null
+        return runCatching {
+            PaymentRequestBuilder.build(
+                id = id,
+                amount = amount,
+                unit = "sat",
+                mints = emptyList(),
+                description = null,
+                nostrPubkeyHex = nostrPubkeyHex,
+                relays = relays,
+                p2pkPubkeyHex = p2pk,
+            )
+        }.getOrNull()
     }
 }
 

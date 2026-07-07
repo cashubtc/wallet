@@ -7,6 +7,7 @@ import org.cashudevkit.decodeInvoice
 import org.cashudevkit.decodePaymentRequest
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
+import java.util.Base64
 
 data class CashuPaymentRequestSummary(
     val encoded: String,
@@ -121,7 +122,8 @@ object PaymentRequestDecoder {
 
     fun cashuPaymentRequestSummary(raw: String): CashuPaymentRequestSummary? {
         val encoded = encodedCashuPaymentRequest(raw) ?: return null
-        val request = runCatching { decodePaymentRequest(encoded) }.getOrNull() ?: return null
+        val request = runCatching { decodePaymentRequest(encoded) }.getOrNull()
+            ?: return Nut18SummaryDecoder.decode(encoded)
         return CashuPaymentRequestSummary(
             encoded = encoded,
             amount = request.amount()?.value?.toLong(),
@@ -209,5 +211,100 @@ object PaymentRequestDecoder {
         CdkCurrencyUnit.Eur -> "eur"
         CdkCurrencyUnit.Auth -> "auth"
         is CdkCurrencyUnit.Custom -> unit
+    }
+}
+
+private sealed interface Nut18DecodedValue {
+    data class Text(val value: String) : Nut18DecodedValue
+    data class UInt(val value: Long) : Nut18DecodedValue
+    data class Bool(val value: Boolean) : Nut18DecodedValue
+    data class Array(val values: List<Nut18DecodedValue>) : Nut18DecodedValue
+    data class Map(val values: List<Pair<String, Nut18DecodedValue>>) : Nut18DecodedValue
+}
+
+private object Nut18SummaryDecoder {
+    fun decode(encoded: String): CashuPaymentRequestSummary? {
+        if (!encoded.startsWith("creqA", ignoreCase = true)) return null
+        val payload = encoded.drop("creqA".length)
+        val bytes = runCatching { Base64.getUrlDecoder().decode(payload) }.getOrNull() ?: return null
+        val root = runCatching { Reader(bytes).readValue() as? Nut18DecodedValue.Map }.getOrNull() ?: return null
+        fun text(key: String): String? = (root.first(key) as? Nut18DecodedValue.Text)?.value
+        val mints = (root.first("m") as? Nut18DecodedValue.Array)
+            ?.values
+            ?.mapNotNull { (it as? Nut18DecodedValue.Text)?.value }
+            .orEmpty()
+        return CashuPaymentRequestSummary(
+            encoded = encoded,
+            amount = (root.first("a") as? Nut18DecodedValue.UInt)?.value,
+            unit = text("u"),
+            description = text("d"),
+            mints = mints,
+        )
+    }
+
+    private fun Nut18DecodedValue.Map.first(key: String): Nut18DecodedValue? =
+        values.firstOrNull { it.first == key }?.second
+
+    private class Reader(private val bytes: ByteArray) {
+        private var index = 0
+
+        fun readValue(): Nut18DecodedValue {
+            val initial = readByte()
+            val major = (initial.toInt() and 0xFF) shr 5
+            val additional = initial.toInt() and 0x1F
+            return when (major) {
+                0 -> Nut18DecodedValue.UInt(readLength(additional))
+                3 -> {
+                    val length = readLength(additional).toInt()
+                    Nut18DecodedValue.Text(readBytes(length).toString(Charsets.UTF_8))
+                }
+                4 -> {
+                    val length = readLength(additional).toInt()
+                    Nut18DecodedValue.Array(List(length) { readValue() })
+                }
+                5 -> {
+                    val length = readLength(additional).toInt()
+                    Nut18DecodedValue.Map(
+                        List(length) {
+                            val key = readValue() as? Nut18DecodedValue.Text ?: error("NUT-18 key must be text.")
+                            key.value to readValue()
+                        },
+                    )
+                }
+                7 -> when (additional) {
+                    20 -> Nut18DecodedValue.Bool(false)
+                    21 -> Nut18DecodedValue.Bool(true)
+                    else -> error("Unsupported simple CBOR value.")
+                }
+                else -> error("Unsupported CBOR major type.")
+            }
+        }
+
+        private fun readLength(additional: Int): Long = when {
+            additional < 24 -> additional.toLong()
+            additional == 24 -> readByte().toLong() and 0xFFL
+            additional == 25 -> readUnsigned(byteCount = 2)
+            additional == 26 -> readUnsigned(byteCount = 4)
+            additional == 27 -> readUnsigned(byteCount = 8)
+            else -> error("Unsupported CBOR length.")
+        }
+
+        private fun readUnsigned(byteCount: Int): Long {
+            var value = 0L
+            repeat(byteCount) {
+                value = (value shl 8) or (readByte().toLong() and 0xFF)
+            }
+            return value
+        }
+
+        private fun readBytes(count: Int): ByteArray {
+            require(index + count <= bytes.size) { "Unexpected end of CBOR." }
+            return bytes.copyOfRange(index, index + count).also { index += count }
+        }
+
+        private fun readByte(): Byte {
+            require(index < bytes.size) { "Unexpected end of CBOR." }
+            return bytes[index++]
+        }
     }
 }

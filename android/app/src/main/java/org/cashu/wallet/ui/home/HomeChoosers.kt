@@ -2,12 +2,13 @@ package org.cashu.wallet.ui.home
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CurrencyBitcoin
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Money
 import androidx.compose.runtime.Composable
 import org.cashu.wallet.ui.components.ChooserOption
 import org.cashu.wallet.ui.components.ChooserSheet
 
-enum class ReceiveAction { Ecash, Bitcoin }
+enum class ReceiveAction { Ecash, Bitcoin, LockedEcash }
 
 // Receive keeps the compact chooser (iOS WalletActionSheetView). Send has no
 // chooser — it opens the unified send surface directly.
@@ -30,6 +31,12 @@ fun ReceiveChooserSheet(
                 label = "Bitcoin",
                 icon = Icons.Outlined.CurrencyBitcoin,
                 supporting = "Lightning invoice or on-chain address",
+            ),
+            ChooserOption(
+                id = ReceiveAction.LockedEcash.name,
+                label = "Locked Ecash",
+                icon = Icons.Outlined.Lock,
+                supporting = "Receive ecash only you can claim",
             ),
         ),
         onSelect = { option -> onSelect(ReceiveAction.valueOf(option.id)) },

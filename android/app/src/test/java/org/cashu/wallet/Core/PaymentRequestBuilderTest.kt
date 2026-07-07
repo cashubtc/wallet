@@ -4,6 +4,7 @@ import org.cashu.wallet.Models.CashuRequest
 import org.cashu.wallet.Models.CashuRequestPayment
 import java.util.Base64
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -45,6 +46,31 @@ class PaymentRequestBuilderTest {
     }
 
     @Test
+    fun lockedReceiveRequestEncodesNut10AndParses() {
+        val p2pkPubkey = "02${"a".repeat(64)}"
+        val encoded = LockedReceiveRequest.build(
+            id = "testid01",
+            amount = 21,
+            primaryP2pkPubkeyHex = p2pkPubkey,
+            nostrPubkeyHex = "b".repeat(64),
+            relays = listOf("wss://relay.example.com"),
+        )
+
+        assertNotNull(encoded)
+        val request = encoded!!
+        assertTrue(request.startsWith("creqA"))
+        val cbor = Base64.getUrlDecoder().decode(request.removePrefix("creqA"))
+        assertTrue(cbor.bytesContain("nut10"))
+        assertTrue(cbor.bytesContain("P2PK"))
+        assertTrue(cbor.bytesContain(p2pkPubkey))
+
+        val parsed = PaymentRequestDecoder.cashuPaymentRequestSummary(request)
+        assertNotNull(parsed)
+        assertEquals(21L, parsed?.amount)
+        assertEquals("sat", parsed?.unit)
+    }
+
+    @Test
     fun cashuRequestLegacyPaymentIdsArePreservedAsZeroAmountPayments() {
         val request = CashuRequest(
             id = "abc",
@@ -63,5 +89,13 @@ class PaymentRequestBuilderTest {
         private const val PRIVATE_KEY_HEX = "0000000000000000000000000000000000000000000000000000000000000001"
 
         private fun ByteArray.hex(): String = joinToString("") { "%02x".format(it) }
+
+        private fun ByteArray.bytesContain(needle: String): Boolean {
+            val pin = needle.toByteArray(Charsets.UTF_8)
+            if (pin.isEmpty() || size < pin.size) return false
+            return indices.any { start ->
+                start + pin.size <= size && pin.indices.all { offset -> this[start + offset] == pin[offset] }
+            }
+        }
     }
 }

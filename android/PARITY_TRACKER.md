@@ -24,7 +24,7 @@ Status date: 2026-07-07
 | 4 | Unified Send, Pay Flows, and Contactless | Complete | Milestone 4 commit on `codex/android-update-plan-implementation` | Cashu Request route model, add-mint/top-up recovery, amountless/non-sat notices, P2PK scan quick-fill/chip, NFC route parity, focused tests. |
 | 5 | Receive Ecash and Cashu Request Parity | Complete | Milestone 5 commit on `codex/android-update-plan-implementation` | Shared receive status, stable pending ids, unknown/locked token review, editable NUT-18 requests, quote-backed receive intents, focused tests. |
 | 6 | Receive Lightning, BOLT12, and On-chain | Complete | Milestone 6 commit on `codex/android-update-plan-implementation` | Material method picker, BOLT11 expiry, reusable BOLT12 reuse/editing, on-chain reuse/new address/explorer, shared status, focused tests. |
-| 7 | Locked Ecash and P2PK | Not started | TBD | Seed-derived primary key, NUT-10/NUT-18 requests, locked receive, authenticated key reveal, tests. |
+| 7 | Locked Ecash and P2PK | Complete | Milestone 7 commit on `codex/android-update-plan-implementation` | Seed-derived primary key, NUT-10/NUT-18 requests, locked receive, authenticated key reveal, focused tests. |
 | 8 | Mints and Mint Metadata | Not started | TBD | Full NUT-06 mint detail, discovery polish, refresh behavior, nickname handling, tests. |
 | 9 | History and Transaction Detail | Not started | TBD | Stale sync, swipe/delete, row/detail parity, large-ledger behavior, tests. |
 | 10 | Settings, Integrations, and Privacy | Not started | TBD | App Lock/cloud backup settings, accurate privacy toggles, Nostr/P2PK/Lightning parity, tests. |
@@ -105,3 +105,13 @@ Status date: 2026-07-07
 - Quote lifecycle: BOLT11 expiry countdown/expired state, quote polling policy, on-chain observation, and paid/issued quote handling feed the shared `PaymentStatusScreen`.
 - Wallet operations: `WalletManager` can find existing active amountless BOLT12 and active on-chain mint quotes before creating duplicates.
 - Tests: focused Gradle coverage includes mint quote domain/polling policy, pending quote history rows, and Home quote-intent duplicate suppression.
+
+## Current Milestone 7 Evidence
+
+- NUT-10 request encoding: `PaymentRequestBuilder` writes `nut10` P2PK data into NUT-18 `creqA` requests and `PaymentRequestDecoder` has a structured fallback summary decoder for extension-bearing requests.
+- Locked receive: `LockedReceiveRequest` builds Nostr-routed requests locked to the seed-derived primary P2PK key, and `ReceiveLockedEcashScreen` exposes QR/copy/share/regenerate actions.
+- Primary key model: `SettingsManager` exposes primary P2PK public/private/nsec helpers from the active Nostr identity and includes available local P2PK keys in signing lookups.
+- Known-key receive: receive-token review checks `isKnownP2PKPublicKey`, so primary-key locked tokens show "Your key" and unknown-key tokens remain blocked.
+- P2PK settings: Locked Ecash settings now use lazy Material sections for Your key, Quick lock, Advanced keys, detail QR/copy, private reveal/copy behind authentication, rename/remove, import, and explainer copy.
+- Send quick fills: Send Ecash can quick-fill "your key" when enabled and can quick-fill a copied public key from the clipboard.
+- Tests: focused Gradle coverage includes locked receive NUT-10 bytes/summary parsing, P2PK normalization, and send-side P2PK scan normalization.

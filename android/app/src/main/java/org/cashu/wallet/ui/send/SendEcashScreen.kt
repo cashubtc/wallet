@@ -119,6 +119,7 @@ fun SendEcashScreen(
     val formatter = remember { AmountFormatter() }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
 
     var face: SendFace by remember { mutableStateOf(SendFace.Input) }
     var amount by remember { mutableStateOf("") }
@@ -175,6 +176,9 @@ fun SendEcashScreen(
             org.cashu.wallet.Core.SettingsManager.normalizeP2PKPublicKeyForSend(p2pkInput)
         }.getOrNull()
     }
+    val clipboardP2pkPubkey = clipboard.getText()?.text
+        ?.let(::p2pkKeyCandidate)
+        ?.let { runCatching { SettingsManager.normalizeP2PKPublicKeyForSend(it) }.getOrNull() }
     LaunchedEffect(p2pkOn, p2pkInput) {
         if (!p2pkOn) {
             p2pkInputError = null
@@ -309,9 +313,21 @@ fun SendEcashScreen(
                     p2pkInput = p2pkInput,
                     onP2pkInputChange = { p2pkInput = it },
                     p2pkInputError = p2pkInputError,
+                    p2pkPrimaryKeyHex = if (settings.showP2PKButtonInDrawer) {
+                        settingsManager.primaryP2PKPublicKey()
+                    } else {
+                        null
+                    },
                     p2pkLatestKeyHex = settings.p2pkKeys.firstOrNull()?.publicKey,
+                    p2pkClipboardKeyHex = clipboardP2pkPubkey,
+                    onUsePrimaryP2pkKey = {
+                        settingsManager.primaryP2PKPublicKey()?.let { p2pkInput = it }
+                    },
                     onUseLatestP2pkKey = {
                         settings.p2pkKeys.firstOrNull()?.let { p2pkInput = it.publicKey }
+                    },
+                    onUseClipboardP2pkKey = {
+                        clipboardP2pkPubkey?.let { p2pkInput = it }
                     },
                     onScanP2PK = onScanP2PK,
                     canSendWithP2pk = !p2pkOn || validatedP2pkPubkey != null,
@@ -438,8 +454,12 @@ private fun InputFace(
     p2pkInput: String,
     onP2pkInputChange: (String) -> Unit,
     p2pkInputError: String?,
+    p2pkPrimaryKeyHex: String?,
     p2pkLatestKeyHex: String?,
+    p2pkClipboardKeyHex: String?,
+    onUsePrimaryP2pkKey: () -> Unit,
     onUseLatestP2pkKey: () -> Unit,
+    onUseClipboardP2pkKey: () -> Unit,
     onScanP2PK: () -> Unit,
     canSendWithP2pk: Boolean,
     onSend: () -> Unit,
@@ -501,8 +521,12 @@ private fun InputFace(
                 input = p2pkInput,
                 onInputChange = onP2pkInputChange,
                 inputError = p2pkInputError,
+                primaryKeyHex = p2pkPrimaryKeyHex,
                 latestKeyHex = p2pkLatestKeyHex,
+                clipboardKeyHex = p2pkClipboardKeyHex,
+                onUsePrimaryKey = onUsePrimaryP2pkKey,
                 onUseLatestKey = onUseLatestP2pkKey,
+                onUseClipboardKey = onUseClipboardP2pkKey,
                 onScanKey = onScanP2PK,
             )
         }
@@ -533,8 +557,12 @@ private fun P2pkLockSection(
     input: String,
     onInputChange: (String) -> Unit,
     inputError: String?,
+    primaryKeyHex: String?,
     latestKeyHex: String?,
+    clipboardKeyHex: String?,
+    onUsePrimaryKey: () -> Unit,
     onUseLatestKey: () -> Unit,
+    onUseClipboardKey: () -> Unit,
     onScanKey: () -> Unit,
 ) {
     val normalized = remember(input) {
@@ -583,9 +611,21 @@ private fun P2pkLockSection(
                 color = MaterialTheme.colorScheme.error,
             )
         }
+        if (primaryKeyHex != null) {
+            org.cashu.wallet.ui.components.GhostButton(
+                text = "Use your key",
+                onClick = onUsePrimaryKey,
+            )
+        }
+        if (clipboardKeyHex != null && clipboardKeyHex != primaryKeyHex && clipboardKeyHex != latestKeyHex) {
+            org.cashu.wallet.ui.components.GhostButton(
+                text = "Paste key",
+                onClick = onUseClipboardKey,
+            )
+        }
         if (latestKeyHex != null) {
             org.cashu.wallet.ui.components.GhostButton(
-                text = "Use my latest key",
+                text = "Use latest device key",
                 onClick = onUseLatestKey,
             )
         }

@@ -182,7 +182,7 @@ fun ReceiveEcashScreen(
                 val locks = TokenParser.p2pkPubkeys(token)
                 val lockState = when {
                     locks.isEmpty() -> TokenLockState.None
-                    runCatching { settingsManager.p2pkSigningKeysFor(locks).isNotEmpty() }.getOrDefault(false) ->
+                    locks.any { settingsManager.isKnownP2PKPublicKey(it) } ->
                         TokenLockState.YourKey
                     else -> TokenLockState.UnknownKey
                 }

@@ -22,6 +22,7 @@ import org.cashu.wallet.ui.mints.MintDetailScreen
 import org.cashu.wallet.ui.mints.MintsScreen
 import org.cashu.wallet.ui.receive.CashuRequestDetailScreen
 import org.cashu.wallet.ui.receive.ReceiveEcashScreen
+import org.cashu.wallet.ui.receive.ReceiveLockedEcashScreen
 import org.cashu.wallet.ui.receive.ReceiveLightningScreen
 import org.cashu.wallet.ui.send.SendEcashScreen
 import org.cashu.wallet.ui.send.UnifiedSendScreen
@@ -96,6 +97,13 @@ fun CashuNavHost(
                 walletManager = container.walletManager,
                 settingsManager = container.settingsManager,
                 cashuRequestStore = container.cashuRequestStore,
+                onClose = { navController.popBackStack() },
+            )
+        }
+        composable(Routes.RECEIVE_LOCKED_ECASH) {
+            ReceiveLockedEcashScreen(
+                settingsManager = container.settingsManager,
+                nostrService = container.nostrService,
                 onClose = { navController.popBackStack() },
             )
         }
@@ -192,6 +200,7 @@ fun CashuNavHost(
         composable(Routes.SETTINGS_P2PK) {
             P2PKScreen(
                 settingsManager = container.settingsManager,
+                appLockManager = container.appLockManager,
                 onClose = { navController.popBackStack() },
             )
         }
@@ -255,6 +264,7 @@ private fun NavGraphBuilder.tabDestinations(
                 val route = when (action) {
                     ReceiveAction.Ecash -> Routes.RECEIVE_ECASH
                     ReceiveAction.Bitcoin -> Routes.RECEIVE_LIGHTNING
+                    ReceiveAction.LockedEcash -> Routes.RECEIVE_LOCKED_ECASH
                 }
                 navController.navigate(route)
             },

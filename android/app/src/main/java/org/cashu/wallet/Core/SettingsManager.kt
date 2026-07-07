@@ -79,6 +79,7 @@ internal object LegacySettingsSecretMigrator {
 class SettingsManager(
     private val settingsStore: SettingsStore,
     private val secureStorage: SecureStorage,
+    private val nostrService: NostrService,
 ) {
     private val secureRandom = SecureRandom()
 
@@ -184,7 +185,8 @@ class SettingsManager(
     }
 
     fun importP2PKPublicKey(publicKey: String, label: String = "P2PK key") {
-        val normalized = normalizeP2PKForComparison(publicKey)
+        val normalized = normalizeP2PKPublicKeyForSend(publicKey) ?: return
+        require(!isKnownP2PKPublicKey(normalized)) { "Key already exists." }
         val key = P2PKKeyInfo(
             id = UUID.randomUUID().toString(),
             publicKey = normalized,
@@ -214,16 +216,67 @@ class SettingsManager(
 
     fun p2pkSigningKeysFor(pubkeys: List<String>): List<String> {
         if (pubkeys.isEmpty()) return emptyList()
-        val tokenPubkeys = pubkeys.map(::normalizeP2PKForComparison).toSet()
-        val availableKeys = settingsStore.p2pkKeys
-        val matching = availableKeys.filter { normalizeP2PKForComparison(it.publicKey) in tokenPubkeys }
-        require(matching.isNotEmpty()) {
+        require(pubkeys.any(::isKnownP2PKPublicKey)) {
             "This token is locked to a P2PK key that is not stored on this device."
         }
-        require(matching.any { secureStorage.loadString(secureP2PKPrivateKey(it.id)) != null }) {
+        val signingKeys = allP2PKSigningKeyHexes()
+        require(signingKeys.isNotEmpty()) {
             "Missing encrypted P2PK private key."
         }
-        return availableKeys.mapNotNull { secureStorage.loadString(secureP2PKPrivateKey(it.id)) }
+        return signingKeys
+    }
+
+    fun allP2PKSigningKeyHexes(): List<String> {
+        val candidates = buildList {
+            primaryP2PKPrivateKeyHex()?.let(::add)
+            settingsStore.p2pkKeys.forEach { key ->
+                secureStorage.loadString(secureP2PKPrivateKey(key.id))?.let(::add)
+            }
+        }
+        val seen = mutableSetOf<String>()
+        return candidates.mapNotNull { hex ->
+            val normalized = hex.trim().lowercase()
+            normalized.takeIf { it.isNotEmpty() && seen.add(it) }
+        }
+    }
+
+    fun isKnownP2PKPublicKey(pubkey: String): Boolean {
+        val target = normalizeP2PKForComparison(pubkey)
+        primaryP2PKPublicKey()?.let { primary ->
+            if (normalizeP2PKForComparison(primary) == target) return true
+        }
+        return settingsStore.p2pkKeys.any { normalizeP2PKForComparison(it.publicKey) == target }
+    }
+
+    fun primaryP2PKPublicKey(): String? {
+        val publicKeyHex = nostrService.state.value.publicKeyHex
+        return publicKeyHex.takeIf { it.length == 64 }?.let { "02$it" }
+    }
+
+    fun primaryP2PKPrivateKeyHex(): String? =
+        nostrService.currentPrivateKey()?.trim()?.lowercase()?.takeIf { it.length == 64 }
+
+    fun primaryP2PKNsec(): String? =
+        primaryP2PKPrivateKeyHex()?.let { hex ->
+            runCatching { Bech32.encode("nsec", NostrService.hexToBytes(hex)) }.getOrNull()
+        }
+
+    fun primaryP2PKIsSeedBacked(): Boolean =
+        nostrService.state.value.signerType == NostrSignerType.Seed
+
+    fun p2pkPrivateKeyHex(id: String): String? =
+        secureStorage.loadString(secureP2PKPrivateKey(id))?.trim()?.lowercase()
+
+    fun p2pkNsec(id: String): String? =
+        p2pkPrivateKeyHex(id)?.let { hex ->
+            runCatching { Bech32.encode("nsec", NostrService.hexToBytes(hex)) }.getOrNull()
+        }
+
+    fun setP2PKKeyLabel(id: String, label: String) = update {
+        val trimmed = label.trim().ifBlank { "P2PK key" }
+        settingsStore.p2pkKeys = settingsStore.p2pkKeys.map {
+            if (it.id == id) it.copy(label = trimmed) else it
+        }
     }
 
     fun markP2PKKeyUsed(publicKey: String) = update {
@@ -311,7 +364,7 @@ class SettingsManager(
         val privateKeyHex = privateKey.toHex()
         val publicKey = "02${NostrService.publicKeyHex(privateKeyHex)}"
         val comparable = normalizeP2PKForComparison(publicKey)
-        require(settingsStore.p2pkKeys.none { normalizeP2PKForComparison(it.publicKey) == comparable }) {
+        require(!isKnownP2PKPublicKey(publicKey) && settingsStore.p2pkKeys.none { normalizeP2PKForComparison(it.publicKey) == comparable }) {
             "Key already exists."
         }
         val id = UUID.randomUUID().toString()

@@ -20,6 +20,7 @@ object Routes {
     const val SEND_ECASH = "send/ecash"
     const val RECEIVE_ECASH = "receive/ecash"
     const val RECEIVE_LIGHTNING = "receive/lightning"
+    const val RECEIVE_LOCKED_ECASH = "receive/locked-ecash"
 
     // With arguments
     const val MINT_DETAIL = "mints/{mintUrl}"

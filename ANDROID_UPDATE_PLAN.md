@@ -32,6 +32,7 @@ If `java` is not available on the shell path but Android Studio is installed, us
 
 ```sh
 ANDROID_STUDIO_APP="$(mdfind "kMDItemCFBundleIdentifier == 'com.google.android.studio'" | head -n 1)"
+if [ -z "$ANDROID_STUDIO_APP" ]; then ANDROID_STUDIO_APP="/Applications/Android Studio.app"; fi
 export JAVA_HOME="$ANDROID_STUDIO_APP/Contents/jbr/Contents/Home"
 ```
 
@@ -83,6 +84,13 @@ Focused validation used during Milestone 6:
 ```sh
 JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:compileDebugKotlin
 JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:testDebugUnitTest --tests org.cashu.wallet.Core.MintQuoteDomainTest --tests org.cashu.wallet.Core.MintQuotePollingPolicyTest --tests org.cashu.wallet.Core.PendingMintQuoteTransactionsTest --tests org.cashu.wallet.ui.home.HomeRecentTest
+```
+
+Focused validation used during Milestone 7:
+
+```sh
+JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:compileDebugKotlin
+JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:testDebugUnitTest --tests org.cashu.wallet.Core.PaymentRequestBuilderTest --tests org.cashu.wallet.Core.SettingsManagerTest --tests org.cashu.wallet.ui.send.SendEcashP2PKTest
 ```
 
 ## Executive Summary
@@ -326,7 +334,7 @@ Checklist:
 - [x] Add non-sat Cashu Request handling: show clear unsupported notice until Android can pay non-sat requests. Non-sat Cashu Requests route to an unsupported-unit confirmation notice.
 - [x] Add send ecash scanner/quick-fill for recipient P2PK public keys. Send Ecash has a dedicated scanner target and consumes scanned recipient keys.
 - [x] Add locked-key chip UX instead of only a raw text field. Valid P2PK input renders a locked recipient chip above the raw field.
-- [x] Use seed-derived primary P2PK key in quick-fill once Milestone 7 lands. The quick-fill surface is in place and currently uses the latest generated/imported P2PK key; Milestone 7 remains responsible for replacing that source with the seed-derived primary key.
+- [x] Use seed-derived primary P2PK key in quick-fill once Milestone 7 lands. Send Ecash now offers the seed-derived "your key" quick-fill when the Locked Ecash quick-lock setting is enabled, plus clipboard key quick-fill.
 - [x] Align contactless NFC routing with iOS: Cashu Request when payable, BOLT11 fallback when needed, Lightning handoff to Send, clear unsupported unit/no mint/insufficient balance errors. NFC now uses the shared Cashu Request route model and preserves Lightning handoff.
 - [x] Add tests for destination inference, Cashu Request fallback/acquire, fee rows, mint switching, top-up, and NFC input decoding. Added/expanded route, NFC, and P2PK scan normalization JVM tests; fee/top-up behavior is covered through route-state tests and compile validation.
 
@@ -368,7 +376,7 @@ Checklist:
 - [x] Add a minimum processing beat for instant receive, matching iOS's legibility behavior. Receive token success waits at least 650ms before resolving.
 - [x] Post home received notification after successful token receive, including unit, and suppress misleading sat deltas for non-sat. The receive path still uses `WalletManager.receiveTokens`, which emits the typed receive event added in Milestone 3.
 - [x] Add unknown mint caution before receiving a token from a mint not yet tracked. Review now flags unknown mints and shows an inline caution.
-- [x] Add locked-to row that distinguishes "Your key" from unknown key and disables Receive for unknown locked tokens. Known stored P2PK keys show "Your key"; unknown locked tokens cannot be received. Seed-derived primary-key coverage remains owned by Milestone 7.
+- [x] Add locked-to row that distinguishes "Your key" from unknown key and disables Receive for unknown locked tokens. Known stored P2PK keys and the seed-derived primary key show "Your key"; unknown locked tokens cannot be received.
 - [x] Generate stable pending receive IDs that do not collide for repeated long tokens. Pending receive ids now use the SHA-256 of the full normalized token and have JVM regression coverage.
 - [x] Decide and align default New Request mint scope with iOS. Current iOS uses any mint (`mints: []`); Android should match unless product explicitly changes both platforms. Android New Request now creates any-mint NUT-18 requests by default.
 - [x] Expand Android `CashuRequestStore` with create/upsert/update/attach-by-quote/reset/reload semantics. Store APIs now cover upsert, update, quote-intent upsert, attach-by-quote, reload, and reset.
@@ -460,19 +468,19 @@ Android gaps:
 
 Checklist:
 
-- [ ] Add Android NUT-10 encoding to `PaymentRequestBuilder.build`.
-- [ ] Add `LockedReceiveRequest` builder using seed-derived primary P2PK key and configured Nostr relays.
-- [ ] Add tests equivalent to iOS `testLockedReceiveRequestEncodesNut10AndParses`.
-- [ ] Add seed-derived primary P2PK public/private key access through Android secure storage/seed entropy, protected by authentication for private reveal.
-- [ ] Include seed-derived primary private key in `p2pkSigningKeysFor` when a token is locked to that public key.
-- [ ] Add `isKnownP2PKPublicKey` equivalent that checks primary and stored keys.
-- [ ] Update receive token review to label primary-key locked tokens as "Your key".
-- [ ] Add Receive Locked Ecash entry and QR detail screen.
-- [ ] Redesign `P2PKScreen` with Material sections: Your key, Quick lock toggle, Advanced keys, generated/imported device keys.
-- [ ] Add key detail screen: public key QR/copy, private key reveal/copy behind auth, rename, remove, usage count.
-- [ ] Add import sheet validation and duplicate handling.
-- [ ] Add explainer sheet/section for locked ecash using concise Android-native copy.
-- [ ] Add send ecash quick-fill for "Your key" and recent copied public key.
+- [x] Add Android NUT-10 encoding to `PaymentRequestBuilder.build`.
+- [x] Add `LockedReceiveRequest` builder using seed-derived primary P2PK key and configured Nostr relays.
+- [x] Add tests equivalent to iOS `testLockedReceiveRequestEncodesNut10AndParses`.
+- [x] Add seed-derived primary P2PK public/private key access through Android secure storage/seed entropy, protected by authentication for private reveal.
+- [x] Include seed-derived primary private key in `p2pkSigningKeysFor` when a token is locked to that public key.
+- [x] Add `isKnownP2PKPublicKey` equivalent that checks primary and stored keys.
+- [x] Update receive token review to label primary-key locked tokens as "Your key".
+- [x] Add Receive Locked Ecash entry and QR detail screen.
+- [x] Redesign `P2PKScreen` with Material sections: Your key, Quick lock toggle, Advanced keys, generated/imported device keys.
+- [x] Add key detail screen: public key QR/copy, private key reveal/copy behind auth, rename, remove, usage count.
+- [x] Add import sheet validation and duplicate handling.
+- [x] Add explainer sheet/section for locked ecash using concise Android-native copy.
+- [x] Add send ecash quick-fill for "Your key" and recent copied public key.
 
 Success condition:
 
@@ -684,7 +692,7 @@ Checklist:
 - [ ] Replace `HomeScreen`'s hard-coded pinned top height and fade assumptions with measured layout height so the transaction list cannot hide under or detach from the pinned balance area at large text sizes or with extra unit/status rows.
 - [ ] Add responsive constraints to `BalanceDisplay` and Home unit pager so large amounts, long unit codes, and received-delta labels do not overlap or resize the pinned header unpredictably.
 - [ ] Make `LightningScreen` scrollable and navigation-bar aware; the quote check action and lower sections can be clipped on short screens today.
-- [ ] Make `P2PKScreen` use a lazy or scrollable layout with bottom insets so long key lists and action buttons remain reachable.
+- [x] Make `P2PKScreen` use a lazy or scrollable layout with bottom insets so long key lists and action buttons remain reachable.
 - [ ] Make `ContactlessPayView` scrollable or vertically adaptive so NFC instructions/status/actions do not clip on compact devices or large text.
 - [ ] Audit `UnifiedSendScreen` amount/confirm faces for keyboard and small-height clipping; add `verticalScroll`/`imePadding`/`bringIntoViewRequester` where destination fields or CTAs can be covered.
 - [ ] Audit `SendEcashScreen` input face for keypad, P2PK lock fields, keyboard, and CTA clipping; ensure the generated-token face keeps copy/share/actions reachable above navigation bars.
