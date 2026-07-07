@@ -78,7 +78,7 @@ fun MintChip(
         }
         if (mints.isNotEmpty()) {
             DropdownMenuItem(
-                text = { Text("Manage mints") },
+                text = { Text("Add Mint") },
                 onClick = {
                     expanded = false
                     onManage()

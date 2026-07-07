@@ -24,7 +24,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
-import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.outlined.AccountBalance
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.QrCodeScanner
@@ -161,10 +161,12 @@ fun HomeScreen(
             if (recentItems.isEmpty()) {
                 item("empty") {
                     val hasMints = walletState.mints.isNotEmpty()
+                    // iOS: a single quiet tray empty state; the add-mint CTA
+                    // survives only for the true first-run (no mints yet).
                     EmptyState(
-                        icon = if (hasMints) Icons.Filled.Bolt else Icons.Outlined.AccountBalance,
-                        title = if (hasMints) "No activity yet" else "Add a mint to get started",
-                        supporting = if (hasMints) "Your first payment will show up here."
+                        icon = if (hasMints) Icons.Outlined.Inbox else Icons.Outlined.AccountBalance,
+                        title = if (hasMints) "No Activity Yet" else "Add a mint to get started",
+                        supporting = if (hasMints) "Your recent payments will show up here."
                         else "Mints custody your ecash. Add one to begin.",
                         actionLabel = if (!hasMints) "Add mint" else null,
                         onAction = if (!hasMints) onOpenMints else null,
@@ -240,8 +242,9 @@ fun HomeScreen(
                 val satHero: @Composable () -> Unit = {
                     BalanceDisplay(
                         amount = balanceDisplay,
-                        onTogglePrimary = { next ->
-                            settingsManager.setAmountDisplayPrimary(next.rawValue)
+                        // iOS: tapping the hero toggles the ₿ symbol vs "sat".
+                        onTogglePrimary = {
+                            settingsManager.setUseBitcoinSymbol(!settings.useBitcoinSymbol)
                         },
                     )
                 }
