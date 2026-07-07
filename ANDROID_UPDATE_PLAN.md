@@ -923,7 +923,8 @@ Integration checklist:
 - [ ] Add an Android integration test target equivalent to `CI/IntegrationTests`.
 - [ ] Run against local Nutshell/CDK test mints for mint, melt, restore, token parser, payment request parser, multi-unit, BOLT11, BOLT12, and on-chain where available.
 - [ ] Add fake-gateway integration tests for no-network CI paths.
-- [ ] Add CI jobs for JVM unit tests, instrumentation tests on managed devices, lint, and release build.
+- [x] Add CI jobs for JVM unit tests, lint, and release build. `.github/workflows/integration-tests.yml` now includes an Android Gradle job for `:app:testDebugUnitTest`, `:app:lintDebug`, and `:app:assembleRelease`.
+- [ ] Add CI jobs for instrumentation tests on managed devices once the Android Compose/instrumentation harness exists.
 
 Success condition:
 

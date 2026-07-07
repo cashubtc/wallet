@@ -11,6 +11,37 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  android-gradle:
+    name: Android Gradle Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    defaults:
+      run:
+        working-directory: android
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup JDK
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: '21'
+
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+
+    - name: Run Android JVM tests
+      run: ./gradlew --no-daemon :app:testDebugUnitTest
+
+    - name: Run Android lint
+      run: ./gradlew --no-daemon :app:lintDebug
+
+    - name: Build Android release APK
+      run: ./gradlew --no-daemon :app:assembleRelease
+
   integration-tests:
     name: Integration Tests with Live Mints
     runs-on: macos-26
