@@ -55,8 +55,11 @@ import org.cashu.wallet.ui.components.AmountText
 import org.cashu.wallet.ui.components.CanvasDivider
 import org.cashu.wallet.ui.components.CashuTextField
 import org.cashu.wallet.ui.components.GhostButton
+import org.cashu.wallet.ui.components.InlineNotice
 import org.cashu.wallet.ui.components.InspectorRow
 import org.cashu.wallet.ui.components.NumberPad
+import org.cashu.wallet.ui.components.PaymentStatusPhase
+import org.cashu.wallet.ui.components.PaymentStatusScreen
 import org.cashu.wallet.ui.components.PrimaryButton
 import org.cashu.wallet.ui.components.TwoFaceScreen
 import org.cashu.wallet.ui.theme.CashuTheme
@@ -238,9 +241,29 @@ fun SendLightningScreen(
                     errorText = errorText,
                 )
 
-                is PayFace.Paying -> PayingFace()
-                is PayFace.Done -> DoneFace(result = current.result, onClose = onClose)
-                is PayFace.Failed -> FailedFace(reason = current.reason, onRetry = { face = PayFace.Input })
+                // All pay flows resolve through the shared full-screen terminal.
+                is PayFace.Paying -> PaymentStatusScreen(
+                    phase = PaymentStatusPhase.Processing,
+                    title = "Sending payment…",
+                )
+                is PayFace.Done -> PaymentStatusScreen(
+                    phase = PaymentStatusPhase.Success,
+                    title = "Payment sent",
+                    detail = current.result?.let { r ->
+                        buildString {
+                            append("${r.amount} sat")
+                            if (r.feePaid > 0L) append(" · fee ${r.feePaid} sat")
+                        }
+                    },
+                    onDone = onClose,
+                )
+                is PayFace.Failed -> PaymentStatusScreen(
+                    phase = PaymentStatusPhase.Failure,
+                    title = "Payment failed",
+                    detail = current.reason,
+                    doneLabel = "Try again",
+                    onDone = { face = PayFace.Input },
+                )
             }
         }
     }
@@ -294,7 +317,7 @@ private fun InputFace(
         )
         GhostButton(text = "Paste from clipboard", onClick = onPaste)
         if (errorText != null) {
-            Text(errorText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            InlineNotice(text = errorText)
         }
         Spacer(Modifier.weight(1f, fill = true))
         PrimaryButton(
@@ -306,6 +329,12 @@ private fun InputFace(
     }
 }
 
+/**
+ * Confirm layout follows the iOS PayFlowScaffold order: mint at the top
+ * accessory (never a bottom "From" row), the amount as the hero, then the
+ * destination details, with the Pay footer firing immediately — no confirm
+ * dialog, no hold-to-pay.
+ */
 @Composable
 private fun ConfirmFace(
     decoded: PaymentRequestDecodeResult,
@@ -328,28 +357,17 @@ private fun ConfirmFace(
         verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.comfortable),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            InspectorRow(
-                label = "Type",
-                value = PaymentRequestDecoder.typeLabel(decoded),
-                leadingIcon = when (decoded) {
-                    is PaymentRequestDecodeResult.Onchain -> Icons.Outlined.CurrencyBitcoin
-                    else -> Icons.Outlined.Bolt
-                },
-            )
-            CanvasDivider(leadingInset = 16)
-            InspectorRow(
-                label = "Destination",
-                value = PaymentRequestDecoder.shortRepresentation("", decoded),
-                valueMonospaced = true,
-            )
-            CanvasDivider(leadingInset = 16)
-            InspectorRow(
-                label = "Mint",
-                value = activeMintName,
-                leadingIcon = Icons.Outlined.AccountBalance,
-            )
-        }
+        // Top accessory: the paying mint + its spendable balance.
+        Text(
+            text = activeMintName,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = "Balance $balanceText",
+            style = MaterialTheme.typography.bodySmall.withMonoDigits(),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
 
         if (knownAmount != null) {
             AmountText(
@@ -362,134 +380,45 @@ private fun ConfirmFace(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         } else {
-            Text(
-                "Enter amount",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
             AmountText(
                 text = amountInput.ifEmpty { "0" },
                 style = MaterialTheme.typography.displayMedium.withMonoDigits(),
             )
+            Text(
+                "sat",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        Column(modifier = Modifier.fillMaxWidth()) {
+            InspectorRow(
+                label = "Type",
+                value = PaymentRequestDecoder.typeLabel(decoded),
+                leadingIcon = when (decoded) {
+                    is PaymentRequestDecodeResult.Onchain -> Icons.Outlined.CurrencyBitcoin
+                    else -> Icons.Outlined.Bolt
+                },
+            )
+            CanvasDivider(leadingInset = 16)
+            InspectorRow(
+                label = "To",
+                value = PaymentRequestDecoder.shortRepresentation("", decoded),
+                valueMonospaced = true,
+            )
+        }
+
+        if (errorText != null) {
+            InlineNotice(text = errorText)
+        }
+
+        if (knownAmount == null) {
             NumberPad(amount = amountInput, onAmountChange = onAmountChange)
         }
 
-        Text(
-            text = "Balance $balanceText",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-
-        if (errorText != null) {
-            Text(errorText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-        }
-
+        Spacer(Modifier.weight(1f, fill = true))
         PrimaryButton(text = "Pay", onClick = onPay)
         Spacer(Modifier.navigationBarsPadding())
     }
 }
 
-@Composable
-private fun PayingFace() {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = CashuTheme.spacing.section),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        androidx.compose.material3.CircularProgressIndicator()
-        Spacer(Modifier.height(CashuTheme.spacing.comfortable))
-        Text(
-            text = "Sending payment…",
-            style = MaterialTheme.typography.titleMedium,
-        )
-    }
-}
-
-@Composable
-private fun DoneFace(
-    result: MeltPaymentResult?,
-    onClose: () -> Unit,
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(
-                horizontal = CashuTheme.spacing.section,
-                vertical = CashuTheme.spacing.section,
-            ),
-        verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.comfortable),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Icon(
-            imageVector = Icons.Outlined.CheckCircle,
-            contentDescription = null,
-            tint = CashuTheme.colors.received,
-            modifier = Modifier.size(STATUS_HERO_ICON),
-        )
-        Text(
-            text = "Payment sent",
-            style = MaterialTheme.typography.headlineSmall,
-        )
-        if (result != null) {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                InspectorRow(
-                    label = "Amount",
-                    value = "${result.amount} sat",
-                    leadingIcon = Icons.Outlined.Bolt,
-                    valueMonospaced = true,
-                )
-                CanvasDivider(leadingInset = 16)
-                InspectorRow(
-                    label = "Fee",
-                    value = "${result.feePaid} sat",
-                    leadingIcon = Icons.Outlined.Receipt,
-                    valueMonospaced = true,
-                )
-                if (result.preimage != null) {
-                    CanvasDivider(leadingInset = 16)
-                    InspectorRow(
-                        label = "Preimage",
-                        value = result.preimage,
-                        valueMonospaced = true,
-                    )
-                }
-            }
-        }
-        Spacer(Modifier.weight(1f, fill = true))
-        PrimaryButton(text = "Done", onClick = onClose)
-        Spacer(Modifier.navigationBarsPadding())
-    }
-}
-
-@Composable
-private fun FailedFace(reason: String, onRetry: () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(CashuTheme.spacing.section),
-        verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.comfortable),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Icon(
-            imageVector = Icons.Outlined.Cancel,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.error,
-            modifier = Modifier.size(STATUS_HERO_ICON),
-        )
-        Text(
-            "Payment failed",
-            style = MaterialTheme.typography.headlineSmall,
-        )
-        Text(
-            reason,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.weight(1f, fill = true))
-        PrimaryButton(text = "Try again", onClick = onRetry)
-        Spacer(Modifier.navigationBarsPadding())
-    }
-}
