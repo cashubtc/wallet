@@ -56,6 +56,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -72,8 +75,8 @@ import org.cashu.wallet.ui.components.CashuTextField
 import org.cashu.wallet.ui.components.GhostButton
 import org.cashu.wallet.ui.components.InlineNotice
 import org.cashu.wallet.ui.components.MintAvatar
-import org.cashu.wallet.ui.components.MintMethodChips
 import org.cashu.wallet.ui.components.PrimaryButton
+import org.cashu.wallet.ui.components.SectionHeader
 import org.cashu.wallet.ui.theme.CashuTheme
 import org.cashu.wallet.ui.theme.withMonoDigits
 
@@ -178,22 +181,15 @@ fun MintsScreen(
             }
 
             item("discover-row") {
+                // Quiet nav-row weight: plain monochrome glyph, no filled circle.
                 ListEntryRow(
                     leadingIcon = {
-                        Box(
-                            modifier = Modifier
-                                .size(MINT_AVATAR_SIZE)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.surfaceContainerHigh),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.Search,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.size(CashuTheme.spacing.loose),
-                            )
-                        }
+                        Icon(
+                            imageVector = Icons.Outlined.Search,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(CashuTheme.spacing.loose),
+                        )
                     },
                     title = "Discover mints",
                     subtitle = "Browse mints announced over Nostr",
@@ -205,12 +201,11 @@ fun MintsScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(
-                            horizontal = CashuTheme.spacing.comfortable,
-                            vertical = CashuTheme.spacing.comfortable,
-                        ),
+                        .padding(horizontal = CashuTheme.spacing.comfortable)
+                        .padding(bottom = CashuTheme.spacing.comfortable),
                     verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
                 ) {
+                    SectionHeader("Add mint")
                     CashuTextField(
                         value = url,
                         onValueChange = { url = it; error = null },
@@ -237,24 +232,25 @@ fun MintsScreen(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
+                    Text(
+                        text = "Enter the URL of a Cashu mint to connect to it. " +
+                            "This wallet is not affiliated with any mint.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                     if (error != null) {
                         InlineNotice(text = error!!)
-                    }
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        GhostButton(
-                            text = "Paste",
-                            onClick = ::pasteFromClipboard,
-                            modifier = Modifier.weight(1f),
-                        )
                     }
                     PrimaryButton(
                         text = "Add mint",
                         onClick = ::addMint,
                         enabled = url.isNotBlank() && !walletState.isLoading,
                         loading = walletState.isLoading,
+                    )
+                    GhostButton(
+                        text = "Paste URL from clipboard",
+                        onClick = ::pasteFromClipboard,
+                        modifier = Modifier.fillMaxWidth(),
                     )
                     Spacer(Modifier.height(CashuTheme.spacing.snug))
                 }
@@ -305,7 +301,7 @@ fun MintsScreen(
             title = { Text("Remove Mint") },
             text = {
                 Text(
-                    "Remove ${mint.name}? You will lose access to any ecash issued by this mint unless you re-add it.",
+                    "Remove ${mint.name}? Any unspent ecash on this mint will need to be restored from your seed phrase.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
             },
@@ -443,12 +439,15 @@ private fun MintRow(
             Box {
                 MintAvatar(mint = mint)
                 if (isActive) {
+                    // Default-mint dot — state is also surfaced to TalkBack so
+                    // it isn't encoded by colour alone.
                     Box(
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
                             .size(CashuTheme.spacing.default)
                             .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.surface),
+                            .background(MaterialTheme.colorScheme.surface)
+                            .semantics { contentDescription = "Default mint" },
                         contentAlignment = Alignment.Center,
                     ) {
                         Box(
@@ -464,6 +463,7 @@ private fun MintRow(
                 Text(
                     text = mint.name,
                     style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -475,23 +475,14 @@ private fun MintRow(
                     maxLines = 1,
                     overflow = TextOverflow.MiddleEllipsis,
                 )
-                if (mint.supportedMintMethods.isNotEmpty() || mint.supportedMeltMethods.isNotEmpty()) {
-                    Spacer(Modifier.height(CashuTheme.spacing.micro))
-                    MintMethodChips(mint = mint)
-                }
             }
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    text = "${mint.balance}",
-                    style = MaterialTheme.typography.bodyMedium.withMonoDigits(),
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Text(
-                    text = "sat",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            // Quiet trailing balance (iOS: "N sat" subheadline secondary).
+            // Payment-method chips live in Mint Detail, not on list rows.
+            Text(
+                text = "${mint.balance} sat",
+                style = MaterialTheme.typography.bodyMedium.withMonoDigits(),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Icon(
                 imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
                 contentDescription = null,
