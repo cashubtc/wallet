@@ -416,6 +416,7 @@ struct ReceiveTokenDetailView: View {
             tokenId: UUID().uuidString,
             token: tokenString,
             amount: tokenAmount,
+            unit: tokenUnit,
             date: Date(),
             mintUrl: mintUrl,
             memo: decodedToken?.memo()

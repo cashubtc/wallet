@@ -154,7 +154,8 @@ struct CashuRequestDetailView: View {
             rows.append(.init(
                 icon: "bitcoinsign",
                 label: "Amount",
-                value: AmountFormatter.sats(receivedAmount, useBitcoinSymbol: settings.useBitcoinSymbol)
+                value: request.map { formatAmount(receivedAmount, unit: $0.unit) }
+                    ?? AmountFormatter.sats(receivedAmount, useBitcoinSymbol: settings.useBitcoinSymbol)
             ))
         }
         if let request {
@@ -369,9 +370,16 @@ struct CashuRequestDetailView: View {
 
     private func amountDisplayValue(for request: CashuRequest) -> String {
         guard let amount = request.amount, amount > 0 else { return "Any" }
+        return formatAmount(amount, unit: request.unit)
+    }
+
+    private func formatAmount(_ amount: UInt64, unit: String) -> String {
+        if unit.lowercased() == "sat" {
+            return AmountFormatter.sats(amount, useBitcoinSymbol: settings.useBitcoinSymbol)
+        }
         return CurrencyAmount(
             value: amount,
-            currency: CurrencyRegistry.currency(forMintUnit: request.unit)
+            currency: CurrencyRegistry.currency(forMintUnit: unit)
         ).formatted()
     }
 

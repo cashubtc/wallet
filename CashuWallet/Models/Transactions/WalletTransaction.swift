@@ -24,6 +24,9 @@ struct WalletTransaction: Identifiable {
     
     /// Fee paid for the transaction (in sats)
     var fee: UInt64 = 0
+
+    /// Mint account unit for `amount` ("sat", "usd", "eur", or custom).
+    var unit: String = "sat"
     
     /// Whether this is from pending storage vs. completed transactions
     var isPendingToken: Bool = false

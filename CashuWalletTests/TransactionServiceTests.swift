@@ -147,6 +147,15 @@ final class TransactionServiceTests: XCTestCase {
         XCTAssertEqual(service.pendingReceiveTokens[0].amount, 99)
     }
 
+    func testSavePendingReceiveTokenDeduplicatesSameEcash() {
+        service.savePendingReceiveToken(receiveToken(id: "r1", token: "cashuAsame", amount: 10))
+        service.savePendingReceiveToken(receiveToken(id: "r2", token: "cashuAsame", amount: 99))
+
+        XCTAssertEqual(service.pendingReceiveTokens.count, 1)
+        XCTAssertEqual(service.pendingReceiveTokens[0].tokenId, "r1")
+        XCTAssertEqual(service.pendingReceiveTokens[0].amount, 99)
+    }
+
     func testRemovePendingReceiveToken() {
         service.savePendingReceiveToken(receiveToken(id: "r1", amount: 10))
         service.savePendingReceiveToken(receiveToken(id: "r2", amount: 20))
@@ -180,10 +189,10 @@ final class TransactionServiceTests: XCTestCase {
         )
     }
 
-    private func receiveToken(id: String, amount: UInt64) -> PendingReceiveToken {
+    private func receiveToken(id: String, token: String? = nil, amount: UInt64) -> PendingReceiveToken {
         PendingReceiveToken(
             tokenId: id,
-            token: "cashuArecv\(id)",
+            token: token ?? "cashuArecv\(id)",
             amount: amount,
             date: Date(),
             mintUrl: "https://mint.example.com"

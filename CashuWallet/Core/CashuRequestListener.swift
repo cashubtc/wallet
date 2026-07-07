@@ -87,10 +87,14 @@ final class CashuRequestListener: ObservableObject {
     /// the previous wallet's Nostr inbox; a new wallet has a new keypair, and a
     /// re-restored seed should re-attempt claims rather than skip them.
     func resetForWalletBoundary() {
+        let oldClient = client
+        client = nil
+        isRunning = false
         processedIds = []
         processedOrder = []
         heldForApproval = nil
         UserDefaults.standard.removeObject(forKey: processedIdsKey)
+        Task { await oldClient?.stop() }
     }
 
     // MARK: - Event handling
@@ -167,6 +171,7 @@ final class CashuRequestListener: ObservableObject {
                 requestId: requestId,
                 mintUrl: mintUrl,
                 amount: proofsTotalAmount(proofs),
+                unit: PaymentRequestDecoder.unitDescription(PaymentRequestDecoder.currencyUnit(from: unit)),
                 memo: memo,
                 reason: mintKnown ? "auto-claim off" : "unknown mint"
             )
@@ -215,6 +220,7 @@ final class CashuRequestListener: ObservableObject {
         requestId: String?,
         mintUrl: String,
         amount: UInt64,
+        unit: String,
         memo: String?,
         reason: String
     ) -> ClaimOutcome {
@@ -238,6 +244,7 @@ final class CashuRequestListener: ObservableObject {
             tokenId: UUID().uuidString,
             token: tokenString,
             amount: amount,
+            unit: unit,
             date: Date(),
             mintUrl: mintUrl,
             cashuRequestId: requestId ?? "",
