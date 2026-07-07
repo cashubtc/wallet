@@ -62,17 +62,22 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import org.cashu.wallet.Core.AmountFormatter
+import org.cashu.wallet.Core.Protocols.CurrencyAmount
+import org.cashu.wallet.Core.Protocols.CurrencyRegistry
 import org.cashu.wallet.Core.SettingsManager
+import org.cashu.wallet.Core.UnitAmountEntry
 import org.cashu.wallet.Core.WalletManager
 import org.cashu.wallet.Models.MintQuoteInfo
 import org.cashu.wallet.Models.MintQuoteState
 import org.cashu.wallet.Models.PaymentMethodKind
 import org.cashu.wallet.ui.components.AmountText
 import org.cashu.wallet.ui.components.GhostButton
+import org.cashu.wallet.ui.components.InlineNotice
 import org.cashu.wallet.ui.components.NumberPad
 import org.cashu.wallet.ui.components.PrimaryButton
 import org.cashu.wallet.ui.components.QrCard
 import org.cashu.wallet.ui.components.TwoFaceScreen
+import org.cashu.wallet.ui.components.UnitPickerSheet
 import org.cashu.wallet.ui.components.shareText
 import org.cashu.wallet.ui.theme.CashuTheme
 import org.cashu.wallet.ui.theme.withMonoDigits
@@ -102,6 +107,8 @@ fun ReceiveLightningScreen(
     var creating by remember { mutableStateOf(false) }
     var errorText by remember { mutableStateOf<String?>(null) }
     var paymentJustReceived by remember { mutableStateOf(false) }
+    var selectedReceiveUnit by remember { mutableStateOf<String?>(null) }
+    var unitPickerOpen by remember { mutableStateOf(false) }
 
     val activeMint = walletState.activeMint
     val supportedMethods = activeMint?.supportedMintMethods?.ifEmpty { listOf(PaymentMethodKind.Bolt11) }
@@ -109,7 +116,19 @@ fun ReceiveLightningScreen(
 
     LaunchedEffect(activeMint) {
         if (method !in supportedMethods) method = supportedMethods.first()
+        selectedReceiveUnit = null
     }
+
+    // Mint unit: NUT-04 mintable units only; on-chain always mints sat.
+    val effectiveUnit = if (method == PaymentMethodKind.Onchain) {
+        "sat"
+    } else {
+        activeMint?.resolvedMintUnit(selectedReceiveUnit) ?: "sat"
+    }
+    val currency = CurrencyRegistry.currencyForMintUnit(effectiveUnit)
+    val isSatUnit = effectiveUnit.equals("sat", ignoreCase = true)
+    val showsUnitSelector = activeMint?.supportsMultipleMintUnits == true &&
+        method != PaymentMethodKind.Onchain
 
     Scaffold(
         topBar = {
@@ -150,6 +169,14 @@ fun ReceiveLightningScreen(
                         }) {
                             Icon(Icons.Outlined.IosShare, contentDescription = "Share")
                         }
+                    } else if (current is ReceiveLnFace.Input && showsUnitSelector) {
+                        androidx.compose.material3.TextButton(onClick = { unitPickerOpen = true }) {
+                            Text(
+                                text = effectiveUnit.uppercase(),
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -174,14 +201,17 @@ fun ReceiveLightningScreen(
                     onAmountChange = { amount = it; errorText = null },
                     supportedMethods = supportedMethods,
                     selectedMethod = method,
-                    onMethodChange = { method = it },
+                    onMethodChange = { method = it; amount = "" },
                     creating = creating,
                     activeMintName = activeMint?.name ?: "No mint",
+                    unitLabel = if (isSatUnit) "sat" else effectiveUnit.uppercase(),
+                    decimals = currency.decimals,
                     errorText = errorText,
                     onCreate = {
-                        val explicit = amount.toLongOrNull()
+                        val explicit = UnitAmountEntry.baseUnits(amount, currency.decimals)
+                            .takeIf { it > 0 }
                         val needsAmount = method != PaymentMethodKind.Bolt12
-                        if (needsAmount && (explicit == null || explicit <= 0L)) {
+                        if (needsAmount && explicit == null) {
                             errorText = "Enter an amount."
                             return@InputFace
                         }
@@ -193,8 +223,9 @@ fun ReceiveLightningScreen(
                         scope.launch {
                             try {
                                 val quote = walletManager.createMintQuote(
-                                    amount = if (needsAmount) explicit else explicit?.takeIf { it > 0 },
+                                    amount = explicit,
                                     method = method,
+                                    unit = effectiveUnit,
                                 )
                                 face = ReceiveLnFace.Display(quote)
                             } catch (t: Throwable) {
@@ -225,21 +256,45 @@ fun ReceiveLightningScreen(
                         if (liveQuote.state == MintQuoteState.Paid) {
                             runCatching { walletManager.mintTokens(liveQuote.id) }
                             paymentJustReceived = true
-                            delay(2_500)
-                            paymentJustReceived = false
+                            // Receive-flow resolution: dwell on the celebration,
+                            // then the screen dismisses itself (iOS parity).
+                            delay(1_200)
+                            onClose()
                         }
                     }
                     DisplayFace(
                         quote = liveQuote,
                         amountLabel = liveQuote.amount?.let {
-                            formatter.formatWalletSats(it, settings.useBitcoinSymbol)
+                            if (liveQuote.unit.equals("sat", ignoreCase = true)) {
+                                formatter.formatWalletSats(it, settings.useBitcoinSymbol)
+                            } else {
+                                CurrencyAmount(
+                                    it,
+                                    CurrencyRegistry.currencyForMintUnit(liveQuote.unit),
+                                ).formatted()
+                            }
                         },
                         showCelebration = paymentJustReceived,
                         onCopy = { clipboard.setText(AnnotatedString(liveQuote.request)) },
+                        onDone = onClose,
                     )
                 }
             }
         }
+    }
+
+    if (unitPickerOpen) {
+        UnitPickerSheet(
+            units = activeMint?.effectiveMintUnits ?: listOf("sat"),
+            selectedUnit = effectiveUnit,
+            onSelect = {
+                selectedReceiveUnit = it
+                amount = ""
+                errorText = null
+                unitPickerOpen = false
+            },
+            onDismiss = { unitPickerOpen = false },
+        )
     }
 }
 
@@ -252,6 +307,8 @@ private fun InputFace(
     onMethodChange: (PaymentMethodKind) -> Unit,
     creating: Boolean,
     activeMintName: String,
+    unitLabel: String,
+    decimals: Int,
     errorText: String?,
     onCreate: () -> Unit,
 ) {
@@ -288,25 +345,25 @@ private fun InputFace(
         }
 
         AmountText(
-            text = amount.ifEmpty { "0" },
+            text = when {
+                amount.isNotEmpty() -> amount
+                decimals > 0 -> "0." + "0".repeat(decimals)
+                else -> "0"
+            },
             style = MaterialTheme.typography.displayMedium.withMonoDigits(),
         )
         Text(
-            text = "sat",
+            text = unitLabel,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
         if (errorText != null) {
-            Text(
-                text = errorText,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-            )
+            InlineNotice(text = errorText)
         }
 
         Spacer(modifier = Modifier.weight(1f, fill = true))
-        NumberPad(amount = amount, onAmountChange = onAmountChange)
+        NumberPad(amount = amount, onAmountChange = onAmountChange, decimals = decimals)
         Spacer(Modifier.height(CashuTheme.spacing.micro))
         PrimaryButton(
             text = if (creating) "Creating…" else "Create request",
@@ -324,6 +381,7 @@ private fun DisplayFace(
     amountLabel: String?,
     showCelebration: Boolean,
     onCopy: () -> Unit,
+    onDone: () -> Unit,
 ) {
     val isPaid = quote.state == MintQuoteState.Paid ||
         quote.state == MintQuoteState.Issued ||
@@ -364,8 +422,7 @@ private fun DisplayFace(
         )
         GhostButton(
             text = "Done",
-            onClick = onCopy,
-            enabled = isPaid,
+            onClick = onDone,
         )
         Spacer(Modifier.navigationBarsPadding())
     }
@@ -380,9 +437,14 @@ private fun QuoteStatusRow(isPaid: Boolean, showCelebration: Boolean) {
     ) {
         Spacer(modifier = Modifier.weight(1f))
         if (isPaid) {
+            // Single celebration beat: one green check grows in gently (0.9 → 1);
+            // the label carries the moment, no doubled glyphs.
             AnimatedVisibility(
-                visible = showCelebration,
-                enter = scaleIn(animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)) + fadeIn(),
+                visible = true,
+                enter = scaleIn(
+                    animationSpec = spring(dampingRatio = 0.7f, stiffness = Spring.StiffnessMediumLow),
+                    initialScale = 0.9f,
+                ) + fadeIn(),
                 exit = fadeOut(),
             ) {
                 Icon(
@@ -392,12 +454,6 @@ private fun QuoteStatusRow(isPaid: Boolean, showCelebration: Boolean) {
                     modifier = Modifier.size(CashuTheme.spacing.loose),
                 )
             }
-            Icon(
-                imageVector = Icons.Outlined.CheckCircle,
-                contentDescription = null,
-                tint = CashuTheme.colors.received,
-                modifier = Modifier.size(CashuTheme.spacing.loose),
-            )
             Text(
                 text = if (showCelebration) "Payment received!" else "Paid",
                 style = MaterialTheme.typography.titleMedium,

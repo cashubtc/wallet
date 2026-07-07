@@ -43,6 +43,8 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import org.cashu.wallet.Core.AmountFormatter
+import org.cashu.wallet.Core.Protocols.CurrencyAmount
+import org.cashu.wallet.Core.Protocols.CurrencyRegistry
 import org.cashu.wallet.Core.SettingsManager
 import org.cashu.wallet.Core.TokenParser
 import org.cashu.wallet.Core.WalletManager
@@ -51,6 +53,7 @@ import org.cashu.wallet.ui.components.AmountText
 import org.cashu.wallet.ui.components.CanvasDivider
 import org.cashu.wallet.ui.components.CashuTextField
 import org.cashu.wallet.ui.components.GhostButton
+import org.cashu.wallet.ui.components.InlineNotice
 import org.cashu.wallet.ui.components.InspectorRow
 import org.cashu.wallet.ui.components.PrimaryButton
 import org.cashu.wallet.ui.components.TwoFaceCrossfade
@@ -251,11 +254,7 @@ private fun PasteFace(
         )
         GhostButton(text = "Paste from clipboard", onClick = onPaste)
         if (errorText != null) {
-            Text(
-                text = errorText,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-            )
+            InlineNotice(text = errorText)
         }
         Spacer(modifier = Modifier.weight(1f, fill = true))
         PrimaryButton(
@@ -291,14 +290,25 @@ private fun ReviewFace(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.loose),
     ) {
+        // Amount and fee render in the token's own unit.
+        val isSatToken = info.unit.equals("sat", ignoreCase = true)
+        val tokenCurrency = CurrencyRegistry.currencyForMintUnit(info.unit)
         AmountText(
-            text = formatter.formatWalletSats(info.amount, useBitcoinSymbol),
+            text = if (isSatToken) {
+                formatter.formatWalletSats(info.amount, useBitcoinSymbol)
+            } else {
+                CurrencyAmount(info.amount, tokenCurrency).formatted()
+            },
             style = MaterialTheme.typography.displayMedium.withMonoDigits(),
         )
         Column(modifier = Modifier.fillMaxWidth()) {
             InspectorRow(
                 label = "Fee",
-                value = if (fee == 0L) "Free" else "${fee} sat",
+                value = when {
+                    fee == 0L -> "Free"
+                    isSatToken -> "$fee sat"
+                    else -> CurrencyAmount(fee, tokenCurrency).formatted()
+                },
                 leadingIcon = Icons.Outlined.Receipt,
             )
             CanvasDivider(leadingInset = 16)
@@ -324,11 +334,7 @@ private fun ReviewFace(
             }
         }
         if (errorText != null) {
-            Text(
-                text = errorText,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-            )
+            InlineNotice(text = errorText)
         }
         Spacer(modifier = Modifier.height(CashuTheme.spacing.snug))
         PrimaryButton(
