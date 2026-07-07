@@ -260,10 +260,12 @@ class TokenService: ObservableObject {
             )
             return fee.value
         } catch {
-            // Fallback: calculate manually using keyset fee
+            // Fallback: calculate manually using keyset fee.
+            // getKeysetFeesById returns the keyset's input fee in ppk (per 1000
+            // proofs), so the total is ceil(ppk * count / 1000) per NUT-02.
             do {
-                let feePerProof = try await wallet.getKeysetFeesById(keysetId: firstProof.keysetId)
-                return feePerProof * UInt64(proofs.count)
+                let feePpk = try await wallet.getKeysetFeesById(keysetId: firstProof.keysetId)
+                return (feePpk * UInt64(proofs.count) + 999) / 1000
             } catch {
                 print("Failed to get keyset fee for calculation: \(error)")
             }

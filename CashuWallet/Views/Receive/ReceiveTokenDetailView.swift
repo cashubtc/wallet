@@ -14,6 +14,11 @@ struct ReceiveTokenDetailView: View {
     /// unit-native amount/fee formatting so a non-sat token isn't shown as sats.
     @State private var tokenUnit: String
     @State private var receiveFee: UInt64 = 0
+    /// The net amount CDK actually credited (token value minus the mint's
+    /// receive-swap fee), set once the claim completes. Drives the success
+    /// screen so "Amount" matches the balance change instead of the token's
+    /// gross value — receiving an 11-sat token that nets 10 must read as 10.
+    @State private var claimedAmount: UInt64?
     @State private var mintUrl: String = ""
     @State private var errorMessage: String?
     @State private var isLoadingFee = true
@@ -198,14 +203,20 @@ struct ReceiveTokenDetailView: View {
         )
     }
 
+    /// Status rows for the processing/success screen. "Amount" is the net
+    /// credited to the balance: the estimate (token value − previewed fee)
+    /// while claiming, then the exact net CDK returned. The fee row likewise
+    /// firms up from the preview to the actually charged fee.
     private var successRows: [PaymentStatusView.DetailRow] {
+        let estimatedNet = tokenAmount - min(receiveFee, tokenAmount)
+        let paidFee = claimedAmount.map { tokenAmount - min($0, tokenAmount) }
         var rows: [PaymentStatusView.DetailRow] = [
             .init(
                 icon: "bitcoinsign",
                 label: "Amount",
-                value: formatAmount(tokenAmount)
+                value: formatAmount(claimedAmount ?? estimatedNet)
             ),
-            .init(icon: "arrow.up.arrow.down", label: "Fee", value: formatFee(receiveFee)),
+            .init(icon: "arrow.up.arrow.down", label: "Fee", value: formatFee(paidFee ?? receiveFee)),
         ]
         if !mintUrl.isEmpty {
             rows.append(.init(
@@ -346,13 +357,17 @@ struct ReceiveTokenDetailView: View {
                 let receivedAmount = try await walletManager.receiveTokens(tokenString: tokenString)
                 try? await minHold
                 await MainActor.run {
+                    // CDK returns the net amount credited; the difference to the
+                    // token's gross value is the mint's receive-swap fee.
+                    claimedAmount = receivedAmount
+                    let paidFee = tokenAmount - min(receivedAmount, tokenAmount)
                     // Post the home-screen receipt toast (seen after Done), then
                     // morph the spinner into the shared full-screen success. It
                     // owns the success haptic on the transition, so don't buzz here.
                     NotificationCenter.default.post(
                         name: .cashuTokenReceived,
                         object: nil,
-                        userInfo: ["amount": receivedAmount, "fee": UInt64(0), "unit": tokenUnit]
+                        userInfo: ["amount": receivedAmount, "fee": paidFee, "unit": tokenUnit]
                     )
                     withAnimation(.smooth(duration: 0.3)) { phase = .success }
                 }

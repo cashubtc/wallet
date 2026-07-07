@@ -341,7 +341,9 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
         return runCatching {
             wallet.calculateFee(proofs.size.toUInt(), first.keysetId).value.toLong()
         }.getOrElse {
-            wallet.getKeysetFeesById(first.keysetId).toLong() * proofs.size
+            // getKeysetFeesById returns the keyset's input fee in ppk (per 1000
+            // proofs), so the total is ceil(ppk * count / 1000) per NUT-02.
+            (wallet.getKeysetFeesById(first.keysetId).toLong() * proofs.size + 999) / 1000
         }
     }
 
