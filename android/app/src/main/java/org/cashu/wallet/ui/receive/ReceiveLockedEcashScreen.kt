@@ -33,7 +33,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextAlign
 import org.cashu.wallet.Core.LockedReceiveRequest
 import org.cashu.wallet.Core.NostrService
@@ -43,6 +42,7 @@ import org.cashu.wallet.ui.components.GhostButton
 import org.cashu.wallet.ui.components.InlineNotice
 import org.cashu.wallet.ui.components.PrimaryButton
 import org.cashu.wallet.ui.components.QrCard
+import org.cashu.wallet.ui.components.copyTextWithToast
 import org.cashu.wallet.ui.components.shareText
 import org.cashu.wallet.ui.theme.CashuTheme
 
@@ -119,7 +119,7 @@ fun ReceiveLockedEcashScreen(
                 InlineNotice(text = "Share this request with people who should send ecash only this wallet can claim.")
                 PrimaryButton(
                     text = "Copy request",
-                    onClick = { clipboard.setText(AnnotatedString(encoded)) },
+                    onClick = { clipboard.copyTextWithToast(context, encoded) },
                     modifier = Modifier.fillMaxWidth(),
                 )
                 GhostButton(

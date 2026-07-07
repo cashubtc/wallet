@@ -30,7 +30,6 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import org.cashu.wallet.Views.Components.QRCodeView
 import org.cashu.wallet.ui.theme.CashuTheme
@@ -93,7 +92,7 @@ fun QrCard(
                 leadingIcon = { Icon(Icons.Outlined.ContentCopy, contentDescription = null) },
                 onClick = {
                     menuOpen = false
-                    clipboard.setText(AnnotatedString(content))
+                    clipboard.copyTextWithToast(context, content)
                 },
             )
             DropdownMenuItem(
@@ -117,5 +116,6 @@ internal fun Context.shareText(text: String, subject: String) {
     val chooser = Intent.createChooser(send, null).apply {
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
-    startActivity(chooser)
+    runCatching { startActivity(chooser) }
+        .onFailure { showShortToast("No app available to share.") }
 }

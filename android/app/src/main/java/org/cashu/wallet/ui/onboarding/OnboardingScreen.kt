@@ -44,7 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextAlign
@@ -59,6 +59,7 @@ import org.cashu.wallet.Core.WalletManager
 import org.cashu.wallet.Models.MintInfo
 import org.cashu.wallet.Models.RestoreMintResult
 import org.cashu.wallet.ui.components.CashuTextField
+import org.cashu.wallet.ui.components.copyTextWithToast
 import org.cashu.wallet.ui.components.GhostButton
 import org.cashu.wallet.ui.components.InlineNotice
 import org.cashu.wallet.ui.components.MintAvatar
@@ -291,6 +292,7 @@ private fun ShowMnemonicFace(
     onContinue: () -> Unit,
 ) {
     val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
     val words = remember(mnemonic) {
         mnemonic.trim().split(' ').filter { it.isNotBlank() }
     }
@@ -330,7 +332,7 @@ private fun ShowMnemonicFace(
             GhostButton(
                 text = if (copied) "Copied" else "Copy phrase",
                 onClick = {
-                    clipboard.setText(AnnotatedString(mnemonic))
+                    clipboard.copyTextWithToast(context, mnemonic)
                     copied = true
                 },
                 modifier = Modifier.fillMaxWidth(),

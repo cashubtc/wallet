@@ -67,7 +67,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -103,6 +102,7 @@ import org.cashu.wallet.ui.components.PrimaryButton
 import org.cashu.wallet.ui.components.QrCard
 import org.cashu.wallet.ui.components.TwoFaceScreen
 import org.cashu.wallet.ui.components.UnitPickerSheet
+import org.cashu.wallet.ui.components.copyTextWithToast
 import org.cashu.wallet.ui.components.shareText
 import org.cashu.wallet.ui.theme.CapsuleShape
 import org.cashu.wallet.ui.theme.CashuTheme
@@ -529,7 +529,7 @@ fun ReceiveLightningScreen(
                         isExpired = isExpired,
                         onchainObservation = onchainObservation,
                         showCelebration = paymentJustReceived,
-                        onCopy = { clipboard.setText(AnnotatedString(liveQuote.request)) },
+                        onCopy = { clipboard.copyTextWithToast(context, liveQuote.request) },
                         onDone = onClose,
                         onEditReusableAmount = if (liveQuote.paymentMethod == PaymentMethodKind.Bolt12) {
                             { reusableAmountEditorOpen = true }

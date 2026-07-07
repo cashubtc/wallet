@@ -64,6 +64,7 @@ fun MintDiscoveryContent(
     val scope = rememberCoroutineScope()
 
     var query by remember { mutableStateOf("") }
+    var addingMintUrls by remember { mutableStateOf<Set<String>>(emptySet()) }
 
     val configuredUrls = remember(walletState.mints, discoveryState.sessionAddedMintUrls) {
         walletState.mints.map { it.url }.toSet() + discoveryState.sessionAddedMintUrls
@@ -189,17 +190,20 @@ fun MintDiscoveryContent(
                             item("discovered-header") { SectionHeader("Discovered") }
                         }
                         items(discovered, key = { it.url }) { mint ->
-                            DiscoveryRow(
-                                mint = mint,
-                                isConfigured = false,
-                                isBusy = walletState.isLoading,
-                                onAdd = {
-                                    scope.launch {
-                                        runCatching { walletManager.addMint(mint.url) }
-                                            .onSuccess { mintDiscoveryManager.markMintAdded(mint.url) }
-                                    }
-                                },
-                            )
+                                DiscoveryRow(
+                                    mint = mint,
+                                    isConfigured = false,
+                                    isBusy = walletState.isLoading || mint.url in addingMintUrls,
+                                    onAdd = add@{
+                                        if (mint.url in addingMintUrls) return@add
+                                        addingMintUrls += mint.url
+                                        scope.launch {
+                                            runCatching { walletManager.addMint(mint.url) }
+                                                .onSuccess { mintDiscoveryManager.markMintAdded(mint.url) }
+                                            addingMintUrls -= mint.url
+                                        }
+                                    },
+                                )
                             if (mint != discovered.last()) CanvasDivider(leadingInset = 64)
                         }
                     }

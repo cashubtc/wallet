@@ -1,5 +1,6 @@
 package org.cashu.wallet.ui.history
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -139,6 +140,11 @@ fun HistoryScreen(
 
     val topBarState = rememberTopAppBarState()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(state = topBarState)
+
+    BackHandler(enabled = searching) {
+        searching = false
+        query = ""
+    }
 
     Scaffold(
         modifier = Modifier

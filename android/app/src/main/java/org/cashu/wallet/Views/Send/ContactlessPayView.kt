@@ -7,12 +7,16 @@ import android.nfc.NdefMessage
 import android.nfc.NfcAdapter
 import android.nfc.Tag
 import android.nfc.tech.Ndef
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
@@ -55,6 +59,8 @@ fun ContactlessPayView(
     var paymentComplete by remember { mutableStateOf(false) }
     var lastPaymentAmount by remember { mutableStateOf<Long?>(null) }
 
+    BackHandler { onClose() }
+
     DisposableEffect(activity, adapter, service) {
         if (activity != null && adapter?.isEnabled == true) {
             val flags = (
@@ -94,8 +100,8 @@ fun ContactlessPayView(
                                     onLightningRequest(input.request)
                                 }
                             }
-                        }.onFailure { failure ->
-                            error = failure.message ?: "NFC payment failed."
+                        }.onFailure {
+                            error = "NFC payment failed."
                             status = "Ready to scan again."
                         }
                         isProcessing = false
@@ -116,6 +122,8 @@ fun ContactlessPayView(
         modifier = Modifier
             .fillMaxSize()
             .padding(contentPadding)
+            .verticalScroll(rememberScrollState())
+            .navigationBarsPadding()
             .padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {

@@ -1,5 +1,6 @@
 package org.cashu.wallet.ui.send
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -374,6 +375,15 @@ fun UnifiedSendScreen(
             } catch (t: Throwable) {
                 status = SendStatus.Failed(t.message ?: "Payment failed.")
             }
+        }
+    }
+
+    BackHandler(enabled = true) {
+        when (val current = status) {
+            SendStatus.Sending -> Unit
+            is SendStatus.Sent -> onClose()
+            is SendStatus.Failed -> status = null
+            null -> goBack()
         }
     }
 

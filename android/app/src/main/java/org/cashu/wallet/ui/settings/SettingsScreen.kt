@@ -292,5 +292,5 @@ private fun Context.openExternal(url: String) {
     val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
-    startActivity(intent)
+    runCatching { startActivity(intent) }
 }

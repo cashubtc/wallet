@@ -1,5 +1,6 @@
 package org.cashu.wallet.ui.send
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.RepeatMode
@@ -61,7 +62,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -81,6 +81,7 @@ import org.cashu.wallet.ui.components.PrimaryButton
 import org.cashu.wallet.ui.components.QrCard
 import org.cashu.wallet.ui.components.TwoFaceScreen
 import org.cashu.wallet.ui.components.UnitPickerSheet
+import org.cashu.wallet.ui.components.copyTextWithToast
 import org.cashu.wallet.ui.components.shareText
 import org.cashu.wallet.ui.theme.CashuTheme
 import org.cashu.wallet.ui.theme.withMonoDigits
@@ -179,6 +180,13 @@ fun SendEcashScreen(
     val clipboardP2pkPubkey = clipboard.getText()?.text
         ?.let(::p2pkKeyCandidate)
         ?.let { runCatching { SettingsManager.normalizeP2PKPublicKeyForSend(it) }.getOrNull() }
+
+    BackHandler(enabled = sending || face is SendFace.Generated) {
+        if (!sending && face is SendFace.Generated) {
+            face = SendFace.Input
+        }
+    }
+
     LaunchedEffect(p2pkOn, p2pkInput) {
         if (!p2pkOn) {
             p2pkInputError = null
@@ -686,6 +694,7 @@ private fun GeneratedFace(
     onDone: () -> Unit,
 ) {
     val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
     var copied by remember { mutableStateOf(false) }
     var claimState: ClaimState by remember(result.token) { mutableStateOf(ClaimState.Pending) }
     LaunchedEffect(copied) {
@@ -778,7 +787,7 @@ private fun GeneratedFace(
         PrimaryButton(
             text = if (copied) "Copied" else "Copy",
             onClick = {
-                clipboard.setText(AnnotatedString(result.token))
+                clipboard.copyTextWithToast(context, result.token)
                 copied = true
             },
         )

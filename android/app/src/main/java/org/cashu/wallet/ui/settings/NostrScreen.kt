@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -43,7 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -58,6 +59,7 @@ import org.cashu.wallet.ui.components.InlineNotice
 import org.cashu.wallet.ui.components.InspectorRow
 import org.cashu.wallet.ui.components.PrimaryButton
 import org.cashu.wallet.ui.components.SectionHeader
+import org.cashu.wallet.ui.components.copyTextWithToast
 import org.cashu.wallet.ui.security.rememberWalletAuthenticationLauncher
 import org.cashu.wallet.ui.theme.CashuTheme
 
@@ -72,6 +74,7 @@ fun NostrScreen(
     val nostrState by nostrService.state.collectAsState()
     val settings by settingsManager.state.collectAsState()
     val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
     val authenticate = rememberWalletAuthenticationLauncher(appLockManager)
     var nsecSheetOpen by remember { mutableStateOf(false) }
     var showImport by remember { mutableStateOf(false) }
@@ -100,7 +103,8 @@ fun NostrScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .verticalScroll(rememberScrollState()),
+                .verticalScroll(rememberScrollState())
+                .navigationBarsPadding(),
             verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
         ) {
             NostrKeyStatusPanel(
@@ -141,7 +145,7 @@ fun NostrScreen(
                 label = "npub",
                 value = nostrState.npub.ifBlank { "—" },
                 valueMonospaced = true,
-                onClick = { clipboard.setText(AnnotatedString(nostrState.npub)) },
+                onClick = { clipboard.copyTextWithToast(context, nostrState.npub) },
                 editable = nostrState.npub.isNotBlank(),
             )
             CanvasDivider(leadingInset = 16)
@@ -149,7 +153,7 @@ fun NostrScreen(
                 label = "hex",
                 value = nostrState.publicKeyHex.ifBlank { "—" },
                 valueMonospaced = true,
-                onClick = { clipboard.setText(AnnotatedString(nostrState.publicKeyHex)) },
+                onClick = { clipboard.copyTextWithToast(context, nostrState.publicKeyHex) },
                 editable = nostrState.publicKeyHex.isNotBlank(),
             )
 
@@ -188,7 +192,7 @@ fun NostrScreen(
                 IconButton(
                     onClick = {
                         authenticate("Copy your Nostr private key") {
-                            clipboard.setText(AnnotatedString(nostrState.nsec))
+                            clipboard.copyTextWithToast(context, nostrState.nsec)
                         }
                     },
                     enabled = nostrState.nsec.isNotBlank(),
@@ -301,7 +305,7 @@ fun NostrScreen(
             confirmButton = {
                 TextButton(onClick = {
                     authenticate("Copy your Nostr private key") {
-                        clipboard.setText(AnnotatedString(nostrState.nsec))
+                        clipboard.copyTextWithToast(context, nostrState.nsec)
                         copied = true
                     }
                 }) {

@@ -45,7 +45,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -61,6 +61,7 @@ import org.cashu.wallet.ui.components.PrimaryButton
 import org.cashu.wallet.ui.components.QrCard
 import org.cashu.wallet.ui.components.SectionHeader
 import org.cashu.wallet.ui.components.ToggleRow
+import org.cashu.wallet.ui.components.copyTextWithToast
 import org.cashu.wallet.ui.security.rememberWalletAuthenticationLauncher
 import org.cashu.wallet.ui.theme.CashuTheme
 
@@ -78,6 +79,7 @@ fun P2PKScreen(
 ) {
     val settings by settingsManager.state.collectAsState()
     val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
     var showImport by remember { mutableStateOf(false) }
     var importError by remember { mutableStateOf<String?>(null) }
     var showExplainer by remember { mutableStateOf(false) }
@@ -145,7 +147,7 @@ fun P2PKScreen(
                             publicKey = primaryKey,
                             leadingIcon = Icons.Outlined.Key,
                             onClick = { detail = P2PKDetail.Primary },
-                            onCopy = { clipboard.setText(AnnotatedString(primaryKey)) },
+                            onCopy = { clipboard.copyTextWithToast(context, primaryKey) },
                         )
                     }
                 }
@@ -181,7 +183,7 @@ fun P2PKScreen(
                             publicKey = key.publicKey,
                             leadingIcon = Icons.Outlined.VpnKey,
                             onClick = { detail = P2PKDetail.Stored(key.id) },
-                            onCopy = { clipboard.setText(AnnotatedString(key.publicKey)) },
+                            onCopy = { clipboard.copyTextWithToast(context, key.publicKey) },
                         )
                         CanvasDivider(leadingInset = 16)
                     }
@@ -291,6 +293,7 @@ private fun P2PKKeyDetailScreen(
 ) {
     val settings by settingsManager.state.collectAsState()
     val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
     val authenticate = rememberWalletAuthenticationLauncher(appLockManager)
     var privateRevealed by remember { mutableStateOf(false) }
     var showRename by remember { mutableStateOf(false) }
@@ -355,7 +358,7 @@ private fun P2PKKeyDetailScreen(
                 KeyValueRow(
                     label = "Public key",
                     value = publicKey ?: "-",
-                    onCopy = publicKey?.let { { clipboard.setText(AnnotatedString(it)) } },
+                    onCopy = publicKey?.let { { clipboard.copyTextWithToast(context, it) } },
                 )
             }
             item("status") {
@@ -399,7 +402,7 @@ private fun P2PKKeyDetailScreen(
                     onCopy = {
                         privateNsec?.let { nsec ->
                             authenticate("Copy P2PK private key") {
-                                clipboard.setText(AnnotatedString(nsec))
+                                clipboard.copyTextWithToast(context, nsec)
                             }
                         }
                     },

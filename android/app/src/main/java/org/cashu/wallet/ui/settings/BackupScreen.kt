@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -35,7 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
@@ -44,6 +45,7 @@ import kotlinx.coroutines.delay
 import org.cashu.wallet.Core.AppLockManager
 import org.cashu.wallet.Core.WalletManager
 import org.cashu.wallet.ui.components.CashuTextField
+import org.cashu.wallet.ui.components.copyTextWithToast
 import org.cashu.wallet.ui.components.GhostButton
 import org.cashu.wallet.ui.components.PrimaryButton
 import org.cashu.wallet.ui.components.SectionHeader
@@ -62,6 +64,7 @@ fun BackupScreen(
         mnemonic.orEmpty().trim().split(' ').filter { it.isNotBlank() }
     }
     val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
     val authenticate = rememberWalletAuthenticationLauncher(appLockManager)
 
     var revealed by remember { mutableStateOf(false) }
@@ -92,6 +95,7 @@ fun BackupScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
+                .navigationBarsPadding()
                 .padding(horizontal = CashuThemeTokens.spacing.comfortable),
             verticalArrangement = Arrangement.spacedBy(CashuThemeTokens.spacing.comfortable),
         ) {
@@ -112,7 +116,7 @@ fun BackupScreen(
                             authenticate("Copy your seed phrase") {
                                 val phrase = mnemonic ?: walletManager.backupMnemonic().orEmpty()
                                 if (phrase.isNotBlank()) {
-                                    clipboard.setText(AnnotatedString(phrase))
+                                    clipboard.copyTextWithToast(context, phrase)
                                     copied = true
                                 }
                             }

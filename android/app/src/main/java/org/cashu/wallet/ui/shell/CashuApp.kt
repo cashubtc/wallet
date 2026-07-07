@@ -1,5 +1,6 @@
 package org.cashu.wallet.ui.shell
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
@@ -119,6 +120,13 @@ private fun AuthenticatedShell(container: AppContainer) {
     val pendingDeepLink by container.navigationManager.pendingDeepLink.collectAsState()
     val connectivityState by container.connectivityObserver.state.collectAsState()
     val appLockState by container.appLockManager.state.collectAsState()
+
+    BackHandler(enabled = showContactless || scannerTarget != null) {
+        when {
+            scannerTarget != null -> scannerTarget = null
+            showContactless -> showContactless = false
+        }
+    }
 
     LaunchedEffect(pendingDeepLink) {
         val deepLink = pendingDeepLink ?: return@LaunchedEffect

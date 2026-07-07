@@ -692,16 +692,18 @@ iOS implementation reference files for this backlog:
 
 The Android UI currently relies heavily on top app bar back buttons and route pops. Several screens have internal steps, overlays, or modal-like states but no matching `BackHandler`, so the system back gesture can leave the flow instead of moving back one logical step.
 
+Milestone update: Android now handles system back for shell overlays, onboarding, send flows, history search, scanner, and contactless payment. Predictive-back visual previews still need physical-device or emulator verification on Android 14+.
+
 Checklist:
 
-- [ ] Add `BackHandler` to `CashuApp` overlays so Android back closes scanner and contactless pay overlays before leaving the app or popping navigation.
-- [ ] Add `BackHandler` to `OnboardingScreen` so system back mirrors the visible back action, moves through onboarding steps predictably, and does not accidentally exit mid-create or mid-restore.
-- [ ] Add `BackHandler` to `UnifiedSendScreen` so input, amount, confirm, and status states follow the same behavior as the toolbar back button; block or confirm during in-flight sends.
-- [ ] Add `BackHandler` to `SendEcashScreen` so the generated-token state returns to input instead of closing the route.
+- [x] Add `BackHandler` to `CashuApp` overlays so Android back closes scanner and contactless pay overlays before leaving the app or popping navigation. Shell overlays now close scanner/contactless state first.
+- [x] Add `BackHandler` to `OnboardingScreen` so system back mirrors the visible back action, moves through onboarding steps predictably, and does not accidentally exit mid-create or mid-restore. Onboarding routes system back through the same step-aware `goBack` logic.
+- [x] Add `BackHandler` to `UnifiedSendScreen` so input, amount, confirm, and status states follow the same behavior as the toolbar back button; block or confirm during in-flight sends. Unified Send now consumes in-flight back, returns failed/sent states appropriately, and otherwise mirrors toolbar back.
+- [x] Add `BackHandler` to `SendEcashScreen` so the generated-token state returns to input instead of closing the route. Generated ecash now returns to the input face before route close.
 - [x] Add `BackHandler` to `ReceiveEcashScreen` so review returns to paste/scan input and receive-later or in-flight states are not abandoned silently. Receive ecash now handles system back for review and status states.
 - [x] Add `BackHandler` to `ReceiveLightningScreen` so invoice/offer/address display returns to input or confirms cancellation instead of popping the whole route. Receive Lightning now dismisses sheets/status or returns from display to input before route pop.
-- [ ] Add `BackHandler` to `HistoryScreen` so back closes search mode before leaving the tab.
-- [ ] Add `BackHandler` to scanner and contactless surfaces directly, even when launched through shell state, so close/dispose logic is always executed.
+- [x] Add `BackHandler` to `HistoryScreen` so back closes search mode before leaving the tab. Search mode now clears query and closes before tab navigation.
+- [x] Add `BackHandler` to scanner and contactless surfaces directly, even when launched through shell state, so close/dispose logic is always executed.
 - [ ] Verify predictive back previews on Android 14+ for pushed routes, full-screen overlays, bottom sheets, dialogs, and multi-step send/receive flows.
 
 Success condition:
@@ -712,21 +714,23 @@ Success condition:
 
 Multiple screens assume a comfortable phone height or default font size. These layouts need to survive compact phones, split-screen, gesture navigation bars, landscape-ish heights, display cutouts, keyboard/IME, and large font/accessibility settings.
 
+Milestone update: the immediate clipping fixes are in for Contactless Pay, Lightning settings, pushed settings/detail screens, shared settings rows, mint rows, history rows, and clipboard/detail rows. Home measurement, QR responsive sizing, IME bring-into-view, and screenshot verification remain open.
+
 Checklist:
 
 - [ ] Replace `HomeScreen`'s hard-coded pinned top height and fade assumptions with measured layout height so the transaction list cannot hide under or detach from the pinned balance area at large text sizes or with extra unit/status rows.
 - [ ] Add responsive constraints to `BalanceDisplay` and Home unit pager so large amounts, long unit codes, and received-delta labels do not overlap or resize the pinned header unpredictably.
-- [ ] Make `LightningScreen` scrollable and navigation-bar aware; the quote check action and lower sections can be clipped on short screens today.
+- [x] Make `LightningScreen` scrollable and navigation-bar aware; the quote check action and lower sections can be clipped on short screens today.
 - [x] Make `P2PKScreen` use a lazy or scrollable layout with bottom insets so long key lists and action buttons remain reachable.
-- [ ] Make `ContactlessPayView` scrollable or vertically adaptive so NFC instructions/status/actions do not clip on compact devices or large text.
+- [x] Make `ContactlessPayView` scrollable or vertically adaptive so NFC instructions/status/actions do not clip on compact devices or large text.
 - [ ] Audit `UnifiedSendScreen` amount/confirm faces for keyboard and small-height clipping; add `verticalScroll`/`imePadding`/`bringIntoViewRequester` where destination fields or CTAs can be covered.
 - [ ] Audit `SendEcashScreen` input face for keypad, P2PK lock fields, keyboard, and CTA clipping; ensure the generated-token face keeps copy/share/actions reachable above navigation bars.
 - [ ] Audit `ReceiveLightningScreen` input face for amount keypad, method picker, keyboard, and CTA clipping; move to scrollable/adaptive composition if needed.
 - [ ] Audit `ReceiveEcashScreen` paste/review faces for keyboard, long token text, locked-token metadata, and lower action clipping.
 - [ ] Make QR display surfaces use responsive QR sizing instead of fixed sizes that can overflow narrow split-screen widths.
-- [ ] Add bottom `navigationBarsPadding` or explicit safe-area spacers to pushed settings sub-screens such as Privacy, Backup, Nostr, P2PK, Lightning, and Mint Detail.
+- [x] Add bottom `navigationBarsPadding` or explicit safe-area spacers to pushed settings sub-screens such as Privacy, Backup, Nostr, P2PK, Lightning, and Mint Detail. Privacy, Backup, Backup/Restore, Nostr, P2PK, Lightning, Mint Detail, and Transaction Detail now clear navigation bars.
 - [ ] Add `imePadding` and scroll support to all text-entry dialogs and sheets: Nostr relay add/import, P2PK import/generate labels, mint add/discovery filters, restore seed/mint input, and send destination entry.
-- [ ] Add max-lines, overflow, and width constraints to `SettingsRows.NavRow`, `ToggleRow`, mint rows, history rows, QR detail rows, and public-key rows so long titles, trailing values, mint URLs, relay URLs, Lightning addresses, and P2PK keys cannot push controls off-screen.
+- [x] Add max-lines, overflow, and width constraints to `SettingsRows.NavRow`, `ToggleRow`, mint rows, history rows, QR detail rows, and public-key rows so long titles, trailing values, mint URLs, relay URLs, Lightning addresses, and P2PK keys cannot push controls off-screen.
 - [ ] Verify segmented controls in Nostr and receive method pickers at large font sizes; labels should wrap or adapt instead of clipping.
 - [ ] Keep modal bottom sheet content scrollable and inset-aware, especially currency picker, mint discovery, receive chooser, and method picker sheets.
 
@@ -759,15 +763,17 @@ Success condition:
 
 Several Compose controls have behavior that can surprise users or produce duplicate actions.
 
+Milestone update: shared toggle semantics, discovered-mint busy state, unused add-mint nickname UI, safe link handling, and clipboard/share feedback are fixed. Retry determinism, watcher lifecycle audit, and deeper per-screen loading isolation remain open.
+
 Checklist:
 
-- [ ] Fix `ToggleRow` semantics so tapping the switch and tapping the row cannot double-toggle or expose duplicate TalkBack actions; prefer one `toggleable` semantic owner.
-- [ ] Add disabled/busy state to mint discovery add rows to prevent double-tapping the same discovered mint before wallet state catches up.
-- [ ] Make the Add Mint nickname field actually persist/use the nickname or remove the field until backend support exists.
+- [x] Fix `ToggleRow` semantics so tapping the switch and tapping the row cannot double-toggle or expose duplicate TalkBack actions; prefer one `toggleable` semantic owner.
+- [x] Add disabled/busy state to mint discovery add rows to prevent double-tapping the same discovered mint before wallet state catches up.
+- [x] Make the Add Mint nickname field actually persist/use the nickname or remove the field until backend support exists. The unused nickname field has been removed until persisted mint aliases exist.
 - [ ] Audit `SwipeToDismissBox` plus `combinedClickable` in `MintsScreen`; swiping should not also open mint detail, and long press should not conflict with delete affordances.
 - [ ] Make retry quote behavior explicit in Unified Send. The current retry-by-resetting-selected-mint pattern can fail when the same mint remains selected.
-- [ ] Add user-visible confirmation/feedback for copy/share actions that currently silently write to clipboard.
-- [ ] Add safe external-link handling for explorer, contact, and support links so missing browser/activity handlers do not crash the app.
+- [x] Add user-visible confirmation/feedback for copy/share actions that currently silently write to clipboard. UI clipboard writes now use a shared toast-backed helper, and share failure reports when no share target exists.
+- [x] Add safe external-link handling for explorer, contact, and support links so missing browser/activity handlers do not crash the app.
 - [x] Ensure receive-later token ids are stable and collision-resistant; avoid using only a token prefix for pending receive identity. Pending receive ids now hash the full token and have JVM coverage.
 - [ ] Audit Receive Lightning polling/subscription effects to ensure only one active watcher exists per quote and watchers cancel on navigation/back.
 - [ ] Add per-screen loading state instead of reusing broad wallet loading flags for unrelated buttons, especially mint add/discovery and settings toggles.

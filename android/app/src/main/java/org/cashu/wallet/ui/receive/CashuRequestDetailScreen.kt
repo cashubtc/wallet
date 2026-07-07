@@ -61,7 +61,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import java.text.DateFormat
@@ -87,6 +86,7 @@ import org.cashu.wallet.ui.components.PrimaryButton
 import org.cashu.wallet.ui.components.QrCard
 import org.cashu.wallet.ui.components.SectionHeader
 import org.cashu.wallet.ui.components.UnitPickerSheet
+import org.cashu.wallet.ui.components.copyTextWithToast
 import org.cashu.wallet.ui.components.requestRowTitle
 import org.cashu.wallet.ui.components.shareText
 import org.cashu.wallet.ui.theme.CashuTheme
@@ -341,7 +341,7 @@ fun CashuRequestDetailScreen(
                 PrimaryButton(
                     text = if (copied) "Copied" else copyActionLabel(screenTitle),
                     onClick = {
-                        clipboard.setText(AnnotatedString(request.encoded))
+                        clipboard.copyTextWithToast(context, request.encoded)
                         copied = true
                     },
                 )

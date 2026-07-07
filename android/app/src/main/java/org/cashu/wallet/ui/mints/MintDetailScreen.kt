@@ -48,7 +48,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.ClipboardManager
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
@@ -69,6 +68,7 @@ import org.cashu.wallet.ui.components.MintAvatar
 import org.cashu.wallet.ui.components.MintMethodChips
 import org.cashu.wallet.ui.components.PrimaryButton
 import org.cashu.wallet.ui.components.SectionHeader
+import org.cashu.wallet.ui.components.copyTextWithToast
 import org.cashu.wallet.ui.components.shareText
 import org.cashu.wallet.ui.theme.CashuTheme
 import org.cashu.wallet.ui.theme.withMonoDigits
@@ -213,7 +213,7 @@ fun MintDetailScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable {
-                            clipboard.setText(AnnotatedString(mint.url))
+                            clipboard.copyTextWithToast(context, mint.url)
                             copiedUrl = true
                         }
                         .padding(
@@ -600,7 +600,7 @@ private fun openContact(context: Context, clipboard: ClipboardManager, contact: 
     ) {
         return
     }
-    clipboard.setText(AnnotatedString(info))
+    clipboard.copyTextWithToast(context, info)
 }
 
 private fun openExternalOrCopy(context: Context, clipboard: ClipboardManager, value: String) {
@@ -611,7 +611,7 @@ private fun openExternalOrCopy(context: Context, clipboard: ClipboardManager, va
     ) {
         return
     }
-    clipboard.setText(AnnotatedString(value))
+    clipboard.copyTextWithToast(context, value)
 }
 
 private fun String.withHttpsFallback(): String =

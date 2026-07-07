@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -39,7 +40,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -55,6 +56,7 @@ import org.cashu.wallet.ui.components.PrimaryButton
 import org.cashu.wallet.ui.components.QrCard
 import org.cashu.wallet.ui.components.SectionHeader
 import org.cashu.wallet.ui.components.ToggleRow
+import org.cashu.wallet.ui.components.copyTextWithToast
 import org.cashu.wallet.ui.components.formatRelativeTimestamp
 import org.cashu.wallet.ui.theme.CashuTheme
 
@@ -68,6 +70,7 @@ fun LightningScreen(
     val walletState by walletManager.state.collectAsState()
     val npcState by npcService.state.collectAsState()
     val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
 
     var mintPickerOpen by remember { mutableStateOf(false) }
     var addressQrOpen by remember { mutableStateOf(false) }
@@ -91,7 +94,8 @@ fun LightningScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .verticalScroll(rememberScrollState()),
+                .verticalScroll(rememberScrollState())
+                .navigationBarsPadding(),
             verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
         ) {
             SectionHeader("Lightning address")
@@ -128,7 +132,7 @@ fun LightningScreen(
                     GhostButton(
                         text = "Copy address",
                         onClick = {
-                            clipboard.setText(AnnotatedString(npcState.lightningAddress))
+                            clipboard.copyTextWithToast(context, npcState.lightningAddress)
                         },
                         modifier = Modifier.fillMaxWidth(),
                     )

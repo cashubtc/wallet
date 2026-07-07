@@ -98,7 +98,6 @@ fun MintsScreen(
     val clipboard = LocalClipboardManager.current
 
     var url by remember { mutableStateOf("") }
-    var nickname by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     var pendingRemoval by remember { mutableStateOf<MintInfo?>(null) }
     var discoveryOpen by remember { mutableStateOf(false) }
@@ -139,7 +138,6 @@ fun MintsScreen(
             runCatching { walletManager.addMint(normalized) }
                 .onSuccess {
                     url = ""
-                    nickname = ""
                 }
                 .onFailure { error = it.message ?: "Could not add mint." }
         }
@@ -239,13 +237,6 @@ fun MintsScreen(
                                 )
                             }
                         },
-                    )
-                    CashuTextField(
-                        value = nickname,
-                        onValueChange = { nickname = it },
-                        label = "Nickname (optional)",
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
                     )
                     Text(
                         text = "Enter the URL of a Cashu mint to connect to it. " +
@@ -497,6 +488,8 @@ private fun MintRow(
                 text = "${mint.balance} sat",
                 style = MaterialTheme.typography.bodyMedium.withMonoDigits(),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
             Icon(
                 imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
@@ -558,12 +551,16 @@ internal fun ListEntryRow(
                 text = title,
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
             if (subtitle != null) {
                 Text(
                     text = subtitle,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }
