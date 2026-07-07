@@ -70,12 +70,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import org.cashu.wallet.Core.AmountFormatter
 import org.cashu.wallet.Core.CashuRequestStore
+import org.cashu.wallet.Core.initialMintQuotePollIntervalMillis
+import org.cashu.wallet.Core.nextMintQuotePollIntervalMillis
 import org.cashu.wallet.Core.OnchainExplorer
 import org.cashu.wallet.Core.OnchainPaymentObservation
 import org.cashu.wallet.Core.Protocols.CurrencyAmount
@@ -440,25 +442,36 @@ fun ReceiveLightningScreen(
                     val isExpired = liveQuote.expiryEpochSeconds
                         ?.takeIf { it > 0 }
                         ?.let { nowEpochSeconds >= it } == true
-                    LaunchedEffect(current.quote.id) {
-                        walletManager.subscribeToMintQuote(current.quote.id)
-                            .catch { /* swallow; we'll fall back to manual polling */ }
-                            .collectLatest { liveQuote = it }
-                    }
-                    LaunchedEffect(current.quote.id) {
-                        var intervalMillis = when (current.quote.paymentMethod) {
-                            PaymentMethodKind.Bolt11 -> 5_000L
-                            PaymentMethodKind.Bolt12 -> 10_000L
-                            PaymentMethodKind.Onchain -> 30_000L
+                    LaunchedEffect(current.quote.id, current.quote.paymentMethod, settings.useWebsockets) {
+                        suspend fun pollUntilTerminal() {
+                            var intervalMillis = initialMintQuotePollIntervalMillis(current.quote.paymentMethod)
+                            while (shouldPollMintQuote(liveQuote.state, liveQuote.expiryEpochSeconds, System.currentTimeMillis() / 1000)) {
+                                delay(intervalMillis)
+                                runCatching { walletManager.pollMintQuote(current.quote.id) }
+                                    .getOrNull()
+                                    ?.let { liveQuote = it }
+                                intervalMillis = nextMintQuotePollIntervalMillis(
+                                    currentIntervalMillis = intervalMillis,
+                                    method = current.quote.paymentMethod,
+                                )
+                            }
                         }
+                        if (settings.useWebsockets) {
+                            try {
+                                walletManager.subscribeToMintQuote(current.quote.id)
+                                    .collectLatest { liveQuote = it }
+                            } catch (error: Throwable) {
+                                if (error is CancellationException) throw error
+                                pollUntilTerminal()
+                            }
+                        } else {
+                            pollUntilTerminal()
+                        }
+                        // Some gateways complete their quote stream without a
+                        // terminal quote; continue with manual polling in the
+                        // same watcher job so navigation still cancels cleanly.
                         while (shouldPollMintQuote(liveQuote.state, liveQuote.expiryEpochSeconds, System.currentTimeMillis() / 1000)) {
-                            delay(intervalMillis)
-                            runCatching { walletManager.pollMintQuote(current.quote.id) }
-                                .getOrNull()
-                                ?.let { liveQuote = it }
-                            intervalMillis = (intervalMillis + 1_000L).coerceAtMost(
-                                if (current.quote.paymentMethod == PaymentMethodKind.Bolt11) 15_000L else 30_000L,
-                            )
+                            pollUntilTerminal()
                         }
                     }
                     LaunchedEffect(liveQuote.expiryEpochSeconds) {

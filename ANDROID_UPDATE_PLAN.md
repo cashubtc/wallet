@@ -107,6 +107,12 @@ JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:compileDebugKotlin
 JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:testDebugUnitTest
 ```
 
+Focused validation used during Mint Detail and Receive Lightning watcher hardening:
+
+```sh
+JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:compileDebugKotlin :app:testDebugUnitTest --tests org.cashu.wallet.Core.MintDetailDisplayTest --tests org.cashu.wallet.Core.MintQuotePollingPolicyTest
+```
+
 ## Executive Summary
 
 Android is strongest in:
@@ -770,7 +776,7 @@ Success condition:
 
 Several Compose controls have behavior that can surprise users or produce duplicate actions.
 
-Milestone update: shared toggle semantics, discovered-mint busy state, unused add-mint nickname UI, safe link handling, clipboard/share feedback, Unified Send retry determinism, mint-row swipe/click conflict prevention, and mint add/discovery local loading state are fixed. Receive Lightning watcher lifecycle audit remains open.
+Milestone update: shared toggle semantics, discovered-mint busy state, unused add-mint nickname UI, safe link handling, clipboard/share feedback, Unified Send retry determinism, mint-row swipe/click conflict prevention, mint add/discovery local loading state, and Receive Lightning single quote-state watcher lifecycle are fixed.
 
 Checklist:
 
@@ -782,7 +788,7 @@ Checklist:
 - [x] Add user-visible confirmation/feedback for copy/share actions that currently silently write to clipboard. UI clipboard writes now use a shared toast-backed helper, and share failure reports when no share target exists.
 - [x] Add safe external-link handling for explorer, contact, and support links so missing browser/activity handlers do not crash the app.
 - [x] Ensure receive-later token ids are stable and collision-resistant; avoid using only a token prefix for pending receive identity. Pending receive ids now hash the full token and have JVM coverage.
-- [ ] Audit Receive Lightning polling/subscription effects to ensure only one active watcher exists per quote and watchers cancel on navigation/back.
+- [x] Audit Receive Lightning polling/subscription effects to ensure only one active watcher exists per quote and watchers cancel on navigation/back. Receive Lightning now runs subscription-or-polling in one `LaunchedEffect` keyed by quote id/method/websocket setting; cancellation is rethrown and polling only runs as fallback or when websockets are disabled.
 - [x] Add per-screen loading state instead of reusing broad wallet loading flags for unrelated buttons, especially mint add/discovery and settings toggles. Add Mint and Mint Discovery now use local per-action busy state instead of broad wallet loading flags; settings toggles already update their own setting paths directly.
 
 Success condition:
@@ -860,7 +866,7 @@ Major gaps:
 
 Unit test checklist:
 
-Milestone update: JVM coverage now includes payment request/locked receive encoding and dedicated `CashuRequestStore` persistence tests for quote-intent upsert, attach by quote id, duplicate suppression, update, delete, reset, reload, stale current-id cleanup, and legacy payment normalization. Compose UI, screenshot, instrumentation, integration, and CI parity remain open.
+Milestone update: JVM coverage now includes payment request/locked receive encoding, dedicated `CashuRequestStore` persistence tests for quote-intent upsert, attach by quote id, duplicate suppression, update, delete, reset, reload, stale current-id cleanup, legacy payment normalization, Mint Detail display mapping tests, and Receive Lightning polling cadence tests. Compose UI, screenshot, instrumentation, integration, and CI parity remain open.
 
 - [x] Add `PaymentRequestBuilder` tests for NUT-10 payload and locked receive request parse.
 - [x] Add `CashuRequestStore` tests for update/regenerate, quote-intent upsert, attach by quote id, delete/reset/reload, and duplicate suppression.
@@ -871,7 +877,8 @@ Milestone update: JVM coverage now includes payment request/locked receive encod
 - [ ] Add send destination inference tests for real amountless BOLT11/BOLT12 fixtures.
 - [ ] Add receive token tests for unknown mint, locked known primary P2PK key, locked unknown key, non-sat unit, receive later, and home event payload.
 - [ ] Add receive Lightning tests for BOLT11 expiry, reusable BOLT12 offer reuse, on-chain address reuse/new address, quote-backed request store attachment.
-- [ ] Add Mint Detail tests for NUT-06 mapping, contact URL mapping, method min/max ranges, and connection state.
+- [x] Add Mint Detail tests for NUT-06-derived display mapping, contact URL mapping, and method min/max ranges. `MintDetailDisplayTest` covers capability summary, contacts, HTTPS fallback, and method range/feature labels.
+- [ ] Add Mint Detail tests for refresh-driven connection state and full screen rendering with NUT-06 metadata.
 - [ ] Add Settings tests for relay validation, storage-only toggle removal/implementation, Sentry opt-in, App Lock state.
 - [x] Add logging tests that reject raw seed/token/private-key strings in privacy-safe messages. `AppLoggerTest` and `SentryServiceTest` cover seed phrases, Cashu tokens, nsec values, URLs, local paths, breadcrumbs, and captured errors.
 

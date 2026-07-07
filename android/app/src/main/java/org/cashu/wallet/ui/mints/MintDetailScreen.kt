@@ -51,6 +51,10 @@ import androidx.compose.ui.platform.ClipboardManager
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
+import org.cashu.wallet.Core.externalTargetWithHttpsFallback
+import org.cashu.wallet.Core.mintCapabilitySummary
+import org.cashu.wallet.Core.mintContactTarget
+import org.cashu.wallet.Core.mintPaymentMethodSettingLabel
 import org.cashu.wallet.Core.Protocols.CurrencyAmount
 import org.cashu.wallet.Core.Protocols.CurrencyRegistry
 import org.cashu.wallet.Core.WalletManager
@@ -259,7 +263,7 @@ fun MintDetailScreen(
             SectionHeader("Capabilities")
             InspectorRow(
                 label = "Summary",
-                value = capabilitySummary(mint),
+                value = mintCapabilitySummary(mint),
             )
             CanvasDivider(leadingInset = 16)
             InspectorRow(
@@ -509,19 +513,10 @@ private fun PaymentMethodRows(
                 if (index > 0) CanvasDivider(leadingInset = 16)
                 InspectorRow(
                     label = "$label ${setting.method.displayName}",
-                    value = methodSettingLabel(setting),
+                    value = mintPaymentMethodSettingLabel(setting),
                 )
             }
     }
-}
-
-private fun methodSettingLabel(setting: MintPaymentMethodSetting): String {
-    val parts = mutableListOf(setting.unit.uppercase())
-    setting.minAmount?.let { parts += "min $it" }
-    setting.maxAmount?.let { parts += "max $it" }
-    if (setting.supportsDescription == true) parts += "description"
-    if (setting.supportsAmountless == true) parts += "amountless"
-    return parts.joinToString(" · ")
 }
 
 @Composable
@@ -584,16 +579,8 @@ private fun capabilitySummary(mint: MintInfo): String {
 }
 
 private fun openContact(context: Context, clipboard: ClipboardManager, contact: MintContactInfo) {
-    val method = contact.method.lowercase()
     val info = contact.info.trim()
-    val target = when (method) {
-        "email", "mail" -> "mailto:$info"
-        "web", "website", "url" -> info.withHttpsFallback()
-        "twitter", "x" -> if (info.startsWith("http")) info else "https://x.com/${info.removePrefix("@")}"
-        "telegram" -> if (info.startsWith("http")) info else "https://t.me/${info.removePrefix("@")}"
-        "nostr" -> info.takeIf { it.startsWith("nostr:", ignoreCase = true) }
-        else -> null
-    }
+    val target = mintContactTarget(contact)
     if (target != null && runCatching {
             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(target)))
         }.isSuccess
@@ -604,7 +591,7 @@ private fun openContact(context: Context, clipboard: ClipboardManager, contact: 
 }
 
 private fun openExternalOrCopy(context: Context, clipboard: ClipboardManager, value: String) {
-    val target = value.trim().withHttpsFallback()
+    val target = externalTargetWithHttpsFallback(value)
     if (runCatching {
             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(target)))
         }.isSuccess
@@ -613,16 +600,6 @@ private fun openExternalOrCopy(context: Context, clipboard: ClipboardManager, va
     }
     clipboard.copyTextWithToast(context, value)
 }
-
-private fun String.withHttpsFallback(): String =
-    if (startsWith("http://", ignoreCase = true) ||
-        startsWith("https://", ignoreCase = true) ||
-        startsWith("mailto:", ignoreCase = true)
-    ) {
-        this
-    } else {
-        "https://$this"
-    }
 
 private fun formatTimestamp(epochMillis: Long): String {
     val seconds = ((System.currentTimeMillis() - epochMillis) / 1000).coerceAtLeast(0)
