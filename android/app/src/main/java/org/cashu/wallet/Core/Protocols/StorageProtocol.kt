@@ -75,6 +75,7 @@ object StorageKeys {
     const val settingsNostrRelays = "settings.nostrRelays"
     const val settingsNostrSignerType = "settings.nostrSignerType"
     const val settingsAmountDisplayPrimary = "settings.amountDisplayPrimary"
+    const val settingsHomeBalanceUnit = "settings.homeBalanceUnit"
     const val settingsSentryEnabled = "settings.sentryEnabled"
 
     const val npcEnabled = "npc.enabled"

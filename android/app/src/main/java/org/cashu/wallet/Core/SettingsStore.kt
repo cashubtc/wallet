@@ -75,6 +75,10 @@ class SettingsStore(
         get() = store.string(StorageKeys.settingsAmountDisplayPrimary) ?: "fiat"
         set(value) = store.putString(StorageKeys.settingsAmountDisplayPrimary, value)
 
+    var homeBalanceUnit: String
+        get() = store.string(StorageKeys.settingsHomeBalanceUnit) ?: "sat"
+        set(value) = store.putString(StorageKeys.settingsHomeBalanceUnit, value)
+
     var sentryEnabled: Boolean
         get() = store.boolean(StorageKeys.settingsSentryEnabled, false)
         set(value) = store.putBoolean(StorageKeys.settingsSentryEnabled, value)

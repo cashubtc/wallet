@@ -199,25 +199,48 @@ class WalletManager(
     suspend fun refreshBalance() {
         val mints = mutableState.value.mints
         var total = 0L
+        val unitTotals = mutableMapOf<String, Long>()
         val updated = mints.map { mint ->
             val balance = runCatching { gateway.totalBalance(mint.url) }.getOrDefault(mint.balance)
             total += balance
+            // Only sum unit wallets that already exist — never register a unit
+            // wallet just because the mint advertises the unit.
+            mint.units.filter { !it.equals("sat", ignoreCase = true) }.forEach { unit ->
+                runCatching { gateway.unitBalanceIfExists(mint.url, unit) }.getOrNull()?.let {
+                    unitTotals[unit] = (unitTotals[unit] ?: 0L) + it
+                }
+            }
             mint.copy(balance = balance)
         }
+        unitTotals["sat"] = total
         walletStore.saveMints(updated)
         update {
             copy(
                 balance = total,
+                balancesByUnit = unitTotals.toMap(),
                 mints = updated,
                 activeMint = activeMintFrom(updated),
             )
         }
     }
 
-    override suspend fun createMintQuote(amount: Long?, method: PaymentMethodKind): MintQuoteInfo {
+    /**
+     * Balance of one (mint, unit). Sat answers from the cached mint balance;
+     * non-sat registers the unit wallet on demand. Null when unavailable.
+     */
+    suspend fun unitBalance(mintUrl: String, unit: String): Long? {
+        if (unit.equals("sat", ignoreCase = true)) {
+            return mutableState.value.mints.firstOrNull { it.url == mintUrl }?.balance
+        }
+        return runCatching {
+            withContext(Dispatchers.IO) { gateway.unitBalance(mintUrl, unit) }
+        }.getOrNull()
+    }
+
+    override suspend fun createMintQuote(amount: Long?, method: PaymentMethodKind, unit: String): MintQuoteInfo {
         val active = mutableState.value.activeMint ?: throw IllegalStateException("No active mint.")
         return withLoadingResult {
-            gateway.createMintQuote(amount, method, active.url).also {
+            gateway.createMintQuote(amount, method, active.url, unit).also {
                 mintQuoteSyncService.rememberMintQuoteTimestamp(it.id)
             }
         }
@@ -317,11 +340,11 @@ class WalletManager(
             result
         }
 
-    override suspend fun sendTokens(amount: Long, memo: String?, p2pkPubkey: String?, mintUrl: String?): SendTokenResult {
+    override suspend fun sendTokens(amount: Long, memo: String?, p2pkPubkey: String?, mintUrl: String?, unit: String): SendTokenResult {
         val selectedMint = mintUrl ?: mutableState.value.activeMint?.url ?: throw IllegalStateException("No active mint.")
         val normalizedP2PKPubkey = SettingsManager.normalizeP2PKPublicKeyForSend(p2pkPubkey)
         return withLoadingResult {
-            val result = gateway.sendEcashToken(amount, memo, normalizedP2PKPubkey, selectedMint)
+            val result = gateway.sendEcashToken(amount, memo, normalizedP2PKPubkey, selectedMint, unit)
             val pending = PendingToken(
                 tokenId = UUID.randomUUID().toString(),
                 token = result.token,
@@ -330,6 +353,7 @@ class WalletManager(
                 dateEpochMillis = System.currentTimeMillis(),
                 mintUrl = selectedMint,
                 memo = memo,
+                unit = unit,
             )
             normalizedP2PKPubkey?.let(settingsManager::markP2PKKeyUsed)
             walletStore.savePendingTokens(walletStore.loadPendingTokens() + pending)

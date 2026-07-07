@@ -14,7 +14,10 @@ data class WalletState(
     val canExitOnboarding: Boolean = false,
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
-    val activeUnit: String = "sat",
+    // Per-unit totals across mints ("sat" included). The primary balance model
+    // stays sat-denominated; there is deliberately no global active unit — unit
+    // selection lives per flow, matching iOS.
+    val balancesByUnit: Map<String, Long> = emptyMap(),
     val mints: List<MintInfo> = emptyList(),
     val activeMint: MintInfo? = null,
     val transactions: List<WalletTransaction> = emptyList(),
@@ -22,4 +25,8 @@ data class WalletState(
     val pendingReceiveTokens: List<PendingReceiveToken> = emptyList(),
     val claimedTokens: List<ClaimedToken> = emptyList(),
     val transactionUpdateVersion: Long = 0,
-)
+) {
+    /** True when any unit — sat or not — holds a spendable balance. */
+    val hasAnyBalance: Boolean
+        get() = balance > 0 || balancesByUnit.values.any { it > 0 }
+}

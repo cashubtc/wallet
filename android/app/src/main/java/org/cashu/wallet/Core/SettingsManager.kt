@@ -21,6 +21,7 @@ data class SettingsState(
     val receivePaymentRequestsAutomatically: Boolean = false,
     val showP2PKButtonInDrawer: Boolean = false,
     val amountDisplayPrimary: String = "fiat",
+    val homeBalanceUnit: String = "sat",
     val sentryEnabled: Boolean = false,
     val checkIncomingInvoices: Boolean = true,
     val periodicallyCheckIncomingInvoices: Boolean = true,
@@ -163,6 +164,7 @@ class SettingsManager(
     fun setAmountDisplayPrimary(value: String) = update {
         settingsStore.amountDisplayPrimary = AmountDisplayPrimary.fromRaw(value).rawValue
     }
+    fun setHomeBalanceUnit(unit: String) = update { settingsStore.homeBalanceUnit = unit }
 
     fun addRelay(relay: String) = update {
         val normalized = relay.trim()
@@ -288,6 +290,7 @@ class SettingsManager(
         receivePaymentRequestsAutomatically = settingsStore.receivePaymentRequestsAutomatically,
         showP2PKButtonInDrawer = settingsStore.showP2PKButtonInDrawer,
         amountDisplayPrimary = AmountDisplayPrimary.fromRaw(settingsStore.amountDisplayPrimary).rawValue,
+        homeBalanceUnit = settingsStore.homeBalanceUnit,
         sentryEnabled = settingsStore.sentryEnabled,
         checkIncomingInvoices = settingsStore.checkIncomingInvoices,
         periodicallyCheckIncomingInvoices = settingsStore.periodicallyCheckIncomingInvoices,

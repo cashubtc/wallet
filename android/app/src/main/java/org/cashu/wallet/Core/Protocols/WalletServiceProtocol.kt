@@ -21,11 +21,11 @@ interface WalletServiceProtocol {
     suspend fun removeMint(mint: MintInfo)
     suspend fun setActiveMint(mint: MintInfo)
     suspend fun restoreFromMint(url: String): RestoreMintResult
-    suspend fun createMintQuote(amount: Long?, method: PaymentMethodKind): MintQuoteInfo
+    suspend fun createMintQuote(amount: Long?, method: PaymentMethodKind, unit: String = "sat"): MintQuoteInfo
     suspend fun mintTokens(quoteId: String): Long
     suspend fun createMeltQuote(request: String, amountSats: Long? = null, preferredMintURL: String? = null): MeltQuoteInfo
     suspend fun meltTokens(quoteId: String, mintUrl: String? = null): MeltPaymentResult
-    suspend fun sendTokens(amount: Long, memo: String?, p2pkPubkey: String?, mintUrl: String?): SendTokenResult
+    suspend fun sendTokens(amount: Long, memo: String?, p2pkPubkey: String?, mintUrl: String?, unit: String = "sat"): SendTokenResult
     suspend fun receiveTokens(tokenString: String): Long
 }
 
