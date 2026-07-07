@@ -913,7 +913,7 @@ Checklist:
 - [ ] Add compact-height screenshot tests for amount entry/keypad screens and NFC/scanner overlays.
 - [ ] Add tests that verify primary CTAs remain visible above keyboard and navigation bars.
 - [x] Add Compose tests for shared Settings row toggle semantics and compact-width row overflow. `SettingsRowsComposeTest` covers whole-row switch behavior, row text visibility, and click routing at large font.
-- [ ] Add Compose tests for mint swipe/delete/open behavior and discovery double-tap prevention.
+- [x] Add Compose tests for mint swipe/delete/open behavior and discovery double-tap prevention. `MintsInteractionComposeTest` covers row click-open, swipe-left remove, swipe-right set-active, swipe actions not also opening the row, configured discovery rows, and the add button disabling after the first discovery tap.
 - [ ] Add performance benchmarks for Settings open/scroll/toggle and Home/History/Mints list scroll.
 
 Success condition:

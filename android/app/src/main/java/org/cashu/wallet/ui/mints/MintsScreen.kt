@@ -335,12 +335,13 @@ fun MintsScreen(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SwipeableMintRow(
+internal fun SwipeableMintRow(
     mint: MintInfo,
     isActive: Boolean,
     onOpen: () -> Unit,
     onSetActive: () -> Unit,
     onRequestRemove: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val dismissState = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
@@ -358,6 +359,7 @@ private fun SwipeableMintRow(
         },
     )
     SwipeToDismissBox(
+        modifier = modifier,
         state = dismissState,
         enableDismissFromStartToEnd = !isActive,
         backgroundContent = {

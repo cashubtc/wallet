@@ -223,14 +223,15 @@ fun MintDiscoveryContent(
 }
 
 @Composable
-private fun DiscoveryRow(
+internal fun DiscoveryRow(
     mint: MintInfo,
     isConfigured: Boolean,
     isBusy: Boolean,
     onAdd: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(
                 horizontal = CashuTheme.spacing.comfortable,
