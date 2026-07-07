@@ -857,6 +857,12 @@ Success condition:
 
 The settings area is a likely source of lag because the root screen collects a broad `SettingsState`, rebuilds many rows from one state object, and several sub-screens compose full vertical columns of dynamic data. Currency and relay/key sections also perform formatting or list work during composition.
 
+Milestone update: Android now has committed AGP-consumed baseline and startup profile sources under `android/app/src/main/baselineProfiles/`. The baseline profile seeds startup, Settings, tab switching, Send/Receive, scanner, and Home/History/Mints/Settings list surfaces, while a focused JVM guard keeps those journey descriptors present until a managed-device Macrobenchmark path can generate measured profiles.
+
+Focused validation:
+
+- `cd android && JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:mergeReleaseArtProfile :app:mergeReleaseStartupProfile :app:compileReleaseArtProfile :app:testDebugUnitTest --tests org.cashu.wallet.performance.BaselineProfileCoverageTest`
+
 Checklist:
 
 - [ ] Profile Settings open/scroll/toggle paths with Macrobenchmark, JankStats, and Compose recomposition counts before changing behavior.
@@ -868,7 +874,7 @@ Checklist:
 - [x] Convert long or potentially long Settings sub-screen lists to `LazyColumn`, especially Nostr relays and P2PK keys, instead of composing the full list in a `verticalScroll` column. Nostr relays and P2PK keys now use lazy rendering.
 - [x] Optimize image loading in dense lists. `MintAvatar` now uses a remembered Coil painter with the existing generated fallback instead of subcomposition during list scroll.
 - [ ] Profile Home list masking/fade drawing and animated QR generation; move QR bitmap generation off the main thread or add frame caching if animated UR/QR display causes missed frames.
-- [ ] Add baseline profiles for app startup, opening Settings, switching tabs, opening Send/Receive, opening scanner, and scrolling Home/History/Mints/Settings.
+- [x] Add baseline profiles for app startup, opening Settings, switching tabs, opening Send/Receive, opening scanner, and scrolling Home/History/Mints/Settings. `baseline-prof.txt`, `startup-prof.txt`, and `BaselineProfileCoverageTest` now cover these route families, and AGP's merge/compile profile tasks pass.
 
 Success condition:
 

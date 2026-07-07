@@ -1,0 +1,20 @@
+# Startup dex-layout profile for cold start and first shell render.
+Lorg/cashu/wallet/App/AppContainer;
+Lorg/cashu/wallet/App/CashuWalletApplication;
+Lorg/cashu/wallet/App/MainActivity;
+Lorg/cashu/wallet/Core/AppLockManager;
+Lorg/cashu/wallet/Core/Navigation/NavigationManager;
+Lorg/cashu/wallet/Core/SettingsManager;
+Lorg/cashu/wallet/Core/Wallet/WalletManager;
+Lorg/cashu/wallet/Core/Wallet/WalletState;
+Lorg/cashu/wallet/Core/WalletStore;
+Lorg/cashu/wallet/ui/components/BalanceDisplayKt;
+Lorg/cashu/wallet/ui/components/ButtonsKt;
+Lorg/cashu/wallet/ui/components/TransactionRowKt;
+Lorg/cashu/wallet/ui/home/HomeChoosersKt;
+Lorg/cashu/wallet/ui/home/HomeScreenKt;
+Lorg/cashu/wallet/ui/navigation/CashuNavHostKt;
+Lorg/cashu/wallet/ui/security/AppLockGateKt;
+Lorg/cashu/wallet/ui/shell/CashuAppKt;
+Lorg/cashu/wallet/ui/shell/WalletScaffoldKt;
+Lorg/cashu/wallet/ui/theme/CashuThemeKt;
