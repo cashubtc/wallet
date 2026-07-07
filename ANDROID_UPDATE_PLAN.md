@@ -575,7 +575,7 @@ Checklist:
 
 Focused validation:
 
-- `cd android && JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew --no-daemon :app:compileDebugKotlin :app:testDebugUnitTest --tests org.cashu.wallet.ui.history.HistoryTimelineTest --tests org.cashu.wallet.Core.TransactionDisplayTest --tests org.cashu.wallet.Core.OnchainExplorerTest`
+- `cd android && JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:compileDebugKotlin :app:testDebugUnitTest --tests org.cashu.wallet.ui.history.HistoryTimelineTest --tests org.cashu.wallet.Core.TransactionDisplayTest --tests org.cashu.wallet.Core.OnchainExplorerTest`
 
 Success condition:
 
@@ -628,7 +628,7 @@ Checklist:
 
 Focused validation:
 
-- `cd android && JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew --no-daemon :app:compileDebugKotlin :app:testDebugUnitTest --tests org.cashu.wallet.Core.SettingsManagerTest --tests org.cashu.wallet.Core.NostrServiceTest --tests org.cashu.wallet.Core.NPCServiceTest --tests org.cashu.wallet.Core.SentryServiceTest`
+- `cd android && JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:compileDebugKotlin :app:testDebugUnitTest --tests org.cashu.wallet.Core.SettingsManagerTest --tests org.cashu.wallet.Core.NostrServiceTest --tests org.cashu.wallet.Core.NPCServiceTest --tests org.cashu.wallet.Core.SentryServiceTest`
 
 Success condition:
 
@@ -670,7 +670,7 @@ Milestone 11 update:
 
 Focused validation:
 
-- `cd android && JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew --no-daemon :app:compileDebugKotlin :app:testDebugUnitTest --tests org.cashu.wallet.Core.WalletUserErrorsTest --tests org.cashu.wallet.Core.ProtocolFeatureCoverageTest --tests org.cashu.wallet.Core.WalletDatabaseRecoveryTest --tests org.cashu.wallet.Core.PreferenceSnapshotTest --tests org.cashu.wallet.Core.SecureStorageProtocolTest --tests org.cashu.wallet.Core.WalletServiceProtocolTest --tests org.cashu.wallet.Core.PaymentRequestBuilderTest --tests org.cashu.wallet.Core.PaymentRequestDecoderTest --tests org.cashu.wallet.Core.TokenParserTest --tests org.cashu.wallet.Core.NPCServiceTest --tests org.cashu.wallet.Core.PendingMintQuoteTransactionsTest --tests org.cashu.wallet.Core.StoredMeltQuoteTransactionsTest`
+- `cd android && JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:compileDebugKotlin :app:testDebugUnitTest --tests org.cashu.wallet.Core.WalletUserErrorsTest --tests org.cashu.wallet.Core.ProtocolFeatureCoverageTest --tests org.cashu.wallet.Core.WalletDatabaseRecoveryTest --tests org.cashu.wallet.Core.PreferenceSnapshotTest --tests org.cashu.wallet.Core.SecureStorageProtocolTest --tests org.cashu.wallet.Core.WalletServiceProtocolTest --tests org.cashu.wallet.Core.PaymentRequestBuilderTest --tests org.cashu.wallet.Core.PaymentRequestDecoderTest --tests org.cashu.wallet.Core.TokenParserTest --tests org.cashu.wallet.Core.NPCServiceTest --tests org.cashu.wallet.Core.PendingMintQuoteTransactionsTest --tests org.cashu.wallet.Core.StoredMeltQuoteTransactionsTest`
 
 Success condition:
 
@@ -906,7 +906,12 @@ iOS/product reference files for this milestone:
 
 Checklist:
 
-- [ ] Run complete Android test suite: JVM, instrumentation, Compose UI, lint, release build.
+Milestone update: local Gradle release gates passed for the current branch with `:app:testDebugUnitTest`, `:app:lintDebug`, and `:app:assembleRelease`. Device/emulator instrumentation, Compose UI tests, iOS tests, real-mint payment validation, and manual parity walkthroughs remain open acceptance gates.
+
+- [x] Run Android JVM unit tests with Gradle.
+- [x] Run Android `lintDebug` with Gradle.
+- [x] Build Android release APK with Gradle.
+- [ ] Run Android instrumentation and Compose UI tests on a managed device or physical device.
 - [ ] Run iOS tests to ensure shared product assumptions did not diverge.
 - [ ] Perform manual parity walkthrough on physical Android device: onboarding, restore, backup/security, home, send, receive, scanner, NFC, mints, history, settings.
 - [ ] Perform manual parity walkthrough on iOS after any shared model/protocol changes.
