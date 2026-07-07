@@ -948,6 +948,7 @@ Milestone update: local Gradle release gates passed for the current branch with 
 - [x] Run Android JVM unit tests with Gradle.
 - [x] Run Android `lintDebug` with Gradle.
 - [x] Build Android release APK with Gradle.
+- [x] Fix locale-observation lint in the Android currency picker so `lintDebug` remains green when Compose tracks configuration changes.
 - [ ] Run Android instrumentation and Compose UI tests on a managed device or physical device.
 - [ ] Run iOS tests to ensure shared product assumptions did not diverge.
 - [ ] Perform manual parity walkthrough on physical Android device: onboarding, restore, backup/security, home, send, receive, scanner, NFC, mints, history, settings.

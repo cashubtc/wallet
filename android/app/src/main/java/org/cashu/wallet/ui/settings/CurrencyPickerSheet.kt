@@ -29,6 +29,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalLocale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import java.text.NumberFormat
@@ -65,7 +66,7 @@ fun CurrencyPickerSheet(
     val price by priceService.state.collectAsStateWithLifecycle()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val fiatOn = settings.showFiatBalance
-    val locale = Locale.getDefault()
+    val locale = LocalLocale.current.platformLocale
     val currencyRows = remember(locale) {
         SettingsManager.supportedFiatCurrencies.map { code ->
             CurrencyDisplayRow(
