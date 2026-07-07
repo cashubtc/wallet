@@ -17,7 +17,6 @@ import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Description
-import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Public
@@ -59,7 +58,6 @@ fun SettingsScreen(
     onOpenLightning: () -> Unit,
     onOpenP2PK: () -> Unit,
     onOpenNostr: () -> Unit,
-    onOpenNWC: () -> Unit,
     onOpenPrivacy: () -> Unit,
     onOpenAppearance: () -> Unit,
     contentPadding: PaddingValues,
@@ -135,14 +133,6 @@ fun SettingsScreen(
                     title = "Nostr",
                     leadingIcon = Icons.Outlined.AccountCircle,
                     onClick = onOpenNostr,
-                )
-            }
-            item("integrations-divider") { CanvasDivider(leadingInset = 16) }
-            item("nwc") {
-                NavRow(
-                    title = "Nostr Wallet Connect",
-                    leadingIcon = Icons.Outlined.Link,
-                    onClick = onOpenNWC,
                 )
             }
 

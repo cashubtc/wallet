@@ -32,7 +32,6 @@ object Routes {
     const val SETTINGS_LIGHTNING = "settings/lightning"
     const val SETTINGS_P2PK = "settings/p2pk"
     const val SETTINGS_NOSTR = "settings/nostr"
-    const val SETTINGS_NWC = "settings/nwc"
     const val SETTINGS_PRIVACY = "settings/privacy"
     const val SETTINGS_APPEARANCE = "settings/appearance"
 

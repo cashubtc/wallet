@@ -68,8 +68,6 @@ object StorageKeys {
     const val settingsUseWebsockets = "settings.useWebsockets"
     const val settingsEnablePaymentRequests = "settings.enablePaymentRequests"
     const val settingsReceivePaymentRequestsAutomatically = "settings.receivePaymentRequestsAutomatically"
-    const val settingsEnableNWC = "settings.enableNWC"
-    const val settingsNwcConnections = "settings.nwcConnections"
     const val settingsShowP2PKButtonInDrawer = "settings.showP2PKButtonInDrawer"
     const val settingsP2PKKeys = "settings.p2pkKeys"
     const val settingsCheckIncomingInvoices = "settings.checkIncomingInvoices"
@@ -110,7 +108,6 @@ object StorageKeys {
         walletProcessedCashuRequests,
         cashuRequests,
         cashuRequestsCurrentId,
-        settingsNwcConnections,
         settingsP2PKKeys,
         npcEnabled,
         npcAutomaticClaim,

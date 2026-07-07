@@ -29,7 +29,6 @@ import org.cashu.wallet.ui.send.SendLightningScreen
 import org.cashu.wallet.ui.settings.AppearanceScreen
 import org.cashu.wallet.ui.settings.BackupScreen
 import org.cashu.wallet.ui.settings.LightningScreen
-import org.cashu.wallet.ui.settings.NWCScreen
 import org.cashu.wallet.ui.settings.NostrScreen
 import org.cashu.wallet.ui.settings.P2PKScreen
 import org.cashu.wallet.ui.settings.PrivacyScreen
@@ -172,12 +171,6 @@ fun CashuNavHost(
                 onClose = { navController.popBackStack() },
             )
         }
-        composable(Routes.SETTINGS_NWC) {
-            NWCScreen(
-                settingsManager = container.settingsManager,
-                onClose = { navController.popBackStack() },
-            )
-        }
         composable(Routes.SETTINGS_PRIVACY) {
             PrivacyScreen(
                 settingsManager = container.settingsManager,
@@ -287,7 +280,6 @@ private fun NavGraphBuilder.tabDestinations(
             onOpenLightning = { navController.navigate(Routes.SETTINGS_LIGHTNING) },
             onOpenP2PK = { navController.navigate(Routes.SETTINGS_P2PK) },
             onOpenNostr = { navController.navigate(Routes.SETTINGS_NOSTR) },
-            onOpenNWC = { navController.navigate(Routes.SETTINGS_NWC) },
             onOpenPrivacy = { navController.navigate(Routes.SETTINGS_PRIVACY) },
             onOpenAppearance = { navController.navigate(Routes.SETTINGS_APPEARANCE) },
             contentPadding = contentPadding,

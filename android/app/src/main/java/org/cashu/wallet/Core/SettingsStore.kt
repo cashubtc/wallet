@@ -13,7 +13,6 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import org.cashu.wallet.Core.Protocols.StorageKeys
-import org.cashu.wallet.Models.NwcConnection
 import org.cashu.wallet.Models.P2PKKeyInfo
 
 class SettingsStore(
@@ -68,10 +67,6 @@ class SettingsStore(
         get() = store.boolean(StorageKeys.settingsReceivePaymentRequestsAutomatically, false)
         set(value) = store.putBoolean(StorageKeys.settingsReceivePaymentRequestsAutomatically, value)
 
-    var enableNWC: Boolean
-        get() = store.boolean(StorageKeys.settingsEnableNWC, false)
-        set(value) = store.putBoolean(StorageKeys.settingsEnableNWC, value)
-
     var showP2PKButtonInDrawer: Boolean
         get() = store.boolean(StorageKeys.settingsShowP2PKButtonInDrawer, false)
         set(value) = store.putBoolean(StorageKeys.settingsShowP2PKButtonInDrawer, value)
@@ -100,16 +95,9 @@ class SettingsStore(
         get() = loadList(StorageKeys.settingsNostrRelays, String.serializer()).ifEmpty { defaultNostrRelays }
         set(value) = saveList(StorageKeys.settingsNostrRelays, String.serializer(), value)
 
-    var nwcConnections: List<NwcConnection>
-        get() = loadList(StorageKeys.settingsNwcConnections, NwcConnection.serializer())
-        set(value) = saveList(StorageKeys.settingsNwcConnections, NwcConnection.serializer(), value)
-
     var p2pkKeys: List<P2PKKeyInfo>
         get() = loadList(StorageKeys.settingsP2PKKeys, P2PKKeyInfo.serializer())
         set(value) = saveList(StorageKeys.settingsP2PKKeys, P2PKKeyInfo.serializer(), value)
-
-    internal fun loadNwcConnectionsWithLegacySecrets(): List<LegacyNwcConnectionRecord> =
-        LegacySettingsSecretParser.nwcConnections(store.string(StorageKeys.settingsNwcConnections))
 
     internal fun loadP2PKKeysWithLegacySecrets(): List<LegacyP2PKKeyRecord> =
         LegacySettingsSecretParser.p2pkKeys(store.string(StorageKeys.settingsP2PKKeys))
@@ -176,7 +164,6 @@ class SettingsStore(
     }
 
     private val walletScopedKeys = setOf(
-        StorageKeys.settingsNwcConnections,
         StorageKeys.settingsP2PKKeys,
         StorageKeys.settingsNostrSignerType,
         StorageKeys.npcEnabled,
@@ -184,15 +171,6 @@ class SettingsStore(
         StorageKeys.npcSelectedMint,
         StorageKeys.npcLastCheck,
     )
-}
-
-internal data class LegacyNwcConnectionRecord(
-    val metadata: NwcConnection,
-    val walletPrivateKey: String,
-    val connectionSecret: String,
-    val shouldRewriteMetadata: Boolean,
-) {
-    val hasLegacySecret: Boolean get() = walletPrivateKey.isNotBlank() || connectionSecret.isNotBlank()
 }
 
 internal data class LegacyP2PKKeyRecord(
@@ -205,37 +183,6 @@ internal data class LegacyP2PKKeyRecord(
 
 internal object LegacySettingsSecretParser {
     private val json = Json { ignoreUnknownKeys = true }
-
-    fun nwcConnections(raw: String?): List<LegacyNwcConnectionRecord> {
-        if (raw.isNullOrBlank()) return emptyList()
-        return runCatching {
-            json.parseToJsonElement(raw).jsonArray.mapNotNull { element ->
-                val fields = element.jsonObject
-                val walletPublicKey = fields.string("walletPublicKey") ?: return@mapNotNull null
-                val connectionPublicKey = fields.string("connectionPublicKey") ?: return@mapNotNull null
-                val id = fields.string("id") ?: java.util.UUID.randomUUID().toString()
-                val hasName = "name" in fields
-                val hasCreatedAt = "createdAtEpochMillis" in fields
-                val hasAndroidAllowance = "allowanceSats" in fields
-                val hasSwiftAllowance = "allowanceLeft" in fields
-                val metadata = NwcConnection(
-                    id = id,
-                    name = fields.string("name") ?: "Wallet connection",
-                    walletPublicKey = walletPublicKey,
-                    connectionPublicKey = connectionPublicKey,
-                    allowanceSats = fields.long("allowanceSats") ?: fields.long("allowanceLeft"),
-                    createdAtEpochMillis = fields.long("createdAtEpochMillis") ?: System.currentTimeMillis(),
-                )
-                LegacyNwcConnectionRecord(
-                    metadata = metadata,
-                    walletPrivateKey = fields.string("walletPrivateKey").orEmpty(),
-                    connectionSecret = fields.string("connectionSecret").orEmpty(),
-                    shouldRewriteMetadata = !hasName || !hasCreatedAt || !hasAndroidAllowance || hasSwiftAllowance ||
-                        "walletPrivateKey" in fields || "connectionSecret" in fields,
-                )
-            }
-        }.getOrDefault(emptyList())
-    }
 
     fun p2pkKeys(raw: String?): List<LegacyP2PKKeyRecord> {
         if (raw.isNullOrBlank()) return emptyList()
