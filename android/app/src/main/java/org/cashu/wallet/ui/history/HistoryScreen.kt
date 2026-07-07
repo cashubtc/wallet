@@ -5,23 +5,24 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.FilterList
-import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
@@ -32,10 +33,13 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -49,6 +53,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
@@ -65,8 +70,8 @@ import org.cashu.wallet.Models.WalletTransaction
 import org.cashu.wallet.ui.components.CanvasDivider
 import org.cashu.wallet.ui.components.CashuRequestRow
 import org.cashu.wallet.ui.components.requestRowAmount
+import org.cashu.wallet.ui.components.requestRowTitle
 import org.cashu.wallet.ui.components.CashuSearchBar
-import org.cashu.wallet.ui.components.EmptyState
 import org.cashu.wallet.ui.components.SectionHeader
 import org.cashu.wallet.ui.components.TransactionRow
 import org.cashu.wallet.ui.components.TransactionRowModel
@@ -97,9 +102,17 @@ fun HistoryScreen(
     var query by remember { mutableStateOf("") }
     var refreshing by remember { mutableStateOf(false) }
     var requestPendingDelete by remember { mutableStateOf<CashuRequest?>(null) }
+    var visibleCount by remember { mutableStateOf(HISTORY_PAGE_STEP) }
+    var didInitialLoad by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
-        walletManager.loadTransactions()
+        runCatching { walletManager.loadTransactions() }
+        didInitialLoad = true
+        runCatching { walletManager.syncPendingMintQuotesIfStale() }
+    }
+
+    LaunchedEffect(filter, query) {
+        visibleCount = HISTORY_PAGE_STEP
     }
 
     // Unified, filtered, searched timeline merging transactions + Cashu Requests.
@@ -113,9 +126,16 @@ fun HistoryScreen(
             )
         }
     }
-    val sections by remember(items) {
-        derivedStateOf { groupHistoryItems(items, System.currentTimeMillis()) }
+    val visibleItems by remember(items, visibleCount) {
+        derivedStateOf { visibleHistoryItems(items, visibleCount) }
     }
+    val sections by remember(visibleItems) {
+        derivedStateOf { groupHistoryItems(visibleItems, System.currentTimeMillis()) }
+    }
+    val sectionsWithOffsets by remember(sections) {
+        derivedStateOf { sections.withStartOffsets() }
+    }
+    val hasMore = visibleItems.size < items.size
 
     val topBarState = rememberTopAppBarState()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(state = topBarState)
@@ -187,66 +207,98 @@ fun HistoryScreen(
                 .fillMaxSize()
                 .padding(padding),
         ) {
-            if (sections.isEmpty()) {
-                HistoryEmptyState(filter = filter, hasQuery = query.isNotBlank())
-            } else {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    if (searching) {
-                        item("search") {
-                            CashuSearchBar(
-                                value = query,
-                                onValueChange = { query = it },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(
-                                        horizontal = CashuTheme.spacing.comfortable,
-                                        vertical = CashuTheme.spacing.snug,
-                                    ),
-                                placeholder = "Search history",
-                            )
+            Column(Modifier.fillMaxSize()) {
+                if (searching) {
+                    CashuSearchBar(
+                        value = query,
+                        onValueChange = { query = it },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(
+                                horizontal = CashuTheme.spacing.comfortable,
+                                vertical = CashuTheme.spacing.snug,
+                            ),
+                        placeholder = "Search history",
+                    )
+                }
+                if (sections.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (didInitialLoad) {
+                            HistoryEmptyState(filter = filter, hasQuery = query.isNotBlank(), query = query)
                         }
                     }
-                    sections.forEach { section ->
-                        item(key = "header-${section.title}") {
-                            SectionHeader(section.title.uppercase())
-                        }
-                        items(section.items, key = { it.key }) { item ->
-                            when (item) {
-                                is HistoryItem.Tx -> {
-                                    val tx = item.transaction
-                                    TransactionRow(
-                                        model = TransactionRowModel(
-                                            transaction = tx,
-                                            title = TransactionDisplay.title(tx),
-                                            timestamp = formatRelativeTimestamp(tx.dateEpochMillis),
-                                            primaryAmount = formatter.formatWalletSats(
-                                                tx.amount, settings.useBitcoinSymbol,
-                                            ),
-                                            secondaryAmount = if (settings.showFiatBalance && priceState.btcPrice > 0)
-                                                formatter.formatFiat(
-                                                    tx.amount,
-                                                    priceState.btcPrice,
-                                                    settings.bitcoinPriceCurrency,
-                                                )
-                                            else null,
-                                        ),
-                                        onClick = { onOpenTransaction(tx) },
-                                    )
+                } else {
+                    LazyColumn(modifier = Modifier.weight(1f)) {
+                        sectionsWithOffsets.forEach { section ->
+                            item(key = "header-${section.group.title}") {
+                                SectionHeader(section.group.title.uppercase())
+                            }
+                            itemsIndexed(
+                                section.group.items,
+                                key = { _, item -> item.key },
+                            ) { index, item ->
+                                val globalIndex = section.startIndex + index
+                                if (hasMore && globalIndex >= visibleItems.lastIndex - HISTORY_PREFETCH_LEAD) {
+                                    LaunchedEffect(item.key, visibleItems.size, items.size) {
+                                        visibleCount = minOf(visibleCount + HISTORY_PAGE_STEP, items.size)
+                                    }
                                 }
-                                is HistoryItem.Req -> {
-                                    CashuRequestRow(
-                                        request = item.request,
-                                        timestamp = formatRelativeTimestamp(item.request.createdAtEpochMillis),
-                                        primaryAmountText = requestRowAmount(
-                                            item.request, formatter, settings.useBitcoinSymbol,
-                                        ),
-                                        secondaryAmountText = null,
-                                        onClick = { onOpenCashuRequest(item.request) },
-                                        onLongClick = { requestPendingDelete = item.request },
-                                    )
+                                when (item) {
+                                    is HistoryItem.Tx -> {
+                                        val tx = item.transaction
+                                        TransactionRow(
+                                            model = TransactionRowModel(
+                                                transaction = tx,
+                                                title = TransactionDisplay.title(tx),
+                                                timestamp = formatRelativeTimestamp(tx.dateEpochMillis),
+                                                primaryAmount = formatter.formatWalletSats(
+                                                    tx.amount, settings.useBitcoinSymbol,
+                                                ),
+                                                secondaryAmount = if (settings.showFiatBalance && priceState.btcPrice > 0)
+                                                    formatter.formatFiat(
+                                                        tx.amount,
+                                                        priceState.btcPrice,
+                                                        settings.bitcoinPriceCurrency,
+                                                    )
+                                                else null,
+                                            ),
+                                            onClick = { onOpenTransaction(tx) },
+                                        )
+                                    }
+                                    is HistoryItem.Req -> {
+                                        SwipeableCashuRequestRow(
+                                            request = item.request,
+                                            timestamp = formatRelativeTimestamp(item.request.createdAtEpochMillis),
+                                            primaryAmountText = requestRowAmount(
+                                                item.request, formatter, settings.useBitcoinSymbol,
+                                            ),
+                                            secondaryAmountText = null,
+                                            onClick = { onOpenCashuRequest(item.request) },
+                                            onRequestRemove = { requestPendingDelete = item.request },
+                                        )
+                                    }
+                                }
+                                if (item != section.group.items.last()) CanvasDivider()
+                            }
+                        }
+                        if (hasMore) {
+                            item("show-more") {
+                                TextButton(
+                                    onClick = {
+                                        visibleCount = minOf(visibleCount + HISTORY_PAGE_STEP, items.size)
+                                    },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(CashuTheme.spacing.comfortable),
+                                ) {
+                                    Text("Show more")
                                 }
                             }
-                            if (item != section.items.last()) CanvasDivider()
                         }
                     }
                 }
@@ -279,25 +331,78 @@ fun HistoryScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun HistoryEmptyState(filter: HistoryFilter, hasQuery: Boolean) {
-    val (icon, title, supporting) = when {
-        hasQuery -> Triple(Icons.Outlined.Search, "No matches", null)
-        filter == HistoryFilter.Pending -> Triple(
-            Icons.Outlined.Schedule,
-            "No pending transactions",
-            null,
+private fun SwipeableCashuRequestRow(
+    request: CashuRequest,
+    timestamp: String,
+    primaryAmountText: String?,
+    secondaryAmountText: String?,
+    onClick: () -> Unit,
+    onRequestRemove: () -> Unit,
+) {
+    val dismissState = rememberSwipeToDismissBoxState(
+        confirmValueChange = { value ->
+            when (value) {
+                SwipeToDismissBoxValue.EndToStart -> {
+                    onRequestRemove()
+                    false
+                }
+                SwipeToDismissBoxValue.StartToEnd,
+                SwipeToDismissBoxValue.Settled,
+                -> false
+            }
+        },
+    )
+    SwipeToDismissBox(
+        state = dismissState,
+        enableDismissFromStartToEnd = false,
+        enableDismissFromEndToStart = true,
+        backgroundContent = {
+            val active = dismissState.dismissDirection == SwipeToDismissBoxValue.EndToStart
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(if (active) MaterialTheme.colorScheme.error else Color.Transparent)
+                    .padding(horizontal = CashuTheme.spacing.loose),
+                contentAlignment = Alignment.CenterEnd,
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Delete,
+                        contentDescription = "Remove",
+                        tint = if (active) MaterialTheme.colorScheme.onError else Color.Transparent,
+                    )
+                    Text(
+                        text = "Remove",
+                        color = if (active) MaterialTheme.colorScheme.onError else Color.Transparent,
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                }
+            }
+        },
+    ) {
+        CashuRequestRow(
+            request = request,
+            timestamp = timestamp,
+            primaryAmountText = primaryAmountText,
+            secondaryAmountText = secondaryAmountText,
+            onClick = onClick,
+            onLongClick = onRequestRemove,
         )
-        filter == HistoryFilter.Completed -> Triple(
-            Icons.Outlined.Check,
-            "No completed transactions",
-            null,
-        )
-        else -> Triple(
-            Icons.Filled.Bolt,
-            "No activity yet",
-            "Your first payment will show up here.",
-        )
+    }
+}
+
+@Composable
+private fun HistoryEmptyState(filter: HistoryFilter, hasQuery: Boolean, query: String) {
+    val copy = historyEmptyStateCopy(filter = filter, hasQuery = hasQuery, query = query)
+    val icon = when {
+        hasQuery -> Icons.Outlined.Search
+        filter != HistoryFilter.All -> Icons.Outlined.FilterList
+        else -> Icons.Filled.Bolt
     }
     // Pulse the empty-state bolt to match iOS.
     val transition = rememberInfiniteTransition(label = "empty-pulse")
@@ -327,13 +432,13 @@ private fun HistoryEmptyState(filter: HistoryFilter, hasQuery: Boolean) {
                     .alpha(if (icon == Icons.Filled.Bolt) alpha else 1f),
             )
             Text(
-                text = title,
+                text = copy.title,
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface,
             )
-            if (supporting != null) {
+            if (copy.supporting != null) {
                 Text(
-                    text = supporting,
+                    text = copy.supporting,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -345,6 +450,32 @@ private fun HistoryEmptyState(filter: HistoryFilter, hasQuery: Boolean) {
 // Smaller-than-48dp on purpose: this is an inline empty-state glyph inside an
 // already-spaced column, not the standalone EmptyState component.
 private val HISTORY_EMPTY_ICON_SIZE = 40.dp
+internal const val HISTORY_PAGE_STEP = 30
+private const val HISTORY_PREFETCH_LEAD = 5
+
+internal data class HistoryEmptyStateCopy(
+    val title: String,
+    val supporting: String?,
+)
+
+internal fun historyEmptyStateCopy(
+    filter: HistoryFilter,
+    hasQuery: Boolean,
+    query: String,
+): HistoryEmptyStateCopy = when {
+    hasQuery -> HistoryEmptyStateCopy(
+        title = "No Results",
+        supporting = "No activity matches \"${query.trim()}\".",
+    )
+    filter != HistoryFilter.All -> HistoryEmptyStateCopy(
+        title = "Nothing Here",
+        supporting = "No transactions match this filter.",
+    )
+    else -> HistoryEmptyStateCopy(
+        title = "No History Yet",
+        supporting = "Your payments will appear here.",
+    )
+}
 
 /** Unified History timeline item. Mirrors iOS HistoryItem enum. */
 internal sealed interface HistoryItem {
@@ -364,6 +495,23 @@ internal data class HistorySection2(
     val title: String,
     val items: List<HistoryItem>,
 )
+
+private data class HistorySectionWithOffset(
+    val group: HistorySection2,
+    val startIndex: Int,
+)
+
+private fun List<HistorySection2>.withStartOffsets(): List<HistorySectionWithOffset> {
+    var offset = 0
+    return map { section ->
+        HistorySectionWithOffset(section, offset).also {
+            offset += section.items.size
+        }
+    }
+}
+
+internal fun visibleHistoryItems(items: List<HistoryItem>, visibleCount: Int): List<HistoryItem> =
+    items.take(visibleCount.coerceAtLeast(0))
 
 internal fun unifiedFiltered(
     transactions: List<WalletTransaction>,
@@ -404,8 +552,9 @@ internal fun unifiedFiltered(
                     tx.memo?.contains(query, ignoreCase = true) == true
             }
             is HistoryItem.Req -> {
-                "cashu request".contains(query, ignoreCase = true) ||
+                requestRowTitle(item.request).contains(query, ignoreCase = true) ||
                     (item.request.amount?.toString()?.contains(query) == true) ||
+                    (item.request.totalReceived > 0 && item.request.totalReceived.toString().contains(query)) ||
                     item.request.memo?.contains(query, ignoreCase = true) == true
             }
         }
@@ -415,10 +564,10 @@ internal fun unifiedFiltered(
 internal fun groupHistoryItems(
     items: List<HistoryItem>,
     nowEpochMillis: Long,
+    zoneId: java.time.ZoneId = java.time.ZoneId.systemDefault(),
 ): List<HistorySection2> {
     if (items.isEmpty()) return emptyList()
-    val zone = java.time.ZoneId.systemDefault()
-    val today = java.time.Instant.ofEpochMilli(nowEpochMillis).atZone(zone).toLocalDate()
+    val today = java.time.Instant.ofEpochMilli(nowEpochMillis).atZone(zoneId).toLocalDate()
     val yesterday = today.minusDays(1)
     val weekStart = today.minusDays(today.dayOfWeek.value.toLong() - 1)
     val monthStart = today.withDayOfMonth(1)
@@ -430,7 +579,7 @@ internal fun groupHistoryItems(
         "Earlier" to mutableListOf<HistoryItem>(),
     )
     items.forEach { item ->
-        val d = java.time.Instant.ofEpochMilli(item.date).atZone(zone).toLocalDate()
+        val d = java.time.Instant.ofEpochMilli(item.date).atZone(zoneId).toLocalDate()
         val key = when {
             d == today -> "Today"
             d == yesterday -> "Yesterday"

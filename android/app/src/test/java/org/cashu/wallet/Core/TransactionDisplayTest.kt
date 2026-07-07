@@ -24,12 +24,12 @@ class TransactionDisplayTest {
         assertEquals("lnbc1test", TransactionDisplay.qrContent(transaction))
 
         // Detail canon: monochrome Status row first, Date second, Fee when > 0.
-        // The lightning preimage row stays dropped (on-chain keeps Address/TxID).
+        // Lightning/ecash proofs use the same Payment Proof row as iOS.
         val fields = TransactionDisplay.detailFields(transaction)
         assertEquals("Status", fields.first().label)
         assertEquals("Date", fields[1].label)
         assertTrue(fields.any { it.label == "Fee" && it.value == "2 sat" })
-        assertTrue(fields.none { it.label == "Payment Proof" })
+        assertTrue(fields.any { it.label == "Payment Proof" && it.value == "proof" })
     }
 
     @Test
@@ -51,6 +51,14 @@ class TransactionDisplayTest {
             invoice = "lno1offer",
         )
         assertTrue(TransactionDisplay.showsQr(reusableOffer))
+
+        val settledOneShotInvoice = transaction(
+            kind = TransactionKind.Lightning,
+            type = TransactionType.Incoming,
+            invoice = "lnbc1invoice",
+        )
+        assertTrue(!TransactionDisplay.showsQr(settledOneShotInvoice))
+        assertEquals(null, TransactionDisplay.copyableContent(settledOneShotInvoice))
     }
 
     @Test
@@ -65,8 +73,21 @@ class TransactionDisplayTest {
         val fields = TransactionDisplay.detailFields(transaction)
 
         assertEquals("Bitcoin sent", TransactionDisplay.title(transaction))
+        assertTrue(TransactionDisplay.showsQr(transaction))
         assertTrue(fields.any { it.label == "Address" && it.value == "bc1qaddress" })
         assertTrue(fields.any { it.label == "Transaction ID" && it.value == "txid" })
+    }
+
+    @Test
+    fun failedLightningInvoiceIsNotScannable() {
+        val transaction = transaction(
+            kind = TransactionKind.Lightning,
+            type = TransactionType.Incoming,
+            invoice = "lnbc1invoice",
+        ).copy(status = TransactionStatus.Failed)
+
+        assertTrue(!TransactionDisplay.showsQr(transaction))
+        assertEquals(null, TransactionDisplay.copyableContent(transaction))
     }
 
     @Test

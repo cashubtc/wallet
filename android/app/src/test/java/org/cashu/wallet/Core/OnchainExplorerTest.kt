@@ -14,6 +14,18 @@ class OnchainExplorerTest {
     }
 
     @Test
+    fun mainnetTransactionUsesMatchingExplorer() {
+        assertEquals(
+            "https://mempool.space/tx/txid123",
+            OnchainExplorer.transactionWebUrl(
+                txid = "txid123",
+                address = "bc1qexample",
+                mintUrl = null,
+            ),
+        )
+    }
+
+    @Test
     fun testnetAddressUsesSignetMempoolSpace() {
         assertEquals(
             "https://mempool.space/signet/address/tb1qexample",

@@ -26,7 +26,7 @@ Status date: 2026-07-07
 | 6 | Receive Lightning, BOLT12, and On-chain | Complete | Milestone 6 commit on `codex/android-update-plan-implementation` | Material method picker, BOLT11 expiry, reusable BOLT12 reuse/editing, on-chain reuse/new address/explorer, shared status, focused tests. |
 | 7 | Locked Ecash and P2PK | Complete | Milestone 7 commit on `codex/android-update-plan-implementation` | Seed-derived primary key, NUT-10/NUT-18 requests, locked receive, authenticated key reveal, focused tests. |
 | 8 | Mints and Mint Metadata | Complete | Milestone 8 commit on `codex/android-update-plan-implementation` | Full NUT-06 mint detail, discovery polish, refresh behavior, rich metadata model, focused tests. |
-| 9 | History and Transaction Detail | Not started | TBD | Stale sync, swipe/delete, row/detail parity, large-ledger behavior, tests. |
+| 9 | History and Transaction Detail | Complete | Milestone 9 commit on `codex/android-update-plan-implementation` | Stale sync, swipe/delete, row/detail parity, large-ledger behavior, focused tests. |
 | 10 | Settings, Integrations, and Privacy | Not started | TBD | App Lock/cloud backup settings, accurate privacy toggles, Nostr/P2PK/Lightning parity, tests. |
 | 11 | Protocol, CDK, Storage, and Runtime Hardening | Not started | TBD | Latest CDK feature parity, sagas, keysets, multi-unit, privacy-safe errors/logging, tests. |
 | UI bug sweep | Android back/layout/jank/interaction bugs | Not started | TBD | Back gesture tests, large-font screenshots, settings performance benchmark, duplicate-action tests. |
@@ -125,3 +125,12 @@ Status date: 2026-07-07
 - Multi-unit safety: Mint Detail reads non-sat unit balances with `unitBalanceIfExists` so detail inspection does not create/register unit wallets.
 - Discovery: search, Added/Discovered sections, pull and explicit refresh, error notice, session-added state, and WebSockets-disabled empty state are all present.
 - Tests: focused Gradle coverage includes rich mint model defaults, discovery parsing/state tests, and currency formatting/registry coverage.
+
+## Current Milestone 9 Evidence
+
+- History entry: opening History loads transactions immediately and runs throttled stale pending mint-quote sync through `syncPendingMintQuotesIfStale`.
+- Large ledgers: the merged transaction/request timeline renders in 30-row windows, resets on filter/search changes, and prefetches the next window near the visible end with a fallback Show More action.
+- Request deletion: Cashu Request rows support Material end-to-start swipe remove plus the existing long-press path, both feeding the same confirmation dialog.
+- Empty/search parity: search remains visible when there are no results, request search includes received amount, and empty copy now matches iOS: No Results, Nothing Here, No History Yet.
+- Transaction detail: canonical rows now include Payment Proof for non-on-chain preimages, drop Android-only Memo, and keep on-chain addresses QR/share/copy-capable after settlement.
+- Tests: focused Gradle coverage includes duplicate suppression, request received-amount search, date buckets, visible windowing, QR/share/copy rules, and explorer URL generation.

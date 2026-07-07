@@ -47,15 +47,19 @@ object TransactionDisplay {
         transaction.token ?: transaction.invoice
 
     /**
-     * The QR hero appears only for an actionable request: a pending
-     * transaction (unclaimed outgoing token, unpaid invoice, pending on-chain
-     * address) or a reusable BOLT12 offer. Settled artifacts never re-present
-     * as scannable payment codes.
+     * The QR hero appears only while a stored artifact is still actionable:
+     * unclaimed ecash, pending or reusable Lightning, or any on-chain address
+     * because it stays fundable after first use.
      */
-    fun showsQr(transaction: WalletTransaction): Boolean {
-        if (qrContent(transaction) == null) return false
-        if (transaction.status == TransactionStatus.Pending) return true
-        return transaction.invoice?.startsWith("lno", ignoreCase = true) == true
+    fun showsQr(transaction: WalletTransaction): Boolean = when (transaction.kind) {
+        TransactionKind.Ecash -> transaction.token != null &&
+            transaction.status == TransactionStatus.Pending
+        TransactionKind.Lightning -> transaction.invoice != null &&
+            (
+                transaction.status == TransactionStatus.Pending ||
+                    transaction.invoice.startsWith("lno", ignoreCase = true)
+                )
+        TransactionKind.Onchain -> transaction.invoice != null
     }
 
     /**
@@ -76,19 +80,21 @@ object TransactionDisplay {
     }
 
     // Detail rows follow the iOS canon: Status first (monochrome), Date, then
-    // conditional essentials — Fee when > 0, Mint always, Memo when present,
-    // on-chain Address/Transaction ID. Type/Direction/Unit rows stay dropped
-    // (the title names kind + direction; the unit is always sat here).
+    // conditional essentials — Fee when > 0, Mint, Payment Proof for ecash /
+    // Lightning, and on-chain Address/Transaction ID. Type/Direction/Unit/Memo
+    // rows stay dropped (the title names kind + direction; transactions are
+    // sat-denominated until the model carries a unit).
     fun detailFields(transaction: WalletTransaction): List<TransactionDetailField> =
         buildList {
             add(TransactionDetailField("Status", statusText(transaction)))
             add(TransactionDetailField("Date", formatDetailDate(transaction.dateEpochMillis)))
             if (transaction.fee > 0) add(TransactionDetailField("Fee", "${transaction.fee} sat"))
             transaction.mintUrl?.let { add(TransactionDetailField("Mint", mintHost(it))) }
-            transaction.memo?.takeIf { it.isNotBlank() }?.let { add(TransactionDetailField("Memo", it)) }
             if (transaction.kind == TransactionKind.Onchain) {
                 transaction.invoice?.let { add(TransactionDetailField("Address", it)) }
                 transaction.preimage?.let { add(TransactionDetailField("Transaction ID", it)) }
+            } else {
+                transaction.preimage?.let { add(TransactionDetailField("Payment Proof", it)) }
             }
         }
 

@@ -558,18 +558,24 @@ Android current state:
 
 - History already merges requests and transactions, filters, searches, groups, refreshes, opens transaction/request details, and supports request deletion through long press.
 - Transaction detail mostly mirrors actionable QR, settled ecash copy, explorer link, and detail rows.
+- Milestone 9 update: Android now runs stale mint-quote sync on History entry, windows the merged ledger in 30-row visible batches with near-end prefetch, keeps search visible for zero-result states, and supports Material swipe-to-remove plus the existing long-press request deletion path.
+- Milestone 9 non-sat ledger plan: current wallet transactions remain sat-denominated because `WalletTransaction` has no persisted unit. When CDK exposes completed non-sat transaction units, add a transaction unit field, render `CurrencyAmount` for non-sat detail/list rows, keep sat fiat conversion sat-only, and add focused completed non-sat row/detail tests. No compatibility migration is needed for unreleased Android data.
 
 Checklist:
 
-- [ ] Add stale pending quote sync when History opens, matching iOS `syncPendingMintQuotesIfStale`.
-- [ ] Add large-ledger windowing/pagination equivalent to iOS visible-count extension.
-- [ ] Replace or supplement long-press request delete with a discoverable Material swipe action or overflow menu.
-- [ ] Audit row copy and empty states against iOS: No Results, Nothing Here, No History Yet.
-- [ ] Audit transaction detail rows against iOS canonical rows. Remove Android-only rows unless the same row is intentionally added to iOS.
-- [ ] Verify QR visibility rules for pending ecash, reusable BOLT12, settled one-shot Lightning, on-chain addresses, and failed transactions.
-- [ ] Verify passive copy for settled ecash without QR/share.
-- [ ] Add non-sat transaction display plan for future non-sat completed rows.
-- [ ] Add tests for duplicate suppression, search over request received amount, date buckets, QR/share/copy rules, and explorer URL generation.
+- [x] Add stale pending quote sync when History opens, matching iOS `syncPendingMintQuotesIfStale`.
+- [x] Add large-ledger windowing/pagination equivalent to iOS visible-count extension.
+- [x] Replace or supplement long-press request delete with a discoverable Material swipe action or overflow menu.
+- [x] Audit row copy and empty states against iOS: No Results, Nothing Here, No History Yet.
+- [x] Audit transaction detail rows against iOS canonical rows. Remove Android-only rows unless the same row is intentionally added to iOS.
+- [x] Verify QR visibility rules for pending ecash, reusable BOLT12, settled one-shot Lightning, on-chain addresses, and failed transactions.
+- [x] Verify passive copy for settled ecash without QR/share.
+- [x] Add non-sat transaction display plan for future non-sat completed rows.
+- [x] Add tests for duplicate suppression, search over request received amount, date buckets, QR/share/copy rules, and explorer URL generation.
+
+Focused validation:
+
+- `cd android && JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew --no-daemon :app:compileDebugKotlin :app:testDebugUnitTest --tests org.cashu.wallet.ui.history.HistoryTimelineTest --tests org.cashu.wallet.Core.TransactionDisplayTest --tests org.cashu.wallet.Core.OnchainExplorerTest`
 
 Success condition:
 
