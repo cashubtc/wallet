@@ -88,6 +88,31 @@ class PendingMintQuoteTransactionsTest {
     }
 
     @Test
+    fun buildsOnchainRowsFromPaidAmountFallback() {
+        val rows = pendingMintQuoteTransactions(
+            quotes = listOf(
+                quote(
+                    id = "onchain-quote",
+                    amount = null,
+                    method = PaymentMethodKind.Onchain,
+                    state = MintQuoteState.Pending,
+                    amountPaid = 50,
+                    amountIssued = 0,
+                ),
+            ),
+            trackedMintUrls = setOf(MintUrl),
+            completedQuoteIds = emptySet(),
+            timestamps = mutableMapOf(),
+            nowEpochMillis = 1,
+        )
+
+        assertEquals(TransactionKind.Onchain, rows.single().kind)
+        assertEquals(TransactionStatus.Pending, rows.single().status)
+        assertEquals(50L, rows.single().amount)
+        assertEquals("onchain-quote", rows.single().quoteId)
+    }
+
+    @Test
     fun detectsPendingMintQuoteRows() {
         assertTrue(
             isPendingMintQuoteTransaction(

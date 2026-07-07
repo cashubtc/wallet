@@ -78,6 +78,13 @@ JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:compileDebugKotlin
 JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:testDebugUnitTest --tests org.cashu.wallet.Core.PaymentRequestBuilderTest --tests org.cashu.wallet.Core.PendingReceiveTokenIdsTest --tests org.cashu.wallet.ui.home.HomeRecentTest
 ```
 
+Focused validation used during Milestone 6:
+
+```sh
+JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:compileDebugKotlin
+JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:testDebugUnitTest --tests org.cashu.wallet.Core.MintQuoteDomainTest --tests org.cashu.wallet.Core.MintQuotePollingPolicyTest --tests org.cashu.wallet.Core.PendingMintQuoteTransactionsTest --tests org.cashu.wallet.ui.home.HomeRecentTest
+```
+
 ## Executive Summary
 
 Android is strongest in:
@@ -407,17 +414,17 @@ Android gaps:
 
 Checklist:
 
-- [ ] Build a Material method picker equivalent to iOS method choices: Lightning invoice, reusable invoice, on-chain address.
-- [ ] For BOLT11, show expiry countdown, expired state, and disable/refresh behavior as iOS does.
-- [ ] For BOLT12, support reusable amountless offers and fixed-amount offers with clear copy.
-- [ ] Reuse an existing amountless BOLT12 offer instead of creating duplicates.
-- [ ] Store BOLT12 and on-chain receive quotes as Cashu Request quote intents in History.
-- [ ] Add amount editing for reusable BOLT12 request rows.
-- [ ] For on-chain, support existing address reuse and "Use new address".
-- [ ] Observe on-chain payment and show status, block explorer link, address, and tx link where available.
-- [ ] Use shared processing/success screens when minting paid quotes.
-- [ ] Support multi-unit mint units for receive quote creation where CDK supports them.
-- [ ] Align BOLT12 product copy with iOS. If iOS says "Reusable invoice", Android should not surface conflicting "Offer" wording without a deliberate copy decision.
+- [x] Build a Material method picker equivalent to iOS method choices: Lightning invoice, reusable invoice, on-chain address. Receive Lightning now uses a Material bottom-sheet method picker with friendly titles/descriptors and top-bar method glyph.
+- [x] For BOLT11, show expiry countdown, expired state, and disable/refresh behavior as iOS does. BOLT11 display tracks expiry every second, stops polling after expiry, and shows expired status.
+- [x] For BOLT12, support reusable amountless offers and fixed-amount offers with clear copy. Reusable invoices auto-create amountless offers and can mint a fresh fixed-amount offer from the editable Amount row.
+- [x] Reuse an existing amountless BOLT12 offer instead of creating duplicates. `WalletManager.existingAmountlessOffer()` reopens the active mint's existing amountless BOLT12 quote when available.
+- [x] Store BOLT12 and on-chain receive quotes as Cashu Request quote intents in History. Milestone 5 added quote-backed rows for all receive quotes; Milestone 6 keeps those rows updated through BOLT12/on-chain reuse.
+- [x] Add amount editing for reusable BOLT12 request rows. The reusable invoice display exposes an editable Amount row backed by a Material amount dialog.
+- [x] For on-chain, support existing address reuse and "Use new address". `WalletManager.existingOnchainMintQuote()` reuses the active mint's existing on-chain quote, and the display offers "Use new address" to force a fresh quote.
+- [x] Observe on-chain payment and show status, block explorer link, address, and tx link where available. On-chain display links to the address explorer, polls quote state, and observes explorer payment details when a concrete amount is available.
+- [x] Use shared processing/success screens when minting paid quotes. Paid/issued quotes now transition through the shared `PaymentStatusScreen` processing/success/failure terminal.
+- [x] Support multi-unit mint units for receive quote creation where CDK supports them. Existing receive-unit picker remains active for Lightning/reusable invoice creation and passes the selected mint unit to quote creation.
+- [x] Align BOLT12 product copy with iOS. If iOS says "Reusable invoice", Android should not surface conflicting "Offer" wording without a deliberate copy decision. Receive UI now uses "Reusable invoice" and "Copy invoice" for BOLT12.
 
 Success condition:
 
@@ -659,7 +666,7 @@ Checklist:
 - [ ] Add `BackHandler` to `UnifiedSendScreen` so input, amount, confirm, and status states follow the same behavior as the toolbar back button; block or confirm during in-flight sends.
 - [ ] Add `BackHandler` to `SendEcashScreen` so the generated-token state returns to input instead of closing the route.
 - [x] Add `BackHandler` to `ReceiveEcashScreen` so review returns to paste/scan input and receive-later or in-flight states are not abandoned silently. Receive ecash now handles system back for review and status states.
-- [ ] Add `BackHandler` to `ReceiveLightningScreen` so invoice/offer/address display returns to input or confirms cancellation instead of popping the whole route.
+- [x] Add `BackHandler` to `ReceiveLightningScreen` so invoice/offer/address display returns to input or confirms cancellation instead of popping the whole route. Receive Lightning now dismisses sheets/status or returns from display to input before route pop.
 - [ ] Add `BackHandler` to `HistoryScreen` so back closes search mode before leaving the tab.
 - [ ] Add `BackHandler` to scanner and contactless surfaces directly, even when launched through shell state, so close/dispose logic is always executed.
 - [ ] Verify predictive back previews on Android 14+ for pushed routes, full-screen overlays, bottom sheets, dialogs, and multi-step send/receive flows.

@@ -23,7 +23,7 @@ Status date: 2026-07-07
 | 3 | Home, Shell, and Foreground Behavior | Complete | Milestone 3 commit on `codex/android-update-plan-implementation` | Received-delta event stream/chip, sat-only gating, foreground quote metadata, recents dedupe, unit pager tests, and TalkBack labels. |
 | 4 | Unified Send, Pay Flows, and Contactless | Complete | Milestone 4 commit on `codex/android-update-plan-implementation` | Cashu Request route model, add-mint/top-up recovery, amountless/non-sat notices, P2PK scan quick-fill/chip, NFC route parity, focused tests. |
 | 5 | Receive Ecash and Cashu Request Parity | Complete | Milestone 5 commit on `codex/android-update-plan-implementation` | Shared receive status, stable pending ids, unknown/locked token review, editable NUT-18 requests, quote-backed receive intents, focused tests. |
-| 6 | Receive Lightning, BOLT12, and On-chain | Not started | TBD | BOLT11 expiry, reusable BOLT12, on-chain address reuse/observer, quote-backed history, tests. |
+| 6 | Receive Lightning, BOLT12, and On-chain | Complete | Milestone 6 commit on `codex/android-update-plan-implementation` | Material method picker, BOLT11 expiry, reusable BOLT12 reuse/editing, on-chain reuse/new address/explorer, shared status, focused tests. |
 | 7 | Locked Ecash and P2PK | Not started | TBD | Seed-derived primary key, NUT-10/NUT-18 requests, locked receive, authenticated key reveal, tests. |
 | 8 | Mints and Mint Metadata | Not started | TBD | Full NUT-06 mint detail, discovery polish, refresh behavior, nickname handling, tests. |
 | 9 | History and Transaction Detail | Not started | TBD | Stale sync, swipe/delete, row/detail parity, large-ledger behavior, tests. |
@@ -96,3 +96,12 @@ Status date: 2026-07-07
 - Request detail: NUT-18 request rows for amount, mint, unit, and memo are editable through Material dialogs/sheets and regenerate the encoded payload with the same request id.
 - Quote intents: BOLT11, BOLT12, and on-chain receive quotes are stored as quote-backed request rows, labeled in Home/History, and attach payment by quote id after minting succeeds.
 - Tests: focused Gradle coverage includes payment request encoding/model behavior, pending receive id hashing, and quote-intent row titles.
+
+## Current Milestone 6 Evidence
+
+- Method picker: Receive Lightning now uses a Material bottom-sheet picker for Lightning invoice, reusable invoice, and on-chain address options.
+- Reusable BOLT12: amountless reusable invoices are auto-created/reused, use "Reusable invoice" copy, and expose an editable amount row that creates a fresh fixed-amount reusable invoice.
+- On-chain receive: existing on-chain quotes are reused, "Use new address" forces a fresh address, and the display includes block explorer address/transaction links when available.
+- Quote lifecycle: BOLT11 expiry countdown/expired state, quote polling policy, on-chain observation, and paid/issued quote handling feed the shared `PaymentStatusScreen`.
+- Wallet operations: `WalletManager` can find existing active amountless BOLT12 and active on-chain mint quotes before creating duplicates.
+- Tests: focused Gradle coverage includes mint quote domain/polling policy, pending quote history rows, and Home quote-intent duplicate suppression.
