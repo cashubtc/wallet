@@ -140,6 +140,14 @@ JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:compileDebugAndroidTestKotlin
 JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:help --task :app:pixel2Api35DebugAndroidTest
 ```
 
+Managed-device validation attempt:
+
+```sh
+JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:pixel2Api35DebugAndroidTest
+```
+
+Current local blocker: Gradle reached `:app:pixel2Api35Setup`, installed the API 35 ARM64 system image, then failed to create the emulator snapshot because Android emulator 36.6.11 rejects the managed-device GPU option `auto-no-window` (`Selected GPU option 'auto-no-window' is not valid`). No usable attached Android device was available; ADB only showed an offline emulator from the failed setup. Keep the managed-device/manual instrumentation gate open until the emulator/AGP GPU mismatch is fixed, a physical device is attached, or CI runs the managed-device job on a compatible host.
+
 Focused validation used while adding receive-token review coverage:
 
 ```sh
@@ -1028,7 +1036,7 @@ Milestone update: local Gradle release gates passed for the current branch with 
 - [x] Run Android `lintDebug` with Gradle.
 - [x] Build Android release APK with Gradle.
 - [x] Fix locale-observation lint in the Android currency picker so `lintDebug` remains green when Compose tracks configuration changes.
-- [ ] Run Android instrumentation and Compose UI tests on a managed device or physical device.
+- [ ] Run Android instrumentation and Compose UI tests on a managed device or physical device. Local attempt with `:app:pixel2Api35DebugAndroidTest` is currently blocked during managed-device setup because Android emulator 36.6.11 rejects Gradle's `auto-no-window` GPU mode; retry after changing the emulator/AGP host combination or attaching a physical Android device.
 - [ ] Run iOS tests to ensure shared product assumptions did not diverge.
 - [ ] Perform manual parity walkthrough on physical Android device: onboarding, restore, backup/security, home, send, receive, scanner, NFC, mints, history, settings.
 - [ ] Perform manual parity walkthrough on iOS after any shared model/protocol changes.
