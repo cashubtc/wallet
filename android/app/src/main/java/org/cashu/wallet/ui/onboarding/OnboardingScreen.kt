@@ -52,6 +52,7 @@ import kotlinx.coroutines.launch
 import org.cashu.wallet.Core.WalletManager
 import org.cashu.wallet.ui.components.CashuTextField
 import org.cashu.wallet.ui.components.GhostButton
+import org.cashu.wallet.ui.components.InlineNotice
 import org.cashu.wallet.ui.components.PrimaryButton
 import org.cashu.wallet.ui.theme.CashuTheme
 
@@ -441,11 +442,7 @@ private fun RestoreInputFace(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         if (errorMessage != null) {
-            Text(
-                text = errorMessage,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-            )
+            InlineNotice(text = errorMessage)
         }
         Spacer(Modifier.height(CashuTheme.spacing.snug))
         PrimaryButton(
@@ -567,14 +564,9 @@ private val VERIFY_CHECK_ICON_SIZE = 18.dp
 private val SEED_INPUT_HEIGHT = 160.dp
 private val RADIO_CHECK_ICON_SIZE = 14.dp
 
-private fun <S> AnimatedContentTransitionScope<S>.stepTransition(direction: Int):
-    androidx.compose.animation.ContentTransform {
-    val offset = if (direction >= 0) 80 else -80
-    return (
-        androidx.compose.animation.slideInHorizontally(tween(280)) { offset } +
-            fadeIn(tween(220))
-    ).togetherWith(
-        androidx.compose.animation.slideOutHorizontally(tween(260)) { -offset / 2 } +
-            fadeOut(tween(180))
-    )
-}
+// Steps crossfade — a horizontal push between onboarding steps was rejected as
+// jarring (2026-06-26 iOS decision, binding product behavior).
+private fun <S> AnimatedContentTransitionScope<S>.stepTransition(
+    @Suppress("UNUSED_PARAMETER") direction: Int,
+): androidx.compose.animation.ContentTransform =
+    fadeIn(tween(250)).togetherWith(fadeOut(tween(250)))

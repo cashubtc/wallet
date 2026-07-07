@@ -45,7 +45,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import org.cashu.wallet.BuildConfig
 import org.cashu.wallet.Core.WalletManager
-import org.cashu.wallet.ui.components.CanvasDivider
 import org.cashu.wallet.ui.components.NavRow
 import org.cashu.wallet.ui.components.SectionHeader
 import org.cashu.wallet.ui.theme.CashuTheme
@@ -99,7 +98,6 @@ fun SettingsScreen(
                     onClick = onOpenBackup,
                 )
             }
-            item("backup-divider") { CanvasDivider(leadingInset = 16) }
             item("restore") {
                 NavRow(
                     title = "Restore ecash",
@@ -117,7 +115,6 @@ fun SettingsScreen(
                     onClick = onOpenLightning,
                 )
             }
-            item("payments-divider") { CanvasDivider(leadingInset = 16) }
             item("p2pk") {
                 NavRow(
                     title = "P2PK",
@@ -144,7 +141,6 @@ fun SettingsScreen(
                     onClick = onOpenPrivacy,
                 )
             }
-            item("privacy-divider") { CanvasDivider(leadingInset = 16) }
             item("appearance") {
                 NavRow(
                     title = "Appearance",
@@ -161,7 +157,6 @@ fun SettingsScreen(
                     onClick = { context.openExternal("https://cashu.space") },
                 )
             }
-            item("about-divider") { CanvasDivider(leadingInset = 16) }
             item("specs") {
                 NavRow(
                     title = "Protocol Specs (NUTs)",

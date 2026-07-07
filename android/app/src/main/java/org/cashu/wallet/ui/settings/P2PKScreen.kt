@@ -42,6 +42,7 @@ import org.cashu.wallet.Models.P2PKKeyInfo
 import org.cashu.wallet.ui.components.CanvasDivider
 import org.cashu.wallet.ui.components.CashuTextField
 import org.cashu.wallet.ui.components.EmptyState
+import org.cashu.wallet.ui.components.InlineNotice
 import org.cashu.wallet.ui.components.PrimaryButton
 import org.cashu.wallet.ui.components.SectionHeader
 import org.cashu.wallet.ui.components.ToggleRow
@@ -142,11 +143,7 @@ fun P2PKScreen(
                         singleLine = true,
                     )
                     if (importError != null) {
-                        Text(
-                            text = importError!!,
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
+                        InlineNotice(text = importError!!)
                     }
                 }
             },

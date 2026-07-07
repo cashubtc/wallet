@@ -49,6 +49,7 @@ import org.cashu.wallet.Core.SettingsManager
 import org.cashu.wallet.ui.components.CanvasDivider
 import org.cashu.wallet.ui.components.CashuTextField
 import org.cashu.wallet.ui.components.GhostButton
+import org.cashu.wallet.ui.components.InlineNotice
 import org.cashu.wallet.ui.components.InspectorRow
 import org.cashu.wallet.ui.components.PrimaryButton
 import org.cashu.wallet.ui.components.SectionHeader
@@ -272,11 +273,7 @@ fun NostrScreen(
                         singleLine = true,
                     )
                     if (importError != null) {
-                        Text(
-                            text = importError!!,
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
+                        InlineNotice(text = importError!!)
                     }
                 }
             },
@@ -354,11 +351,7 @@ fun NostrScreen(
                         singleLine = true,
                     )
                     if (addRelayError != null) {
-                        Text(
-                            text = addRelayError!!,
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
+                        InlineNotice(text = addRelayError!!)
                     }
                 }
             },
