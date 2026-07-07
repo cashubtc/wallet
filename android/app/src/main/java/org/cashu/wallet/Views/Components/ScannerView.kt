@@ -53,6 +53,8 @@ import org.cashu.wallet.Core.WalletHaptic
 import org.cashu.wallet.Core.rememberWalletHaptics
 import org.cashu.wallet.ui.components.GhostButton
 import org.cashu.wallet.ui.components.PrimaryButton
+import org.cashu.wallet.ui.navigation.SimpleBackAction
+import org.cashu.wallet.ui.navigation.directSurfaceBackAction
 
 @Composable
 fun ScannerView(
@@ -73,7 +75,12 @@ fun ScannerView(
         hasCameraPermission = granted
     }
 
-    BackHandler { onClose() }
+    BackHandler {
+        when (directSurfaceBackAction()) {
+            SimpleBackAction.Close -> onClose()
+            else -> Unit
+        }
+    }
 
     LaunchedEffect(Unit) {
         if (!hasCameraPermission) permissionLauncher.launch(Manifest.permission.CAMERA)

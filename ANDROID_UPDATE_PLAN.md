@@ -818,6 +818,7 @@ Checklist:
 - [x] Add `BackHandler` to `ReceiveLightningScreen` so invoice/offer/address display returns to input or confirms cancellation instead of popping the whole route. Receive Lightning now dismisses sheets/status or returns from display to input before route pop.
 - [x] Add `BackHandler` to `HistoryScreen` so back closes search mode before leaving the tab. Search mode now clears query and closes before tab navigation.
 - [x] Add `BackHandler` to scanner and contactless surfaces directly, even when launched through shell state, so close/dispose logic is always executed.
+- [x] Add shared back-navigation policy coverage for shell overlays, onboarding, Unified Send, Send Ecash, Receive Ecash, Receive Lightning, History search, scanner, contactless, and P2PK detail. `BackNavigationPolicyTest` covers every logical outcome, and `BackNavigationComposeTest` verifies those outcomes are dispatched through Compose `BackHandler`.
 - [ ] Verify predictive back previews on Android 14+ for pushed routes, full-screen overlays, bottom sheets, dialogs, and multi-step send/receive flows.
 
 Success condition:
@@ -907,7 +908,7 @@ Success condition:
 
 Checklist:
 
-- [ ] Add Compose tests for every custom back gesture listed above.
+- [x] Add Compose tests for every custom back gesture listed above. Android now has `BackNavigationPolicyTest` plus `BackNavigationComposeTest`; focused validation passed with `:app:compileDebugKotlin`, `:app:testDebugUnitTest --tests org.cashu.wallet.ui.navigation.BackNavigationPolicyTest`, and `:app:compileDebugAndroidTestKotlin`. Managed-device execution remains tracked in the release gate.
 - [ ] Add large-font screenshot tests for Home, Unified Send, Send Ecash, Receive Ecash, Receive Lightning, Settings, Nostr, P2PK, Lightning, Mints, Mint Detail, and Transaction Detail.
 - [ ] Add compact-height screenshot tests for amount entry/keypad screens and NFC/scanner overlays.
 - [ ] Add tests that verify primary CTAs remain visible above keyboard and navigation bars.

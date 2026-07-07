@@ -77,6 +77,8 @@ import org.cashu.wallet.ui.components.SectionHeader
 import org.cashu.wallet.ui.components.TransactionRow
 import org.cashu.wallet.ui.components.TransactionRowModel
 import org.cashu.wallet.ui.components.formatRelativeTimestamp
+import org.cashu.wallet.ui.navigation.SimpleBackAction
+import org.cashu.wallet.ui.navigation.historyBackAction
 import org.cashu.wallet.ui.theme.CashuTheme
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -142,8 +144,13 @@ fun HistoryScreen(
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(state = topBarState)
 
     BackHandler(enabled = searching) {
-        searching = false
-        query = ""
+        when (historyBackAction(searching)) {
+            SimpleBackAction.CloseSearch -> {
+                searching = false
+                query = ""
+            }
+            else -> Unit
+        }
     }
 
     Scaffold(

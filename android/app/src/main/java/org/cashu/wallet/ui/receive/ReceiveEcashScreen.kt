@@ -63,6 +63,8 @@ import org.cashu.wallet.ui.components.PrimaryButton
 import org.cashu.wallet.ui.components.PaymentStatusPhase
 import org.cashu.wallet.ui.components.PaymentStatusScreen
 import org.cashu.wallet.ui.components.TwoFaceCrossfade
+import org.cashu.wallet.ui.navigation.ReceiveEcashBackAction
+import org.cashu.wallet.ui.navigation.receiveEcashBackAction
 import org.cashu.wallet.ui.theme.CashuTheme
 import org.cashu.wallet.ui.theme.withMonoDigits
 
@@ -112,13 +114,13 @@ fun ReceiveEcashScreen(
     var status by remember { mutableStateOf<ReceiveStatus?>(null) }
 
     BackHandler(enabled = status != null || face is ReceiveFace.Review) {
-        when {
-            status != null -> {
+        when (receiveEcashBackAction(hasStatus = status != null, reviewing = face is ReceiveFace.Review)) {
+            ReceiveEcashBackAction.ClearStatus -> {
                 status = null
                 receiving = false
             }
-            face is ReceiveFace.Review -> face = ReceiveFace.Paste
-            else -> onClose()
+            ReceiveEcashBackAction.ReturnToPaste -> face = ReceiveFace.Paste
+            ReceiveEcashBackAction.Close -> onClose()
         }
     }
 

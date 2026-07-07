@@ -83,6 +83,8 @@ import org.cashu.wallet.ui.components.TwoFaceScreen
 import org.cashu.wallet.ui.components.UnitPickerSheet
 import org.cashu.wallet.ui.components.copyTextWithToast
 import org.cashu.wallet.ui.components.shareText
+import org.cashu.wallet.ui.navigation.SendEcashBackAction
+import org.cashu.wallet.ui.navigation.sendEcashBackAction
 import org.cashu.wallet.ui.theme.CashuTheme
 import org.cashu.wallet.ui.theme.withMonoDigits
 
@@ -182,8 +184,10 @@ fun SendEcashScreen(
         ?.let { runCatching { SettingsManager.normalizeP2PKPublicKeyForSend(it) }.getOrNull() }
 
     BackHandler(enabled = sending || face is SendFace.Generated) {
-        if (!sending && face is SendFace.Generated) {
-            face = SendFace.Input
+        when (sendEcashBackAction(sending = sending, generated = face is SendFace.Generated)) {
+            SendEcashBackAction.Ignore -> Unit
+            SendEcashBackAction.ReturnToInput -> face = SendFace.Input
+            null -> Unit
         }
     }
 

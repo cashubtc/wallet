@@ -84,6 +84,8 @@ import org.cashu.wallet.ui.components.PaymentStatusScreen
 import org.cashu.wallet.ui.components.PrimaryButton
 import org.cashu.wallet.ui.components.QrCard
 import org.cashu.wallet.ui.components.TwoFaceScreen
+import org.cashu.wallet.ui.navigation.UnifiedSendBackAction
+import org.cashu.wallet.ui.navigation.unifiedSendBackAction
 import org.cashu.wallet.ui.theme.CashuTheme
 import org.cashu.wallet.ui.theme.withMonoDigits
 
@@ -274,23 +276,6 @@ fun UnifiedSendScreen(
             .onFailure { quoteError = it.message ?: "Couldn't fetch a quote." }
     }
 
-    fun goBack() {
-        when {
-            status != null -> Unit
-            step == SendStep.Confirm && cameFromAmount -> {
-                step = SendStep.Amount
-                meltQuote = null
-                quoteError = null
-                confirmError = null
-            }
-            step != SendStep.Input -> {
-                suppressedValue = destination.trim()
-                reset()
-            }
-            else -> onClose()
-        }
-    }
-
     fun pay() {
         val rail = locked ?: return
         confirmError = null
@@ -343,14 +328,34 @@ fun UnifiedSendScreen(
         }
     }
 
-    BackHandler(enabled = true) {
-        when (val current = status) {
-            SendStatus.Sending -> Unit
-            is SendStatus.Sent -> onClose()
-            is SendStatus.Failed -> status = null
-            null -> goBack()
+    fun handleBack() {
+        when (
+            unifiedSendBackAction(
+                sending = status is SendStatus.Sending,
+                sent = status is SendStatus.Sent,
+                failed = status is SendStatus.Failed,
+                onConfirmStep = step == SendStep.Confirm,
+                cameFromAmount = cameFromAmount,
+                onInputStep = step == SendStep.Input,
+            )
+        ) {
+            UnifiedSendBackAction.Ignore -> Unit
+            UnifiedSendBackAction.Close -> onClose()
+            UnifiedSendBackAction.ClearStatus -> status = null
+            UnifiedSendBackAction.ReturnToAmount -> {
+                step = SendStep.Amount
+                meltQuote = null
+                quoteError = null
+                confirmError = null
+            }
+            UnifiedSendBackAction.ResetToInput -> {
+                suppressedValue = destination.trim()
+                reset()
+            }
         }
     }
+
+    BackHandler(enabled = true) { handleBack() }
 
     // Status terminal replaces the whole body (iOS PaymentStatusView slot).
     when (val current = status) {
@@ -390,7 +395,7 @@ fun UnifiedSendScreen(
             TopAppBar(
                 title = { Text("Send", style = MaterialTheme.typography.titleMedium) },
                 navigationIcon = {
-                    IconButton(onClick = ::goBack) {
+                    IconButton(onClick = ::handleBack) {
                         Icon(
                             imageVector = if (step == SendStep.Input) {
                                 Icons.Outlined.Close

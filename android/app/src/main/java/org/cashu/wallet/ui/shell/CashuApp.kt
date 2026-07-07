@@ -27,8 +27,10 @@ import org.cashu.wallet.Views.Components.ScannerView
 import org.cashu.wallet.Views.Send.ContactlessPayView
 import org.cashu.wallet.ui.onboarding.OnboardingScreen
 import org.cashu.wallet.ui.navigation.Routes
+import org.cashu.wallet.ui.navigation.ShellBackAction
 import org.cashu.wallet.ui.navigation.TopTab
 import org.cashu.wallet.ui.navigation.navigateToTab
+import org.cashu.wallet.ui.navigation.shellBackAction
 import org.cashu.wallet.ui.security.AppLockGate
 import org.cashu.wallet.ui.security.PrivacyCover
 import org.cashu.wallet.ui.security.SecureWindowEffect
@@ -122,9 +124,10 @@ private fun AuthenticatedShell(container: AppContainer) {
     val appLockState by container.appLockManager.state.collectAsStateWithLifecycle()
 
     BackHandler(enabled = showContactless || scannerTarget != null) {
-        when {
-            scannerTarget != null -> scannerTarget = null
-            showContactless -> showContactless = false
+        when (shellBackAction(scannerVisible = scannerTarget != null, contactlessVisible = showContactless)) {
+            ShellBackAction.CloseScanner -> scannerTarget = null
+            ShellBackAction.CloseContactless -> showContactless = false
+            null -> Unit
         }
     }
 

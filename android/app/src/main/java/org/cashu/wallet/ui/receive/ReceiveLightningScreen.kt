@@ -106,6 +106,8 @@ import org.cashu.wallet.ui.components.TwoFaceScreen
 import org.cashu.wallet.ui.components.UnitPickerSheet
 import org.cashu.wallet.ui.components.copyTextWithToast
 import org.cashu.wallet.ui.components.shareText
+import org.cashu.wallet.ui.navigation.ReceiveLightningBackAction
+import org.cashu.wallet.ui.navigation.receiveLightningBackAction
 import org.cashu.wallet.ui.theme.CapsuleShape
 import org.cashu.wallet.ui.theme.CashuTheme
 import org.cashu.wallet.ui.theme.withMonoDigits
@@ -200,14 +202,22 @@ fun ReceiveLightningScreen(
         method != PaymentMethodKind.Onchain
 
     BackHandler(enabled = status != null || face is ReceiveLnFace.Display || methodPickerOpen || unitPickerOpen || mintPickerOpen) {
-        when {
-            status is ReceiveLnStatus.Success -> onClose()
-            status != null -> status = null
-            methodPickerOpen -> methodPickerOpen = false
-            unitPickerOpen -> unitPickerOpen = false
-            mintPickerOpen -> mintPickerOpen = false
-            face is ReceiveLnFace.Display -> face = ReceiveLnFace.Input
-            else -> onClose()
+        when (
+            receiveLightningBackAction(
+                successStatus = status is ReceiveLnStatus.Success,
+                hasStatus = status != null,
+                methodPickerOpen = methodPickerOpen,
+                unitPickerOpen = unitPickerOpen,
+                mintPickerOpen = mintPickerOpen,
+                displayingQuote = face is ReceiveLnFace.Display,
+            )
+        ) {
+            ReceiveLightningBackAction.Close -> onClose()
+            ReceiveLightningBackAction.ClearStatus -> status = null
+            ReceiveLightningBackAction.CloseMethodPicker -> methodPickerOpen = false
+            ReceiveLightningBackAction.CloseUnitPicker -> unitPickerOpen = false
+            ReceiveLightningBackAction.CloseMintPicker -> mintPickerOpen = false
+            ReceiveLightningBackAction.ReturnToInput -> face = ReceiveLnFace.Input
         }
     }
 

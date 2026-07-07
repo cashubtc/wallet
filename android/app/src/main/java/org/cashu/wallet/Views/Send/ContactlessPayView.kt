@@ -40,6 +40,8 @@ import org.cashu.wallet.Core.WalletManager
 import org.cashu.wallet.ui.components.GhostButton
 import org.cashu.wallet.ui.components.InlineNotice
 import org.cashu.wallet.ui.components.PrimaryButton
+import org.cashu.wallet.ui.navigation.SimpleBackAction
+import org.cashu.wallet.ui.navigation.directSurfaceBackAction
 
 @Composable
 fun ContactlessPayView(
@@ -59,7 +61,12 @@ fun ContactlessPayView(
     var paymentComplete by remember { mutableStateOf(false) }
     var lastPaymentAmount by remember { mutableStateOf<Long?>(null) }
 
-    BackHandler { onClose() }
+    BackHandler {
+        when (directSurfaceBackAction()) {
+            SimpleBackAction.Close -> onClose()
+            else -> Unit
+        }
+    }
 
     DisposableEffect(activity, adapter, service) {
         if (activity != null && adapter?.isEnabled == true) {

@@ -64,6 +64,9 @@ import org.cashu.wallet.ui.components.GhostButton
 import org.cashu.wallet.ui.components.InlineNotice
 import org.cashu.wallet.ui.components.MintAvatar
 import org.cashu.wallet.ui.components.PrimaryButton
+import org.cashu.wallet.ui.navigation.OnboardingBackAction
+import org.cashu.wallet.ui.navigation.OnboardingBackState
+import org.cashu.wallet.ui.navigation.onboardingBackAction
 import org.cashu.wallet.ui.theme.CashuTheme
 
 private data class RecommendedMint(val name: String, val url: String)
@@ -105,16 +108,16 @@ fun OnboardingScreen(
     }
 
     fun goBack() {
-        when (val current = step) {
-            OnboardingStep.Welcome -> if (walletState.canExitOnboarding) walletManager.closeRestoreFlow()
-            is OnboardingStep.ShowMnemonic -> goTo(OnboardingStep.Welcome, forward = false)
-            is OnboardingStep.FirstMint -> goTo(OnboardingStep.ShowMnemonic(current.mnemonic), forward = false)
-            is OnboardingStep.FirstMintProgress -> Unit
-            OnboardingStep.RestoreMethod -> goTo(OnboardingStep.Welcome, forward = false)
-            OnboardingStep.CloudRestore -> goTo(OnboardingStep.RestoreMethod, forward = false)
-            OnboardingStep.RestoreInput -> goTo(OnboardingStep.RestoreMethod, forward = false)
-            is OnboardingStep.RestoreMints -> goTo(OnboardingStep.RestoreInput, forward = false)
-            is OnboardingStep.RestoreProgress -> Unit
+        when (onboardingBackAction(step.backState(), walletState.canExitOnboarding)) {
+            OnboardingBackAction.CloseRestoreFlow -> walletManager.closeRestoreFlow()
+            OnboardingBackAction.Welcome -> goTo(OnboardingStep.Welcome, forward = false)
+            OnboardingBackAction.ShowMnemonic -> {
+                val current = step as? OnboardingStep.FirstMint ?: return
+                goTo(OnboardingStep.ShowMnemonic(current.mnemonic), forward = false)
+            }
+            OnboardingBackAction.RestoreMethod -> goTo(OnboardingStep.RestoreMethod, forward = false)
+            OnboardingBackAction.RestoreInput -> goTo(OnboardingStep.RestoreInput, forward = false)
+            OnboardingBackAction.Stay -> Unit
         }
     }
 
@@ -215,6 +218,19 @@ fun OnboardingScreen(
         EcashInfoDialog(onDismiss = { infoOpen = false })
     }
 }
+
+private fun OnboardingStep.backState(): OnboardingBackState =
+    when (this) {
+        OnboardingStep.Welcome -> OnboardingBackState.Welcome
+        is OnboardingStep.ShowMnemonic -> OnboardingBackState.ShowMnemonic
+        is OnboardingStep.FirstMint -> OnboardingBackState.FirstMint
+        is OnboardingStep.FirstMintProgress -> OnboardingBackState.FirstMintProgress
+        OnboardingStep.RestoreMethod -> OnboardingBackState.RestoreMethod
+        OnboardingStep.CloudRestore -> OnboardingBackState.CloudRestore
+        OnboardingStep.RestoreInput -> OnboardingBackState.RestoreInput
+        is OnboardingStep.RestoreMints -> OnboardingBackState.RestoreMints
+        is OnboardingStep.RestoreProgress -> OnboardingBackState.RestoreProgress
+    }
 
 private fun OnboardingStep.analyticsName(): String =
     when (this) {

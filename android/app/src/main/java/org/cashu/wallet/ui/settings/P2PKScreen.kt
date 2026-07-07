@@ -63,6 +63,8 @@ import org.cashu.wallet.ui.components.QrCard
 import org.cashu.wallet.ui.components.SectionHeader
 import org.cashu.wallet.ui.components.ToggleRow
 import org.cashu.wallet.ui.components.copyTextWithToast
+import org.cashu.wallet.ui.navigation.SimpleBackAction
+import org.cashu.wallet.ui.navigation.p2pkBackAction
 import org.cashu.wallet.ui.security.rememberWalletAuthenticationLauncher
 import org.cashu.wallet.ui.theme.CashuTheme
 
@@ -91,7 +93,12 @@ fun P2PKScreen(
         if (settings.p2pkKeys.none { it.id == selected.id }) detail = null
     }
 
-    BackHandler(enabled = detail != null) { detail = null }
+    BackHandler(enabled = detail != null) {
+        when (p2pkBackAction(showingDetail = detail != null)) {
+            SimpleBackAction.CloseDetail -> detail = null
+            else -> Unit
+        }
+    }
 
     val selectedDetail = detail
     if (selectedDetail != null) {
