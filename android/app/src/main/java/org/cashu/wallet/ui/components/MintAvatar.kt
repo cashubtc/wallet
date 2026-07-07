@@ -1,5 +1,6 @@
 package org.cashu.wallet.ui.components
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -20,7 +21,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import coil.compose.SubcomposeAsyncImage
+import coil.compose.AsyncImagePainter
+import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
 import org.cashu.wallet.Models.MintInfo
 
@@ -54,14 +56,17 @@ fun MintAvatar(
                     .crossfade(true)
                     .build()
             }
-            SubcomposeAsyncImage(
-                model = request,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-                loading = { GeneratedFallback(mint = mint, size = size) },
-                error = { GeneratedFallback(mint = mint, size = size) },
-            )
+            val painter = rememberAsyncImagePainter(model = request)
+            if (painter.state is AsyncImagePainter.State.Success) {
+                Image(
+                    painter = painter,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                GeneratedFallback(mint = mint, size = size)
+            }
         }
     } else {
         Box(
@@ -117,4 +122,3 @@ private fun hslToColor(h: Float, saturation: Float, lightness: Float): Color {
     }
     return Color(r1 + m, g1 + m, b1 + m)
 }
-

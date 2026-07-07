@@ -751,7 +751,7 @@ Checklist:
 - [ ] Review the collapsing top app bar/nested scroll behavior on Settings. If it contributes to jank without providing value, simplify to a pinned Material top app bar.
 - [x] Optimize `CurrencyPickerSheet`: precompute currency display names/symbols/formatters, avoid rebuilding all row labels on every price tick, and use stable keys.
 - [x] Convert long or potentially long Settings sub-screen lists to `LazyColumn`, especially Nostr relays and P2PK keys, instead of composing the full list in a `verticalScroll` column. Nostr relays and P2PK keys now use lazy rendering.
-- [ ] Optimize image loading in dense lists. `MintAvatar`/mint rows should avoid expensive subcomposition or repeated model creation during scroll where a simpler cached image path works.
+- [x] Optimize image loading in dense lists. `MintAvatar` now uses a remembered Coil painter with the existing generated fallback instead of subcomposition during list scroll.
 - [ ] Profile Home list masking/fade drawing and animated QR generation; move QR bitmap generation off the main thread or add frame caching if animated UR/QR display causes missed frames.
 - [ ] Add baseline profiles for app startup, opening Settings, switching tabs, opening Send/Receive, opening scanner, and scrolling Home/History/Mints/Settings.
 
