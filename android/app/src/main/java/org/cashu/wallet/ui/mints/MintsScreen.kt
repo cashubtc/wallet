@@ -70,6 +70,7 @@ import org.cashu.wallet.Models.MintInfo
 import org.cashu.wallet.ui.components.CanvasDivider
 import org.cashu.wallet.ui.components.CashuTextField
 import org.cashu.wallet.ui.components.GhostButton
+import org.cashu.wallet.ui.components.InlineNotice
 import org.cashu.wallet.ui.components.MintAvatar
 import org.cashu.wallet.ui.components.MintMethodChips
 import org.cashu.wallet.ui.components.PrimaryButton
@@ -237,11 +238,7 @@ fun MintsScreen(
                         modifier = Modifier.fillMaxWidth(),
                     )
                     if (error != null) {
-                        Text(
-                            text = error!!,
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
+                        InlineNotice(text = error!!)
                     }
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
@@ -265,10 +262,8 @@ fun MintsScreen(
 
             walletState.errorMessage?.let { msg ->
                 item("err") {
-                    Text(
+                    InlineNotice(
                         text = msg,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(
                             horizontal = CashuTheme.spacing.comfortable,
                             vertical = CashuTheme.spacing.snug,

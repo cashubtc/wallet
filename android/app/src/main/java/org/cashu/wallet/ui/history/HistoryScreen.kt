@@ -171,7 +171,10 @@ fun HistoryScreen(
             onRefresh = {
                 scope.launch {
                     refreshing = true
+                    // Manual re-check lives here (iOS parity): resume unissued
+                    // mint quotes, then re-verify pending sent tokens.
                     runCatching {
+                        walletManager.syncPendingMintQuotes()
                         walletManager.loadTransactions()
                         if (walletState.pendingTokens.isNotEmpty()) {
                             walletManager.checkAllPendingTokens()

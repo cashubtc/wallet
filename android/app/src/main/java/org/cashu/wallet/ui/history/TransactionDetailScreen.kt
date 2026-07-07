@@ -16,6 +16,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
+import androidx.compose.material.icons.filled.Cancel
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.IosShare
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -83,7 +85,9 @@ fun TransactionDetailScreen(
         }
     }
 
+    val showsQr = transaction?.let { TransactionDisplay.showsQr(it) } == true
     val qrContent = transaction?.let { TransactionDisplay.qrContent(it) }
+    val copyableContent = transaction?.let { TransactionDisplay.copyableContent(it) }
     val title = transaction?.let { TransactionDisplay.title(it) } ?: ""
 
     Scaffold(
@@ -96,7 +100,8 @@ fun TransactionDetailScreen(
                     }
                 },
                 actions = {
-                    if (qrContent != null) {
+                    // Share rides the top bar only while the artifact is live.
+                    if (showsQr && qrContent != null) {
                         IconButton(onClick = {
                             context.shareText(qrContent, subject = title)
                         }) {
@@ -128,26 +133,33 @@ fun TransactionDetailScreen(
             verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.comfortable),
         ) {
             Spacer(Modifier.height(CashuTheme.spacing.snug))
-            if (qrContent != null) {
-                QrCard(
+            // Hero state slot: live request → QR; completed → 64dp green check;
+            // failed → 64dp red X; pending with no QR → no glyph. State detail
+            // lives in the monochrome Status row below.
+            when {
+                showsQr && qrContent != null -> QrCard(
                     content = qrContent,
                     staticOnly = transaction.kind != TransactionKind.Ecash,
                     shareSubject = title,
                 )
+                transaction.status == TransactionStatus.Completed -> Icon(
+                    imageVector = Icons.Filled.CheckCircle,
+                    contentDescription = "Completed",
+                    tint = CashuTheme.colors.received,
+                    modifier = Modifier.size(HERO_GLYPH_SIZE),
+                )
+                transaction.status == TransactionStatus.Failed -> Icon(
+                    imageVector = Icons.Filled.Cancel,
+                    contentDescription = "Failed",
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(HERO_GLYPH_SIZE),
+                )
+                else -> Unit
             }
             HeroAmount(
                 transaction = transaction,
                 formatter = formatter,
                 useBitcoinSymbol = settings.useBitcoinSymbol,
-            )
-            Text(
-                text = TransactionDisplay.statusText(transaction),
-                style = MaterialTheme.typography.bodyMedium,
-                color = when (transaction.status) {
-                    TransactionStatus.Completed -> CashuTheme.colors.received
-                    TransactionStatus.Pending -> CashuTheme.colors.pending
-                    TransactionStatus.Failed -> MaterialTheme.colorScheme.error
-                },
             )
             SectionHeader("Details")
             Column(modifier = Modifier.fillMaxWidth()) {
@@ -169,7 +181,7 @@ fun TransactionDetailScreen(
                 ExplorerLinkRow(url = explorerUrl, onOpen = { context.openInBrowser(it) })
             }
 
-            if (qrContent != null) {
+            if (copyableContent != null) {
                 Spacer(Modifier.height(CashuTheme.spacing.snug))
                 Column(
                     modifier = Modifier
@@ -179,7 +191,7 @@ fun TransactionDetailScreen(
                     PrimaryButton(
                         text = if (copied) "Copied" else "Copy ${TransactionDisplay.qrLabel(transaction).lowercase()}",
                         onClick = {
-                            clipboard.setText(AnnotatedString(qrContent))
+                            clipboard.setText(AnnotatedString(copyableContent))
                             copied = true
                         },
                     )
@@ -193,24 +205,29 @@ fun TransactionDetailScreen(
 // Inline link glyph next to the "View in block explorer" label.
 private val EXPLORER_GLYPH_SIZE = 18.dp
 
+// 64dp terminal hero glyph, matching PaymentStatusScreen.
+private val HERO_GLYPH_SIZE = 64.dp
+
 private val MonospacedLabels = setOf("Request", "Address", "Payment Proof", "Transaction ID", "Quote ID", "Mint")
 
+// Crisp primary amount hero — the hero glyph above carries state colour; the
+// +/− sign stays a settled-ledger signal (pending renders bare).
 @Composable
 private fun HeroAmount(
     transaction: WalletTransaction,
     formatter: AmountFormatter,
     useBitcoinSymbol: Boolean,
 ) {
-    val prefix = if (transaction.type == TransactionType.Incoming) "+" else "−"
-    val color = when (transaction.status) {
-        TransactionStatus.Completed -> CashuTheme.colors.received
-        TransactionStatus.Pending -> MaterialTheme.colorScheme.onSurfaceVariant
-        TransactionStatus.Failed -> MaterialTheme.colorScheme.onSurface
+    val formatted = formatter.formatWalletSats(transaction.amount, useBitcoinSymbol)
+    val text = if (transaction.status == TransactionStatus.Pending) {
+        formatted
+    } else {
+        "${if (transaction.type == TransactionType.Incoming) "+" else "−"}$formatted"
     }
     AmountText(
-        text = "$prefix${formatter.formatWalletSats(transaction.amount, useBitcoinSymbol)}",
+        text = text,
         style = MaterialTheme.typography.displayMedium.withMonoDigits(),
-        color = color,
+        color = MaterialTheme.colorScheme.onSurface,
     )
 }
 
