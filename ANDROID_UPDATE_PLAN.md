@@ -748,7 +748,7 @@ Checklist:
 - [ ] Split `SettingsScreen` state observation into stable selectors or row models so toggling Sentry/NPC/Nostr/auto-paste does not recompose unrelated sections.
 - [ ] Use lifecycle-aware state collection (`collectAsStateWithLifecycle`) across Compose screens to avoid off-screen collectors causing extra recomposition and work.
 - [ ] Replace settings row rebuilding with immutable/stable row definitions where possible; use `remember` for static section content, icons, and expensive labels.
-- [ ] Review the collapsing top app bar/nested scroll behavior on Settings. If it contributes to jank without providing value, simplify to a pinned Material top app bar.
+- [x] Review the collapsing top app bar/nested scroll behavior on Settings. Settings now uses a pinned Material top app bar to remove unnecessary nested-scroll coordination.
 - [x] Optimize `CurrencyPickerSheet`: precompute currency display names/symbols/formatters, avoid rebuilding all row labels on every price tick, and use stable keys.
 - [x] Convert long or potentially long Settings sub-screen lists to `LazyColumn`, especially Nostr relays and P2PK keys, instead of composing the full list in a `verticalScroll` column. Nostr relays and P2PK keys now use lazy rendering.
 - [x] Optimize image loading in dense lists. `MintAvatar` now uses a remembered Coil painter with the existing generated fallback instead of subcomposition during list scroll.
