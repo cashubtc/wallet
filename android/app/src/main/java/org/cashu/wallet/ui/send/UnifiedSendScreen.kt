@@ -39,6 +39,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -160,6 +161,7 @@ fun UnifiedSendScreen(
     var mintPickerOpen by remember { mutableStateOf(false) }
     var addMintToPayOpen by remember { mutableStateOf(false) }
     var meltQuote by remember { mutableStateOf<MeltQuoteInfo?>(null) }
+    var quoteRetryNonce by remember { mutableIntStateOf(0) }
     var topUpQuote by remember { mutableStateOf<MintQuoteInfo?>(null) }
     var topUpLoading by remember { mutableStateOf(false) }
     var topUpError by remember { mutableStateOf<String?>(null) }
@@ -293,7 +295,7 @@ fun UnifiedSendScreen(
     }
 
     // Confirm entry prefetches the melt quote (iOS shows fee/total skeleton).
-    LaunchedEffect(step, locked, confirmAmount, activeMintUrl) {
+    LaunchedEffect(step, locked, confirmAmount, activeMintUrl, quoteRetryNonce) {
         if (step != SendStep.Confirm) return@LaunchedEffect
         val rail = locked as? LockedRail.Melt ?: return@LaunchedEffect
         meltQuote = null
@@ -527,11 +529,9 @@ fun UnifiedSendScreen(
                     quote = meltQuote,
                     quoteError = quoteError,
                     onRetryQuote = {
+                        meltQuote = null
                         quoteError = null
-                        // Re-trigger the prefetch by nudging state.
-                        val current = selectedMintUrl
-                        selectedMintUrl = null
-                        selectedMintUrl = current
+                        quoteRetryNonce++
                     },
                     confirmError = confirmError,
                     mintBalance = activeMint?.balance ?: 0L,

@@ -771,7 +771,7 @@ Checklist:
 - [x] Add disabled/busy state to mint discovery add rows to prevent double-tapping the same discovered mint before wallet state catches up.
 - [x] Make the Add Mint nickname field actually persist/use the nickname or remove the field until backend support exists. The unused nickname field has been removed until persisted mint aliases exist.
 - [ ] Audit `SwipeToDismissBox` plus `combinedClickable` in `MintsScreen`; swiping should not also open mint detail, and long press should not conflict with delete affordances.
-- [ ] Make retry quote behavior explicit in Unified Send. The current retry-by-resetting-selected-mint pattern can fail when the same mint remains selected.
+- [x] Make retry quote behavior explicit in Unified Send. The quote retry path now increments an explicit retry nonce instead of nudging mint state to the same value.
 - [x] Add user-visible confirmation/feedback for copy/share actions that currently silently write to clipboard. UI clipboard writes now use a shared toast-backed helper, and share failure reports when no share target exists.
 - [x] Add safe external-link handling for explorer, contact, and support links so missing browser/activity handlers do not crash the app.
 - [x] Ensure receive-later token ids are stable and collision-resistant; avoid using only a token prefix for pending receive identity. Pending receive ids now hash the full token and have JVM coverage.
