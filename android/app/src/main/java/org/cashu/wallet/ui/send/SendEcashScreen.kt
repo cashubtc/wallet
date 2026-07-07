@@ -109,6 +109,9 @@ fun SendEcashScreen(
     settingsManager: SettingsManager,
     priceService: org.cashu.wallet.Core.PriceService,
     onClose: () -> Unit,
+    onScanP2PK: () -> Unit = {},
+    scannedP2PK: String? = null,
+    onScannedP2PKConsumed: () -> Unit = {},
 ) {
     val walletState by walletManager.state.collectAsState()
     val settings by settingsManager.state.collectAsState()
@@ -185,6 +188,12 @@ fun SendEcashScreen(
         p2pkInputError = runCatching {
             org.cashu.wallet.Core.SettingsManager.normalizeP2PKPublicKeyForSend(trimmed)
         }.exceptionOrNull()?.message
+    }
+    LaunchedEffect(scannedP2PK) {
+        val scanned = scannedP2PK?.takeIf { it.isNotBlank() } ?: return@LaunchedEffect
+        p2pkOn = true
+        p2pkInput = p2pkKeyCandidate(scanned)
+        onScannedP2PKConsumed()
     }
 
     Scaffold(
@@ -304,6 +313,7 @@ fun SendEcashScreen(
                     onUseLatestP2pkKey = {
                         settings.p2pkKeys.firstOrNull()?.let { p2pkInput = it.publicKey }
                     },
+                    onScanP2PK = onScanP2PK,
                     canSendWithP2pk = !p2pkOn || validatedP2pkPubkey != null,
                     onSend = {
                         val mintUrl = activeMintUrl ?: walletState.activeMint?.url
@@ -430,6 +440,7 @@ private fun InputFace(
     p2pkInputError: String?,
     p2pkLatestKeyHex: String?,
     onUseLatestP2pkKey: () -> Unit,
+    onScanP2PK: () -> Unit,
     canSendWithP2pk: Boolean,
     onSend: () -> Unit,
 ) {
@@ -492,6 +503,7 @@ private fun InputFace(
                 inputError = p2pkInputError,
                 latestKeyHex = p2pkLatestKeyHex,
                 onUseLatestKey = onUseLatestP2pkKey,
+                onScanKey = onScanP2PK,
             )
         }
 
@@ -523,11 +535,32 @@ private fun P2pkLockSection(
     inputError: String?,
     latestKeyHex: String?,
     onUseLatestKey: () -> Unit,
+    onScanKey: () -> Unit,
 ) {
+    val normalized = remember(input) {
+        runCatching { org.cashu.wallet.Core.SettingsManager.normalizeP2PKPublicKeyForSend(input) }.getOrNull()
+    }
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.tight),
     ) {
+        if (normalized != null) {
+            androidx.compose.material3.AssistChip(
+                onClick = {},
+                label = {
+                    Text(
+                        text = "Locked to ${normalized.take(10)}…${normalized.takeLast(6)}",
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Filled.Lock,
+                        contentDescription = null,
+                    )
+                },
+            )
+        }
         CashuTextField(
             value = input,
             onValueChange = onInputChange,
@@ -556,7 +589,23 @@ private fun P2pkLockSection(
                 onClick = onUseLatestKey,
             )
         }
+        org.cashu.wallet.ui.components.GhostButton(
+            text = "Scan recipient key",
+            onClick = onScanKey,
+        )
     }
+}
+
+internal fun p2pkKeyCandidate(raw: String): String {
+    val stripped = raw.trim()
+        .removePrefix("cashu://")
+        .removePrefix("cashu:")
+        .removePrefix("p2pk://")
+        .removePrefix("p2pk:")
+    return stripped
+        .substringAfter("p2pk=", missingDelimiterValue = stripped)
+        .substringBefore("&")
+        .trim()
 }
 
 @Composable

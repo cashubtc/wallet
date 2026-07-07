@@ -4,7 +4,8 @@ import org.cashu.wallet.Core.PaymentRequestDecoder
 import org.cashu.wallet.Core.PaymentRequestDecodeResult
 import org.cashu.wallet.Core.LightningRequestParser
 import org.cashu.wallet.Core.WalletManager
-import org.cashu.wallet.Core.selectMintForCashuPaymentRequest
+import org.cashu.wallet.Core.CashuPaymentRequestRoute
+import org.cashu.wallet.Core.routeForCashuPaymentRequest
 
 data class NFCPaymentState(
     val isReading: Boolean = false,
@@ -15,7 +16,10 @@ data class NFCPaymentState(
 )
 
 sealed interface NFCPaymentInput {
-    data class CashuRequest(val summary: org.cashu.wallet.Core.CashuPaymentRequestSummary) : NFCPaymentInput
+    data class CashuRequest(
+        val raw: String,
+        val summary: org.cashu.wallet.Core.CashuPaymentRequestSummary,
+    ) : NFCPaymentInput
     data class LightningRequest(val request: String) : NFCPaymentInput
 }
 
@@ -28,7 +32,7 @@ object NFCPaymentInputDecoder {
             ?: runCatching { LightningRequestParser.parse(trimmed).request }.getOrNull()
         val cashuRequest = PaymentRequestDecoder.cashuPaymentRequestSummary(trimmed)
         if (cashuRequest != null && (cashuRequest.isSatUnit || lightningFallback == null)) {
-            return NFCPaymentInput.CashuRequest(cashuRequest)
+            return NFCPaymentInput.CashuRequest(raw = trimmed, summary = cashuRequest)
         }
 
         if (lightningFallback != null) return NFCPaymentInput.LightningRequest(lightningFallback)
@@ -47,7 +51,7 @@ class NFCPaymentService(
 
     suspend fun preparePayment(payload: String): String {
         return when (val input = decodePaymentInput(payload)) {
-            is NFCPaymentInput.CashuRequest -> prepareCashuRequest(input.summary)
+            is NFCPaymentInput.CashuRequest -> prepareCashuRequest(input.raw, input.summary)
             is NFCPaymentInput.LightningRequest -> {
                 throw IllegalStateException("Lightning NFC requests should be routed to Send.")
             }
@@ -56,24 +60,41 @@ class NFCPaymentService(
 
     fun tokenRecord(token: String) = NDEFTextRecordCoder.encode(token)
 
-    private suspend fun prepareCashuRequest(summary: org.cashu.wallet.Core.CashuPaymentRequestSummary): String {
-        val amount = summary.amount?.takeIf { it > 0 }
-            ?: throw IllegalArgumentException("Cashu payment request requires an amount.")
-        require(summary.isSatUnit) { "Only sat Cashu payment requests are supported." }
+    private suspend fun prepareCashuRequest(
+        raw: String,
+        summary: org.cashu.wallet.Core.CashuPaymentRequestSummary,
+    ): String {
         val state = walletManager.state.value
-        val selectedMint = selectMintForCashuPaymentRequest(
+        val route = routeForCashuPaymentRequest(
+            rawRequest = raw,
             request = summary,
             mints = state.mints,
             selectedMintUrl = state.activeMint?.url,
             activeMintUrl = state.activeMint?.url,
-            amountSats = amount,
-        ) ?: throw IllegalArgumentException("No compatible mint has enough balance.")
-
-        return walletManager.sendTokens(
-            amount = amount,
-            memo = null,
-            p2pkPubkey = null,
-            mintUrl = selectedMint.url,
-        ).token
+            amountSats = summary.amount,
+        )
+        return when (route) {
+            is CashuPaymentRequestRoute.PayWithEcash -> walletManager.sendTokens(
+                amount = route.amountSats,
+                memo = null,
+                p2pkPubkey = null,
+                mintUrl = route.mint.url,
+            ).token
+            is CashuPaymentRequestRoute.PayBolt11Fallback -> {
+                throw IllegalStateException("Lightning NFC requests should be routed to Send.")
+            }
+            is CashuPaymentRequestRoute.AddMintToPay -> {
+                throw IllegalArgumentException("Add the requested mint before paying this NFC request.")
+            }
+            is CashuPaymentRequestRoute.NeedsExternalTopUp -> {
+                throw IllegalArgumentException("Top up the compatible mint before paying this NFC request.")
+            }
+            CashuPaymentRequestRoute.MissingAmount -> {
+                throw IllegalArgumentException("Cashu payment request requires an amount.")
+            }
+            is CashuPaymentRequestRoute.UnsupportedUnit -> {
+                throw IllegalArgumentException("Only sat Cashu payment requests are supported.")
+            }
+        }
     }
 }

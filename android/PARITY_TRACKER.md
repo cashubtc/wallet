@@ -21,7 +21,7 @@ Status date: 2026-07-07
 | 1 | Security, App Lock, Backup, and Wallet Lifecycle | Complete | Milestone 1 commit on `codex/android-update-plan-implementation` | App Lock, authenticated secret reveal, documented no-cloud backup MVP, startup maintenance, stale quote sync, security tests. |
 | 2 | Onboarding and Restore Parity | Complete | Milestone 2 commit on `codex/android-update-plan-implementation` | iOS-equivalent create/restore/no-cloud placeholder/staged mint restore flows, row-level add/restore progress, retry, and focused Gradle validation. |
 | 3 | Home, Shell, and Foreground Behavior | Complete | Milestone 3 commit on `codex/android-update-plan-implementation` | Received-delta event stream/chip, sat-only gating, foreground quote metadata, recents dedupe, unit pager tests, and TalkBack labels. |
-| 4 | Unified Send, Pay Flows, and Contactless | Not started | TBD | Full Cashu Request pay/acquire/top-up, richer status/error flows, NFC parity, tests. |
+| 4 | Unified Send, Pay Flows, and Contactless | Complete | Milestone 4 commit on `codex/android-update-plan-implementation` | Cashu Request route model, add-mint/top-up recovery, amountless/non-sat notices, P2PK scan quick-fill/chip, NFC route parity, focused tests. |
 | 5 | Receive Ecash and Cashu Request Parity | Not started | TBD | Editable requests, quote-backed intents, locked/unknown mint handling, status parity, tests. |
 | 6 | Receive Lightning, BOLT12, and On-chain | Not started | TBD | BOLT11 expiry, reusable BOLT12, on-chain address reuse/observer, quote-backed history, tests. |
 | 7 | Locked Ecash and P2PK | Not started | TBD | Seed-derived primary key, NUT-10/NUT-18 requests, locked receive, authenticated key reveal, tests. |
@@ -76,3 +76,12 @@ Status date: 2026-07-07
 - Timeline parity: Home recent rows continue to suppress Cashu Request-attached transactions; JVM coverage locks this behavior.
 - Unit pager parity: `HomeBalanceTest` verifies the active-mint and held non-sat balance gate.
 - Accessibility: active mint, balance toggle, Receive, Send, Scan, unit pager dots, transaction rows, and Cashu Request rows expose explicit semantic descriptions.
+
+## Current Milestone 4 Evidence
+
+- Cashu Request routing: `CashuPaymentRequestRoute` distinguishes pay-with-ecash, BOLT11 fallback, add requested mint, target-mint top-up, unsupported unit, and missing amount.
+- Unified Send recovery: Cashu Request confirm surfaces route rows, add-mint bottom sheet, top-up QR sheet, amountless BOLT11/BOLT12 warnings, non-sat unsupported notices, and compatible-mint recovery CTAs.
+- Wallet operations: `WalletManager` exposes target-mint quote creation and add-mint-then-pay helpers.
+- Send Ecash P2PK: dedicated scanner target, scanned-key quick-fill, and locked-key chip sit above the raw public-key field.
+- Contactless: NFC preparation uses the shared route model and keeps Lightning fallback handoff to Unified Send.
+- Tests: focused Gradle coverage includes Cashu Request routing, NFC decoding, and P2PK scan normalization.

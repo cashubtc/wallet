@@ -27,14 +27,18 @@ import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -49,15 +53,19 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.cashu.wallet.Core.AmountFormatter
+import org.cashu.wallet.Core.CashuPaymentRequestRoute
 import org.cashu.wallet.Core.PaymentRequestDecodeResult
 import org.cashu.wallet.Core.PaymentRequestDecoder
 import org.cashu.wallet.Core.SettingsManager
 import org.cashu.wallet.Core.TokenParser
 import org.cashu.wallet.Core.WalletManager
 import org.cashu.wallet.Core.compatibleMintsForCashuPaymentRequest
+import org.cashu.wallet.Core.routeForCashuPaymentRequest
 import org.cashu.wallet.Models.MeltPaymentResult
 import org.cashu.wallet.Models.MeltQuoteInfo
 import org.cashu.wallet.Models.MintInfo
+import org.cashu.wallet.Models.MintQuoteInfo
+import org.cashu.wallet.Models.PaymentMethodKind
 import org.cashu.wallet.ui.components.AmountText
 import org.cashu.wallet.ui.components.CanvasDivider
 import org.cashu.wallet.ui.components.CashuTextField
@@ -72,6 +80,7 @@ import org.cashu.wallet.ui.components.NumberPad
 import org.cashu.wallet.ui.components.PaymentStatusPhase
 import org.cashu.wallet.ui.components.PaymentStatusScreen
 import org.cashu.wallet.ui.components.PrimaryButton
+import org.cashu.wallet.ui.components.QrCard
 import org.cashu.wallet.ui.components.TwoFaceScreen
 import org.cashu.wallet.ui.theme.CashuTheme
 import org.cashu.wallet.ui.theme.withMonoDigits
@@ -148,12 +157,15 @@ fun UnifiedSendScreen(
     var cameFromAmount by remember { mutableStateOf(false) }
     var selectedMintUrl by remember { mutableStateOf<String?>(null) }
     var mintPickerOpen by remember { mutableStateOf(false) }
+    var addMintToPayOpen by remember { mutableStateOf(false) }
     var meltQuote by remember { mutableStateOf<MeltQuoteInfo?>(null) }
+    var topUpQuote by remember { mutableStateOf<MintQuoteInfo?>(null) }
+    var topUpLoading by remember { mutableStateOf(false) }
+    var topUpError by remember { mutableStateOf<String?>(null) }
     var quoteError by remember { mutableStateOf<String?>(null) }
     var confirmError by remember { mutableStateOf<String?>(null) }
 
     val activeMintUrl = selectedMintUrl ?: walletState.activeMint?.url
-    val activeMint = walletState.mints.firstOrNull { it.url == activeMintUrl } ?: walletState.activeMint
     val enteredAmount = amount.toLongOrNull() ?: 0L
     val confirmAmount = locked?.let { rail ->
         when (rail) {
@@ -161,11 +173,28 @@ fun UnifiedSendScreen(
             is LockedRail.Creq -> rail.knownAmount ?: enteredAmount
         }
     } ?: 0L
+    val cashuRoute = (locked as? LockedRail.Creq)?.let { rail ->
+        routeForCashuPaymentRequest(
+            rawRequest = rail.raw,
+            request = rail.decoded.summary,
+            mints = walletState.mints,
+            selectedMintUrl = selectedMintUrl,
+            activeMintUrl = walletState.activeMint?.url,
+            amountSats = confirmAmount,
+        )
+    }
+    val activeMint = when (val route = cashuRoute) {
+        is CashuPaymentRequestRoute.PayWithEcash -> route.mint
+        else -> walletState.mints.firstOrNull { it.url == activeMintUrl } ?: walletState.activeMint
+    }
 
     fun reset(toInput: Boolean = true) {
         locked = null
         amount = ""
         meltQuote = null
+        topUpQuote = null
+        topUpError = null
+        topUpLoading = false
         quoteError = null
         confirmError = null
         cameFromAmount = false
@@ -188,19 +217,9 @@ fun UnifiedSendScreen(
         ) {
             // BIP-321 payloads can carry a Lightning leg alongside the creq;
             // fall back to it when none of the requested mints are held.
-            val summary = decoded.summary
             val fallback = PaymentRequestDecoder.decode(trimmed)
-            if (fallback is PaymentRequestDecodeResult.Unrecognized) {
-                val required = summary.mints.joinToString()
-                inputHint = if (required.isEmpty()) {
-                    "Add a mint before paying this Cashu request."
-                } else {
-                    "This Cashu request requires a mint you don't have: $required"
-                }
-                return
-            }
-            decoded = fallback
-            if (fallback is PaymentRequestDecodeResult.Bolt11 || fallback is PaymentRequestDecodeResult.Bolt12) {
+            if (fallback !is PaymentRequestDecodeResult.Unrecognized) {
+                decoded = fallback
                 request = PaymentRequestDecoder.encodedLightningRequest(trimmed) ?: trimmed
             }
         }
@@ -208,7 +227,7 @@ fun UnifiedSendScreen(
             is PaymentRequestDecodeResult.Bolt11 -> {
                 val known = decoded.amountSats
                 if (known == null || known <= 0L) {
-                    inputHint = "This invoice doesn't specify an amount."
+                    inputHint = "This BOLT11 invoice doesn't include an amount. Ask for an amount-specific invoice before paying."
                 } else {
                     locked = LockedRail.Melt(request, decoded, known)
                     cameFromAmount = false
@@ -218,7 +237,7 @@ fun UnifiedSendScreen(
             is PaymentRequestDecodeResult.Bolt12 -> {
                 val known = decoded.amountSats
                 if (known == null || known <= 0L) {
-                    inputHint = "This offer doesn't specify an amount."
+                    inputHint = "This BOLT12 offer doesn't include an amount. Amountless offers are not payable here yet."
                 } else {
                     locked = LockedRail.Melt(request, decoded, known)
                     cameFromAmount = false
@@ -231,9 +250,9 @@ fun UnifiedSendScreen(
                 step = SendStep.Amount
             }
             is PaymentRequestDecodeResult.CashuPaymentRequest -> {
-                val known = decoded.summary.amount?.takeIf { it > 0 && decoded.summary.isSatUnit }
+                val known = decoded.summary.amount?.takeIf { it > 0 }
                 locked = LockedRail.Creq(request, decoded, known)
-                if (known != null) {
+                if (!decoded.summary.isSatUnit || known != null) {
                     cameFromAmount = false
                     step = SendStep.Confirm
                 } else {
@@ -319,7 +338,36 @@ fun UnifiedSendScreen(
                         status = SendStatus.Sent(result)
                     }
                     is LockedRail.Creq -> {
-                        walletManager.payCashuPaymentRequest(rail.raw, confirmAmount, activeMintUrl)
+                        when (val route = cashuRoute) {
+                            is CashuPaymentRequestRoute.PayWithEcash -> {
+                                walletManager.payCashuPaymentRequest(rail.raw, route.amountSats, route.mint.url)
+                            }
+                            is CashuPaymentRequestRoute.PayBolt11Fallback -> {
+                                val quote = walletManager.createMeltQuote(
+                                    request = route.lightningRequest,
+                                    amountSats = null,
+                                    preferredMintURL = activeMintUrl,
+                                )
+                                val result = walletManager.meltTokens(quote.id, activeMintUrl)
+                                status = SendStatus.Sent(result)
+                                return@launch
+                            }
+                            is CashuPaymentRequestRoute.AddMintToPay -> {
+                                error("Add a compatible mint before paying this Cashu Request.")
+                            }
+                            is CashuPaymentRequestRoute.NeedsExternalTopUp -> {
+                                error("Top up the target mint before paying this Cashu Request.")
+                            }
+                            CashuPaymentRequestRoute.MissingAmount -> {
+                                error("Enter an amount before paying this Cashu Request.")
+                            }
+                            is CashuPaymentRequestRoute.UnsupportedUnit -> {
+                                error("Only sat Cashu Requests are supported on Android right now.")
+                            }
+                            null -> {
+                                walletManager.payCashuPaymentRequest(rail.raw, confirmAmount, activeMintUrl)
+                            }
+                        }
                         status = SendStatus.Sent(null)
                     }
                 }
@@ -442,9 +490,30 @@ fun UnifiedSendScreen(
 
                 SendStep.Confirm -> ConfirmFace(
                     rail = locked,
+                    cashuRoute = cashuRoute,
                     amountSats = confirmAmount,
                     mint = activeMint,
                     onPickMint = { mintPickerOpen = true },
+                    onAddMintToPay = { addMintToPayOpen = true },
+                    onCreateTopUp = { mintUrl, requestedAmount ->
+                        topUpError = null
+                        topUpLoading = true
+                        scope.launch {
+                            runCatching {
+                                walletManager.createMintQuoteForMint(
+                                    mintUrl = mintUrl,
+                                    amount = requestedAmount,
+                                    method = PaymentMethodKind.Bolt11,
+                                    unit = "sat",
+                                )
+                            }.onSuccess {
+                                topUpQuote = it
+                            }.onFailure {
+                                topUpError = it.message ?: "Could not create a top-up request."
+                            }
+                            topUpLoading = false
+                        }
+                    },
                     quote = meltQuote,
                     quoteError = quoteError,
                     onRetryQuote = {
@@ -458,6 +527,8 @@ fun UnifiedSendScreen(
                     mintBalance = activeMint?.balance ?: 0L,
                     formatter = formatter,
                     useBitcoinSymbol = settings.useBitcoinSymbol,
+                    topUpLoading = topUpLoading,
+                    topUpError = topUpError,
                     onPay = ::pay,
                 )
             }
@@ -474,6 +545,168 @@ fun UnifiedSendScreen(
             },
             onDismiss = { mintPickerOpen = false },
         )
+    }
+
+    if (addMintToPayOpen) {
+        val route = cashuRoute as? CashuPaymentRequestRoute.AddMintToPay
+        AddMintToPaySheet(
+            walletManager = walletManager,
+            mintUrls = route?.mintUrls.orEmpty(),
+            onSelect = { mintUrl ->
+                scope.launch {
+                    runCatching {
+                        walletManager.addMint(mintUrl)
+                    }.onSuccess {
+                        selectedMintUrl = mintUrl.trim().trimEnd('/')
+                        addMintToPayOpen = false
+                    }.onFailure {
+                        confirmError = it.message ?: "Could not add mint."
+                    }
+                }
+            },
+            onDismiss = { addMintToPayOpen = false },
+        )
+    }
+
+    topUpQuote?.let { quote ->
+        TopUpQuoteSheet(
+            quote = quote,
+            formatter = formatter,
+            useBitcoinSymbol = settings.useBitcoinSymbol,
+            onDismiss = { topUpQuote = null },
+        )
+    }
+}
+
+private data class AddMintPreviewState(
+    val mintInfo: MintInfo? = null,
+    val isLoading: Boolean = false,
+    val error: String? = null,
+)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AddMintToPaySheet(
+    walletManager: WalletManager,
+    mintUrls: List<String>,
+    onSelect: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val previewStates = remember { mutableStateMapOf<String, AddMintPreviewState>() }
+
+    LaunchedEffect(mintUrls) {
+        mintUrls.forEach { url ->
+            if (url !in previewStates) {
+                previewStates[url] = AddMintPreviewState(isLoading = true)
+                val result = runCatching { walletManager.previewMint(url) }
+                previewStates[url] = result.fold(
+                    onSuccess = { AddMintPreviewState(mintInfo = it) },
+                    onFailure = { AddMintPreviewState(error = it.message ?: "Preview unavailable") },
+                )
+            }
+        }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = CashuTheme.spacing.comfortable)
+                .navigationBarsPadding(),
+            verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
+        ) {
+            Text(
+                text = "Add mint to pay",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = "This Cashu Request accepts one of these mints.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            mintUrls.forEach { url ->
+                val state = previewStates[url] ?: AddMintPreviewState()
+                val fallback = remember(url) { MintInfo(url = url, name = url.removePrefix("https://").trimEnd('/')) }
+                val mint = state.mintInfo ?: fallback
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onSelect(url) }
+                        .padding(vertical = CashuTheme.spacing.snug),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
+                ) {
+                    MintAvatar(mint = mint)
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = mint.name,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            text = when {
+                                state.isLoading -> "Fetching mint info…"
+                                state.error != null -> "${state.error} · ${fallback.name}"
+                                else -> fallback.name
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TopUpQuoteSheet(
+    quote: MintQuoteInfo,
+    formatter: AmountFormatter,
+    useBitcoinSymbol: Boolean,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = CashuTheme.spacing.comfortable)
+                .navigationBarsPadding(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
+        ) {
+            Text(
+                text = "Top up mint",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            quote.amount?.let { amount ->
+                AmountText(
+                    text = formatter.formatWalletSats(amount, useBitcoinSymbol),
+                    style = MaterialTheme.typography.headlineSmall.withMonoDigits(),
+                )
+            }
+            QrCard(content = quote.request, shareSubject = "Top-up request", staticOnly = true)
+            Text(
+                text = "Pay this invoice, then try the Cashu Request again after the mint settles.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            PrimaryButton(text = "Done", onClick = onDismiss)
+        }
     }
 }
 
@@ -751,9 +984,12 @@ private fun AmountFace(
 @Composable
 private fun ConfirmFace(
     rail: LockedRail?,
+    cashuRoute: CashuPaymentRequestRoute?,
     amountSats: Long,
     mint: MintInfo?,
     onPickMint: () -> Unit,
+    onAddMintToPay: () -> Unit,
+    onCreateTopUp: (mintUrl: String, amountSats: Long) -> Unit,
     quote: MeltQuoteInfo?,
     quoteError: String?,
     onRetryQuote: () -> Unit,
@@ -761,12 +997,18 @@ private fun ConfirmFace(
     mintBalance: Long,
     formatter: AmountFormatter,
     useBitcoinSymbol: Boolean,
+    topUpLoading: Boolean,
+    topUpError: String?,
     onPay: () -> Unit,
 ) {
     val isMelt = rail is LockedRail.Melt
     val isOnchain = (rail as? LockedRail.Melt)?.decoded is PaymentRequestDecodeResult.Onchain
+    val cashuSummary = (rail as? LockedRail.Creq)?.decoded?.summary
+    val cashuAmountLabel = cashuSummary?.let(PaymentRequestDecoder::amountLabel)
     val total = quote?.totalAmount ?: amountSats
     val insufficient = isMelt && quote != null && total > mintBalance
+    val canPayCashuRequest = cashuRoute is CashuPaymentRequestRoute.PayWithEcash ||
+        cashuRoute is CashuPaymentRequestRoute.PayBolt11Fallback
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -784,7 +1026,7 @@ private fun ConfirmFace(
         rail?.let { ToPill(destination = it.raw) }
         Spacer(Modifier.height(CashuTheme.spacing.section))
         AmountText(
-            text = formatter.formatWalletSats(amountSats, useBitcoinSymbol),
+            text = cashuAmountLabel ?: formatter.formatWalletSats(amountSats, useBitcoinSymbol),
             style = MaterialTheme.typography.displayMedium.withMonoDigits(),
         )
         Spacer(Modifier.height(CashuTheme.spacing.section))
@@ -815,7 +1057,7 @@ private fun ConfirmFace(
             } else {
                 InspectorRow(
                     label = "Amount",
-                    value = "$amountSats sat",
+                    value = cashuAmountLabel ?: "$amountSats sat",
                     valueMonospaced = true,
                 )
                 if (mint != null) {
@@ -825,6 +1067,39 @@ private fun ConfirmFace(
                         value = mint.name,
                         leadingIcon = Icons.Outlined.AccountBalance,
                     )
+                }
+                when (val route = cashuRoute) {
+                    is CashuPaymentRequestRoute.PayWithEcash -> {
+                        CanvasDivider(leadingInset = 16)
+                        InspectorRow(
+                            label = "Route",
+                            value = "Pay from ${route.mint.name}",
+                        )
+                    }
+                    is CashuPaymentRequestRoute.PayBolt11Fallback -> {
+                        CanvasDivider(leadingInset = 16)
+                        InspectorRow(
+                            label = "Route",
+                            value = "Use BOLT11 fallback",
+                        )
+                    }
+                    is CashuPaymentRequestRoute.AddMintToPay -> {
+                        CanvasDivider(leadingInset = 16)
+                        InspectorRow(
+                            label = "Route",
+                            value = "Add requested mint",
+                        )
+                    }
+                    is CashuPaymentRequestRoute.NeedsExternalTopUp -> {
+                        CanvasDivider(leadingInset = 16)
+                        InspectorRow(
+                            label = "Route",
+                            value = "Top up target mint",
+                        )
+                    }
+                    CashuPaymentRequestRoute.MissingAmount,
+                    is CashuPaymentRequestRoute.UnsupportedUnit,
+                    null -> Unit
                 }
             }
         }
@@ -840,6 +1115,58 @@ private fun ConfirmFace(
             InlineNotice(text = quoteError)
             GhostButton(text = "Try again", onClick = onRetryQuote)
         }
+        when (val route = cashuRoute) {
+            is CashuPaymentRequestRoute.UnsupportedUnit -> {
+                Spacer(Modifier.height(CashuTheme.spacing.default))
+                InlineNotice(
+                    text = "Only sat Cashu Requests are supported on Android right now.",
+                    severity = NoticeSeverity.Warning,
+                )
+            }
+            CashuPaymentRequestRoute.MissingAmount -> {
+                Spacer(Modifier.height(CashuTheme.spacing.default))
+                InlineNotice(
+                    text = "This Cashu Request does not include an amount. Enter an amount before paying.",
+                    severity = NoticeSeverity.Warning,
+                )
+            }
+            is CashuPaymentRequestRoute.AddMintToPay -> {
+                Spacer(Modifier.height(CashuTheme.spacing.default))
+                InlineNotice(
+                    text = "This request asks for a mint you have not added yet.",
+                    severity = NoticeSeverity.Warning,
+                )
+                GhostButton(text = "Add mint to pay", onClick = onAddMintToPay)
+            }
+            is CashuPaymentRequestRoute.NeedsExternalTopUp -> {
+                Spacer(Modifier.height(CashuTheme.spacing.default))
+                InlineNotice(
+                    text = "The compatible mint does not hold enough ecash for this request.",
+                    severity = NoticeSeverity.Warning,
+                )
+                route.mintUrl?.let { mintUrl ->
+                    GhostButton(
+                        text = if (topUpLoading) "Creating top-up…" else "Create top-up QR",
+                        onClick = { onCreateTopUp(mintUrl, route.amountSats) },
+                        enabled = !topUpLoading,
+                    )
+                }
+                GhostButton(text = "Choose another mint", onClick = onPickMint)
+            }
+            is CashuPaymentRequestRoute.PayBolt11Fallback -> {
+                Spacer(Modifier.height(CashuTheme.spacing.default))
+                InlineNotice(
+                    text = "The requested Cashu mint is unavailable. Android can pay this request through its BOLT11 fallback.",
+                    severity = NoticeSeverity.Info,
+                )
+            }
+            is CashuPaymentRequestRoute.PayWithEcash,
+            null -> Unit
+        }
+        if (topUpError != null) {
+            Spacer(Modifier.height(CashuTheme.spacing.default))
+            InlineNotice(text = topUpError)
+        }
         if (confirmError != null) {
             Spacer(Modifier.height(CashuTheme.spacing.default))
             InlineNotice(text = confirmError)
@@ -848,7 +1175,11 @@ private fun ConfirmFace(
         PrimaryButton(
             text = "Pay ${formatter.formatWalletSats(amountSats, useBitcoinSymbol)}",
             onClick = onPay,
-            enabled = (!isMelt || (quote != null && !insufficient)) && quoteError == null,
+            enabled = if (isMelt) {
+                quote != null && !insufficient && quoteError == null
+            } else {
+                canPayCashuRequest && quoteError == null
+            },
             loading = isMelt && quote == null && quoteError == null,
         )
         Spacer(Modifier.navigationBarsPadding())

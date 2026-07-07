@@ -184,6 +184,20 @@ class WalletManager(
         }
     }
 
+    suspend fun createMintQuoteForMint(
+        mintUrl: String,
+        amount: Long?,
+        method: PaymentMethodKind = PaymentMethodKind.Bolt11,
+        unit: String = "sat",
+    ): MintQuoteInfo =
+        withLoadingResult {
+            val trackedMintUrl = ensureMintTracked(mintUrl)
+            gateway.createMintQuote(amount, method, trackedMintUrl, unit).also {
+                mintQuoteSyncService.rememberMintQuoteTimestamp(it.id)
+                loadCachedState(needsOnboarding = false)
+            }
+        }
+
     override suspend fun removeMint(mint: MintInfo) {
         withLoading {
             runCatching { gateway.removeWallet(mint.url) }
@@ -524,6 +538,15 @@ class WalletManager(
     suspend fun payCashuPaymentRequest(encoded: String, customAmountSats: Long?, preferredMintURL: String?) {
         withLoading {
             gateway.payCashuPaymentRequest(encoded, customAmountSats, preferredMintURL)
+            refreshBalance()
+            loadTransactions()
+        }
+    }
+
+    suspend fun addMintAndPayCashuPaymentRequest(encoded: String, customAmountSats: Long?, mintUrl: String) {
+        withLoading {
+            val trackedMintUrl = ensureMintTracked(mintUrl)
+            gateway.payCashuPaymentRequest(encoded, customAmountSats, trackedMintUrl)
             refreshBalance()
             loadTransactions()
         }

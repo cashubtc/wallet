@@ -52,6 +52,9 @@ fun CashuNavHost(
     onPendingReceiveScanConsumed: () -> Unit,
     pendingSendScan: String?,
     onPendingSendScanConsumed: () -> Unit,
+    onScanP2PK: () -> Unit,
+    pendingP2PKScan: String?,
+    onPendingP2PKScanConsumed: () -> Unit,
     pendingMintScan: String?,
     onPendingMintScanConsumed: () -> Unit,
     modifier: Modifier = Modifier,
@@ -101,6 +104,9 @@ fun CashuNavHost(
                 settingsManager = container.settingsManager,
                 priceService = container.priceService,
                 onClose = { navController.popBackStack() },
+                onScanP2PK = onScanP2PK,
+                scannedP2PK = pendingP2PKScan,
+                onScannedP2PKConsumed = onPendingP2PKScanConsumed,
             )
         }
         // The Send surface (iOS UnifiedSendView): destination field + ways-to-send.

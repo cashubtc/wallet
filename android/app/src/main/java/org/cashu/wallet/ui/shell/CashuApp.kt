@@ -113,6 +113,7 @@ private fun AuthenticatedShell(container: AppContainer) {
     var scannerTarget by remember { mutableStateOf<ScannerTarget?>(null) }
     var pendingReceiveScan by remember { mutableStateOf<String?>(null) }
     var pendingSendScan by remember { mutableStateOf<String?>(null) }
+    var pendingP2PKScan by remember { mutableStateOf<String?>(null) }
     var pendingMintScan by remember { mutableStateOf<String?>(null) }
 
     val pendingDeepLink by container.navigationManager.pendingDeepLink.collectAsState()
@@ -170,6 +171,10 @@ private fun AuthenticatedShell(container: AppContainer) {
                             pendingSendScan = it
                             navController.navigate(Routes.SEND)
                         },
+                        onSendEcashP2PK = {
+                            pendingP2PKScan = it
+                            navController.navigate(Routes.SEND_ECASH)
+                        },
                         onMint = {
                             pendingMintScan = it
                             navController.navigateToTab(TopTab.Mints)
@@ -190,6 +195,9 @@ private fun AuthenticatedShell(container: AppContainer) {
                 onPendingReceiveScanConsumed = { pendingReceiveScan = null },
                 pendingSendScan = pendingSendScan,
                 onPendingSendScanConsumed = { pendingSendScan = null },
+                onScanP2PK = { scannerTarget = ScannerTarget.SendEcashP2PK },
+                pendingP2PKScan = pendingP2PKScan,
+                onPendingP2PKScanConsumed = { pendingP2PKScan = null },
                 pendingMintScan = pendingMintScan,
                 onPendingMintScanConsumed = { pendingMintScan = null },
                 navController = navController,
@@ -211,13 +219,14 @@ private fun LoadingScreen() {
     }
 }
 
-internal enum class ScannerTarget { Auto, Receive, Send, Mints }
+internal enum class ScannerTarget { Auto, Receive, Send, SendEcashP2PK, Mints }
 
 private fun routeScannedPayload(
     target: ScannerTarget,
     payload: String,
     onReceive: (String) -> Unit,
     onSend: (String) -> Unit,
+    onSendEcashP2PK: (String) -> Unit,
     onMint: (String) -> Unit,
 ) {
     val trimmed = payload.trim()
@@ -228,6 +237,10 @@ private fun routeScannedPayload(
         }
         ScannerTarget.Send -> {
             onSend(trimmed)
+            return
+        }
+        ScannerTarget.SendEcashP2PK -> {
+            onSendEcashP2PK(trimmed)
             return
         }
         ScannerTarget.Mints -> {

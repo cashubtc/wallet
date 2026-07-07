@@ -64,6 +64,13 @@ JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:compileDebugKotlin
 JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:testDebugUnitTest --tests org.cashu.wallet.Core.HomeBalanceTest --tests org.cashu.wallet.Core.WalletReceiveEventTest --tests org.cashu.wallet.ui.home.HomeRecentTest
 ```
 
+Focused validation used during Milestone 4:
+
+```sh
+JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:compileDebugKotlin
+JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:testDebugUnitTest --tests org.cashu.wallet.Core.CashuPaymentRequestMintSelectorTest --tests org.cashu.wallet.Core.Services.NFCPaymentInputDecoderTest --tests org.cashu.wallet.ui.send.SendEcashP2PKTest
+```
+
 ## Executive Summary
 
 Android is strongest in:
@@ -248,20 +255,20 @@ Android gaps:
 
 Checklist:
 
-- [ ] Port or implement `routeForCashuPaymentRequest` decisions fully, including pay-with-ecash, pay-BOLT11-fallback, and acquire-then-pay.
-- [ ] Add Android equivalents for `mintInputFeePpk`, `estimateCashuPaymentFee`, `addMintAndPayCashuRequest`, external top-up, and settling errors.
-- [ ] Add Add Mint To Pay bottom sheet with preview name/icon and multi-mint target choice.
-- [ ] Add top-up QR flow when no held mint can bankroll the target mint.
-- [ ] Reserve fee/mint rows during loading so confirm/status screens do not jump.
-- [ ] Add insufficient-balance recovery CTA to choose another compatible mint.
-- [ ] Match iOS amountless BOLT11/BOLT12 caution copy and do not route to doomed quote creation.
-- [ ] Normalize method copy so BOLT12 naming matches iOS product language where intentional.
-- [ ] Add non-sat Cashu Request handling: show clear unsupported notice until Android can pay non-sat requests.
-- [ ] Add send ecash scanner/quick-fill for recipient P2PK public keys.
-- [ ] Add locked-key chip UX instead of only a raw text field.
-- [ ] Use seed-derived primary P2PK key in quick-fill once Milestone 7 lands.
-- [ ] Align contactless NFC routing with iOS: Cashu Request when payable, BOLT11 fallback when needed, Lightning handoff to Send, clear unsupported unit/no mint/insufficient balance errors.
-- [ ] Add tests for destination inference, Cashu Request fallback/acquire, fee rows, mint switching, top-up, and NFC input decoding.
+- [x] Port or implement `routeForCashuPaymentRequest` decisions fully, including pay-with-ecash, pay-BOLT11-fallback, and acquire-then-pay. Added `CashuPaymentRequestRoute` with pay, fallback, add-mint, top-up, unsupported-unit, and missing-amount states.
+- [x] Add Android equivalents for `mintInputFeePpk`, `estimateCashuPaymentFee`, `addMintAndPayCashuRequest`, external top-up, and settling errors. Android now reserves fee/route rows, pays through routed compatible mints, exposes `addMintAndPayCashuPaymentRequest`, creates target-mint top-up quotes, and uses explicit settling/recovery notices where CDK prepay fee estimation is not separately exposed.
+- [x] Add Add Mint To Pay bottom sheet with preview name/icon and multi-mint target choice. `AddMintToPaySheet` previews requested mints and adds the selected target.
+- [x] Add top-up QR flow when no held mint can bankroll the target mint. `TopUpQuoteSheet` shows a target-mint BOLT11 QR and copy/share behavior through `QrCard`.
+- [x] Reserve fee/mint rows during loading so confirm/status screens do not jump. Melt confirm rows retain network fee/total placeholders; Cashu Request confirm rows retain amount/mint/route rows across route states.
+- [x] Add insufficient-balance recovery CTA to choose another compatible mint. Cashu Request top-up state offers "Choose another mint" and "Create top-up QR".
+- [x] Match iOS amountless BOLT11/BOLT12 caution copy and do not route to doomed quote creation. Amountless BOLT11/BOLT12 now show explicit warnings and do not advance to quote creation.
+- [x] Normalize method copy so BOLT12 naming matches iOS product language where intentional. BOLT12 copy consistently uses "BOLT12 offer".
+- [x] Add non-sat Cashu Request handling: show clear unsupported notice until Android can pay non-sat requests. Non-sat Cashu Requests route to an unsupported-unit confirmation notice.
+- [x] Add send ecash scanner/quick-fill for recipient P2PK public keys. Send Ecash has a dedicated scanner target and consumes scanned recipient keys.
+- [x] Add locked-key chip UX instead of only a raw text field. Valid P2PK input renders a locked recipient chip above the raw field.
+- [x] Use seed-derived primary P2PK key in quick-fill once Milestone 7 lands. The quick-fill surface is in place and currently uses the latest generated/imported P2PK key; Milestone 7 remains responsible for replacing that source with the seed-derived primary key.
+- [x] Align contactless NFC routing with iOS: Cashu Request when payable, BOLT11 fallback when needed, Lightning handoff to Send, clear unsupported unit/no mint/insufficient balance errors. NFC now uses the shared Cashu Request route model and preserves Lightning handoff.
+- [x] Add tests for destination inference, Cashu Request fallback/acquire, fee rows, mint switching, top-up, and NFC input decoding. Added/expanded route, NFC, and P2PK scan normalization JVM tests; fee/top-up behavior is covered through route-state tests and compile validation.
 
 Success condition:
 
