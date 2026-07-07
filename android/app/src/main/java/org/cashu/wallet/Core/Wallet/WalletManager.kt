@@ -411,15 +411,13 @@ class WalletManager(
     }
 
     suspend fun performForegroundMaintenance() {
-        val current = mutableState.value
-        if (!current.isInitialized || current.needsOnboarding) return
-        val settings = settingsManager.state.value
-        if (settings.checkPendingOnStartup && settings.checkSentTokens) {
-            runCatching { checkAllPendingTokens() }
-                .onFailure { AppLogger.wallet.error("Pending sent-token foreground check failed", it) }
-        }
-        runCatching { syncPendingMintQuotesIfStale() }
-            .onFailure { AppLogger.wallet.error("Pending mint quote foreground sync failed", it) }
+        runWalletForegroundMaintenance(
+            walletState = mutableState.value,
+            settings = settingsManager.state.value,
+            checkAllPendingTokens = { checkAllPendingTokens() },
+            syncPendingMintQuotesIfStale = { syncPendingMintQuotesIfStale() },
+            onError = { message, error -> AppLogger.wallet.error(message, error) },
+        )
     }
 
     override fun isNPCQuoteProcessed(quoteId: String): Boolean =

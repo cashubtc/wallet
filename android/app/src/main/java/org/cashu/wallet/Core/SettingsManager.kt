@@ -155,7 +155,7 @@ class SettingsManager(
     }
     fun setUseWebsockets(value: Boolean) = update { settingsStore.useWebsockets = value }
     fun setCheckIncomingInvoices(value: Boolean) = update { settingsStore.checkIncomingInvoices = value }
-    // TODO(runtime-parity): Keep this storage-only until Swift wires matching startup processors.
+    // Gates foreground/startup sent-token claim checks in WalletManager.
     fun setCheckPendingOnStartup(value: Boolean) = update { settingsStore.checkPendingOnStartup = value }
     fun setPeriodicallyCheckIncomingInvoices(value: Boolean) = update {
         settingsStore.periodicallyCheckIncomingInvoices = value

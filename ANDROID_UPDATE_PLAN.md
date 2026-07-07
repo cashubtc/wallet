@@ -200,6 +200,12 @@ Focused validation used while extracting Mint Detail content rendering and conne
 JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:compileDebugKotlin :app:testDebugUnitTest --tests org.cashu.wallet.ui.mints.MintDetailScreenTest :app:compileDebugAndroidTestKotlin
 ```
 
+Focused validation used while extracting Settings runtime-toggle behavior coverage:
+
+```sh
+JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:compileDebugKotlin :app:testDebugUnitTest --tests org.cashu.wallet.Core.WalletForegroundMaintenanceTest
+```
+
 ## Executive Summary
 
 Android is strongest in:
@@ -955,7 +961,7 @@ Major gaps:
 
 Unit test checklist:
 
-Milestone update: JVM coverage now includes payment request/locked receive encoding, dedicated `CashuRequestStore` persistence tests for quote-intent upsert, attach by quote id, duplicate suppression, update, delete, reset, reload, stale current-id cleanup, legacy payment normalization, WalletManager startup maintenance/keyset refresh orchestration, CDK orphaned saga reservation routing, Cashu Request payment orchestration, external top-up quote creation, mint quote settlement policy, receive-fee fallback estimation, Mint Detail display mapping and connection-state tests, Mint Detail Compose rendering coverage for NUT-06 metadata, Receive Lightning polling cadence tests, and Receive Lightning quote-flow tests for quote intent persistence, force-new on-chain creation, reusable BOLT12 reuse, and settlement attachment. Compose UI, screenshot, instrumentation, integration, and CI parity remain open.
+Milestone update: JVM coverage now includes payment request/locked receive encoding, dedicated `CashuRequestStore` persistence tests for quote-intent upsert, attach by quote id, duplicate suppression, update, delete, reset, reload, stale current-id cleanup, legacy payment normalization, WalletManager startup maintenance/keyset refresh orchestration, Settings runtime-toggle foreground maintenance behavior, CDK orphaned saga reservation routing, Cashu Request payment orchestration, external top-up quote creation, mint quote settlement policy, receive-fee fallback estimation, Mint Detail display mapping and connection-state tests, Mint Detail Compose rendering coverage for NUT-06 metadata, Receive Lightning polling cadence tests, and Receive Lightning quote-flow tests for quote intent persistence, force-new on-chain creation, reusable BOLT12 reuse, and settlement attachment. Compose UI, screenshot, instrumentation, integration, and CI parity remain open.
 
 - [x] Add `PaymentRequestBuilder` tests for NUT-10 payload and locked receive request parse.
 - [x] Add `CashuRequestStore` tests for update/regenerate, quote-intent upsert, attach by quote id, delete/reset/reload, and duplicate suppression.
@@ -972,7 +978,7 @@ Milestone update: JVM coverage now includes payment request/locked receive encod
 - [x] Add Mint Detail tests for refresh-driven connection state and full screen rendering with NUT-06 metadata. `MintDetailScreenTest` covers refresh-driven online/offline state, and `MintDetailContentComposeTest` renders a NUT-06-rich mint detail body with connection status, copied URL notice, capabilities, NUT support, payment method ranges, non-sat balances, software, terms, contacts, and active-mint state. The Compose test compiles in `:app:compileDebugAndroidTestKotlin`; managed-device execution remains part of the manual/device gate below.
 - [x] Add Settings tests for relay validation, Sentry opt-in contract, and App Lock default state. `SettingsManagerTest` covers relay normalization/rejection, `SentryServiceTest` covers opt-in start/stop behavior, and `SettingsManagerTest` covers App Lock default state.
 - [x] Add Settings/App Lock tests for availability, lifecycle, and authentication state transitions. `AppLockPolicyTest` covers session start, unavailable auth, disabling, grace-period relock, unavailable refresh, and authenticating lifecycle suppression.
-- [ ] Add Settings tests for storage-only toggle runtime behavior.
+- [x] Add Settings tests for storage-only toggle runtime behavior. `WalletForegroundMaintenanceTest` covers the visible startup sent-token toggle as real runtime behavior, verifies it only runs sent-token claim checks when both `checkPendingOnStartup` and `checkSentTokens` are enabled, verifies pending mint quote sync still runs, and verifies foreground work is skipped before wallet initialization/onboarding completes. The payment-request toggles remain hidden from UI until runtime support exists.
 - [x] Add logging tests that reject raw seed/token/private-key strings in privacy-safe messages. `AppLoggerTest` and `SentryServiceTest` cover seed phrases, Cashu tokens, nsec values, URLs, local paths, breadcrumbs, and captured errors.
 
 Compose UI and instrumentation checklist:
