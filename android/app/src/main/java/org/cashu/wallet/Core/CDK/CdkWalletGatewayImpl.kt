@@ -294,12 +294,16 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
     override suspend fun sendEcashToken(amount: Long, memo: String?, p2pkPubkey: String?, mintUrl: String, unit: String): SendTokenResult {
         if (!unit.equals("sat", ignoreCase = true)) ensureWallet(mintUrl, unit)
         val conditions = p2pkPubkey?.let { CdkSpendingConditions.P2pk(it, null) }
+        // includeFee = true — the token carries the recipient's redeem fee on top
+        // of the requested amount, so receiving it credits the full amount and
+        // the fee returned below is the sender's real cost. Mirrors the iOS
+        // TokenService.sendTokens and CDK's pay_request.
         val sendOptions = CdkSendOptions(
             memo = memo?.let { CdkSendMemo(it, true) },
             conditions = conditions,
             amountSplitTarget = CdkSplitTarget.None,
             sendKind = CdkSendKind.OnlineExact,
-            includeFee = false,
+            includeFee = true,
             useP2bk = false,
             maxProofs = null,
             metadata = emptyMap(),
@@ -333,18 +337,29 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
 
     override suspend fun calculateReceiveFee(tokenString: String): Long {
         val token = CdkToken.decode(tokenString)
-        val proofs = token.proofsSimple()
-        val first = proofs.firstOrNull() ?: return 0
         val tokenUnit = token.unit() ?: CdkCurrencyUnit.Sat
         ensureWallet(token.mintUrl().url, tokenUnit.toDomainUnit())
         val wallet = walletFor(token.mintUrl().url, tokenUnit)
+        // Resolve proofs with their FULL keyset ids: proofsSimple() can carry a
+        // short/legacy IDv2 keyset id that getKeysetFeesById below can't look
+        // up, which would fail the whole preview to 0 — the review screen then
+        // shows the token's gross value as if the redeem were free.
+        val proofs = runCatching {
+            token.proofs(wallet.getMintKeysets(org.cashudevkit.KeysetFilter.ALL))
+        }.getOrElse { token.proofsSimple() }
+        if (proofs.isEmpty()) return 0
+        // NUT-02 fee: sum each input's fee_ppk, then one ceil over the total.
+        // Don't use wallet.calculateFee here — the 0.17.x FFI helper floor-
+        // divides (ppk * count / 1000), reporting 0 where the mint charges 1.
         return runCatching {
-            wallet.calculateFee(proofs.size.toUInt(), first.keysetId).value.toLong()
-        }.getOrElse {
-            // getKeysetFeesById returns the keyset's input fee in ppk (per 1000
-            // proofs), so the total is ceil(ppk * count / 1000) per NUT-02.
-            (wallet.getKeysetFeesById(first.keysetId).toLong() * proofs.size + 999) / 1000
-        }
+            val ppkByKeyset = mutableMapOf<String, Long>()
+            val totalPpk = proofs.sumOf { proof ->
+                ppkByKeyset.getOrPut(proof.keysetId) {
+                    wallet.getKeysetFeesById(proof.keysetId).toLong()
+                }
+            }
+            (totalPpk + 999) / 1000
+        }.getOrDefault(0L)
     }
 
     override suspend fun checkTokenSpendable(token: String, mintUrl: String): Boolean {

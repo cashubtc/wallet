@@ -79,13 +79,17 @@ class TokenService: ObservableObject {
         let localP2PKSigningKeys = SettingsManager.shared.allP2PKSigningKeyHexes().map { SecretKey(hex: $0) }
 
         // Create SendOptions
-        // Note: includeFee: false matches cashu.me default behavior
+        // includeFee: true — the token carries the recipient's redeem fee on top
+        // of `amount`, so receiving it credits the full amount and the fee we
+        // return below is the sender's real cost. Matches CDK's pay_request
+        // (see estimateCashuPaymentFee). With false, sending 755 produced a
+        // 755 token that redeemed to 754 while the send screen showed "no fee".
         let sendOptions = SendOptions(
             memo: sendMemo,
             conditions: spendingConditions,
             amountSplitTarget: SplitTarget.none,
             sendKind: SendKind.onlineExact,
-            includeFee: false,
+            includeFee: true,
             useP2bk: false,
             maxProofs: nil,
             metadata: [:],
@@ -239,7 +243,6 @@ class TokenService: ObservableObject {
         // Decode the token
         let token = try Token.decode(encodedToken: tokenString)
         let mintUrl = try token.mintUrl()
-        let proofs = try token.proofsSimple()
         let tokenUnit = token.unit() ?? .sat
 
         // Ensure the mint is added with the correct unit
@@ -247,28 +250,42 @@ class TokenService: ObservableObject {
 
         // Get the wallet for this mint
         let wallet = try await repo.getWallet(mintUrl: mintUrl, unit: tokenUnit)
-        
-        guard let firstProof = proofs.first else {
+
+        // Resolve proofs with their FULL keyset ids: proofsSimple() can carry a
+        // short/legacy IDv2 keyset id that getKeysetFeesById below can't look
+        // up, which used to fail the whole preview to 0 — the confirm screen
+        // then showed the token's gross value as if the redeem were free. Same
+        // trap checkTokenSpendable documents for checkProofsSpent.
+        let proofs: [Proof]
+        do {
+            let keysets = try await wallet.getMintKeysets(filter: .all)
+            proofs = try token.proofs(mintKeysets: keysets)
+        } catch {
+            proofs = try token.proofsSimple()
+        }
+
+        guard !proofs.isEmpty else {
             return 0
         }
-        
-        // Calculate fee using the wallet's calculateFee method
+
+        // NUT-02 fee: sum each input's fee_ppk, then one ceil over the total.
+        // Don't use wallet.calculateFee here — the 0.17.x FFI helper floor-
+        // divides (ppk * count / 1000), reporting 0 where the mint charges 1.
         do {
-            let fee = try await wallet.calculateFee(
-                proofCount: UInt32(proofs.count),
-                keysetId: firstProof.keysetId
-            )
-            return fee.value
-        } catch {
-            // Fallback: calculate manually using keyset fee.
-            // getKeysetFeesById returns the keyset's input fee in ppk (per 1000
-            // proofs), so the total is ceil(ppk * count / 1000) per NUT-02.
-            do {
-                let feePpk = try await wallet.getKeysetFeesById(keysetId: firstProof.keysetId)
-                return (feePpk * UInt64(proofs.count) + 999) / 1000
-            } catch {
-                print("Failed to get keyset fee for calculation: \(error)")
+            var ppkByKeyset: [String: UInt64] = [:]
+            var totalPpk: UInt64 = 0
+            for proof in proofs {
+                if let ppk = ppkByKeyset[proof.keysetId] {
+                    totalPpk += ppk
+                } else {
+                    let ppk = try await wallet.getKeysetFeesById(keysetId: proof.keysetId)
+                    ppkByKeyset[proof.keysetId] = ppk
+                    totalPpk += ppk
+                }
             }
+            return (totalPpk + 999) / 1000
+        } catch {
+            print("Failed to get keyset fee for calculation: \(error)")
             return 0
         }
     }
