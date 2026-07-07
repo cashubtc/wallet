@@ -164,6 +164,12 @@ Focused validation used for NFC/NDEF coverage:
 JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:testDebugUnitTest --tests org.cashu.wallet.Core.Services.NDEFTextRecordCoderTest --tests org.cashu.wallet.Core.Services.NFCPaymentInputDecoderTest
 ```
 
+Focused validation used for Android release configuration coverage:
+
+```sh
+JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:testDebugUnitTest --tests org.cashu.wallet.App.AndroidReleaseConfigurationTest
+```
+
 ## Executive Summary
 
 Android is strongest in:
@@ -991,7 +997,7 @@ Milestone update: local Gradle release gates passed for the current branch with 
 - [ ] Perform manual parity walkthrough on iOS after any shared model/protocol changes.
 - [ ] Validate with at least one real mint supporting current CDK features, one BOLT11 path, one BOLT12 path, one on-chain path, one P2PK locked token, and one Cashu Request paid over Nostr.
 - [ ] Verify no PII/secrets/tokens/seeds/private keys appear in logs, screenshots, crash reports, commits, PRs, or release notes.
-- [ ] Verify Android release build preserves secure storage, backup policy, network security, app lock, and Sentry opt-in behavior.
+- [x] Verify Android release build preserves secure storage, backup policy, network security, app lock, and Sentry opt-in behavior. `AndroidReleaseConfigurationTest` asserts manifest backup/data-extraction policy, no cleartext opt-in, Sentry auto-init off, backup exclusions for secure storage and wallet DB files, App Lock `FLAG_SECURE`, and Sentry opt-in startup guard; release APK assembly passes in the Gradle gate above.
 - [x] Update README/product docs with accurate Android feature coverage. Root `README.md` now describes Android as the unreleased native parity target, and `android/README.md` documents current Android feature coverage, validation gates, and remaining release blockers.
 
 Success condition:
