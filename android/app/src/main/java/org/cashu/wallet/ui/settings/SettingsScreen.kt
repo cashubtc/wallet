@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material.icons.outlined.ArrowOutward
@@ -39,8 +40,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import org.cashu.wallet.BuildConfig
 import org.cashu.wallet.Core.AppLockManager
@@ -52,6 +57,39 @@ import org.cashu.wallet.ui.components.SectionHeader
 import org.cashu.wallet.ui.components.ToggleRow
 import org.cashu.wallet.ui.security.findFragmentActivity
 import org.cashu.wallet.ui.theme.CashuTheme
+
+private data class SettingsDisplayUiState(
+    val showFiatBalance: Boolean = false,
+    val bitcoinPriceCurrency: String = "USD",
+    val useBitcoinSymbol: Boolean = false,
+)
+
+private data class SettingsAppLockUiState(
+    val enabled: Boolean = false,
+    val available: Boolean = false,
+)
+
+private enum class SettingsRouteAction {
+    BackupRestore,
+    Lightning,
+    LockedEcash,
+    Nostr,
+    Privacy,
+}
+
+private data class SettingsRouteRowSpec(
+    val key: String,
+    val title: String,
+    val leadingIcon: ImageVector,
+    val action: SettingsRouteAction,
+)
+
+private data class SettingsExternalRowSpec(
+    val key: String,
+    val title: String,
+    val leadingIcon: ImageVector,
+    val url: String,
+)
 
 /**
  * Settings root — section order, rows, and copy mirror iOS SettingsView:
@@ -75,11 +113,100 @@ fun SettingsScreen(
     val context = LocalContext.current
     val activity = remember(context) { context.findFragmentActivity() }
     val scope = rememberCoroutineScope()
-    val settings by settingsManager.state.collectAsStateWithLifecycle()
-    val appLockState by appLockManager.state.collectAsStateWithLifecycle()
+    val displayState by remember(settingsManager) {
+        settingsManager.state
+            .map {
+                SettingsDisplayUiState(
+                    showFiatBalance = it.showFiatBalance,
+                    bitcoinPriceCurrency = it.bitcoinPriceCurrency,
+                    useBitcoinSymbol = it.useBitcoinSymbol,
+                )
+            }
+            .distinctUntilChanged()
+    }.collectAsStateWithLifecycle(SettingsDisplayUiState())
+    val appLockUiState by remember(settingsManager, appLockManager) {
+        combine(settingsManager.state, appLockManager.state) { settings, appLock ->
+            SettingsAppLockUiState(
+                enabled = settings.appLockEnabled,
+                available = appLock.isAvailable,
+            )
+        }.distinctUntilChanged()
+    }.collectAsStateWithLifecycle(SettingsAppLockUiState())
+    val backupRows = remember {
+        listOf(
+            SettingsRouteRowSpec(
+                key = "backup-restore",
+                title = "Backup & Restore",
+                leadingIcon = Icons.Outlined.VpnKey,
+                action = SettingsRouteAction.BackupRestore,
+            ),
+        )
+    }
+    val paymentRows = remember {
+        listOf(
+            SettingsRouteRowSpec(
+                key = "lightning",
+                title = "Lightning",
+                leadingIcon = Icons.Outlined.Bolt,
+                action = SettingsRouteAction.Lightning,
+            ),
+            SettingsRouteRowSpec(
+                key = "locked-ecash",
+                title = "Locked Ecash",
+                leadingIcon = Icons.Outlined.Lock,
+                action = SettingsRouteAction.LockedEcash,
+            ),
+        )
+    }
+    val integrationRows = remember {
+        listOf(
+            SettingsRouteRowSpec(
+                key = "nostr",
+                title = "Nostr",
+                leadingIcon = Icons.Outlined.AccountCircle,
+                action = SettingsRouteAction.Nostr,
+            ),
+        )
+    }
+    val privacyRows = remember {
+        listOf(
+            SettingsRouteRowSpec(
+                key = "privacy",
+                title = "Privacy",
+                leadingIcon = Icons.Outlined.VisibilityOff,
+                action = SettingsRouteAction.Privacy,
+            ),
+        )
+    }
+    val aboutRows = remember {
+        listOf(
+            SettingsExternalRowSpec(
+                key = "learn",
+                title = "Learn about Cashu",
+                leadingIcon = Icons.Outlined.Public,
+                url = "https://cashu.space",
+            ),
+            SettingsExternalRowSpec(
+                key = "specs",
+                title = "Protocol Specs (NUTs)",
+                leadingIcon = Icons.Outlined.Description,
+                url = "https://github.com/cashubtc/nuts",
+            ),
+        )
+    }
     var confirmDelete by remember { mutableStateOf(false) }
     var appLockUnavailable by remember { mutableStateOf(false) }
     var currencyPickerOpen by remember { mutableStateOf(false) }
+
+    fun openRoute(action: SettingsRouteAction) {
+        when (action) {
+            SettingsRouteAction.BackupRestore -> onOpenBackupRestore()
+            SettingsRouteAction.Lightning -> onOpenLightning()
+            SettingsRouteAction.LockedEcash -> onOpenLockedEcash()
+            SettingsRouteAction.Nostr -> onOpenNostr()
+            SettingsRouteAction.Privacy -> onOpenPrivacy()
+        }
+    }
 
     Scaffold(
         modifier = Modifier.padding(contentPadding),
@@ -105,7 +232,7 @@ fun SettingsScreen(
                 NavRow(
                     title = "Currency",
                     leadingIcon = Icons.Outlined.Payments,
-                    trailingValue = if (settings.showFiatBalance) settings.bitcoinPriceCurrency else "Off",
+                    trailingValue = if (displayState.showFiatBalance) displayState.bitcoinPriceCurrency else "Off",
                     onClick = { currencyPickerOpen = true },
                 )
             }
@@ -114,29 +241,25 @@ fun SettingsScreen(
                     title = "Use ₿ symbol",
                     subtitle = "Use ₿ symbol instead of sats.",
                     leadingIcon = Icons.Outlined.CurrencyBitcoin,
-                    checked = settings.useBitcoinSymbol,
+                    checked = displayState.useBitcoinSymbol,
                     onCheckedChange = settingsManager::setUseBitcoinSymbol,
                 )
             }
 
             item("backup-header") { SectionHeader("Backup & Security") }
-            item("backup-restore") {
-                NavRow(
-                    title = "Backup & Restore",
-                    leadingIcon = Icons.Outlined.VpnKey,
-                    onClick = onOpenBackupRestore,
-                )
+            items(backupRows, key = { it.key }) { row ->
+                RouteNavRow(row = row, onOpen = ::openRoute)
             }
             item("app-lock") {
                 ToggleRow(
                     title = "App Lock",
-                    subtitle = if (appLockState.isAvailable) {
+                    subtitle = if (appLockUiState.available) {
                         "Require biometrics or device credential to open the wallet."
                     } else {
                         "Set a screen lock on this device to enable wallet locking."
                     },
-                    leadingIcon = if (settings.appLockEnabled) Icons.Outlined.Lock else Icons.Outlined.LockOpen,
-                    checked = settings.appLockEnabled,
+                    leadingIcon = if (appLockUiState.enabled) Icons.Outlined.Lock else Icons.Outlined.LockOpen,
+                    checked = appLockUiState.enabled,
                     onCheckedChange = { requested ->
                         if (!requested) {
                             settingsManager.setAppLockEnabled(false)
@@ -156,54 +279,27 @@ fun SettingsScreen(
             }
 
             item("payments-header") { SectionHeader("Payments") }
-            item("lightning") {
-                NavRow(
-                    title = "Lightning",
-                    leadingIcon = Icons.Outlined.Bolt,
-                    onClick = onOpenLightning,
-                )
-            }
-            item("locked-ecash") {
-                NavRow(
-                    title = "Locked Ecash",
-                    leadingIcon = Icons.Outlined.Lock,
-                    onClick = onOpenLockedEcash,
-                )
+            items(paymentRows, key = { it.key }) { row ->
+                RouteNavRow(row = row, onOpen = ::openRoute)
             }
 
             item("integrations-header") { SectionHeader("Integrations") }
-            item("nostr") {
-                NavRow(
-                    title = "Nostr",
-                    leadingIcon = Icons.Outlined.AccountCircle,
-                    onClick = onOpenNostr,
-                )
+            items(integrationRows, key = { it.key }) { row ->
+                RouteNavRow(row = row, onOpen = ::openRoute)
             }
 
             item("privacy-header") { SectionHeader("Privacy") }
-            item("privacy") {
-                NavRow(
-                    title = "Privacy",
-                    leadingIcon = Icons.Outlined.VisibilityOff,
-                    onClick = onOpenPrivacy,
-                )
+            items(privacyRows, key = { it.key }) { row ->
+                RouteNavRow(row = row, onOpen = ::openRoute)
             }
 
             item("about-header") { SectionHeader("About") }
-            item("learn") {
+            items(aboutRows, key = { it.key }) { row ->
                 NavRow(
-                    title = "Learn about Cashu",
-                    leadingIcon = Icons.Outlined.Public,
+                    title = row.title,
+                    leadingIcon = row.leadingIcon,
                     trailingIcon = Icons.Outlined.ArrowOutward,
-                    onClick = { context.openExternal("https://cashu.space") },
-                )
-            }
-            item("specs") {
-                NavRow(
-                    title = "Protocol Specs (NUTs)",
-                    leadingIcon = Icons.Outlined.Description,
-                    trailingIcon = Icons.Outlined.ArrowOutward,
-                    onClick = { context.openExternal("https://github.com/cashubtc/nuts") },
+                    onClick = { context.openExternal(row.url) },
                 )
             }
 
@@ -278,6 +374,18 @@ fun SettingsScreen(
             },
         )
     }
+}
+
+@Composable
+private fun RouteNavRow(
+    row: SettingsRouteRowSpec,
+    onOpen: (SettingsRouteAction) -> Unit,
+) {
+    NavRow(
+        title = row.title,
+        leadingIcon = row.leadingIcon,
+        onClick = { onOpen(row.action) },
+    )
 }
 
 private fun Context.openExternal(url: String) {

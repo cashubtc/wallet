@@ -113,6 +113,12 @@ Focused validation used during Mint Detail and Receive Lightning watcher hardeni
 JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:compileDebugKotlin :app:testDebugUnitTest --tests org.cashu.wallet.Core.MintDetailDisplayTest --tests org.cashu.wallet.Core.MintQuotePollingPolicyTest
 ```
 
+Focused validation used during Settings selector/row-model refactoring:
+
+```sh
+JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:compileDebugKotlin
+```
+
 ## Executive Summary
 
 Android is strongest in:
@@ -758,9 +764,9 @@ The settings area is a likely source of lag because the root screen collects a b
 Checklist:
 
 - [ ] Profile Settings open/scroll/toggle paths with Macrobenchmark, JankStats, and Compose recomposition counts before changing behavior.
-- [ ] Split `SettingsScreen` state observation into stable selectors or row models so toggling Sentry/NPC/Nostr/auto-paste does not recompose unrelated sections.
+- [x] Split `SettingsScreen` state observation into stable selectors or row models so toggling Sentry/NPC/Nostr/auto-paste does not recompose unrelated sections. Settings root now collects display/app-lock selector flows and remembers static navigation row specs.
 - [x] Use lifecycle-aware state collection (`collectAsStateWithLifecycle`) across Compose screens to avoid off-screen collectors causing extra recomposition and work. The Compose UI layer now depends on `lifecycle-runtime-compose` and uses lifecycle-aware collection for wallet/settings/app services.
-- [ ] Replace settings row rebuilding with immutable/stable row definitions where possible; use `remember` for static section content, icons, and expensive labels.
+- [x] Replace settings row rebuilding with immutable/stable row definitions where possible; use `remember` for static section content, icons, and expensive labels. Static Settings route/about rows now render from remembered row specs; dynamic display/app-lock rows receive narrow state objects.
 - [x] Review the collapsing top app bar/nested scroll behavior on Settings. Settings now uses a pinned Material top app bar to remove unnecessary nested-scroll coordination.
 - [x] Optimize `CurrencyPickerSheet`: precompute currency display names/symbols/formatters, avoid rebuilding all row labels on every price tick, and use stable keys.
 - [x] Convert long or potentially long Settings sub-screen lists to `LazyColumn`, especially Nostr relays and P2PK keys, instead of composing the full list in a `verticalScroll` column. Nostr relays and P2PK keys now use lazy rendering.
