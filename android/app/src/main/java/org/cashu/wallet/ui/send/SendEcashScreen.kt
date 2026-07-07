@@ -66,16 +66,21 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.cashu.wallet.Core.AmountFormatter
+import org.cashu.wallet.Core.Protocols.CurrencyAmount
+import org.cashu.wallet.Core.Protocols.CurrencyRegistry
 import org.cashu.wallet.Core.SettingsManager
+import org.cashu.wallet.Core.UnitAmountEntry
 import org.cashu.wallet.Core.WalletManager
 import org.cashu.wallet.Models.SendTokenResult
 import org.cashu.wallet.ui.components.AmountText
 import org.cashu.wallet.ui.components.CashuTextField
+import org.cashu.wallet.ui.components.InlineNotice
 import org.cashu.wallet.ui.components.MintPickerSheet
 import org.cashu.wallet.ui.components.NumberPad
 import org.cashu.wallet.ui.components.PrimaryButton
 import org.cashu.wallet.ui.components.QrCard
 import org.cashu.wallet.ui.components.TwoFaceScreen
+import org.cashu.wallet.ui.components.UnitPickerSheet
 import org.cashu.wallet.ui.components.shareText
 import org.cashu.wallet.ui.theme.CashuTheme
 import org.cashu.wallet.ui.theme.withMonoDigits
@@ -86,7 +91,15 @@ private val CHECKING_PROGRESS_SIZE = 14.dp
 
 private sealed interface SendFace {
     data object Input : SendFace
-    data class Generated(val result: SendTokenResult, val mintUrl: String) : SendFace
+
+    // Unit and amount are captured at generation time so the token face keeps
+    // rendering correctly after the entry state resets.
+    data class Generated(
+        val result: SendTokenResult,
+        val mintUrl: String,
+        val unit: String,
+        val amount: Long,
+    ) : SendFace
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -109,14 +122,46 @@ fun SendEcashScreen(
     var errorText by remember { mutableStateOf<String?>(null) }
     var pickerOpen by remember { mutableStateOf(false) }
     var selectedMintUrl by remember { mutableStateOf<String?>(null) }
+    var unitPickerOpen by remember { mutableStateOf(false) }
+    var selectedUnit by remember { mutableStateOf<String?>(null) }
+    var nonSatBalance by remember { mutableStateOf<Long?>(null) }
     var p2pkOn by remember { mutableStateOf(false) }
     var p2pkInput by remember { mutableStateOf("") }
     var p2pkInputError by remember { mutableStateOf<String?>(null) }
 
     val activeMintUrl = selectedMintUrl ?: walletState.activeMint?.url
     val activeMint = walletState.mints.firstOrNull { it.url == activeMintUrl } ?: walletState.activeMint
-    val mintBalance = activeMint?.balance ?: 0L
-    val amountValue = amount.toLongOrNull() ?: 0L
+
+    // Effective send unit: explicit pick when the mint offers it, else the
+    // default unit that actually holds balance (a USD-only wallet opens on USD).
+    val effectiveUnit = run {
+        val units = activeMint?.units ?: listOf("sat")
+        val explicit = selectedUnit?.takeIf { units.contains(it) }
+        explicit ?: run {
+            fun holdsBalance(unit: String): Boolean = if (unit.equals("sat", ignoreCase = true)) {
+                (activeMint?.balance ?: 0L) > 0L
+            } else {
+                (walletState.balancesByUnit[unit] ?: 0L) > 0L
+            }
+            val fallback = activeMint?.defaultUnit ?: "sat"
+            if (holdsBalance(fallback)) fallback
+            else units.firstOrNull(::holdsBalance) ?: fallback
+        }
+    }
+    val currency = CurrencyRegistry.currencyForMintUnit(effectiveUnit)
+    val isSatUnit = effectiveUnit.equals("sat", ignoreCase = true)
+    val amountValue = UnitAmountEntry.baseUnits(amount, currency.decimals)
+
+    // Per-(mint, unit) spendable balance. Sat answers from cache; non-sat loads
+    // through the CDK unit wallet on demand.
+    LaunchedEffect(activeMintUrl, effectiveUnit) {
+        nonSatBalance = null
+        if (!isSatUnit && activeMintUrl != null) {
+            nonSatBalance = walletManager.unitBalance(activeMintUrl, effectiveUnit)
+        }
+    }
+    val mintBalance = if (isSatUnit) activeMint?.balance ?: 0L else nonSatBalance ?: 0L
+    val balanceLoading = !isSatUnit && nonSatBalance == null
 
     // Normalize and validate the P2PK input only when the lock is on.
     val validatedP2pkPubkey: String? = remember(p2pkOn, p2pkInput) {
@@ -177,6 +222,15 @@ fun SendEcashScreen(
                             Icon(Icons.Outlined.IosShare, contentDescription = "Share")
                         }
                     } else if (current is SendFace.Input) {
+                        if (activeMint?.supportsMultipleUnits == true) {
+                            androidx.compose.material3.TextButton(onClick = { unitPickerOpen = true }) {
+                                Text(
+                                    text = effectiveUnit.uppercase(),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                            }
+                        }
                         IconButton(onClick = { p2pkOn = !p2pkOn }) {
                             Icon(
                                 imageVector = if (p2pkOn) Icons.Filled.Lock
@@ -217,13 +271,27 @@ fun SendEcashScreen(
                     mintCount = walletState.mints.size,
                     onPickMint = { pickerOpen = true },
                     onUseMax = {
-                        if (mintBalance > 0L) amount = mintBalance.toString()
+                        if (mintBalance > 0L) {
+                            amount = UnitAmountEntry.entryString(mintBalance, currency.decimals)
+                        }
                     },
                     mintBalanceText = if (mintBalance > 0L) {
-                        formatter.formatWalletSats(mintBalance, settings.useBitcoinSymbol)
+                        if (isSatUnit) {
+                            formatter.formatWalletSats(mintBalance, settings.useBitcoinSymbol)
+                        } else {
+                            CurrencyAmount(mintBalance, currency).formatted()
+                        }
                     } else null,
                     amountValue = amountValue,
-                    balanceText = formatter.formatWalletSats(walletState.balance, settings.useBitcoinSymbol),
+                    mintBalance = mintBalance,
+                    balanceLoading = balanceLoading,
+                    balanceText = when {
+                        balanceLoading -> "…"
+                        isSatUnit -> formatter.formatWalletSats(walletState.balance, settings.useBitcoinSymbol)
+                        else -> CurrencyAmount(mintBalance, currency).formatted()
+                    },
+                    unitLabel = if (isSatUnit) "sat" else effectiveUnit.uppercase(),
+                    decimals = currency.decimals,
                     sending = sending,
                     errorText = errorText,
                     p2pkOn = p2pkOn,
@@ -257,8 +325,9 @@ fun SendEcashScreen(
                                     memo = memo.ifBlank { null },
                                     p2pkPubkey = validatedP2pkPubkey,
                                     mintUrl = mintUrl,
+                                    unit = effectiveUnit,
                                 )
-                                face = SendFace.Generated(result, mintUrl)
+                                face = SendFace.Generated(result, mintUrl, effectiveUnit, amountValue)
                                 amount = ""
                                 memo = ""
                             } catch (t: Throwable) {
@@ -274,8 +343,16 @@ fun SendEcashScreen(
                     walletManager = walletManager,
                     result = current.result,
                     mintUrl = current.mintUrl,
+                    unit = current.unit,
                     pollingEnabled = settings.checkSentTokens,
-                    amountLabel = formatter.formatWalletSats(amountValue.takeIf { it > 0 } ?: 0L, settings.useBitcoinSymbol),
+                    amountLabel = if (current.unit.equals("sat", ignoreCase = true)) {
+                        formatter.formatWalletSats(current.amount, settings.useBitcoinSymbol)
+                    } else {
+                        CurrencyAmount(
+                            current.amount,
+                            CurrencyRegistry.currencyForMintUnit(current.unit),
+                        ).formatted()
+                    },
                     onSendAnother = { face = SendFace.Input },
                 )
             }
@@ -286,8 +363,30 @@ fun SendEcashScreen(
         MintPickerSheet(
             mints = walletState.mints,
             activeMintUrl = activeMintUrl,
-            onSelect = { selectedMintUrl = it.url; pickerOpen = false },
+            onSelect = {
+                selectedMintUrl = it.url
+                selectedUnit = null
+                amount = ""
+                nonSatBalance = null
+                errorText = null
+                pickerOpen = false
+            },
             onDismiss = { pickerOpen = false },
+        )
+    }
+
+    if (unitPickerOpen) {
+        UnitPickerSheet(
+            units = activeMint?.units ?: listOf("sat"),
+            selectedUnit = effectiveUnit,
+            onSelect = {
+                selectedUnit = it
+                amount = ""
+                nonSatBalance = null
+                errorText = null
+                unitPickerOpen = false
+            },
+            onDismiss = { unitPickerOpen = false },
         )
     }
 }
@@ -304,7 +403,11 @@ private fun InputFace(
     onUseMax: () -> Unit,
     mintBalanceText: String?,
     amountValue: Long,
+    mintBalance: Long,
+    balanceLoading: Boolean,
     balanceText: String,
+    unitLabel: String,
+    decimals: Int,
     sending: Boolean,
     errorText: String?,
     p2pkOn: Boolean,
@@ -316,7 +419,7 @@ private fun InputFace(
     canSendWithP2pk: Boolean,
     onSend: () -> Unit,
 ) {
-    val canSend = amountValue > 0 && !sending && canSendWithP2pk
+    val canSend = amountValue in 1..mintBalance && !sending && !balanceLoading && canSendWithP2pk
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -347,11 +450,15 @@ private fun InputFace(
 
         Spacer(Modifier.height(CashuTheme.spacing.snug))
         AmountText(
-            text = if (amount.isEmpty()) "0" else amount,
+            text = when {
+                amount.isNotEmpty() -> amount
+                decimals > 0 -> "0." + "0".repeat(decimals)
+                else -> "0"
+            },
             style = MaterialTheme.typography.displayMedium.withMonoDigits(),
         )
         Text(
-            text = "sat",
+            text = unitLabel,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -375,16 +482,12 @@ private fun InputFace(
         }
 
         if (errorText != null) {
-            Text(
-                text = errorText,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-            )
+            InlineNotice(text = errorText)
         }
 
         Spacer(modifier = Modifier.weight(1f, fill = true))
 
-        NumberPad(amount = amount, onAmountChange = onAmountChange)
+        NumberPad(amount = amount, onAmountChange = onAmountChange, decimals = decimals)
 
         Spacer(Modifier.height(CashuTheme.spacing.micro))
         PrimaryButton(
@@ -472,6 +575,7 @@ private fun GeneratedFace(
     walletManager: org.cashu.wallet.Core.WalletManager,
     result: SendTokenResult,
     mintUrl: String,
+    unit: String,
     pollingEnabled: Boolean,
     amountLabel: String,
     onSendAnother: () -> Unit,
@@ -521,9 +625,14 @@ private fun GeneratedFace(
             color = MaterialTheme.colorScheme.onSurface,
         )
         if (result.fee > 0L) {
+            val feeLabel = if (unit.equals("sat", ignoreCase = true)) {
+                "${result.fee} sat"
+            } else {
+                CurrencyAmount(result.fee, CurrencyRegistry.currencyForMintUnit(unit)).formatted()
+            }
             Text(
-                text = "Fee ${result.fee} sat",
-                style = MaterialTheme.typography.bodySmall,
+                text = "Fee $feeLabel",
+                style = MaterialTheme.typography.bodySmall.withMonoDigits(),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -539,7 +648,7 @@ private fun GeneratedFace(
             )
         }
         PrimaryButton(
-            text = if (claimState == ClaimState.Claimed) "Send another" else "Send another",
+            text = "Send another",
             onClick = onSendAnother,
         )
         Spacer(modifier = Modifier.navigationBarsPadding())
@@ -603,9 +712,14 @@ private fun ClaimStatusRow(claimState: ClaimState) {
                 }
             }
             ClaimState.Claimed -> {
+                // Single gentle celebration beat: green lives on the glyph only,
+                // the text stays primary (One Green Rule).
                 AnimatedVisibility(
                     visible = true,
-                    enter = scaleIn(spring(dampingRatio = Spring.DampingRatioMediumBouncy)) + fadeIn(),
+                    enter = scaleIn(
+                        animationSpec = spring(dampingRatio = 0.7f, stiffness = Spring.StiffnessMediumLow),
+                        initialScale = 0.9f,
+                    ) + fadeIn(),
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -620,7 +734,7 @@ private fun ClaimStatusRow(claimState: ClaimState) {
                         Text(
                             text = "Claimed",
                             style = MaterialTheme.typography.titleMedium,
-                            color = org.cashu.wallet.ui.theme.CashuTheme.colors.received,
+                            color = MaterialTheme.colorScheme.onSurface,
                         )
                     }
                 }
