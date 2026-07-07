@@ -866,7 +866,7 @@ Milestone update: JVM coverage now includes payment request/locked receive encod
 - [ ] Add receive Lightning tests for BOLT11 expiry, reusable BOLT12 offer reuse, on-chain address reuse/new address, quote-backed request store attachment.
 - [ ] Add Mint Detail tests for NUT-06 mapping, contact URL mapping, method min/max ranges, and connection state.
 - [ ] Add Settings tests for relay validation, storage-only toggle removal/implementation, Sentry opt-in, App Lock state.
-- [ ] Add logging tests that reject raw seed/token/private-key strings in privacy-safe messages.
+- [x] Add logging tests that reject raw seed/token/private-key strings in privacy-safe messages. `AppLoggerTest` and `SentryServiceTest` cover seed phrases, Cashu tokens, nsec values, URLs, local paths, breadcrumbs, and captured errors.
 
 Compose UI and instrumentation checklist:
 
