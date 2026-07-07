@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.SignalCellularConnectedNoInternet0Bar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -20,6 +21,7 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -43,8 +45,10 @@ import org.cashu.wallet.Models.MintInfo
 import org.cashu.wallet.ui.components.CanvasDivider
 import org.cashu.wallet.ui.components.CashuSearchBar
 import org.cashu.wallet.ui.components.EmptyState
+import org.cashu.wallet.ui.components.InlineNotice
 import org.cashu.wallet.ui.components.MintAvatar
 import org.cashu.wallet.ui.components.MintMethodChips
+import org.cashu.wallet.ui.components.SectionHeader
 import org.cashu.wallet.ui.theme.CashuTheme
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -61,7 +65,9 @@ fun MintDiscoveryContent(
 
     var query by remember { mutableStateOf("") }
 
-    val configuredUrls = remember(walletState.mints) { walletState.mints.map { it.url }.toSet() }
+    val configuredUrls = remember(walletState.mints, discoveryState.sessionAddedMintUrls) {
+        walletState.mints.map { it.url }.toSet() + discoveryState.sessionAddedMintUrls
+    }
 
     val filtered by remember(discoveryState.discoveredMints, query, configuredUrls) {
         derivedStateOf {
@@ -101,6 +107,36 @@ fun MintDiscoveryContent(
             placeholder = "Search mints",
         )
 
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = CashuTheme.spacing.comfortable),
+            horizontalArrangement = Arrangement.End,
+        ) {
+            FilledTonalButton(
+                onClick = { scope.launch { mintDiscoveryManager.discoverMints() } },
+                enabled = settings.useWebsockets && !discoveryState.isDiscovering,
+                shape = MaterialTheme.shapes.extraLarge,
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Refresh,
+                    contentDescription = null,
+                    modifier = Modifier.size(CashuTheme.spacing.default),
+                )
+                Text("Refresh")
+            }
+        }
+
+        discoveryState.lastError?.let {
+            InlineNotice(
+                text = it,
+                modifier = Modifier.padding(
+                    horizontal = CashuTheme.spacing.comfortable,
+                    vertical = CashuTheme.spacing.snug,
+                ),
+            )
+        }
+
         if (!settings.useWebsockets) {
             EmptyState(
                 icon = Icons.Outlined.SignalCellularConnectedNoInternet0Bar,
@@ -129,18 +165,43 @@ fun MintDiscoveryContent(
                 )
             }
             else -> {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(filtered, key = { it.url }) { mint ->
-                        val isConfigured = mint.url in configuredUrls
-                        DiscoveryRow(
-                            mint = mint,
-                            isConfigured = isConfigured,
-                            isBusy = walletState.isLoading,
-                            onAdd = {
-                                scope.launch { runCatching { walletManager.addMint(mint.url) } }
-                            },
-                        )
-                        if (mint != filtered.last()) CanvasDivider(leadingInset = 64)
+                val added = filtered.filter { it.url in configuredUrls }
+                val discovered = filtered.filterNot { it.url in configuredUrls }
+                PullToRefreshBox(
+                    isRefreshing = discoveryState.isDiscovering,
+                    onRefresh = { scope.launch { mintDiscoveryManager.discoverMints() } },
+                    modifier = Modifier.fillMaxSize(),
+                ) {
+                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        if (added.isNotEmpty()) {
+                            item("added-header") { SectionHeader("Added") }
+                            items(added, key = { "added-${it.url}" }) { mint ->
+                                DiscoveryRow(
+                                    mint = mint,
+                                    isConfigured = true,
+                                    isBusy = walletState.isLoading,
+                                    onAdd = {},
+                                )
+                                if (mint != added.last()) CanvasDivider(leadingInset = 64)
+                            }
+                        }
+                        if (discovered.isNotEmpty()) {
+                            item("discovered-header") { SectionHeader("Discovered") }
+                        }
+                        items(discovered, key = { it.url }) { mint ->
+                            DiscoveryRow(
+                                mint = mint,
+                                isConfigured = false,
+                                isBusy = walletState.isLoading,
+                                onAdd = {
+                                    scope.launch {
+                                        runCatching { walletManager.addMint(mint.url) }
+                                            .onSuccess { mintDiscoveryManager.markMintAdded(mint.url) }
+                                    }
+                                },
+                            )
+                            if (mint != discovered.last()) CanvasDivider(leadingInset = 64)
+                        }
                     }
                 }
             }

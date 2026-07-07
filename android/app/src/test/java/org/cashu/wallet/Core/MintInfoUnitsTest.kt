@@ -1,6 +1,10 @@
 package org.cashu.wallet.Core
 
 import org.cashu.wallet.Models.MintInfo
+import org.cashu.wallet.Models.MintContactInfo
+import org.cashu.wallet.Models.MintNutSupport
+import org.cashu.wallet.Models.MintPaymentMethodSetting
+import org.cashu.wallet.Models.PaymentMethodKind
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -51,5 +55,38 @@ class MintInfoUnitsTest {
     fun multiUnitGates() {
         assertFalse(mint(units = listOf("sat")).supportsMultipleUnits)
         assertTrue(mint(units = listOf("sat", "usd")).supportsMultipleUnits)
+    }
+
+    @Test
+    fun richMintMetadataDefaultsAndStoresFullInfo() {
+        val m = MintInfo(
+            url = "https://mint.example",
+            pubkey = "a".repeat(64),
+            descriptionLong = "Long description",
+            motd = "Message",
+            tosUrl = "https://mint.example/terms",
+            softwareName = "nutshell",
+            softwareVersion = "0.17",
+            contacts = listOf(MintContactInfo(method = "email", info = "hello@example.com")),
+            nuts = MintNutSupport(nut04 = true, nut05 = true, nut10 = true, nut20 = true),
+            mintMethodSettings = listOf(
+                MintPaymentMethodSetting(
+                    method = PaymentMethodKind.Bolt11,
+                    unit = "sat",
+                    minAmount = 1,
+                    maxAmount = 21,
+                    supportsDescription = true,
+                ),
+            ),
+        )
+
+        assertEquals("a".repeat(64), m.pubkey)
+        assertEquals("Long description", m.descriptionLong)
+        assertEquals("Message", m.motd)
+        assertEquals("nutshell", m.softwareName)
+        assertTrue(m.nuts.nut10)
+        assertTrue(m.nuts.nut20)
+        assertEquals(PaymentMethodKind.Bolt11, m.mintMethodSettings.single().method)
+        assertTrue(m.mintMethodSettings.single().supportsDescription == true)
     }
 }

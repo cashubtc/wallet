@@ -184,6 +184,40 @@ class WalletManager(
         }
     }
 
+    suspend fun refreshMintInfo(mint: MintInfo): MintInfo =
+        withLoadingResult {
+            val refreshed = fetchUpdatedMintInfo(mint)
+            val current = walletStore.loadMints()
+            val updated = current.map { existing ->
+                if (existing.url == mint.url) refreshed else existing
+            }
+            walletStore.saveMints(updated)
+            update {
+                copy(
+                    mints = updated,
+                    activeMint = activeMintFrom(updated),
+                    balance = updated.sumOf { it.balance },
+                )
+            }
+            refreshed
+        }
+
+    suspend fun refreshAllMintInfo() {
+        if (walletStore.loadMints().isEmpty()) return
+        withLoading {
+            val current = walletStore.loadMints()
+            val updated = current.map { fetchUpdatedMintInfo(it) }
+            walletStore.saveMints(updated)
+            update {
+                copy(
+                    mints = updated,
+                    activeMint = activeMintFrom(updated),
+                    balance = updated.sumOf { it.balance },
+                )
+            }
+        }
+    }
+
     suspend fun createMintQuoteForMint(
         mintUrl: String,
         amount: Long?,
@@ -266,6 +300,15 @@ class WalletManager(
         }
         return runCatching {
             withContext(Dispatchers.IO) { gateway.unitBalance(mintUrl, unit) }
+        }.getOrNull()
+    }
+
+    suspend fun unitBalanceIfExists(mintUrl: String, unit: String): Long? {
+        if (unit.equals("sat", ignoreCase = true)) {
+            return mutableState.value.mints.firstOrNull { it.url == mintUrl }?.balance
+        }
+        return runCatching {
+            withContext(Dispatchers.IO) { gateway.unitBalanceIfExists(mintUrl, unit) }
         }.getOrNull()
     }
 
@@ -751,6 +794,16 @@ class WalletManager(
             )
         }
         return normalized
+    }
+
+    private suspend fun fetchUpdatedMintInfo(existing: MintInfo): MintInfo {
+        val refreshed = runCatching { gateway.fetchFullMintInfo(existing.url) }.getOrNull()
+            ?: runCatching { mintMetadataFetcher.fetchRawMintInfo(existing.url) }.getOrNull()
+            ?: return existing
+        return refreshed.copy(
+            balance = existing.balance,
+            lastUpdatedEpochMillis = System.currentTimeMillis(),
+        )
     }
 
     private suspend fun deriveNostrKey(mnemonic: String) {

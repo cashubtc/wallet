@@ -15,7 +15,10 @@ import org.cashu.wallet.Core.PaymentRequestParser
 import org.cashu.wallet.Models.MeltPaymentResult
 import org.cashu.wallet.Models.MeltQuoteInfo
 import org.cashu.wallet.Models.MeltQuoteState
+import org.cashu.wallet.Models.MintContactInfo
 import org.cashu.wallet.Models.MintInfo
+import org.cashu.wallet.Models.MintNutSupport
+import org.cashu.wallet.Models.MintPaymentMethodSetting
 import org.cashu.wallet.Models.MintQuoteInfo
 import org.cashu.wallet.Models.MintQuoteState
 import org.cashu.wallet.Models.PaymentMethodKind
@@ -97,6 +100,8 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
         val wallet = walletFor(mintUrl)
         return wallet.fetchMintInfo()?.toDomain(mintUrl)
     }
+
+    override suspend fun fetchFullMintInfo(mintUrl: String): MintInfo? = fetchMintInfo(mintUrl)
 
     override suspend fun restoreMint(mintUrl: String): RestoreMintResult {
         ensureWallet(mintUrl)
@@ -463,8 +468,50 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
         return MintInfo(
             url = mintUrl,
             name = name ?: "Unknown Mint",
+            pubkey = pubkey,
             description = description,
+            descriptionLong = descriptionLong,
             iconUrl = iconUrl,
+            urls = urls.orEmpty(),
+            motd = motd,
+            serverTimeEpochSeconds = time?.toLong(),
+            tosUrl = tosUrl,
+            softwareName = version?.name,
+            softwareVersion = version?.version,
+            contacts = contact.orEmpty().map { MintContactInfo(method = it.method, info = it.info) },
+            nuts = MintNutSupport(
+                nut04 = !nuts.nut04.disabled && nuts.nut04.methods.isNotEmpty(),
+                nut05 = !nuts.nut05.disabled && nuts.nut05.methods.isNotEmpty(),
+                nut07 = nuts.nut07Supported,
+                nut08 = nuts.nut08Supported,
+                nut09 = nuts.nut09Supported,
+                nut10 = nuts.nut10Supported,
+                nut11 = nuts.nut11Supported,
+                nut12 = nuts.nut12Supported,
+                nut14 = nuts.nut14Supported,
+                nut20 = nuts.nut20Supported,
+                nut21 = nuts.nut21 != null,
+                nut22 = nuts.nut22 != null,
+                nut29 = nuts.nut29.maxBatchSize != null || !nuts.nut29.methods.isNullOrEmpty(),
+            ),
+            mintMethodSettings = nuts.nut04.methods.map {
+                MintPaymentMethodSetting(
+                    method = it.method.toDomain(),
+                    unit = it.unit.toDomainUnit(),
+                    minAmount = it.minAmount?.value?.toLong(),
+                    maxAmount = it.maxAmount?.value?.toLong(),
+                    supportsDescription = it.description,
+                )
+            }.sortedWith(compareBy<MintPaymentMethodSetting> { it.method.sortOrder }.thenBy { it.unit }),
+            meltMethodSettings = nuts.nut05.methods.map {
+                MintPaymentMethodSetting(
+                    method = it.method.toDomain(),
+                    unit = it.unit.toDomainUnit(),
+                    minAmount = it.minAmount?.value?.toLong(),
+                    maxAmount = it.maxAmount?.value?.toLong(),
+                    supportsAmountless = it.amountless,
+                )
+            }.sortedWith(compareBy<MintPaymentMethodSetting> { it.method.sortOrder }.thenBy { it.unit }),
             units = units,
             mintUnits = mintUnits,
             supportedMintMethods = mintMethods,

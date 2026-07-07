@@ -93,6 +93,13 @@ JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:compileDebugKotlin
 JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:testDebugUnitTest --tests org.cashu.wallet.Core.PaymentRequestBuilderTest --tests org.cashu.wallet.Core.SettingsManagerTest --tests org.cashu.wallet.ui.send.SendEcashP2PKTest
 ```
 
+Focused validation used during Milestone 8:
+
+```sh
+JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:compileDebugKotlin
+JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:testDebugUnitTest --tests org.cashu.wallet.Core.MintInfoUnitsTest --tests org.cashu.wallet.Core.MintDiscoveryManagerTest --tests org.cashu.wallet.Core.CurrencyProtocolTest
+```
+
 ## Executive Summary
 
 Android is strongest in:
@@ -511,19 +518,19 @@ Android gaps:
 
 Checklist:
 
-- [ ] Add Android `fetchFullMintInfo` via CDK gateway.
-- [ ] Add `refreshMintInfo` on Mints tab open, with safe placeholder handling.
-- [ ] Render connection state: checking, online, offline.
-- [ ] Render About, long description/read more, MOTD.
-- [ ] Render capabilities summary: Lightning, on-chain, locked ecash, HTLC where supported.
-- [ ] Render NUT technical details for NUT-04/05/07/08/09/10/11/12/14/20 where CDK exposes them.
-- [ ] Render Receive/Send payment methods with min/max amounts and on-chain confirmation details.
-- [ ] Render contact rows as Android intents where possible: email, website, X/Twitter, Telegram, Nostr, generic copy.
-- [ ] Render software version and ToS link.
-- [ ] Add top-bar share action for mint URL.
-- [ ] Add copy feedback for full URL.
-- [ ] Keep multi-unit balances and ensure non-sat unit wallets are queried without unintentionally creating new wallets.
-- [ ] Improve discovery: search, added/discovered sections, pull/explicit refresh, error state, session-added state, and WebSockets-disabled state.
+- [x] Add Android `fetchFullMintInfo` via CDK gateway.
+- [x] Add `refreshMintInfo` on Mints tab open, with safe placeholder handling.
+- [x] Render connection state: checking, online, offline.
+- [x] Render About, long description/read more, MOTD.
+- [x] Render capabilities summary: Lightning, on-chain, locked ecash, HTLC where supported.
+- [x] Render NUT technical details for NUT-04/05/07/08/09/10/11/12/14/20 where CDK exposes them.
+- [x] Render Receive/Send payment methods with min/max amounts and on-chain confirmation details.
+- [x] Render contact rows as Android intents where possible: email, website, X/Twitter, Telegram, Nostr, generic copy.
+- [x] Render software version and ToS link.
+- [x] Add top-bar share action for mint URL.
+- [x] Add copy feedback for full URL.
+- [x] Keep multi-unit balances and ensure non-sat unit wallets are queried without unintentionally creating new wallets.
+- [x] Improve discovery: search, added/discovered sections, pull/explicit refresh, error state, session-added state, and WebSockets-disabled state.
 
 Success condition:
 

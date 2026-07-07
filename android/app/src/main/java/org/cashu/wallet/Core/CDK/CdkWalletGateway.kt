@@ -21,6 +21,7 @@ interface CdkWalletGateway {
     suspend fun ensureWallet(mintUrl: String, unit: String = "sat")
     suspend fun removeWallet(mintUrl: String, unit: String = "sat")
     suspend fun fetchMintInfo(mintUrl: String): MintInfo?
+    suspend fun fetchFullMintInfo(mintUrl: String): MintInfo?
     suspend fun restoreMint(mintUrl: String): RestoreMintResult
     suspend fun totalBalance(mintUrl: String): Long
 

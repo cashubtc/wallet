@@ -25,7 +25,7 @@ Status date: 2026-07-07
 | 5 | Receive Ecash and Cashu Request Parity | Complete | Milestone 5 commit on `codex/android-update-plan-implementation` | Shared receive status, stable pending ids, unknown/locked token review, editable NUT-18 requests, quote-backed receive intents, focused tests. |
 | 6 | Receive Lightning, BOLT12, and On-chain | Complete | Milestone 6 commit on `codex/android-update-plan-implementation` | Material method picker, BOLT11 expiry, reusable BOLT12 reuse/editing, on-chain reuse/new address/explorer, shared status, focused tests. |
 | 7 | Locked Ecash and P2PK | Complete | Milestone 7 commit on `codex/android-update-plan-implementation` | Seed-derived primary key, NUT-10/NUT-18 requests, locked receive, authenticated key reveal, focused tests. |
-| 8 | Mints and Mint Metadata | Not started | TBD | Full NUT-06 mint detail, discovery polish, refresh behavior, nickname handling, tests. |
+| 8 | Mints and Mint Metadata | Complete | Milestone 8 commit on `codex/android-update-plan-implementation` | Full NUT-06 mint detail, discovery polish, refresh behavior, rich metadata model, focused tests. |
 | 9 | History and Transaction Detail | Not started | TBD | Stale sync, swipe/delete, row/detail parity, large-ledger behavior, tests. |
 | 10 | Settings, Integrations, and Privacy | Not started | TBD | App Lock/cloud backup settings, accurate privacy toggles, Nostr/P2PK/Lightning parity, tests. |
 | 11 | Protocol, CDK, Storage, and Runtime Hardening | Not started | TBD | Latest CDK feature parity, sagas, keysets, multi-unit, privacy-safe errors/logging, tests. |
@@ -115,3 +115,13 @@ Status date: 2026-07-07
 - P2PK settings: Locked Ecash settings now use lazy Material sections for Your key, Quick lock, Advanced keys, detail QR/copy, private reveal/copy behind authentication, rename/remove, import, and explainer copy.
 - Send quick fills: Send Ecash can quick-fill "your key" when enabled and can quick-fill a copied public key from the clipboard.
 - Tests: focused Gradle coverage includes locked receive NUT-10 bytes/summary parsing, P2PK normalization, and send-side P2PK scan normalization.
+
+## Current Milestone 8 Evidence
+
+- Mint metadata model: Android `MintInfo` now stores NUT-06 pubkey, version, long description, contacts, endpoint URLs, MOTD, ToS, NUT support flags, and mint/melt method range settings.
+- Metadata fetching: CDK `fetchFullMintInfo` and raw `/v1/info` fallback populate the richer model; `WalletManager.refreshMintInfo` and `refreshAllMintInfo` refresh safely while preserving local balances.
+- Mints tab: opening the tab refreshes mint info and exposes a top-bar refresh action.
+- Mint detail: renders checking/online/offline state, About/read-more/MOTD, capabilities, NUT support, method min/max rows, contacts as Android intents or copy fallback, software/ToS, top share, and URL copy feedback.
+- Multi-unit safety: Mint Detail reads non-sat unit balances with `unitBalanceIfExists` so detail inspection does not create/register unit wallets.
+- Discovery: search, Added/Discovered sections, pull and explicit refresh, error notice, session-added state, and WebSockets-disabled empty state are all present.
+- Tests: focused Gradle coverage includes rich mint model defaults, discovery parsing/state tests, and currency formatting/registry coverage.

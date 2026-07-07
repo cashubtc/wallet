@@ -23,6 +23,7 @@ import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.QrCodeScanner
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
@@ -111,6 +112,12 @@ fun MintsScreen(
         }
     }
 
+    LaunchedEffect(walletState.mints.map { it.url }) {
+        if (walletState.mints.isNotEmpty() && !walletState.isLoading) {
+            scope.launch { walletManager.refreshAllMintInfo() }
+        }
+    }
+
     fun pasteFromClipboard() {
         val candidate = clipboard.getText()?.text?.let { mintUrlCandidates(it).firstOrNull() }
         if (candidate == null) {
@@ -148,6 +155,14 @@ fun MintsScreen(
         topBar = {
             CenterAlignedTopAppBar(
                 title = { Text("Mints") },
+                actions = {
+                    IconButton(
+                        onClick = { scope.launch { walletManager.refreshAllMintInfo() } },
+                        enabled = !walletState.isLoading,
+                    ) {
+                        Icon(Icons.Outlined.Refresh, contentDescription = "Refresh mints")
+                    }
+                },
                 scrollBehavior = scrollBehavior,
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background,

@@ -30,6 +30,8 @@ import org.cashu.wallet.Models.MintInfo
 data class MintDiscoveryState(
     val discoveredMints: List<MintInfo> = emptyList(),
     val isDiscovering: Boolean = false,
+    val lastError: String? = null,
+    val sessionAddedMintUrls: Set<String> = emptySet(),
 )
 
 class MintDiscoveryManager(
@@ -48,13 +50,16 @@ class MintDiscoveryManager(
         if (!settingsManager.state.value.useWebsockets) return emptyList()
 
         closeAllConnections()
-        mutableState.value = MintDiscoveryState(isDiscovering = true)
+        mutableState.value = mutableState.value.copy(isDiscovering = true, lastError = null)
         return try {
             withContext(Dispatchers.IO) {
                 configuredRelays()
                     .map { relay -> async { connectAndQuery(relay) } }
                     .awaitAll()
             }
+            mutableState.value.discoveredMints
+        } catch (t: Throwable) {
+            mutableState.update { it.copy(lastError = t.message ?: "Discovery failed.") }
             mutableState.value.discoveredMints
         } finally {
             closeAllConnections()
@@ -65,6 +70,10 @@ class MintDiscoveryManager(
     fun clearDiscoveredMints() {
         closeAllConnections()
         mutableState.value = MintDiscoveryState()
+    }
+
+    fun markMintAdded(url: String) {
+        mutableState.update { it.copy(sessionAddedMintUrls = it.sessionAddedMintUrls + url) }
     }
 
     private suspend fun connectAndQuery(relay: String) {
