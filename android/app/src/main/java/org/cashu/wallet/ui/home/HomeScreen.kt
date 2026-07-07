@@ -1,8 +1,5 @@
 package org.cashu.wallet.ui.home
 
-import android.content.Context
-import android.content.pm.PackageManager
-import android.nfc.NfcAdapter
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -95,9 +92,8 @@ fun HomeScreen(
     onOpenTransaction: (WalletTransaction) -> Unit,
     onOpenCashuRequest: (CashuRequest) -> Unit,
     onReceive: (ReceiveAction) -> Unit,
-    onSend: (SendAction) -> Unit,
+    onSend: () -> Unit,
     onScan: () -> Unit,
-    onContactless: () -> Unit,
     contentPadding: PaddingValues,
 ) {
     val walletState by walletManager.state.collectAsState()
@@ -106,11 +102,7 @@ fun HomeScreen(
     val requestState by cashuRequestStore.state.collectAsState()
     val formatter = remember { AmountFormatter() }
 
-    val context = LocalContext.current
-    val hasNfc = remember(context) { context.hasNfcFeature() }
-
     var receiveChooserOpen by remember { mutableStateOf(false) }
-    var sendChooserOpen by remember { mutableStateOf(false) }
 
     val balanceDisplay = remember(walletState.balance, settings, priceState) {
         formatter.displayText(
@@ -273,7 +265,8 @@ fun HomeScreen(
             triptych = {
                 ActionDuet(
                     onReceive = { receiveChooserOpen = true },
-                    onSend = { sendChooserOpen = true },
+                    // Send opens the unified surface directly — no chooser.
+                    onSend = onSend,
                     receiveEnabled = walletState.activeMint != null,
                     sendEnabled = walletState.hasAnyBalance,
                 )
@@ -289,19 +282,6 @@ fun HomeScreen(
                 onReceive(action)
             },
             onDismiss = { receiveChooserOpen = false },
-        )
-    }
-    if (sendChooserOpen) {
-        SendChooserSheet(
-            showContactless = hasNfc,
-            onSelect = { action ->
-                sendChooserOpen = false
-                when (action) {
-                    SendAction.Ecash, SendAction.Bitcoin -> onSend(action)
-                    SendAction.Contactless -> onContactless()
-                }
-            },
-            onDismiss = { sendChooserOpen = false },
         )
     }
 }
@@ -457,11 +437,6 @@ private fun ActionDuet(
             Text("Send", style = MaterialTheme.typography.labelLarge)
         }
     }
-}
-
-private fun Context.hasNfcFeature(): Boolean {
-    if (!packageManager.hasSystemFeature(PackageManager.FEATURE_NFC)) return false
-    return NfcAdapter.getDefaultAdapter(this) != null
 }
 
 /** Unified Home/History timeline item. Mirrors iOS HistoryItem enum. */

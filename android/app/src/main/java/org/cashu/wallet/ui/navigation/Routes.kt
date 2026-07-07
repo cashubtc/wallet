@@ -16,8 +16,8 @@ object Routes {
     // Pushed destinations (PR 1 stubs; expanded as later PRs land)
     const val SCANNER = "scanner"
     const val CONTACTLESS = "contactless"
+    const val SEND = "send"
     const val SEND_ECASH = "send/ecash"
-    const val SEND_LIGHTNING = "send/lightning"
     const val RECEIVE_ECASH = "receive/ecash"
     const val RECEIVE_LIGHTNING = "receive/lightning"
 

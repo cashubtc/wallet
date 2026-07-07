@@ -18,14 +18,13 @@ import org.cashu.wallet.ui.history.HistoryScreen
 import org.cashu.wallet.ui.history.TransactionDetailScreen
 import org.cashu.wallet.ui.home.HomeScreen
 import org.cashu.wallet.ui.home.ReceiveAction
-import org.cashu.wallet.ui.home.SendAction
 import org.cashu.wallet.ui.mints.MintDetailScreen
 import org.cashu.wallet.ui.mints.MintsScreen
 import org.cashu.wallet.ui.receive.CashuRequestDetailScreen
 import org.cashu.wallet.ui.receive.ReceiveEcashScreen
 import org.cashu.wallet.ui.receive.ReceiveLightningScreen
 import org.cashu.wallet.ui.send.SendEcashScreen
-import org.cashu.wallet.ui.send.SendLightningScreen
+import org.cashu.wallet.ui.send.UnifiedSendScreen
 import org.cashu.wallet.ui.settings.AppearanceScreen
 import org.cashu.wallet.ui.settings.BackupScreen
 import org.cashu.wallet.ui.settings.LightningScreen
@@ -48,6 +47,7 @@ fun CashuNavHost(
     contentPadding: PaddingValues,
     onScan: () -> Unit,
     onContactless: () -> Unit,
+    onOpenReceiveToken: (String) -> Unit,
     pendingReceiveScan: String?,
     onPendingReceiveScanConsumed: () -> Unit,
     pendingSendScan: String?,
@@ -95,11 +95,18 @@ fun CashuNavHost(
                 onClose = { navController.popBackStack() },
             )
         }
-        composable(Routes.SEND_LIGHTNING) {
-            SendLightningScreen(
+        // The Send surface (iOS UnifiedSendView): destination field + ways-to-send.
+        composable(Routes.SEND) {
+            UnifiedSendScreen(
                 walletManager = container.walletManager,
                 settingsManager = container.settingsManager,
                 onClose = { navController.popBackStack() },
+                onScan = onScan,
+                onContactless = onContactless,
+                onSendEcash = { navController.navigate(Routes.SEND_ECASH) },
+                onOpenReceiveToken = onOpenReceiveToken,
+                onOpenMints = { navController.navigateToTab(TopTab.Mints) },
+                onReceive = { navController.navigate(Routes.RECEIVE_ECASH) },
                 prefilledPayload = pendingSendScan,
                 onPrefilledConsumed = onPendingSendScanConsumed,
             )
@@ -233,16 +240,9 @@ private fun NavGraphBuilder.tabDestinations(
                 }
                 navController.navigate(route)
             },
-            onSend = { action ->
-                val route = when (action) {
-                    SendAction.Ecash -> Routes.SEND_ECASH
-                    SendAction.Bitcoin -> Routes.SEND_LIGHTNING
-                    SendAction.Contactless -> Routes.SEND_ECASH
-                }
-                navController.navigate(route)
-            },
+            // Send goes straight to the unified surface — no chooser (iOS parity).
+            onSend = { navController.navigate(Routes.SEND) },
             onScan = onScan,
-            onContactless = onContactless,
             contentPadding = contentPadding,
         )
     }
