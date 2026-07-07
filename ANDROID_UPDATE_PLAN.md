@@ -125,6 +125,12 @@ Focused validation used during bottom-sheet and segmented-label polish:
 JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:compileDebugKotlin
 ```
 
+Focused validation used during reusable receive-quote selection tests:
+
+```sh
+JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:compileDebugKotlin :app:testDebugUnitTest --tests org.cashu.wallet.Core.MintQuoteReuseTest
+```
+
 ## Executive Summary
 
 Android is strongest in:
@@ -889,7 +895,8 @@ Milestone update: JVM coverage now includes payment request/locked receive encod
 - [x] Add send destination inference tests for BIP-321 Cashu Request plus Lightning fallback precedence, on-chain, Lightning address, and ecash token handoff.
 - [ ] Add send destination inference tests for real amountless BOLT11/BOLT12 fixtures.
 - [ ] Add receive token tests for unknown mint, locked known primary P2PK key, locked unknown key, non-sat unit, receive later, and home event payload.
-- [ ] Add receive Lightning tests for BOLT11 expiry, reusable BOLT12 offer reuse, on-chain address reuse/new address, quote-backed request store attachment.
+- [x] Add receive Lightning JVM tests for expiry formatting and reusable quote selection. `QuoteExpiryFormatterTest` covers expiry text; `MintQuoteReuseTest` covers amountless BOLT12 offer reuse and on-chain quote reuse filtering.
+- [ ] Add receive Lightning tests for quote-backed request store attachment, force-new on-chain address flow, and screen/integration behavior.
 - [x] Add Mint Detail tests for NUT-06-derived display mapping, contact URL mapping, and method min/max ranges. `MintDetailDisplayTest` covers capability summary, contacts, HTTPS fallback, and method range/feature labels.
 - [ ] Add Mint Detail tests for refresh-driven connection state and full screen rendering with NUT-06 metadata.
 - [x] Add Settings tests for relay validation, Sentry opt-in contract, and App Lock default state. `SettingsManagerTest` covers relay normalization/rejection, `SentryServiceTest` covers opt-in start/stop behavior, and `SettingsManagerTest` covers App Lock default state.

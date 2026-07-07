@@ -336,13 +336,15 @@ class WalletManager(
     fun subscribeToMintQuote(quoteId: String): Flow<MintQuoteInfo> = gateway.subscribeToMintQuote(quoteId)
 
     suspend fun existingAmountlessOffer(): MintQuoteInfo? =
-        existingActiveMintQuote(PaymentMethodKind.Bolt12) { quote ->
-            quote.amount == null && quote.amountPaid == 0L && quote.amountIssued == 0L
+        withLoadingResult {
+            val active = mutableState.value.activeMint ?: return@withLoadingResult null
+            selectReusableAmountlessOffer(gateway.listUnissuedMintQuotes(), active.url)
         }
 
     suspend fun existingOnchainMintQuote(): MintQuoteInfo? =
-        existingActiveMintQuote(PaymentMethodKind.Onchain) { quote ->
-            quote.state != org.cashu.wallet.Models.MintQuoteState.Issued
+        withLoadingResult {
+            val active = mutableState.value.activeMint ?: return@withLoadingResult null
+            selectReusableOnchainMintQuote(gateway.listUnissuedMintQuotes(), active.url)
         }
 
     override suspend fun mintTokens(quoteId: String): Long =
@@ -359,17 +361,6 @@ class WalletManager(
                     source = receiveSourceFor(quote?.paymentMethod),
                 )
             }
-        }
-
-    private suspend fun existingActiveMintQuote(
-        method: PaymentMethodKind,
-        predicate: (MintQuoteInfo) -> Boolean,
-    ): MintQuoteInfo? =
-        withLoadingResult {
-            val active = mutableState.value.activeMint ?: return@withLoadingResult null
-            gateway.listUnissuedMintQuotes()
-                .filter { it.paymentMethod == method && it.mintUrl == active.url }
-                .firstOrNull(predicate)
         }
 
     suspend fun refreshPendingMintQuote(quoteId: String): Boolean =
