@@ -84,9 +84,13 @@ struct ErrorBannerView: View {
 
             if let onDismiss {
                 Button(action: onDismiss) {
+                    // Compact banner: 32pt target (not the full 44) so a short
+                    // single-line banner doesn't visibly inflate.
                     Image(systemName: "xmark")
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(.secondary)
+                        .frame(width: 32, height: 32)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Dismiss")

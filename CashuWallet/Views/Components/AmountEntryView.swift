@@ -67,12 +67,10 @@ struct AmountEntryView: View {
     private var headerSection: some View {
         HStack {
             // Close button (floating left)
-            Button(action: { dismiss() }) {
-                Image(systemName: "xmark")
-                    .font(.title3)
-                    .foregroundStyle(.secondary)
-            }
-            
+            SheetCloseButton()
+                .font(.title3)
+                .foregroundStyle(.secondary)
+
             Spacer()
             
             // Title
@@ -218,9 +216,7 @@ struct MintPickerView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button(action: { dismiss() }) {
-                        Image(systemName: "xmark")
-                    }
+                    SheetCloseButton()
                 }
             }
         }
@@ -326,24 +322,23 @@ struct TokenDisplayView: View {
         VStack(spacing: 24) {
                 // Header
                 HStack {
-                    Button(action: { onDismiss?() }) {
-                        Image(systemName: "xmark")
-                            .font(.title3)
-                            .foregroundStyle(.secondary)
-                    }
-                    
+                    SheetCloseButton { onDismiss?() }
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+
                     Spacer()
-                    
+
                     Text("Ecash Token")
                         .font(.headline)
-                    
+
                     Spacer()
-                    
+
                     // Share button
                     ShareLink(item: token) {
                         Image(systemName: "square.and.arrow.up")
                             .font(.title3)
-        .foregroundStyle(Color.accentColor)
+                            .foregroundStyle(Color.accentColor)
+                            .toolbarIconTapTarget()
                     }
                 }
                 .padding(.horizontal, 20)

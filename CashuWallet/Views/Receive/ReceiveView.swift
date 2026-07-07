@@ -275,10 +275,7 @@ struct ReceiveEcashView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(action: { dismiss() }) {
-                        Image(systemName: "xmark")
-                    }
-                    .accessibilityLabel("Close")
+                    SheetCloseButton()
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -287,6 +284,7 @@ struct ReceiveEcashView: View {
                     } label: {
                         Image(systemName: "viewfinder")
                             .font(.body.weight(.semibold))
+                            .toolbarIconTapTarget()
                     }
                     .accessibilityLabel("Scan QR Code")
                     .accessibilityHint("Opens the camera to scan an ecash token")

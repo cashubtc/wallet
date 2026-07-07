@@ -73,10 +73,7 @@ struct ReceiveLightningView: View {
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(action: { dismiss() }) {
-                        Image(systemName: "xmark")
-                    }
-                    .accessibilityLabel("Close")
+                    SheetCloseButton()
                 }
 
                 ToolbarItem(placement: .principal) {
@@ -88,6 +85,7 @@ struct ReceiveLightningView: View {
                     ToolbarItem(placement: .topBarTrailing) {
                         ShareLink(item: quote.request) {
                             Image(systemName: "square.and.arrow.up")
+                                .toolbarIconTapTarget()
                         }
                         .accessibilityLabel("Share request")
                     }
@@ -103,6 +101,7 @@ struct ReceiveLightningView: View {
                         } label: {
                             Image(systemName: selectedOption.navSymbol)
                                 .contentTransition(.symbolEffect(.replace))
+                                .toolbarIconTapTarget()
                         }
                         // Both reusable options share title + glyph, so the
                         // descriptor is what tells "fixed" from "any amount".

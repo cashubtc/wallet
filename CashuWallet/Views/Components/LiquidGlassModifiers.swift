@@ -57,6 +57,40 @@ extension View {
 
 }
 
+// MARK: - Sheet Close Button
+
+/// Close ("xmark") button for sheet / full-screen-cover chrome with a full
+/// 44×44pt tap target. A Button whose label is a bare SF Symbol is only
+/// hit-testable on the glyph itself (~17pt), which made the sheet close
+/// buttons feel broken — near-misses did nothing. Font and color propagate
+/// from the call site (`.font`, `.foregroundStyle`), so styled headers can
+/// use it too. Defaults to dismissing the enclosing presentation.
+struct SheetCloseButton: View {
+    @Environment(\.dismiss) private var dismiss
+    var action: (() -> Void)? = nil
+
+    var body: some View {
+        Button {
+            if let action { action() } else { dismiss() }
+        } label: {
+            Image(systemName: "xmark")
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel("Close")
+    }
+}
+
+extension View {
+    /// Expands an icon-only toolbar button's label to the HIG-minimum 44×44pt
+    /// tap target. Apply inside the label, on the `Image`.
+    func toolbarIconTapTarget() -> some View {
+        self
+            .frame(width: 44, height: 44)
+            .contentShape(Rectangle())
+    }
+}
+
 // MARK: - Screen Entry Fade
 
 /// A subtle opacity-only entrance for a screen's content. Because it carries its

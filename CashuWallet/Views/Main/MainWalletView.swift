@@ -85,6 +85,7 @@ struct MainWalletView: View {
                     } label: {
                         Image(systemName: "viewfinder")
                             .font(.body.weight(.semibold))
+                            .toolbarIconTapTarget()
                     }
                     .accessibilityLabel("Scan QR Code")
                     .accessibilityHint("Opens the QR scanner")
@@ -966,11 +967,8 @@ private struct WalletActionSheetView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(action: onClose) {
-                        Image(systemName: "xmark")
-                    }
-                    .accessibilityLabel("Close")
-                    .accessibilityIdentifier("wallet-chooser-close")
+                    SheetCloseButton(action: onClose)
+                        .accessibilityIdentifier("wallet-chooser-close")
                 }
             }
         }

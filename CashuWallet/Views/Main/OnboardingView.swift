@@ -1292,6 +1292,8 @@ struct OnboardingView: View {
             Button(action: { mintsToRestore.removeAll { $0 == url } }) {
                 Image(systemName: "xmark.circle")
                     .foregroundStyle(.secondary)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
             .accessibilityLabel("Remove mint")
             .accessibilityHint("Removes this mint before restoring")

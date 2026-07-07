@@ -81,14 +81,12 @@ struct ReceiveTokenDetailView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(action: {
+                    SheetCloseButton {
                         switch phase {
                         case .none:              dismiss()
                         case .success, .failure: finish()
                         default:                 break   // .processing — button stays disabled
                         }
-                    }) {
-                        Image(systemName: "xmark")
                     }
                     .disabled(phase == .processing)
                 }

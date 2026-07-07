@@ -78,10 +78,7 @@ struct SendView: View {
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(action: { dismiss() }) {
-                        Image(systemName: "xmark")
-                    }
-                    .accessibilityLabel("Close")
+                    SheetCloseButton()
                 }
 
                 ToolbarItem(placement: .principal) {
@@ -96,6 +93,7 @@ struct SendView: View {
                             showLockScanner = true
                         } label: {
                             Image(systemName: "lock")
+                                .toolbarIconTapTarget()
                         }
                         .accessibilityLabel("Lock ecash")
                         .accessibilityHint("Lock this ecash to a public key")
@@ -122,6 +120,7 @@ struct SendView: View {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button(action: { showShareSheet = true }) {
                             Image(systemName: "square.and.arrow.up")
+                                .toolbarIconTapTarget()
                         }
                         .accessibilityLabel("Share token")
                     }
@@ -1193,10 +1192,7 @@ struct UnifiedSendView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(action: onClose) {
-                        Image(systemName: "xmark")
-                    }
-                    .accessibilityLabel("Close")
+                    SheetCloseButton(action: onClose)
                 }
             }
             .sheet(isPresented: $showingScanner) {
@@ -1356,9 +1352,14 @@ struct UnifiedSendView: View {
                     HapticFeedback.selection()
                     destination = ""
                 } label: {
+                    // Padding expands the hit area; the negative outer padding
+                    // cancels the layout growth so the field row keeps its height.
                     Image(systemName: "xmark.circle.fill")
                         .font(.title3)
                         .foregroundStyle(.secondary)
+                        .padding(10)
+                        .contentShape(Rectangle())
+                        .padding(-10)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Clear")
@@ -2762,10 +2763,7 @@ struct MeltView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     // No dismissing mid-authorization (payment is in flight).
                     if paymentPhase != .processing {
-                        Button(action: close) {
-                            Image(systemName: "xmark")
-                        }
-                        .accessibilityLabel("Close")
+                        SheetCloseButton(action: close)
                     }
                 }
 
@@ -3657,10 +3655,7 @@ struct MintSelectorSheet: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button(action: { dismiss() }) {
-                    Image(systemName: "xmark")
-                }
-                .accessibilityLabel("Close")
+                SheetCloseButton()
             }
         }
     }
@@ -3887,10 +3882,7 @@ struct AddMintToPaySheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(action: { dismiss() }) {
-                        Image(systemName: "xmark")
-                    }
-                    .accessibilityLabel("Close")
+                    SheetCloseButton()
                 }
             }
         }
@@ -3999,10 +3991,7 @@ struct MethodPickerSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(action: { dismiss() }) {
-                        Image(systemName: "xmark")
-                    }
-                    .accessibilityLabel("Close")
+                    SheetCloseButton()
                 }
             }
         }
