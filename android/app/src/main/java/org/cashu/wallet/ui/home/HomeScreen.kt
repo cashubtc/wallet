@@ -38,6 +38,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -49,6 +50,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -149,7 +151,10 @@ fun HomeScreen(
     }
 
     val density = LocalDensity.current
-    val pinnedTopPx = with(density) { PINNED_TOP_HEIGHT.toPx() }
+    var measuredPinnedTopPx by remember { mutableIntStateOf(0) }
+    val pinnedTopPx = measuredPinnedTopPx.takeIf { it > 0 }?.toFloat()
+        ?: with(density) { PINNED_TOP_FALLBACK_HEIGHT.toPx() }
+    val pinnedTopHeight = with(density) { pinnedTopPx.toDp() }
     val fadeBandPx = with(density) { FADE_BAND_HEIGHT.toPx() }
 
     Box(modifier = Modifier.fillMaxSize().padding(contentPadding)) {
@@ -176,7 +181,7 @@ fun HomeScreen(
                     }
                 },
             contentPadding = PaddingValues(
-                top = PINNED_TOP_HEIGHT,
+                top = pinnedTopHeight,
                 bottom = CashuTheme.spacing.section,
             ),
         ) {
@@ -323,6 +328,7 @@ fun HomeScreen(
                 )
             },
             onScan = onScan,
+            modifier = Modifier.onSizeChanged { measuredPinnedTopPx = it.height },
         )
     }
 
@@ -337,9 +343,8 @@ fun HomeScreen(
     }
 }
 
-// PINNED_TOP_HEIGHT must match the LazyColumn's top contentPadding so the fade
-// mask aligns with the bottom edge of the pinned region.
-private val PINNED_TOP_HEIGHT = 280.dp
+// First-frame fallback before the pinned header reports its measured height.
+private val PINNED_TOP_FALLBACK_HEIGHT = 280.dp
 private val FADE_BAND_HEIGHT = 32.dp
 private val VIEW_ALL_CHEVRON_SIZE = 16.dp
 private val ACTION_BUTTON_MIN_HEIGHT = 56.dp
@@ -350,9 +355,10 @@ private fun PinnedTop(
     balance: @Composable () -> Unit,
     triptych: @Composable () -> Unit,
     onScan: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             // Solid background; the fade effect lives on the LazyColumn mask below
             // (rows fade as they scroll up past the pinned region).

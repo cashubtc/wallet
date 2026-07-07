@@ -718,7 +718,7 @@ Milestone update: the immediate clipping fixes are in for Contactless Pay, Light
 
 Checklist:
 
-- [ ] Replace `HomeScreen`'s hard-coded pinned top height and fade assumptions with measured layout height so the transaction list cannot hide under or detach from the pinned balance area at large text sizes or with extra unit/status rows.
+- [x] Replace `HomeScreen`'s hard-coded pinned top height and fade assumptions with measured layout height so the transaction list cannot hide under or detach from the pinned balance area at large text sizes or with extra unit/status rows.
 - [ ] Add responsive constraints to `BalanceDisplay` and Home unit pager so large amounts, long unit codes, and received-delta labels do not overlap or resize the pinned header unpredictably.
 - [x] Make `LightningScreen` scrollable and navigation-bar aware; the quote check action and lower sections can be clipped on short screens today.
 - [x] Make `P2PKScreen` use a lazy or scrollable layout with bottom insets so long key lists and action buttons remain reachable.
