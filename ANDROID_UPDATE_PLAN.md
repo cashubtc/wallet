@@ -146,6 +146,12 @@ Focused validation used while adding receive-token review coverage:
 JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:compileDebugKotlin :app:testDebugUnitTest --tests org.cashu.wallet.ui.receive.ReceiveEcashReviewTest --tests org.cashu.wallet.Core.PendingReceiveTokenIdsTest --tests org.cashu.wallet.Core.WalletReceiveEventTest
 ```
 
+Focused validation used while extracting send destination inference:
+
+```sh
+JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:compileDebugKotlin :app:testDebugUnitTest --tests org.cashu.wallet.ui.send.SendDestinationResolverTest
+```
+
 ## Executive Summary
 
 Android is strongest in:
@@ -909,7 +915,7 @@ Milestone update: JVM coverage now includes payment request/locked receive encod
 - [ ] Add tests for keyset refresh and incomplete saga recovery routing.
 - [ ] Add tests for `addMintAndPayCashuRequest`, external top-up, mint settling, and fee estimation.
 - [x] Add send destination inference tests for BIP-321 Cashu Request plus Lightning fallback precedence, on-chain, Lightning address, and ecash token handoff.
-- [ ] Add send destination inference tests for real amountless BOLT11/BOLT12 fixtures.
+- [x] Add send destination inference tests for amountless BOLT11/BOLT12 fixtures. `SendDestinationResolverTest` now covers the official amountless BOLT11 donation invoice fixture, the official amountful BOLT11 coffee invoice fixture, the BOLT12 `lno` amountless-offer branch, Lightning address amount entry, and ecash receive handoff. The resolver also fixes structural BOLT11 amount parsing to stop at the bech32 separator.
 - [x] Add receive token tests for unknown mint, locked known primary P2PK key, locked unknown key, non-sat unit, receive later, and home event payload. `ReceiveEcashReviewTest` covers review warnings and non-sat labels; `PendingReceiveTokenIdsTest` covers receive-later ids; `WalletReceiveEventTest` covers positive sat home events.
 - [x] Add receive Lightning JVM tests for expiry formatting and reusable quote selection. `QuoteExpiryFormatterTest` covers expiry text; `MintQuoteReuseTest` covers amountless BOLT12 offer reuse and on-chain quote reuse filtering.
 - [ ] Add receive Lightning tests for quote-backed request store attachment, force-new on-chain address flow, and screen/integration behavior.

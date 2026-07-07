@@ -61,9 +61,7 @@ import org.cashu.wallet.Core.CashuPaymentRequestRoute
 import org.cashu.wallet.Core.PaymentRequestDecodeResult
 import org.cashu.wallet.Core.PaymentRequestDecoder
 import org.cashu.wallet.Core.SettingsManager
-import org.cashu.wallet.Core.TokenParser
 import org.cashu.wallet.Core.WalletManager
-import org.cashu.wallet.Core.compatibleMintsForCashuPaymentRequest
 import org.cashu.wallet.Core.routeForCashuPaymentRequest
 import org.cashu.wallet.Models.MeltPaymentResult
 import org.cashu.wallet.Models.MeltQuoteInfo
@@ -211,67 +209,30 @@ fun UnifiedSendScreen(
         val trimmed = raw.trim()
         if (trimmed.isEmpty() || trimmed == suppressedValue) return
         inputHint = null
-        var decoded = PaymentRequestDecoder.decode(
-            trimmed,
-            includeCashuPaymentRequests = true,
-            preferCashuPaymentRequests = true,
-        )
-        var request = trimmed
-        if (decoded is PaymentRequestDecodeResult.CashuPaymentRequest &&
-            compatibleMintsForCashuPaymentRequest(decoded.summary, walletState.mints).isEmpty()
-        ) {
-            // BIP-321 payloads can carry a Lightning leg alongside the creq;
-            // fall back to it when none of the requested mints are held.
-            val fallback = PaymentRequestDecoder.decode(trimmed)
-            if (fallback !is PaymentRequestDecodeResult.Unrecognized) {
-                decoded = fallback
-                request = PaymentRequestDecoder.encodedLightningRequest(trimmed) ?: trimmed
-            }
-        }
-        when (decoded) {
-            is PaymentRequestDecodeResult.Bolt11 -> {
-                val known = decoded.amountSats
-                if (known == null || known <= 0L) {
-                    inputHint = "This BOLT11 invoice doesn't include an amount. Ask for an amount-specific invoice before paying."
-                } else {
-                    locked = LockedRail.Melt(request, decoded, known)
-                    cameFromAmount = false
-                    step = SendStep.Confirm
-                }
-            }
-            is PaymentRequestDecodeResult.Bolt12 -> {
-                val known = decoded.amountSats
-                if (known == null || known <= 0L) {
-                    inputHint = "This BOLT12 offer doesn't include an amount. Amountless offers are not payable here yet."
-                } else {
-                    locked = LockedRail.Melt(request, decoded, known)
-                    cameFromAmount = false
-                    step = SendStep.Confirm
-                }
-            }
-            is PaymentRequestDecodeResult.LightningAddress,
-            is PaymentRequestDecodeResult.Onchain -> {
-                locked = LockedRail.Melt(request, decoded, knownAmount = null)
-                step = SendStep.Amount
-            }
-            is PaymentRequestDecodeResult.CashuPaymentRequest -> {
-                val known = decoded.summary.amount?.takeIf { it > 0 }
-                locked = LockedRail.Creq(request, decoded, known)
-                if (!decoded.summary.isSatUnit || known != null) {
-                    cameFromAmount = false
-                    step = SendStep.Confirm
-                } else {
+        when (val resolution = resolveSendDestination(trimmed, walletState.mints)) {
+            is SendDestinationResolution.Hint -> inputHint = resolution.message
+            is SendDestinationResolution.Melt -> {
+                locked = LockedRail.Melt(resolution.request, resolution.decoded, resolution.knownAmount)
+                if (resolution.requiresAmountEntry) {
                     step = SendStep.Amount
+                } else {
+                    cameFromAmount = false
+                    step = SendStep.Confirm
                 }
             }
-            PaymentRequestDecodeResult.Unrecognized -> {
-                val token = TokenParser.extractToken(trimmed)
-                if (token != null) {
-                    onOpenReceiveToken(token)
+            is SendDestinationResolution.CashuRequest -> {
+                locked = LockedRail.Creq(resolution.request, resolution.decoded, resolution.knownAmount)
+                if (resolution.requiresAmountEntry) {
+                    step = SendStep.Amount
                 } else {
-                    inputHint =
-                        "Unrecognized — try a Lightning address, invoice, Bitcoin address, or Cashu Request"
+                    cameFromAmount = false
+                    step = SendStep.Confirm
                 }
+            }
+            is SendDestinationResolution.EcashToken -> onOpenReceiveToken(resolution.token)
+            SendDestinationResolution.Unrecognized -> {
+                inputHint =
+                    "Unrecognized — try a Lightning address, invoice, Bitcoin address, or Cashu Request"
             }
         }
     }
@@ -1055,7 +1016,7 @@ private fun ConfirmFace(
         Spacer(Modifier.height(CashuTheme.spacing.section))
         Column(modifier = Modifier.fillMaxWidth()) {
             if (isMelt) {
-                if (isOnchain && rail != null) {
+                if (isOnchain) {
                     InspectorRow(
                         label = "To",
                         value = PaymentRequestDecoder.shortRepresentation(
