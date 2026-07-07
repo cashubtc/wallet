@@ -37,7 +37,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -82,7 +82,7 @@ fun MintDetailScreen(
     mintUrl: String,
     onClose: () -> Unit,
 ) {
-    val walletState by walletManager.state.collectAsState()
+    val walletState by walletManager.state.collectAsStateWithLifecycle()
     val mint = walletState.mints.firstOrNull { it.url == mintUrl }
     val isActive = walletState.activeMint?.url == mintUrl
     val clipboard = LocalClipboardManager.current

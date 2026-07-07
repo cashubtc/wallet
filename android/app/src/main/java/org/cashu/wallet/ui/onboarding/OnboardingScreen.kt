@@ -33,7 +33,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -91,7 +91,7 @@ fun OnboardingScreen(
     walletManager: WalletManager,
     sentryService: SentryService? = null,
 ) {
-    val walletState by walletManager.state.collectAsState()
+    val walletState by walletManager.state.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
 
     var step: OnboardingStep by remember { mutableStateOf(OnboardingStep.Welcome) }

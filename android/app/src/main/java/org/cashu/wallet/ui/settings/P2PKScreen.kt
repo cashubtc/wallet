@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -37,7 +38,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -77,7 +78,7 @@ fun P2PKScreen(
     appLockManager: AppLockManager,
     onClose: () -> Unit,
 ) {
-    val settings by settingsManager.state.collectAsState()
+    val settings by settingsManager.state.collectAsStateWithLifecycle()
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
     var showImport by remember { mutableStateOf(false) }
@@ -228,6 +229,7 @@ fun P2PKScreen(
     if (showImport) {
         var input by remember { mutableStateOf("") }
         AlertDialog(
+            modifier = Modifier.imePadding(),
             onDismissRequest = {
                 showImport = false
                 importError = null
@@ -291,7 +293,7 @@ private fun P2PKKeyDetailScreen(
     appLockManager: AppLockManager,
     onBack: () -> Unit,
 ) {
-    val settings by settingsManager.state.collectAsState()
+    val settings by settingsManager.state.collectAsStateWithLifecycle()
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
     val authenticate = rememberWalletAuthenticationLauncher(appLockManager)
@@ -426,6 +428,7 @@ private fun P2PKKeyDetailScreen(
     if (showRename && key != null) {
         var name by remember(key.id) { mutableStateOf(key.label) }
         AlertDialog(
+            modifier = Modifier.imePadding(),
             onDismissRequest = { showRename = false },
             title = { Text("Rename key") },
             text = {

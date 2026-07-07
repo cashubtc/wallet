@@ -32,7 +32,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -75,8 +75,8 @@ fun SettingsScreen(
     val context = LocalContext.current
     val activity = remember(context) { context.findFragmentActivity() }
     val scope = rememberCoroutineScope()
-    val settings by settingsManager.state.collectAsState()
-    val appLockState by appLockManager.state.collectAsState()
+    val settings by settingsManager.state.collectAsStateWithLifecycle()
+    val appLockState by appLockManager.state.collectAsStateWithLifecycle()
     var confirmDelete by remember { mutableStateOf(false) }
     var appLockUnavailable by remember { mutableStateOf(false) }
     var currencyPickerOpen by remember { mutableStateOf(false) }

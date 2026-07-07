@@ -8,6 +8,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
@@ -59,6 +60,7 @@ fun BalanceDisplay(
     ) {
         AmountText(
             text = amount.primary,
+            modifier = Modifier.fillMaxWidth(),
             style = MaterialTheme.typography.displayMedium,
             color = LocalContentColor.current,
         )
@@ -69,6 +71,7 @@ fun BalanceDisplay(
         ) {
             AmountText(
                 text = amount.secondary.orEmpty(),
+                modifier = Modifier.fillMaxWidth(),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 animated = false,

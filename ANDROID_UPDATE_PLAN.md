@@ -100,6 +100,13 @@ JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:compileDebugKotlin
 JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:testDebugUnitTest --tests org.cashu.wallet.Core.MintInfoUnitsTest --tests org.cashu.wallet.Core.MintDiscoveryManagerTest --tests org.cashu.wallet.Core.CurrencyProtocolTest
 ```
 
+Focused validation used during the UI/performance bug sweep:
+
+```sh
+JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:compileDebugKotlin
+JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:testDebugUnitTest
+```
+
 ## Executive Summary
 
 Android is strongest in:
@@ -714,22 +721,22 @@ Success condition:
 
 Multiple screens assume a comfortable phone height or default font size. These layouts need to survive compact phones, split-screen, gesture navigation bars, landscape-ish heights, display cutouts, keyboard/IME, and large font/accessibility settings.
 
-Milestone update: the immediate clipping fixes are in for Contactless Pay, Lightning settings, pushed settings/detail screens, shared settings rows, mint rows, history rows, and clipboard/detail rows. Home measurement, QR responsive sizing, IME bring-into-view, and screenshot verification remain open.
+Milestone update: the immediate clipping fixes are in for Contactless Pay, Lightning settings, pushed settings/detail screens, shared settings rows, mint rows, history rows, clipboard/detail rows, Home header measurement, Home amount scaling, responsive QR sizing, and scroll/IME fallback on amount-entry send/receive faces. Screenshot and physical-device verification remain open.
 
 Checklist:
 
 - [x] Replace `HomeScreen`'s hard-coded pinned top height and fade assumptions with measured layout height so the transaction list cannot hide under or detach from the pinned balance area at large text sizes or with extra unit/status rows.
-- [ ] Add responsive constraints to `BalanceDisplay` and Home unit pager so large amounts, long unit codes, and received-delta labels do not overlap or resize the pinned header unpredictably.
+- [x] Add responsive constraints to `BalanceDisplay` and Home unit pager so large amounts, long unit codes, and received-delta labels do not overlap or resize the pinned header unpredictably. `AmountText` now scales within its width lane, Home unit pages fill the available width, and received-delta/action labels are bounded.
 - [x] Make `LightningScreen` scrollable and navigation-bar aware; the quote check action and lower sections can be clipped on short screens today.
 - [x] Make `P2PKScreen` use a lazy or scrollable layout with bottom insets so long key lists and action buttons remain reachable.
 - [x] Make `ContactlessPayView` scrollable or vertically adaptive so NFC instructions/status/actions do not clip on compact devices or large text.
-- [ ] Audit `UnifiedSendScreen` amount/confirm faces for keyboard and small-height clipping; add `verticalScroll`/`imePadding`/`bringIntoViewRequester` where destination fields or CTAs can be covered.
-- [ ] Audit `SendEcashScreen` input face for keypad, P2PK lock fields, keyboard, and CTA clipping; ensure the generated-token face keeps copy/share/actions reachable above navigation bars.
-- [ ] Audit `ReceiveLightningScreen` input face for amount keypad, method picker, keyboard, and CTA clipping; move to scrollable/adaptive composition if needed.
-- [ ] Audit `ReceiveEcashScreen` paste/review faces for keyboard, long token text, locked-token metadata, and lower action clipping.
+- [x] Audit `UnifiedSendScreen` amount/confirm faces for keyboard and small-height clipping; add `verticalScroll`/`imePadding`/`bringIntoViewRequester` where destination fields or CTAs can be covered. Input, amount, and confirm faces now have scroll/IME fallbacks and bottom insets.
+- [x] Audit `SendEcashScreen` input face for keypad, P2PK lock fields, keyboard, and CTA clipping; ensure the generated-token face keeps copy/share/actions reachable above navigation bars. The input face now scrolls with IME padding; generated-token face was already scrollable and inset-aware.
+- [x] Audit `ReceiveLightningScreen` input face for amount keypad, method picker, keyboard, and CTA clipping; move to scrollable/adaptive composition if needed. The amount input face now scrolls with IME padding and fixed spacers instead of clipping weight spacers.
+- [x] Audit `ReceiveEcashScreen` paste/review faces for keyboard, long token text, locked-token metadata, and lower action clipping. Paste face now applies IME plus navigation-bar padding, and review face remains scrollable/inset-aware for long metadata.
 - [x] Make QR display surfaces use responsive QR sizing instead of fixed sizes that can overflow narrow split-screen widths. `QrCard` now constrains QR size against the available width with a minimum usable QR size.
 - [x] Add bottom `navigationBarsPadding` or explicit safe-area spacers to pushed settings sub-screens such as Privacy, Backup, Nostr, P2PK, Lightning, and Mint Detail. Privacy, Backup, Backup/Restore, Nostr, P2PK, Lightning, Mint Detail, and Transaction Detail now clear navigation bars.
-- [ ] Add `imePadding` and scroll support to all text-entry dialogs and sheets: Nostr relay add/import, P2PK import/generate labels, mint add/discovery filters, restore seed/mint input, and send destination entry.
+- [x] Add `imePadding` and scroll support to all text-entry dialogs and sheets: Nostr relay add/import, P2PK import/generate labels, mint add/discovery filters, restore seed/mint input, and send destination entry. Nostr and P2PK dialogs, mint add/discovery, onboarding restore, Receive Lightning reusable amount editing, and Unified Send destination entry now have scroll/IME or bottom-inset coverage.
 - [x] Add max-lines, overflow, and width constraints to `SettingsRows.NavRow`, `ToggleRow`, mint rows, history rows, QR detail rows, and public-key rows so long titles, trailing values, mint URLs, relay URLs, Lightning addresses, and P2PK keys cannot push controls off-screen.
 - [ ] Verify segmented controls in Nostr and receive method pickers at large font sizes; labels should wrap or adapt instead of clipping.
 - [ ] Keep modal bottom sheet content scrollable and inset-aware, especially currency picker, mint discovery, receive chooser, and method picker sheets.
@@ -746,7 +753,7 @@ Checklist:
 
 - [ ] Profile Settings open/scroll/toggle paths with Macrobenchmark, JankStats, and Compose recomposition counts before changing behavior.
 - [ ] Split `SettingsScreen` state observation into stable selectors or row models so toggling Sentry/NPC/Nostr/auto-paste does not recompose unrelated sections.
-- [ ] Use lifecycle-aware state collection (`collectAsStateWithLifecycle`) across Compose screens to avoid off-screen collectors causing extra recomposition and work.
+- [x] Use lifecycle-aware state collection (`collectAsStateWithLifecycle`) across Compose screens to avoid off-screen collectors causing extra recomposition and work. The Compose UI layer now depends on `lifecycle-runtime-compose` and uses lifecycle-aware collection for wallet/settings/app services.
 - [ ] Replace settings row rebuilding with immutable/stable row definitions where possible; use `remember` for static section content, icons, and expensive labels.
 - [x] Review the collapsing top app bar/nested scroll behavior on Settings. Settings now uses a pinned Material top app bar to remove unnecessary nested-scroll coordination.
 - [x] Optimize `CurrencyPickerSheet`: precompute currency display names/symbols/formatters, avoid rebuilding all row labels on every price tick, and use stable keys.
@@ -763,20 +770,20 @@ Success condition:
 
 Several Compose controls have behavior that can surprise users or produce duplicate actions.
 
-Milestone update: shared toggle semantics, discovered-mint busy state, unused add-mint nickname UI, safe link handling, and clipboard/share feedback are fixed. Retry determinism, watcher lifecycle audit, and deeper per-screen loading isolation remain open.
+Milestone update: shared toggle semantics, discovered-mint busy state, unused add-mint nickname UI, safe link handling, clipboard/share feedback, Unified Send retry determinism, mint-row swipe/click conflict prevention, and mint add/discovery local loading state are fixed. Receive Lightning watcher lifecycle audit remains open.
 
 Checklist:
 
 - [x] Fix `ToggleRow` semantics so tapping the switch and tapping the row cannot double-toggle or expose duplicate TalkBack actions; prefer one `toggleable` semantic owner.
 - [x] Add disabled/busy state to mint discovery add rows to prevent double-tapping the same discovered mint before wallet state catches up.
 - [x] Make the Add Mint nickname field actually persist/use the nickname or remove the field until backend support exists. The unused nickname field has been removed until persisted mint aliases exist.
-- [ ] Audit `SwipeToDismissBox` plus `combinedClickable` in `MintsScreen`; swiping should not also open mint detail, and long press should not conflict with delete affordances.
+- [x] Audit `SwipeToDismissBox` plus `combinedClickable` in `MintsScreen`; swiping should not also open mint detail, and long press should not conflict with delete affordances. Mint rows now suppress click/long-press callbacks while a swipe dismiss direction is active.
 - [x] Make retry quote behavior explicit in Unified Send. The quote retry path now increments an explicit retry nonce instead of nudging mint state to the same value.
 - [x] Add user-visible confirmation/feedback for copy/share actions that currently silently write to clipboard. UI clipboard writes now use a shared toast-backed helper, and share failure reports when no share target exists.
 - [x] Add safe external-link handling for explorer, contact, and support links so missing browser/activity handlers do not crash the app.
 - [x] Ensure receive-later token ids are stable and collision-resistant; avoid using only a token prefix for pending receive identity. Pending receive ids now hash the full token and have JVM coverage.
 - [ ] Audit Receive Lightning polling/subscription effects to ensure only one active watcher exists per quote and watchers cancel on navigation/back.
-- [ ] Add per-screen loading state instead of reusing broad wallet loading flags for unrelated buttons, especially mint add/discovery and settings toggles.
+- [x] Add per-screen loading state instead of reusing broad wallet loading flags for unrelated buttons, especially mint add/discovery and settings toggles. Add Mint and Mint Discovery now use local per-action busy state instead of broad wallet loading flags; settings toggles already update their own setting paths directly.
 
 Success condition:
 

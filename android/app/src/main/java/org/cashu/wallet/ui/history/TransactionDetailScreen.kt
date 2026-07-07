@@ -31,7 +31,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -71,8 +71,8 @@ fun TransactionDetailScreen(
     transactionId: String,
     onClose: () -> Unit,
 ) {
-    val walletState by walletManager.state.collectAsState()
-    val settings by settingsManager.state.collectAsState()
+    val walletState by walletManager.state.collectAsStateWithLifecycle()
+    val settings by settingsManager.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     val formatter = remember { AmountFormatter() }

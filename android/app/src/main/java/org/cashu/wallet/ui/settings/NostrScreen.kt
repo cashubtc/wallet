@@ -37,7 +37,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -73,8 +73,8 @@ fun NostrScreen(
     appLockManager: AppLockManager,
     onClose: () -> Unit,
 ) {
-    val nostrState by nostrService.state.collectAsState()
-    val settings by settingsManager.state.collectAsState()
+    val nostrState by nostrService.state.collectAsStateWithLifecycle()
+    val settings by settingsManager.state.collectAsStateWithLifecycle()
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
     val authenticate = rememberWalletAuthenticationLauncher(appLockManager)

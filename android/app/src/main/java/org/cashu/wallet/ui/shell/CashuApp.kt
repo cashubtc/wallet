@@ -7,16 +7,16 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.navigation.compose.rememberNavController
 import org.cashu.wallet.App.AppContainer
 import org.cashu.wallet.Core.Navigation.CashuRoute
@@ -48,8 +48,8 @@ import org.cashu.wallet.ui.theme.CashuTheme
 @Composable
 fun CashuApp(container: AppContainer) {
     CashuTheme {
-        val walletState by container.walletManager.state.collectAsState()
-        val settings by container.settingsManager.state.collectAsState()
+        val walletState by container.walletManager.state.collectAsStateWithLifecycle()
+        val settings by container.settingsManager.state.collectAsStateWithLifecycle()
         val lifecycleOwner = LocalLifecycleOwner.current
         val isAuthenticated = walletState.isInitialized && !walletState.needsOnboarding
         SecureWindowEffect(enabled = settings.appLockEnabled)
@@ -117,9 +117,9 @@ private fun AuthenticatedShell(container: AppContainer) {
     var pendingP2PKScan by remember { mutableStateOf<String?>(null) }
     var pendingMintScan by remember { mutableStateOf<String?>(null) }
 
-    val pendingDeepLink by container.navigationManager.pendingDeepLink.collectAsState()
-    val connectivityState by container.connectivityObserver.state.collectAsState()
-    val appLockState by container.appLockManager.state.collectAsState()
+    val pendingDeepLink by container.navigationManager.pendingDeepLink.collectAsStateWithLifecycle()
+    val connectivityState by container.connectivityObserver.state.collectAsStateWithLifecycle()
+    val appLockState by container.appLockManager.state.collectAsStateWithLifecycle()
 
     BackHandler(enabled = showContactless || scannerTarget != null) {
         when {

@@ -56,7 +56,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -155,8 +155,8 @@ fun ReceiveLightningScreen(
     cashuRequestStore: CashuRequestStore,
     onClose: () -> Unit,
 ) {
-    val walletState by walletManager.state.collectAsState()
-    val settings by settingsManager.state.collectAsState()
+    val walletState by walletManager.state.collectAsStateWithLifecycle()
+    val settings by settingsManager.state.collectAsStateWithLifecycle()
     val formatter = remember { AmountFormatter() }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -622,7 +622,8 @@ private fun InputFace(
         modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = CashuTheme.spacing.comfortable)
-            .imePadding(),
+            .imePadding()
+            .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Spacer(Modifier.height(CashuTheme.spacing.default))
@@ -633,7 +634,7 @@ private fun InputFace(
                 onClick = onPickMint,
             )
         }
-        Spacer(Modifier.weight(1f))
+        Spacer(Modifier.height(CashuTheme.spacing.loose))
         if (selectedMethod == PaymentMethodKind.Onchain) {
             Text(
                 text = "ON-CHAIN",
@@ -668,7 +669,7 @@ private fun InputFace(
             Spacer(Modifier.height(CashuTheme.spacing.default))
             InlineNotice(text = errorText)
         }
-        Spacer(Modifier.weight(1f))
+        Spacer(Modifier.height(CashuTheme.spacing.default))
         NumberPad(amount = amount, onAmountChange = onAmountChange, decimals = decimals)
         Spacer(Modifier.height(CashuTheme.spacing.micro))
         PrimaryButton(
@@ -818,6 +819,7 @@ private fun ReusableAmountDialog(
     var errorText by remember { mutableStateOf<String?>(null) }
 
     androidx.compose.material3.AlertDialog(
+        modifier = Modifier.imePadding(),
         onDismissRequest = onDismiss,
         title = { Text("Edit amount") },
         text = {

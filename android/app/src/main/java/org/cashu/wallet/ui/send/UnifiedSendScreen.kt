@@ -13,7 +13,9 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.AccountBalance
@@ -37,7 +39,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
@@ -137,8 +139,8 @@ fun UnifiedSendScreen(
     prefilledPayload: String? = null,
     onPrefilledConsumed: () -> Unit = {},
 ) {
-    val walletState by walletManager.state.collectAsState()
-    val settings by settingsManager.state.collectAsState()
+    val walletState by walletManager.state.collectAsStateWithLifecycle()
+    val settings by settingsManager.state.collectAsStateWithLifecycle()
     val formatter = remember { AmountFormatter() }
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
@@ -757,7 +759,8 @@ private fun InputFace(
         modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = CashuTheme.spacing.comfortable)
-            .imePadding(),
+            .imePadding()
+            .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Spacer(Modifier.height(CashuTheme.spacing.default))
@@ -813,7 +816,7 @@ private fun InputFace(
                 )
             }
         }
-        Spacer(Modifier.weight(1f))
+        Spacer(Modifier.navigationBarsPadding())
     }
 }
 
@@ -956,7 +959,9 @@ private fun AmountFace(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = CashuTheme.spacing.comfortable),
+            .padding(horizontal = CashuTheme.spacing.comfortable)
+            .imePadding()
+            .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         ToPill(destination = destination)
@@ -979,7 +984,7 @@ private fun AmountFace(
                 onUseMax = onUseMax,
             )
         }
-        Spacer(Modifier.weight(1f))
+        Spacer(Modifier.height(CashuTheme.spacing.default))
         NumberPad(amount = amount, onAmountChange = onAmountChange)
         Spacer(Modifier.height(CashuTheme.spacing.micro))
         PrimaryButton(
@@ -1022,7 +1027,9 @@ private fun ConfirmFace(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = CashuTheme.spacing.comfortable),
+            .padding(horizontal = CashuTheme.spacing.comfortable)
+            .imePadding()
+            .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         // Top accessory: paying mint + recipient (mint-at-top rule).
@@ -1181,7 +1188,7 @@ private fun ConfirmFace(
             Spacer(Modifier.height(CashuTheme.spacing.default))
             InlineNotice(text = confirmError)
         }
-        Spacer(Modifier.weight(1f))
+        Spacer(Modifier.height(CashuTheme.spacing.default))
         PrimaryButton(
             text = "Pay ${formatter.formatWalletSats(amountSats, useBitcoinSymbol)}",
             onClick = onPay,

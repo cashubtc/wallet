@@ -51,7 +51,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -114,9 +114,9 @@ fun SendEcashScreen(
     scannedP2PK: String? = null,
     onScannedP2PKConsumed: () -> Unit = {},
 ) {
-    val walletState by walletManager.state.collectAsState()
-    val settings by settingsManager.state.collectAsState()
-    val priceState by priceService.state.collectAsState()
+    val walletState by walletManager.state.collectAsStateWithLifecycle()
+    val settings by settingsManager.state.collectAsStateWithLifecycle()
+    val priceState by priceService.state.collectAsStateWithLifecycle()
     val formatter = remember { AmountFormatter() }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -477,7 +477,8 @@ private fun InputFace(
         modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = CashuTheme.spacing.comfortable)
-            .imePadding(),
+            .imePadding()
+            .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -543,7 +544,7 @@ private fun InputFace(
             InlineNotice(text = errorText)
         }
 
-        Spacer(modifier = Modifier.weight(1f, fill = true))
+        Spacer(Modifier.height(CashuTheme.spacing.default))
 
         NumberPad(amount = amount, onAmountChange = onAmountChange, decimals = decimals)
 

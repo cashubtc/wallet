@@ -30,7 +30,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -67,8 +67,8 @@ fun LightningScreen(
     npcService: NPCService,
     onClose: () -> Unit,
 ) {
-    val walletState by walletManager.state.collectAsState()
-    val npcState by npcService.state.collectAsState()
+    val walletState by walletManager.state.collectAsStateWithLifecycle()
+    val npcState by npcService.state.collectAsStateWithLifecycle()
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
 

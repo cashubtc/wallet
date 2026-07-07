@@ -44,7 +44,7 @@ import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -90,10 +90,10 @@ fun HistoryScreen(
     onOpenCashuRequest: (CashuRequest) -> Unit,
     contentPadding: PaddingValues,
 ) {
-    val walletState by walletManager.state.collectAsState()
-    val settings by settingsManager.state.collectAsState()
-    val priceState by priceService.state.collectAsState()
-    val requestState by cashuRequestStore.state.collectAsState()
+    val walletState by walletManager.state.collectAsStateWithLifecycle()
+    val settings by settingsManager.state.collectAsStateWithLifecycle()
+    val priceState by priceService.state.collectAsStateWithLifecycle()
+    val requestState by cashuRequestStore.state.collectAsStateWithLifecycle()
     val formatter = remember { AmountFormatter() }
     val scope = rememberCoroutineScope()
 

@@ -32,7 +32,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -100,8 +100,8 @@ fun ReceiveEcashScreen(
     prefilledPayload: String? = null,
     onPrefilledConsumed: () -> Unit = {},
 ) {
-    val walletState by walletManager.state.collectAsState()
-    val settings by settingsManager.state.collectAsState()
+    val walletState by walletManager.state.collectAsStateWithLifecycle()
+    val settings by settingsManager.state.collectAsStateWithLifecycle()
     val formatter = remember { AmountFormatter() }
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
@@ -382,7 +382,8 @@ private fun PasteFace(
         modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = CashuTheme.spacing.comfortable)
-            .imePadding(),
+            .imePadding()
+            .navigationBarsPadding(),
         verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
     ) {
         Spacer(Modifier.height(CashuTheme.spacing.micro))
@@ -430,7 +431,6 @@ private fun PasteFace(
             text = "New Request",
             onClick = onNewRequest,
         )
-        Spacer(Modifier.navigationBarsPadding())
     }
 }
 

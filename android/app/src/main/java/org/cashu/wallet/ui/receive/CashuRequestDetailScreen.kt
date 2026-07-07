@@ -51,7 +51,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -102,10 +102,10 @@ fun CashuRequestDetailScreen(
     requestId: String,
     onClose: () -> Unit,
 ) {
-    val storeState by cashuRequestStore.state.collectAsState()
-    val walletState by walletManager.state.collectAsState()
-    val settings by settingsManager.state.collectAsState()
-    val nostrState by nostrService.state.collectAsState()
+    val storeState by cashuRequestStore.state.collectAsStateWithLifecycle()
+    val walletState by walletManager.state.collectAsStateWithLifecycle()
+    val settings by settingsManager.state.collectAsStateWithLifecycle()
+    val nostrState by nostrService.state.collectAsStateWithLifecycle()
     val formatter = remember { AmountFormatter() }
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current

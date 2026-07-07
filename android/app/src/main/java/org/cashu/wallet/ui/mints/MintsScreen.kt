@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -45,7 +46,7 @@ import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -93,12 +94,13 @@ fun MintsScreen(
     scannedMintUrl: String? = null,
     onScannedMintUrlConsumed: () -> Unit = {},
 ) {
-    val walletState by walletManager.state.collectAsState()
+    val walletState by walletManager.state.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
 
     var url by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
+    var addingMint by remember { mutableStateOf(false) }
     var pendingRemoval by remember { mutableStateOf<MintInfo?>(null) }
     var discoveryOpen by remember { mutableStateOf(false) }
 
@@ -133,6 +135,8 @@ fun MintsScreen(
             error = "Enter a valid HTTPS mint URL."
             return
         }
+        if (addingMint) return
+        addingMint = true
         error = null
         scope.launch {
             runCatching { walletManager.addMint(normalized) }
@@ -140,6 +144,7 @@ fun MintsScreen(
                     url = ""
                 }
                 .onFailure { error = it.message ?: "Could not add mint." }
+            addingMint = false
         }
     }
 
@@ -172,7 +177,8 @@ fun MintsScreen(
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding),
+                .padding(padding)
+                .imePadding(),
             contentPadding = PaddingValues(bottom = CashuTheme.spacing.section),
         ) {
             if (walletState.mints.isNotEmpty()) {
@@ -250,8 +256,8 @@ fun MintsScreen(
                     PrimaryButton(
                         text = "Add mint",
                         onClick = ::addMint,
-                        enabled = url.isNotBlank() && !walletState.isLoading,
-                        loading = walletState.isLoading,
+                        enabled = url.isNotBlank() && !addingMint,
+                        loading = addingMint,
                     )
                     GhostButton(
                         text = "Paste URL from clipboard",
@@ -403,12 +409,14 @@ private fun SwipeableMintRow(
             }
         },
     ) {
+        val clickEnabled = dismissState.dismissDirection == SwipeToDismissBoxValue.Settled
         MintRow(
             mint = mint,
             isActive = isActive,
             onClick = onOpen,
             onSetActiveLongPress = onSetActive,
             onRemoveLongPress = onRequestRemove,
+            clickEnabled = clickEnabled,
         )
     }
 }
@@ -421,6 +429,7 @@ private fun MintRow(
     onClick: () -> Unit,
     onSetActiveLongPress: () -> Unit = {},
     onRemoveLongPress: () -> Unit = {},
+    clickEnabled: Boolean = true,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     Box(
@@ -428,8 +437,8 @@ private fun MintRow(
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.background)
             .combinedClickable(
-                onClick = onClick,
-                onLongClick = { menuOpen = true },
+                onClick = { if (clickEnabled) onClick() },
+                onLongClick = { if (clickEnabled) menuOpen = true },
             ),
     ) {
         Row(

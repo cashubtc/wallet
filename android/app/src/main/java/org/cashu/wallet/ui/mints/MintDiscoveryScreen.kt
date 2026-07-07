@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -25,7 +26,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -58,9 +59,9 @@ fun MintDiscoveryContent(
     settingsManager: SettingsManager,
     mintDiscoveryManager: MintDiscoveryManager,
 ) {
-    val walletState by walletManager.state.collectAsState()
-    val settings by settingsManager.state.collectAsState()
-    val discoveryState by mintDiscoveryManager.state.collectAsState()
+    val walletState by walletManager.state.collectAsStateWithLifecycle()
+    val settings by settingsManager.state.collectAsStateWithLifecycle()
+    val discoveryState by mintDiscoveryManager.state.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
 
     var query by remember { mutableStateOf("") }
@@ -95,7 +96,11 @@ fun MintDiscoveryContent(
         onDispose { mintDiscoveryManager.clearDiscoveredMints() }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .navigationBarsPadding(),
+    ) {
         CashuSearchBar(
             value = query,
             onValueChange = { query = it },
@@ -124,7 +129,11 @@ fun MintDiscoveryContent(
                     contentDescription = null,
                     modifier = Modifier.size(CashuTheme.spacing.default),
                 )
-                Text("Refresh")
+                Text(
+                    text = "Refresh",
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
 
@@ -180,7 +189,7 @@ fun MintDiscoveryContent(
                                 DiscoveryRow(
                                     mint = mint,
                                     isConfigured = true,
-                                    isBusy = walletState.isLoading,
+                                    isBusy = false,
                                     onAdd = {},
                                 )
                                 if (mint != added.last()) CanvasDivider(leadingInset = 64)
@@ -193,7 +202,7 @@ fun MintDiscoveryContent(
                                 DiscoveryRow(
                                     mint = mint,
                                     isConfigured = false,
-                                    isBusy = walletState.isLoading || mint.url in addingMintUrls,
+                                    isBusy = mint.url in addingMintUrls,
                                     onAdd = add@{
                                         if (mint.url in addingMintUrls) return@add
                                         addingMintUrls += mint.url

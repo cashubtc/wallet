@@ -19,7 +19,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import org.cashu.wallet.Core.SettingsManager
@@ -34,7 +34,7 @@ fun PrivacyScreen(
     settingsManager: SettingsManager,
     onClose: () -> Unit,
 ) {
-    val settings by settingsManager.state.collectAsState()
+    val settings by settingsManager.state.collectAsStateWithLifecycle()
     Scaffold(
         topBar = {
             TopAppBar(

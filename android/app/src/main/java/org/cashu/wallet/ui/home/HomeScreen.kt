@@ -36,7 +36,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -58,6 +58,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import org.cashu.wallet.Core.AmountDisplayPrimary
@@ -108,10 +109,10 @@ fun HomeScreen(
     onScan: () -> Unit,
     contentPadding: PaddingValues,
 ) {
-    val walletState by walletManager.state.collectAsState()
-    val settings by settingsManager.state.collectAsState()
-    val priceState by priceService.state.collectAsState()
-    val requestState by cashuRequestStore.state.collectAsState()
+    val walletState by walletManager.state.collectAsStateWithLifecycle()
+    val settings by settingsManager.state.collectAsStateWithLifecycle()
+    val priceState by priceService.state.collectAsStateWithLifecycle()
+    val requestState by cashuRequestStore.state.collectAsStateWithLifecycle()
     val formatter = remember { AmountFormatter() }
 
     var receiveChooserOpen by remember { mutableStateOf(false) }
@@ -442,6 +443,7 @@ private fun UnitBalancePager(
                             balancesByUnit[unit] ?: 0L,
                             CurrencyRegistry.currencyForMintUnit(unit),
                         ).formatted(),
+                        modifier = Modifier.fillMaxWidth(),
                         style = MaterialTheme.typography.displayMedium,
                     )
                 }
@@ -503,6 +505,8 @@ private fun ReceivedDeltaBeat(
                 text = "+$amount",
                 style = MaterialTheme.typography.labelLarge,
                 color = CashuTheme.colors.received,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }
@@ -532,7 +536,12 @@ private fun ActionDuet(
             shape = MaterialTheme.shapes.extraLarge,
             enabled = receiveEnabled,
         ) {
-            Text("Receive", style = MaterialTheme.typography.labelLarge)
+            Text(
+                text = "Receive",
+                style = MaterialTheme.typography.labelLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
         FilledTonalButton(
             onClick = onSend,
@@ -546,7 +555,12 @@ private fun ActionDuet(
             shape = MaterialTheme.shapes.extraLarge,
             enabled = sendEnabled,
         ) {
-            Text("Send", style = MaterialTheme.typography.labelLarge)
+            Text(
+                text = "Send",
+                style = MaterialTheme.typography.labelLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
