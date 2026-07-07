@@ -860,7 +860,8 @@ Milestone update: JVM coverage now includes payment request/locked receive encod
 - [ ] Add `WalletManager` tests for startup maintenance orchestration with fake gateway.
 - [ ] Add tests for keyset refresh and incomplete saga recovery routing.
 - [ ] Add tests for `addMintAndPayCashuRequest`, external top-up, mint settling, and fee estimation.
-- [ ] Add send destination inference tests for amountless BOLT11/BOLT12, BIP-321 Cashu Request plus Lightning fallback, on-chain, Lightning address, and ecash token handoff.
+- [x] Add send destination inference tests for BIP-321 Cashu Request plus Lightning fallback precedence, on-chain, Lightning address, and ecash token handoff.
+- [ ] Add send destination inference tests for real amountless BOLT11/BOLT12 fixtures.
 - [ ] Add receive token tests for unknown mint, locked known primary P2PK key, locked unknown key, non-sat unit, receive later, and home event payload.
 - [ ] Add receive Lightning tests for BOLT11 expiry, reusable BOLT12 offer reuse, on-chain address reuse/new address, quote-backed request store attachment.
 - [ ] Add Mint Detail tests for NUT-06 mapping, contact URL mapping, method min/max ranges, and connection state.
