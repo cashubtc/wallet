@@ -158,6 +158,12 @@ Focused validation used while extracting App Lock policy coverage:
 JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:compileDebugKotlin :app:testDebugUnitTest --tests org.cashu.wallet.Core.AppLockPolicyTest
 ```
 
+Focused validation used for NFC/NDEF coverage:
+
+```sh
+JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:testDebugUnitTest --tests org.cashu.wallet.Core.Services.NDEFTextRecordCoderTest --tests org.cashu.wallet.Core.Services.NFCPaymentInputDecoderTest
+```
+
 ## Executive Summary
 
 Android is strongest in:
@@ -945,7 +951,7 @@ Compose UI and instrumentation checklist:
 - [ ] Mints tests: add/paste/scan, discovery search/add, set active, remove, full detail metadata.
 - [ ] Settings tests: App Lock, backup reveal auth, Nostr reveal auth, relay validation, P2PK key flows, privacy toggles, delete wallet.
 - [ ] Scanner tests: permission denied/granted, animated UR progress, quick-fill routing, unsupported payload error.
-- [ ] NFC instrumentation or Robolectric-adjacent tests for NDEF text/URI record read/write and routing.
+- [x] NFC instrumentation or Robolectric-adjacent tests for NDEF text/URI record read/write and routing. `NDEFTextRecordCoderTest` covers text encode/decode, URI, external, media, and raw UTF-8 payloads; `NFCPaymentInputDecoderTest` covers Lightning/BOLT12 routing and unsupported payload rejection.
 - [ ] Accessibility tests for content descriptions on critical controls and large-font screenshots.
 
 Integration checklist:
