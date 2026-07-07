@@ -7,13 +7,7 @@ final class SettingsUITests: UITestBase {
 
     private func navigateToSettings() {
         createWalletAndSkipMint()
-        app.tabBars.buttons["Settings"].tap()
-        let settingsTab = app.tabBars.buttons["Settings"]
-        let selected = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "isSelected == true"),
-            object: settingsTab
-        )
-        wait(for: [selected], timeout: 5)
+        tapTab("Settings")
     }
 
     // MARK: - Tests
@@ -35,14 +29,14 @@ final class SettingsUITests: UITestBase {
     func testSettingsTabIsAccessible() throws {
         navigateToSettings()
 
-        XCTAssertTrue(app.tabBars.firstMatch.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.tabBars.buttons["Settings"].isSelected)
+        XCTAssertTrue(mainTabBar(timeout: 5).exists)
+        XCTAssertTrue(tabButton("Settings").isSelected)
     }
 
     func testCanReturnToWalletFromSettings() throws {
         navigateToSettings()
 
-        app.tabBars.buttons["Wallet"].tap()
-        XCTAssertTrue(app.tabBars.buttons["Wallet"].isSelected)
+        tapTab("Wallet")
+        XCTAssertTrue(tabButton("Wallet").isSelected)
     }
 }

@@ -52,7 +52,7 @@ final class ReceiveUITests: UITestBase {
         XCTAssertTrue(closeButton.waitForExistence(timeout: 5), "Receive chooser should show a close button")
         closeButton.tap()
 
-        XCTAssertTrue(app.tabBars.buttons["Wallet"].waitForExistence(timeout: 5))
+        XCTAssertTrue(tabButton("Wallet", timeout: 5).exists)
     }
 
     func testBitcoinOptionOpensLightningFlow() throws {

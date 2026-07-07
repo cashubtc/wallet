@@ -9,21 +9,20 @@ final class MainTabUITests: UITestBase {
         createWalletAndSkipMint()
         waitForMainTab()
 
-        let tabBar = app.tabBars.firstMatch
-        XCTAssertTrue(tabBar.buttons["Wallet"].exists)
-        XCTAssertTrue(tabBar.buttons["History"].exists)
-        XCTAssertTrue(tabBar.buttons["Mints"].exists)
-        XCTAssertTrue(tabBar.buttons["Settings"].exists)
+        XCTAssertTrue(tabButton("Wallet").exists)
+        XCTAssertTrue(tabButton("History").exists)
+        XCTAssertTrue(tabButton("Mints").exists)
+        XCTAssertTrue(tabButton("Settings").exists)
     }
 
     func testNavigateToHistoryTab() throws {
         createWalletAndSkipMint()
         waitForMainTab()
 
-        app.tabBars.buttons["History"].tap()
+        tapTab("History")
 
         // History view should appear — at minimum the tab should be selected
-        let historyTab = app.tabBars.buttons["History"]
+        let historyTab = tabButton("History")
         XCTAssertTrue(historyTab.isSelected, "History tab should become selected")
     }
 
@@ -31,9 +30,9 @@ final class MainTabUITests: UITestBase {
         createWalletAndSkipMint()
         waitForMainTab()
 
-        app.tabBars.buttons["Mints"].tap()
+        tapTab("Mints")
 
-        let mintsTab = app.tabBars.buttons["Mints"]
+        let mintsTab = tabButton("Mints")
         XCTAssertTrue(mintsTab.isSelected)
     }
 
@@ -42,8 +41,8 @@ final class MainTabUITests: UITestBase {
         createWalletAndSkipMint()
         waitForMainTab()
 
-        app.tabBars.buttons["Mints"].tap()
-        XCTAssertTrue(app.tabBars.buttons["Mints"].isSelected)
+        tapTab("Mints")
+        XCTAssertTrue(tabButton("Mints").isSelected)
 
         XCTAssertTrue(
             app.navigationBars["Mints"].waitForExistence(timeout: 10),
@@ -59,9 +58,9 @@ final class MainTabUITests: UITestBase {
         createWalletAndSkipMint()
         waitForMainTab()
 
-        app.tabBars.buttons["Settings"].tap()
+        tapTab("Settings")
 
-        let settingsTab = app.tabBars.buttons["Settings"]
+        let settingsTab = tabButton("Settings")
         XCTAssertTrue(settingsTab.isSelected)
     }
 
@@ -69,7 +68,7 @@ final class MainTabUITests: UITestBase {
         createWalletAndSkipMint()
         waitForMainTab()
 
-        let walletTab = app.tabBars.buttons["Wallet"]
+        let walletTab = tabButton("Wallet")
         XCTAssertTrue(walletTab.isSelected, "Wallet should be selected by default")
     }
 
@@ -77,13 +76,13 @@ final class MainTabUITests: UITestBase {
         createWalletAndSkipMint()
         waitForMainTab()
 
-        app.tabBars.buttons["Mints"].tap()
-        XCTAssertTrue(app.tabBars.buttons["Mints"].isSelected)
+        tapTab("Mints")
+        XCTAssertTrue(tabButton("Mints").isSelected)
 
-        app.tabBars.buttons["Settings"].tap()
-        XCTAssertTrue(app.tabBars.buttons["Settings"].isSelected)
+        tapTab("Settings")
+        XCTAssertTrue(tabButton("Settings").isSelected)
 
-        app.tabBars.buttons["Wallet"].tap()
-        XCTAssertTrue(app.tabBars.buttons["Wallet"].isSelected)
+        tapTab("Wallet")
+        XCTAssertTrue(tabButton("Wallet").isSelected)
     }
 }

@@ -29,7 +29,7 @@ final class WalletIntegrationTests: UITestBase {
         createWalletWithMint()
 
         // The added mint should be listed on the Mints tab.
-        app.tabBars.buttons["Mints"].tap()
+        tapTab("Mints")
         let mintRow = app.staticTexts[mintURL]
         XCTAssertTrue(mintRow.waitForExistence(timeout: 10), "Added mint should appear in the Mints list")
     }

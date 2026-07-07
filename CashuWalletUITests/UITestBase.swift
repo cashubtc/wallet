@@ -21,11 +21,13 @@ class UITestBase: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication()
+        app.terminate()
         app.launchEnvironment = launchEnvironment(for: launchMode)
         app.launch()
     }
 
     override func tearDownWithError() throws {
+        app?.terminate()
         app = nil
     }
 
@@ -103,8 +105,64 @@ class UITestBase: XCTestCase {
 
     func waitForMainTab(timeout: TimeInterval = 20) {
         XCTAssertTrue(
-            app.tabBars.buttons["Wallet"].waitForExistence(timeout: timeout),
+            tabButton("Wallet", timeout: timeout).exists,
             "Main wallet tab bar should appear"
+        )
+    }
+
+    @discardableResult
+    func mainTabBar(
+        timeout: TimeInterval = 20,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) -> XCUIElement {
+        let tabBar = app.tabBars.firstMatch
+        XCTAssertTrue(
+            tabBar.waitForExistence(timeout: timeout),
+            "Main tab bar should appear",
+            file: file,
+            line: line
+        )
+        return tabBar
+    }
+
+    @discardableResult
+    func tabButton(
+        _ title: String,
+        timeout: TimeInterval = 20,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) -> XCUIElement {
+        let button = mainTabBar(timeout: timeout, file: file, line: line).buttons[title].firstMatch
+        XCTAssertTrue(
+            button.waitForExistence(timeout: timeout),
+            "\(title) tab should appear",
+            file: file,
+            line: line
+        )
+        return button
+    }
+
+    func tapTab(
+        _ title: String,
+        timeout: TimeInterval = 5,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let button = tabButton(title, timeout: timeout, file: file, line: line)
+        button.tap()
+
+        let selected = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "isSelected == true"),
+            object: button
+        )
+        let result = XCTWaiter.wait(for: [selected], timeout: timeout)
+        XCTAssertEqual(
+            result,
+            .completed,
+            "\(title) tab should become selected",
+            file: file,
+            line: line
         )
     }
 }
