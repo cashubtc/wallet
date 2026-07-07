@@ -3,17 +3,19 @@ package org.cashu.wallet.ui.settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Close
@@ -99,189 +101,208 @@ fun NostrScreen(
             )
         },
     ) { padding ->
-        Column(
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .verticalScroll(rememberScrollState())
                 .navigationBarsPadding(),
+            contentPadding = PaddingValues(bottom = CashuTheme.spacing.section),
             verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
         ) {
-            NostrKeyStatusPanel(
-                signerType = nostrState.signerType,
-                initialized = nostrState.isInitialized,
-                npub = nostrState.npub,
-            )
-
-            SectionHeader("Signer")
-            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = CashuTheme.spacing.comfortable)) {
-                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                    NostrSignerType.entries.forEachIndexed { index, kind ->
-                        SegmentedButton(
-                            shape = SegmentedButtonDefaults.itemShape(
-                                index = index,
-                                count = NostrSignerType.entries.size,
-                            ),
-                            selected = kind == nostrState.signerType,
-                            onClick = {
-                                runCatching { nostrService.switchSignerType(kind) }
-                            },
-                        ) { Text(kind.displayName) }
-                    }
-                }
-                Spacer(Modifier.height(CashuTheme.spacing.snug))
-                Text(
-                    text = when (nostrState.signerType) {
-                        NostrSignerType.Seed -> "Keys are derived from your wallet seed."
-                        NostrSignerType.PrivateKey -> "Custom key stored in secure storage."
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+            item("status") {
+                NostrKeyStatusPanel(
+                    signerType = nostrState.signerType,
+                    initialized = nostrState.isInitialized,
+                    npub = nostrState.npub,
                 )
             }
 
-            SectionHeader("Public identity")
-            InspectorRow(
-                label = "npub",
-                value = nostrState.npub.ifBlank { "—" },
-                valueMonospaced = true,
-                onClick = { clipboard.copyTextWithToast(context, nostrState.npub) },
-                editable = nostrState.npub.isNotBlank(),
-            )
-            CanvasDivider(leadingInset = 16)
-            InspectorRow(
-                label = "hex",
-                value = nostrState.publicKeyHex.ifBlank { "—" },
-                valueMonospaced = true,
-                onClick = { clipboard.copyTextWithToast(context, nostrState.publicKeyHex) },
-                editable = nostrState.publicKeyHex.isNotBlank(),
-            )
-
-            SectionHeader("Private key")
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(
-                        horizontal = CashuTheme.spacing.comfortable,
-                        vertical = CashuTheme.spacing.snug,
-                    ),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
-            ) {
-                Text(
-                    text = "•".repeat(12),
-                    style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 1,
-                    overflow = TextOverflow.MiddleEllipsis,
-                )
-                IconButton(
-                    onClick = {
-                        authenticate("Reveal your Nostr private key") {
-                            nsecSheetOpen = true
-                        }
-                    },
-                    enabled = nostrState.nsec.isNotBlank(),
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Visibility,
-                        contentDescription = "Reveal",
-                    )
-                }
-                IconButton(
-                    onClick = {
-                        authenticate("Copy your Nostr private key") {
-                            clipboard.copyTextWithToast(context, nostrState.nsec)
-                        }
-                    },
-                    enabled = nostrState.nsec.isNotBlank(),
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.ContentCopy,
-                        contentDescription = "Copy nsec",
-                    )
-                }
-            }
-            Column(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = CashuTheme.spacing.comfortable),
-                verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
-            ) {
-                PrimaryButton(
-                    text = "Generate new key",
-                    onClick = { showGenerateConfirm = true },
-                )
-                GhostButton(
-                    text = "Import nsec…",
-                    onClick = { showImport = true },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                GhostButton(
-                    text = "Reset to wallet seed",
-                    onClick = { showResetConfirm = true },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = nostrState.signerType != NostrSignerType.Seed,
-                )
-            }
-
-            SectionHeader("Relays")
-            if (settings.nostrRelays.isEmpty()) {
-                Text(
-                    text = "Using defaults (relay.damus.io, nos.lol, primal.net, 8333.space).",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(
-                        horizontal = CashuTheme.spacing.comfortable,
-                        vertical = CashuTheme.spacing.snug,
-                    ),
-                )
-            } else {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    settings.nostrRelays.forEachIndexed { index, relay ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(
-                                    horizontal = CashuTheme.spacing.comfortable,
-                                    vertical = CashuTheme.spacing.default,
+            item("signer-header") { SectionHeader("Signer") }
+            item("signer") {
+                Column(modifier = Modifier.fillMaxWidth().padding(horizontal = CashuTheme.spacing.comfortable)) {
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        NostrSignerType.entries.forEachIndexed { index, kind ->
+                            SegmentedButton(
+                                shape = SegmentedButtonDefaults.itemShape(
+                                    index = index,
+                                    count = NostrSignerType.entries.size,
                                 ),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                text = relay,
-                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                                color = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.weight(1f),
-                                maxLines = 1,
-                                overflow = TextOverflow.MiddleEllipsis,
-                            )
-                            IconButton(onClick = { settingsManager.removeRelay(relay) }) {
-                                Icon(
-                                    imageVector = Icons.Outlined.Close,
-                                    contentDescription = "Remove relay",
-                                    modifier = Modifier.size(CashuTheme.spacing.loose),
+                                selected = kind == nostrState.signerType,
+                                onClick = {
+                                    runCatching { nostrService.switchSignerType(kind) }
+                                },
+                            ) {
+                                Text(
+                                    text = kind.displayName,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
                                 )
                             }
                         }
-                        if (index != settings.nostrRelays.lastIndex) CanvasDivider(leadingInset = 16)
+                    }
+                    Spacer(Modifier.height(CashuTheme.spacing.snug))
+                    Text(
+                        text = when (nostrState.signerType) {
+                            NostrSignerType.Seed -> "Keys are derived from your wallet seed."
+                            NostrSignerType.PrivateKey -> "Custom key stored in secure storage."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            item("public-header") { SectionHeader("Public identity") }
+            item("npub") {
+                InspectorRow(
+                    label = "npub",
+                    value = nostrState.npub.ifBlank { "—" },
+                    valueMonospaced = true,
+                    onClick = { clipboard.copyTextWithToast(context, nostrState.npub) },
+                    editable = nostrState.npub.isNotBlank(),
+                )
+            }
+            item("npub-divider") { CanvasDivider(leadingInset = 16) }
+            item("hex") {
+                InspectorRow(
+                    label = "hex",
+                    value = nostrState.publicKeyHex.ifBlank { "—" },
+                    valueMonospaced = true,
+                    onClick = { clipboard.copyTextWithToast(context, nostrState.publicKeyHex) },
+                    editable = nostrState.publicKeyHex.isNotBlank(),
+                )
+            }
+
+            item("private-header") { SectionHeader("Private key") }
+            item("private-key") {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(
+                            horizontal = CashuTheme.spacing.comfortable,
+                            vertical = CashuTheme.spacing.snug,
+                        ),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
+                ) {
+                    Text(
+                        text = "•".repeat(12),
+                        style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                        overflow = TextOverflow.MiddleEllipsis,
+                    )
+                    IconButton(
+                        onClick = {
+                            authenticate("Reveal your Nostr private key") {
+                                nsecSheetOpen = true
+                            }
+                        },
+                        enabled = nostrState.nsec.isNotBlank(),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Visibility,
+                            contentDescription = "Reveal",
+                        )
+                    }
+                    IconButton(
+                        onClick = {
+                            authenticate("Copy your Nostr private key") {
+                                clipboard.copyTextWithToast(context, nostrState.nsec)
+                            }
+                        },
+                        enabled = nostrState.nsec.isNotBlank(),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.ContentCopy,
+                            contentDescription = "Copy nsec",
+                        )
                     }
                 }
             }
-            Column(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = CashuTheme.spacing.comfortable),
-                verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
-            ) {
-                PrimaryButton(
-                    text = "Add relay…",
-                    onClick = { addRelayOpen = true },
-                )
-                GhostButton(
-                    text = "Reset to defaults",
-                    onClick = { settingsManager.resetNostrRelaysToDefault() },
-                    modifier = Modifier.fillMaxWidth(),
-                )
+            item("private-actions") {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = CashuTheme.spacing.comfortable),
+                    verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
+                ) {
+                    PrimaryButton(
+                        text = "Generate new key",
+                        onClick = { showGenerateConfirm = true },
+                    )
+                    GhostButton(
+                        text = "Import nsec…",
+                        onClick = { showImport = true },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    GhostButton(
+                        text = "Reset to wallet seed",
+                        onClick = { showResetConfirm = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = nostrState.signerType != NostrSignerType.Seed,
+                    )
+                }
             }
-            Spacer(Modifier.height(CashuTheme.spacing.section))
+
+            item("relays-header") { SectionHeader("Relays") }
+            if (settings.nostrRelays.isEmpty()) {
+                item("relays-empty") {
+                    Text(
+                        text = "Using defaults (relay.damus.io, nos.lol, primal.net, 8333.space).",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(
+                            horizontal = CashuTheme.spacing.comfortable,
+                            vertical = CashuTheme.spacing.snug,
+                        ),
+                    )
+                }
+            } else {
+                itemsIndexed(settings.nostrRelays, key = { _, relay -> relay }) { index, relay ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(
+                                horizontal = CashuTheme.spacing.comfortable,
+                                vertical = CashuTheme.spacing.default,
+                            ),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = relay,
+                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
+                            overflow = TextOverflow.MiddleEllipsis,
+                        )
+                        IconButton(onClick = { settingsManager.removeRelay(relay) }) {
+                            Icon(
+                                imageVector = Icons.Outlined.Close,
+                                contentDescription = "Remove relay",
+                                modifier = Modifier.size(CashuTheme.spacing.loose),
+                            )
+                        }
+                    }
+                    if (index != settings.nostrRelays.lastIndex) CanvasDivider(leadingInset = 16)
+                }
+            }
+            item("relay-actions") {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = CashuTheme.spacing.comfortable),
+                    verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
+                ) {
+                    PrimaryButton(
+                        text = "Add relay…",
+                        onClick = { addRelayOpen = true },
+                    )
+                    GhostButton(
+                        text = "Reset to defaults",
+                        onClick = { settingsManager.resetNostrRelaysToDefault() },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
         }
     }
 
@@ -322,6 +343,7 @@ fun NostrScreen(
         var input by remember { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { showImport = false; importError = null },
+            modifier = Modifier.imePadding(),
             title = { Text("Import nsec") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug)) {
@@ -400,6 +422,7 @@ fun NostrScreen(
         var input by remember { mutableStateOf("wss://") }
         AlertDialog(
             onDismissRequest = { addRelayOpen = false; addRelayError = null },
+            modifier = Modifier.imePadding(),
             title = { Text("Add relay") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug)) {

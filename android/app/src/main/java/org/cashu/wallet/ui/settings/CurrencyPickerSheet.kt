@@ -26,8 +26,10 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import java.text.NumberFormat
 import java.util.Currency
@@ -40,6 +42,12 @@ import org.cashu.wallet.ui.theme.withMonoDigits
 
 private val CheckSize = 20.dp
 private val ProgressSize = 16.dp
+
+private data class CurrencyDisplayRow(
+    val code: String,
+    val displayName: String?,
+    val symbol: String,
+)
 
 /**
  * The Settings → Currency sheet (iOS CurrencyPickerSheet): "Off / Sats only"
@@ -57,6 +65,23 @@ fun CurrencyPickerSheet(
     val price by priceService.state.collectAsState()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val fiatOn = settings.showFiatBalance
+    val locale = Locale.getDefault()
+    val currencyRows = remember(locale) {
+        SettingsManager.supportedFiatCurrencies.map { code ->
+            CurrencyDisplayRow(
+                code = code,
+                displayName = currencyDisplayName(code, locale),
+                symbol = currencySymbol(code),
+            )
+        }
+    }
+    val btcPriceText = remember(price.btcPrice, price.currencyCode, locale) {
+        if (price.btcPrice > 0) {
+            formatBtcPrice(price.btcPrice, price.currencyCode, locale)
+        } else {
+            "Loading…"
+        }
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -92,21 +117,23 @@ fun CurrencyPickerSheet(
                         },
                     )
                 }
-                items(SettingsManager.supportedFiatCurrencies, key = { it }) { code ->
+                items(currencyRows, key = { it.code }) { row ->
                     CurrencyRow(
-                        title = code,
-                        subtitle = currencyDisplayName(code),
-                        selected = fiatOn && settings.bitcoinPriceCurrency == code,
+                        title = row.code,
+                        subtitle = row.displayName,
+                        selected = fiatOn && settings.bitcoinPriceCurrency == row.code,
                         leading = {
                             Text(
-                                text = currencySymbol(code),
+                                text = row.symbol,
                                 style = MaterialTheme.typography.titleMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
                         },
                         onClick = {
                             settingsManager.setShowFiatBalance(true)
-                            settingsManager.setBitcoinPriceCurrency(code)
+                            settingsManager.setBitcoinPriceCurrency(row.code)
                             priceService.syncFromSettings(refresh = true)
                             onDismiss()
                         },
@@ -131,13 +158,11 @@ fun CurrencyPickerSheet(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Text(
-                            text = if (price.btcPrice > 0) {
-                                formatBtcPrice(price.btcPrice, price.currencyCode)
-                            } else {
-                                "Loading…"
-                            },
+                            text = btcPriceText,
                             style = MaterialTheme.typography.bodyLarge.withMonoDigits(),
                             color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                     if (price.isFetching) {
@@ -187,12 +212,16 @@ private fun CurrencyRow(
                 text = title,
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
             if (subtitle != null && !subtitle.equals(title, ignoreCase = true)) {
                 Text(
                     text = subtitle,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }
@@ -207,14 +236,14 @@ private fun CurrencyRow(
     }
 }
 
-private fun currencyDisplayName(code: String): String? =
-    runCatching { Currency.getInstance(code).getDisplayName(Locale.getDefault()) }.getOrNull()
+private fun currencyDisplayName(code: String, locale: Locale): String? =
+    runCatching { Currency.getInstance(code).getDisplayName(locale) }.getOrNull()
 
 private fun currencySymbol(code: String): String =
     runCatching { Currency.getInstance(code).symbol }.getOrDefault(code)
 
-private fun formatBtcPrice(price: Double, currencyCode: String): String {
-    val formatter = NumberFormat.getCurrencyInstance(Locale.getDefault())
+private fun formatBtcPrice(price: Double, currencyCode: String, locale: Locale): String {
+    val formatter = NumberFormat.getCurrencyInstance(locale)
     runCatching { formatter.currency = Currency.getInstance(currencyCode) }
     formatter.maximumFractionDigits = 0
     return formatter.format(price)
