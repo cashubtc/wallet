@@ -24,71 +24,66 @@ class AppLockManager(
     private val nowMillis: () -> Long = { System.currentTimeMillis() },
 ) {
     private val appContext = context.applicationContext
-    private val gracePeriodMillis = 30_000L
     private val authenticators =
         BiometricManager.Authenticators.BIOMETRIC_WEAK or BiometricManager.Authenticators.DEVICE_CREDENTIAL
-    private val mutableState = MutableStateFlow(
-        AppLockState(isAvailable = canAuthenticate()),
-    )
+    private var runtime = AppLockPolicy.initial(isAvailable = canAuthenticate())
+    private val mutableState = MutableStateFlow(runtime.state)
     val state: StateFlow<AppLockState> = mutableState.asStateFlow()
 
-    private var backgroundedAtMillis: Long? = null
-    private var authenticatedSessionStarted = false
-
     fun startAuthenticatedSession() {
-        if (authenticatedSessionStarted) return
-        authenticatedSessionStarted = true
-        val available = refreshAvailability()
-        if (settingsManager.state.value.appLockEnabled && available) {
-            lock()
-        }
+        applyRuntime(
+            AppLockPolicy.startAuthenticatedSession(
+                runtime = runtime,
+                appLockEnabled = settingsManager.state.value.appLockEnabled,
+                isAvailable = canAuthenticate(),
+            ),
+        )
     }
 
     fun endAuthenticatedSession() {
-        authenticatedSessionStarted = false
-        backgroundedAtMillis = null
-        mutableState.value = AppLockState(isAvailable = canAuthenticate())
+        applyRuntime(AppLockPolicy.endAuthenticatedSession(isAvailable = canAuthenticate()))
     }
 
     fun setEnabled(enabled: Boolean) {
         if (!enabled) {
-            unlock()
+            applyRuntime(AppLockPolicy.setEnabled(runtime, enabled = false))
             return
         }
         refreshAvailability()
     }
 
     fun appResignedActive() {
-        val current = mutableState.value
-        if (!settingsManager.state.value.appLockEnabled || current.isAuthenticating) return
-        if (backgroundedAtMillis == null) backgroundedAtMillis = nowMillis()
-        mutableState.value = current.copy(isObscured = true)
+        applyRuntime(
+            AppLockPolicy.appResignedActive(
+                runtime = runtime,
+                appLockEnabled = settingsManager.state.value.appLockEnabled,
+                nowMillis = nowMillis(),
+            ),
+        )
     }
 
     fun appBecameActive() {
-        val current = mutableState.value
-        if (!settingsManager.state.value.appLockEnabled || current.isAuthenticating) return
-        if (current.isLocked) {
-            mutableState.value = current.copy(isObscured = true)
-            return
-        }
-        val shouldRelock = backgroundedAtMillis?.let { nowMillis() - it >= gracePeriodMillis } == true
-        if (shouldRelock) {
-            lock()
-        } else {
-            mutableState.value = current.copy(isObscured = false)
-        }
-        backgroundedAtMillis = null
+        applyRuntime(
+            AppLockPolicy.appBecameActive(
+                runtime = runtime,
+                appLockEnabled = settingsManager.state.value.appLockEnabled,
+                nowMillis = nowMillis(),
+            ),
+        )
     }
 
     fun refreshAvailability(): Boolean {
         val available = canAuthenticate()
-        val current = mutableState.value
-        mutableState.value = current.copy(isAvailable = available)
         if (!available && settingsManager.state.value.appLockEnabled) {
             AppLogger.security.info("App Lock authentication unavailable; wallet remains unlocked")
-            unlock()
         }
+        applyRuntime(
+            AppLockPolicy.refreshAvailability(
+                runtime = runtime,
+                appLockEnabled = settingsManager.state.value.appLockEnabled,
+                isAvailable = available,
+            ),
+        )
         return available
     }
 
@@ -98,7 +93,7 @@ class AppLockManager(
     ): Boolean {
         if (mutableState.value.isAuthenticating) return false
         if (!refreshAvailability()) {
-            unlock()
+            applyRuntime(AppLockPolicy.authenticated(runtime))
             return true
         }
         if (activity == null) {
@@ -106,13 +101,13 @@ class AppLockManager(
             return false
         }
 
-        mutableState.value = mutableState.value.copy(isAuthenticating = true)
+        applyRuntime(AppLockPolicy.authenticating(runtime, isAuthenticating = true))
         return try {
             val success = prompt(activity, reason)
-            if (success) unlock()
+            if (success) applyRuntime(AppLockPolicy.authenticated(runtime))
             success
         } finally {
-            mutableState.value = mutableState.value.copy(isAuthenticating = false)
+            applyRuntime(AppLockPolicy.authenticating(runtime, isAuthenticating = false))
         }
     }
 
@@ -155,12 +150,8 @@ class AppLockManager(
     private fun canAuthenticate(): Boolean =
         BiometricManager.from(appContext).canAuthenticate(authenticators) == BiometricManager.BIOMETRIC_SUCCESS
 
-    private fun lock() {
-        mutableState.value = mutableState.value.copy(isLocked = true, isObscured = true)
-    }
-
-    private fun unlock() {
-        backgroundedAtMillis = null
-        mutableState.value = mutableState.value.copy(isLocked = false, isObscured = false)
+    private fun applyRuntime(next: AppLockRuntime) {
+        runtime = next
+        mutableState.value = next.state
     }
 }
