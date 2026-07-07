@@ -45,11 +45,11 @@ class AnimatedUrDecoder {
             } else {
                 AnimatedUrDecodeUpdate(content = null, progress = progress())
             }
-        }.getOrElse { error ->
+        }.getOrElse {
             AnimatedUrDecodeUpdate(
                 content = null,
                 progress = progress(),
-                errorMessage = error.message ?: "Unable to decode animated QR.",
+                errorMessage = "Unable to decode animated QR.",
             )
         }
     }

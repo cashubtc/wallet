@@ -79,10 +79,10 @@ class PriceService(private val settingsStore: SettingsStore) {
                 )
                 price
             },
-            onFailure = { error ->
+            onFailure = {
                 mutableState.value = mutableState.value.copy(
                     isFetching = false,
-                    errorMessage = error.message ?: "Could not fetch BTC price.",
+                    errorMessage = "Could not fetch BTC price.",
                 )
                 null
             },

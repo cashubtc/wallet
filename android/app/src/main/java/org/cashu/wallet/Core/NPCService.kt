@@ -136,13 +136,13 @@ class NPCService(
                         errorMessage = null,
                     )
                 }
-            }.onFailure { error ->
+            }.onFailure {
                 update {
                     copy(
                         selectedMintUrl = mintUrl,
                         configuredMintUrl = configuredMintUrl,
                         isLoading = false,
-                        errorMessage = error.message ?: "Failed to update npub.cash mint.",
+                        errorMessage = "Could not update the Lightning Address receiving mint.",
                     )
                 }
                 prefs.edit().putString(StorageKeys.npcSelectedMint, mintUrl).apply()
@@ -196,12 +196,12 @@ class NPCService(
                 )
             }
             applyPollingPreferences()
-        }.onFailure { error ->
+        }.onFailure {
             update {
                 copy(
                     isConnected = false,
                     isLoading = false,
-                    errorMessage = error.message ?: "Not connected to npub.cash.",
+                    errorMessage = "Could not connect to the Lightning Address service.",
                 )
             }
         }
@@ -248,11 +248,11 @@ class NPCService(
                     },
                 )
             }
-        }.onFailure { error ->
+        }.onFailure {
             update {
                 copy(
                     isCheckingPayments = false,
-                    errorMessage = error.message ?: "Failed to check npub.cash payments.",
+                    errorMessage = "Could not check Lightning Address payments.",
                 )
             }
         }

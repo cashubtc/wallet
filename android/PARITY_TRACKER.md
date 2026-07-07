@@ -28,7 +28,7 @@ Status date: 2026-07-07
 | 8 | Mints and Mint Metadata | Complete | Milestone 8 commit on `codex/android-update-plan-implementation` | Full NUT-06 mint detail, discovery polish, refresh behavior, rich metadata model, focused tests. |
 | 9 | History and Transaction Detail | Complete | Milestone 9 commit on `codex/android-update-plan-implementation` | Stale sync, swipe/delete, row/detail parity, large-ledger behavior, focused tests. |
 | 10 | Settings, Integrations, and Privacy | Complete | Milestone 10 commit on `codex/android-update-plan-implementation` | App Lock/no-cloud backup decision, accurate privacy toggles, authenticated secrets, Nostr/Lightning parity, focused tests. |
-| 11 | Protocol, CDK, Storage, and Runtime Hardening | Not started | TBD | Latest CDK feature parity, sagas, keysets, multi-unit, privacy-safe errors/logging, tests. |
+| 11 | Protocol, CDK, Storage, and Runtime Hardening | Complete | Milestone 11 commit on `codex/android-update-plan-implementation` | Startup recovery/keyset refresh, multi-unit/protocol coverage, privacy-safe errors, wallet boundary tests. |
 | UI bug sweep | Android back/layout/jank/interaction bugs | Not started | TBD | Back gesture tests, large-font screenshots, settings performance benchmark, duplicate-action tests. |
 | 12 | Material UI, Accessibility, and Motion Polish | Not started | TBD | Material polish, TalkBack, dark/contrast, reduce motion, screenshot checks. |
 | 13 | Android Test Coverage Parity | Not started | TBD | JVM, Compose UI, instrumentation, integration, accessibility, screenshot, and CI coverage. |
@@ -144,3 +144,11 @@ Status date: 2026-07-07
 - Lightning Address: Android now follows the iOS enable/address/preferences/check structure, hides operational rows until enabled and initialized, labels the receiving mint, and shows last-check status.
 - Danger: delete wallet confirmation explains local wallet/mint/request/Nostr/P2PK deletion and the lack of Android cloud backup.
 - Tests: focused Gradle coverage includes settings relay validation, Nostr service, NPC service, and Sentry service behavior.
+
+## Current Milestone 11 Evidence
+
+- Startup runtime: `WalletManager` now has an explicit tracked mint/unit refresh pass that calls CDK wallet ensuring for every stored mint/unit before balance, transaction, and pending-state maintenance.
+- Error mapping: `WalletUserErrors` maps common wallet/CDK failures to safe user copy and redacts fallback messages; wallet, NPC, price, animated QR, and Cashu Request listener state paths avoid raw exception text.
+- Service architecture: `android/SERVICE_BOUNDARY_NOTES.md` records the intentional WalletManager-centered Android service boundary and the tests required before any later split.
+- Wallet boundary safety: focused validation covers database recovery, preference snapshots, secure Nostr key helpers, wallet service protocols, pending quote metadata, stored melt metadata, and protocol feature coverage.
+- Protocol coverage: tests cover payment-method domain support for BOLT11/BOLT12/on-chain, rich NUT flags including NUT-09/NUT-10/NUT-20/NUT-21, generic non-sat units, NUT-18/NUT-10 request building, token parsing, and Lightning request decoding.

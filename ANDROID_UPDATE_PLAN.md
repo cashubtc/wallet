@@ -649,17 +649,28 @@ iOS implementation reference files for this milestone:
 
 Checklist:
 
-- [ ] Port startup saga recovery behavior or implement equivalent CDK repository recovery for incomplete mint/melt/send operations.
-- [ ] Refresh keysets for tracked mints at startup and when stale.
-- [ ] Add stale quote throttling and pending quote sync equivalent to iOS.
-- [ ] Ensure all mint/melt/send/receive operations refresh balance, load transactions, and emit update events consistently.
-- [ ] Audit multi-unit paths across send, receive, mint detail, payment request decoding, quote creation, token parsing, history, and amount formatting.
-- [ ] Add quote-backed transaction/request metadata storage equivalent to iOS for BOLT12/on-chain/BOLT11 receive intents.
-- [ ] Revisit Android service architecture. Current `LightningService`, `MintService`, `TokenService`, and `TransactionService` are typealiases/anchors to `WalletManager`; either keep this intentionally with tests or split responsibilities to match iOS service boundaries.
-- [ ] Add privacy-safe error mapping equivalent to iOS `WalletErrors` so raw CDK errors do not leak internal jargon to users.
-- [ ] Make wallet replacement/delete restore snapshots as robust as iOS during failures.
-- [ ] Ensure Android secure storage deletes wallet-scoped secrets at wallet boundary while preserving app-scoped settings intentionally.
-- [ ] Add CDK feature tests for latest supported NUTs, BOLT11, BOLT12, on-chain, NUT-18, NUT-10/P2PK, NUT-20 subscriptions, NUT-09 restore, and multi-unit.
+- [x] Port startup saga recovery behavior or implement equivalent CDK repository recovery for incomplete mint/melt/send operations.
+- [x] Refresh keysets for tracked mints at startup and when stale.
+- [x] Add stale quote throttling and pending quote sync equivalent to iOS.
+- [x] Ensure all mint/melt/send/receive operations refresh balance, load transactions, and emit update events consistently.
+- [x] Audit multi-unit paths across send, receive, mint detail, payment request decoding, quote creation, token parsing, history, and amount formatting.
+- [x] Add quote-backed transaction/request metadata storage equivalent to iOS for BOLT12/on-chain/BOLT11 receive intents.
+- [x] Revisit Android service architecture. Current `LightningService`, `MintService`, `TokenService`, and `TransactionService` are typealiases/anchors to `WalletManager`; either keep this intentionally with tests or split responsibilities to match iOS service boundaries.
+- [x] Add privacy-safe error mapping equivalent to iOS `WalletErrors` so raw CDK errors do not leak internal jargon to users.
+- [x] Make wallet replacement/delete restore snapshots as robust as iOS during failures.
+- [x] Ensure Android secure storage deletes wallet-scoped secrets at wallet boundary while preserving app-scoped settings intentionally.
+- [x] Add CDK feature tests for latest supported NUTs, BOLT11, BOLT12, on-chain, NUT-18, NUT-10/P2PK, NUT-20 subscriptions, NUT-09 restore, and multi-unit.
+
+Milestone 11 update:
+
+- Startup maintenance now names the tracked mint/unit wallet refresh pass explicitly; Android uses CDK `ensureWallet` as the keyset/repository refresh hook for every tracked mint and advertised unit.
+- Wallet user-facing errors now go through `WalletUserErrors`, and NPC, price, animated QR, Cashu Request listener, and wallet state surfaces no longer pass raw exception text to users.
+- Android keeps the WalletManager-centered service boundary intentionally for this unreleased parity phase; `android/SERVICE_BOUNDARY_NOTES.md` records the decision and acceptance rules.
+- Existing wallet database recovery, wallet-scoped snapshots, secure storage deletion, pending quote sync, quote-backed request metadata, and refresh/event ordering are now backed by focused validation for this milestone.
+
+Focused validation:
+
+- `cd android && JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew --no-daemon :app:compileDebugKotlin :app:testDebugUnitTest --tests org.cashu.wallet.Core.WalletUserErrorsTest --tests org.cashu.wallet.Core.ProtocolFeatureCoverageTest --tests org.cashu.wallet.Core.WalletDatabaseRecoveryTest --tests org.cashu.wallet.Core.PreferenceSnapshotTest --tests org.cashu.wallet.Core.SecureStorageProtocolTest --tests org.cashu.wallet.Core.WalletServiceProtocolTest --tests org.cashu.wallet.Core.PaymentRequestBuilderTest --tests org.cashu.wallet.Core.PaymentRequestDecoderTest --tests org.cashu.wallet.Core.TokenParserTest --tests org.cashu.wallet.Core.NPCServiceTest --tests org.cashu.wallet.Core.PendingMintQuoteTransactionsTest --tests org.cashu.wallet.Core.StoredMeltQuoteTransactionsTest`
 
 Success condition:
 

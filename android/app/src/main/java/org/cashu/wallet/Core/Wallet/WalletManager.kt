@@ -41,7 +41,7 @@ class WalletManager(
 ) : WalletServiceProtocol, NPCQuoteClaimHandler {
     private val exceptionHandler = CoroutineExceptionHandler { _, error ->
         AppLogger.wallet.error("Unhandled wallet coroutine error", error)
-        update { copy(isLoading = false, errorMessage = error.message ?: error::class.simpleName) }
+        update { copy(isLoading = false, errorMessage = WalletUserErrors.message(error)) }
     }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate + exceptionHandler)
     private val mutableState = MutableStateFlow(WalletState())
@@ -82,7 +82,7 @@ class WalletManager(
                     isLoading = false,
                     needsOnboarding = true,
                     canExitOnboarding = false,
-                    errorMessage = error.message,
+                    errorMessage = WalletUserErrors.message(error),
                 )
             }
         }
@@ -725,20 +725,26 @@ class WalletManager(
 
     private suspend fun performBestEffortWalletStartupMaintenance() {
         val trackedMints = walletStore.loadMints()
-        trackedMints.forEach { mint ->
-            runCatching { gateway.ensureWallet(mint.url) }
-                .onFailure { AppLogger.wallet.error("Startup wallet preparation failed for mint", it) }
-            mint.units.filterNot { it.equals("sat", ignoreCase = true) }.forEach { unit ->
-                runCatching { gateway.ensureWallet(mint.url, unit) }
-                    .onFailure { AppLogger.wallet.error("Startup unit wallet preparation failed for mint", it) }
-            }
-        }
+        refreshTrackedMintWallets(trackedMints)
         runCatching { refreshBalance() }
             .onFailure { AppLogger.wallet.error("Startup balance refresh failed", it) }
         runCatching { loadTransactions() }
             .onFailure { AppLogger.wallet.error("Startup transaction load failed", it) }
         runCatching { performForegroundMaintenance() }
             .onFailure { AppLogger.wallet.error("Startup pending-state maintenance failed", it) }
+    }
+
+    private suspend fun refreshTrackedMintWallets(trackedMints: List<MintInfo>) {
+        trackedMints.forEach { mint ->
+            // CDK wallet creation/ensuring refreshes the repository's mint
+            // keysets for every tracked mint/unit we may spend from.
+            runCatching { gateway.ensureWallet(mint.url) }
+                .onFailure { AppLogger.wallet.error("Startup wallet refresh failed for mint", it) }
+            mint.units.filterNot { it.equals("sat", ignoreCase = true) }.forEach { unit ->
+                runCatching { gateway.ensureWallet(mint.url, unit) }
+                    .onFailure { AppLogger.wallet.error("Startup unit wallet refresh failed for mint", it) }
+            }
+        }
     }
 
     private fun markNPCQuoteProcessed(quoteId: String) {
@@ -831,7 +837,7 @@ class WalletManager(
             .onSuccess { update { copy(isLoading = false) } }
             .onFailure { error ->
                 AppLogger.wallet.error("Wallet operation failed", error)
-                update { copy(isLoading = false, errorMessage = error.message) }
+                update { copy(isLoading = false, errorMessage = WalletUserErrors.message(error)) }
             }
             .getOrThrow()
     }

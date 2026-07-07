@@ -107,7 +107,7 @@ class CashuRequestListener(
             scope.launch {
                 mutableState.value = CashuRequestListenerState(
                     isRunning = client != null,
-                    lastError = error.message ?: "Failed to redeem Cashu request payment.",
+                    lastError = WalletUserErrors.message(error),
                 )
             }
         }
