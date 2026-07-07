@@ -2,7 +2,7 @@ package org.cashu.wallet.Core
 
 /**
  * Complete BIP-39 English wordlist (2048 words) for per-word mnemonic
- * validation — generated from `CashuWallet/Core/BIP39WordList.swift` so both
+ * validation — generated from `ios/CashuWallet/Core/BIP39WordList.swift` so both
  * platforms validate against the identical list. Mirrors the iOS
  * `WalletManager+Backup` helpers (`invalidMnemonicWords`, `normalizeMnemonic`).
  */

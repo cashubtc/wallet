@@ -13,7 +13,7 @@ Implemented runtime coverage includes:
 - Android Keystore-backed secure storage, DataStore-backed app settings, wallet-scoped reset boundaries, and CDK database migration/recovery helpers.
 - Compose flows for onboarding, wallet home, history, mints, receive, send/pay, scanner, contactless NFC, and settings.
 - Android manifest permissions for internet, camera, NFC, vibration, optional hardware features, backup exclusions, and `cashu:` deep links.
-- Product/design parity tokens from `PRODUCT.md`, `DESIGN.md`, `DESIGN.json`, and the button prompt files through `CashuTheme`, shared action buttons, quiet cards, semantic state colors, and amount display controls.
+- Product/design parity tokens from `../docs/product/PRODUCT.md`, `../docs/product/DESIGN.md`, `../docs/product/DESIGN.json`, and the button prompt files through `CashuTheme`, shared action buttons, quiet cards, semantic state colors, and amount display controls.
 
 ## Build
 

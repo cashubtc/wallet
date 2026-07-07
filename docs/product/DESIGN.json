@@ -245,7 +245,7 @@
     "rules": [
       {
         "name": "The Semantic-Only Rule",
-        "body": "No file in CashuWallet/ defines a custom extension Color. If a new color is needed, it is either a system semantic (Color.primary, Color.secondary, Color.accentColor, Color(.systemBackground), Color(.separator)) or one of three state hues at a stated opacity. There is no fourth case.",
+        "body": "No file in ios/CashuWallet/ defines a custom extension Color. If a new color is needed, it is either a system semantic (Color.primary, Color.secondary, Color.accentColor, Color(.systemBackground), Color(.separator)) or one of three state hues at a stated opacity. There is no fourth case.",
         "section": "colors"
       },
       {
@@ -310,7 +310,7 @@
       "Don't introduce a display font, a serif pairing, a custom-loaded .otf, or a Font.system(size: N) for body text. SF system styles only.",
       "Don't reach for .fullScreenCover for a confirmation, a settings flow, or any modal that is not the camera. Use a sheet with the right detent.",
       "Don't add bounce, elastic, or .spring(response:, dampingFraction:) values outside the existing vocabulary (.smooth(0.32), .snappy(0.25-0.35), .easeOut(0.2-0.3)). Motion is exponential ease-out, in that range.",
-      "Don't echo the anti-references from PRODUCT.md: no gamified crypto-app confetti, no neon-on-black 'crypto default' palette, no mascots, no signature gradients, no holographic borders, no glowing rings. Money is not a game and the wallet should not fight iOS for attention."
+      "Don't echo the anti-references from docs/product/PRODUCT.md: no gamified crypto-app confetti, no neon-on-black 'crypto default' palette, no mascots, no signature gradients, no holographic borders, no glowing rings. Money is not a game and the wallet should not fight iOS for attention."
     ]
   }
 }

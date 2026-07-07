@@ -89,7 +89,7 @@ import org.cashu.wallet.ui.theme.CashuTheme
 import org.cashu.wallet.ui.theme.rememberReducedMotion
 
 // ---------------------------------------------------------------------------
-// iOS OnboardingView parity. Source of truth: CashuWallet/Views/Main/
+// iOS OnboardingView parity. Source of truth: ios/CashuWallet/Views/Main/
 // OnboardingView.swift — welcome → showMnemonic (redacted seed, tap-to-reveal,
 // acknowledge checkbox) → firstMint (multi-select recommended mints), plus the
 // seed-restore branch. Step changes are quiet 250ms crossfades; blocks

@@ -53,7 +53,7 @@ Run the full integration test suite locally:
 NUTSHELL_MINT_URL=http://localhost:3338 \
 CDK_MINT_URL=http://localhost:3339 \
 xcodebuild test \
-  -project CashuWallet.xcodeproj \
+  -project ios/CashuWallet.xcodeproj \
   -scheme CashuWallet \
   -destination 'platform=iOS Simulator,name=iPhone 17' \
   -only-testing:CashuWalletTests
@@ -191,7 +191,7 @@ You can also test manually against the live mints:
 ./CI/start-cdk.sh
 
 # Run iOS app in simulator
-open CashuWallet.xcodeproj
+open ios/CashuWallet.xcodeproj
 
 # Add mints in the app:
 # Settings → Mints → Add Mint:

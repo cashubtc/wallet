@@ -26,7 +26,7 @@ Every primary action button in the app should match this pattern.
 ## What I Need You To Do
 
 ### 1. Deep Audit
-Read every view file under `CashuWallet/Views/`. For each button, document:
+Read every view file under `ios/CashuWallet/Views/`. For each button, document:
 - What style it currently uses (`.glassButton()`, `.buttonStyle(.plain)`, `.liquidGlass()`, custom, etc.)
 - Whether it is full-width or constrained
 - Whether it is a primary action, secondary action, or utility/navigation button
@@ -66,11 +66,11 @@ Apply the following button hierarchy consistently:
 
 ## Files Most Likely Needing Changes
 
-- `CashuWallet/Views/Send/SendView.swift`
-- `CashuWallet/Views/Melt/MeltView.swift` (Pay Lightning)
-- `CashuWallet/Views/Receive/ReceiveLightningView.swift`
-- `CashuWallet/Views/Receive/ReceiveTokenDetailView.swift` ← this is the reference, touch only if needed
-- `CashuWallet/Views/Settings/SettingsView.swift`
+- `ios/CashuWallet/Views/Send/SendView.swift`
+- `ios/CashuWallet/Views/Melt/MeltView.swift` (Pay Lightning)
+- `ios/CashuWallet/Views/Receive/ReceiveLightningView.swift`
+- `ios/CashuWallet/Views/Receive/ReceiveTokenDetailView.swift` ← this is the reference, touch only if needed
+- `ios/CashuWallet/Views/Settings/SettingsView.swift`
 - Any other view with a primary CTA button
 
 ## Existing Utilities to Reuse

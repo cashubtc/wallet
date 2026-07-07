@@ -106,9 +106,9 @@ directly would be redundant, larger, and a bigger exposure surface.
 
 | Concern | Location |
 |---|---|
-| Backup / restore / detection | `CashuWallet/Core/Wallet/WalletManager+Backup.swift` |
-| Synchronizable Keychain seed | `CashuWallet/Core/KeychainService.swift` |
-| Wallet init + NUT-09 per-mint restore | `CashuWallet/Core/Wallet/WalletManager+Lifecycle.swift` |
-| `MintRestorePhase` model | `CashuWallet/Models/WalletSupport/RestoreMintResult.swift` |
-| Onboarding iCloud restore UI | `CashuWallet/Views/Main/OnboardingView.swift` |
-| Settings restore UI + "Back Up Now" | `CashuWallet/Views/.../SettingsView.swift` |
+| Backup / restore / detection | `ios/CashuWallet/Core/Wallet/WalletManager+Backup.swift` |
+| Synchronizable Keychain seed | `ios/CashuWallet/Core/KeychainService.swift` |
+| Wallet init + NUT-09 per-mint restore | `ios/CashuWallet/Core/Wallet/WalletManager+Lifecycle.swift` |
+| `MintRestorePhase` model | `ios/CashuWallet/Models/WalletSupport/RestoreMintResult.swift` |
+| Onboarding iCloud restore UI | `ios/CashuWallet/Views/Main/OnboardingView.swift` |
+| Settings restore UI + "Back Up Now" | `ios/CashuWallet/Views/.../SettingsView.swift` |

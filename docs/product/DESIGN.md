@@ -146,7 +146,7 @@ reserved for state, never for brand. Numbers get the typographic care of a
 chronograph face. Pending values stay quiet; only confirmed values are allowed
 green.
 
-What this system explicitly rejects, pulled verbatim from PRODUCT.md:
+What this system explicitly rejects, pulled verbatim from docs/product/PRODUCT.md:
 
 - Gamified crypto consumer apps (MetaMask, Coinbase Wallet, Trust Wallet)
 - Hero-metric SaaS dashboards
@@ -182,7 +182,7 @@ on dark.
 ### Primary
 
 - **System Ink** (light `#000000` / dark `#FFFFFF`): the `AccentColor` defined in
-  `CashuWallet/Resources/Assets.xcassets/AccentColor.colorset`. Used for tints and
+  `ios/CashuWallet/Resources/Assets.xcassets/AccentColor.colorset`. Used for tints and
   the 15% primary-color frost behind every `glassButton()` capsule (see
   `FullWidthCapsuleButtonStyle`). The ink reads as system label everywhere; there
   is no inverted-fill variant — Liquid Glass is the singular primary surface.
@@ -240,7 +240,7 @@ as a tinted background.
 
 ### Named Rules
 
-**The Semantic-Only Rule.** No file in `CashuWallet/` defines a custom
+**The Semantic-Only Rule.** No file in `ios/CashuWallet/` defines a custom
 `extension Color`. If a new color is needed, it is either a system semantic
 (`Color.primary`, `Color.secondary`, `Color.accentColor`, `Color(.systemBackground)`,
 `Color(.separator)`) or one of three state hues at a stated opacity. There is no
@@ -251,7 +251,7 @@ amounts are never green.* A transaction row's amount is now a **two-state
 ledger signal**: `.secondary` while `transaction.status == .pending`, `.primary`
 once settled (both directions, both kinds — incoming, outgoing, ecash,
 Lightning, on-chain). A received Cashu Request renders `.primary` too. The
-shared `TransactionAmountColumn` (`CashuWallet/Views/Components/`) is the
+shared `TransactionAmountColumn` (`ios/CashuWallet/Views/Components/`) is the
 canonical implementation: `amountColor` is exactly
 `transaction.status == .pending ? .secondary : .primary`; do not re-derive the
 color elsewhere. *Rationale for the carve-out:* mixing green/white/gray amounts
@@ -474,7 +474,7 @@ right tool for the job.
   iOS 18–25. `.body.weight(.semibold)`, `.padding(.vertical, 18)`. Pressed
   state: opacity 0.85 with a `.snappy(0.18)` animation. Disabled: opacity 0.4.
   **This is the only button surface vocabulary in the app.** Defined in
-  `CashuWallet/Views/Components/LiquidGlassModifiers.swift`. Used everywhere a
+  `ios/CashuWallet/Views/Components/LiquidGlassModifiers.swift`. Used everywhere a
   button needs a visible affordance: Create Wallet, Continue, Pay, Send,
   Receive, Copy, Restore, etc.
 - **Text link — `.textLinkButton()`** (= `TextLinkButtonStyle`): the canonical
@@ -485,7 +485,7 @@ right tool for the job.
   custom mint URL") stays at the call site, since text links range from inline
   ("Copy") to full-width ("Skip", "Add custom mint URL"). Used for "Skip" /
   "Skip for now", "What is ecash?", "Copy", and "Add custom mint URL". Defined
-  in `CashuWallet/Views/Components/LiquidGlassModifiers.swift`.
+  in `ios/CashuWallet/Views/Components/LiquidGlassModifiers.swift`.
 - **Utility — `.buttonStyle(.plain)`** with a bare SF Symbol (no text label),
   often wrapped in `.liquidGlass(in: Capsule(), interactive: true)` when the
   symbol earns a glass surface. Reserved for **icon-only** actions: the
@@ -518,7 +518,7 @@ right tool for the job.
 ### History Rows
 
 The canonical list pattern. Defined in
-`CashuWallet/Views/History/HistoryView.swift`.
+`ios/CashuWallet/Views/History/HistoryView.swift`.
 
 - **Leading**: a single directional arrow on a soft neutral circle, via
   `TransactionIcon` — `arrow.down` for incoming, `arrow.up` for outgoing,
@@ -617,7 +617,7 @@ section. Defined in `HistoryView.swift` → `cashuRequestRow(request:, staggerIn
   should follow that glass field, not `.roundedBorder`.* Any remaining
   `.roundedBorder` fields are legacy.
 - **Amount entry**: never a raw TextField. The dedicated
-  `CashuWallet/Views/Components/AmountEntryView.swift` view owns this — a
+  `ios/CashuWallet/Views/Components/AmountEntryView.swift` view owns this — a
   full-screen canvas with `CurrencyAmountDisplay`, fiat-primary toggle, mint
   selector, and inline number pad. Amount is a *moment*, not a form field.
 
@@ -660,7 +660,7 @@ camera scanner only.
 ### Cashu Request Inspector
 
 The signature surface of the NUT-18 receive flow.
-`CashuWallet/Views/Receive/CashuRequestDetailView.swift`. The view runs in two
+`ios/CashuWallet/Views/Receive/CashuRequestDetailView.swift`. The view runs in two
 contexts: as the receive-flow face inside a `.medium`/`.large` sheet from
 `ReceiveEcashView`, or — from History/Home — presented as its **own bottom
 `.sheet`** (wrapped in a `NavigationStack` at the call site for its toolbar).
@@ -731,7 +731,7 @@ both contexts.
 
 ### Signature: ActivityOrb
 
-`CashuWallet/Views/Components/ActivityOrbView.swift` — a pulsing `circle.dotted`
+`ios/CashuWallet/Views/Components/ActivityOrbView.swift` — a pulsing `circle.dotted`
 SF Symbol that fades in (`.easeIn(0.3)`), rotates linearly forever
 (`.linear(2).repeatForever()`), and fades out (`.easeOut(0.5)`) when work
 finishes. Used as a quiet "something is happening in the background" indicator
@@ -879,7 +879,7 @@ code must be).
    `.easeInOut(duration: 0.25)` on the discriminator (`value: currentRequest?.id`).
    Use this whenever a sheet has two faces of the same task; the alternative
    (push navigation, modal stacking) breaks the "the sheet is the unit of
-   intent" principle in PRODUCT.md.
+   intent" principle in docs/product/PRODUCT.md.
 6. **Payment-received celebration** — `paymentJustReceived` lights up the
    Cashu Request status badge for 2.5s with `.spring(response: 0.5,
    dampingFraction: 0.7)`. The checkmark uses `.symbolEffect(.bounce, value:)`
@@ -1014,7 +1014,7 @@ curve or a delight beat):*
 - **Don't** spawn a new sheet, full-screen cover, or alert for an attribute
   edit that fits in three rows. The right pattern is a `.medium`-detent
   sub-sheet that closes itself on selection.
-- **Don't** echo the anti-references from PRODUCT.md: no gamified crypto-app
+- **Don't** echo the anti-references from docs/product/PRODUCT.md: no gamified crypto-app
   confetti, no neon-on-black "crypto default" palette, no mascots, no
   signature gradients, no holographic borders, no glowing rings. Money is not
   a game and the wallet should not fight iOS for attention.

@@ -190,7 +190,7 @@
 		CC000000000000A2 /* NWCManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NWCManager.swift; sourceTree = "<group>"; };
 		CC000000000000B2 /* NWCSettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NWCSettingsSection.swift; sourceTree = "<group>"; };
 		72AF0EF42FEF2300001AD6AC /* SentryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SentryService.swift; sourceTree = "<group>"; };
-		72DD529F60A8D9D1A81E3FBB /* NutshellIntegrationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NutshellIntegrationTests.swift; path = CI/IntegrationTests/Tests/NutshellIntegrationTests.swift; sourceTree = "<group>"; };
+		72DD529F60A8D9D1A81E3FBB /* NutshellIntegrationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NutshellIntegrationTests.swift; path = ../CI/IntegrationTests/Tests/NutshellIntegrationTests.swift; sourceTree = "<group>"; };
 		99846FC03810AE4BE904466F /* WalletIntegrationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = WalletIntegrationTests.swift; path = CashuWalletUITests/WalletIntegrationTests.swift; sourceTree = "<group>"; };
 		AA00000000000011 /* PaymentMethodProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaymentMethodProtocol.swift; sourceTree = "<group>"; };
 		AA00000000000012 /* CurrencyProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CurrencyProtocol.swift; sourceTree = "<group>"; };
@@ -253,7 +253,7 @@
 		EE00000000000014 /* TokenParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TokenParser.swift; sourceTree = "<group>"; };
 		EE00000000000015 /* AmountFormatter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AmountFormatter.swift; sourceTree = "<group>"; };
 		EE00000000000016 /* LightningRequestParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LightningRequestParser.swift; sourceTree = "<group>"; };
-		F1CF8C0C2E1379BCD23CF8C6 /* IntegrationTestBase.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = IntegrationTestBase.swift; path = CI/IntegrationTests/Tests/IntegrationTestBase.swift; sourceTree = "<group>"; };
+		F1CF8C0C2E1379BCD23CF8C6 /* IntegrationTestBase.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = IntegrationTestBase.swift; path = ../CI/IntegrationTests/Tests/IntegrationTestBase.swift; sourceTree = "<group>"; };
 		F200000000000001 /* NDEFTextRecordCoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NDEFTextRecordCoder.swift; sourceTree = "<group>"; };
 		F200000000000002 /* NFCReaderDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NFCReaderDelegate.swift; sourceTree = "<group>"; };
 		F200000000000003 /* NFCPaymentService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NFCPaymentService.swift; sourceTree = "<group>"; };
@@ -275,10 +275,10 @@
 		T1B0000000000004 /* TransactionServiceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TransactionServiceTests.swift; path = CashuWalletTests/TransactionServiceTests.swift; sourceTree = "<group>"; };
 		T1B0000000000005 /* NIP44Tests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NIP44Tests.swift; path = CashuWalletTests/NIP44Tests.swift; sourceTree = "<group>"; };
 		T1B0000000000006 /* TokenServiceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TokenServiceTests.swift; path = CashuWalletTests/TokenServiceTests.swift; sourceTree = "<group>"; };
-		T1B0000000000007 /* AmountFormatterTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AmountFormatterTests.swift; path = CI/IntegrationTests/Tests/AmountFormatterTests.swift; sourceTree = "<group>"; };
-		T1B0000000000008 /* TokenParserTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TokenParserTests.swift; path = CI/IntegrationTests/Tests/TokenParserTests.swift; sourceTree = "<group>"; };
-		T1B0000000000009 /* PaymentRequestDecoderTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PaymentRequestDecoderTests.swift; path = CI/IntegrationTests/Tests/PaymentRequestDecoderTests.swift; sourceTree = "<group>"; };
-		T1B000000000000A /* CurrencyTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CurrencyTests.swift; path = CI/IntegrationTests/Tests/CurrencyTests.swift; sourceTree = "<group>"; };
+		T1B0000000000007 /* AmountFormatterTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AmountFormatterTests.swift; path = ../CI/IntegrationTests/Tests/AmountFormatterTests.swift; sourceTree = "<group>"; };
+		T1B0000000000008 /* TokenParserTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TokenParserTests.swift; path = ../CI/IntegrationTests/Tests/TokenParserTests.swift; sourceTree = "<group>"; };
+		T1B0000000000009 /* PaymentRequestDecoderTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PaymentRequestDecoderTests.swift; path = ../CI/IntegrationTests/Tests/PaymentRequestDecoderTests.swift; sourceTree = "<group>"; };
+		T1B000000000000A /* CurrencyTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CurrencyTests.swift; path = ../CI/IntegrationTests/Tests/CurrencyTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */

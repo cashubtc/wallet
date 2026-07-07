@@ -37,7 +37,7 @@ jobs:
       uses: actions/cache@v4
       with:
         path: ${{ runner.temp }}/SourcePackages
-        key: xcode-spm-macos-26-arm64-26.5-${{ hashFiles('CashuWallet.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+        key: xcode-spm-macos-26-arm64-26.5-${{ hashFiles('ios/CashuWallet.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
 
     - name: Setup mints
       run: |
@@ -91,7 +91,7 @@ jobs:
         SIMULATOR_BOOT_PID=$!
 
         xcodebuild build-for-testing \
-          -project CashuWallet.xcodeproj \
+          -project ios/CashuWallet.xcodeproj \
           -scheme CashuWallet \
           -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" \
           -derivedDataPath "$RUNNER_TEMP/CashuWalletDerivedData" \
@@ -111,7 +111,7 @@ jobs:
       run: |
         set -o pipefail
         xcodebuild test-without-building \
-          -project CashuWallet.xcodeproj \
+          -project ios/CashuWallet.xcodeproj \
           -scheme CashuWallet \
           -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" \
           -derivedDataPath "$RUNNER_TEMP/CashuWalletDerivedData" \
