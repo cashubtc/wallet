@@ -75,6 +75,13 @@ fun CashuNavHost(
             ReceiveEcashScreen(
                 walletManager = container.walletManager,
                 settingsManager = container.settingsManager,
+                nostrService = container.nostrService,
+                cashuRequestStore = container.cashuRequestStore,
+                onOpenRequest = { id ->
+                    navController.navigate(cashuRequestDetailRouteFor(id)) {
+                        popUpTo(Routes.RECEIVE_ECASH) { inclusive = true }
+                    }
+                },
                 onClose = { navController.popBackStack() },
                 onScan = onScan,
                 prefilledPayload = pendingReceiveScan,
