@@ -17,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import org.cashu.wallet.Core.AmountDisplayPrimary
 import org.cashu.wallet.Core.AmountDisplayText
@@ -39,6 +40,8 @@ fun BalanceDisplay(
         Modifier.clickable(
             interactionSource = interactionSource,
             indication = null,
+            onClickLabel = "Toggle balance display",
+            role = Role.Button,
         ) {
             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
             onTogglePrimary(

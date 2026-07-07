@@ -6,6 +6,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -30,6 +31,8 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import org.cashu.wallet.Views.Components.QRCodeView
 import org.cashu.wallet.ui.theme.CashuTheme
@@ -38,6 +41,7 @@ import org.cashu.wallet.ui.theme.CashuTheme
 // the QR off the white surface. Off-limits to change the QR rendering itself
 // per memory — these are *around* QRCodeView.
 private val QrCardCornerRadius = 20.dp
+private val QrCardMinSize = 160.dp
 
 /**
  * White-cushioned wrapper around the legacy QRCodeView (which is off-limits per memory).
@@ -59,11 +63,16 @@ fun QrCard(
     val haptics = LocalHapticFeedback.current
     var menuOpen by remember { mutableStateOf(false) }
 
-    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+    BoxWithConstraints(modifier = modifier, contentAlignment = Alignment.Center) {
+        val maxQrSize = (maxWidth - CashuTheme.spacing.section).coerceAtLeast(QrCardMinSize)
+        val qrSize = minOf(sizeDp.dp, maxQrSize)
         Box(
             modifier = Modifier
                 .clip(RoundedCornerShape(QrCardCornerRadius))
                 .background(Color.White)
+                .semantics {
+                    contentDescription = "QR code. Long press for copy and share options."
+                }
                 .combinedClickable(
                     onClick = {},
                     onLongClick = {
@@ -74,7 +83,7 @@ fun QrCard(
                     onLongClickLabel = "Show options",
                 )
                 .padding(CashuTheme.spacing.comfortable)
-                .size(sizeDp.dp),
+                .size(qrSize),
         ) {
             QRCodeView(
                 content = content,

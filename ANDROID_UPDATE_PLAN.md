@@ -727,7 +727,7 @@ Checklist:
 - [ ] Audit `SendEcashScreen` input face for keypad, P2PK lock fields, keyboard, and CTA clipping; ensure the generated-token face keeps copy/share/actions reachable above navigation bars.
 - [ ] Audit `ReceiveLightningScreen` input face for amount keypad, method picker, keyboard, and CTA clipping; move to scrollable/adaptive composition if needed.
 - [ ] Audit `ReceiveEcashScreen` paste/review faces for keyboard, long token text, locked-token metadata, and lower action clipping.
-- [ ] Make QR display surfaces use responsive QR sizing instead of fixed sizes that can overflow narrow split-screen widths.
+- [x] Make QR display surfaces use responsive QR sizing instead of fixed sizes that can overflow narrow split-screen widths. `QrCard` now constrains QR size against the available width with a minimum usable QR size.
 - [x] Add bottom `navigationBarsPadding` or explicit safe-area spacers to pushed settings sub-screens such as Privacy, Backup, Nostr, P2PK, Lightning, and Mint Detail. Privacy, Backup, Backup/Restore, Nostr, P2PK, Lightning, Mint Detail, and Transaction Detail now clear navigation bars.
 - [ ] Add `imePadding` and scroll support to all text-entry dialogs and sheets: Nostr relay add/import, P2PK import/generate labels, mint add/discovery filters, restore seed/mint input, and send destination entry.
 - [x] Add max-lines, overflow, and width constraints to `SettingsRows.NavRow`, `ToggleRow`, mint rows, history rows, QR detail rows, and public-key rows so long titles, trailing values, mint URLs, relay URLs, Lightning addresses, and P2PK keys cannot push controls off-screen.
@@ -810,13 +810,15 @@ iOS implementation reference files for this milestone:
 
 Checklist:
 
+Milestone update: shared Material components now have responsive QR sizing, bounded button labels, QR long-press accessibility copy, balance toggle click semantics, and explicit keypad button semantics. Screenshot, physical-device, reduced-motion, and full TalkBack audits remain open.
+
 - [ ] Complete the Android UI Bug Audit Backlog above before declaring visual polish complete.
 - [ ] Use Material 3 top app bars, bottom navigation, modal bottom sheets, alert dialogs, segmented controls, chips, icon buttons, and pull-to-refresh where platform appropriate.
 - [ ] Avoid copying Liquid Glass visuals directly; use Material tonal surfaces, elevation, ripple/indication, dynamic color where appropriate, and Android-native motion.
 - [ ] Keep page sections on the bare canvas; avoid nested cards and marketing-style decoration.
-- [ ] Define stable sizes for QR cards, keypads, icon buttons, amount heroes, row heights, and bottom actions to avoid layout jumps.
+- [x] Define stable sizes for QR cards, keypads, icon buttons, amount heroes, row heights, and bottom actions to avoid layout jumps. QR cards now resize within constraints, keypad and button heights are stable, and shared rows have bounded text.
 - [ ] Support large font sizes without clipped button labels or overlapped amount text.
-- [ ] Add TalkBack labels/hints for balances, toggles, QR copy/share, scanner, NFC, destructive actions, key reveals, and transaction rows.
+- [ ] Add TalkBack labels/hints for balances, toggles, QR copy/share, scanner, NFC, destructive actions, key reveals, and transaction rows. Shared QR, balance toggle, keypad, toggle rows, transaction rows, scanner, and key reveal controls now have improved semantics; a complete TalkBack audit remains.
 - [ ] Respect reduce-motion/animation scale settings where possible.
 - [ ] Align haptics: selection on navigation/choice, success on completed scan/payment, warning/error on failures.
 - [ ] Add dark theme and contrast review for all screens.

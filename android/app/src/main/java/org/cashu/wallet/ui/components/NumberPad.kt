@@ -21,6 +21,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import org.cashu.wallet.Core.UnitAmountEntry
 
@@ -114,8 +117,16 @@ private fun NumberPadKey(
             .height(KeyHeight)
             .clip(MaterialTheme.shapes.medium)
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .semantics {
+                this.contentDescription = if (onLongClick != null) {
+                    "$contentDescription. Long press to clear."
+                } else {
+                    contentDescription
+                }
+            }
             .combinedClickable(
                 onClickLabel = contentDescription,
+                role = Role.Button,
                 onLongClickLabel = onLongClick?.let { "Clear" },
                 onLongClick = onLongClick?.let {
                     {
