@@ -57,8 +57,8 @@ fun PrivacyScreen(
         ) {
             SectionHeader("Background work")
             ToggleRow(
-                title = "Check pending tokens on startup",
-                subtitle = "Refresh status when the app launches",
+                title = "Check sent tokens on startup",
+                subtitle = "Refresh sent-token claim status once after unlock",
                 checked = settings.checkPendingOnStartup,
                 onCheckedChange = settingsManager::setCheckPendingOnStartup,
             )
