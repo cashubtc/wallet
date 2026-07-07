@@ -77,7 +77,17 @@ import org.cashu.wallet.ui.components.shareText
 import org.cashu.wallet.ui.theme.CashuTheme
 import org.cashu.wallet.ui.theme.withMonoDigits
 
-private enum class MintConnectionState { Checking, Online, Offline }
+enum class MintConnectionState { Checking, Online, Offline }
+
+fun mintConnectionStateAfterRefresh(
+    beforeLastUpdatedEpochMillis: Long,
+    refreshed: MintInfo?,
+): MintConnectionState =
+    if (refreshed != null && refreshed.lastUpdatedEpochMillis > beforeLastUpdatedEpochMillis) {
+        MintConnectionState.Online
+    } else {
+        MintConnectionState.Offline
+    }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -95,23 +105,36 @@ fun MintDetailScreen(
     var connectionState by remember(mintUrl) { mutableStateOf(MintConnectionState.Checking) }
     var showFullDescription by remember(mintUrl) { mutableStateOf(false) }
     var copiedUrl by remember { mutableStateOf(false) }
+    val nonSatUnits = remember(mint?.units) {
+        mint?.units.orEmpty().filter { !it.equals("sat", ignoreCase = true) }.sorted()
+    }
+    var unitBalances by remember(mintUrl) { mutableStateOf<Map<String, Long>>(emptyMap()) }
+    var loadedUnits by remember(mintUrl) { mutableStateOf<Set<String>>(emptySet()) }
 
     LaunchedEffect(mintUrl, mint?.url) {
         val current = mint ?: return@LaunchedEffect
         connectionState = MintConnectionState.Checking
         val before = current.lastUpdatedEpochMillis
         val refreshed = runCatching { walletManager.refreshMintInfo(current) }.getOrNull()
-        connectionState = if (refreshed != null && refreshed.lastUpdatedEpochMillis > before) {
-            MintConnectionState.Online
-        } else {
-            MintConnectionState.Offline
-        }
+        connectionState = mintConnectionStateAfterRefresh(before, refreshed)
     }
 
     LaunchedEffect(copiedUrl) {
         if (copiedUrl) {
             delay(1_500)
             copiedUrl = false
+        }
+    }
+
+    LaunchedEffect(mint?.url, nonSatUnits) {
+        val current = mint ?: return@LaunchedEffect
+        unitBalances = emptyMap()
+        loadedUnits = emptySet()
+        nonSatUnits.forEach { unit ->
+            walletManager.unitBalanceIfExists(current.url, unit)?.let { balance ->
+                unitBalances = unitBalances + (unit to balance)
+            }
+            loadedUnits = loadedUnits + unit
         }
     }
 
@@ -145,246 +168,30 @@ fun MintDetailScreen(
             EmptyMintFallback(padding = padding, onClose = onClose)
             return@Scaffold
         }
-        Column(
+        MintDetailContent(
+            mint = mint,
+            isActive = isActive,
+            connectionState = connectionState,
+            showFullDescription = showFullDescription,
+            copiedUrl = copiedUrl,
+            unitBalances = unitBalances,
+            loadedUnits = loadedUnits,
+            onToggleFullDescription = { showFullDescription = !showFullDescription },
+            onCopyUrl = {
+                clipboard.copyTextWithToast(context, mint.url)
+                copiedUrl = true
+            },
+            onOpenTerms = { tos -> openExternalOrCopy(context, clipboard, tos) },
+            onOpenContact = { contact -> openContact(context, clipboard, contact) },
+            onSetActive = {
+                if (!isActive) walletManager.launch { walletManager.setActiveMint(mint) }
+            },
+            onRemove = { confirmingRemove = true },
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
-        ) {
-            HeaderBlock(mint = mint, isActive = isActive)
-
-            SectionHeader("Connection")
-            InspectorRow(
-                label = "Status",
-                value = when (connectionState) {
-                    MintConnectionState.Checking -> "Checking"
-                    MintConnectionState.Online -> "Online"
-                    MintConnectionState.Offline -> "Offline"
-                },
-            )
-            CanvasDivider(leadingInset = 16)
-            InspectorRow(
-                label = "Last updated",
-                value = formatTimestamp(mint.lastUpdatedEpochMillis),
-            )
-
-            if (!mint.description.isNullOrBlank() || !mint.descriptionLong.isNullOrBlank() || !mint.motd.isNullOrBlank()) {
-                SectionHeader("About")
-                mint.description?.takeIf { it.isNotBlank() }?.let {
-                    Text(
-                        text = it,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = CashuTheme.spacing.comfortable),
-                    )
-                }
-                mint.descriptionLong?.takeIf { it.isNotBlank() }?.let { longDescription ->
-                    val clipped = longDescription.length > 280 && !showFullDescription
-                    Text(
-                        text = if (clipped) longDescription.take(280).trimEnd() + "..." else longDescription,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = CashuTheme.spacing.comfortable),
-                    )
-                    if (longDescription.length > 280) {
-                        GhostButton(
-                            text = if (showFullDescription) "Show less" else "Read more",
-                            onClick = { showFullDescription = !showFullDescription },
-                            modifier = Modifier.padding(horizontal = CashuTheme.spacing.comfortable),
-                        )
-                    }
-                }
-                mint.motd?.takeIf { it.isNotBlank() }?.let {
-                    InlineNotice(
-                        text = it,
-                        modifier = Modifier.padding(horizontal = CashuTheme.spacing.comfortable),
-                    )
-                }
-            }
-
-            SectionHeader("Identity")
-            Column(modifier = Modifier.fillMaxWidth()) {
-                InspectorRow(
-                    label = "URL",
-                    value = shortenMintUrl(mint.url),
-                    valueMonospaced = true,
-                )
-                CanvasDivider(leadingInset = 16)
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            clipboard.copyTextWithToast(context, mint.url)
-                            copiedUrl = true
-                        }
-                        .padding(
-                            horizontal = CashuTheme.spacing.comfortable,
-                            vertical = CashuTheme.spacing.default,
-                        ),
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.ContentCopy,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(COPY_ROW_ICON_SIZE),
-                    )
-                    Text(
-                        text = "Copy full URL",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                }
-                if (copiedUrl) {
-                    InlineNotice(
-                        text = "Mint URL copied.",
-                        modifier = Modifier.padding(horizontal = CashuTheme.spacing.comfortable),
-                    )
-                }
-                mint.pubkey?.takeIf { it.isNotBlank() }?.let {
-                    CanvasDivider(leadingInset = 16)
-                    InspectorRow(
-                        label = "Public key",
-                        value = it,
-                        valueMonospaced = true,
-                    )
-                }
-                if (mint.urls.isNotEmpty()) {
-                    CanvasDivider(leadingInset = 16)
-                    InspectorRow(
-                        label = "Endpoints",
-                        value = mint.urls.joinToString(),
-                    )
-                }
-            }
-
-            SectionHeader("Capabilities")
-            InspectorRow(
-                label = "Summary",
-                value = mintCapabilitySummary(mint),
-            )
-            CanvasDivider(leadingInset = 16)
-            InspectorRow(
-                label = "Units",
-                value = mint.units.joinToString(", ").ifBlank { "sat" },
-            )
-
-            SectionHeader("NUT support")
-            NutRows(mint = mint)
-
-            SectionHeader("Payment methods")
-            Column(modifier = Modifier.fillMaxWidth()) {
-                PaymentMethodRows(
-                    label = "Receive",
-                    settings = mint.mintMethodSettings,
-                    fallback = mint.supportedMintMethods.map {
-                        MintPaymentMethodSetting(method = it, unit = "sat")
-                    },
-                )
-                CanvasDivider(leadingInset = 16)
-                PaymentMethodRows(
-                    label = "Send",
-                    settings = mint.meltMethodSettings,
-                    fallback = mint.supportedMeltMethods.map {
-                        MintPaymentMethodSetting(method = it, unit = "sat")
-                    },
-                )
-                mint.onchainMintConfirmations?.let {
-                    CanvasDivider(leadingInset = 16)
-                    InspectorRow(
-                        label = "On-chain confirmations",
-                        value = it.toString(),
-                        valueMonospaced = true,
-                    )
-                }
-            }
-
-            SectionHeader("Wallet")
-            InspectorRow(
-                label = "Balance on this mint",
-                value = "${mint.balance} sat",
-                valueMonospaced = true,
-            )
-            // Per-unit balances for non-sat units, loaded on demand.
-            val nonSatUnits = remember(mint.units) {
-                mint.units.filter { !it.equals("sat", ignoreCase = true) }.sorted()
-            }
-            var unitBalances by remember(mint.url) { mutableStateOf<Map<String, Long>>(emptyMap()) }
-            var loadedUnits by remember(mint.url) { mutableStateOf<Set<String>>(emptySet()) }
-            LaunchedEffect(mint.url, nonSatUnits) {
-                nonSatUnits.forEach { unit ->
-                    walletManager.unitBalanceIfExists(mint.url, unit)?.let { balance ->
-                        unitBalances = unitBalances + (unit to balance)
-                    }
-                    loadedUnits = loadedUnits + unit
-                }
-            }
-            nonSatUnits.forEach { unit ->
-                CanvasDivider(leadingInset = 16)
-                InspectorRow(
-                    label = "Balance (${unit.uppercase()})",
-                    value = when {
-                        unit in unitBalances -> CurrencyAmount(
-                            unitBalances.getValue(unit),
-                            CurrencyRegistry.currencyForMintUnit(unit),
-                        ).formatted()
-                        unit in loadedUnits -> "Not created"
-                        else -> "..."
-                    },
-                    valueMonospaced = true,
-                )
-            }
-
-            if (mint.contacts.isNotEmpty() || !mint.softwareName.isNullOrBlank() || !mint.tosUrl.isNullOrBlank()) {
-                SectionHeader("Information")
-                if (!mint.softwareName.isNullOrBlank() || !mint.softwareVersion.isNullOrBlank()) {
-                    InspectorRow(
-                        label = "Software",
-                        value = listOfNotNull(mint.softwareName, mint.softwareVersion).joinToString(" "),
-                    )
-                }
-                mint.tosUrl?.takeIf { it.isNotBlank() }?.let { tos ->
-                    CanvasDivider(leadingInset = 16)
-                    ClickableInfoRow(
-                        label = "Terms",
-                        value = tos,
-                        onClick = { openExternalOrCopy(context, clipboard, tos) },
-                    )
-                }
-                mint.contacts.forEach { contact ->
-                    CanvasDivider(leadingInset = 16)
-                    ClickableInfoRow(
-                        label = contact.method.replaceFirstChar { it.uppercase() },
-                        value = contact.info,
-                        onClick = { openContact(context, clipboard, contact) },
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(CashuTheme.spacing.comfortable))
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = CashuTheme.spacing.comfortable),
-                verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
-            ) {
-                PrimaryButton(
-                    text = if (isActive) "Active mint" else "Set as active mint",
-                    onClick = {
-                        if (!isActive) walletManager.launch { walletManager.setActiveMint(mint) }
-                    },
-                    enabled = !isActive,
-                )
-                DestructiveTextButton(
-                    text = "Remove mint",
-                    onClick = { confirmingRemove = true },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-            Spacer(Modifier.height(CashuTheme.spacing.section).navigationBarsPadding())
-        }
+        )
     }
 
     if (confirmingRemove) {
@@ -410,6 +217,244 @@ fun MintDetailScreen(
                 TextButton(onClick = { confirmingRemove = false }) { Text("Cancel") }
             },
         )
+    }
+}
+
+@Composable
+fun MintDetailContent(
+    mint: MintInfo,
+    isActive: Boolean,
+    connectionState: MintConnectionState,
+    showFullDescription: Boolean,
+    copiedUrl: Boolean,
+    unitBalances: Map<String, Long>,
+    loadedUnits: Set<String>,
+    onToggleFullDescription: () -> Unit,
+    onCopyUrl: () -> Unit,
+    onOpenTerms: (String) -> Unit,
+    onOpenContact: (MintContactInfo) -> Unit,
+    onSetActive: () -> Unit,
+    onRemove: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
+    ) {
+        HeaderBlock(mint = mint, isActive = isActive)
+
+        SectionHeader("Connection")
+        InspectorRow(
+            label = "Status",
+            value = when (connectionState) {
+                MintConnectionState.Checking -> "Checking"
+                MintConnectionState.Online -> "Online"
+                MintConnectionState.Offline -> "Offline"
+            },
+        )
+        CanvasDivider(leadingInset = 16)
+        InspectorRow(
+            label = "Last updated",
+            value = formatTimestamp(mint.lastUpdatedEpochMillis),
+        )
+
+        if (!mint.description.isNullOrBlank() || !mint.descriptionLong.isNullOrBlank() || !mint.motd.isNullOrBlank()) {
+            SectionHeader("About")
+            mint.description?.takeIf { it.isNotBlank() }?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = CashuTheme.spacing.comfortable),
+                )
+            }
+            mint.descriptionLong?.takeIf { it.isNotBlank() }?.let { longDescription ->
+                val clipped = longDescription.length > 280 && !showFullDescription
+                Text(
+                    text = if (clipped) longDescription.take(280).trimEnd() + "..." else longDescription,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = CashuTheme.spacing.comfortable),
+                )
+                if (longDescription.length > 280) {
+                    GhostButton(
+                        text = if (showFullDescription) "Show less" else "Read more",
+                        onClick = onToggleFullDescription,
+                        modifier = Modifier.padding(horizontal = CashuTheme.spacing.comfortable),
+                    )
+                }
+            }
+            mint.motd?.takeIf { it.isNotBlank() }?.let {
+                InlineNotice(
+                    text = it,
+                    modifier = Modifier.padding(horizontal = CashuTheme.spacing.comfortable),
+                )
+            }
+        }
+
+        SectionHeader("Identity")
+        Column(modifier = Modifier.fillMaxWidth()) {
+            InspectorRow(
+                label = "URL",
+                value = shortenMintUrl(mint.url),
+                valueMonospaced = true,
+            )
+            CanvasDivider(leadingInset = 16)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onCopyUrl)
+                    .padding(
+                        horizontal = CashuTheme.spacing.comfortable,
+                        vertical = CashuTheme.spacing.default,
+                    ),
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.ContentCopy,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(COPY_ROW_ICON_SIZE),
+                )
+                Text(
+                    text = "Copy full URL",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+            if (copiedUrl) {
+                InlineNotice(
+                    text = "Mint URL copied.",
+                    modifier = Modifier.padding(horizontal = CashuTheme.spacing.comfortable),
+                )
+            }
+            mint.pubkey?.takeIf { it.isNotBlank() }?.let {
+                CanvasDivider(leadingInset = 16)
+                InspectorRow(
+                    label = "Public key",
+                    value = it,
+                    valueMonospaced = true,
+                )
+            }
+            if (mint.urls.isNotEmpty()) {
+                CanvasDivider(leadingInset = 16)
+                InspectorRow(
+                    label = "Endpoints",
+                    value = mint.urls.joinToString(),
+                )
+            }
+        }
+
+        SectionHeader("Capabilities")
+        InspectorRow(
+            label = "Summary",
+            value = mintCapabilitySummary(mint),
+        )
+        CanvasDivider(leadingInset = 16)
+        InspectorRow(
+            label = "Units",
+            value = mint.units.joinToString(", ").ifBlank { "sat" },
+        )
+
+        SectionHeader("NUT support")
+        NutRows(mint = mint)
+
+        SectionHeader("Payment methods")
+        Column(modifier = Modifier.fillMaxWidth()) {
+            PaymentMethodRows(
+                label = "Receive",
+                settings = mint.mintMethodSettings,
+                fallback = mint.supportedMintMethods.map {
+                    MintPaymentMethodSetting(method = it, unit = "sat")
+                },
+            )
+            CanvasDivider(leadingInset = 16)
+            PaymentMethodRows(
+                label = "Send",
+                settings = mint.meltMethodSettings,
+                fallback = mint.supportedMeltMethods.map {
+                    MintPaymentMethodSetting(method = it, unit = "sat")
+                },
+            )
+            mint.onchainMintConfirmations?.let {
+                CanvasDivider(leadingInset = 16)
+                InspectorRow(
+                    label = "On-chain confirmations",
+                    value = it.toString(),
+                    valueMonospaced = true,
+                )
+            }
+        }
+
+        SectionHeader("Wallet")
+        InspectorRow(
+            label = "Balance on this mint",
+            value = "${mint.balance} sat",
+            valueMonospaced = true,
+        )
+        val nonSatUnits = mint.units.filter { !it.equals("sat", ignoreCase = true) }.sorted()
+        nonSatUnits.forEach { unit ->
+            CanvasDivider(leadingInset = 16)
+            InspectorRow(
+                label = "Balance (${unit.uppercase()})",
+                value = when {
+                    unit in unitBalances -> CurrencyAmount(
+                        unitBalances.getValue(unit),
+                        CurrencyRegistry.currencyForMintUnit(unit),
+                    ).formatted()
+                    unit in loadedUnits -> "Not created"
+                    else -> "..."
+                },
+                valueMonospaced = true,
+            )
+        }
+
+        if (mint.contacts.isNotEmpty() || !mint.softwareName.isNullOrBlank() || !mint.tosUrl.isNullOrBlank()) {
+            SectionHeader("Information")
+            if (!mint.softwareName.isNullOrBlank() || !mint.softwareVersion.isNullOrBlank()) {
+                InspectorRow(
+                    label = "Software",
+                    value = listOfNotNull(mint.softwareName, mint.softwareVersion).joinToString(" "),
+                )
+            }
+            mint.tosUrl?.takeIf { it.isNotBlank() }?.let { tos ->
+                CanvasDivider(leadingInset = 16)
+                ClickableInfoRow(
+                    label = "Terms",
+                    value = tos,
+                    onClick = { onOpenTerms(tos) },
+                )
+            }
+            mint.contacts.forEach { contact ->
+                CanvasDivider(leadingInset = 16)
+                ClickableInfoRow(
+                    label = contact.method.replaceFirstChar { it.uppercase() },
+                    value = contact.info,
+                    onClick = { onOpenContact(contact) },
+                )
+            }
+        }
+
+        Spacer(Modifier.height(CashuTheme.spacing.comfortable))
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = CashuTheme.spacing.comfortable),
+            verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
+        ) {
+            PrimaryButton(
+                text = if (isActive) "Active mint" else "Set as active mint",
+                onClick = onSetActive,
+                enabled = !isActive,
+            )
+            DestructiveTextButton(
+                text = "Remove mint",
+                onClick = onRemove,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        Spacer(Modifier.height(CashuTheme.spacing.section).navigationBarsPadding())
     }
 }
 
