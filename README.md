@@ -1,8 +1,8 @@
 # Cashu Wallet
 
-A privacy-first iOS wallet for Cashu ecash and the Lightning Network, with on-chain Bitcoin support and NFC contactless payments.
+A privacy-first wallet for Cashu ecash and the Lightning Network, with on-chain Bitcoin support and NFC contactless payments.
 
-Built with SwiftUI, targets iOS 18+, and uses [cdk-swift](https://github.com/asmogo/cdk-swift) (the Cashu Dev Kit) under the hood.
+The iOS app is the production reference implementation. The Android app in `android/` is a native Jetpack Compose implementation being brought to feature and UX parity before public release.
 
 ## Features
 
@@ -30,6 +30,8 @@ Built with SwiftUI, targets iOS 18+, and uses [cdk-swift](https://github.com/asm
 
 ## Building
 
+### iOS
+
 Open `CashuWallet.xcodeproj` in Xcode 16+ and run on an iOS 18 simulator or device. Swift Package Manager resolves `cdk-swift` automatically.
 
 For a CLI build to the simulator:
@@ -41,9 +43,22 @@ xcodebuild -project CashuWallet.xcodeproj \
   build
 ```
 
+### Android
+
+Android builds live in `android/` and use Gradle with `cdk-kotlin`. The current local and CI gates are:
+
+```sh
+cd android
+./gradlew --no-daemon :app:testDebugUnitTest
+./gradlew --no-daemon :app:lintDebug
+./gradlew --no-daemon :app:assembleRelease
+```
+
 ## Project layout
 
 - `CashuWallet/App` — app entry point and root view
 - `CashuWallet/Core` — services (wallet, mints, NFC, Nostr, keychain), navigation, settings
 - `CashuWallet/Views` — SwiftUI views grouped by flow (Send, Receive, Mints, History, Settings)
 - `CashuWallet/Models` — data types and protocols
+- `android/app/src/main` — native Android app, Core services, Compose UI, models, and resources
+- `android/app/src/test` — Android JVM unit coverage for parsers, protocol helpers, storage, settings, history, mints, requests, and UI support logic
