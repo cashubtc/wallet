@@ -19,7 +19,7 @@ Status date: 2026-07-07
 | --- | --- | --- | --- | --- |
 | 0 | Source of truth and parity guardrails | Complete | `afa21c7` | Tracker/docs exist, stale parity notes are corrected, route inventory exists, misleading settings are hidden or relabeled, fixtures exist. |
 | 1 | Security, App Lock, Backup, and Wallet Lifecycle | Complete | Milestone 1 commit on `codex/android-update-plan-implementation` | App Lock, authenticated secret reveal, documented no-cloud backup MVP, startup maintenance, stale quote sync, security tests. |
-| 2 | Onboarding and Restore Parity | Not started | TBD | iOS-equivalent create/restore/cloud/staged mint restore flows and UI/instrumentation tests. |
+| 2 | Onboarding and Restore Parity | Complete | Milestone 2 commit on `codex/android-update-plan-implementation` | iOS-equivalent create/restore/no-cloud placeholder/staged mint restore flows, row-level add/restore progress, retry, and focused Gradle validation. |
 | 3 | Home, Shell, and Foreground Behavior | Not started | TBD | Home parity, received-delta beat, foreground sync, scanner/contactless shell correctness, UI tests. |
 | 4 | Unified Send, Pay Flows, and Contactless | Not started | TBD | Full Cashu Request pay/acquire/top-up, richer status/error flows, NFC parity, tests. |
 | 5 | Receive Ecash and Cashu Request Parity | Not started | TBD | Editable requests, quote-backed intents, locked/unknown mint handling, status parity, tests. |
@@ -58,3 +58,12 @@ Status date: 2026-07-07
 - Backup product decision: `android/SECURITY_BACKUP_MODEL.md` keeps Android cloud seed backup hidden until a restorable encryption/account model exists.
 - Startup maintenance: `WalletManager.performBestEffortWalletStartupMaintenance`, `performForegroundMaintenance`, and `syncPendingMintQuotesIfStale`.
 - Logging audit: `AppLogger` redaction coverage expanded and Sentry breadcrumbs are sanitized.
+
+## Current Milestone 2 Evidence
+
+- Onboarding state machine: `OnboardingScreen` now uses welcome, seed reveal, first mint, first-mint progress, restore method, cloud restore placeholder, restore input, restore mints, and restore progress steps.
+- Create flow: seed phrase reveal requires acknowledgement before continuing; the old mnemonic quiz was removed.
+- First mint setup: recommended mint multi-select, pasted/custom mint candidates, skip, and row-level add progress/results with retry.
+- Restore flow: restore method chooser, no-cloud Android backup placeholder, mnemonic validation through `MnemonicInput`, staged mint paste parsing, preview metadata/avatar loading, reorder/remove, and row-level restore progress/results with retry.
+- Settings restore ergonomics: restore launched from an existing wallet can be exited back to the wallet.
+- Privacy-safe telemetry: onboarding emits only generic opt-in Sentry breadcrumbs via `SentryService`.

@@ -97,7 +97,10 @@ fun CashuApp(container: AppContainer) {
 
         when {
             !walletState.isInitialized -> LoadingScreen()
-            walletState.needsOnboarding -> OnboardingScreen(walletManager = container.walletManager)
+            walletState.needsOnboarding -> OnboardingScreen(
+                walletManager = container.walletManager,
+                sentryService = container.sentryService,
+            )
             else -> AuthenticatedShell(container = container)
         }
     }

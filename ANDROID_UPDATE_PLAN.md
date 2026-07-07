@@ -4,6 +4,12 @@ Date: 2026-07-07
 
 This plan compares the current Android implementation against the iOS wallet, treating iOS as the target for feature, payment, UI, UX, and test parity. Android should not copy iOS Liquid Glass controls directly. It should deliver equivalent behavior through native Android and Material 3 patterns: top app bars, bottom navigation, modal bottom sheets, dialogs, snackbars/inline notices, BiometricPrompt, Android NFC, CameraX, and TalkBack-friendly semantics.
 
+## Project Compatibility Baseline
+
+The Android wallet has not shipped publicly, and this repository is still treated as a new unreleased product. Backward compatibility with old Android-only feature behavior is not required. Data migrations for stale Android models, settings, route names, onboarding states, local database shapes, cached quote records, or experimental feature flags are not required unless a specific migration is later requested.
+
+Implementation should therefore prefer clean iOS-parity behavior over preserving legacy Android behavior. When an old Android flow conflicts with the iOS target, replace it directly, delete obsolete code, and simplify tests around the new expected behavior. Security-sensitive changes may invalidate old local app data if that is the cleanest unreleased-product path.
+
 ## Audit Scope
 
 The audit covered the product docs, design docs, iOS app, iOS unit/UI/integration tests, Android app, Android unit/instrumented tests, and Android migration/design notes. Build outputs and generated Gradle/Xcode artifacts are excluded.
@@ -42,6 +48,13 @@ Focused test command used during Milestone 1:
 
 ```sh
 JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:testDebugUnitTest --tests org.cashu.wallet.Core.AppLoggerTest --tests org.cashu.wallet.Core.SentryServiceTest --tests org.cashu.wallet.Core.SettingsManagerTest --tests org.cashu.wallet.ui.preview.PreviewWalletFixturesTest
+```
+
+Focused validation used during Milestone 2:
+
+```sh
+JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:compileDebugKotlin
+JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:testDebugUnitTest --tests org.cashu.wallet.Core.MnemonicInputTest --tests org.cashu.wallet.Core.MintUrlInputTest --tests org.cashu.wallet.Core.SentryServiceTest
 ```
 
 ## Executive Summary
@@ -166,16 +179,16 @@ Android gaps:
 
 Checklist:
 
-- [ ] Redesign `OnboardingScreen` state machine to match iOS steps: welcome, show mnemonic, first mint, restore method, restore input, restore mints, restore progress, cloud restore.
-- [ ] Remove or demote the mnemonic quiz unless a deliberate Android-only product decision keeps it.
-- [ ] Add seed reveal/acknowledgement UI with Material 3 cards/rows and safe copy behavior.
-- [ ] Add restore method screen: restore from Android cloud backup, restore from seed phrase.
-- [ ] Add mnemonic input validation matching iOS supported word counts and error copy.
-- [ ] Add staged mint restore UI that accepts multiple URLs from paste, normalizes candidates, fetches mint preview name/icon, and allows remove/reorder/retry.
-- [ ] Add first-mint setup with recommended mints, custom URL entry, paste multiple URLs, skip, and progress/result rows.
-- [ ] Add per-mint restore result model equivalent to iOS `RestoreMintResult`: recovered, pending, failed, skipped.
-- [ ] Make restore usable from Settings without forcing an awkward full onboarding restart.
-- [ ] Add onboarding analytics/breadcrumbs only if Sentry is opted in and without sensitive values.
+- [x] Redesign `OnboardingScreen` state machine to match iOS steps: welcome, show mnemonic, first mint, restore method, restore input, restore mints, restore progress, cloud restore. Implemented direct replacement flow with a no-cloud Android backup placeholder matching the Milestone 1 backup decision.
+- [x] Remove or demote the mnemonic quiz unless a deliberate Android-only product decision keeps it. The quiz step and unreachable quiz UI were removed.
+- [x] Add seed reveal/acknowledgement UI with Material 3 cards/rows and safe copy behavior. The seed is hidden behind reveal, acknowledgement is required, and copy feedback is transient.
+- [x] Add restore method screen: restore from Android cloud backup, restore from seed phrase. Android cloud restore is shown as unavailable/no-cloud MVP and routes to seed restore.
+- [x] Add mnemonic input validation matching iOS supported word counts and error copy. Restore uses `MnemonicInput` normalization and the shared supported-count label.
+- [x] Add staged mint restore UI that accepts multiple URLs from paste, normalizes candidates, fetches mint preview name/icon, and allows remove/reorder/retry. Restore staging uses `mintUrlCandidates`, best-effort `WalletManager.previewMint`, `MintAvatar`, Up/Down/Remove actions, and retry on failed restore rows.
+- [x] Add first-mint setup with recommended mints, custom URL entry, paste multiple URLs, skip, and progress/result rows. First setup supports multi-select recommended mints, pasted/custom mint candidates, skip, and row-level add progress/results with retry.
+- [x] Add per-mint restore result model equivalent to iOS `RestoreMintResult`: recovered, pending, failed, skipped. Android keeps the domain `RestoreMintResult` and adds UI phases for pending/restoring/restored/skipped/failed.
+- [x] Make restore usable from Settings without forcing an awkward full onboarding restart. Existing wallet restore can be exited back to the wallet and uses the same restore method/staged mint flow.
+- [x] Add onboarding analytics/breadcrumbs only if Sentry is opted in and without sensitive values. Onboarding emits generic step breadcrumbs through the opt-in `SentryService`; no seed words, mint URLs, or user/device identifiers are included.
 
 Success condition:
 

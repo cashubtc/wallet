@@ -168,6 +168,17 @@ class WalletManager(
         }
     }
 
+    suspend fun previewMint(url: String): MintInfo {
+        val normalized = mintMetadataFetcher.normalizeMintUrl(url)
+        mintMetadataFetcher.validateMintUrl(normalized)?.let { throw IllegalArgumentException(it) }
+        return runCatching { mintMetadataFetcher.fetchRawMintInfo(normalized) }.getOrElse {
+            MintInfo(
+                url = normalized,
+                name = runCatching { URL(normalized).host }.getOrNull() ?: "Unknown Mint",
+            )
+        }
+    }
+
     override suspend fun removeMint(mint: MintInfo) {
         withLoading {
             runCatching { gateway.removeWallet(mint.url) }
