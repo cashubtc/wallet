@@ -176,6 +176,12 @@ Focused validation used while extracting receive Lightning quote-flow coverage:
 JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:compileDebugKotlin :app:testDebugUnitTest --tests org.cashu.wallet.ui.receive.ReceiveLightningQuoteFlowTest
 ```
 
+Focused validation used while extracting WalletManager startup maintenance coverage:
+
+```sh
+JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:compileDebugKotlin :app:testDebugUnitTest --tests org.cashu.wallet.Core.WalletStartupMaintenanceTest
+```
+
 ## Executive Summary
 
 Android is strongest in:
@@ -931,11 +937,11 @@ Major gaps:
 
 Unit test checklist:
 
-Milestone update: JVM coverage now includes payment request/locked receive encoding, dedicated `CashuRequestStore` persistence tests for quote-intent upsert, attach by quote id, duplicate suppression, update, delete, reset, reload, stale current-id cleanup, legacy payment normalization, Mint Detail display mapping tests, Receive Lightning polling cadence tests, and Receive Lightning quote-flow tests for quote intent persistence, force-new on-chain creation, reusable BOLT12 reuse, and settlement attachment. Compose UI, screenshot, instrumentation, integration, and CI parity remain open.
+Milestone update: JVM coverage now includes payment request/locked receive encoding, dedicated `CashuRequestStore` persistence tests for quote-intent upsert, attach by quote id, duplicate suppression, update, delete, reset, reload, stale current-id cleanup, legacy payment normalization, WalletManager startup maintenance orchestration, Mint Detail display mapping tests, Receive Lightning polling cadence tests, and Receive Lightning quote-flow tests for quote intent persistence, force-new on-chain creation, reusable BOLT12 reuse, and settlement attachment. Compose UI, screenshot, instrumentation, integration, and CI parity remain open.
 
 - [x] Add `PaymentRequestBuilder` tests for NUT-10 payload and locked receive request parse.
 - [x] Add `CashuRequestStore` tests for update/regenerate, quote-intent upsert, attach by quote id, delete/reset/reload, and duplicate suppression.
-- [ ] Add `WalletManager` tests for startup maintenance orchestration with fake gateway.
+- [x] Add `WalletManager` tests for startup maintenance orchestration with fake gateway. `WalletStartupMaintenanceTest` covers tracked mint/unit wallet refresh ordering, duplicate unit suppression, startup balance refresh, transaction load, foreground maintenance, and best-effort continuation when individual startup steps fail.
 - [ ] Add tests for keyset refresh and incomplete saga recovery routing.
 - [ ] Add tests for `addMintAndPayCashuRequest`, external top-up, mint settling, and fee estimation.
 - [x] Add send destination inference tests for BIP-321 Cashu Request plus Lightning fallback precedence, on-chain, Lightning address, and ecash token handoff.
