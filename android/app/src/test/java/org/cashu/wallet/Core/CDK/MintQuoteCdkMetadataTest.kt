@@ -1,5 +1,6 @@
 package org.cashu.wallet.Core.CDK
 
+import kotlinx.coroutines.runBlocking
 import org.cashu.wallet.Core.LOCAL_NEVER_EXPIRES_EPOCH_SECONDS
 import org.cashu.wallet.Models.PaymentMethodKind
 import org.cashudevkit.Amount as CdkAmount
@@ -64,6 +65,55 @@ class MintQuoteCdkMetadataTest {
 
         assertNull(cleared.usedByOperation)
         assertEquals("secret", cleared.secretKey)
+    }
+
+    @Test
+    fun orphanedReservationIsClearedWhenSagaIsMissing() = runBlocking {
+        var checkedOperationId: String? = null
+        val quote = quote(usedByOperation = "operation-id", secretKey = "secret")
+
+        val cleared = quote.clearingOrphanedReservationIfNeeded { operationId ->
+            checkedOperationId = operationId
+            false
+        }
+
+        assertEquals("operation-id", checkedOperationId)
+        assertNull(cleared.usedByOperation)
+        assertEquals("secret", cleared.secretKey)
+    }
+
+    @Test
+    fun activeSagaKeepsQuoteReservation() = runBlocking {
+        val quote = quote(usedByOperation = "operation-id")
+
+        val retained = quote.clearingOrphanedReservationIfNeeded { true }
+
+        assertEquals("operation-id", retained.usedByOperation)
+    }
+
+    @Test
+    fun sagaLookupFailureClearsReservationForRecovery() = runBlocking {
+        val quote = quote(usedByOperation = "operation-id")
+
+        val cleared = quote.clearingOrphanedReservationIfNeeded {
+            error("database unavailable")
+        }
+
+        assertNull(cleared.usedByOperation)
+    }
+
+    @Test
+    fun quoteWithoutReservationDoesNotCheckSagaState() = runBlocking {
+        var sagaChecked = false
+        val quote = quote(usedByOperation = null)
+
+        val unchanged = quote.clearingOrphanedReservationIfNeeded {
+            sagaChecked = true
+            false
+        }
+
+        assertFalse(sagaChecked)
+        assertNull(unchanged.usedByOperation)
     }
 
     @Test

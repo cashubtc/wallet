@@ -182,6 +182,12 @@ Focused validation used while extracting WalletManager startup maintenance cover
 JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:compileDebugKotlin :app:testDebugUnitTest --tests org.cashu.wallet.Core.WalletStartupMaintenanceTest
 ```
 
+Focused validation used while covering keyset refresh and orphaned saga reservation routing:
+
+```sh
+JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:compileDebugKotlin :app:testDebugUnitTest --tests org.cashu.wallet.Core.CDK.MintQuoteCdkMetadataTest
+```
+
 ## Executive Summary
 
 Android is strongest in:
@@ -937,12 +943,12 @@ Major gaps:
 
 Unit test checklist:
 
-Milestone update: JVM coverage now includes payment request/locked receive encoding, dedicated `CashuRequestStore` persistence tests for quote-intent upsert, attach by quote id, duplicate suppression, update, delete, reset, reload, stale current-id cleanup, legacy payment normalization, WalletManager startup maintenance orchestration, Mint Detail display mapping tests, Receive Lightning polling cadence tests, and Receive Lightning quote-flow tests for quote intent persistence, force-new on-chain creation, reusable BOLT12 reuse, and settlement attachment. Compose UI, screenshot, instrumentation, integration, and CI parity remain open.
+Milestone update: JVM coverage now includes payment request/locked receive encoding, dedicated `CashuRequestStore` persistence tests for quote-intent upsert, attach by quote id, duplicate suppression, update, delete, reset, reload, stale current-id cleanup, legacy payment normalization, WalletManager startup maintenance/keyset refresh orchestration, CDK orphaned saga reservation routing, Mint Detail display mapping tests, Receive Lightning polling cadence tests, and Receive Lightning quote-flow tests for quote intent persistence, force-new on-chain creation, reusable BOLT12 reuse, and settlement attachment. Compose UI, screenshot, instrumentation, integration, and CI parity remain open.
 
 - [x] Add `PaymentRequestBuilder` tests for NUT-10 payload and locked receive request parse.
 - [x] Add `CashuRequestStore` tests for update/regenerate, quote-intent upsert, attach by quote id, delete/reset/reload, and duplicate suppression.
 - [x] Add `WalletManager` tests for startup maintenance orchestration with fake gateway. `WalletStartupMaintenanceTest` covers tracked mint/unit wallet refresh ordering, duplicate unit suppression, startup balance refresh, transaction load, foreground maintenance, and best-effort continuation when individual startup steps fail.
-- [ ] Add tests for keyset refresh and incomplete saga recovery routing.
+- [x] Add tests for keyset refresh and incomplete saga recovery routing. `WalletStartupMaintenanceTest` covers startup `ensureWallet` calls for every tracked mint/unit so keysets are refreshed before balance/transaction sync, and `MintQuoteCdkMetadataTest` covers orphaned mint-quote reservation cleanup when the referenced saga is missing or cannot be read while preserving reservations for active sagas.
 - [ ] Add tests for `addMintAndPayCashuRequest`, external top-up, mint settling, and fee estimation.
 - [x] Add send destination inference tests for BIP-321 Cashu Request plus Lightning fallback precedence, on-chain, Lightning address, and ecash token handoff.
 - [x] Add send destination inference tests for amountless BOLT11/BOLT12 fixtures. `SendDestinationResolverTest` now covers the official amountless BOLT11 donation invoice fixture, the official amountful BOLT11 coffee invoice fixture, the BOLT12 `lno` amountless-offer branch, Lightning address amount entry, and ecash receive handoff. The resolver also fixes structural BOLT11 amount parsing to stop at the bech32 separator.

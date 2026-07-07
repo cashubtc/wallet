@@ -47,6 +47,14 @@ internal fun CdkMintQuote.preservingLocalMetadataFrom(existingQuote: CdkMintQuot
 internal fun CdkMintQuote.clearingReservation(): CdkMintQuote =
     if (usedByOperation == null) this else copy(usedByOperation = null)
 
+internal suspend fun CdkMintQuote.clearingOrphanedReservationIfNeeded(
+    hasSaga: suspend (operationId: String) -> Boolean,
+): CdkMintQuote {
+    val operationId = usedByOperation ?: return this
+    val sagaExists = runCatching { hasSaga(operationId) }.getOrDefault(false)
+    return if (sagaExists) this else clearingReservation()
+}
+
 internal fun CdkMintQuote.hasUnissuedOnchainCredit(): Boolean =
     amountPaid.value > amountIssued.value
 

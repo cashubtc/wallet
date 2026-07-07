@@ -579,10 +579,9 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
     }
 
     private suspend fun CdkMintQuote.clearingOrphanedReservationIfNeeded(): CdkMintQuote {
-        val operationId = usedByOperation ?: return this
-        val saga = runCatching { database?.getSaga(operationId) }.getOrNull()
-        if (saga != null) return this
-        return clearingReservation()
+        return clearingOrphanedReservationIfNeeded { operationId ->
+            database?.getSaga(operationId) != null
+        }
     }
 
     private suspend fun releaseMintQuoteReservation(operationId: String, quoteId: String) {
