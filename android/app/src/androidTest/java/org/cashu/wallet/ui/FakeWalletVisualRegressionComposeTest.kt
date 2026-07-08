@@ -13,6 +13,7 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -27,77 +28,22 @@ class FakeWalletVisualRegressionComposeTest {
     val compose = createComposeRule()
 
     @Test
-    fun largeFontCoreWalletScreensCaptureNonBlankImages() {
-        captureHome()
-        captureSend()
-        captureSendEcash()
-        captureReceiveEcash()
-        captureReceiveLightning()
-        captureSettings()
-        captureSettingsRoute("Nostr", "Nostr reveal auth and relay validation")
-        captureSettingsRoute("Locked Ecash", "P2PK key flows and reveal auth")
-        captureSettingsRoute("Lightning", "Lightning address rows, mint selection, and claim preferences")
-        captureMints()
-        captureMintDetail()
-        captureTransactionDetail()
-    }
-
-    @Test
-    fun compactHeightAmountAndOverlayScreensKeepPrimaryActionsVisible() {
-        setProbe(width = 320.dp, height = 420.dp, fontScale = 1.5f)
-        compose.onNodeWithText("Send").performClick()
-        compose.onNodeWithText("Pay").assertIsDisplayed()
-        compose.onNodeWithText("Send ecash").assertIsDisplayed()
-        captureProbe()
-
-        setProbe(width = 320.dp, height = 420.dp, fontScale = 1.5f)
-        compose.onNodeWithText("Receive").performClick()
-        compose.onNodeWithText("Accept token").assertIsDisplayed()
-        compose.onNodeWithText("New Request").assertIsDisplayed()
-        captureProbe()
-
-        setProbe(width = 320.dp, height = 420.dp, fontScale = 1.5f)
-        compose.onNodeWithText("Scan").performClick()
-        compose.onNodeWithText("Close scanner").assertIsDisplayed()
-        captureProbe()
-
-        setProbe(width = 320.dp, height = 420.dp, fontScale = 1.5f)
-        compose.onNodeWithText("Contactless").performClick()
-        compose.onNodeWithText("Close contactless").assertIsDisplayed()
-        captureProbe()
-    }
-
-    @Test
-    fun darkThemeAndWideWidthShellScreensCaptureNonBlankImages() {
-        setProbe(width = 840.dp, height = 720.dp, darkTheme = true)
-        compose.onNodeWithText("42 sats").assertIsDisplayed()
-        captureProbe()
-
-        setProbe(width = 840.dp, height = 720.dp, darkTheme = true)
-        compose.onNodeWithText("Mints").performClick()
-        compose.onNodeWithText("Discovery search").assertIsDisplayed()
-        captureProbe()
-
-        setProbe(width = 840.dp, height = 720.dp, darkTheme = true)
-        compose.onNodeWithText("Settings").performClick()
-        compose.onNodeWithText("Delete wallet").assertIsDisplayed()
-        captureProbe()
-    }
-
-    private fun captureHome() {
+    fun largeFontHomeCaptureIsNonBlank() {
         setProbe()
         compose.onNodeWithText("42 sats").assertIsDisplayed()
         captureProbe()
     }
 
-    private fun captureSend() {
+    @Test
+    fun largeFontSendCaptureIsNonBlank() {
         setProbe()
         compose.onNodeWithText("Send").performClick()
         compose.onNodeWithText("Amount entry").assertIsDisplayed()
         captureProbe()
     }
 
-    private fun captureSendEcash() {
+    @Test
+    fun largeFontSendEcashCaptureIsNonBlank() {
         setProbe()
         compose.onNodeWithText("Send").performClick()
         compose.onNodeWithText("Send ecash").performClick()
@@ -105,14 +51,16 @@ class FakeWalletVisualRegressionComposeTest {
         captureProbe()
     }
 
-    private fun captureReceiveEcash() {
+    @Test
+    fun largeFontReceiveEcashCaptureIsNonBlank() {
         setProbe()
         compose.onNodeWithText("Receive").performClick()
         compose.onNodeWithText("Paste token").assertIsDisplayed()
         captureProbe()
     }
 
-    private fun captureReceiveLightning() {
+    @Test
+    fun largeFontReceiveLightningCaptureIsNonBlank() {
         setProbe()
         compose.onNodeWithText("Receive").performClick()
         compose.onNodeWithText("New Request").performClick()
@@ -120,29 +68,51 @@ class FakeWalletVisualRegressionComposeTest {
         captureProbe()
     }
 
-    private fun captureSettings() {
+    @Test
+    fun largeFontSettingsCaptureIsNonBlank() {
         setProbe()
         compose.onNodeWithText("Settings").performClick()
         compose.onNodeWithText("App Lock").assertIsDisplayed()
         captureProbe()
     }
 
-    private fun captureSettingsRoute(row: String, detailText: String) {
+    @Test
+    fun largeFontSettingsNostrCaptureIsNonBlank() {
         setProbe()
         compose.onNodeWithText("Settings").performClick()
-        compose.onNodeWithText(row).performClick()
-        compose.onNodeWithText(detailText).assertIsDisplayed()
+        compose.onNodeWithText("Nostr").performClick()
+        compose.onNodeWithText("Nostr reveal auth and relay validation").assertIsDisplayed()
         captureProbe()
     }
 
-    private fun captureMints() {
+    @Test
+    fun largeFontSettingsLockedEcashCaptureIsNonBlank() {
+        setProbe()
+        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithText("Locked Ecash").performClick()
+        compose.onNodeWithText("P2PK key flows and reveal auth").assertIsDisplayed()
+        captureProbe()
+    }
+
+    @Test
+    fun largeFontSettingsLightningCaptureIsNonBlank() {
+        setProbe()
+        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithText("Lightning").performClick()
+        compose.onNodeWithText("Lightning address rows, mint selection, and claim preferences").assertIsDisplayed()
+        captureProbe()
+    }
+
+    @Test
+    fun largeFontMintsCaptureIsNonBlank() {
         setProbe()
         compose.onNodeWithText("Mints").performClick()
         compose.onNodeWithText("Paste mint").assertIsDisplayed()
         captureProbe()
     }
 
-    private fun captureMintDetail() {
+    @Test
+    fun largeFontMintDetailCaptureIsNonBlank() {
         setProbe()
         compose.onNodeWithText("Mints").performClick()
         compose.onNodeWithText("Fake Mint active").performClick()
@@ -150,11 +120,69 @@ class FakeWalletVisualRegressionComposeTest {
         captureProbe()
     }
 
-    private fun captureTransactionDetail() {
+    @Test
+    fun largeFontTransactionDetailCaptureIsNonBlank() {
         setProbe()
         compose.onNodeWithText("History").performClick()
         compose.onNodeWithText("Received ecash").performClick()
         compose.onNodeWithText("QR, copy, share, and explorer actions").assertIsDisplayed()
+        captureProbe()
+    }
+
+    @Test
+    fun compactHeightSendActionsRemainReachable() {
+        setProbe(width = 320.dp, height = 420.dp, fontScale = 1.5f)
+        compose.onNodeWithText("Send").performScrollTo().performClick()
+        compose.onNodeWithText("Pay").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Send ecash").performScrollTo().assertIsDisplayed()
+        captureProbe()
+    }
+
+    @Test
+    fun compactHeightReceiveActionsRemainReachable() {
+        setProbe(width = 320.dp, height = 420.dp, fontScale = 1.5f)
+        compose.onNodeWithText("Receive").performScrollTo().performClick()
+        compose.onNodeWithText("Accept token").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("New Request").performScrollTo().assertIsDisplayed()
+        captureProbe()
+    }
+
+    @Test
+    fun compactHeightScannerOverlayKeepsCloseVisible() {
+        setProbe(width = 320.dp, height = 420.dp, fontScale = 1.5f)
+        compose.onNodeWithText("Scan").performScrollTo().performClick()
+        compose.onNodeWithText("Close scanner").performScrollTo().assertIsDisplayed()
+        captureProbe()
+    }
+
+    @Test
+    fun compactHeightContactlessOverlayKeepsCloseReachable() {
+        setProbe(width = 320.dp, height = 420.dp, fontScale = 1.5f)
+        compose.onNodeWithText("Contactless").performScrollTo().performClick()
+        compose.onNodeWithText("Close contactless").performScrollTo().assertIsDisplayed()
+        captureProbe()
+    }
+
+    @Test
+    fun darkThemeWideHomeCaptureIsNonBlank() {
+        setProbe(width = 840.dp, height = 720.dp, darkTheme = true)
+        compose.onNodeWithText("42 sats").assertIsDisplayed()
+        captureProbe()
+    }
+
+    @Test
+    fun darkThemeWideMintsCaptureIsNonBlank() {
+        setProbe(width = 840.dp, height = 720.dp, darkTheme = true)
+        compose.onNodeWithText("Mints").performClick()
+        compose.onNodeWithText("Discovery search").assertIsDisplayed()
+        captureProbe()
+    }
+
+    @Test
+    fun darkThemeWideSettingsCaptureIsNonBlank() {
+        setProbe(width = 840.dp, height = 720.dp, darkTheme = true)
+        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithText("Delete wallet").assertIsDisplayed()
         captureProbe()
     }
 

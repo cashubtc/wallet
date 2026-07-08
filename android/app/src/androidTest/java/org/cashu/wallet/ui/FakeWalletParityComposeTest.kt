@@ -43,7 +43,7 @@ class FakeWalletParityComposeTest {
     }
 
     @Test
-    fun onboardingCreateAndRestoreStoriesAreCovered() {
+    fun onboardingCreateStoryIsCovered() {
         compose.setCashuContent {
             FakeOnboardingFlow()
         }
@@ -54,10 +54,14 @@ class FakeWalletParityComposeTest {
         compose.onNodeWithText("First mint").assertIsDisplayed()
         compose.onNodeWithText("Skip first mint").performClick()
         compose.onNodeWithText("Wallet ready").assertIsDisplayed()
+    }
 
+    @Test
+    fun onboardingRestoreStoryIsCovered() {
         compose.setCashuContent {
             FakeOnboardingFlow()
         }
+
         compose.onNodeWithText("Restore wallet").performClick()
         compose.onNodeWithText("Restore method").assertIsDisplayed()
         compose.onNodeWithText("Seed restore").performClick()
@@ -69,7 +73,7 @@ class FakeWalletParityComposeTest {
     }
 
     @Test
-    fun sendAndReceiveStoriesCoverCoreStates() {
+    fun sendStoryCoversCoreStates() {
         compose.setCashuContent {
             FakeWalletApp()
         }
@@ -88,10 +92,14 @@ class FakeWalletParityComposeTest {
         compose.onNodeWithText("P2PK lock field").assertIsDisplayed()
         compose.onNodeWithText("Generate token").performClick()
         compose.onNodeWithText("Generated token").assertIsDisplayed()
+    }
 
+    @Test
+    fun receiveEcashStoryCoversCoreStates() {
         compose.setCashuContent {
             FakeWalletApp()
         }
+
         compose.onNodeWithText("Receive").performClick()
         compose.onNodeWithText("Paste token").assertIsDisplayed()
         compose.onNodeWithText("Locked token: Your key").assertIsDisplayed()
@@ -109,7 +117,7 @@ class FakeWalletParityComposeTest {
     }
 
     @Test
-    fun receiveLightningHistoryMintsSettingsAndScannerStoriesAreCovered() {
+    fun receiveLightningStoryIsCovered() {
         compose.setCashuContent {
             FakeWalletApp()
         }
@@ -123,20 +131,28 @@ class FakeWalletParityComposeTest {
         compose.onNodeWithText("On-chain address").performClick()
         compose.onNodeWithText("On-chain address display").assertIsDisplayed()
         compose.onNodeWithText("On-chain observer link").assertIsDisplayed()
+    }
 
+    @Test
+    fun historyStoryIsCovered() {
         compose.setCashuContent {
             FakeWalletApp()
         }
+
         compose.onNodeWithText("History").performClick()
         compose.onNodeWithText("Search history").performClick()
         compose.onNodeWithText("No Results").assertIsDisplayed()
         compose.onNodeWithText("Delete request").performClick()
         compose.onNodeWithText("Received ecash").performClick()
         compose.onNodeWithText("QR, copy, share, and explorer actions").assertIsDisplayed()
+    }
 
+    @Test
+    fun mintsStoryIsCovered() {
         compose.setCashuContent {
             FakeWalletApp()
         }
+
         compose.onNodeWithText("Mints").performClick()
         compose.onNodeWithText("Paste mint").assertIsDisplayed()
         compose.onNodeWithText("Discovery search").assertIsDisplayed()
@@ -144,23 +160,28 @@ class FakeWalletParityComposeTest {
         compose.onNodeWithText("Discovered mint added").assertIsDisplayed()
         compose.onNodeWithText("Set active Fake Mint").performClick()
         compose.onNodeWithText("Remove Fake Mint").performClick()
+    }
 
-        compose.setCashuContent {
-            FakeWalletApp()
-        }
+    @Test
+    fun settingsBackupStoryIsCovered() {
+        compose.setCashuContent { FakeWalletApp() }
         compose.onNodeWithText("Settings").performClick()
         compose.onNodeWithText("App Lock").assertIsDisplayed()
         compose.onNodeWithText("Backup & Restore").performClick()
         compose.onNodeWithText("Backup reveal auth and restore entry").assertIsDisplayed()
-        compose.setCashuContent {
-            FakeWalletApp()
-        }
+    }
+
+    @Test
+    fun settingsNostrStoryIsCovered() {
+        compose.setCashuContent { FakeWalletApp() }
         compose.onNodeWithText("Settings").performClick()
         compose.onNodeWithText("Nostr").performClick()
         compose.onNodeWithText("Nostr reveal auth and relay validation").assertIsDisplayed()
-        compose.setCashuContent {
-            FakeWalletApp()
-        }
+    }
+
+    @Test
+    fun scannerStoryIsCovered() {
+        compose.setCashuContent { FakeWalletApp() }
         compose.onNodeWithText("Scan").performClick()
         compose.onNodeWithText("Permission denied").assertIsDisplayed()
         compose.onNodeWithText("Permission granted").assertIsDisplayed()

@@ -4,6 +4,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsDisplayed
@@ -51,7 +54,7 @@ class SettingsRowsComposeTest {
 
     @Test
     fun toggleRowExposesSwitchStateAndTogglesFromWholeRow() {
-        var checked = false
+        var checked by mutableStateOf(false)
 
         compose.setCashuContent(fontScale = 2f) {
             ToggleRow(

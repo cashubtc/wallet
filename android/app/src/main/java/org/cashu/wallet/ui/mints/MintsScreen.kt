@@ -343,21 +343,33 @@ internal fun SwipeableMintRow(
     onRequestRemove: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    var handledSwipeDirection by remember(mint.url) { mutableStateOf<SwipeToDismissBoxValue?>(null) }
     val dismissState = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
             when (value) {
                 SwipeToDismissBoxValue.StartToEnd -> {
-                    onSetActive()
+                    if (handledSwipeDirection != value) {
+                        handledSwipeDirection = value
+                        onSetActive()
+                    }
                     false
                 }
                 SwipeToDismissBoxValue.EndToStart -> {
-                    onRequestRemove()
+                    if (handledSwipeDirection != value) {
+                        handledSwipeDirection = value
+                        onRequestRemove()
+                    }
                     false
                 }
                 SwipeToDismissBoxValue.Settled -> false
             }
         },
     )
+    LaunchedEffect(dismissState.dismissDirection) {
+        if (dismissState.dismissDirection == SwipeToDismissBoxValue.Settled) {
+            handledSwipeDirection = null
+        }
+    }
     SwipeToDismissBox(
         modifier = modifier,
         state = dismissState,
