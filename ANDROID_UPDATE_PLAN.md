@@ -1005,7 +1005,7 @@ Milestone update: JVM coverage now includes payment request/locked receive encod
 Compose UI and instrumentation checklist:
 
 - [x] Add reusable `androidTest` Compose harness and first component suites. `ComposeTestHarness` wraps content in `CashuTheme` with controllable font scale, while `SettingsRowsComposeTest` and `ButtonsComposeTest` cover large-font Settings rows and CTA behavior.
-- [ ] Add fake wallet/container adapters for full app-level Compose tests without real mints, network, secure keys, or app storage.
+- [x] Add fake wallet/container adapters for full app-level Compose tests without real mints, network, secure keys, or app storage. `FakeWalletContainer`, `FakeWalletApp`, and `FakeWalletAppHarnessTest` provide an androidTest-only app shell that exercises real route constants, top tabs, pushed flows, settings subroutes, scanner/contactless overlays, and action logging without touching CDK, secure storage, network, or app storage.
 - [ ] Home tests: balance toggle, unit pager, received delta, recent request/transaction row, empty state, scan/send/receive actions.
 - [ ] Onboarding tests: create seed reveal/ack, first mint skip/add, restore method, staged mint restore progress/results.
 - [ ] Send tests: unified input paste/scan route, amount entry, quote loading, mint switch, success/failure status, send ecash P2PK.
@@ -1017,6 +1017,10 @@ Compose UI and instrumentation checklist:
 - [ ] Scanner tests: permission denied/granted, animated UR progress, quick-fill routing, unsupported payload error.
 - [x] NFC instrumentation or Robolectric-adjacent tests for NDEF text/URI record read/write and routing. `NDEFTextRecordCoderTest` covers text encode/decode, URI, external, media, and raw UTF-8 payloads; `NFCPaymentInputDecoderTest` covers Lightning/BOLT12 routing and unsupported payload rejection.
 - [ ] Accessibility tests for content descriptions on critical controls and large-font screenshots.
+
+Focused validation:
+
+- `cd android && JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:compileDebugAndroidTestKotlin`
 
 Integration checklist:
 
