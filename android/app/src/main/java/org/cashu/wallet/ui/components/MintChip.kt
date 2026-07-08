@@ -59,6 +59,9 @@ fun MintChip(
         DropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
+            // Menus default to extraSmall (4dp) corners; the app is rounded
+            // everywhere else, so lift menus onto the large shape token.
+            shape = MaterialTheme.shapes.large,
         ) {
             mints.forEach { mint ->
                 val isActive = mint.url == activeMint?.url

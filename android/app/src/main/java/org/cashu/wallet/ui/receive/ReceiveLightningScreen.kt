@@ -195,6 +195,7 @@ fun ReceiveLightningScreen(
                         DropdownMenu(
                             expanded = methodMenuOpen,
                             onDismissRequest = { methodMenuOpen = false },
+                            shape = MaterialTheme.shapes.large,
                         ) {
                             supportedMethods.forEach { kind ->
                                 DropdownMenuItem(

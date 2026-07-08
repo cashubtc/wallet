@@ -84,6 +84,7 @@ fun QrCard(
         DropdownMenu(
             expanded = menuOpen,
             onDismissRequest = { menuOpen = false },
+            shape = MaterialTheme.shapes.large,
         ) {
             DropdownMenuItem(
                 text = { Text("Copy") },

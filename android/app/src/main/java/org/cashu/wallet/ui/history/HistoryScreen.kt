@@ -25,11 +25,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.FilterList
+import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.AlertDialog
@@ -162,6 +162,7 @@ fun HistoryScreen(
                         DropdownMenu(
                             expanded = filterMenuOpen,
                             onDismissRequest = { filterMenuOpen = false },
+                            shape = MaterialTheme.shapes.large,
                         ) {
                             HistoryFilter.entries.forEach { entry ->
                                 DropdownMenuItem(
@@ -329,12 +330,12 @@ private fun HistoryEmptyState(
             null,
         )
         else -> Triple(
-            Icons.Filled.Bolt,
+            Icons.Outlined.History,
             "No activity yet",
             "Your first payment will show up here.",
         )
     }
-    // Pulse the empty-state bolt (resting state under reduce-motion).
+    // Pulse the empty-state glyph (resting state under reduce-motion).
     val reducedMotion = rememberReducedMotion()
     val transition = rememberInfiniteTransition(label = "empty-pulse")
     val pulseAlpha by transition.animateFloat(
@@ -360,7 +361,7 @@ private fun HistoryEmptyState(
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
                     .size(HISTORY_EMPTY_ICON_SIZE)
-                    .alpha(if (icon == Icons.Filled.Bolt && !reducedMotion) pulseAlpha else 1f),
+                    .alpha(if (icon == Icons.Outlined.History && !reducedMotion) pulseAlpha else 1f),
             )
             Text(
                 text = title,

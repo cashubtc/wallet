@@ -498,6 +498,7 @@ private fun MintRow(
         DropdownMenu(
             expanded = menuOpen,
             onDismissRequest = { menuOpen = false },
+            shape = MaterialTheme.shapes.large,
         ) {
             DropdownMenuItem(
                 text = { Text("Set as Active") },
