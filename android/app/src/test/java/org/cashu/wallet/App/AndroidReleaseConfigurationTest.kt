@@ -23,6 +23,11 @@ class AndroidReleaseConfigurationTest {
         val cleartextTraffic = application.getAttributeNS(androidNamespace, "usesCleartextTraffic")
         assertTrue(cleartextTraffic.isBlank() || cleartextTraffic == "false")
 
+        val mainActivity = application.getElementsByTagName("activity")
+            .let { nodes -> (0 until nodes.length).map { nodes.item(it) as Element } }
+            .first { it.getAttributeNS(androidNamespace, "name") == ".App.MainActivity" }
+        assertEquals("true", mainActivity.getAttributeNS(androidNamespace, "enableOnBackInvokedCallback"))
+
         val metaData = application.getElementsByTagName("meta-data")
         val sentryAutoInit = (0 until metaData.length)
             .map { metaData.item(it) as Element }

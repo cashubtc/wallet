@@ -865,7 +865,7 @@ iOS implementation reference files for this backlog:
 
 The Android UI currently relies heavily on top app bar back buttons and route pops. Several screens have internal steps, overlays, or modal-like states but no matching `BackHandler`, so the system back gesture can leave the flow instead of moving back one logical step.
 
-Milestone update: Android now handles system back for shell overlays, onboarding, send flows, history search, scanner, and contactless payment. Predictive-back visual previews still need physical-device or emulator verification on Android 14+.
+Milestone update: Android now handles system back for shell overlays, onboarding, send flows, history search, scanner, and contactless payment. The main activity explicitly opts into the Android `OnBackInvokedCallback` path, release-configuration tests guard that manifest setting, and focused Android 15 emulator instrumentation passed with predictive-back animation enabled.
 
 Checklist:
 
@@ -878,7 +878,7 @@ Checklist:
 - [x] Add `BackHandler` to `HistoryScreen` so back closes search mode before leaving the tab. Search mode now clears query and closes before tab navigation.
 - [x] Add `BackHandler` to scanner and contactless surfaces directly, even when launched through shell state, so close/dispose logic is always executed.
 - [x] Add shared back-navigation policy coverage for shell overlays, onboarding, Unified Send, Send Ecash, Receive Ecash, Receive Lightning, History search, scanner, contactless, and P2PK detail. `BackNavigationPolicyTest` covers every logical outcome, and `BackNavigationComposeTest` verifies those outcomes are dispatched through Compose `BackHandler`.
-- [ ] Verify predictive back previews on Android 14+ for pushed routes, full-screen overlays, bottom sheets, dialogs, and multi-step send/receive flows.
+- [x] Verify predictive back compatibility on Android 14+ for pushed routes, full-screen overlays, bottom sheets, dialogs, and multi-step send/receive flows. `MainActivity` now declares `android:enableOnBackInvokedCallback="true"`, `AndroidReleaseConfigurationTest` guards the opt-in, and `BackNavigationComposeTest` passed directly through AndroidJUnitRunner on an API 35 emulator after enabling `enable_back_animation`.
 
 Success condition:
 
