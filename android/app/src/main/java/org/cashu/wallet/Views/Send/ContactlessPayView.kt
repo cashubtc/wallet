@@ -14,7 +14,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -127,7 +128,7 @@ fun ContactlessPayView(
         } else {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (isProcessing) {
-                    CircularProgressIndicator()
+                    LoadingIndicator()
                 }
                 Text(status, color = MaterialTheme.colorScheme.secondary)
             }

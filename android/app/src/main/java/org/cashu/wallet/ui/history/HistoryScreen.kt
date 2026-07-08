@@ -7,6 +7,14 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.VisibilityThreshold
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.consumeWindowInsets
@@ -30,7 +38,8 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -49,6 +58,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
@@ -73,8 +83,9 @@ import org.cashu.wallet.ui.components.TransactionRow
 import org.cashu.wallet.ui.components.TransactionRowModel
 import org.cashu.wallet.ui.components.formatRelativeTimestamp
 import org.cashu.wallet.ui.theme.CashuTheme
+import org.cashu.wallet.ui.theme.rememberReducedMotion
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun HistoryScreen(
     walletManager: WalletManager,
@@ -129,7 +140,7 @@ fun HistoryScreen(
             .consumeWindowInsets(contentPadding)
             .nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            CenterAlignedTopAppBar(
+            LargeFlexibleTopAppBar(
                 title = { Text("History") },
                 scrollBehavior = scrollBehavior,
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -195,7 +206,11 @@ fun HistoryScreen(
             // empty result set (searching to zero matches must not unmount
             // the field mid-typing) — iOS .searchable parity.
             Column(modifier = Modifier.fillMaxSize()) {
-                if (searching) {
+                AnimatedVisibility(
+                    visible = searching,
+                    enter = expandVertically(spring(stiffness = Spring.StiffnessMediumLow, visibilityThreshold = IntSize.VisibilityThreshold)) + fadeIn(),
+                    exit = shrinkVertically(spring(stiffness = Spring.StiffnessMediumLow, visibilityThreshold = IntSize.VisibilityThreshold)) + fadeOut(),
+                ) {
                     CashuSearchBar(
                         value = query,
                         onValueChange = { query = it },
@@ -223,6 +238,8 @@ fun HistoryScreen(
                                 SectionHeader(section.title.uppercase())
                             }
                             items(section.items, key = { it.key }) { item ->
+                                // Spring-animated placement on filter/search changes.
+                                Column(modifier = Modifier.animateItem()) {
                                 when (item) {
                                     is HistoryItem.Tx -> {
                                         val tx = item.transaction
@@ -259,6 +276,7 @@ fun HistoryScreen(
                                     }
                                 }
                                 if (item != section.items.last()) CanvasDivider()
+                                }
                             }
                         }
                     }
@@ -316,9 +334,10 @@ private fun HistoryEmptyState(
             "Your first payment will show up here.",
         )
     }
-    // Pulse the empty-state bolt to match iOS.
+    // Pulse the empty-state bolt (resting state under reduce-motion).
+    val reducedMotion = rememberReducedMotion()
     val transition = rememberInfiniteTransition(label = "empty-pulse")
-    val alpha by transition.animateFloat(
+    val pulseAlpha by transition.animateFloat(
         initialValue = 0.4f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
@@ -341,7 +360,7 @@ private fun HistoryEmptyState(
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
                     .size(HISTORY_EMPTY_ICON_SIZE)
-                    .alpha(if (icon == Icons.Filled.Bolt) alpha else 1f),
+                    .alpha(if (icon == Icons.Filled.Bolt && !reducedMotion) pulseAlpha else 1f),
             )
             Text(
                 text = title,

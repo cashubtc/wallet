@@ -15,7 +15,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.outlined.CurrencyBitcoin
 import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -141,9 +142,8 @@ fun CurrencyPickerSheet(
                         )
                     }
                     if (price.isFetching) {
-                        CircularProgressIndicator(
+                        LoadingIndicator(
                             modifier = Modifier.size(ProgressSize),
-                            strokeWidth = 1.5.dp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     } else {

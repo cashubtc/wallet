@@ -6,6 +6,9 @@ activityCompose = "1.10.1"
 lifecycle = "2.9.0"
 navigationCompose = "2.9.0"
 composeBom = "2026.05.00"
+# M3 Expressive (MaterialExpressiveTheme, MotionScheme, LoadingIndicator, ButtonGroup…)
+# is public-experimental only on the 1.5 alpha line; the BOM still pins 1.4.0 stable.
+material3 = "1.5.0-alpha23"
 datastore = "1.1.7"
 serializationJson = "1.8.1"
 coroutines = "1.10.2"
@@ -35,7 +38,7 @@ androidx-compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling
 androidx-compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }
 androidx-compose-ui-test-junit4 = { module = "androidx.compose.ui:ui-test-junit4" }
 androidx-compose-ui-test-manifest = { module = "androidx.compose.ui:ui-test-manifest" }
-androidx-compose-material3 = { module = "androidx.compose.material3:material3" }
+androidx-compose-material3 = { module = "androidx.compose.material3:material3", version.ref = "material3" }
 androidx-compose-material-icons-extended = { module = "androidx.compose.material:material-icons-extended" }
 androidx-datastore-preferences = { module = "androidx.datastore:datastore-preferences", version.ref = "datastore" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serializationJson" }

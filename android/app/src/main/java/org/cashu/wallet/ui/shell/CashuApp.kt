@@ -1,8 +1,20 @@
 package org.cashu.wallet.ui.shell
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.VisibilityThreshold
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -14,6 +26,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.unit.IntOffset
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.navigation.compose.rememberNavController
@@ -79,13 +92,31 @@ fun CashuApp(container: AppContainer) {
             }
         }
 
-        when {
-            !walletState.isInitialized -> LoadingScreen()
-            walletState.needsOnboarding -> OnboardingScreen(walletManager = container.walletManager)
-            else -> AuthenticatedShell(container = container)
+        // Root gating cross-fades (fade-through) instead of hard-cutting.
+        val gate = when {
+            !walletState.isInitialized -> AppGate.Loading
+            walletState.needsOnboarding -> AppGate.Onboarding
+            else -> AppGate.Shell
+        }
+        AnimatedContent(
+            targetState = gate,
+            transitionSpec = {
+                (fadeIn(spring(stiffness = Spring.StiffnessMedium)) +
+                    scaleIn(initialScale = 0.98f, animationSpec = spring(stiffness = Spring.StiffnessMedium)))
+                    .togetherWith(fadeOut(spring(stiffness = Spring.StiffnessMedium)))
+            },
+            label = "app-gate",
+        ) { target ->
+            when (target) {
+                AppGate.Loading -> LoadingScreen()
+                AppGate.Onboarding -> OnboardingScreen(walletManager = container.walletManager)
+                AppGate.Shell -> AuthenticatedShell(container = container)
+            }
         }
     }
 }
+
+private enum class AppGate { Loading, Onboarding, Shell }
 
 @Composable
 private fun AuthenticatedShell(container: AppContainer) {
@@ -124,39 +155,13 @@ private fun AuthenticatedShell(container: AppContainer) {
     }
 
     val activeScannerTarget = scannerTarget
-    when {
-        showContactless -> ContactlessPayView(
-            walletManager = container.walletManager,
-            onClose = { showContactless = false },
-            onLightningRequest = { invoice ->
-                pendingSendScan = invoice
-                showContactless = false
-                navController.navigate(Routes.SEND)
-            },
-        )
-        activeScannerTarget != null -> ScannerView(
-            onClose = { scannerTarget = null },
-            onScanned = { payload ->
-                scannerTarget = null
-                routeScannedPayload(
-                    target = activeScannerTarget,
-                    payload = payload,
-                    onReceive = {
-                        pendingReceiveScan = it
-                        navController.navigate(Routes.RECEIVE_ECASH)
-                    },
-                    onSend = {
-                        pendingSendScan = it
-                        navController.navigate(Routes.SEND)
-                    },
-                    onMint = {
-                        pendingMintScan = it
-                        navController.navigateToTab(TopTab.Mints)
-                    },
-                )
-            },
-        )
-        else -> WalletScaffold(
+    // The shell stays mounted; camera surfaces animate over it (slide-up + fade)
+    // instead of replacing it with a one-frame cut.
+    var lastScannerTarget by remember { mutableStateOf(ScannerTarget.Auto) }
+    if (activeScannerTarget != null) lastScannerTarget = activeScannerTarget
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        WalletScaffold(
             container = container,
             connectivityState = connectivityState,
             onScan = { scannerTarget = ScannerTarget.Auto },
@@ -173,13 +178,65 @@ private fun AuthenticatedShell(container: AppContainer) {
             onPendingMintScanConsumed = { pendingMintScan = null },
             navController = navController,
         )
+        AnimatedVisibility(
+            visible = showContactless,
+            enter = overlayEnter,
+            exit = overlayExit,
+        ) {
+            ContactlessPayView(
+                walletManager = container.walletManager,
+                onClose = { showContactless = false },
+                onLightningRequest = { invoice ->
+                    pendingSendScan = invoice
+                    showContactless = false
+                    navController.navigate(Routes.SEND)
+                },
+            )
+        }
+        AnimatedVisibility(
+            visible = activeScannerTarget != null,
+            enter = overlayEnter,
+            exit = overlayExit,
+        ) {
+            ScannerView(
+                onClose = { scannerTarget = null },
+                onScanned = { payload ->
+                    scannerTarget = null
+                    routeScannedPayload(
+                        target = lastScannerTarget,
+                        payload = payload,
+                        onReceive = {
+                            pendingReceiveScan = it
+                            navController.navigate(Routes.RECEIVE_ECASH)
+                        },
+                        onSend = {
+                            pendingSendScan = it
+                            navController.navigate(Routes.SEND)
+                        },
+                        onMint = {
+                            pendingMintScan = it
+                            navController.navigateToTab(TopTab.Mints)
+                        },
+                    )
+                },
+            )
+        }
     }
 }
 
+// Camera-surface overlay motion: slide up over the shell, slide back down on close.
+private val overlayEnter = slideInVertically(
+    spring(stiffness = Spring.StiffnessMediumLow, visibilityThreshold = IntOffset.VisibilityThreshold),
+) { it / 5 } + fadeIn(spring(stiffness = Spring.StiffnessMedium))
+private val overlayExit = slideOutVertically(
+    spring(stiffness = Spring.StiffnessMediumLow, visibilityThreshold = IntOffset.VisibilityThreshold),
+) { it / 5 } + fadeOut(spring(stiffness = Spring.StiffnessMedium))
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun LoadingScreen() {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        CircularProgressIndicator()
+        LoadingIndicator()
     }
 }
 

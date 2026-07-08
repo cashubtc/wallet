@@ -1,5 +1,13 @@
 package org.cashu.wallet.ui.shell
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.VisibilityThreshold
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.AccountBalanceWallet
@@ -19,6 +27,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.unit.IntOffset
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
@@ -49,10 +58,24 @@ fun WalletScaffold(
     val selectedTab = TopTab.entries.firstOrNull { it.route == currentRoute }
     Scaffold(
         bottomBar = {
-            // Hide bottom bar on pushed destinations that aren't a top tab.
-            if (selectedTab != null) {
+            // Slide the bar away on pushed destinations instead of blinking it out.
+            AnimatedVisibility(
+                visible = selectedTab != null,
+                enter = slideInVertically(
+                    spring(
+                        stiffness = Spring.StiffnessMediumLow,
+                        visibilityThreshold = IntOffset.VisibilityThreshold,
+                    ),
+                ) { it } + fadeIn(spring(stiffness = Spring.StiffnessMedium)),
+                exit = slideOutVertically(
+                    spring(
+                        stiffness = Spring.StiffnessMediumLow,
+                        visibilityThreshold = IntOffset.VisibilityThreshold,
+                    ),
+                ) { it } + fadeOut(spring(stiffness = Spring.StiffnessMedium)),
+            ) {
                 CashuNavigationBar(
-                    selected = selectedTab,
+                    selected = selectedTab ?: TopTab.Home,
                     onSelect = { tab ->
                         if (tab != selectedTab) navController.navigateToTab(tab)
                     },

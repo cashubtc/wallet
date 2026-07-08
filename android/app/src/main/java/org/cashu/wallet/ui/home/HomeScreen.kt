@@ -1,5 +1,9 @@
 package org.cashu.wallet.ui.home
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,6 +19,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
@@ -70,6 +75,7 @@ import org.cashu.wallet.ui.components.EmptyState
 import org.cashu.wallet.ui.components.GhostButton
 import org.cashu.wallet.ui.components.MintChip
 import org.cashu.wallet.ui.components.PrimaryButton
+import org.cashu.wallet.ui.components.SecondaryButton
 import org.cashu.wallet.ui.components.SectionHeader
 import org.cashu.wallet.ui.components.TransactionRow
 import org.cashu.wallet.ui.components.TransactionRowModel
@@ -412,17 +418,26 @@ private fun UnitBalancePager(
         Spacer(Modifier.height(CashuTheme.spacing.snug))
         Row(horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.tight)) {
             units.forEachIndexed { index, unit ->
+                val selected = index == pagerState.currentPage
+                // Animated M3 page indicator: the active dot stretches into a pill.
+                val dotWidth by animateDpAsState(
+                    targetValue = if (selected) PAGE_DOT_SIZE * 2.5f else PAGE_DOT_SIZE,
+                    animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+                    label = "dot-width",
+                )
+                val dotColor by animateColorAsState(
+                    targetValue = if (selected) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.outlineVariant
+                    },
+                    label = "dot-color",
+                )
                 Box(
                     modifier = Modifier
-                        .size(PAGE_DOT_SIZE)
-                        .background(
-                            color = if (index == pagerState.currentPage) {
-                                MaterialTheme.colorScheme.onSurface
-                            } else {
-                                MaterialTheme.colorScheme.outlineVariant
-                            },
-                            shape = CircleShape,
-                        ),
+                        .height(PAGE_DOT_SIZE)
+                        .width(dotWidth)
+                        .background(color = dotColor, shape = CircleShape),
                 )
             }
         }
@@ -438,7 +453,8 @@ private fun ActionDuet(
     receiveEnabled: Boolean,
     sendEnabled: Boolean,
 ) {
-    // Same Singular Button as every other CTA (Buttons.kt) — no local re-implementation.
+    // Filled + tonal pair: receive is the on-ramp (primary), send is one step
+    // quieter — standard M3 emphasis hierarchy.
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
@@ -450,7 +466,7 @@ private fun ActionDuet(
             modifier = Modifier.weight(1f),
             enabled = receiveEnabled,
         )
-        PrimaryButton(
+        SecondaryButton(
             text = "Send",
             onClick = onSend,
             modifier = Modifier.weight(1f),

@@ -92,6 +92,7 @@ import org.cashu.wallet.ui.components.UnitPickerSheet
 import org.cashu.wallet.ui.components.shareText
 import org.cashu.wallet.ui.theme.CapsuleShape
 import org.cashu.wallet.ui.theme.CashuTheme
+import org.cashu.wallet.ui.theme.rememberReducedMotion
 import org.cashu.wallet.ui.theme.withMonoDigits
 
 private sealed interface ReceiveLnFace {
@@ -583,6 +584,7 @@ private fun QuoteStatusRow(isPaid: Boolean, showCelebration: Boolean) {
                 color = CashuTheme.colors.received,
             )
         } else {
+            val reducedMotion = rememberReducedMotion()
             val transition = rememberInfiniteTransition(label = "waiting-pulse")
             val alpha by transition.animateFloat(
                 initialValue = 1f,
@@ -593,7 +595,7 @@ private fun QuoteStatusRow(isPaid: Boolean, showCelebration: Boolean) {
                 ),
                 label = "waiting-pulse-alpha",
             )
-            Box(modifier = Modifier.alpha(alpha)) {
+            Box(modifier = Modifier.alpha(if (reducedMotion) 1f else alpha)) {
                 Icon(
                     imageVector = Icons.Outlined.Schedule,
                     contentDescription = null,

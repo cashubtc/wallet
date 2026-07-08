@@ -1,8 +1,21 @@
 package org.cashu.wallet.ui.navigation
 
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.VisibilityThreshold
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.IntOffset
+import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -62,6 +75,11 @@ fun CashuNavHost(
         navController = navController,
         startDestination = Routes.HOME,
         modifier = modifier,
+        // Shared-axis X for pushed destinations, spring-driven (M3 Expressive).
+        enterTransition = pushEnter,
+        exitTransition = pushExit,
+        popEnterTransition = popEnter,
+        popExitTransition = popExit,
     ) {
         tabDestinations(
             navController = navController,
@@ -257,7 +275,13 @@ private fun NavGraphBuilder.tabDestinations(
     pendingMintScan: String?,
     onPendingMintScanConsumed: () -> Unit,
 ) {
-    composable(Routes.HOME) {
+    composable(
+        route = Routes.HOME,
+        enterTransition = tabEnter,
+        exitTransition = tabExit,
+        popEnterTransition = tabEnter,
+        popExitTransition = tabExit,
+    ) {
         HomeScreen(
             walletManager = container.walletManager,
             settingsManager = container.settingsManager,
@@ -284,7 +308,13 @@ private fun NavGraphBuilder.tabDestinations(
             contentPadding = contentPadding,
         )
     }
-    composable(Routes.HISTORY) {
+    composable(
+        route = Routes.HISTORY,
+        enterTransition = tabEnter,
+        exitTransition = tabExit,
+        popEnterTransition = tabEnter,
+        popExitTransition = tabExit,
+    ) {
         HistoryScreen(
             walletManager = container.walletManager,
             settingsManager = container.settingsManager,
@@ -299,7 +329,13 @@ private fun NavGraphBuilder.tabDestinations(
             contentPadding = contentPadding,
         )
     }
-    composable(Routes.MINTS) {
+    composable(
+        route = Routes.MINTS,
+        enterTransition = tabEnter,
+        exitTransition = tabExit,
+        popEnterTransition = tabEnter,
+        popExitTransition = tabExit,
+    ) {
         MintsScreen(
             walletManager = container.walletManager,
             settingsManager = container.settingsManager,
@@ -311,7 +347,13 @@ private fun NavGraphBuilder.tabDestinations(
             onScannedMintUrlConsumed = onPendingMintScanConsumed,
         )
     }
-    composable(Routes.SETTINGS) {
+    composable(
+        route = Routes.SETTINGS,
+        enterTransition = tabEnter,
+        exitTransition = tabExit,
+        popEnterTransition = tabEnter,
+        popExitTransition = tabExit,
+    ) {
         SettingsScreen(
             walletManager = container.walletManager,
             settingsManager = container.settingsManager,
@@ -335,4 +377,35 @@ fun NavHostController.navigateToTab(tab: TopTab) {
         launchSingleTop = true
         restoreState = true
     }
+}
+
+// ---------------------------------------------------------------------------
+// Motion: shared-axis X (push/pop) + fade-through (tab switches), all springs.
+// ---------------------------------------------------------------------------
+
+private val slideSpring = spring(
+    stiffness = Spring.StiffnessMediumLow,
+    visibilityThreshold = IntOffset.VisibilityThreshold,
+)
+private val fadeSpring = spring<Float>(stiffness = Spring.StiffnessMedium)
+
+private val pushEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
+    slideInHorizontally(slideSpring) { it / 4 } + fadeIn(fadeSpring)
+}
+private val pushExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
+    slideOutHorizontally(slideSpring) { -it / 4 } + fadeOut(fadeSpring)
+}
+private val popEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
+    slideInHorizontally(slideSpring) { -it / 4 } + fadeIn(fadeSpring)
+}
+private val popExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
+    slideOutHorizontally(slideSpring) { it / 4 } + fadeOut(fadeSpring)
+}
+
+/** M3 fade-through between sibling tabs (fade + 98% scale settle, no slide). */
+internal val tabEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
+    fadeIn(fadeSpring) + scaleIn(initialScale = 0.98f, animationSpec = fadeSpring)
+}
+internal val tabExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
+    fadeOut(fadeSpring)
 }

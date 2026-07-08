@@ -7,7 +7,8 @@ plugins {
 
 android {
     namespace = "org.cashu.wallet"
-    compileSdk = 36
+    // 37: required by the compose 1.12/material3 1.5 alpha line (M3 Expressive).
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.jcashu.wallet"
@@ -49,6 +50,10 @@ android {
 
     kotlin {
         jvmToolchain(17)
+        compilerOptions {
+            // The app adopts M3 Expressive wholesale (theme, motion, components).
+            freeCompilerArgs.add("-opt-in=androidx.compose.material3.ExperimentalMaterial3ExpressiveApi")
+        }
     }
 
     buildFeatures {

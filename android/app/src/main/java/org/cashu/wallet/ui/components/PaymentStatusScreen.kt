@@ -21,14 +21,21 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextAlign
@@ -65,9 +72,28 @@ fun PaymentStatusScreen(
             PaymentStatusPhase.Processing -> Unit
         }
     }
+    // Screen entrance: the terminal fades + settles in over the form instead of
+    // hard-cutting (callers mount it as a full replacement of the send body).
+    var appeared by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { appeared = true }
+    val entranceAlpha by animateFloatAsState(
+        targetValue = if (appeared) 1f else 0f,
+        animationSpec = spring(stiffness = Spring.StiffnessMedium),
+        label = "status-entrance-alpha",
+    )
+    val entranceScale by animateFloatAsState(
+        targetValue = if (appeared) 1f else 0.96f,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "status-entrance-scale",
+    )
     Box(
         modifier = modifier
             .fillMaxSize()
+            .graphicsLayer {
+                alpha = entranceAlpha
+                scaleX = entranceScale
+                scaleY = entranceScale
+            }
             .background(MaterialTheme.colorScheme.background),
     ) {
         Column(
@@ -101,10 +127,9 @@ fun PaymentStatusScreen(
                     contentAlignment = Alignment.Center,
                 ) {
                     when (current) {
-                        PaymentStatusPhase.Processing -> CircularProgressIndicator(
+                        PaymentStatusPhase.Processing -> LoadingIndicator(
                             modifier = Modifier.size(SpinnerSize),
-                            strokeWidth = 3.dp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = MaterialTheme.colorScheme.primary,
                         )
                         PaymentStatusPhase.Success -> Icon(
                             imageVector = Icons.Filled.CheckCircle,

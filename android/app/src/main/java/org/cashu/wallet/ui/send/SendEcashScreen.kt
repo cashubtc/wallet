@@ -41,7 +41,8 @@ import androidx.compose.material.icons.outlined.IosShare
 import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.UnfoldMore
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -85,6 +86,7 @@ import org.cashu.wallet.ui.components.TwoFaceScreen
 import org.cashu.wallet.ui.components.UnitPickerSheet
 import org.cashu.wallet.ui.components.shareText
 import org.cashu.wallet.ui.theme.CashuTheme
+import org.cashu.wallet.ui.theme.rememberReducedMotion
 import org.cashu.wallet.ui.theme.withMonoDigits
 
 // Inline status icons inside dense rows — smaller than the standard 20dp body icon.
@@ -713,8 +715,9 @@ private fun ClaimStatusRow(claimState: ClaimState) {
     ) { state ->
         when (state) {
             ClaimState.Pending -> {
+                val reducedMotion = rememberReducedMotion()
                 val transition = rememberInfiniteTransition(label = "pending-pulse")
-                val alpha by transition.animateFloat(
+                val pulseAlpha by transition.animateFloat(
                     initialValue = 1f,
                     targetValue = 0.4f,
                     animationSpec = infiniteRepeatable(
@@ -726,7 +729,7 @@ private fun ClaimStatusRow(claimState: ClaimState) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.tight),
-                    modifier = Modifier.alpha(alpha),
+                    modifier = Modifier.alpha(if (reducedMotion) 1f else pulseAlpha),
                 ) {
                     Icon(
                         imageVector = Icons.Outlined.Schedule,
@@ -746,9 +749,8 @@ private fun ClaimStatusRow(claimState: ClaimState) {
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.tight),
                 ) {
-                    CircularProgressIndicator(
+                    LoadingIndicator(
                         modifier = Modifier.size(CHECKING_PROGRESS_SIZE),
-                        strokeWidth = 1.5.dp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(

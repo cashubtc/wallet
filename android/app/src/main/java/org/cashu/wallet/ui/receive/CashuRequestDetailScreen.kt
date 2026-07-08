@@ -75,6 +75,7 @@ import org.cashu.wallet.ui.components.QrCard
 import org.cashu.wallet.ui.components.SectionHeader
 import org.cashu.wallet.ui.components.shareText
 import org.cashu.wallet.ui.theme.CashuTheme
+import org.cashu.wallet.ui.theme.rememberReducedMotion
 import org.cashu.wallet.ui.theme.withMonoDigits
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -325,6 +326,7 @@ private fun StatusBlock(received: Boolean, paymentCount: Int, celebrate: Boolean
                 color = CashuTheme.colors.received,
             )
         } else {
+            val reducedMotion = rememberReducedMotion()
             val transition = rememberInfiniteTransition(label = "waiting-pulse")
             val alpha by transition.animateFloat(
                 initialValue = 1f,
@@ -335,7 +337,7 @@ private fun StatusBlock(received: Boolean, paymentCount: Int, celebrate: Boolean
                 ),
                 label = "waiting-pulse-alpha",
             )
-            Box(modifier = Modifier.alpha(alpha)) {
+            Box(modifier = Modifier.alpha(if (reducedMotion) 1f else alpha)) {
                 Icon(
                     imageVector = Icons.Outlined.Schedule,
                     contentDescription = null,
