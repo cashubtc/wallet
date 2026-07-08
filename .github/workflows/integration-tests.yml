@@ -30,6 +30,11 @@ jobs:
         distribution: temurin
         java-version: '21'
 
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
 
@@ -38,6 +43,31 @@ jobs:
 
     - name: Run Android no-network integration tests
       run: ./gradlew --no-daemon :app:androidNoNetworkIntegrationTest
+
+    - name: Setup Android local test mints
+      working-directory: .
+      run: |
+        chmod +x CI/setup-nutshell.sh CI/setup-cdk.sh
+        ./CI/setup-nutshell.sh
+        ./CI/setup-cdk.sh
+
+    - name: Start Android local test mints
+      working-directory: .
+      run: |
+        chmod +x CI/start-nutshell.sh CI/start-cdk.sh
+        ./CI/start-nutshell.sh
+        ./CI/start-cdk.sh
+
+    - name: Run Android local mint integration tests
+      run: ./gradlew --no-daemon :app:androidLocalMintIntegrationTest
+
+    - name: Stop Android local test mints
+      if: always()
+      working-directory: .
+      run: |
+        chmod +x CI/stop-nutshell.sh CI/stop-cdk.sh
+        ./CI/stop-nutshell.sh
+        ./CI/stop-cdk.sh
 
     - name: Run Android lint
       run: ./gradlew --no-daemon :app:lintDebug

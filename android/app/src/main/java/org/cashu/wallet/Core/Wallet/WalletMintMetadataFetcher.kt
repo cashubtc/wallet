@@ -50,7 +50,7 @@ internal class WalletMintMetadataFetcher {
                 .ifEmpty { listOf(PaymentMethodKind.Bolt11) }
             val mintUnits = mintMethodSettings.map { it.unit }.distinct().sorted().ifEmpty { listOf("sat") }
             val units = (mintUnits + meltMethodSettings.map { it.unit }).distinct().sorted().ifEmpty { listOf("sat") }
-            val version = root["version"]?.jsonObject
+            val version = softwareInfo(root["version"])
             MintInfo(
                 url = url,
                 name = name,
@@ -62,8 +62,8 @@ internal class WalletMintMetadataFetcher {
                 motd = root["motd"]?.jsonPrimitive?.contentOrNull,
                 serverTimeEpochSeconds = root["time"]?.jsonPrimitive?.longOrNull,
                 tosUrl = root["tos_url"]?.jsonPrimitive?.contentOrNull,
-                softwareName = version?.get("name")?.jsonPrimitive?.contentOrNull,
-                softwareVersion = version?.get("version")?.jsonPrimitive?.contentOrNull,
+                softwareName = version.name,
+                softwareVersion = version.version,
                 contacts = contacts(root["contact"]),
                 nuts = MintNutSupport(
                     nut04 = nutSupported(nuts, "4", mintMethodSettings.isNotEmpty()),
@@ -146,4 +146,27 @@ internal class WalletMintMetadataFetcher {
             MintContactInfo(method, info)
         }
     }
+
+    private fun softwareInfo(element: JsonElement?): MintSoftwareInfo {
+        val fields = runCatching { element?.jsonObject }.getOrNull()
+        if (fields != null) {
+            return MintSoftwareInfo(
+                name = fields["name"]?.jsonPrimitive?.contentOrNull,
+                version = fields["version"]?.jsonPrimitive?.contentOrNull,
+            )
+        }
+        val text = runCatching { element?.jsonPrimitive?.contentOrNull }
+            .getOrNull()
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?: return MintSoftwareInfo()
+        val name = text.substringBefore("/", missingDelimiterValue = "").takeIf { it.isNotBlank() }
+        val version = text.substringAfter("/", missingDelimiterValue = text).takeIf { it.isNotBlank() }
+        return MintSoftwareInfo(name = name, version = version)
+    }
+
+    private data class MintSoftwareInfo(
+        val name: String? = null,
+        val version: String? = null,
+    )
 }

@@ -6,7 +6,7 @@ This directory contains the complete CI infrastructure for running end-to-end in
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  CI GitHub Actions Runner (macOS)                        │
+│  CI GitHub Actions Runner (Linux or macOS)               │
 ├─────────────────────────────────────────────────────────┤
 │                                                         │
 │  ┌──────────────────┐         ┌─────────────────────┐   │
@@ -154,14 +154,19 @@ description = "Integration-test mint with FakeWallet backend"
 [database]
 engine = "sqlite"
 
-[ln]
+[[ln]]
 ln_backend = "fakewallet"
 unit = "sat"
+
+[[ln]]
+ln_backend = "fakewallet"
+unit = "usd"
 
 [onchain]
 onchain_backend = "fakewallet"
 
 [fake_wallet]
+supported_units = ["sat", "usd"]
 fee_percent = 0.0
 reserve_fee_min = 0
 ```
@@ -171,14 +176,15 @@ reserve_fee_min = 0
 The workflow (`.github/workflows/integration-tests.yml`) runs on every push/PR to main:
 
 1. Checks out code
-2. Setups Python 3.11 and Xcode
-3. Installs Nutshell via pip with a supported Python runtime
-4. Prepares CDK from a release binary on Linux or a Cargo source build on macOS
-5. Starts both mints
-6. Runs integration tests against both mints
-7. Uploads test results on failure
+2. Sets up Python 3.11
+3. Runs Android JVM, no-network, lint, and release Gradle gates
+4. On the Android Linux runner, installs Nutshell, prepares CDK from the Linux release binary, starts both mints, and runs `:app:androidLocalMintIntegrationTest`
+5. On the iOS macOS runner, installs and starts Nutshell, then runs the Swift package, unit, and UI integration tests
+6. Uploads test results and mint logs on failure
 
-**Expected CI time:** Linux runners should stay close to the previous fast path; macOS CDK setup depends on whether the Cargo build output is already cached.
+The iOS macOS job currently keeps CDK disabled because the CDK release does not publish a macOS arm64 binary and source builds are too slow for that runner. Android's local-mint endpoint gate covers both Nutshell and CDK on Linux.
+
+**Expected CI time:** Linux runners should stay close to the previous fast path; macOS runtime is dominated by the iOS build and simulator test phases.
 
 ## Manual Testing
 

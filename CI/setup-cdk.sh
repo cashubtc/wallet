@@ -89,13 +89,21 @@ description = "Integration-test mint with FakeWallet backend"
 [database]
 engine = "sqlite"
 
-[ln]
+[[ln]]
 ln_backend = "fakewallet"
 unit = "sat"
 min_mint = 1
 max_mint = 500000
 min_melt = 1
 max_melt = 500000
+
+[[ln]]
+ln_backend = "fakewallet"
+unit = "usd"
+min_mint = 1
+max_mint = 100000
+min_melt = 1
+max_melt = 100000
 
 [onchain]
 onchain_backend = "fakewallet"
@@ -105,6 +113,7 @@ min_melt = 1
 max_melt = 500000
 
 [fake_wallet]
+supported_units = ["sat", "usd"]
 fee_percent = 0.0
 reserve_fee_min = 0
 min_delay_time = 0

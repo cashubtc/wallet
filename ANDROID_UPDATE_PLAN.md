@@ -127,6 +127,23 @@ Focused validation used during Android no-network integration target setup:
 JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:testDebugUnitTest --tests org.cashu.wallet.integration.NoNetworkFakeGatewayIntegrationTest :app:androidNoNetworkIntegrationTest
 ```
 
+Focused validation used during Android local-mint integration setup:
+
+```sh
+# From the repository root:
+./CI/setup-nutshell.sh
+./CI/setup-cdk.sh
+./CI/start-nutshell.sh
+./CI/start-cdk.sh
+
+# From android/:
+JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:compileDebugUnitTestKotlin :app:androidLocalMintIntegrationTest
+
+# From the repository root after testing:
+./CI/stop-nutshell.sh
+./CI/stop-cdk.sh
+```
+
 Focused validation used during bottom-sheet and segmented-label polish:
 
 ```sh
@@ -1041,12 +1058,13 @@ Focused validation:
 
 Integration checklist:
 
-Milestone update: local Nutshell setup now self-selects a compatible Python 3.10-3.12 runtime, recreates incompatible virtualenvs, and has been smoke-started successfully against `/v1/info`. CDK setup is now executable/idempotent, writes a bootable fakewallet config with local-only seed material, and has been smoke-started successfully against `/v1/info`. The full local-mint operation matrix remains open.
+Milestone update: local Nutshell setup now self-selects a compatible Python 3.10-3.12 runtime, recreates incompatible virtualenvs, and has been smoke-started successfully against `/v1/info`. CDK setup is now executable/idempotent, writes a bootable fakewallet config with local-only seed material, exposes sat and usd fakewallet units, and has been smoke-started successfully against `/v1/info`. Android now has a host-safe live local-mint Gradle task, `:app:androidLocalMintIntegrationTest`, which passed locally against Nutshell and CDK for `/v1/info`, `/v1/keys`, BOLT11 quotes, CDK BOLT12 offers, CDK on-chain quotes, CDK usd quotes, Cashu Request decoding, and Cashu token prefix parsing. Full wallet mint/melt/restore token round-trip coverage still requires the Android native runtime because the host JVM cannot load the Android `libcdk_ffi` wallet library.
 
 - [x] Add an Android integration test target equivalent to `CI/IntegrationTests`. Gradle now defines `:app:androidNoNetworkIntegrationTest` as the Android no-network JVM integration target, and CI runs it after Android JVM tests.
-- [ ] Run against local Nutshell/CDK test mints for mint, melt, restore, token parser, payment request parser, multi-unit, BOLT11, BOLT12, and on-chain where available. Nutshell and CDK setup/start are verified locally after hardening `CI/setup-nutshell.sh`, `CI/setup-cdk.sh`, and `CI/start-cdk.sh`; operation coverage across both mints is still pending.
+- [x] Add a host-safe Android live local-mint Gradle target. `:app:androidLocalMintIntegrationTest` covers Nutshell/CDK metadata and keysets, BOLT11 quote creation on both mints, CDK BOLT12/on-chain/usd quote creation, Android Cashu Request decoding, and Cashu token prefix parsing.
+- [ ] Run the full Android wallet-operation matrix against local Nutshell/CDK test mints for mint, melt, restore, token parser, payment request parser, multi-unit, BOLT11, BOLT12, and on-chain where available. The endpoint/parser matrix passes under Gradle; full wallet mint/melt/restore token round-trip coverage remains pending on an Android instrumentation or physical-device runtime because host JVM tests cannot instantiate the Android CDK wallet FFI.
 - [x] Add fake-gateway integration tests for no-network CI paths. `NoNetworkFakeGatewayIntegrationTest` covers receive-lightning quote settlement through `CashuRequestStore` and Cashu payment-request payment/refresh without real mints or network.
-- [x] Add CI jobs for JVM unit tests, lint, and release build. `.github/workflows/integration-tests.yml` now includes an Android Gradle job for `:app:testDebugUnitTest`, `:app:lintDebug`, and `:app:assembleRelease`.
+- [x] Add CI jobs for JVM unit tests, lint, local-mint endpoint integration, and release build. `.github/workflows/integration-tests.yml` now includes an Android Gradle job for `:app:testDebugUnitTest`, `:app:androidNoNetworkIntegrationTest`, local Nutshell/CDK setup, `:app:androidLocalMintIntegrationTest`, `:app:lintDebug`, and `:app:assembleRelease`.
 - [x] Add CI jobs for instrumentation tests on managed devices once the Android Compose/instrumentation harness exists. Gradle now defines `pixel2Api35`, and CI runs `:app:pixel2Api35DebugAndroidTest`.
 
 Success condition:
@@ -1066,9 +1084,10 @@ iOS/product reference files for this milestone:
 
 Checklist:
 
-Milestone update: local Gradle release gates passed for the current branch with `:app:testDebugUnitTest`, `:app:lintDebug`, and `:app:assembleRelease`. Device/emulator instrumentation, Compose UI tests, iOS tests, real-mint payment validation, and manual parity walkthroughs remain open acceptance gates.
+Milestone update: local Gradle release gates passed for the current branch with `:app:testDebugUnitTest`, `:app:lintDebug`, and `:app:assembleRelease`. Local Android endpoint integration also passed with `:app:compileDebugUnitTestKotlin :app:androidLocalMintIntegrationTest` against running Nutshell/CDK test mints. Device/emulator instrumentation, Compose UI tests, iOS tests, full native mint/melt/restore validation, real-mint payment validation, and manual parity walkthroughs remain open acceptance gates.
 
 - [x] Run Android JVM unit tests with Gradle.
+- [x] Run Android local-mint endpoint integration with Gradle.
 - [x] Run Android `lintDebug` with Gradle.
 - [x] Build Android release APK with Gradle.
 - [x] Fix locale-observation lint in the Android currency picker so `lintDebug` remains green when Compose tracks configuration changes.

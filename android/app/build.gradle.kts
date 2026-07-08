@@ -134,3 +134,25 @@ tasks.register<Test>("androidNoNetworkIntegrationTest") {
         includeTestsMatching("org.cashu.wallet.integration.*")
     }
 }
+
+tasks.register<Test>("androidLocalMintIntegrationTest") {
+    group = "verification"
+    description = "Runs Android JVM integration coverage against local Nutshell/CDK test mints."
+    val debugUnitTest = tasks.named<Test>("testDebugUnitTest")
+    dependsOn("compileDebugUnitTestKotlin", "compileDebugUnitTestJavaWithJavac", "processDebugUnitTestJavaRes")
+    shouldRunAfter("androidNoNetworkIntegrationTest")
+    testClassesDirs = debugUnitTest.get().testClassesDirs
+    classpath = debugUnitTest.get().classpath
+    systemProperty("cashu.localMintIntegration", "true")
+    systemProperty(
+        "cashu.nutshellMintUrl",
+        providers.gradleProperty("nutshellMintUrl").getOrElse("http://localhost:3338"),
+    )
+    systemProperty(
+        "cashu.cdkMintUrl",
+        providers.gradleProperty("cdkMintUrl").getOrElse("http://localhost:3339"),
+    )
+    filter {
+        includeTestsMatching("org.cashu.wallet.liveintegration.*")
+    }
+}
