@@ -19,6 +19,7 @@ struct LightningRequestMetadata: Equatable, Sendable {
     let normalizedRequest: String
     let paymentMethod: PaymentMethodKind
     let amountSats: UInt64?
+    let amountMsat: UInt64?
 }
 
 struct TokenPreview: Equatable, Sendable {
@@ -75,7 +76,8 @@ actor CdkRuntime {
         return LightningRequestMetadata(
             normalizedRequest: normalized,
             paymentMethod: paymentMethod,
-            amountSats: decoded.amountMsat.map(PaymentRequestDecoder.satsCeiling(from:))
+            amountSats: decoded.amountMsat.map(PaymentRequestDecoder.satsCeiling(from:)),
+            amountMsat: decoded.amountMsat
         )
     }
 
