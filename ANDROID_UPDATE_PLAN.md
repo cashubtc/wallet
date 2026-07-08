@@ -144,6 +144,19 @@ JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:compileDebugUnitTestKotlin :ap
 ./CI/stop-cdk.sh
 ```
 
+Local Nutshell launcher hardening:
+
+- `CI/start-nutshell.sh` now runs Nutshell from `CI/.nutshell-workdir` with an empty local `.env`, so user-level `~/.cashu/.env` settings cannot alter CI/integration behavior.
+- The local Nutshell test mint binds to `127.0.0.1`, uses `CASHU_DIR` under the CI workdir, and sets `MINT_URL`, `MINT_HOST`, and `MINT_PORT` explicitly.
+- FakeWallet tests use zero incoming/outgoing delay and zero quote backend-check throttle so BOLT11 test quotes settle deterministically.
+
+SwiftPM iOS integration validation used after hardening local Nutshell:
+
+```sh
+# Keep Nutshell/CDK running locally, then from CI/IntegrationTests:
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer NUTSHELL_MINT_URL=http://localhost:3338 swift test
+```
+
 Focused validation used during bottom-sheet and segmented-label polish:
 
 ```sh
@@ -178,7 +191,7 @@ Managed-device validation attempt:
 JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:pixel2Api35DebugAndroidTest
 ```
 
-Current local status: direct connected-emulator instrumentation now passes through AndroidJUnitRunner with 49/49 tests green after fixing the fake Compose shell, compact-height scrolling probes, settings toggle state, and mint swipe idempotence. Standard Gradle `:app:connectedDebugAndroidTest` still exits with an empty `test-result.pb` and zero-test HTML report on this local emulator, so keep the Gradle connected/managed-device result-collection gate open. The managed-device task also remains blocked locally because Android emulator 36.6.11 rejects Gradle's `auto-no-window` GPU option during `:app:pixel2Api35Setup`.
+Current local status: direct connected-emulator instrumentation now passes through AndroidJUnitRunner with 49/49 tests green after fixing the fake Compose shell, compact-height scrolling probes, settings toggle state, and mint swipe idempotence. Standard Gradle `:app:connectedDebugAndroidTest` still exits with an empty `test-result.pb` and zero-test HTML report on this local emulator, so keep the Gradle connected/managed-device result-collection gate open. The managed-device task also remains blocked locally because Android emulator 36.6.11 rejects Gradle's `auto-no-window` GPU option during `:app:pixel2Api35Setup`. SwiftPM iOS integration tests in `CI/IntegrationTests` now pass 12/12 against the hermetic local Nutshell FakeWallet mint; full Xcode project scheme/UI-test discovery remains blocked locally because `xcodebuild -list -project CashuWallet.xcodeproj` hangs at package graph resolution.
 
 Focused validation used while adding receive-token review coverage:
 
@@ -1067,7 +1080,7 @@ Focused validation:
 
 Integration checklist:
 
-Milestone update: local Nutshell setup now self-selects a compatible Python 3.10-3.12 runtime, recreates incompatible virtualenvs, and has been smoke-started successfully against `/v1/info`. CDK setup is now executable/idempotent, writes a bootable fakewallet config with local-only seed material, exposes sat and usd fakewallet units, and has been smoke-started successfully against `/v1/info`. Android now has a host-safe live local-mint Gradle task, `:app:androidLocalMintIntegrationTest`, which passed locally against Nutshell and CDK for `/v1/info`, `/v1/keys`, BOLT11 quotes, CDK BOLT12 offers, CDK on-chain quotes, CDK usd quotes, Cashu Request decoding, and Cashu token prefix parsing. Full wallet mint/melt/restore token round-trip coverage still requires the Android native runtime because the host JVM cannot load the Android `libcdk_ffi` wallet library.
+Milestone update: local Nutshell setup now self-selects a compatible Python 3.10-3.12 runtime, recreates incompatible virtualenvs, runs hermetically from `CI/.nutshell-workdir` instead of user-level Cashu config, binds to local-only host settings, and uses deterministic FakeWallet quote settlement. CDK setup is now executable/idempotent, writes a bootable fakewallet config with local-only seed material, exposes sat and usd fakewallet units, and has been smoke-started successfully against `/v1/info`. Android now has a host-safe live local-mint Gradle task, `:app:androidLocalMintIntegrationTest`, which passed locally against Nutshell and CDK for `/v1/info`, `/v1/keys`, BOLT11 quotes, CDK BOLT12 offers, CDK on-chain quotes, CDK usd quotes, Cashu Request decoding, and Cashu token prefix parsing. SwiftPM iOS integration tests also pass 12/12 against the hermetic Nutshell FakeWallet mint. Full Android wallet mint/melt/restore token round-trip coverage still requires the Android native runtime because the host JVM cannot load the Android `libcdk_ffi` wallet library.
 
 - [x] Add an Android integration test target equivalent to `CI/IntegrationTests`. Gradle now defines `:app:androidNoNetworkIntegrationTest` as the Android no-network JVM integration target, and CI runs it after Android JVM tests.
 - [x] Add a host-safe Android live local-mint Gradle target. `:app:androidLocalMintIntegrationTest` covers Nutshell/CDK metadata and keysets, BOLT11 quote creation on both mints, CDK BOLT12/on-chain/usd quote creation, Android Cashu Request decoding, and Cashu token prefix parsing.
@@ -1093,7 +1106,7 @@ iOS/product reference files for this milestone:
 
 Checklist:
 
-Milestone update: local Gradle release gates passed for the current branch with `:app:testDebugUnitTest`, `:app:lintDebug`, and `:app:assembleRelease`. Local Android endpoint integration also passed with `:app:compileDebugUnitTestKotlin :app:androidLocalMintIntegrationTest` against running Nutshell/CDK test mints. Direct connected-emulator AndroidJUnitRunner instrumentation passed 49/49 tests after fixing Compose harness, compact scrolling, settings toggle, and mint swipe regressions. iOS tests, Gradle connected/managed-device result collection, full native mint/melt/restore validation, real-mint payment validation, and manual parity walkthroughs remain open acceptance gates.
+Milestone update: local Gradle release gates passed for the current branch with `:app:testDebugUnitTest`, `:app:lintDebug`, and `:app:assembleRelease`. Local Android endpoint integration also passed with `:app:compileDebugUnitTestKotlin :app:androidLocalMintIntegrationTest` against running Nutshell/CDK test mints. Direct connected-emulator AndroidJUnitRunner instrumentation passed 49/49 tests after fixing Compose harness, compact scrolling, settings toggle, and mint swipe regressions. SwiftPM iOS integration tests passed 12/12 after hardening the local Nutshell FakeWallet launcher; full Xcode project/unit/UI-test discovery still hangs at package graph resolution. Gradle connected/managed-device result collection, full native Android mint/melt/restore validation, real-mint payment validation, and manual parity walkthroughs remain open acceptance gates.
 
 - [x] Run Android JVM unit tests with Gradle.
 - [x] Run Android local-mint endpoint integration with Gradle.
@@ -1102,7 +1115,8 @@ Milestone update: local Gradle release gates passed for the current branch with 
 - [x] Fix locale-observation lint in the Android currency picker so `lintDebug` remains green when Compose tracks configuration changes.
 - [x] Run Android instrumentation and Compose UI tests on an attached emulator. Direct AndroidJUnitRunner execution passed 49/49 tests with storage, fake-wallet app shell, onboarding, send, receive, mints, history, settings, scanner/contactless, accessibility, large-font, compact-height, mint interaction, and back-navigation coverage.
 - [ ] Restore standard Gradle connected/managed-device instrumentation result collection. Local `:app:connectedDebugAndroidTest` packages the APKs but exits with an empty `test-result.pb` and a zero-test HTML report, while `:app:pixel2Api35DebugAndroidTest` remains blocked by the local emulator 36.6.11 `auto-no-window` GPU option rejection.
-- [ ] Run iOS tests to ensure shared product assumptions did not diverge.
+- [x] Run SwiftPM iOS integration tests to ensure shared local-mint product assumptions did not diverge. `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer NUTSHELL_MINT_URL=http://localhost:3338 swift test` passed 12/12 in `CI/IntegrationTests` against the hermetic Nutshell FakeWallet mint.
+- [ ] Restore full Xcode project/unit/UI-test discovery. `xcodebuild -list -project CashuWallet.xcodeproj` still hangs at `Resolve Package Graph` locally and was stopped after roughly 90 seconds.
 - [ ] Perform manual parity walkthrough on physical Android device: onboarding, restore, backup/security, home, send, receive, scanner, NFC, mints, history, settings.
 - [ ] Perform manual parity walkthrough on iOS after any shared model/protocol changes.
 - [ ] Validate with at least one real mint supporting current CDK features, one BOLT11 path, one BOLT12 path, one on-chain path, one P2PK locked token, and one Cashu Request paid over Nostr.
