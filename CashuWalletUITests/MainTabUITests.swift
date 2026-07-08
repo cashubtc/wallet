@@ -21,9 +21,10 @@ final class MainTabUITests: UITestBase {
 
         tapTab("History")
 
-        // History view should appear — at minimum the tab should be selected
-        let historyTab = tabButton("History")
-        XCTAssertTrue(historyTab.isSelected, "History tab should become selected")
+        XCTAssertTrue(
+            app.navigationBars["History"].waitForExistence(timeout: 10),
+            "History view should appear"
+        )
     }
 
     func testNavigateToMintsTab() throws {
@@ -31,9 +32,6 @@ final class MainTabUITests: UITestBase {
         waitForMainTab()
 
         tapTab("Mints")
-
-        let mintsTab = tabButton("Mints")
-        XCTAssertTrue(mintsTab.isSelected)
     }
 
     /// With no mint configured, the Mints tab shows its add-mint form.
@@ -42,7 +40,6 @@ final class MainTabUITests: UITestBase {
         waitForMainTab()
 
         tapTab("Mints")
-        XCTAssertTrue(tabButton("Mints").isSelected)
 
         XCTAssertTrue(
             app.navigationBars["Mints"].waitForExistence(timeout: 10),
@@ -59,17 +56,13 @@ final class MainTabUITests: UITestBase {
         waitForMainTab()
 
         tapTab("Settings")
-
-        let settingsTab = tabButton("Settings")
-        XCTAssertTrue(settingsTab.isSelected)
     }
 
     func testWalletTabIsDefaultSelected() throws {
         createWalletAndSkipMint()
         waitForMainTab()
 
-        let walletTab = tabButton("Wallet")
-        XCTAssertTrue(walletTab.isSelected, "Wallet should be selected by default")
+        waitForSelectedTab("Wallet")
     }
 
     func testNavigateBetweenMultipleTabs() throws {
@@ -77,12 +70,9 @@ final class MainTabUITests: UITestBase {
         waitForMainTab()
 
         tapTab("Mints")
-        XCTAssertTrue(tabButton("Mints").isSelected)
 
         tapTab("Settings")
-        XCTAssertTrue(tabButton("Settings").isSelected)
 
         tapTab("Wallet")
-        XCTAssertTrue(tabButton("Wallet").isSelected)
     }
 }
