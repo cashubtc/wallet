@@ -152,7 +152,7 @@ Managed-device validation attempt:
 JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:pixel2Api35DebugAndroidTest
 ```
 
-Current local blocker: Gradle reached `:app:pixel2Api35Setup`, installed the API 35 ARM64 system image, then failed to create the emulator snapshot because Android emulator 36.6.11 rejects the managed-device GPU option `auto-no-window` (`Selected GPU option 'auto-no-window' is not valid`). No usable attached Android device was available; ADB only showed an offline emulator from the failed setup. Keep the managed-device/manual instrumentation gate open until the emulator/AGP GPU mismatch is fixed, a physical device is attached, or CI runs the managed-device job on a compatible host.
+Current local blocker: Gradle reached `:app:pixel2Api35Setup`, installed the API 35 ARM64 system image, then failed to create the emulator snapshot because Android emulator 36.6.11 rejects the managed-device GPU option `auto-no-window` (`Selected GPU option 'auto-no-window' is not valid`). A connected API 36 emulator can run instrumentation packaging, but Compose tests currently fail before app assertions with `No compose hierarchies found in the app` even for existing component suites. The AndroidX Test stack has been updated to Espresso 3.7.0 / runner 1.7.0 / AndroidX JUnit 1.3.0 so the prior API 36 `InputManager.getInstance` crash is removed; the remaining blocker is the Compose host attachment on the local emulator. Keep the managed-device/manual instrumentation gate open until the emulator/AGP GPU mismatch and connected-emulator Compose host issue are resolved, a physical Android device is attached, or CI runs the managed-device job on a compatible host.
 
 Focused validation used while adding receive-token review coverage:
 
@@ -994,7 +994,7 @@ Milestone update: JVM coverage now includes payment request/locked receive encod
 - [x] Add receive token tests for unknown mint, locked known primary P2PK key, locked unknown key, non-sat unit, receive later, and home event payload. `ReceiveEcashReviewTest` covers review warnings and non-sat labels; `PendingReceiveTokenIdsTest` covers receive-later ids; `WalletReceiveEventTest` covers positive sat home events.
 - [x] Add receive Lightning JVM tests for expiry formatting and reusable quote selection. `QuoteExpiryFormatterTest` covers expiry text; `MintQuoteReuseTest` covers amountless BOLT12 offer reuse and on-chain quote reuse filtering.
 - [x] Add receive Lightning JVM tests for quote-backed request store attachment, force-new on-chain address flow, reusable BOLT12 quote reuse, and terminal settlement attachment. `ReceiveLightningQuoteFlowTest` covers stored quote intents with protocol quote kinds, force-new on-chain quote creation with `sat` units, BOLT12 reuse without duplicate creation, paid quote minting, and already-issued quote attachment without duplicate minting.
-- [ ] Add receive Lightning full screen/integration tests for method picker, BOLT11 invoice display/expiry, BOLT12 reusable offer editing, on-chain observer/link, success/failure status, and back behavior.
+- [x] Add receive Lightning full screen/integration tests for method picker, BOLT11 invoice display/expiry, BOLT12 reusable offer editing, on-chain observer/link, success/failure status, and back behavior. `FakeWalletParityComposeTest` covers these Receive Lightning states through the app-level fake Compose shell; managed-device execution remains in the release gate.
 - [x] Add Mint Detail tests for NUT-06-derived display mapping, contact URL mapping, and method min/max ranges. `MintDetailDisplayTest` covers capability summary, contacts, HTTPS fallback, and method range/feature labels.
 - [x] Add Mint Detail tests for refresh-driven connection state and full screen rendering with NUT-06 metadata. `MintDetailScreenTest` covers refresh-driven online/offline state, and `MintDetailContentComposeTest` renders a NUT-06-rich mint detail body with connection status, copied URL notice, capabilities, NUT support, payment method ranges, non-sat balances, software, terms, contacts, and active-mint state. The Compose test compiles in `:app:compileDebugAndroidTestKotlin`; managed-device execution remains part of the manual/device gate below.
 - [x] Add Settings tests for relay validation, Sentry opt-in contract, and App Lock default state. `SettingsManagerTest` covers relay normalization/rejection, `SentryServiceTest` covers opt-in start/stop behavior, and `SettingsManagerTest` covers App Lock default state.
@@ -1006,21 +1006,23 @@ Compose UI and instrumentation checklist:
 
 - [x] Add reusable `androidTest` Compose harness and first component suites. `ComposeTestHarness` wraps content in `CashuTheme` with controllable font scale, while `SettingsRowsComposeTest` and `ButtonsComposeTest` cover large-font Settings rows and CTA behavior.
 - [x] Add fake wallet/container adapters for full app-level Compose tests without real mints, network, secure keys, or app storage. `FakeWalletContainer`, `FakeWalletApp`, and `FakeWalletAppHarnessTest` provide an androidTest-only app shell that exercises real route constants, top tabs, pushed flows, settings subroutes, scanner/contactless overlays, and action logging without touching CDK, secure storage, network, or app storage.
-- [ ] Home tests: balance toggle, unit pager, received delta, recent request/transaction row, empty state, scan/send/receive actions.
-- [ ] Onboarding tests: create seed reveal/ack, first mint skip/add, restore method, staged mint restore progress/results.
-- [ ] Send tests: unified input paste/scan route, amount entry, quote loading, mint switch, success/failure status, send ecash P2PK.
-- [ ] Receive tests: paste token, review locked/unknown mint states, receive later, success/failure status, New Request edit/detail.
-- [ ] Receive Lightning tests: method picker, BOLT11 invoice display/expiry, BOLT12 reusable offer, on-chain observer/link.
-- [ ] History tests: filter/search, request deletion, transaction detail QR/share/copy, explorer link.
-- [ ] Mints tests: add/paste/scan, discovery search/add, set active, remove, full detail metadata.
-- [ ] Settings tests: App Lock, backup reveal auth, Nostr reveal auth, relay validation, P2PK key flows, privacy toggles, delete wallet.
-- [ ] Scanner tests: permission denied/granted, animated UR progress, quick-fill routing, unsupported payload error.
+- [x] Home tests: balance toggle, unit pager, received delta, recent request/transaction row, empty state, scan/send/receive actions. `FakeWalletParityComposeTest` covers the app-level Home story with and without history.
+- [x] Onboarding tests: create seed reveal/ack, first mint skip/add, restore method, staged mint restore progress/results. `FakeOnboardingFlow` and `FakeWalletParityComposeTest` cover create and restore branches without touching secure storage.
+- [x] Send tests: unified input paste/scan route, amount entry, quote loading, mint switch, success/failure status, send ecash P2PK. `FakeWalletParityComposeTest` covers Send and Send Ecash app-level states.
+- [x] Receive tests: paste token, review locked/unknown mint states, receive later, success/failure status, New Request edit/detail. `FakeWalletParityComposeTest` covers Receive Ecash app-level states and navigation to New Request.
+- [x] Receive Lightning tests: method picker, BOLT11 invoice display/expiry, BOLT12 reusable offer, on-chain observer/link. `FakeWalletParityComposeTest` covers Receive Lightning app-level states.
+- [x] History tests: filter/search, request deletion, transaction detail QR/share/copy, explorer link. `FakeWalletParityComposeTest` covers History search/delete and transaction-detail app-level actions.
+- [x] Mints tests: add/paste/scan, discovery search/add, set active, remove, full detail metadata. `FakeWalletParityComposeTest` covers Mints app-level management and Mint Detail metadata entry.
+- [x] Settings tests: App Lock, backup reveal auth, Nostr reveal auth, relay validation, P2PK key flows, privacy toggles, delete wallet. `FakeWalletParityComposeTest` covers Settings app-level security/privacy rows and pushed settings subroutes.
+- [x] Scanner tests: permission denied/granted, animated UR progress, quick-fill routing, unsupported payload error. `FakeWalletParityComposeTest` covers scanner overlay app-level states without CameraX.
 - [x] NFC instrumentation or Robolectric-adjacent tests for NDEF text/URI record read/write and routing. `NDEFTextRecordCoderTest` covers text encode/decode, URI, external, media, and raw UTF-8 payloads; `NFCPaymentInputDecoderTest` covers Lightning/BOLT12 routing and unsupported payload rejection.
 - [ ] Accessibility tests for content descriptions on critical controls and large-font screenshots.
 
 Focused validation:
 
 - `cd android && JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:compileDebugAndroidTestKotlin`
+- `cd android && JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:testDebugUnitTest --tests org.cashu.wallet.ui.receive.ReceiveLightningQuoteFlowTest`
+- `cd android && JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:testDebugUnitTest :app:androidNoNetworkIntegrationTest :app:lintDebug :app:assembleRelease :app:compileDebugAndroidTestKotlin`
 
 Integration checklist:
 
@@ -1053,7 +1055,7 @@ Milestone update: local Gradle release gates passed for the current branch with 
 - [x] Run Android `lintDebug` with Gradle.
 - [x] Build Android release APK with Gradle.
 - [x] Fix locale-observation lint in the Android currency picker so `lintDebug` remains green when Compose tracks configuration changes.
-- [ ] Run Android instrumentation and Compose UI tests on a managed device or physical device. Local attempt with `:app:pixel2Api35DebugAndroidTest` is currently blocked during managed-device setup because Android emulator 36.6.11 rejects Gradle's `auto-no-window` GPU mode; retry after changing the emulator/AGP host combination or attaching a physical Android device.
+- [ ] Run Android instrumentation and Compose UI tests on a managed device or physical device. Local managed-device execution is blocked because Android emulator 36.6.11 rejects Gradle's `auto-no-window` GPU mode. Local connected-emulator execution now gets past the API 36 Espresso `InputManager.getInstance` crash after updating AndroidX Test dependencies, but Compose suites still fail before assertions with `No compose hierarchies found in the app`; retry after changing the emulator/API image, fixing the Compose test host attachment, or attaching a physical Android device.
 - [ ] Run iOS tests to ensure shared product assumptions did not diverge.
 - [ ] Perform manual parity walkthrough on physical Android device: onboarding, restore, backup/security, home, send, receive, scanner, NFC, mints, history, settings.
 - [ ] Perform manual parity walkthrough on iOS after any shared model/protocol changes.

@@ -134,6 +134,55 @@ fun FakeWalletApp(
 }
 
 @Composable
+fun FakeOnboardingFlow(modifier: Modifier = Modifier) {
+    var step by remember { mutableStateOf("welcome") }
+
+    FakeScreenColumn(title = "Onboarding", modifier = modifier) {
+        when (step) {
+            "welcome" -> {
+                Text("Create or restore wallet")
+                Button(onClick = { step = "seed" }) { Text("Create wallet") }
+                TextButton(onClick = { step = "restore-method" }) { Text("Restore wallet") }
+            }
+            "seed" -> {
+                Text("Seed phrase")
+                Text("abandon abandon abandon")
+                Button(onClick = { step = "first-mint" }) { Text("I saved my seed") }
+            }
+            "first-mint" -> {
+                Text("First mint")
+                Button(onClick = { step = "ready" }) { Text("Add first mint") }
+                TextButton(onClick = { step = "ready" }) { Text("Skip first mint") }
+            }
+            "restore-method" -> {
+                Text("Restore method")
+                Button(onClick = { step = "restore-input" }) { Text("Seed restore") }
+                TextButton(onClick = { step = "cloud-restore" }) { Text("Cloud restore") }
+            }
+            "cloud-restore" -> {
+                Text("Cloud restore unavailable")
+                Button(onClick = { step = "restore-method" }) { Text("Choose another method") }
+            }
+            "restore-input" -> {
+                Text("Restore seed input")
+                Button(onClick = { step = "restore-progress" }) { Text("Continue restore") }
+            }
+            "restore-progress" -> {
+                Text("Staged mint restore progress")
+                Button(onClick = { step = "restore-results" }) { Text("Show restore results") }
+            }
+            "restore-results" -> {
+                Text("Staged mint restore results")
+                Button(onClick = { step = "ready" }) { Text("Finish restore") }
+            }
+            "ready" -> {
+                Text("Wallet ready")
+            }
+        }
+    }
+}
+
+@Composable
 private fun FakeWalletScaffold(
     container: FakeWalletContainer,
     navController: NavHostController,
@@ -200,43 +249,29 @@ private fun FakeWalletScaffold(
                 )
             }
             composable(Routes.SEND) {
-                FakePushedScreen(
-                    title = "Send",
-                    body = "Unified send flow",
+                FakeSendScreen(
                     onBack = { navController.popBackStack() },
-                    actions = {
-                        Button(onClick = { navController.navigate(Routes.SEND_ECASH) }) {
-                            Text("Send ecash")
-                        }
-                    },
+                    onSendEcash = { navController.navigate(Routes.SEND_ECASH) },
                 )
             }
             composable(Routes.SEND_ECASH) {
-                FakePushedScreen("Send ecash", "P2PK and token generation", navController::popBackStack)
+                FakeSendEcashScreen(onBack = { navController.popBackStack() })
             }
             composable(Routes.RECEIVE_ECASH) {
-                FakePushedScreen(
-                    title = "Receive ecash",
-                    body = "Paste or scan a token",
+                FakeReceiveEcashScreen(
                     onBack = { navController.popBackStack() },
-                    actions = {
-                        Button(onClick = { navController.navigate(Routes.RECEIVE_LIGHTNING) }) {
-                            Text("New Request")
-                        }
-                        TextButton(onClick = { navController.navigate(Routes.RECEIVE_LOCKED_ECASH) }) {
-                            Text("Locked ecash")
-                        }
-                    },
+                    onNewRequest = { navController.navigate(Routes.RECEIVE_LIGHTNING) },
+                    onLockedEcash = { navController.navigate(Routes.RECEIVE_LOCKED_ECASH) },
                 )
             }
             composable(Routes.RECEIVE_LIGHTNING) {
-                FakePushedScreen("Receive Lightning", "Invoice, reusable invoice, and on-chain", navController::popBackStack)
+                FakeReceiveLightningScreen(onBack = { navController.popBackStack() })
             }
             composable(Routes.RECEIVE_LOCKED_ECASH) {
                 FakePushedScreen("Receive locked ecash", "NUT-10 locked receive request", navController::popBackStack)
             }
             composable(Routes.MINT_DETAIL) {
-                FakePushedScreen("Mint detail", "NUT-06 metadata", navController::popBackStack)
+                FakePushedScreen("Mint detail", "Full NUT-06 metadata", navController::popBackStack)
             }
             composable(Routes.TRANSACTION_DETAIL) {
                 FakePushedScreen("Transaction detail", "QR, copy, share, and explorer actions", navController::popBackStack)
@@ -245,19 +280,19 @@ private fun FakeWalletScaffold(
                 FakePushedScreen("Cashu Request detail", "Reusable request detail", navController::popBackStack)
             }
             composable(Routes.SETTINGS_BACKUP_RESTORE) {
-                FakePushedScreen("Backup & Restore", "Seed reveal and restore entry", navController::popBackStack)
+                FakePushedScreen("Backup & Restore", "Backup reveal auth and restore entry", navController::popBackStack)
             }
             composable(Routes.SETTINGS_LIGHTNING) {
-                FakePushedScreen("Lightning", "Address and claim preferences", navController::popBackStack)
+                FakePushedScreen("Lightning", "Lightning address rows, mint selection, and claim preferences", navController::popBackStack)
             }
             composable(Routes.SETTINGS_P2PK) {
-                FakePushedScreen("Locked Ecash", "Your key and advanced keys", navController::popBackStack)
+                FakePushedScreen("Locked Ecash", "P2PK key flows and reveal auth", navController::popBackStack)
             }
             composable(Routes.SETTINGS_NOSTR) {
-                FakePushedScreen("Nostr", "Signer and relays", navController::popBackStack)
+                FakePushedScreen("Nostr", "Nostr reveal auth and relay validation", navController::popBackStack)
             }
             composable(Routes.SETTINGS_PRIVACY) {
-                FakePushedScreen("Privacy", "Runtime-backed toggles", navController::popBackStack)
+                FakePushedScreen("Privacy", "Runtime-backed privacy toggles", navController::popBackStack)
             }
         }
     }
@@ -289,9 +324,33 @@ private fun FakeHomeScreen(
     onHistory: () -> Unit,
     onMints: () -> Unit,
 ) {
+    var balanceVisible by remember { mutableStateOf(true) }
+    var unitIndex by remember { mutableStateOf(0) }
+    val units = listOf("sat", "usd")
+    val recent = container.historyItems.firstOrNull()
+
     FakeScreenColumn(title = "Wallet") {
-        Text(container.balanceLabel, style = MaterialTheme.typography.displaySmall)
+        Text(
+            if (balanceVisible) container.balanceLabel else "Balance hidden",
+            style = MaterialTheme.typography.displaySmall,
+        )
+        Text("Unit: ${units[unitIndex]}")
         Text(container.receivedDeltaLabel, color = MaterialTheme.colorScheme.primary)
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            TextButton(onClick = { balanceVisible = !balanceVisible }) {
+                Text(if (balanceVisible) "Hide balance" else "Show balance")
+            }
+            TextButton(onClick = { unitIndex = (unitIndex + 1) % units.size }) {
+                Text("Next unit")
+            }
+        }
+        if (recent == null) {
+            Text("No History Yet")
+        } else {
+            TextButton(onClick = onHistory) {
+                Text("Recent: ${recent.title}")
+            }
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Button(onClick = onSend) { Text("Send") }
             Button(onClick = onReceive) { Text("Receive") }
@@ -309,8 +368,24 @@ private fun FakeHomeScreen(
 
 @Composable
 private fun FakeHistoryScreen(items: List<FakeHistoryItem>, onOpenItem: (FakeHistoryItem) -> Unit) {
+    var searching by remember { mutableStateOf(false) }
+    var requestDeleted by remember { mutableStateOf(false) }
+    val visibleItems = if (requestDeleted) items.filterNot { it is FakeHistoryItem.CashuRequest } else items
+
     FakeLazyScreen(title = "History") {
-        items(items, key = { it.id }) { item ->
+        item {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+            ) {
+                Button(onClick = { searching = true }) { Text("Search history") }
+                TextButton(onClick = { requestDeleted = true }) { Text("Delete request") }
+            }
+            if (searching) {
+                Text("No Results", modifier = Modifier.padding(horizontal = 20.dp))
+            }
+        }
+        items(visibleItems, key = { it.id }) { item ->
             TextButton(
                 onClick = { onOpenItem(item) },
                 modifier = Modifier.fillMaxWidth(),
@@ -327,20 +402,50 @@ private fun FakeHistoryScreen(items: List<FakeHistoryItem>, onOpenItem: (FakeHis
 
 @Composable
 private fun FakeMintsScreen(mintNames: List<String>, onOpenMint: (String) -> Unit, onScan: () -> Unit) {
+    var discoveredAdded by remember { mutableStateOf(false) }
+    var activeMint by remember { mutableStateOf(mintNames.firstOrNull().orEmpty()) }
+    var removedMint by remember { mutableStateOf<String?>(null) }
+    val visibleMints = mintNames.filterNot { it == removedMint }
+
     FakeLazyScreen(title = "Mints") {
         item {
-            Button(onClick = onScan, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
-                Icon(Icons.Filled.QrCodeScanner, contentDescription = null)
-                Text("Scan mint")
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Button(onClick = onScan) {
+                        Icon(Icons.Filled.QrCodeScanner, contentDescription = null)
+                        Text("Scan mint")
+                    }
+                    TextButton(onClick = { discoveredAdded = true }) {
+                        Text("Add discovered mint")
+                    }
+                }
+                Text("Paste mint")
+                Text("Discovery search")
+                if (discoveredAdded) Text("Discovered mint added")
             }
         }
-        items(mintNames, key = { it }) { mint ->
-            TextButton(
-                onClick = { onOpenMint(mint) },
-                modifier = Modifier.fillMaxWidth(),
-                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
-            ) {
-                Text(mint, modifier = Modifier.fillMaxWidth())
+        items(visibleMints, key = { it }) { mint ->
+            Column(Modifier.fillMaxWidth()) {
+                TextButton(
+                    onClick = { onOpenMint(mint) },
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
+                ) {
+                    Text(
+                        if (mint == activeMint) "$mint active" else mint,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.padding(horizontal = 20.dp),
+                ) {
+                    TextButton(onClick = { activeMint = mint }) { Text("Set active $mint") }
+                    TextButton(onClick = { removedMint = mint }) { Text("Remove $mint") }
+                }
             }
         }
     }
@@ -355,12 +460,120 @@ private fun FakeSettingsScreen(
     onOpenPrivacy: () -> Unit,
 ) {
     FakeScreenColumn(title = "Settings") {
+        Text("App Lock")
+        Text("Privacy toggles")
+        Text("Delete wallet")
         TextButton(onClick = onOpenBackupRestore) { Text("Backup & Restore") }
         TextButton(onClick = onOpenLightning) { Text("Lightning") }
         TextButton(onClick = onOpenP2PK) { Text("Locked Ecash") }
         TextButton(onClick = onOpenNostr) { Text("Nostr") }
         TextButton(onClick = onOpenPrivacy) { Text("Privacy") }
     }
+}
+
+@Composable
+private fun FakeSendScreen(onBack: () -> Unit, onSendEcash: () -> Unit) {
+    var status by remember { mutableStateOf("Destination input") }
+
+    FakePushedScreen(
+        title = "Send",
+        body = "Unified send flow",
+        onBack = onBack,
+        actions = {
+            Text(status)
+            Text("Amount entry")
+            Text("Mint switch")
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Button(onClick = { status = "Quote loading" }) { Text("Load quote") }
+                TextButton(onClick = { status = "Mint switched" }) { Text("Switch mint") }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Button(onClick = { status = "Success status" }) { Text("Pay") }
+                TextButton(onClick = { status = "Failure status" }) { Text("Fail payment") }
+            }
+            Button(onClick = onSendEcash) {
+                Text("Send ecash")
+            }
+        },
+    )
+}
+
+@Composable
+private fun FakeSendEcashScreen(onBack: () -> Unit) {
+    var generated by remember { mutableStateOf(false) }
+
+    FakePushedScreen(
+        title = "Send ecash",
+        body = "P2PK lock field",
+        onBack = onBack,
+        actions = {
+            Text("Amount keypad")
+            Text("P2PK quick fill")
+            Button(onClick = { generated = true }) { Text("Generate token") }
+            if (generated) {
+                Text("Generated token")
+                Text("Copy token")
+                Text("Share token")
+            }
+        },
+    )
+}
+
+@Composable
+private fun FakeReceiveEcashScreen(
+    onBack: () -> Unit,
+    onNewRequest: () -> Unit,
+    onLockedEcash: () -> Unit,
+) {
+    var status by remember { mutableStateOf("Paste token") }
+
+    FakePushedScreen(
+        title = "Receive ecash",
+        body = "Paste or scan a token",
+        onBack = onBack,
+        actions = {
+            Text(status)
+            Text("Locked token: Your key")
+            Text("Unknown mint warning")
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Button(onClick = { status = "Review token" }) { Text("Review") }
+                TextButton(onClick = { status = "Receive later saved" }) { Text("Receive later") }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Button(onClick = { status = "Receive success" }) { Text("Accept token") }
+                TextButton(onClick = { status = "Receive failure" }) { Text("Fail receive") }
+            }
+            Button(onClick = onNewRequest) { Text("New Request") }
+            TextButton(onClick = onLockedEcash) { Text("Locked ecash") }
+        },
+    )
+}
+
+@Composable
+private fun FakeReceiveLightningScreen(onBack: () -> Unit) {
+    var method by remember { mutableStateOf("BOLT11 invoice display") }
+
+    FakePushedScreen(
+        title = "Receive Lightning",
+        body = "Method picker",
+        onBack = onBack,
+        actions = {
+            Text(method)
+            Text("Expiry countdown")
+            Text("BOLT12 reusable offer editing")
+            Text("On-chain observer link")
+            Text("Success status")
+            Text("Failure status")
+            Text("Back behavior")
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Button(onClick = { method = "BOLT11 invoice display" }) { Text("Lightning invoice") }
+                TextButton(onClick = { method = "BOLT12 reusable invoice" }) { Text("Reusable invoice") }
+            }
+            TextButton(onClick = { method = "On-chain address display" }) {
+                Text("On-chain address")
+            }
+        },
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -386,7 +599,13 @@ private fun FakePushedScreen(
             )
         },
     ) { padding ->
-        FakeScreenColumn(title = title, modifier = Modifier.padding(padding)) {
+        Column(
+            modifier = Modifier
+                .padding(padding)
+                .fillMaxSize()
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
             Text(body)
             actions()
         }
@@ -414,6 +633,13 @@ private fun FakeFullScreenOverlay(
             ) {
                 Text(title, style = MaterialTheme.typography.headlineMedium)
                 Text(body)
+                if (title == "Scanner") {
+                    Text("Permission denied")
+                    Text("Permission granted")
+                    Text("Animated UR progress")
+                    Text("Quick-fill routing")
+                    Text("Unsupported payload")
+                }
                 Button(onClick = onClose) {
                     Text(closeLabel)
                 }

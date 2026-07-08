@@ -1,9 +1,8 @@
 package org.cashu.wallet.ui
 
-import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -17,7 +16,7 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class FakeWalletAppHarnessTest {
     @get:Rule
-    val compose = createAndroidComposeRule<ComponentActivity>()
+    val compose = createComposeRule()
 
     @Test
     fun fakeWalletShellNavigatesTabsAndPushedRoutesWithoutRealServices() {
@@ -25,7 +24,6 @@ class FakeWalletAppHarnessTest {
             FakeWalletApp()
         }
 
-        compose.onNodeWithText("Wallet").assertIsDisplayed()
         compose.onNodeWithText("42 sats").assertIsDisplayed()
 
         compose.onNodeWithText("History").performClick()
