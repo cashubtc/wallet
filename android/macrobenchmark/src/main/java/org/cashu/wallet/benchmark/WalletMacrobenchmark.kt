@@ -7,6 +7,7 @@ import androidx.benchmark.macro.StartupMode
 import androidx.benchmark.macro.StartupTimingMetric
 import androidx.benchmark.macro.junit4.MacrobenchmarkRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.Until
 import org.junit.Rule
@@ -21,9 +22,9 @@ class WalletMacrobenchmark {
     @Test
     fun coldStartup() {
         benchmarkRule.measureRepeated(
-            packageName = TargetPackage,
+            packageName = targetPackage,
             metrics = listOf(StartupTimingMetric()),
-            compilationMode = CompilationMode.Partial(),
+            compilationMode = compilationMode,
             startupMode = StartupMode.COLD,
             iterations = 5,
             setupBlock = {
@@ -37,9 +38,9 @@ class WalletMacrobenchmark {
     @Test
     fun settingsOpenAndScrollFrameTiming() {
         benchmarkRule.measureRepeated(
-            packageName = TargetPackage,
+            packageName = targetPackage,
             metrics = listOf(FrameTimingMetric()),
-            compilationMode = CompilationMode.Partial(),
+            compilationMode = compilationMode,
             startupMode = StartupMode.WARM,
             iterations = 5,
             setupBlock = {
@@ -63,9 +64,9 @@ class WalletMacrobenchmark {
     @Test
     fun homeHistoryAndMintsListScrollFrameTiming() {
         benchmarkRule.measureRepeated(
-            packageName = TargetPackage,
+            packageName = targetPackage,
             metrics = listOf(FrameTimingMetric()),
-            compilationMode = CompilationMode.Partial(),
+            compilationMode = compilationMode,
             startupMode = StartupMode.WARM,
             iterations = 5,
             setupBlock = {
@@ -109,7 +110,18 @@ class WalletMacrobenchmark {
     }
 
     private companion object {
-        const val TargetPackage = "com.jcashu.wallet"
         const val WaitMs = 5_000L
+        const val TargetPackageArg = "targetPackage"
+        const val CompilationModeArg = "compilationMode"
+        const val DefaultTargetPackage = "com.jcashu.wallet.debug"
     }
+
+    private val targetPackage: String
+        get() = InstrumentationRegistry.getArguments().getString(TargetPackageArg) ?: DefaultTargetPackage
+
+    private val compilationMode: CompilationMode
+        get() = when (InstrumentationRegistry.getArguments().getString(CompilationModeArg)?.lowercase()) {
+            "none" -> CompilationMode.None()
+            else -> CompilationMode.Partial()
+        }
 }

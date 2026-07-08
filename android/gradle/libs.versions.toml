@@ -8,6 +8,7 @@ navigationCompose = "2.9.0"
 biometric = "1.1.0"
 concurrent = "1.2.0"
 benchmarkMacro = "1.4.1"
+profileinstaller = "1.4.1"
 composeBom = "2026.05.00"
 datastore = "1.1.7"
 serializationJson = "1.8.1"
@@ -40,6 +41,7 @@ androidx-biometric = { module = "androidx.biometric:biometric", version.ref = "b
 androidx-concurrent-futures = { module = "androidx.concurrent:concurrent-futures", version.ref = "concurrent" }
 androidx-concurrent-futures-ktx = { module = "androidx.concurrent:concurrent-futures-ktx", version.ref = "concurrent" }
 androidx-benchmark-macro-junit4 = { module = "androidx.benchmark:benchmark-macro-junit4", version.ref = "benchmarkMacro" }
+androidx-profileinstaller = { module = "androidx.profileinstaller:profileinstaller", version.ref = "profileinstaller" }
 androidx-compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }
 androidx-compose-ui = { module = "androidx.compose.ui:ui" }
 androidx-compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview" }

@@ -55,6 +55,7 @@ import org.cashu.wallet.Core.WalletManager
 import org.cashu.wallet.ui.components.NavRow
 import org.cashu.wallet.ui.components.SectionHeader
 import org.cashu.wallet.ui.components.ToggleRow
+import org.cashu.wallet.ui.performance.DebugRecompositionProbe
 import org.cashu.wallet.ui.security.findFragmentActivity
 import org.cashu.wallet.ui.theme.CashuTheme
 
@@ -110,6 +111,7 @@ fun SettingsScreen(
     onOpenPrivacy: () -> Unit,
     contentPadding: PaddingValues,
 ) {
+    DebugRecompositionProbe("SettingsScreen")
     val context = LocalContext.current
     val activity = remember(context) { context.findFragmentActivity() }
     val scope = rememberCoroutineScope()

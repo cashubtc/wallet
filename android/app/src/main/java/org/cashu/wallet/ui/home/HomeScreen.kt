@@ -90,6 +90,7 @@ import org.cashu.wallet.ui.components.SectionHeader
 import org.cashu.wallet.ui.components.TransactionRow
 import org.cashu.wallet.ui.components.TransactionRowModel
 import org.cashu.wallet.ui.components.formatRelativeTimestamp
+import org.cashu.wallet.ui.performance.DebugRecompositionProbe
 import org.cashu.wallet.ui.theme.CashuTheme
 
 private const val RECENT_LIMIT = 5
@@ -110,6 +111,7 @@ fun HomeScreen(
     onScan: () -> Unit,
     contentPadding: PaddingValues,
 ) {
+    DebugRecompositionProbe("HomeScreen")
     val walletState by walletManager.state.collectAsStateWithLifecycle()
     val settings by settingsManager.state.collectAsStateWithLifecycle()
     val priceState by priceService.state.collectAsStateWithLifecycle()

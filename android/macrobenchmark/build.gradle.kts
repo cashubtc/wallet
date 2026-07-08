@@ -11,9 +11,13 @@ android {
         minSdk = 26
         targetSdk = 36
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunnerArguments["targetPackage"] = providers
+            .gradleProperty("benchmarkTargetPackage")
+            .getOrElse("com.jcashu.wallet.debug")
     }
 
     targetProjectPath = ":app"
+    experimentalProperties["android.experimental.self-instrumenting"] = true
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
