@@ -42,6 +42,7 @@ fun AmountText(
     val resolvedColor = if (color == Color.Unspecified) LocalContentColor.current else color
     val finalStyle = style.withMonoDigits().copy(color = resolvedColor)
     val density = LocalDensity.current
+    val reduceMotion = rememberReduceMotionEnabled()
     BoxWithConstraints(
         modifier = modifier.clipToBounds(),
         contentAlignment = Alignment.Center,
@@ -59,7 +60,7 @@ fun AmountText(
             scaleX = scale
             scaleY = scale
         }
-        if (!animated) {
+        if (!animated || reduceMotion) {
             Text(
                 text = text,
                 style = finalStyle,

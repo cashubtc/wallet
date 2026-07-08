@@ -16,12 +16,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import org.cashu.wallet.Core.AmountDisplayPrimary
 import org.cashu.wallet.Core.AmountDisplayText
+import org.cashu.wallet.Core.WalletHaptic
+import org.cashu.wallet.Core.rememberWalletHaptics
 import org.cashu.wallet.ui.theme.CashuTheme
 
 /**
@@ -35,8 +35,9 @@ fun BalanceDisplay(
     onTogglePrimary: ((AmountDisplayPrimary) -> Unit)? = null,
     padding: PaddingValues = PaddingValues(),
 ) {
-    val haptics = LocalHapticFeedback.current
+    val haptics = rememberWalletHaptics()
     val interactionSource = remember { MutableInteractionSource() }
+    val reduceMotion = rememberReduceMotionEnabled()
     val clickModifier = if (onTogglePrimary != null) {
         Modifier.clickable(
             interactionSource = interactionSource,
@@ -44,7 +45,7 @@ fun BalanceDisplay(
             onClickLabel = "Toggle balance display",
             role = Role.Button,
         ) {
-            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            haptics.perform(WalletHaptic.Selection)
             onTogglePrimary(
                 if (amount.effectivePrimary == AmountDisplayPrimary.Fiat) AmountDisplayPrimary.Sats
                 else AmountDisplayPrimary.Fiat
@@ -64,18 +65,27 @@ fun BalanceDisplay(
             style = MaterialTheme.typography.displayMedium,
             color = LocalContentColor.current,
         )
-        AnimatedVisibility(
-            visible = amount.secondary != null,
-            enter = fadeIn(),
-            exit = fadeOut(),
-        ) {
-            AmountText(
-                text = amount.secondary.orEmpty(),
-                modifier = Modifier.fillMaxWidth(),
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                animated = false,
-            )
+        amount.secondary?.let { secondary ->
+            val secondaryContent: @Composable () -> Unit = {
+                AmountText(
+                    text = secondary,
+                    modifier = Modifier.fillMaxWidth(),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    animated = false,
+                )
+            }
+            if (reduceMotion) {
+                secondaryContent()
+            } else {
+                AnimatedVisibility(
+                    visible = true,
+                    enter = fadeIn(),
+                    exit = fadeOut(),
+                ) {
+                    secondaryContent()
+                }
+            }
         }
     }
 }

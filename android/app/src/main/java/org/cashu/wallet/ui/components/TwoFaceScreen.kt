@@ -30,6 +30,10 @@ fun <T> TwoFaceScreen(
     label: String = "two-face",
     content: @Composable (T) -> Unit,
 ) {
+    if (rememberReduceMotionEnabled()) {
+        content(targetState)
+        return
+    }
     AnimatedContent(
         targetState = targetState,
         modifier = modifier,
@@ -57,6 +61,10 @@ fun <T> TwoFaceCrossfade(
     label: String = "two-face-crossfade",
     content: @Composable (T) -> Unit,
 ) {
+    if (rememberReduceMotionEnabled()) {
+        content(targetState)
+        return
+    }
     AnimatedContent(
         targetState = targetState,
         modifier = modifier,
@@ -86,4 +94,3 @@ private fun <S> AnimatedContentTransitionScope<S>.slideTransition(
         ) + fadeOut(tween(duration))
     )
 }
-

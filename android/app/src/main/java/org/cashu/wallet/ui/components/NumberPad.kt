@@ -19,13 +19,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import org.cashu.wallet.Core.UnitAmountEntry
+import org.cashu.wallet.Core.WalletHaptic
+import org.cashu.wallet.Core.rememberWalletHaptics
 
 // NumberPad spacing intentionally matches the iOS 10pt grid — between snug (8)
 // and default (12) on the token scale. Keypad keys are 56dp (M3 button height).
@@ -111,7 +111,7 @@ private fun NumberPadKey(
     onLongClick: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
-    val haptics = LocalHapticFeedback.current
+    val haptics = rememberWalletHaptics()
     Box(
         modifier = modifier
             .height(KeyHeight)
@@ -130,12 +130,12 @@ private fun NumberPadKey(
                 onLongClickLabel = onLongClick?.let { "Clear" },
                 onLongClick = onLongClick?.let {
                     {
-                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        haptics.perform(WalletHaptic.MediumImpact)
                         it()
                     }
                 },
                 onClick = {
-                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    haptics.perform(WalletHaptic.Selection)
                     onClick()
                 },
             ),

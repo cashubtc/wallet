@@ -17,13 +17,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import org.cashu.wallet.App.AppContainer
 import org.cashu.wallet.Core.Platform.ConnectivityState
+import org.cashu.wallet.Core.WalletHaptic
+import org.cashu.wallet.Core.rememberWalletHaptics
 import org.cashu.wallet.ui.navigation.CashuNavHost
 import org.cashu.wallet.ui.navigation.Routes
 import org.cashu.wallet.ui.navigation.TopTab
@@ -89,14 +89,14 @@ private fun CashuNavigationBar(
     selected: TopTab,
     onSelect: (TopTab) -> Unit,
 ) {
-    val haptics = LocalHapticFeedback.current
+    val haptics = rememberWalletHaptics()
     NavigationBar {
         TopTab.entries.forEach { tab ->
             val isSelected = tab == selected
             NavigationBarItem(
                 selected = isSelected,
                 onClick = {
-                    if (!isSelected) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    if (!isSelected) haptics.perform(WalletHaptic.Selection)
                     onSelect(tab)
                 },
                 icon = {

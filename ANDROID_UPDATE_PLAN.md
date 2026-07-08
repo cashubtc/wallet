@@ -228,6 +228,12 @@ JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :macrobenchmark:compileDebugKotlin 
 JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :macrobenchmark:compileDebugKotlin
 ```
 
+Focused validation used while adding reduced-motion, haptic alignment, and Material UI policy coverage:
+
+```sh
+JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:compileDebugKotlin :app:testDebugUnitTest --tests org.cashu.wallet.ui.components.MotionPreferencesTest --tests org.cashu.wallet.Core.HapticFeedbackTest --tests org.cashu.wallet.ui.MaterialUiPolicyTest
+```
+
 ## Executive Summary
 
 Android is strongest in:
@@ -947,17 +953,17 @@ iOS implementation reference files for this milestone:
 
 Checklist:
 
-Milestone update: shared Material components now have responsive QR sizing, bounded button labels, QR long-press accessibility copy, balance toggle click semantics, explicit keypad button semantics, more specific key/share/explorer/mint-scan labels, and app-level visual probes for large font, compact height, dark theme, and wide widths. Physical-device, reduced-motion, haptics, and full manual TalkBack audits remain open.
+Milestone update: shared Material components now have responsive QR sizing, bounded button labels, QR long-press accessibility copy, balance toggle click semantics, explicit keypad button semantics, more specific key/share/explorer/mint-scan labels, app-level visual probes for large font, compact height, dark theme, and wide widths, reduced-motion handling for major animated surfaces, wallet-level haptic alignment, and JVM Material policy guards. Physical-device and full manual TalkBack audits remain open.
 
 - [ ] Complete the Android UI Bug Audit Backlog above before declaring visual polish complete.
-- [ ] Use Material 3 top app bars, bottom navigation, modal bottom sheets, alert dialogs, segmented controls, chips, icon buttons, and pull-to-refresh where platform appropriate.
-- [ ] Avoid copying Liquid Glass visuals directly; use Material tonal surfaces, elevation, ripple/indication, dynamic color where appropriate, and Android-native motion.
-- [ ] Keep page sections on the bare canvas; avoid nested cards and marketing-style decoration.
+- [x] Use Material 3 top app bars, bottom navigation, modal bottom sheets, alert dialogs, segmented controls, chips, icon buttons, and pull-to-refresh where platform appropriate. `MaterialUiPolicyTest` guards the key Material components used by shell, History, Mints, Settings, sheets, chips, and buttons.
+- [x] Avoid copying Liquid Glass visuals directly; use Material tonal surfaces, elevation, ripple/indication, dynamic color where appropriate, and Android-native motion. `MaterialUiPolicyTest` rejects iOS Liquid Glass implementation names in Android UI sources, and reduced-motion support now follows Android animation settings.
+- [x] Keep page sections on the bare canvas; avoid nested cards and marketing-style decoration. `MaterialUiPolicyTest` guards screen-level UI files against decorative `Card` wrappers.
 - [x] Define stable sizes for QR cards, keypads, icon buttons, amount heroes, row heights, and bottom actions to avoid layout jumps. QR cards now resize within constraints, keypad and button heights are stable, and shared rows have bounded text.
 - [x] Support large font sizes without clipped button labels or overlapped amount text. `ButtonsComposeTest`, `LargeFontPickerComposeTest`, `SettingsRowsComposeTest`, and `FakeWalletVisualRegressionComposeTest` compile large-font coverage for compact controls and core screens; physical screenshot execution remains gated by the emulator/device issue.
 - [x] Add TalkBack labels/hints for balances, toggles, QR copy/share, scanner, NFC, destructive actions, key reveals, and transaction rows. Shared QR, balance toggle, keypad, toggle rows, transaction rows, scanner, key reveal/copy controls, mint scan, transaction share, and explorer actions now have improved semantics; `AccessibilitySemanticsComposeTest` covers the critical component labels.
-- [ ] Respect reduce-motion/animation scale settings where possible.
-- [ ] Align haptics: selection on navigation/choice, success on completed scan/payment, warning/error on failures.
+- [x] Respect reduce-motion/animation scale settings where possible. `rememberReduceMotionEnabled` disables or bypasses digit, face-swap, inline-notice, chooser, received-delta, and terminal-status animations when Android animators are disabled or set to zero scale; `MotionPreferencesTest` covers the policy.
+- [x] Align haptics: selection on navigation/choice, success on completed scan/payment, warning/error on failures. Navigation tabs, chooser rows, balance toggles, keypad taps, QR long-presses, scanner success, and payment terminal states now route through the wallet haptic abstraction; `HapticFeedbackTest` covers the Android constants.
 - [x] Add dark theme and contrast review for all screens. `FakeWalletVisualRegressionComposeTest.darkThemeAndWideWidthShellScreensCaptureNonBlankImages` covers dark-theme shell screens at tablet-ish width; manual contrast review remains part of the physical-device walkthrough.
 - [x] Add screenshot checks for core screens on compact phone, large phone, and tablet-ish widths. `FakeWalletVisualRegressionComposeTest` adds large-font, compact-height, dark-theme, and wide-width nonblank image probes for app-level fake screens.
 

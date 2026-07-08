@@ -85,6 +85,7 @@ import org.cashu.wallet.ui.components.requestRowAmount
 import org.cashu.wallet.ui.components.EmptyState
 import org.cashu.wallet.ui.components.GhostButton
 import org.cashu.wallet.ui.components.MintChip
+import org.cashu.wallet.ui.components.rememberReduceMotionEnabled
 import org.cashu.wallet.ui.components.SectionHeader
 import org.cashu.wallet.ui.components.TransactionRow
 import org.cashu.wallet.ui.components.TransactionRowModel
@@ -480,35 +481,45 @@ private fun ReceivedDeltaBeat(
     formatter: AmountFormatter,
     useBitcoinSymbol: Boolean,
 ) {
+    val reduceMotion = rememberReduceMotionEnabled()
+    val amount = event?.let { formatter.formatWalletSats(it.amount, useBitcoinSymbol) }.orEmpty()
+    if (reduceMotion) {
+        if (event != null) ReceivedDeltaContent(amount)
+        return
+    }
     AnimatedVisibility(
         visible = event != null,
         enter = fadeIn() + scaleIn(initialScale = 0.94f),
         exit = fadeOut() + scaleOut(targetScale = 0.98f),
     ) {
-        val amount = event?.let { formatter.formatWalletSats(it.amount, useBitcoinSymbol) }.orEmpty()
-        Row(
-            modifier = Modifier
-                .padding(top = CashuTheme.spacing.snug)
-                .background(
-                    color = CashuTheme.colors.receivedContainer,
-                    shape = MaterialTheme.shapes.extraLarge,
-                )
-                .padding(horizontal = CashuTheme.spacing.default, vertical = CashuTheme.spacing.tight)
-                .semantics {
-                    liveRegion = LiveRegionMode.Polite
-                    contentDescription = "Received $amount"
-                },
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.tight),
-        ) {
-            Text(
-                text = "+$amount",
-                style = MaterialTheme.typography.labelLarge,
-                color = CashuTheme.colors.received,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+        ReceivedDeltaContent(amount)
+    }
+}
+
+@Composable
+private fun ReceivedDeltaContent(amount: String) {
+    Row(
+        modifier = Modifier
+            .padding(top = CashuTheme.spacing.snug)
+            .background(
+                color = CashuTheme.colors.receivedContainer,
+                shape = MaterialTheme.shapes.extraLarge,
             )
-        }
+            .padding(horizontal = CashuTheme.spacing.default, vertical = CashuTheme.spacing.tight)
+            .semantics {
+                liveRegion = LiveRegionMode.Polite
+                contentDescription = "Received $amount"
+            },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.tight),
+    ) {
+        Text(
+            text = "+$amount",
+            style = MaterialTheme.typography.labelLarge,
+            color = CashuTheme.colors.received,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 

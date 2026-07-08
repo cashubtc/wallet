@@ -29,12 +29,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import org.cashu.wallet.Views.Components.QRCodeView
+import org.cashu.wallet.Core.WalletHaptic
+import org.cashu.wallet.Core.rememberWalletHaptics
 import org.cashu.wallet.ui.theme.CashuTheme
 
 // QR canvas: 20dp corner is the M3 'large' shape token; 16dp padding cushions
@@ -60,7 +60,7 @@ fun QrCard(
 ) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
-    val haptics = LocalHapticFeedback.current
+    val haptics = rememberWalletHaptics()
     var menuOpen by remember { mutableStateOf(false) }
 
     BoxWithConstraints(modifier = modifier, contentAlignment = Alignment.Center) {
@@ -76,7 +76,7 @@ fun QrCard(
                 .combinedClickable(
                     onClick = {},
                     onLongClick = {
-                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        haptics.perform(WalletHaptic.MediumImpact)
                         menuOpen = true
                     },
                     onClickLabel = null,

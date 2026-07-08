@@ -82,6 +82,10 @@ fun InlineNoticeHost(
 ) {
     // Keep the last non-null text so the exit fade shows content, not a blank.
     var lastText = text
+    if (rememberReduceMotionEnabled()) {
+        text?.let { InlineNotice(text = it, severity = severity) }
+        return
+    }
     AnimatedVisibility(
         visible = text != null,
         modifier = modifier,

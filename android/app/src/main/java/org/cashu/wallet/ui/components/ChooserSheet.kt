@@ -32,10 +32,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
+import org.cashu.wallet.Core.WalletHaptic
+import org.cashu.wallet.Core.rememberWalletHaptics
 import org.cashu.wallet.ui.theme.CashuTheme
 
 private val ChooserIconSize = 24.dp
@@ -88,13 +88,18 @@ fun ChooserSheet(
                     vertical = CashuTheme.spacing.default,
                 ),
             )
+            val reduceMotion = rememberReduceMotionEnabled()
             options.forEachIndexed { index, option ->
-                AnimatedVisibility(
-                    visible = revealed,
-                    enter = fadeIn(tween(durationMillis = 220, delayMillis = index * 70)) +
-                            slideInHorizontally(tween(durationMillis = 280, delayMillis = index * 70)) { -it / 8 },
-                ) {
+                if (reduceMotion) {
                     ChooserRow(option = option, onClick = { onSelect(option) })
+                } else {
+                    AnimatedVisibility(
+                        visible = revealed,
+                        enter = fadeIn(tween(durationMillis = 220, delayMillis = index * 70)) +
+                            slideInHorizontally(tween(durationMillis = 280, delayMillis = index * 70)) { -it / 8 },
+                    ) {
+                        ChooserRow(option = option, onClick = { onSelect(option) })
+                    }
                 }
             }
             Spacer(Modifier.height(CashuTheme.spacing.snug))
@@ -104,13 +109,13 @@ fun ChooserSheet(
 
 @Composable
 private fun ChooserRow(option: ChooserOption, onClick: () -> Unit) {
-    val haptics = LocalHapticFeedback.current
+    val haptics = rememberWalletHaptics()
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
             .clickable {
-                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                haptics.perform(WalletHaptic.Selection)
                 onClick()
             }
             .padding(horizontal = CashuTheme.spacing.snug, vertical = CashuTheme.spacing.default),

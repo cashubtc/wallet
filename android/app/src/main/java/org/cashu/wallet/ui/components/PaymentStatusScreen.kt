@@ -29,10 +29,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import org.cashu.wallet.Core.WalletHaptic
+import org.cashu.wallet.Core.rememberWalletHaptics
 import org.cashu.wallet.ui.theme.CashuTheme
 
 // 64dp terminal glyph per the iOS PaymentStatusView spec; 40dp working spinner.
@@ -57,11 +57,12 @@ fun PaymentStatusScreen(
     doneLabel: String = "Done",
     onDone: (() -> Unit)? = null,
 ) {
-    val haptics = LocalHapticFeedback.current
+    val haptics = rememberWalletHaptics()
+    val reduceMotion = rememberReduceMotionEnabled()
     LaunchedEffect(phase) {
         when (phase) {
-            PaymentStatusPhase.Success -> haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-            PaymentStatusPhase.Failure -> haptics.performHapticFeedback(HapticFeedbackType.Reject)
+            PaymentStatusPhase.Success -> haptics.perform(WalletHaptic.Success)
+            PaymentStatusPhase.Failure -> haptics.perform(WalletHaptic.Error)
             PaymentStatusPhase.Processing -> Unit
         }
     }
@@ -77,48 +78,29 @@ fun PaymentStatusScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            AnimatedContent(
-                targetState = phase,
-                transitionSpec = {
-                    // The check/X grows in gently from 0.9; the spinner just fades.
-                    val enter = if (targetState == PaymentStatusPhase.Processing) {
-                        fadeIn(tween(200))
-                    } else {
-                        fadeIn(tween(200)) + scaleIn(
-                            animationSpec = spring(
-                                dampingRatio = 0.7f,
-                                stiffness = Spring.StiffnessMediumLow,
-                            ),
-                            initialScale = 0.9f,
-                        )
-                    }
-                    enter togetherWith fadeOut(tween(150))
-                },
-                label = "payment-status-glyph",
-            ) { current ->
-                Box(
-                    modifier = Modifier.size(StatusGlyphSize),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    when (current) {
-                        PaymentStatusPhase.Processing -> CircularProgressIndicator(
-                            modifier = Modifier.size(SpinnerSize),
-                            strokeWidth = 3.dp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        PaymentStatusPhase.Success -> Icon(
-                            imageVector = Icons.Filled.CheckCircle,
-                            contentDescription = "Success",
-                            tint = CashuTheme.colors.received,
-                            modifier = Modifier.size(StatusGlyphSize),
-                        )
-                        PaymentStatusPhase.Failure -> Icon(
-                            imageVector = Icons.Filled.Cancel,
-                            contentDescription = "Failed",
-                            tint = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(StatusGlyphSize),
-                        )
-                    }
+            if (reduceMotion) {
+                StatusGlyph(phase)
+            } else {
+                AnimatedContent(
+                    targetState = phase,
+                    transitionSpec = {
+                        // The check/X grows in gently from 0.9; the spinner just fades.
+                        val enter = if (targetState == PaymentStatusPhase.Processing) {
+                            fadeIn(tween(200))
+                        } else {
+                            fadeIn(tween(200)) + scaleIn(
+                                animationSpec = spring(
+                                    dampingRatio = 0.7f,
+                                    stiffness = Spring.StiffnessMediumLow,
+                                ),
+                                initialScale = 0.9f,
+                            )
+                        }
+                        enter togetherWith fadeOut(tween(150))
+                    },
+                    label = "payment-status-glyph",
+                ) { current ->
+                    StatusGlyph(current)
                 }
             }
             Spacer(Modifier.height(CashuTheme.spacing.section))
@@ -147,6 +129,34 @@ fun PaymentStatusScreen(
                     .padding(horizontal = CashuTheme.spacing.comfortable)
                     .navigationBarsPadding()
                     .padding(bottom = CashuTheme.spacing.comfortable),
+            )
+        }
+    }
+}
+
+@Composable
+private fun StatusGlyph(phase: PaymentStatusPhase) {
+    Box(
+        modifier = Modifier.size(StatusGlyphSize),
+        contentAlignment = Alignment.Center,
+    ) {
+        when (phase) {
+            PaymentStatusPhase.Processing -> CircularProgressIndicator(
+                modifier = Modifier.size(SpinnerSize),
+                strokeWidth = 3.dp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            PaymentStatusPhase.Success -> Icon(
+                imageVector = Icons.Filled.CheckCircle,
+                contentDescription = "Success",
+                tint = CashuTheme.colors.received,
+                modifier = Modifier.size(StatusGlyphSize),
+            )
+            PaymentStatusPhase.Failure -> Icon(
+                imageVector = Icons.Filled.Cancel,
+                contentDescription = "Failed",
+                tint = MaterialTheme.colorScheme.error,
+                modifier = Modifier.size(StatusGlyphSize),
             )
         }
     }
