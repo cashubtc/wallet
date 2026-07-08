@@ -81,7 +81,7 @@ Rule of thumb: when iOS uses a pattern Android also has natively (sheet, alert, 
 
 | iOS | Android | Divergence |
 |-----|---------|-------------|
-| `.sheet(item:)` from chooser → `SendView` | Push `SendEcashScreen` or `SendLightningScreen` | Material 3 prefers full-screen pushed destinations for multi-step flows over sheets. Avoids nested-modal cognitive load. |
+| `.sheet(item:)` from chooser → `SendView` (`.large` detent) | `ModalBottomSheet` hosting `UnifiedSendScreen` / `SendEcashScreen` at full height (`WalletFlowSheetHost`) | **Revised 2026-07:** originally pushed destinations; converted to native M3 modal sheets for iOS sheet parity. Send → Send Ecash swaps content inside the same open sheet. Dismissal is blocked while a payment is in flight. |
 | Two-face cross-fade (`AnyTransition.opacity` on `generatedToken`) | `AnimatedContent(targetState = face, transitionSpec = { fadeIn(tween(250)) togetherWith fadeOut(tween(250)) })` | Same animation, M3 primitive. |
 | Liquid Glass primary "Send" button | `FilledTonalButton`, full width | Closest native analog. |
 | Share via `.topBarTrailing` `ShareLink` | `IconButton(Icons.Outlined.Share)` in `TopAppBar.actions`, fires `Intent.ACTION_SEND` | Same place; native share sheet. |
@@ -92,9 +92,9 @@ Rule of thumb: when iOS uses a pattern Android also has natively (sheet, alert, 
 
 | iOS | Android | Divergence |
 |-----|---------|-------------|
-| `.sheet` from chooser → ReceiveView | Push `ReceiveEcashScreen` / `ReceiveLightningScreen` | Same rationale as Send: pushed destinations on Android. |
+| `.sheet` from chooser → ReceiveView (`.medium`/`.large` detents) | `ModalBottomSheet` hosting `ReceiveEcashScreen` (wrap-content ≈ `.medium`) / `ReceiveLightningScreen` (full height ≈ `.large`) via `WalletFlowSheetHost` | **Revised 2026-07:** originally pushed destinations; converted to native M3 modal sheets. M3 has no fixed detents, but wrap-content approximates `.medium` and full-height content approximates `.large`. |
 | Two-face cross-fade (`.opacity` on `currentRequest`) | `AnimatedContent` cross-fade | Same. |
-| Nested sheets for editing Cashu Request mint/amount | Push the parent as a destination, then open `ModalBottomSheet` over it for the picker | Avoids nested-sheet anti-pattern on Android. |
+| Nested sheets for editing Cashu Request mint/amount | Cashu Request Detail stays a pushed destination (flow sheet closes first), with `ModalBottomSheet` pickers over it | Avoids nested-sheet anti-pattern on Android. |
 | Pulsing waiting indicator (`.symbolEffect(.pulse)`) | Infinite-transition alpha pulse on the clock icon | Same effect. |
 | Celebration burst on payment received | `AnimatedVisibility(enter = scaleIn(spring) + fadeIn)` + 2.5s hold via `LaunchedEffect`/`delay` | Same. |
 | `.fullScreenCover` for `ReceiveTokenDetailView` (deep-link entry) | Pushed `ReceiveTokenDetailScreen` | Same outcome via push. |
@@ -119,7 +119,7 @@ Rule of thumb: when iOS uses a pattern Android also has natively (sheet, alert, 
 - No `ElevatedButton` / shadows on rows / `Card` chrome (Flat-By-Default Rule).
 - No `BottomAppBar` with FAB (the 4 tabs + Wallet-screen triptych replace it).
 - No iOS-style chevron back-buttons; uses Material `Icons.AutoMirrored.Filled.ArrowBack`.
-- No SwiftUI-style "presentation detents" emulation — sheets are full or wrap-content via `skipPartiallyExpanded = true`.
+- No SwiftUI-style "presentation detents" emulation — sheets are full or wrap-content via `skipPartiallyExpanded = true`. (The money-flow sheets approximate iOS `.medium`/`.large` through content height, not detents.)
 - No mock confetti / celebration ribbons; only the iOS-defined 2.5s checkmark bounce on payment received.
 - No "confirm sending X to Y?" dialogs (per memory: *No Send-confirm gate*).
 - No QR-code library / `QRCodeView` changes (per memory: *Don't touch QR code / library*) — wrap the existing implementation in M3 chrome only.

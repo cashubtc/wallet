@@ -34,10 +34,6 @@ import org.cashu.wallet.ui.home.ReceiveAction
 import org.cashu.wallet.ui.mints.MintDetailScreen
 import org.cashu.wallet.ui.mints.MintsScreen
 import org.cashu.wallet.ui.receive.CashuRequestDetailScreen
-import org.cashu.wallet.ui.receive.ReceiveEcashScreen
-import org.cashu.wallet.ui.receive.ReceiveLightningScreen
-import org.cashu.wallet.ui.send.SendEcashScreen
-import org.cashu.wallet.ui.send.UnifiedSendScreen
 import org.cashu.wallet.ui.settings.AdvancedKeysScreen
 import org.cashu.wallet.ui.settings.BackupRestoreScreen
 import org.cashu.wallet.ui.settings.BackupScreen
@@ -49,10 +45,10 @@ import org.cashu.wallet.ui.settings.PrivacyScreen
 import org.cashu.wallet.ui.settings.SettingsScreen
 
 /**
- * The NavHost. For PR #1, top-level destinations call legacy Views composables;
- * later PRs replace each destination with a freshly-built screen under ui.home, ui.history, etc.
- *
- * Send/Receive/Scanner/Contactless are pushed destinations (or shell overlays), not tabs.
+ * The NavHost. Tabs + pushed detail destinations only — the money flows
+ * (Send, Send Ecash, Receive Ecash, Receive Lightning) are native modal
+ * bottom sheets hosted by the shell (see `ui.shell.WalletFlowSheetHost`),
+ * and Scanner/Contactless are shell overlays.
  */
 @Composable
 fun CashuNavHost(
@@ -61,12 +57,9 @@ fun CashuNavHost(
     connectivityState: ConnectivityState,
     contentPadding: PaddingValues,
     onScan: () -> Unit,
-    onContactless: () -> Unit,
-    onOpenReceiveToken: (String) -> Unit,
-    pendingReceiveScan: String?,
-    onPendingReceiveScanConsumed: () -> Unit,
-    pendingSendScan: String?,
-    onPendingSendScanConsumed: () -> Unit,
+    onReceiveEcash: () -> Unit,
+    onReceiveLightning: () -> Unit,
+    onSend: () -> Unit,
     pendingMintScan: String?,
     onPendingMintScanConsumed: () -> Unit,
     modifier: Modifier = Modifier,
@@ -87,58 +80,12 @@ fun CashuNavHost(
             connectivityState = connectivityState,
             contentPadding = contentPadding,
             onScan = onScan,
-            onContactless = onContactless,
+            onReceiveEcash = onReceiveEcash,
+            onReceiveLightning = onReceiveLightning,
+            onSend = onSend,
             pendingMintScan = pendingMintScan,
             onPendingMintScanConsumed = onPendingMintScanConsumed,
         )
-        composable(Routes.RECEIVE_ECASH) {
-            ReceiveEcashScreen(
-                walletManager = container.walletManager,
-                settingsManager = container.settingsManager,
-                nostrService = container.nostrService,
-                cashuRequestStore = container.cashuRequestStore,
-                onOpenRequest = { id ->
-                    navController.navigate(cashuRequestDetailRouteFor(id)) {
-                        popUpTo(Routes.RECEIVE_ECASH) { inclusive = true }
-                    }
-                },
-                onClose = { navController.popBackStack() },
-                onScan = onScan,
-                prefilledPayload = pendingReceiveScan,
-                onPrefilledConsumed = onPendingReceiveScanConsumed,
-            )
-        }
-        composable(Routes.RECEIVE_LIGHTNING) {
-            ReceiveLightningScreen(
-                walletManager = container.walletManager,
-                settingsManager = container.settingsManager,
-                onClose = { navController.popBackStack() },
-            )
-        }
-        composable(Routes.SEND_ECASH) {
-            SendEcashScreen(
-                walletManager = container.walletManager,
-                settingsManager = container.settingsManager,
-                priceService = container.priceService,
-                onClose = { navController.popBackStack() },
-            )
-        }
-        // The Send surface (iOS UnifiedSendView): destination field + ways-to-send.
-        composable(Routes.SEND) {
-            UnifiedSendScreen(
-                walletManager = container.walletManager,
-                settingsManager = container.settingsManager,
-                onClose = { navController.popBackStack() },
-                onScan = onScan,
-                onContactless = onContactless,
-                onSendEcash = { navController.navigate(Routes.SEND_ECASH) },
-                onOpenReceiveToken = onOpenReceiveToken,
-                onOpenMints = { navController.navigateToTab(TopTab.Mints) },
-                onReceive = { navController.navigate(Routes.RECEIVE_ECASH) },
-                prefilledPayload = pendingSendScan,
-                onPrefilledConsumed = onPendingSendScanConsumed,
-            )
-        }
         composable(
             route = Routes.MINT_DETAIL,
             arguments = listOf(navArgument("mintUrl") { type = NavType.StringType }),
@@ -271,7 +218,9 @@ private fun NavGraphBuilder.tabDestinations(
     connectivityState: ConnectivityState,
     contentPadding: PaddingValues,
     onScan: () -> Unit,
-    onContactless: () -> Unit,
+    onReceiveEcash: () -> Unit,
+    onReceiveLightning: () -> Unit,
+    onSend: () -> Unit,
     pendingMintScan: String?,
     onPendingMintScanConsumed: () -> Unit,
 ) {
@@ -296,14 +245,13 @@ private fun NavGraphBuilder.tabDestinations(
                 navController.navigate(cashuRequestDetailRouteFor(req.id))
             },
             onReceive = { action ->
-                val route = when (action) {
-                    ReceiveAction.Ecash -> Routes.RECEIVE_ECASH
-                    ReceiveAction.Bitcoin -> Routes.RECEIVE_LIGHTNING
+                when (action) {
+                    ReceiveAction.Ecash -> onReceiveEcash()
+                    ReceiveAction.Bitcoin -> onReceiveLightning()
                 }
-                navController.navigate(route)
             },
             // Send goes straight to the unified surface — no chooser (iOS parity).
-            onSend = { navController.navigate(Routes.SEND) },
+            onSend = onSend,
             onScan = onScan,
             contentPadding = contentPadding,
         )

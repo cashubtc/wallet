@@ -101,12 +101,14 @@ Top-to-bottom inside the pinned region:
 
 ### 3.3 Receive chooser sheet
 
-`ModalBottomSheet`, `skipPartiallyExpanded = true`, height wraps content. Options as a vertical `Column` of M3 `ListItem`s with **cascade-in animation** (each item: 0.07s stagger, 12dp horizontal slide-in, fade). Tap an option → dismiss the chooser → navigate to the relevant flow screen.
+`ModalBottomSheet`, `skipPartiallyExpanded = true`, height wraps content. Options as a vertical `Column` of M3 `ListItem`s with **cascade-in animation** (each item: 0.07s stagger, 12dp horizontal slide-in, fade). Tap an option → dismiss the chooser → open the relevant flow sheet.
 
 | Label | Leading icon | Action |
 |-------|---------|--------|
-| **Ecash** | `Icons.Outlined.Money` (banknote) | Push `ReceiveEcashScreen` |
-| **Bitcoin** | `Icons.Outlined.CurrencyBitcoin` | Push `ReceiveLightningScreen` |
+| **Ecash** | `Icons.Outlined.Money` (banknote) | Open `ReceiveEcashScreen` flow sheet (wrap-content ≈ iOS `.medium`) |
+| **Bitcoin** | `Icons.Outlined.CurrencyBitcoin` | Open `ReceiveLightningScreen` flow sheet (full height) |
+
+> **Revised 2026-07:** the money flows (Send, Send Ecash, Receive Ecash, Receive Lightning) are presented as native M3 modal bottom sheets via `ui.shell.WalletFlowSheetHost`, not pushed destinations — restoring iOS sheet parity. Each screen renders a `SheetHeader` (close/back + title + actions) instead of a `TopAppBar`. Dismissal is blocked while money is in flight.
 
 ### 3.4 Send chooser sheet
 
@@ -270,7 +272,7 @@ Footer below all groups: app name + version, `bodySmall`, centered, `onSurfaceVa
 
 ## 7. Send flows
 
-Pushed top-level destinations from the Send chooser sheet. Each is a single screen with **two faces** swapped via `AnimatedContent` (250ms fade-through cross-fade).
+Full-height `ModalBottomSheet` flows hosted by `ui.shell.WalletFlowSheetHost` (**revised 2026-07** — previously pushed destinations; converted for iOS `.large`-sheet parity). Each is a single screen with **two faces** swapped via `AnimatedContent` (250ms fade-through cross-fade), headed by a `SheetHeader` instead of a `TopAppBar`. Sheet dismissal (swipe/scrim/back) is blocked while a payment or token generation is in flight; system back unwinds faces before the sheet closes.
 
 ### 7.1 Send Ecash
 
@@ -316,16 +318,17 @@ Pushed full-screen destination. Pure NFC reader UI: animated wave icon, "Hold de
 
 ## 8. Receive flows
 
-Same two-face pattern as Send.
+Same two-face pattern as Send. Receive Ecash is a **wrap-content** flow sheet (≈ iOS `.medium` detent); Receive Lightning is full height (**revised 2026-07** — previously pushed destinations).
 
 ### 8.1 Receive Ecash
 
-**Face A — Input.** `TopAppBar(title = "Receive ecash", navigationIcon = Close)`.
+**Face A — Input.** `SheetHeader(title = "Receive ecash", navigationIcon = Close, actions = [Scan])`.
 
 Body:
-1. **Token `OutlinedTextField`** — multi-line, monospaced, placeholder "cashuB…". Trailing slot: paste button (`Icons.Outlined.ContentPaste`) → fills from clipboard; clear button when text non-empty.
-2. **Error supporting text** if validation fails.
-3. **Continue `FilledTonalButton`** — disabled when empty. On tap: validate via `TokenParser`. If valid, swap to face B (token detail). If valid but P2PK-locked to a key the wallet doesn't have, show inline error and disable Continue.
+1. **Token field** — `CashuTextField`, multi-line (6–8 lines, scrolls internally), monospaced, placeholder "cashuB…". The paste (`Icons.Outlined.ContentPaste`) / clear (`Icons.Filled.Cancel`) affordance is **overlaid at the field's bottom-trailing corner** (iOS parity) — never in the vertically-centered trailing slot.
+2. **Error inline notice** if validation fails.
+3. **Continue** — `PrimaryButton`, disabled when empty. On tap: validate via `TokenParser`. If valid, swap to face B (token detail). If valid but P2PK-locked to a key the wallet doesn't have, show inline error and disable Continue.
+4. **New Request** — `SecondaryButton` (tonal; one step quieter than Continue).
 
 **Face B — Token detail** (the *Receive Token Detail* face).
 - Amount (large, centered).
@@ -502,11 +505,11 @@ These pre-existing NotificationCenter events on iOS map to Kotlin `SharedFlow` o
 | Settings sub-screens | `settings/{Backup,Lightning,P2PK,Nostr,NWC,Privacy,Appearance}Screen` (pushed) | |
 | Send chooser (sheet from Home) | `home/sheets/SendChooserSheet` (ModalBottomSheet) | Cascade in. |
 | Receive chooser (sheet from Home) | `home/sheets/ReceiveChooserSheet` | Cascade in. |
-| Send Ecash (full sheet) | `send/SendEcashScreen` (pushed) | Two-face cross-fade. |
-| Send Lightning (full sheet) | `send/SendLightningScreen` (pushed) | Two-face. |
-| Contactless | `send/ContactlessScreen` (pushed) | |
-| Receive Ecash (full sheet) | `receive/ReceiveEcashScreen` (pushed) | Two-face. |
-| Receive Lightning (full sheet) | `receive/ReceiveLightningScreen` (pushed) | Two-face. |
+| Send (unified, `.large` sheet) | `send/UnifiedSendScreen` (flow sheet, full height) | Multi-step faces; hosted by `WalletFlowSheetHost`. |
+| Send Ecash (full sheet) | `send/SendEcashScreen` (flow sheet, full height) | Two-face cross-fade; swaps in-sheet from Send. |
+| Contactless | `Views/Send/ContactlessPayView` (shell overlay) | |
+| Receive Ecash (medium/large sheet) | `receive/ReceiveEcashScreen` (flow sheet, wrap-content) | Two-face. |
+| Receive Lightning (full sheet) | `receive/ReceiveLightningScreen` (flow sheet, full height) | Two-face. |
 | Cashu Request Detail (sheet/push) | `receive/CashuRequestDetailScreen` (pushed) | |
 | Transaction Detail (sheet) | `history/TransactionDetailScreen` (pushed) | |
 | Receive Token Detail (full-screen cover) | `receive/ReceiveTokenDetailScreen` (pushed) | Deep-link entry. |

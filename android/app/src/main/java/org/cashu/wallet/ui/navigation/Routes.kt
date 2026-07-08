@@ -5,6 +5,10 @@ package org.cashu.wallet.ui.navigation
  *
  * Top-level tab routes are bare strings used as `NavController` `startDestination`s and tab keys.
  * Pushed detail destinations take typed arguments embedded in the route path.
+ *
+ * Send/Receive flows and Scanner/Contactless are intentionally NOT routes:
+ * flows are modal bottom sheets (`ui.shell.WalletFlowSheetHost`) and camera
+ * surfaces are shell overlays (`ui.shell.CashuApp`).
  */
 object Routes {
     // Top-level tabs
@@ -13,19 +17,10 @@ object Routes {
     const val MINTS = "mints"
     const val SETTINGS = "settings"
 
-    // Pushed destinations (PR 1 stubs; expanded as later PRs land)
-    const val SCANNER = "scanner"
-    const val CONTACTLESS = "contactless"
-    const val SEND = "send"
-    const val SEND_ECASH = "send/ecash"
-    const val RECEIVE_ECASH = "receive/ecash"
-    const val RECEIVE_LIGHTNING = "receive/lightning"
-
     // With arguments
     const val MINT_DETAIL = "mints/{mintUrl}"
     const val TRANSACTION_DETAIL = "history/transaction/{transactionId}"
     const val CASHU_REQUEST_DETAIL = "request/{requestId}"
-    const val RECEIVE_TOKEN_DETAIL = "receive/token-detail"
 
     // Settings sub-screens
     const val SETTINGS_BACKUP_RESTORE = "settings/backup-restore"

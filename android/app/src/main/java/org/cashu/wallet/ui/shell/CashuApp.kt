@@ -1,5 +1,6 @@
 package org.cashu.wallet.ui.shell
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
@@ -38,9 +39,13 @@ import org.cashu.wallet.Core.TokenParser
 import org.cashu.wallet.Views.Components.ScannerView
 import org.cashu.wallet.Views.Send.ContactlessPayView
 import org.cashu.wallet.ui.onboarding.OnboardingScreen
-import org.cashu.wallet.ui.navigation.Routes
 import org.cashu.wallet.ui.navigation.TopTab
+import org.cashu.wallet.ui.navigation.cashuRequestDetailRouteFor
 import org.cashu.wallet.ui.navigation.navigateToTab
+import org.cashu.wallet.ui.receive.ReceiveEcashScreen
+import org.cashu.wallet.ui.receive.ReceiveLightningScreen
+import org.cashu.wallet.ui.send.SendEcashScreen
+import org.cashu.wallet.ui.send.UnifiedSendScreen
 import org.cashu.wallet.ui.theme.CashuTheme
 
 /**
@@ -51,8 +56,9 @@ import org.cashu.wallet.ui.theme.CashuTheme
  *   - `needsOnboarding` → full-screen onboarding (no bottom nav)
  *   - otherwise         → 4-tab `WalletScaffold` over a `NavHost`
  *
- * Scanner and Contactless render as full-screen overlays driven by shell state,
- * matching the previous behavior. Later PRs may push them as NavHost destinations.
+ * Scanner and Contactless render as full-screen overlays driven by shell state;
+ * the money flows (Send / Send Ecash / Receive Ecash / Receive Lightning) are
+ * native modal bottom sheets hosted by [WalletFlowSheetHost] (iOS sheet parity).
  */
 @Composable
 fun CashuApp(container: AppContainer) {
@@ -123,9 +129,15 @@ private fun AuthenticatedShell(container: AppContainer) {
     val navController = rememberNavController()
     var showContactless by remember { mutableStateOf(false) }
     var scannerTarget by remember { mutableStateOf<ScannerTarget?>(null) }
+    // The active money flow, hosted in a modal bottom sheet (iOS WalletFlow sheets).
+    var activeFlow by remember { mutableStateOf<WalletFlow?>(null) }
+    var flowDismissLocked by remember { mutableStateOf(false) }
     var pendingReceiveScan by remember { mutableStateOf<String?>(null) }
     var pendingSendScan by remember { mutableStateOf<String?>(null) }
     var pendingMintScan by remember { mutableStateOf<String?>(null) }
+
+    // A fresh flow starts unlocked, whatever the last one left behind.
+    LaunchedEffect(activeFlow) { flowDismissLocked = false }
 
     val pendingDeepLink by container.navigationManager.pendingDeepLink.collectAsState()
     val connectivityState by container.connectivityObserver.state.collectAsState()
@@ -135,11 +147,11 @@ private fun AuthenticatedShell(container: AppContainer) {
         when (deepLink.route) {
             CashuRoute.Receive -> {
                 pendingReceiveScan = deepLink.payload.orEmpty()
-                navController.navigate(Routes.RECEIVE_ECASH)
+                activeFlow = WalletFlow.ReceiveEcash
             }
             CashuRoute.Send -> {
                 pendingSendScan = deepLink.payload.orEmpty()
-                navController.navigate(Routes.SEND)
+                activeFlow = WalletFlow.Send
             }
             CashuRoute.Mints -> {
                 pendingMintScan = deepLink.payload.orEmpty()
@@ -165,15 +177,9 @@ private fun AuthenticatedShell(container: AppContainer) {
             container = container,
             connectivityState = connectivityState,
             onScan = { scannerTarget = ScannerTarget.Auto },
-            onContactless = { showContactless = true },
-            onOpenReceiveToken = { token ->
-                pendingReceiveScan = token
-                navController.navigate(Routes.RECEIVE_ECASH)
-            },
-            pendingReceiveScan = pendingReceiveScan,
-            onPendingReceiveScanConsumed = { pendingReceiveScan = null },
-            pendingSendScan = pendingSendScan,
-            onPendingSendScanConsumed = { pendingSendScan = null },
+            onReceiveEcash = { activeFlow = WalletFlow.ReceiveEcash },
+            onReceiveLightning = { activeFlow = WalletFlow.ReceiveLightning },
+            onSend = { activeFlow = WalletFlow.Send },
             pendingMintScan = pendingMintScan,
             onPendingMintScanConsumed = { pendingMintScan = null },
             navController = navController,
@@ -189,7 +195,7 @@ private fun AuthenticatedShell(container: AppContainer) {
                 onLightningRequest = { invoice ->
                     pendingSendScan = invoice
                     showContactless = false
-                    navController.navigate(Routes.SEND)
+                    activeFlow = WalletFlow.Send
                 },
             )
         }
@@ -207,11 +213,11 @@ private fun AuthenticatedShell(container: AppContainer) {
                         payload = payload,
                         onReceive = {
                             pendingReceiveScan = it
-                            navController.navigate(Routes.RECEIVE_ECASH)
+                            activeFlow = WalletFlow.ReceiveEcash
                         },
                         onSend = {
                             pendingSendScan = it
-                            navController.navigate(Routes.SEND)
+                            activeFlow = WalletFlow.Send
                         },
                         onMint = {
                             pendingMintScan = it
@@ -219,6 +225,90 @@ private fun AuthenticatedShell(container: AppContainer) {
                         },
                     )
                 },
+            )
+        }
+        // System back (including predictive back) must dismiss the topmost overlay
+        // instead of popping the NavHost — or exiting the app — underneath it.
+        // Declared after WalletScaffold so this callback registers last on the
+        // OnBackPressedDispatcher and takes precedence over NavHost back handling
+        // while an overlay is visible. Scanner is rendered above Contactless, so
+        // it dismisses first. (Flow sheets live in their own window and handle
+        // back themselves.)
+        BackHandler(enabled = activeScannerTarget != null || showContactless) {
+            when {
+                activeScannerTarget != null -> scannerTarget = null
+                else -> showContactless = false
+            }
+        }
+    }
+
+    WalletFlowSheetHost(
+        flow = activeFlow,
+        dismissLocked = flowDismissLocked,
+        onDismissed = { activeFlow = null },
+    ) { flow, close ->
+        when (flow) {
+            WalletFlow.ReceiveEcash -> ReceiveEcashScreen(
+                walletManager = container.walletManager,
+                settingsManager = container.settingsManager,
+                nostrService = container.nostrService,
+                cashuRequestStore = container.cashuRequestStore,
+                onOpenRequest = { id ->
+                    close()
+                    navController.navigate(cashuRequestDetailRouteFor(id))
+                },
+                onClose = close,
+                // Camera overlays render in the activity window, underneath this
+                // sheet's dialog window — the sheet must yield before scanning.
+                onScan = {
+                    close()
+                    scannerTarget = ScannerTarget.Receive
+                },
+                prefilledPayload = pendingReceiveScan,
+                onPrefilledConsumed = { pendingReceiveScan = null },
+                onDismissLockChanged = { flowDismissLocked = it },
+            )
+
+            WalletFlow.ReceiveLightning -> ReceiveLightningScreen(
+                walletManager = container.walletManager,
+                settingsManager = container.settingsManager,
+                onClose = close,
+            )
+
+            WalletFlow.Send -> UnifiedSendScreen(
+                walletManager = container.walletManager,
+                settingsManager = container.settingsManager,
+                onClose = close,
+                onScan = {
+                    close()
+                    scannerTarget = ScannerTarget.Auto
+                },
+                onContactless = {
+                    close()
+                    showContactless = true
+                },
+                onSendEcash = { activeFlow = WalletFlow.SendEcash },
+                onOpenReceiveToken = { token ->
+                    pendingReceiveScan = token
+                    activeFlow = WalletFlow.ReceiveEcash
+                },
+                onOpenMints = {
+                    close()
+                    navController.navigateToTab(TopTab.Mints)
+                },
+                onReceive = { activeFlow = WalletFlow.ReceiveEcash },
+                prefilledPayload = pendingSendScan,
+                onPrefilledConsumed = { pendingSendScan = null },
+                onDismissLockChanged = { flowDismissLocked = it },
+            )
+
+            WalletFlow.SendEcash -> SendEcashScreen(
+                walletManager = container.walletManager,
+                settingsManager = container.settingsManager,
+                priceService = container.priceService,
+                onBack = { activeFlow = WalletFlow.Send },
+                onClose = close,
+                onDismissLockChanged = { flowDismissLocked = it },
             )
         }
     }

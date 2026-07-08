@@ -1,10 +1,10 @@
 package org.cashu.wallet.ui.receive
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
@@ -14,6 +14,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.outlined.AccountBalance
 import androidx.compose.material.icons.outlined.Close
@@ -21,14 +22,10 @@ import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material.icons.outlined.Receipt
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -57,6 +54,8 @@ import org.cashu.wallet.ui.components.GhostButton
 import org.cashu.wallet.ui.components.InlineNotice
 import org.cashu.wallet.ui.components.InspectorRow
 import org.cashu.wallet.ui.components.PrimaryButton
+import org.cashu.wallet.ui.components.SecondaryButton
+import org.cashu.wallet.ui.components.SheetHeader
 import org.cashu.wallet.ui.components.TwoFaceCrossfade
 import org.cashu.wallet.ui.theme.CashuTheme
 import org.cashu.wallet.ui.theme.withMonoDigits
@@ -66,7 +65,6 @@ private sealed interface ReceiveFace {
     data class Review(val token: String, val info: TokenInfo, val fee: Long, val locked: Boolean) : ReceiveFace
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReceiveEcashScreen(
     walletManager: WalletManager,
@@ -78,6 +76,7 @@ fun ReceiveEcashScreen(
     onScan: () -> Unit,
     prefilledPayload: String? = null,
     onPrefilledConsumed: () -> Unit = {},
+    onDismissLockChanged: (Boolean) -> Unit = {},
 ) {
     val walletState by walletManager.state.collectAsState()
     val settings by settingsManager.state.collectAsState()
@@ -168,46 +167,46 @@ fun ReceiveEcashScreen(
         onPrefilledConsumed()
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        when (face) {
-                            ReceiveFace.Paste -> "Receive ecash"
-                            is ReceiveFace.Review -> "Review token"
-                        },
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = {
-                        when (face) {
-                            ReceiveFace.Paste -> onClose()
-                            is ReceiveFace.Review -> face = ReceiveFace.Paste
-                        }
-                    }) {
-                        Icon(Icons.Outlined.Close, contentDescription = "Close")
+    // Don't let a swipe-down interrupt a redeem in flight.
+    LaunchedEffect(validating, receiving) { onDismissLockChanged(validating || receiving) }
+
+    // System back unwinds Review → Paste; from Paste the sheet handles it.
+    BackHandler(enabled = face is ReceiveFace.Review) {
+        face = ReceiveFace.Paste
+        errorText = null
+    }
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        SheetHeader(
+            title = when (face) {
+                ReceiveFace.Paste -> "Receive ecash"
+                is ReceiveFace.Review -> "Review token"
+            },
+            navigationIcon = when (face) {
+                ReceiveFace.Paste -> Icons.Outlined.Close
+                is ReceiveFace.Review -> Icons.AutoMirrored.Outlined.ArrowBack
+            },
+            navigationContentDescription = when (face) {
+                ReceiveFace.Paste -> "Close"
+                is ReceiveFace.Review -> "Back"
+            },
+            onNavigationClick = {
+                when (face) {
+                    ReceiveFace.Paste -> onClose()
+                    is ReceiveFace.Review -> face = ReceiveFace.Paste
+                }
+            },
+            actions = {
+                if (face is ReceiveFace.Paste) {
+                    IconButton(onClick = onScan) {
+                        Icon(Icons.Outlined.QrCodeScanner, contentDescription = "Scan")
                     }
-                },
-                actions = {
-                    if (face is ReceiveFace.Paste) {
-                        IconButton(onClick = onScan) {
-                            Icon(Icons.Outlined.QrCodeScanner, contentDescription = "Scan")
-                        }
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                ),
-            )
-        },
-    ) { padding ->
+                }
+            },
+        )
         TwoFaceCrossfade(
             targetState = face,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
+            modifier = Modifier.fillMaxWidth(),
             label = "receive-ecash-face",
         ) { current ->
             when (current) {
@@ -266,8 +265,10 @@ fun ReceiveEcashScreen(
 }
 
 /**
- * iOS ReceiveEcashView form: a tall monospace token editor with a corner
- * paste/clear affordance, then Continue + New Request as sibling CTAs.
+ * iOS ReceiveEcashView form, at iOS `.medium`-detent proportions: a compact
+ * monospace token editor with the paste/clear affordance pinned to its
+ * bottom-trailing corner (not vertically centered), then Continue (primary)
+ * over New Request (tonal) — the CTA hierarchy iOS renders as glass siblings.
  */
 @Composable
 private fun PasteFace(
@@ -283,43 +284,42 @@ private fun PasteFace(
 ) {
     Column(
         modifier = Modifier
-            .fillMaxSize()
+            .fillMaxWidth()
             .padding(horizontal = CashuTheme.spacing.comfortable)
             .imePadding(),
         verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
     ) {
-        Spacer(Modifier.height(CashuTheme.spacing.micro))
-        CashuTextField(
-            value = input,
-            onValueChange = onInputChange,
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
-            placeholder = "cashuB…",
-            textStyle = MaterialTheme.typography.bodyMedium.copy(
-                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-            ),
-            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None),
-            trailingIcon = if (input.isBlank()) {
-                {
-                    IconButton(onClick = onPaste) {
-                        Icon(
-                            imageVector = Icons.Outlined.ContentPaste,
-                            contentDescription = "Paste",
-                        )
-                    }
-                }
-            } else {
-                {
-                    IconButton(onClick = onClear) {
-                        Icon(
-                            imageVector = Icons.Filled.Cancel,
-                            contentDescription = "Clear",
-                        )
-                    }
-                }
-            },
-        )
+        Box(modifier = Modifier.fillMaxWidth()) {
+            CashuTextField(
+                value = input,
+                onValueChange = onInputChange,
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = "cashuB…",
+                textStyle = MaterialTheme.typography.bodyMedium.copy(
+                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                ),
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None),
+                minLines = TokenFieldMinLines,
+                maxLines = TokenFieldMaxLines,
+            )
+            // Corner affordance (iOS bottomTrailing): paste when empty, clear when full.
+            IconButton(
+                onClick = if (input.isBlank()) onPaste else onClear,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(CornerAffordancePadding),
+            ) {
+                Icon(
+                    imageVector = if (input.isBlank()) {
+                        Icons.Outlined.ContentPaste
+                    } else {
+                        Icons.Filled.Cancel
+                    },
+                    contentDescription = if (input.isBlank()) "Paste" else "Clear",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
         if (errorText != null) {
             InlineNotice(text = errorText)
         }
@@ -329,13 +329,19 @@ private fun PasteFace(
             enabled = canContinue,
             loading = busy,
         )
-        PrimaryButton(
+        SecondaryButton(
             text = "New Request",
             onClick = onNewRequest,
         )
         Spacer(Modifier.navigationBarsPadding())
     }
 }
+
+// ~6 monospace body lines: enough to show a token's head without swallowing
+// the sheet; the field scrolls internally beyond TokenFieldMaxLines.
+private const val TokenFieldMinLines = 6
+private const val TokenFieldMaxLines = 8
+private val CornerAffordancePadding = 4.dp
 
 @Composable
 private fun ReviewFace(
@@ -351,7 +357,7 @@ private fun ReviewFace(
 ) {
     Column(
         modifier = Modifier
-            .fillMaxSize()
+            .fillMaxWidth()
             .verticalScroll(rememberScrollState())
             .padding(
                 horizontal = CashuTheme.spacing.comfortable,
@@ -426,6 +432,3 @@ private fun ReviewFace(
         Spacer(modifier = Modifier.navigationBarsPadding())
     }
 }
-
-private fun Modifier.heightFor(height: Int): Modifier =
-    this.then(Modifier.height(height.dp))

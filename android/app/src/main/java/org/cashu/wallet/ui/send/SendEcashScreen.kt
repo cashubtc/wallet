@@ -1,5 +1,6 @@
 package org.cashu.wallet.ui.send
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.RepeatMode
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -47,10 +49,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -82,6 +81,7 @@ import org.cashu.wallet.ui.components.MintPickerSheet
 import org.cashu.wallet.ui.components.NumberPad
 import org.cashu.wallet.ui.components.PrimaryButton
 import org.cashu.wallet.ui.components.QrCard
+import org.cashu.wallet.ui.components.SheetHeader
 import org.cashu.wallet.ui.components.TwoFaceScreen
 import org.cashu.wallet.ui.components.UnitPickerSheet
 import org.cashu.wallet.ui.components.shareText
@@ -106,13 +106,14 @@ private sealed interface SendFace {
     ) : SendFace
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SendEcashScreen(
     walletManager: WalletManager,
     settingsManager: SettingsManager,
     priceService: org.cashu.wallet.Core.PriceService,
+    onBack: () -> Unit,
     onClose: () -> Unit,
+    onDismissLockChanged: (Boolean) -> Unit = {},
 ) {
     val walletState by walletManager.state.collectAsState()
     val settings by settingsManager.state.collectAsState()
@@ -191,74 +192,68 @@ fun SendEcashScreen(
         }.exceptionOrNull()?.message
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        when (face) {
-                            SendFace.Input -> "Send Ecash"
-                            is SendFace.Generated -> "Pending Ecash"
-                        },
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                },
-                navigationIcon = {
+    // Generation counts as money-in-motion: block sheet dismissal.
+    LaunchedEffect(sending) { onDismissLockChanged(sending) }
+
+    // System back mirrors the header chevron: Generated → Input, Input → the
+    // Send surface. Swallow back while a token is being generated.
+    BackHandler(enabled = true) {
+        when {
+            sending -> Unit
+            face is SendFace.Generated -> face = SendFace.Input
+            else -> onBack()
+        }
+    }
+
+    Column(modifier = Modifier.fillMaxHeight()) {
+        SheetHeader(
+            title = when (face) {
+                SendFace.Input -> "Send Ecash"
+                is SendFace.Generated -> "Pending Ecash"
+            },
+            navigationIcon = Icons.AutoMirrored.Outlined.ArrowBack,
+            navigationContentDescription = "Back",
+            onNavigationClick = {
+                when (face) {
+                    SendFace.Input -> onBack()
+                    is SendFace.Generated -> face = SendFace.Input
+                }
+            },
+            actions = {
+                val current = face
+                if (current is SendFace.Generated) {
                     IconButton(onClick = {
-                        when (face) {
-                            SendFace.Input -> onClose()
-                            is SendFace.Generated -> face = SendFace.Input
-                        }
+                        context.shareText(current.result.token, subject = "Cashu token")
                     }) {
-                        Icon(
-                            imageVector = when (face) {
-                                SendFace.Input -> Icons.Outlined.Close
-                                is SendFace.Generated -> Icons.AutoMirrored.Outlined.ArrowBack
-                            },
-                            contentDescription = "Close",
-                        )
+                        Icon(Icons.Outlined.IosShare, contentDescription = "Share")
                     }
-                },
-                actions = {
-                    val current = face
-                    if (current is SendFace.Generated) {
-                        IconButton(onClick = {
-                            context.shareText(current.result.token, subject = "Cashu token")
-                        }) {
-                            Icon(Icons.Outlined.IosShare, contentDescription = "Share")
-                        }
-                    } else if (current is SendFace.Input) {
-                        if (activeMint?.supportsMultipleUnits == true) {
-                            androidx.compose.material3.TextButton(onClick = { unitPickerOpen = true }) {
-                                Text(
-                                    text = effectiveUnit.uppercase(),
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                )
-                            }
-                        }
-                        IconButton(onClick = { p2pkOn = !p2pkOn }) {
-                            Icon(
-                                imageVector = if (p2pkOn) Icons.Filled.Lock
-                                else Icons.Outlined.LockOpen,
-                                contentDescription = if (p2pkOn) "P2PK locked" else "P2PK off",
-                                tint = if (p2pkOn) MaterialTheme.colorScheme.onSurface
-                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                } else if (current is SendFace.Input) {
+                    if (activeMint?.supportsMultipleUnits == true) {
+                        androidx.compose.material3.TextButton(onClick = { unitPickerOpen = true }) {
+                            Text(
+                                text = effectiveUnit.uppercase(),
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSurface,
                             )
                         }
                     }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                ),
-            )
-        },
-    ) { padding ->
+                    IconButton(onClick = { p2pkOn = !p2pkOn }) {
+                        Icon(
+                            imageVector = if (p2pkOn) Icons.Filled.Lock
+                            else Icons.Outlined.LockOpen,
+                            contentDescription = if (p2pkOn) "P2PK locked" else "P2PK off",
+                            tint = if (p2pkOn) MaterialTheme.colorScheme.onSurface
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            },
+        )
         TwoFaceScreen(
             targetState = face,
             modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
+                .weight(1f)
+                .fillMaxWidth(),
             forward = { initial, target ->
                 initial is SendFace.Input && target is SendFace.Generated
             },
