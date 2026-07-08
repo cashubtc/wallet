@@ -23,6 +23,11 @@ struct ReceiveTokenDetailView: View {
     /// unit-native amount/fee formatting so a non-sat token isn't shown as sats.
     @State private var tokenUnit: String
     @State private var receiveFee: UInt64 = 0
+    /// The net amount CDK actually credited (token value minus the mint's
+    /// receive-swap fee), set once the claim completes. Drives the success
+    /// screen so "Amount" matches the balance change instead of the token's
+    /// gross value — receiving an 11-sat token that nets 10 must read as 10.
+    @State private var claimedAmount: UInt64?
     @State private var mintUrl: String = ""
     @State private var errorMessage: String?
     @State private var isLoadingFee = true
@@ -49,13 +54,15 @@ struct ReceiveTokenDetailView: View {
         self.claim = claim
         self.secondaryActionTitle = secondaryActionTitle
         self.onSecondaryAction = onSecondaryAction
-        // Parse the amount eagerly so the hero shows its FINAL value on frame 1.
-        // Token.decode is a pure Cdk call (no wallet/settings env), so this is
-        // safe in init. Deriving it here avoids the 0 → N flip that parseToken()
-        // in .onAppear would otherwise make, which fires CurrencyAmountDisplay's
-        // .animation(value: sats) while PayFlowScaffold's GeometryReader is still
-        // resolving — sliding the hero in from the top-left. Env-dependent state
-        // (mintIsKnown / tokenLockedToKnownKey / fee) still resolves in onAppear.
+        // Parse the amount eagerly so the hero starts at the token's value on
+        // frame 1. Token.decode is a pure Cdk call (no wallet/settings env), so
+        // this is safe in init. Deriving it here avoids the 0 → N flip that
+        // parseToken() in .onAppear would otherwise make, which fires
+        // CurrencyAmountDisplay's .animation(value: sats) while PayFlowScaffold's
+        // GeometryReader is still resolving — sliding the hero in from the
+        // top-left. Env-dependent state (mintIsKnown / tokenLockedToKnownKey /
+        // fee) still resolves in onAppear; the hero may tick down by the fee
+        // once the preview lands (netReceiveAmount), which animates in place.
         let decoded = try? Token.decode(encodedToken: tokenString)
         let amount = decoded.flatMap { try? $0.value().value } ?? 0
         _tokenAmount = State(initialValue: amount)
@@ -66,6 +73,13 @@ struct ReceiveTokenDetailView: View {
     /// Whether the token is denominated in sats (the common path — keep the
     /// sats↔fiat hero) versus a mint account unit (eur/usd/custom).
     private var isSatUnit: Bool { tokenUnit.lowercased() == "sat" }
+
+    /// What claiming will actually credit: the token's gross value minus the
+    /// previewed receive-swap fee. The hero and the success estimate both show
+    /// this — a 5001-sat token that redeems for 5000 must read as 5000, with
+    /// the fee row accounting for the difference. Equals the gross value until
+    /// the async fee preview lands (receiveFee starts at 0).
+    private var netReceiveAmount: UInt64 { tokenAmount - min(receiveFee, tokenAmount) }
 
     private var unitCurrency: any Currency { CurrencyRegistry.currency(forMintUnit: tokenUnit) }
 
@@ -129,12 +143,12 @@ struct ReceiveTokenDetailView: View {
         PayFlowScaffold {
             if isSatUnit {
                 CurrencyAmountDisplay(
-                    sats: tokenAmount,
+                    sats: netReceiveAmount,
                     primary: $settings.amountDisplayPrimary
                 )
             } else {
                 // Non-sat account unit: show it directly, no BTC-price flip.
-                Text(formatAmount(tokenAmount))
+                Text(formatAmount(netReceiveAmount))
                     .font(.system(size: 64, weight: .semibold, design: .rounded))
                     .monospacedDigit()
                     .minimumScaleFactor(0.4)
@@ -224,14 +238,19 @@ struct ReceiveTokenDetailView: View {
         )
     }
 
+    /// Status rows for the processing/success screen. "Amount" is the net
+    /// credited to the balance: the estimate (token value − previewed fee)
+    /// while claiming, then the exact net CDK returned. The fee row likewise
+    /// firms up from the preview to the actually charged fee.
     private var successRows: [PaymentStatusView.DetailRow] {
+        let paidFee = claimedAmount.map { tokenAmount - min($0, tokenAmount) }
         var rows: [PaymentStatusView.DetailRow] = [
             .init(
                 icon: "bitcoinsign",
                 label: "Amount",
-                value: formatAmount(tokenAmount)
+                value: formatAmount(claimedAmount ?? netReceiveAmount)
             ),
-            .init(icon: "arrow.up.arrow.down", label: "Fee", value: formatFee(receiveFee)),
+            .init(icon: "arrow.up.arrow.down", label: "Fee", value: formatFee(paidFee ?? receiveFee)),
         ]
         if !mintUrl.isEmpty {
             rows.append(.init(
@@ -377,16 +396,21 @@ struct ReceiveTokenDetailView: View {
                 }
                 try? await minHold
                 await MainActor.run {
+                    // CDK returns the net amount credited; the difference to the
+                    // token's gross value is the mint's receive-swap fee.
+                    claimedAmount = receivedAmount
+                    let paidFee = tokenAmount - min(receivedAmount, tokenAmount)
                     // Post the home-screen receipt toast (seen after Done), then
                     // morph the spinner into the shared full-screen success. It
                     // owns the success haptic on the transition, so don't buzz here.
+
                     // A custom claim path posts its own notification, so don't
                     // double up here.
                     if claim == nil {
                         NotificationCenter.default.post(
                             name: .cashuTokenReceived,
                             object: nil,
-                            userInfo: ["amount": receivedAmount, "fee": UInt64(0), "unit": tokenUnit]
+                            userInfo: ["amount": receivedAmount, "fee": paidFee, "unit": tokenUnit]
                         )
                     }
                     withAnimation(.smooth(duration: 0.3)) { phase = .success }
