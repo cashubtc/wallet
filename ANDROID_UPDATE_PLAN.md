@@ -1041,8 +1041,10 @@ Focused validation:
 
 Integration checklist:
 
+Milestone update: local Nutshell setup now self-selects a compatible Python 3.10-3.12 runtime, recreates incompatible virtualenvs, and has been smoke-started successfully against `/v1/info`. CDK local-mint setup and the full local-mint operation matrix remain open.
+
 - [x] Add an Android integration test target equivalent to `CI/IntegrationTests`. Gradle now defines `:app:androidNoNetworkIntegrationTest` as the Android no-network JVM integration target, and CI runs it after Android JVM tests.
-- [ ] Run against local Nutshell/CDK test mints for mint, melt, restore, token parser, payment request parser, multi-unit, BOLT11, BOLT12, and on-chain where available.
+- [ ] Run against local Nutshell/CDK test mints for mint, melt, restore, token parser, payment request parser, multi-unit, BOLT11, BOLT12, and on-chain where available. Nutshell setup/start is verified locally after `CI/setup-nutshell.sh` was hardened for supported Python runtimes; CDK setup and operation coverage are still pending.
 - [x] Add fake-gateway integration tests for no-network CI paths. `NoNetworkFakeGatewayIntegrationTest` covers receive-lightning quote settlement through `CashuRequestStore` and Cashu payment-request payment/refresh without real mints or network.
 - [x] Add CI jobs for JVM unit tests, lint, and release build. `.github/workflows/integration-tests.yml` now includes an Android Gradle job for `:app:testDebugUnitTest`, `:app:lintDebug`, and `:app:assembleRelease`.
 - [x] Add CI jobs for instrumentation tests on managed devices once the Android Compose/instrumentation harness exists. Gradle now defines `pixel2Api35`, and CI runs `:app:pixel2Api35DebugAndroidTest`.

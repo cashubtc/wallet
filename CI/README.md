@@ -29,12 +29,12 @@ This directory contains the complete CI infrastructure for running end-to-end in
 └─────────────────────────────────────────────────────────┘
 ```
 
-## Prebuilt Binaries (Fast CI!)
+## Test Mint Setup
 
-**No more 20+ minute builds!** These scripts use prebuilt binaries:
+The scripts keep CI and local integration setup reproducible:
 
-- **CDK**: Downloads `cdk-mintd-0.17.1` from [GitHub releases](https://github.com/cashubtc/cdk/releases/tag/v0.17.1)
-- **Nutshell**: Installs via `pip install cashu` from PyPI (exposes the `mint` binary)
+- **CDK**: downloads `cdk-mintd-0.17.1` on Linux, and builds it from the tagged source with Cargo on macOS because that release only ships Linux binaries.
+- **Nutshell**: installs via `pip install cashu` from PyPI with Python 3.10-3.12. Set `PYTHON=/path/to/python` if your default `python3` is newer than the supported range.
 
 ## Quick Start
 
@@ -63,7 +63,7 @@ xcodebuild test \
 ### Automated CI Flow
 
 ```bash
-# Setup (downloads binaries, ~30 seconds)
+# Setup (downloads or builds the local mint binaries)
 ./CI/setup-nutshell.sh
 ./CI/setup-cdk.sh
 
@@ -103,7 +103,7 @@ CI/
 ├── start-nutshell.sh      # Launch Nutshell with FakeWallet on port 3338
 ├── stop-nutshell.sh       # Stop Nutshell mint
 │
-├── setup-cdk.sh           # Download cdk-mintd binary from GitHub releases
+├── setup-cdk.sh           # Prepare cdk-mintd from a release binary or source build
 ├── start-cdk.sh           # Launch CDK mint with FakeWallet on port 3339
 ├── stop-cdk.sh            # Stop CDK mint
 │
@@ -158,13 +158,13 @@ The workflow (`.github/workflows/integration-tests.yml`) runs on every push/PR t
 
 1. Checks out code
 2. Setups Python 3.11 and Xcode
-3. Downloads Nutshell via pip (~15s)
-4. Downloads CDK binary from GitHub releases (~10s)
+3. Installs Nutshell via pip with a supported Python runtime
+4. Prepares CDK from a release binary on Linux or a Cargo source build on macOS
 5. Starts both mints
 6. Runs integration tests against both mints
 7. Uploads test results on failure
 
-**Total CI time: ~5 minutes** (down from 25+ minutes with source builds!)
+**Expected CI time:** Linux runners should stay close to the previous fast path; macOS CDK setup depends on whether the Cargo build output is already cached.
 
 ## Manual Testing
 
