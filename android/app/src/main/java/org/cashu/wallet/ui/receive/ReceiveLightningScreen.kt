@@ -73,6 +73,7 @@ import org.cashu.wallet.Core.Protocols.CurrencyAmount
 import org.cashu.wallet.Core.Protocols.CurrencyRegistry
 import org.cashu.wallet.Core.SettingsManager
 import org.cashu.wallet.Core.UnitAmountEntry
+import org.cashu.wallet.Core.Wallet.userFacingWalletMessage
 import org.cashu.wallet.Core.WalletManager
 import org.cashu.wallet.Models.MintInfo
 import org.cashu.wallet.Models.MintQuoteInfo
@@ -272,7 +273,7 @@ fun ReceiveLightningScreen(
                                 )
                                 face = ReceiveLnFace.Display(quote)
                             } catch (t: Throwable) {
-                                errorText = t.message ?: "Could not create request."
+                                errorText = t.userFacingWalletMessage
                             } finally {
                                 creating = false
                             }

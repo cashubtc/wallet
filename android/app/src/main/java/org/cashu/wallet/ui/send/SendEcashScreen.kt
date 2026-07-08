@@ -41,6 +41,7 @@ import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.IosShare
 import androidx.compose.material.icons.outlined.LockOpen
+import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.UnfoldMore
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -72,6 +73,7 @@ import org.cashu.wallet.Core.Protocols.CurrencyAmount
 import org.cashu.wallet.Core.Protocols.CurrencyRegistry
 import org.cashu.wallet.Core.SettingsManager
 import org.cashu.wallet.Core.UnitAmountEntry
+import org.cashu.wallet.Core.Wallet.userFacingWalletMessage
 import org.cashu.wallet.Core.WalletManager
 import org.cashu.wallet.Models.SendTokenResult
 import org.cashu.wallet.ui.components.AmountText
@@ -336,7 +338,7 @@ fun SendEcashScreen(
                                 amount = ""
                                 memo = ""
                             } catch (t: Throwable) {
-                                errorText = t.message ?: "Could not generate token."
+                                errorText = t.userFacingWalletMessage
                             } finally {
                                 sending = false
                             }
@@ -623,13 +625,26 @@ private fun GeneratedFace(
         }
     }
 
-    // Claimed resolves to the shared full-screen terminal (iOS parity).
+    // Claimed resolves to the shared full-screen terminal (iOS parity), with
+    // Amount/Mint metadata rows under the check.
     if (claimState == ClaimState.Claimed) {
         org.cashu.wallet.ui.components.PaymentStatusScreen(
             phase = org.cashu.wallet.ui.components.PaymentStatusPhase.Success,
             title = "Claimed",
-            detail = amountLabel,
             onDone = onDone,
+            rows = {
+                org.cashu.wallet.ui.components.InspectorRow(
+                    label = "Amount",
+                    value = amountLabel,
+                    leadingIcon = Icons.Outlined.Payments,
+                )
+                org.cashu.wallet.ui.components.CanvasDivider(leadingInset = 16.dp)
+                org.cashu.wallet.ui.components.InspectorRow(
+                    label = "Mint",
+                    value = org.cashu.wallet.Core.shortenMintUrl(mintUrl),
+                    leadingIcon = Icons.Outlined.AccountBalance,
+                )
+            },
         )
         return
     }

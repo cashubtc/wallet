@@ -23,7 +23,9 @@ import androidx.compose.material.icons.outlined.Cancel
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Money
 import androidx.compose.material.icons.outlined.Nfc
+import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.QrCodeScanner
+import androidx.compose.material.icons.outlined.Receipt
 import androidx.compose.material.icons.outlined.UnfoldMore
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalIconButton
@@ -53,6 +55,9 @@ import org.cashu.wallet.Core.PaymentRequestDecodeResult
 import org.cashu.wallet.Core.PaymentRequestDecoder
 import org.cashu.wallet.Core.SettingsManager
 import org.cashu.wallet.Core.TokenParser
+import org.cashu.wallet.Core.Wallet.WalletMessage
+import org.cashu.wallet.Core.Wallet.userFacingWalletMessage
+import org.cashu.wallet.Core.Wallet.walletMessage
 import org.cashu.wallet.Core.WalletManager
 import org.cashu.wallet.Core.compatibleMintsForCashuPaymentRequest
 import org.cashu.wallet.Models.MeltPaymentResult
@@ -104,7 +109,7 @@ private sealed interface LockedRail {
 private sealed interface SendStatus {
     data object Sending : SendStatus
     data class Sent(val result: MeltPaymentResult?) : SendStatus
-    data class Failed(val reason: String) : SendStatus
+    data class Failed(val message: WalletMessage) : SendStatus
 }
 
 /**
@@ -288,7 +293,7 @@ fun UnifiedSendScreen(
                 preferredMintURL = activeMintUrl,
             )
         }.onSuccess { meltQuote = it }
-            .onFailure { quoteError = it.message ?: "Couldn't fetch a quote." }
+            .onFailure { quoteError = it.userFacingWalletMessage }
     }
 
     fun goBack() {
@@ -326,7 +331,7 @@ fun UnifiedSendScreen(
                     }
                 }
             } catch (t: Throwable) {
-                status = SendStatus.Failed(t.message ?: "Payment failed.")
+                status = SendStatus.Failed(t.walletMessage)
             }
         }
     }
@@ -348,25 +353,54 @@ fun UnifiedSendScreen(
                 PaymentStatusScreen(phase = PaymentStatusPhase.Processing, title = "Sending payment…")
             }
             is SendStatus.Sent -> Box(Modifier.weight(1f).fillMaxWidth()) {
+                // Amount/Fee/Mint metadata rows (iOS PaymentStatusView success
+                // rows). Melt carries its own result; creq falls back to the
+                // confirmed amount and active mint.
+                val sentAmount = current.result?.amount ?: confirmAmount
+                val sentFee = current.result?.feePaid ?: 0L
+                val sentMint = current.result?.mintUrl ?: activeMintUrl
                 PaymentStatusScreen(
                     phase = PaymentStatusPhase.Success,
                     title = "Payment sent",
-                    detail = current.result?.let { r ->
-                        buildString {
-                            append("${r.amount} sat")
-                            if (r.feePaid > 0L) append(" · fee ${r.feePaid} sat")
+                    onDone = onClose,
+                    rows = {
+                        if (sentAmount > 0L) {
+                            InspectorRow(
+                                label = "Amount",
+                                value = formatter.formatWalletSats(sentAmount, settings.useBitcoinSymbol),
+                                leadingIcon = Icons.Outlined.Payments,
+                            )
+                        }
+                        if (sentFee > 0L) {
+                            CanvasDivider(leadingInset = 16.dp)
+                            InspectorRow(
+                                label = "Fee",
+                                value = formatter.formatWalletSats(sentFee, settings.useBitcoinSymbol),
+                                leadingIcon = Icons.Outlined.Receipt,
+                            )
+                        }
+                        if (sentMint != null) {
+                            CanvasDivider(leadingInset = 16.dp)
+                            InspectorRow(
+                                label = "Mint",
+                                value = sentMint,
+                                leadingIcon = Icons.Outlined.AccountBalance,
+                            )
                         }
                     },
-                    onDone = onClose,
                 )
             }
             is SendStatus.Failed -> Box(Modifier.weight(1f).fillMaxWidth()) {
                 PaymentStatusScreen(
                     phase = PaymentStatusPhase.Failure,
                     title = "Payment failed",
-                    detail = current.reason,
-                    doneLabel = "Try again",
-                    onDone = { status = null },
+                    detail = current.message.text,
+                    // A terminal outcome (already paid) can't be retried — offer
+                    // Done; anything else returns to the confirm step.
+                    doneLabel = if (current.message.isTerminal) "Done" else "Try again",
+                    onDone = {
+                        if (current.message.isTerminal) onClose() else status = null
+                    },
                 )
             }
             null -> {

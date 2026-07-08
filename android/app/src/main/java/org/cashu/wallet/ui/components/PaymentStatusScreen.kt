@@ -12,8 +12,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -54,6 +56,8 @@ enum class PaymentStatusPhase { Processing, Success, Failure }
  * spinner → 64dp green check / red X with a smooth fade + a single gentle
  * scale-in (0.9 → 1, the one celebration beat — nothing else springs).
  * Success/failure require an explicit Done tap; processing shows no actions.
+ * Terminal states may pass [rows] (InspectorRow metadata — Amount/Fee/Mint,
+ * the iOS success detail rows) rendered under the title block.
  */
 @Composable
 fun PaymentStatusScreen(
@@ -63,6 +67,7 @@ fun PaymentStatusScreen(
     modifier: Modifier = Modifier,
     doneLabel: String = "Done",
     onDone: (() -> Unit)? = null,
+    rows: (@Composable ColumnScope.() -> Unit)? = null,
 ) {
     val haptics = LocalHapticFeedback.current
     LaunchedEffect(phase) {
@@ -161,6 +166,12 @@ fun PaymentStatusScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
                 )
+            }
+            // Metadata rows (iOS PaymentStatusView detail rows) sit under the
+            // title block; only terminal phases pass them so processing stays bare.
+            if (rows != null && phase != PaymentStatusPhase.Processing) {
+                Spacer(Modifier.height(CashuTheme.spacing.section))
+                Column(modifier = Modifier.fillMaxWidth()) { rows() }
             }
         }
         if (phase != PaymentStatusPhase.Processing && onDone != null) {

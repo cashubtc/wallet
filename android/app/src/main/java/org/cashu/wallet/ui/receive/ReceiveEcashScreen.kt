@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
@@ -20,6 +21,7 @@ import androidx.compose.material.icons.outlined.AccountBalance
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material.icons.outlined.Receipt
 import androidx.compose.material3.Icon
@@ -39,12 +41,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.cashu.wallet.Core.AmountFormatter
 import org.cashu.wallet.Core.Protocols.CurrencyAmount
 import org.cashu.wallet.Core.Protocols.CurrencyRegistry
 import org.cashu.wallet.Core.SettingsManager
 import org.cashu.wallet.Core.TokenParser
+import org.cashu.wallet.Core.Wallet.WalletMessage
+import org.cashu.wallet.Core.Wallet.walletMessage
 import org.cashu.wallet.Core.WalletManager
 import org.cashu.wallet.Models.TokenInfo
 import org.cashu.wallet.ui.components.AmountText
@@ -53,6 +59,8 @@ import org.cashu.wallet.ui.components.CashuTextField
 import org.cashu.wallet.ui.components.GhostButton
 import org.cashu.wallet.ui.components.InlineNotice
 import org.cashu.wallet.ui.components.InspectorRow
+import org.cashu.wallet.ui.components.PaymentStatusPhase
+import org.cashu.wallet.ui.components.PaymentStatusScreen
 import org.cashu.wallet.ui.components.PrimaryButton
 import org.cashu.wallet.ui.components.SecondaryButton
 import org.cashu.wallet.ui.components.SheetHeader
@@ -64,6 +72,22 @@ private sealed interface ReceiveFace {
     data object Paste : ReceiveFace
     data class Review(val token: String, val info: TokenInfo, val fee: Long, val locked: Boolean) : ReceiveFace
 }
+
+/**
+ * The claim terminal (iOS ReceiveTokenDetailView phase): once Receive is
+ * tapped, the sheet body swaps to the shared PaymentStatusScreen — spinner →
+ * green check with Amount/Fee/Mint rows, or red X with mapped error copy.
+ */
+private sealed interface ClaimStatus {
+    data object Claiming : ClaimStatus
+    data class Claimed(val amount: Long, val fee: Long, val unit: String, val mint: String) : ClaimStatus
+    data class Failed(val message: WalletMessage) : ClaimStatus
+}
+
+// iOS ReceiveTokenDetailView: floor the redeem at 500ms so the "Claiming…"
+// spinner is legible on instant redeems. Not a fake delay — the redeem itself
+// hits the mint; we only pad the *display* of an early result.
+private const val MinClaimingBeatMillis = 500L
 
 @Composable
 fun ReceiveEcashScreen(
@@ -87,7 +111,7 @@ fun ReceiveEcashScreen(
     var face: ReceiveFace by remember { mutableStateOf(ReceiveFace.Paste) }
     var input by remember { mutableStateOf("") }
     var validating by remember { mutableStateOf(false) }
-    var receiving by remember { mutableStateOf(false) }
+    var status by remember { mutableStateOf<ClaimStatus?>(null) }
     var errorText by remember { mutableStateOf<String?>(null) }
 
     // Auto-paste a clipboard token on open (iOS autoPasteEcashReceive).
@@ -168,97 +192,179 @@ fun ReceiveEcashScreen(
     }
 
     // Don't let a swipe-down interrupt a redeem in flight.
-    LaunchedEffect(validating, receiving) { onDismissLockChanged(validating || receiving) }
-
-    // System back unwinds Review → Paste; from Paste the sheet handles it.
-    BackHandler(enabled = face is ReceiveFace.Review) {
-        face = ReceiveFace.Paste
-        errorText = null
+    LaunchedEffect(validating, status) {
+        onDismissLockChanged(validating || status == ClaimStatus.Claiming)
     }
 
-    Column(modifier = Modifier.fillMaxWidth()) {
-        SheetHeader(
-            title = when (face) {
-                ReceiveFace.Paste -> "Receive ecash"
-                is ReceiveFace.Review -> "Review token"
-            },
-            navigationIcon = when (face) {
-                ReceiveFace.Paste -> Icons.Outlined.Close
-                is ReceiveFace.Review -> Icons.AutoMirrored.Outlined.ArrowBack
-            },
-            navigationContentDescription = when (face) {
-                ReceiveFace.Paste -> "Close"
-                is ReceiveFace.Review -> "Back"
-            },
-            onNavigationClick = {
-                when (face) {
-                    ReceiveFace.Paste -> onClose()
-                    is ReceiveFace.Review -> face = ReceiveFace.Paste
-                }
-            },
-            actions = {
-                if (face is ReceiveFace.Paste) {
-                    IconButton(onClick = onScan) {
-                        Icon(Icons.Outlined.QrCodeScanner, contentDescription = "Scan")
-                    }
-                }
-            },
-        )
-        TwoFaceCrossfade(
-            targetState = face,
-            modifier = Modifier.fillMaxWidth(),
-            label = "receive-ecash-face",
-        ) { current ->
-            when (current) {
-                is ReceiveFace.Paste -> PasteFace(
-                    input = input,
-                    onInputChange = { input = it; errorText = null },
-                    onPaste = {
-                        val clip = clipboard.getText()?.text
-                        if (!clip.isNullOrBlank()) input = clip
-                    },
-                    onClear = { input = ""; errorText = null },
-                    onContinue = { validateAndReview(input) },
-                    onNewRequest = ::createNewRequest,
-                    busy = validating,
-                    errorText = errorText,
-                    canContinue = input.isNotBlank() && !validating,
-                )
+    // System back unwinds Review → Paste; swallow it entirely while claiming.
+    // On a terminal (success/failure) face, back falls through to the sheet.
+    BackHandler(enabled = status == ClaimStatus.Claiming || (status == null && face is ReceiveFace.Review)) {
+        if (status == null) {
+            face = ReceiveFace.Paste
+            errorText = null
+        }
+    }
 
-                is ReceiveFace.Review -> ReviewFace(
-                    info = current.info,
-                    fee = current.fee,
-                    locked = current.locked,
-                    receiving = receiving,
-                    formatter = formatter,
-                    useBitcoinSymbol = settings.useBitcoinSymbol,
-                    onReceive = {
-                        receiving = true
-                        errorText = null
-                        scope.launch {
-                            try {
-                                walletManager.receiveTokens(current.token)
-                                onClose()
-                            } catch (t: Throwable) {
-                                errorText = t.message ?: "Could not receive."
-                            } finally {
-                                receiving = false
+    fun claim(review: ReceiveFace.Review) {
+        if (status != null) return
+        status = ClaimStatus.Claiming
+        scope.launch {
+            val startedAt = System.currentTimeMillis()
+            val result = try {
+                Result.success(walletManager.receiveTokens(review.token))
+            } catch (c: CancellationException) {
+                throw c
+            } catch (t: Throwable) {
+                Result.failure(t)
+            }
+            // Hold the "Claiming…" beat so the spinner never flashes for a frame.
+            val elapsed = System.currentTimeMillis() - startedAt
+            if (elapsed < MinClaimingBeatMillis) delay(MinClaimingBeatMillis - elapsed)
+            status = result.fold(
+                onSuccess = { credited ->
+                    ClaimStatus.Claimed(
+                        // The gateway reports what was actually credited (net of the
+                        // receive-swap fee); fall back to the reviewed net amount.
+                        amount = if (credited > 0L) credited else review.info.amount - review.fee.coerceIn(0L, review.info.amount),
+                        fee = review.fee,
+                        unit = review.info.unit,
+                        mint = review.info.mint,
+                    )
+                },
+                onFailure = { ClaimStatus.Failed(it.walletMessage) },
+            )
+        }
+    }
+
+    // The claim terminal replaces the whole sheet body (header included) and
+    // expands the otherwise wrap-content sheet to full height — the same
+    // status-slot pattern as UnifiedSendScreen.
+    Column(modifier = if (status != null) Modifier.fillMaxHeight() else Modifier.fillMaxWidth()) {
+        when (val current = status) {
+            ClaimStatus.Claiming -> Box(Modifier.weight(1f).fillMaxWidth()) {
+                PaymentStatusScreen(phase = PaymentStatusPhase.Processing, title = "Claiming…")
+            }
+
+            is ClaimStatus.Claimed -> Box(Modifier.weight(1f).fillMaxWidth()) {
+                val isSat = current.unit.equals("sat", ignoreCase = true)
+                val currency = CurrencyRegistry.currencyForMintUnit(current.unit)
+                fun formatted(value: Long): String = if (isSat) {
+                    formatter.formatWalletSats(value, settings.useBitcoinSymbol)
+                } else {
+                    CurrencyAmount(value, currency).formatted()
+                }
+                PaymentStatusScreen(
+                    phase = PaymentStatusPhase.Success,
+                    title = "Payment received",
+                    onDone = onClose,
+                    rows = {
+                        InspectorRow(
+                            label = "Amount",
+                            value = formatted(current.amount),
+                            leadingIcon = Icons.Outlined.Payments,
+                        )
+                        if (current.fee > 0L) {
+                            CanvasDivider(leadingInset = 16.dp)
+                            InspectorRow(
+                                label = "Fee",
+                                value = formatted(current.fee),
+                                leadingIcon = Icons.Outlined.Receipt,
+                            )
+                        }
+                        CanvasDivider(leadingInset = 16.dp)
+                        InspectorRow(
+                            label = "Mint",
+                            value = current.mint,
+                            leadingIcon = Icons.Outlined.AccountBalance,
+                        )
+                    },
+                )
+            }
+
+            is ClaimStatus.Failed -> Box(Modifier.weight(1f).fillMaxWidth()) {
+                PaymentStatusScreen(
+                    phase = PaymentStatusPhase.Failure,
+                    title = "Couldn't receive",
+                    detail = current.message.text,
+                    // Terminal outcomes (already redeemed) can't be retried — offer
+                    // Done; anything else returns to Review for another attempt.
+                    doneLabel = if (current.message.isTerminal) "Done" else "Try again",
+                    onDone = {
+                        if (current.message.isTerminal) onClose() else status = null
+                    },
+                )
+            }
+
+            null -> {
+                SheetHeader(
+                    title = when (face) {
+                        ReceiveFace.Paste -> "Receive ecash"
+                        is ReceiveFace.Review -> "Review token"
+                    },
+                    navigationIcon = when (face) {
+                        ReceiveFace.Paste -> Icons.Outlined.Close
+                        is ReceiveFace.Review -> Icons.AutoMirrored.Outlined.ArrowBack
+                    },
+                    navigationContentDescription = when (face) {
+                        ReceiveFace.Paste -> "Close"
+                        is ReceiveFace.Review -> "Back"
+                    },
+                    onNavigationClick = {
+                        when (face) {
+                            ReceiveFace.Paste -> onClose()
+                            is ReceiveFace.Review -> face = ReceiveFace.Paste
+                        }
+                    },
+                    actions = {
+                        if (face is ReceiveFace.Paste) {
+                            IconButton(onClick = onScan) {
+                                Icon(Icons.Outlined.QrCodeScanner, contentDescription = "Scan")
                             }
                         }
                     },
-                    onReceiveLater = {
-                        val pending = org.cashu.wallet.Models.PendingReceiveToken(
-                            tokenId = current.token.take(64),
-                            token = current.token,
-                            amount = current.info.amount,
-                            mintUrl = current.info.mint,
-                            dateEpochMillis = System.currentTimeMillis(),
-                        )
-                        walletManager.savePendingReceiveToken(pending)
-                        onClose()
-                    },
-                    errorText = errorText,
                 )
+                TwoFaceCrossfade(
+                    targetState = face,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = "receive-ecash-face",
+                ) { currentFace ->
+                    when (currentFace) {
+                        is ReceiveFace.Paste -> PasteFace(
+                            input = input,
+                            onInputChange = { input = it; errorText = null },
+                            onPaste = {
+                                val clip = clipboard.getText()?.text
+                                if (!clip.isNullOrBlank()) input = clip
+                            },
+                            onClear = { input = ""; errorText = null },
+                            onContinue = { validateAndReview(input) },
+                            onNewRequest = ::createNewRequest,
+                            busy = validating,
+                            errorText = errorText,
+                            canContinue = input.isNotBlank() && !validating,
+                        )
+
+                        is ReceiveFace.Review -> ReviewFace(
+                            info = currentFace.info,
+                            fee = currentFace.fee,
+                            locked = currentFace.locked,
+                            formatter = formatter,
+                            useBitcoinSymbol = settings.useBitcoinSymbol,
+                            onReceive = { claim(currentFace) },
+                            onReceiveLater = {
+                                val pending = org.cashu.wallet.Models.PendingReceiveToken(
+                                    tokenId = currentFace.token.take(64),
+                                    token = currentFace.token,
+                                    amount = currentFace.info.amount,
+                                    mintUrl = currentFace.info.mint,
+                                    dateEpochMillis = System.currentTimeMillis(),
+                                )
+                                walletManager.savePendingReceiveToken(pending)
+                                onClose()
+                            },
+                        )
+                    }
+                }
             }
         }
     }
@@ -349,12 +455,10 @@ private fun ReviewFace(
     info: TokenInfo,
     fee: Long,
     locked: Boolean,
-    receiving: Boolean,
     formatter: AmountFormatter,
     useBitcoinSymbol: Boolean,
     onReceive: () -> Unit,
     onReceiveLater: () -> Unit,
-    errorText: String?,
 ) {
     Column(
         modifier = Modifier
@@ -415,20 +519,17 @@ private fun ReviewFace(
                 )
             }
         }
-        if (errorText != null) {
-            InlineNotice(text = errorText)
-        }
+        // Claim outcomes no longer land here: tapping Receive swaps the sheet
+        // body to the PaymentStatusScreen terminal (success check / failure X).
         Spacer(modifier = Modifier.height(CashuTheme.spacing.snug))
         PrimaryButton(
-            text = if (receiving) "Receiving…" else "Receive",
+            text = "Receive",
             onClick = onReceive,
-            enabled = !locked && !receiving,
-            loading = receiving,
+            enabled = !locked,
         )
         GhostButton(
             text = "Receive later",
             onClick = onReceiveLater,
-            enabled = !receiving,
         )
         Spacer(modifier = Modifier.navigationBarsPadding())
     }
