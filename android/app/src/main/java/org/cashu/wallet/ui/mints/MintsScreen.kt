@@ -67,6 +67,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import org.cashu.wallet.Core.MintDiscoveryManager
 import org.cashu.wallet.Core.SettingsManager
+import org.cashu.wallet.Core.Wallet.userFacingWalletMessage
 import org.cashu.wallet.Core.WalletManager
 import org.cashu.wallet.Core.mintUrlCandidates
 import org.cashu.wallet.Core.normalizeUserMintUrl
@@ -136,7 +137,7 @@ fun MintsScreen(
                     url = ""
                     nickname = ""
                 }
-                .onFailure { error = it.message ?: "Could not add mint." }
+                .onFailure { error = it.userFacingWalletMessage }
         }
     }
 
@@ -259,18 +260,6 @@ fun MintsScreen(
                         modifier = Modifier.fillMaxWidth(),
                     )
                     Spacer(Modifier.height(CashuTheme.spacing.snug))
-                }
-            }
-
-            walletState.errorMessage?.let { msg ->
-                item("err") {
-                    InlineNotice(
-                        text = msg,
-                        modifier = Modifier.padding(
-                            horizontal = CashuTheme.spacing.comfortable,
-                            vertical = CashuTheme.spacing.snug,
-                        ),
-                    )
                 }
             }
         }
