@@ -76,6 +76,7 @@ import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.cashu.wallet.Core.Bip39WordList
 import org.cashu.wallet.Core.WalletManager
 import org.cashu.wallet.ui.components.CanvasDivider
 import org.cashu.wallet.ui.components.CashuTextField
@@ -901,6 +902,8 @@ private fun RestoreInputFace(
     val wordCount = remember(input) {
         input.trim().split(Regex("\\s+")).count { it.isNotBlank() }
     }
+    // iOS invalidMnemonicWords: live per-word check against the BIP-39 list.
+    val invalidCount = remember(input) { Bip39WordList.invalidWordIndices(input).size }
 
     Column(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -960,15 +963,29 @@ private fun RestoreInputFace(
                     )
                 }
             }
-            Text(
-                text = "$wordCount / 12 words",
-                style = MaterialTheme.typography.labelMedium,
-                color = if (wordCount == 12) {
-                    CashuTheme.colors.received
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-            )
+            // iOS word counter: green only once 12 words all pass the BIP-39
+            // list; the invalid tally stays quiet secondary text.
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.micro),
+            ) {
+                Text(
+                    text = "$wordCount / 12 words",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (wordCount == 12 && invalidCount == 0) {
+                        CashuTheme.colors.received
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
+                if (invalidCount > 0) {
+                    Text(
+                        text = "· $invalidCount invalid",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
             if (errorText != null) {
                 InlineNotice(text = errorText)
             }
