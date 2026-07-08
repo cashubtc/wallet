@@ -217,6 +217,7 @@ fun MintsScreen(
                         label = "Mint URL",
                         placeholder = "https://…",
                         singleLine = true,
+                        isError = error != null,
                         modifier = Modifier.fillMaxWidth(),
                         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
                             capitalization = KeyboardCapitalization.None,

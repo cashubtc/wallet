@@ -271,6 +271,7 @@ fun NostrScreen(
                         label = "nsec1…",
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
+                        isError = importError != null,
                     )
                     if (importError != null) {
                         InlineNotice(text = importError!!)

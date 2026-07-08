@@ -255,6 +255,7 @@ fun OnboardingScreen(walletManager: WalletManager) {
             OnboardingStep.RestoreInput -> RestoreInputFace(
                 restoring = restoring,
                 errorText = restoreError,
+                onClearError = { restoreError = null },
                 onBack = { step = OnboardingStep.Welcome },
                 onRestore = { mnemonic ->
                     scope.launch {
@@ -727,6 +728,7 @@ private fun FirstMintFace(
                     placeholder = "https://mint.example.com",
                     textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
                     singleLine = true,
+                    isError = localError != null,
                     keyboardOptions = KeyboardOptions(
                         capitalization = KeyboardCapitalization.None,
                         keyboardType = KeyboardType.Uri,
@@ -893,6 +895,7 @@ private fun MonogramFallback(name: String) {
 private fun RestoreInputFace(
     restoring: Boolean,
     errorText: String?,
+    onClearError: () -> Unit,
     onBack: () -> Unit,
     onRestore: (String) -> Unit,
 ) {
@@ -935,12 +938,18 @@ private fun RestoreInputFace(
             Box(modifier = Modifier.fillMaxWidth()) {
                 CashuTextField(
                     value = input,
-                    onValueChange = { input = it },
+                    onValueChange = {
+                        input = it
+                        onClearError()
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     placeholder = "word1 word2 word3 …",
                     textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
                     minLines = 5,
                     maxLines = 8,
+                    // Red only once the phrase is "complete" but wrong (or a
+                    // restore attempt failed) — not while a word is half-typed.
+                    isError = errorText != null || (wordCount >= 12 && invalidCount > 0),
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None),
                 )
                 // Corner affordance (iOS bottomTrailing): paste when empty, clear when full.

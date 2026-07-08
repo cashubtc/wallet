@@ -182,6 +182,7 @@ internal fun ImportP2PKDialog(
                     label = "nsec1…",
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
+                    isError = inputError != null,
                 )
                 inputError?.let { InlineNotice(text = it) }
             }

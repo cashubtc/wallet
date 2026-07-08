@@ -67,7 +67,9 @@ fun CashuTextField(
             focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
             unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
             disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            errorContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+            // With the indicator gone, error state reads through a tinted
+            // container (the InlineNotice error tint) + red label/supporting text.
+            errorContainerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.12f),
             focusedIndicatorColor = Color.Transparent,
             unfocusedIndicatorColor = Color.Transparent,
             disabledIndicatorColor = Color.Transparent,

@@ -299,6 +299,7 @@ private fun PasteFace(
                     fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                 ),
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None),
+                isError = errorText != null,
                 minLines = TokenFieldMinLines,
                 maxLines = TokenFieldMaxLines,
             )
