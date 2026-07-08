@@ -7,6 +7,7 @@ import P256K
 class SettingsManager: ObservableObject {
     static let shared = SettingsManager()
     private let settingsStore = SettingsStore.shared
+    private var suppressPaymentRequestSideEffects = false
     
     static let supportedFiatCurrencies: [String] = [
         "USD", "EUR", "AUD", "BRL", "CAD", "CHF", "CNY", "CZK", "DKK", "GBP",
@@ -88,6 +89,39 @@ class SettingsManager: ObservableObject {
         }
     }
 
+    /// Master switch for the NUT-18 Cashu Request listener (incoming ecash over
+    /// Nostr). Off tears the relay subscription down entirely.
+    @Published var enablePaymentRequests: Bool {
+        didSet {
+            settingsStore.enablePaymentRequests = enablePaymentRequests
+            guard !suppressPaymentRequestSideEffects else { return }
+            guard enablePaymentRequests != oldValue else { return }
+            Task { @MainActor in
+                if enablePaymentRequests {
+                    await CashuRequestListener.shared.start()
+                } else {
+                    await CashuRequestListener.shared.stop()
+                }
+            }
+        }
+    }
+
+    /// Whether incoming Cashu Request payments are redeemed without asking.
+    /// Off routes each payment through the approval queue (receive screen)
+    /// instead — nothing is dropped, every payment just needs a tap.
+    @Published var receivePaymentRequestsAutomatically: Bool {
+        didSet {
+            settingsStore.receivePaymentRequestsAutomatically = receivePaymentRequestsAutomatically
+            guard !suppressPaymentRequestSideEffects else { return }
+            guard receivePaymentRequestsAutomatically, !oldValue else { return }
+            // Payments held while auto-claim was off can claim silently now
+            // (known mints only — unknown mints always need approval).
+            Task { @MainActor in
+                await CashuRequestListener.shared.claimEligibleHeldPayments()
+            }
+        }
+    }
+
     @Published var nostrRelays: [String] {
         didSet {
             settingsStore.nostrRelays = nostrRelays
@@ -133,6 +167,8 @@ class SettingsManager: ObservableObject {
         self.p2pkKeys = Self.loadP2PKKeys()
         self.checkIncomingInvoices = settingsStore.checkIncomingInvoices
         self.periodicallyCheckIncomingInvoices = settingsStore.periodicallyCheckIncomingInvoices
+        self.enablePaymentRequests = settingsStore.enablePaymentRequests
+        self.receivePaymentRequestsAutomatically = settingsStore.receivePaymentRequestsAutomatically
         self.nostrRelays = settingsStore.nostrRelays
         self.amountDisplayPrimary = AmountDisplayPrimary(rawValue: settingsStore.amountDisplayPrimary) ?? .fiat
         self.appLockEnabled = settingsStore.appLockEnabled
@@ -218,6 +254,11 @@ class SettingsManager: ObservableObject {
 
         showP2PKButtonInDrawer = false
         p2pkKeys = []
+        let previousSuppression = suppressPaymentRequestSideEffects
+        suppressPaymentRequestSideEffects = resetRuntimeServices
+        defer { suppressPaymentRequestSideEffects = previousSuppression }
+        enablePaymentRequests = true
+        receivePaymentRequestsAutomatically = true
 
         if resetRuntimeServices {
             NostrService.shared.resetForWalletBoundary()

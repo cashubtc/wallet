@@ -180,7 +180,20 @@ extension WalletManager {
     }
 
     func claimPendingReceiveToken(_ token: PendingReceiveToken) async throws -> UInt64 {
-        let amount = try await receiveTokens(tokenString: token.token)
+        let amount: UInt64
+        if token.cashuRequestId != nil {
+            // NUT-18 payment held for approval: claim through the attribution
+            // path so History links it to the originating Cashu Request. An
+            // empty id marks a listener-held payment whose payload carried no
+            // request id — claim the same way, just without attribution.
+            let requestId = token.cashuRequestId.flatMap { $0.isEmpty ? nil : $0 }
+            amount = try await receiveCashuRequestPayment(
+                tokenString: token.token,
+                requestId: requestId
+            )
+        } else {
+            amount = try await receiveTokens(tokenString: token.token)
+        }
         transactionService.removePendingReceiveToken(tokenId: token.tokenId)
         await loadTransactions()
         return amount

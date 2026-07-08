@@ -136,6 +136,29 @@ class TransactionService: ObservableObject {
         // which previously produced a duplicate "Ecash sent" entry per send.
         mergeSentTokens(into: &allTransactions)
 
+        // Unclaimed incoming ecash ("Receive Later" tokens and NUT-18 payments
+        // held for approval) has no CDK counterpart until it's claimed, so each
+        // entry is its own pending incoming row. Tapping the row opens the
+        // claim flow (see TransactionDetailView).
+        allTransactions.append(contentsOf: pendingReceiveTokens.map { pending in
+            var tx = WalletTransaction(
+                id: pending.tokenId,
+                amount: pending.amount,
+                type: .incoming,
+                kind: .ecash,
+                date: pending.date,
+                memo: pending.memo,
+                status: .pending,
+                mintUrl: pending.mintUrl,
+                token: pending.token
+            )
+            tx.statusNote = "Not claimed yet"
+            tx.isPendingReceiveToken = true
+            tx.cashuRequestId = pending.cashuRequestId
+            tx.unit = pending.unit
+            return tx
+        })
+
         persistMintQuoteTimestamps(for: allTransactions, using: mintQuoteTimestamps)
 
         // Sort by date descending (newest first)
@@ -344,11 +367,25 @@ class TransactionService: ObservableObject {
     
     // MARK: - Pending Receive Token Management (Incoming)
     
-    /// Save a token for later claiming
-    /// Uses index-based replacement to avoid non-atomic removeAll+append
+    /// Save a token for later claiming.
+    /// Uses index-based replacement to avoid non-atomic removeAll+append, and
+    /// de-duplicates by token string so parking the same ecash repeatedly
+    /// doesn't create redundant History rows.
     func savePendingReceiveToken(_ token: PendingReceiveToken) {
         if let existingIndex = pendingReceiveTokens.firstIndex(where: { $0.tokenId == token.tokenId }) {
             pendingReceiveTokens[existingIndex] = token
+        } else if let existingIndex = pendingReceiveTokens.firstIndex(where: { $0.token == token.token }) {
+            let existing = pendingReceiveTokens[existingIndex]
+            pendingReceiveTokens[existingIndex] = PendingReceiveToken(
+                tokenId: existing.tokenId,
+                token: token.token,
+                amount: token.amount,
+                unit: token.unit,
+                date: existing.date,
+                mintUrl: token.mintUrl,
+                cashuRequestId: existing.cashuRequestId ?? token.cashuRequestId,
+                memo: token.memo ?? existing.memo
+            )
         } else {
             pendingReceiveTokens.append(token)
         }

@@ -124,19 +124,6 @@ struct ReceiveView: View {
         }
     }
 
-    private func handleScannedCode(_ code: String) {
-        Task { @MainActor in
-            if TokenParser.isCashuToken(code) {
-                do {
-                    let _ = try await walletManager.receiveTokens(tokenString: code)
-                    dismiss()
-                } catch {
-                    print("Error receiving token: \(error)")
-                }
-            }
-        }
-    }
-
     /// Builds a NUT-18 Cashu payment request locked to the wallet's primary
     /// (seed-derived) key, so anyone who pays it sends ecash only this wallet can
     /// claim. Routes the proofs back over Nostr.

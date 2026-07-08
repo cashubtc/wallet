@@ -71,6 +71,28 @@ final class SettingsStore {
         set { set(newValue, forKey: StorageKeys.periodicallyCheckIncomingInvoices) }
     }
 
+    var enablePaymentRequests: Bool {
+        get {
+            bool(
+                StorageKeys.enablePaymentRequests,
+                legacy: StorageKeys.Legacy.enablePaymentRequests,
+                default: true
+            )
+        }
+        set { set(newValue, forKey: StorageKeys.enablePaymentRequests) }
+    }
+
+    var receivePaymentRequestsAutomatically: Bool {
+        get {
+            bool(
+                StorageKeys.receivePaymentRequestsAutomatically,
+                legacy: StorageKeys.Legacy.receivePaymentRequestsAutomatically,
+                default: true
+            )
+        }
+        set { set(newValue, forKey: StorageKeys.receivePaymentRequestsAutomatically) }
+    }
+
     var nostrRelays: [String] {
         get { value(StorageKeys.nostrRelays, legacy: StorageKeys.Legacy.nostrRelays) ?? Self.defaultNostrRelays }
         set { set(newValue, forKey: StorageKeys.nostrRelays) }

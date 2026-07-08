@@ -2,6 +2,7 @@ import XCTest
 
 /// UI tests for the Receive flow options sheet.
 final class ReceiveUITests: UITestBase {
+    override var launchMode: LaunchMode { .seededWalletWithMint }
 
     // MARK: - Helpers
 
@@ -33,7 +34,7 @@ final class ReceiveUITests: UITestBase {
     // MARK: - Tests
 
     func testReceiveOptionsAppear() throws {
-        createWalletAndSkipMint()
+        waitForMainTab()
 
         openReceiveChooser()
 
@@ -44,7 +45,7 @@ final class ReceiveUITests: UITestBase {
     }
 
     func testReceiveSheetCanBeDismissed() throws {
-        createWalletAndSkipMint()
+        waitForMainTab()
 
         openReceiveChooser()
 
@@ -56,7 +57,7 @@ final class ReceiveUITests: UITestBase {
     }
 
     func testBitcoinOptionOpensLightningFlow() throws {
-        createWalletWithMint()
+        waitForMainTab()
 
         openReceiveChooser()
 
