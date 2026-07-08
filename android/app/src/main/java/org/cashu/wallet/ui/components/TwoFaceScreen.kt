@@ -44,28 +44,6 @@ fun <T> TwoFaceScreen(
     )
 }
 
-/**
- * Cross-fade only (no slide). Kept for callers that prefer the original pattern
- * (e.g. ReceiveEcashScreen's paste-↔-review swap which iOS does as a pure
- * .easeInOut(0.25) opacity, not a slide).
- */
-@Composable
-fun <T> TwoFaceCrossfade(
-    targetState: T,
-    modifier: Modifier = Modifier,
-    duration: Int = 250,
-    label: String = "two-face-crossfade",
-    content: @Composable (T) -> Unit,
-) {
-    AnimatedContent(
-        targetState = targetState,
-        modifier = modifier,
-        transitionSpec = { fadeIn(tween(duration)) togetherWith fadeOut(tween(duration)) },
-        label = label,
-        content = { content(it) },
-    )
-}
-
 private fun <S> AnimatedContentTransitionScope<S>.slideTransition(
     duration: Int,
     forward: Boolean,
@@ -86,4 +64,3 @@ private fun <S> AnimatedContentTransitionScope<S>.slideTransition(
         ) + fadeOut(tween(duration))
     )
 }
-

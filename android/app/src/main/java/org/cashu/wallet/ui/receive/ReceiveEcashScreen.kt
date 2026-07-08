@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
@@ -32,13 +31,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
@@ -64,7 +66,7 @@ import org.cashu.wallet.ui.components.PaymentStatusScreen
 import org.cashu.wallet.ui.components.PrimaryButton
 import org.cashu.wallet.ui.components.SecondaryButton
 import org.cashu.wallet.ui.components.SheetHeader
-import org.cashu.wallet.ui.components.TwoFaceCrossfade
+import org.cashu.wallet.ui.components.TwoFaceScreen
 import org.cashu.wallet.ui.theme.CashuTheme
 import org.cashu.wallet.ui.theme.withMonoDigits
 
@@ -88,6 +90,11 @@ private sealed interface ClaimStatus {
 // spinner is legible on instant redeems. Not a fake delay — the redeem itself
 // hits the mint; we only pad the *display* of an early result.
 private const val MinClaimingBeatMillis = 500L
+
+// Floor for the pinned claim-terminal height: enough room for the glyph +
+// title + failure copy + the bottom-anchored Done button, in case the review
+// face measured unusually short.
+private val MinStatusHeight = 360.dp
 
 @Composable
 fun ReceiveEcashScreen(
@@ -236,10 +243,23 @@ fun ReceiveEcashScreen(
         }
     }
 
-    // The claim terminal replaces the whole sheet body (header included) and
-    // expands the otherwise wrap-content sheet to full height — the same
-    // status-slot pattern as UnifiedSendScreen.
-    Column(modifier = if (status != null) Modifier.fillMaxHeight() else Modifier.fillMaxWidth()) {
+    // The claim terminal replaces the whole sheet body (header included) but —
+    // unlike the send flow's full-height takeover — keeps the sheet at the
+    // height the review face occupied. iOS runs the whole claim as a phase
+    // morph inside the `.medium`-detent sheet (ReceiveTokenDetailView), so the
+    // sheet must not balloon to full screen here. We measure the wrap-content
+    // body continuously; when Receive is tapped the pin equals the face on
+    // screen, so the review → "Claiming…" swap has zero height jump.
+    val density = LocalDensity.current
+    var measuredBodyHeightPx by remember { mutableIntStateOf(0) }
+    val pinnedStatusHeight = with(density) { measuredBodyHeightPx.toDp() }.coerceAtLeast(MinStatusHeight)
+    Column(
+        modifier = if (status != null) {
+            Modifier.fillMaxWidth().height(pinnedStatusHeight)
+        } else {
+            Modifier.fillMaxWidth().onSizeChanged { measuredBodyHeightPx = it.height }
+        },
+    ) {
         when (val current = status) {
             ClaimStatus.Claiming -> Box(Modifier.weight(1f).fillMaxWidth()) {
                 PaymentStatusScreen(phase = PaymentStatusPhase.Processing, title = "Claiming…")
@@ -323,9 +343,13 @@ fun ReceiveEcashScreen(
                         }
                     },
                 )
-                TwoFaceCrossfade(
+                // iOS pushes ReceiveTokenDetailView onto the sheet's
+                // NavigationStack (ReceiveView.navigationDestination), so
+                // paste ↔ review reads as a horizontal push/pop — not a fade.
+                TwoFaceScreen(
                     targetState = face,
                     modifier = Modifier.fillMaxWidth(),
+                    forward = { _, target -> target is ReceiveFace.Review },
                     label = "receive-ecash-face",
                 ) { currentFace ->
                     when (currentFace) {
