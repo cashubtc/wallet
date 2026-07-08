@@ -19,3 +19,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "CashuWalletAndroid"
 include(":app")
+include(":macrobenchmark")

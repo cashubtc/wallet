@@ -177,7 +177,7 @@ fun NostrScreen(
                     ) {
                         Icon(
                             imageVector = Icons.Outlined.Visibility,
-                            contentDescription = "Reveal",
+                            contentDescription = "Reveal Nostr private key",
                         )
                     }
                     IconButton(

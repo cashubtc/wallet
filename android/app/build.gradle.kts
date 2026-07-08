@@ -88,6 +88,7 @@ dependencies {
     implementation(libs.androidx.biometric)
     implementation(libs.androidx.concurrent.futures)
     implementation(libs.androidx.concurrent.futures.ktx)
+    implementation(libs.androidx.metrics.performance)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.tooling.preview)

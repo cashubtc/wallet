@@ -106,7 +106,7 @@ fun TransactionDetailScreen(
                         IconButton(onClick = {
                             context.shareText(qrContent, subject = title)
                         }) {
-                            Icon(Icons.Outlined.IosShare, contentDescription = "Share")
+                            Icon(Icons.Outlined.IosShare, contentDescription = "Share ${TransactionDisplay.qrLabel(transaction).lowercase()}")
                         }
                     }
                 },
@@ -260,7 +260,7 @@ private fun ExplorerLinkRow(url: String, onOpen: (String) -> Unit) {
         IconButton(onClick = { onOpen(url) }) {
             Icon(
                 imageVector = Icons.AutoMirrored.Outlined.OpenInNew,
-                contentDescription = "Open",
+                contentDescription = "Open block explorer",
             )
         }
     }

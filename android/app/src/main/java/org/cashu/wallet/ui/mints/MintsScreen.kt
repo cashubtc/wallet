@@ -239,7 +239,7 @@ fun MintsScreen(
                             IconButton(onClick = onScan) {
                                 Icon(
                                     imageVector = Icons.Outlined.QrCodeScanner,
-                                    contentDescription = "Scan",
+                                    contentDescription = "Scan mint QR code",
                                 )
                             }
                         },

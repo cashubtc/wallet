@@ -533,7 +533,7 @@ private fun P2PKRow(
         IconButton(onClick = onCopy) {
             Icon(
                 imageVector = Icons.Outlined.ContentCopy,
-                contentDescription = "Copy",
+                contentDescription = "Copy public key",
                 modifier = Modifier.size(CashuTheme.spacing.loose),
             )
         }
@@ -577,7 +577,7 @@ private fun KeyValueRow(
         }
         if (onCopy != null) {
             IconButton(onClick = onCopy) {
-                Icon(Icons.Outlined.ContentCopy, contentDescription = "Copy")
+                Icon(Icons.Outlined.ContentCopy, contentDescription = "Copy ${label.lowercase()}")
             }
         }
     }
@@ -622,7 +622,7 @@ private fun PrivateKeyRow(
         IconButton(onClick = onToggleReveal, enabled = value != null) {
             Icon(
                 imageVector = if (revealed) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
-                contentDescription = if (revealed) "Hide" else "Reveal",
+                contentDescription = if (revealed) "Hide private key" else "Reveal private key",
             )
         }
         IconButton(onClick = onCopy, enabled = value != null) {

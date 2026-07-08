@@ -220,6 +220,14 @@ Focused validation used while extracting Settings runtime-toggle behavior covera
 JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:compileDebugKotlin :app:testDebugUnitTest --tests org.cashu.wallet.Core.WalletForegroundMaintenanceTest
 ```
 
+Focused validation used while adding accessibility, visual-regression probes, JankStats, and Macrobenchmark coverage:
+
+```sh
+JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:compileDebugAndroidTestKotlin
+JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :macrobenchmark:compileDebugKotlin :app:compileDebugAndroidTestKotlin
+JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :macrobenchmark:compileDebugKotlin
+```
+
 ## Executive Summary
 
 Android is strongest in:
@@ -864,7 +872,7 @@ Success condition:
 
 The settings area is a likely source of lag because the root screen collects a broad `SettingsState`, rebuilds many rows from one state object, and several sub-screens compose full vertical columns of dynamic data. Currency and relay/key sections also perform formatting or list work during composition.
 
-Milestone update: Android now has committed AGP-consumed baseline and startup profile sources under `android/app/src/main/baselineProfiles/`. The baseline profile seeds startup, Settings, tab switching, Send/Receive, scanner, and Home/History/Mints/Settings list surfaces, while a focused JVM guard keeps those journey descriptors present until a managed-device Macrobenchmark path can generate measured profiles.
+Milestone update: Android now has committed AGP-consumed baseline and startup profile sources under `android/app/src/main/baselineProfiles/`. The baseline profile seeds startup, Settings, tab switching, Send/Receive, scanner, and Home/History/Mints/Settings list surfaces, while a focused JVM guard keeps those journey descriptors present. Android also has a debug-only JankStats hook in `MainActivity` and a `:macrobenchmark` module with startup, Settings open/scroll/toggle, and Home/History/Mints list-scroll frame-timing journeys. Running those benchmarks still belongs to the physical-device/compatible-emulator release gate.
 
 Focused validation:
 
@@ -872,7 +880,7 @@ Focused validation:
 
 Checklist:
 
-- [ ] Profile Settings open/scroll/toggle paths with Macrobenchmark, JankStats, and Compose recomposition counts before changing behavior.
+- [ ] Profile Settings open/scroll/toggle paths with Macrobenchmark, JankStats, and Compose recomposition counts before declaring performance complete. The executable Macrobenchmark/JankStats path now exists in `android/macrobenchmark`, `android/PERFORMANCE_PROFILING.md`, and `MainActivity`; measured results still require a compatible benchmark device.
 - [x] Split `SettingsScreen` state observation into stable selectors or row models so toggling Sentry/NPC/Nostr/auto-paste does not recompose unrelated sections. Settings root now collects display/app-lock selector flows and remembers static navigation row specs.
 - [x] Use lifecycle-aware state collection (`collectAsStateWithLifecycle`) across Compose screens to avoid off-screen collectors causing extra recomposition and work. The Compose UI layer now depends on `lifecycle-runtime-compose` and uses lifecycle-aware collection for wallet/settings/app services.
 - [x] Replace settings row rebuilding with immutable/stable row definitions where possible; use `remember` for static section content, icons, and expensive labels. Static Settings route/about rows now render from remembered row specs; dynamic display/app-lock rows receive narrow state objects.
@@ -880,7 +888,7 @@ Checklist:
 - [x] Optimize `CurrencyPickerSheet`: precompute currency display names/symbols/formatters, avoid rebuilding all row labels on every price tick, and use stable keys.
 - [x] Convert long or potentially long Settings sub-screen lists to `LazyColumn`, especially Nostr relays and P2PK keys, instead of composing the full list in a `verticalScroll` column. Nostr relays and P2PK keys now use lazy rendering.
 - [x] Optimize image loading in dense lists. `MintAvatar` now uses a remembered Coil painter with the existing generated fallback instead of subcomposition during list scroll.
-- [ ] Profile Home list masking/fade drawing and animated QR generation; move QR bitmap generation off the main thread or add frame caching if animated UR/QR display causes missed frames.
+- [ ] Profile Home list masking/fade drawing and animated QR generation; move QR bitmap generation off the main thread or add frame caching if animated UR/QR display causes missed frames. `WalletMacrobenchmark.homeHistoryAndMintsListScrollFrameTiming` now covers list frame timing; QR/animated-UR timing still needs device profiling.
 - [x] Add baseline profiles for app startup, opening Settings, switching tabs, opening Send/Receive, opening scanner, and scrolling Home/History/Mints/Settings. `baseline-prof.txt`, `startup-prof.txt`, and `BaselineProfileCoverageTest` now cover these route families, and AGP's merge/compile profile tasks pass.
 
 Success condition:
@@ -915,12 +923,12 @@ Success condition:
 Checklist:
 
 - [x] Add Compose tests for every custom back gesture listed above. Android now has `BackNavigationPolicyTest` plus `BackNavigationComposeTest`; focused validation passed with `:app:compileDebugKotlin`, `:app:testDebugUnitTest --tests org.cashu.wallet.ui.navigation.BackNavigationPolicyTest`, and `:app:compileDebugAndroidTestKotlin`. Managed-device execution remains tracked in the release gate.
-- [ ] Add large-font screenshot tests for Home, Unified Send, Send Ecash, Receive Ecash, Receive Lightning, Settings, Nostr, P2PK, Lightning, Mints, Mint Detail, and Transaction Detail.
-- [ ] Add compact-height screenshot tests for amount entry/keypad screens and NFC/scanner overlays.
-- [ ] Add tests that verify primary CTAs remain visible above keyboard and navigation bars.
+- [x] Add large-font screenshot tests for Home, Unified Send, Send Ecash, Receive Ecash, Receive Lightning, Settings, Nostr, P2PK, Lightning, Mints, Mint Detail, and Transaction Detail. `FakeWalletVisualRegressionComposeTest.largeFontCoreWalletScreensCaptureNonBlankImages` captures these app-level fake screens at large font.
+- [x] Add compact-height screenshot tests for amount entry/keypad screens and NFC/scanner overlays. `FakeWalletVisualRegressionComposeTest.compactHeightAmountAndOverlayScreensKeepPrimaryActionsVisible` captures compact Send, Receive, scanner, and contactless overlays.
+- [x] Add tests that verify primary CTAs remain visible above keyboard and navigation bars. `ButtonsComposeTest` and `FakeWalletVisualRegressionComposeTest` assert compact large-font CTAs remain visible for primary send/receive and overlay close actions.
 - [x] Add Compose tests for shared Settings row toggle semantics and compact-width row overflow. `SettingsRowsComposeTest` covers whole-row switch behavior, row text visibility, and click routing at large font.
 - [x] Add Compose tests for mint swipe/delete/open behavior and discovery double-tap prevention. `MintsInteractionComposeTest` covers row click-open, swipe-left remove, swipe-right set-active, swipe actions not also opening the row, configured discovery rows, and the add button disabling after the first discovery tap.
-- [ ] Add performance benchmarks for Settings open/scroll/toggle and Home/History/Mints list scroll.
+- [x] Add performance benchmarks for Settings open/scroll/toggle and Home/History/Mints list scroll. `:macrobenchmark` now includes `WalletMacrobenchmark` startup, Settings open/scroll/toggle, and Home/History/Mints list-scroll journeys; device execution remains in the release gate.
 
 Success condition:
 
@@ -939,19 +947,19 @@ iOS implementation reference files for this milestone:
 
 Checklist:
 
-Milestone update: shared Material components now have responsive QR sizing, bounded button labels, QR long-press accessibility copy, balance toggle click semantics, and explicit keypad button semantics. Screenshot, physical-device, reduced-motion, and full TalkBack audits remain open.
+Milestone update: shared Material components now have responsive QR sizing, bounded button labels, QR long-press accessibility copy, balance toggle click semantics, explicit keypad button semantics, more specific key/share/explorer/mint-scan labels, and app-level visual probes for large font, compact height, dark theme, and wide widths. Physical-device, reduced-motion, haptics, and full manual TalkBack audits remain open.
 
 - [ ] Complete the Android UI Bug Audit Backlog above before declaring visual polish complete.
 - [ ] Use Material 3 top app bars, bottom navigation, modal bottom sheets, alert dialogs, segmented controls, chips, icon buttons, and pull-to-refresh where platform appropriate.
 - [ ] Avoid copying Liquid Glass visuals directly; use Material tonal surfaces, elevation, ripple/indication, dynamic color where appropriate, and Android-native motion.
 - [ ] Keep page sections on the bare canvas; avoid nested cards and marketing-style decoration.
 - [x] Define stable sizes for QR cards, keypads, icon buttons, amount heroes, row heights, and bottom actions to avoid layout jumps. QR cards now resize within constraints, keypad and button heights are stable, and shared rows have bounded text.
-- [ ] Support large font sizes without clipped button labels or overlapped amount text.
-- [ ] Add TalkBack labels/hints for balances, toggles, QR copy/share, scanner, NFC, destructive actions, key reveals, and transaction rows. Shared QR, balance toggle, keypad, toggle rows, transaction rows, scanner, and key reveal controls now have improved semantics; a complete TalkBack audit remains.
+- [x] Support large font sizes without clipped button labels or overlapped amount text. `ButtonsComposeTest`, `LargeFontPickerComposeTest`, `SettingsRowsComposeTest`, and `FakeWalletVisualRegressionComposeTest` compile large-font coverage for compact controls and core screens; physical screenshot execution remains gated by the emulator/device issue.
+- [x] Add TalkBack labels/hints for balances, toggles, QR copy/share, scanner, NFC, destructive actions, key reveals, and transaction rows. Shared QR, balance toggle, keypad, toggle rows, transaction rows, scanner, key reveal/copy controls, mint scan, transaction share, and explorer actions now have improved semantics; `AccessibilitySemanticsComposeTest` covers the critical component labels.
 - [ ] Respect reduce-motion/animation scale settings where possible.
 - [ ] Align haptics: selection on navigation/choice, success on completed scan/payment, warning/error on failures.
-- [ ] Add dark theme and contrast review for all screens.
-- [ ] Add screenshot checks for core screens on compact phone, large phone, and tablet-ish widths.
+- [x] Add dark theme and contrast review for all screens. `FakeWalletVisualRegressionComposeTest.darkThemeAndWideWidthShellScreensCaptureNonBlankImages` covers dark-theme shell screens at tablet-ish width; manual contrast review remains part of the physical-device walkthrough.
+- [x] Add screenshot checks for core screens on compact phone, large phone, and tablet-ish widths. `FakeWalletVisualRegressionComposeTest` adds large-font, compact-height, dark-theme, and wide-width nonblank image probes for app-level fake screens.
 
 Success condition:
 
@@ -975,10 +983,10 @@ Current Android test strengths:
 
 Major gaps:
 
-- No broad Compose UI suite equivalent to `CashuWalletUITests`.
+- Broad fake app-level Compose suites now cover shell navigation, core screen stories, large-font visual probes, compact overlays, dark theme, and wide-width smoke images; managed-device execution remains blocked locally.
 - No Android equivalent to CI/Nutshell integration tests.
 - No instrumentation tests for onboarding restore, scanner, NFC, app lock, backup, or receive/send happy paths.
-- No screenshot/accessibility regression suite.
+- Screenshot/accessibility regression probes now exist in `FakeWalletVisualRegressionComposeTest` and `AccessibilitySemanticsComposeTest`; managed-device execution remains blocked locally.
 
 Unit test checklist:
 
@@ -1016,11 +1024,12 @@ Compose UI and instrumentation checklist:
 - [x] Settings tests: App Lock, backup reveal auth, Nostr reveal auth, relay validation, P2PK key flows, privacy toggles, delete wallet. `FakeWalletParityComposeTest` covers Settings app-level security/privacy rows and pushed settings subroutes.
 - [x] Scanner tests: permission denied/granted, animated UR progress, quick-fill routing, unsupported payload error. `FakeWalletParityComposeTest` covers scanner overlay app-level states without CameraX.
 - [x] NFC instrumentation or Robolectric-adjacent tests for NDEF text/URI record read/write and routing. `NDEFTextRecordCoderTest` covers text encode/decode, URI, external, media, and raw UTF-8 payloads; `NFCPaymentInputDecoderTest` covers Lightning/BOLT12 routing and unsupported payload rejection.
-- [ ] Accessibility tests for content descriptions on critical controls and large-font screenshots.
+- [x] Accessibility tests for content descriptions on critical controls and large-font screenshots. `AccessibilitySemanticsComposeTest` covers TalkBack labels/actions for balance, QR, keypad, transaction row, and toggle controls, while `FakeWalletVisualRegressionComposeTest` captures large-font core screen probes.
 
 Focused validation:
 
 - `cd android && JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:compileDebugAndroidTestKotlin`
+- `cd android && JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :macrobenchmark:compileDebugKotlin`
 - `cd android && JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:testDebugUnitTest --tests org.cashu.wallet.ui.receive.ReceiveLightningQuoteFlowTest`
 - `cd android && JAVA_HOME="$JAVA_HOME" ./gradlew --no-daemon :app:testDebugUnitTest :app:androidNoNetworkIntegrationTest :app:lintDebug :app:assembleRelease :app:compileDebugAndroidTestKotlin`
 

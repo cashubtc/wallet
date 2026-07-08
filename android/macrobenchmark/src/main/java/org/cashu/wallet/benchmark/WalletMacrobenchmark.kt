@@ -1,0 +1,115 @@
+package org.cashu.wallet.benchmark
+
+import androidx.benchmark.macro.CompilationMode
+import androidx.benchmark.macro.FrameTimingMetric
+import androidx.benchmark.macro.MacrobenchmarkScope
+import androidx.benchmark.macro.StartupMode
+import androidx.benchmark.macro.StartupTimingMetric
+import androidx.benchmark.macro.junit4.MacrobenchmarkRule
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.uiautomator.By
+import androidx.test.uiautomator.Until
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+
+@RunWith(AndroidJUnit4::class)
+class WalletMacrobenchmark {
+    @get:Rule
+    val benchmarkRule = MacrobenchmarkRule()
+
+    @Test
+    fun coldStartup() {
+        benchmarkRule.measureRepeated(
+            packageName = TargetPackage,
+            metrics = listOf(StartupTimingMetric()),
+            compilationMode = CompilationMode.Partial(),
+            startupMode = StartupMode.COLD,
+            iterations = 5,
+            setupBlock = {
+                pressHome()
+            },
+        ) {
+            startActivityAndWait()
+        }
+    }
+
+    @Test
+    fun settingsOpenAndScrollFrameTiming() {
+        benchmarkRule.measureRepeated(
+            packageName = TargetPackage,
+            metrics = listOf(FrameTimingMetric()),
+            compilationMode = CompilationMode.Partial(),
+            startupMode = StartupMode.WARM,
+            iterations = 5,
+            setupBlock = {
+                startActivityAndWait()
+                device.wait(Until.hasObject(By.text("Wallet")), WaitMs)
+            },
+        ) {
+            openTab("Settings")
+            device.wait(Until.hasObject(By.text("Settings")), WaitMs)
+            scrollVertical()
+            device.findObject(By.text("Privacy"))?.click()
+            device.wait(Until.hasObject(By.text("Privacy")), WaitMs)
+            scrollVertical()
+            device.findObject(By.text("Use WebSockets"))?.click()
+            device.waitForIdle()
+            device.findObject(By.text("Use WebSockets"))?.click()
+            device.waitForIdle()
+        }
+    }
+
+    @Test
+    fun homeHistoryAndMintsListScrollFrameTiming() {
+        benchmarkRule.measureRepeated(
+            packageName = TargetPackage,
+            metrics = listOf(FrameTimingMetric()),
+            compilationMode = CompilationMode.Partial(),
+            startupMode = StartupMode.WARM,
+            iterations = 5,
+            setupBlock = {
+                startActivityAndWait()
+                device.wait(Until.hasObject(By.text("Wallet")), WaitMs)
+            },
+        ) {
+            scrollVertical()
+            openTab("History")
+            device.wait(Until.hasObject(By.text("History")), WaitMs)
+            scrollVertical()
+            openTab("Mints")
+            device.wait(Until.hasObject(By.text("Mints")), WaitMs)
+            scrollVertical()
+        }
+    }
+
+    private fun MacrobenchmarkScope.openTab(label: String) {
+        val tab = device.wait(Until.findObject(By.text(label)), WaitMs)
+        tab?.click()
+        device.waitForIdle()
+    }
+
+    private fun MacrobenchmarkScope.scrollVertical() {
+        device.swipe(
+            device.displayWidth / 2,
+            device.displayHeight * 3 / 4,
+            device.displayWidth / 2,
+            device.displayHeight / 4,
+            20,
+        )
+        device.waitForIdle()
+        device.swipe(
+            device.displayWidth / 2,
+            device.displayHeight / 4,
+            device.displayWidth / 2,
+            device.displayHeight * 3 / 4,
+            20,
+        )
+        device.waitForIdle()
+    }
+
+    private companion object {
+        const val TargetPackage = "com.jcashu.wallet"
+        const val WaitMs = 5_000L
+    }
+}
