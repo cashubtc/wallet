@@ -34,6 +34,12 @@ internal data class LegacySettingsSecretMigration(
     val p2pkKeysToPersist: List<P2PKKeyInfo>?,
 )
 
+/** The wallet's seed-derived P2PK identity: compressed 02-prefixed pubkey + private hex. */
+data class PrimaryP2PKKey(
+    val publicKey: String,
+    val privateKeyHex: String,
+)
+
 internal data class SettingsWalletScopedSnapshot(
     val preferences: PreferenceSnapshot,
     val p2pkKeys: List<P2PKKeyInfo>,
@@ -127,6 +133,12 @@ class SettingsManager(
     // Wired by AppContainer (same pattern as NPCService.quoteClaimHandler).
     var sentryService: SentryService? = null
 
+    // Wired by AppContainer: the seed-derived primary P2PK key (iOS
+    // primaryP2PKPublicKey/PrivateKeyHex). Null until the wallet seed is loaded.
+    var primaryP2PKKeyProvider: (() -> PrimaryP2PKKey?)? = null
+
+    private fun primaryP2PKKey(): PrimaryP2PKKey? = primaryP2PKKeyProvider?.invoke()
+
     fun setUseBitcoinSymbol(value: Boolean) = update { settingsStore.useBitcoinSymbol = value }
     fun setShowFiatBalance(value: Boolean) = update {
         settingsStore.showFiatBalance = value
@@ -213,15 +225,28 @@ class SettingsManager(
     fun p2pkSigningKeysFor(pubkeys: List<String>): List<String> {
         if (pubkeys.isEmpty()) return emptyList()
         val tokenPubkeys = pubkeys.map(::normalizeP2PKForComparison).toSet()
+        val primary = primaryP2PKKey()
+        val primaryMatches = primary != null &&
+            normalizeP2PKForComparison(primary.publicKey) in tokenPubkeys
         val availableKeys = settingsStore.p2pkKeys
         val matching = availableKeys.filter { normalizeP2PKForComparison(it.publicKey) in tokenPubkeys }
-        require(matching.isNotEmpty()) {
+        require(primaryMatches || matching.isNotEmpty()) {
             "This token is locked to a P2PK key that is not stored on this device."
         }
-        require(matching.any { secureStorage.loadString(secureP2PKPrivateKey(it.id)) != null }) {
+        require(primaryMatches || matching.any { secureStorage.loadString(secureP2PKPrivateKey(it.id)) != null }) {
             "Missing encrypted P2PK private key."
         }
-        return availableKeys.mapNotNull { secureStorage.loadString(secureP2PKPrivateKey(it.id)) }
+        // Pass the full signing set (primary + device keys) and let CDK pick,
+        // mirroring iOS allP2PKSigningKeyHexes().
+        return allP2PKSigningKeyHexes()
+    }
+
+    /** Primary seed-derived key + every device key with a stored secret, deduped (iOS parity). */
+    fun allP2PKSigningKeyHexes(): List<String> {
+        val stored = settingsStore.p2pkKeys.mapNotNull {
+            secureStorage.loadString(secureP2PKPrivateKey(it.id))
+        }
+        return (listOfNotNull(primaryP2PKKey()?.privateKeyHex) + stored).distinct()
     }
 
     fun markP2PKKeyUsed(publicKey: String) = update {

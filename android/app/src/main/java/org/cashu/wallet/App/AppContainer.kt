@@ -12,6 +12,7 @@ import org.cashu.wallet.Core.Platform.AndroidConnectivityObserver
 import org.cashu.wallet.Core.Platform.AndroidSecureStorage
 import org.cashu.wallet.Core.Platform.WalletDatabasePathManager
 import org.cashu.wallet.Core.PriceService
+import org.cashu.wallet.Core.PrimaryP2PKKey
 import org.cashu.wallet.Core.SentryService
 import org.cashu.wallet.Core.SettingsManager
 import org.cashu.wallet.Core.SettingsStore
@@ -54,5 +55,14 @@ class AppContainer(context: Context) {
     init {
         npcService.quoteClaimHandler = walletManager
         settingsManager.sentryService = sentryService
+        // Seed-derived primary P2PK key (iOS primaryP2PKPublicKey/PrivateKeyHex):
+        // included in the signing set so ecash locked to the wallet's own key
+        // (e.g. NPC locked quotes, locked receive requests) is redeemable.
+        settingsManager.primaryP2PKKeyProvider = provider@{
+            val privateKeyHex = nostrService.seedDerivedPrivateKeyHex() ?: return@provider null
+            val publicKeyHex = nostrService.seedDerivedPublicKeyHex()
+                .takeIf { it.length == 64 } ?: return@provider null
+            PrimaryP2PKKey(publicKey = "02$publicKeyHex", privateKeyHex = privateKeyHex)
+        }
     }
 }

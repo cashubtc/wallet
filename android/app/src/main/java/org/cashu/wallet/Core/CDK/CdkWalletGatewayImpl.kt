@@ -291,7 +291,7 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
         )
     }
 
-    override suspend fun sendEcashToken(amount: Long, memo: String?, p2pkPubkey: String?, mintUrl: String, unit: String): SendTokenResult {
+    override suspend fun sendEcashToken(amount: Long, memo: String?, p2pkPubkey: String?, mintUrl: String, unit: String, p2pkSigningKeys: List<String>): SendTokenResult {
         if (!unit.equals("sat", ignoreCase = true)) ensureWallet(mintUrl, unit)
         val conditions = p2pkPubkey?.let { CdkSpendingConditions.P2pk(it, null) }
         // includeFee = true — the token carries the recipient's redeem fee on top
@@ -307,7 +307,10 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
             useP2bk = false,
             maxProofs = null,
             metadata = emptyMap(),
-            p2pkSigningKeys = emptyList(),
+            // Wallet signing keys let prepareSend swap proofs that are already
+            // P2PK-locked to us (NPC locked quotes, locked receives) — without
+            // them that balance is unspendable. Mirrors iOS TokenService.
+            p2pkSigningKeys = p2pkSigningKeys.map(::CdkSecretKey),
             p2pkLockedProofSendMode = CdkP2pkLockedProofSendMode.SWAP,
         )
         val prepared = walletFor(mintUrl, cdkUnit(unit)).prepareSend(amount.toCdkAmount(), sendOptions)

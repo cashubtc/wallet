@@ -95,6 +95,9 @@ class NostrService(
     fun seedDerivedPublicKeyHex(): String =
         seedPrivateKeyBytes?.let { publicKeyXOnly(it).toHex() }.orEmpty()
 
+    /** Seed-derived private key hex — the wallet's primary P2PK signing key (iOS primaryP2PKPrivateKeyHex). */
+    fun seedDerivedPrivateKeyHex(): String? = seedPrivateKeyBytes?.toHex()
+
     fun seedDerivedNpub(): String =
         seedPrivateKeyBytes?.let { Bech32.encode("npub", publicKeyXOnly(it)) }.orEmpty()
 

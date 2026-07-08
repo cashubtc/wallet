@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.ContentCopy
@@ -76,14 +78,21 @@ fun P2PKScreen(
         },
     ) { padding ->
         Column(
-            modifier = Modifier.fillMaxSize().padding(padding),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                // Scrollable so the Send-flow toggle and Generate/Import CTAs are
+                // always reachable — a fillMaxSize empty state in a fixed Column
+                // used to swallow all height and collapse everything below it.
+                .verticalScroll(rememberScrollState()),
         ) {
             SectionHeader("Your keys")
             if (settings.p2pkKeys.isEmpty()) {
                 EmptyState(
-                    icon = Icons.Outlined.ContentCopy,
+                    icon = Icons.Outlined.VpnKey,
                     title = "No P2PK keys yet",
                     supporting = "Generate a key to lock ecash you receive to it.",
+                    modifier = Modifier.padding(vertical = CashuTheme.spacing.page),
                 )
             } else {
                 Column(modifier = Modifier.fillMaxWidth()) {
@@ -122,6 +131,7 @@ fun P2PKScreen(
                     onClick = { showImport = true },
                 )
             }
+            Spacer(Modifier.height(CashuTheme.spacing.section))
         }
     }
 

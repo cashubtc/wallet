@@ -42,7 +42,7 @@ interface CdkWalletGateway {
     suspend fun createMeltQuote(request: String, amountSats: Long? = null, preferredMintURL: String? = null): MeltQuoteInfo
     suspend fun listMeltQuotes(): List<MeltQuoteInfo>
     suspend fun meltTokens(quoteId: String, mintUrl: String? = null): MeltPaymentResult
-    suspend fun sendEcashToken(amount: Long, memo: String?, p2pkPubkey: String?, mintUrl: String, unit: String = "sat"): SendTokenResult
+    suspend fun sendEcashToken(amount: Long, memo: String?, p2pkPubkey: String?, mintUrl: String, unit: String = "sat", p2pkSigningKeys: List<String> = emptyList()): SendTokenResult
     suspend fun receiveEcashToken(tokenString: String, p2pkSigningKeys: List<String> = emptyList()): Long
     suspend fun calculateReceiveFee(tokenString: String): Long
     suspend fun checkTokenSpendable(token: String, mintUrl: String): Boolean

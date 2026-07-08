@@ -344,7 +344,16 @@ class WalletManager(
         val selectedMint = mintUrl ?: mutableState.value.activeMint?.url ?: throw IllegalStateException("No active mint.")
         val normalizedP2PKPubkey = SettingsManager.normalizeP2PKPublicKeyForSend(p2pkPubkey)
         return withLoadingResult {
-            val result = gateway.sendEcashToken(amount, memo, normalizedP2PKPubkey, selectedMint, unit)
+            val result = gateway.sendEcashToken(
+                amount,
+                memo,
+                normalizedP2PKPubkey,
+                selectedMint,
+                unit,
+                // Full signing set so proofs already locked to our keys can be
+                // swapped into the outgoing token (iOS TokenService parity).
+                settingsManager.allP2PKSigningKeyHexes(),
+            )
             val pending = PendingToken(
                 tokenId = UUID.randomUUID().toString(),
                 token = result.token,
