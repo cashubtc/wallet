@@ -143,15 +143,13 @@ class UITestBase: XCTestCase {
         return button
     }
 
-    func tapTab(
+    func waitForSelectedTab(
         _ title: String,
         timeout: TimeInterval = 5,
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
         let button = tabButton(title, timeout: timeout, file: file, line: line)
-        button.tap()
-
         let selected = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "isSelected == true"),
             object: button
@@ -164,5 +162,16 @@ class UITestBase: XCTestCase {
             file: file,
             line: line
         )
+    }
+
+    func tapTab(
+        _ title: String,
+        timeout: TimeInterval = 5,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let button = tabButton(title, timeout: timeout, file: file, line: line)
+        button.tap()
+        waitForSelectedTab(title, timeout: timeout, file: file, line: line)
     }
 }

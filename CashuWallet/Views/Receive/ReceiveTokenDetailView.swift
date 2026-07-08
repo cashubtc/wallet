@@ -4,6 +4,15 @@ import Cdk
 struct ReceiveTokenDetailView: View {
     let tokenString: String
     var onComplete: (() -> Void)? = nil
+    /// Custom redeem path. When set it replaces `walletManager.receiveTokens`
+    /// on the Receive tap (the NUT-18 approval flow claims through the
+    /// listener so the payment stays linked to its Cashu Request). The owner
+    /// of the closure also owns the received-toast notification.
+    var claim: (() async throws -> UInt64)? = nil
+    /// Replaces the "Receive Later" secondary action when set — approval-flow
+    /// payments can't be parked for later, only claimed or declined.
+    var secondaryActionTitle: String? = nil
+    var onSecondaryAction: (() -> Void)? = nil
     @EnvironmentObject var walletManager: WalletManager
     @Environment(\.dismiss) var dismiss
     @ObservedObject private var settings = SettingsManager.shared
@@ -33,9 +42,18 @@ struct ReceiveTokenDetailView: View {
     /// side (`SendView.paymentPhase`).
     @State private var phase: PaymentStatusView.Phase?
 
-    init(tokenString: String, onComplete: (() -> Void)? = nil) {
+    init(
+        tokenString: String,
+        onComplete: (() -> Void)? = nil,
+        claim: (() async throws -> UInt64)? = nil,
+        secondaryActionTitle: String? = nil,
+        onSecondaryAction: (() -> Void)? = nil
+    ) {
         self.tokenString = tokenString
         self.onComplete = onComplete
+        self.claim = claim
+        self.secondaryActionTitle = secondaryActionTitle
+        self.onSecondaryAction = onSecondaryAction
         // Parse the amount eagerly so the hero starts at the token's value on
         // frame 1. Token.decode is a pure Cdk call (no wallet/settings env), so
         // this is safe in init. Deriving it here avoids the 0 → N flip that
@@ -184,10 +202,18 @@ struct ReceiveTokenDetailView: View {
                 .glassButton()
                 .disabled(!tokenLockedToKnownKey)
 
-                Button(action: receiveLater) {
-                    Text("Receive Later")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                if let secondaryActionTitle, let onSecondaryAction {
+                    Button(action: onSecondaryAction) {
+                        Text(secondaryActionTitle)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    Button(action: receiveLater) {
+                        Text("Receive Later")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
             .padding(.horizontal)
@@ -362,7 +388,12 @@ struct ReceiveTokenDetailView: View {
             // isn't. Not a fake delay: the redeem itself hits the mint.
             async let minHold: Void = Task.sleep(nanoseconds: 500_000_000)
             do {
-                let receivedAmount = try await walletManager.receiveTokens(tokenString: tokenString)
+                let receivedAmount: UInt64
+                if let claim {
+                    receivedAmount = try await claim()
+                } else {
+                    receivedAmount = try await walletManager.receiveTokens(tokenString: tokenString)
+                }
                 try? await minHold
                 await MainActor.run {
                     // CDK returns the net amount credited; the difference to the
@@ -372,11 +403,16 @@ struct ReceiveTokenDetailView: View {
                     // Post the home-screen receipt toast (seen after Done), then
                     // morph the spinner into the shared full-screen success. It
                     // owns the success haptic on the transition, so don't buzz here.
-                    NotificationCenter.default.post(
-                        name: .cashuTokenReceived,
-                        object: nil,
-                        userInfo: ["amount": receivedAmount, "fee": paidFee, "unit": tokenUnit]
-                    )
+
+                    // A custom claim path posts its own notification, so don't
+                    // double up here.
+                    if claim == nil {
+                        NotificationCenter.default.post(
+                            name: .cashuTokenReceived,
+                            object: nil,
+                            userInfo: ["amount": receivedAmount, "fee": paidFee, "unit": tokenUnit]
+                        )
+                    }
                     withAnimation(.smooth(duration: 0.3)) { phase = .success }
                 }
             } catch {
@@ -404,10 +440,14 @@ struct ReceiveTokenDetailView: View {
             tokenId: UUID().uuidString,
             token: tokenString,
             amount: tokenAmount,
+            unit: tokenUnit,
             date: Date(),
-            mintUrl: mintUrl
+            mintUrl: mintUrl,
+            memo: decodedToken?.memo()
         )
         walletManager.savePendingReceiveToken(pendingReceive)
+        // Rebuild History so the parked token shows as a claimable row right away.
+        Task { await walletManager.loadTransactions() }
         if let onComplete = onComplete {
             onComplete()
         } else {

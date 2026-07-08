@@ -36,7 +36,7 @@ struct TransactionAmountColumn: View {
     }
 
     private var showFiat: Bool {
-        settings.showFiatBalance && priceService.btcPriceUSD > 0
+        isSatUnit && settings.showFiatBalance && priceService.btcPriceUSD > 0
     }
 
     // Two-state ledger: pending reads muted, everything settled reads
@@ -52,9 +52,23 @@ struct TransactionAmountColumn: View {
     // `.primary` colour arrive together on settlement. See DESIGN.md — The
     // Quiet Pending Rule.
     private var formattedAmount: String {
-        let value = settings.formatAmountShort(transaction.amount)
+        let value = nativeAmount
         guard transaction.status != .pending else { return value }
         let prefix = transaction.type == .incoming ? "+" : "−"
         return "\(prefix)\(value)"
+    }
+
+    private var isSatUnit: Bool {
+        transaction.unit.lowercased() == "sat"
+    }
+
+    private var nativeAmount: String {
+        if isSatUnit {
+            return settings.formatAmountShort(transaction.amount)
+        }
+        return CurrencyAmount(
+            value: transaction.amount,
+            currency: CurrencyRegistry.currency(forMintUnit: transaction.unit)
+        ).formatted()
     }
 }

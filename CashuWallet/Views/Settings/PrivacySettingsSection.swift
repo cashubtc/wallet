@@ -30,6 +30,30 @@ struct PrivacySettingsSection: View {
                     .padding(.horizontal, 4)
                     .padding(.vertical, 14)
 
+                Toggle(isOn: $settings.enablePaymentRequests) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Listen for payment requests")
+                        Text("Receives ecash sent to your Nostr key while the app is open.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.horizontal, 4)
+                .padding(.vertical, 14)
+
+                Toggle(isOn: $settings.receivePaymentRequestsAutomatically) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Claim received ecash automatically")
+                        Text("Off asks you to confirm each incoming payment before it's claimed.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.horizontal, 4)
+                .padding(.vertical, 14)
+                .disabled(!settings.enablePaymentRequests)
+                .opacity(settings.enablePaymentRequests ? 1.0 : 0.5)
+
                 Toggle(isOn: $settings.sentryEnabled) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Send anonymous crash reports")
