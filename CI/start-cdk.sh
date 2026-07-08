@@ -37,7 +37,7 @@ echo "✅ CDK started (PID: $MINT_PID)"
 echo "📝 Log: $LOG_FILE"
 
 # Wait for mint to be ready
-PORT=$(grep '^port' "${WORK_DIR}/config.toml" 2>/dev/null | head -1 | sed 's/.*= *//')
+PORT=$(grep '^listen_port' "${WORK_DIR}/config.toml" 2>/dev/null | head -1 | sed 's/.*= *//')
 PORT=${PORT:-3339}
 
 echo "⏳ Waiting for mint to be ready on port ${PORT}..."

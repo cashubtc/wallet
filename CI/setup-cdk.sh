@@ -15,6 +15,7 @@ WORK_DIR="${SCRIPT_DIR}/.cdk-workdir"
 echo "🔧 Setting up CDK mint (v${CDK_VERSION}) on port ${PORT}..."
 
 mkdir -p "$BIN_DIR"
+MINTD_BIN="${BIN_DIR}/cdk-mintd"
 
 # Detect platform & arch
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
@@ -26,14 +27,16 @@ case "${ARCH}" in
     *)       echo "❌ Unsupported arch: ${ARCH}"; exit 1 ;;
 esac
 
-if [ "$OS" = "darwin" ]; then
+if [ -x "$MINTD_BIN" ]; then
+    echo "✅ cdk-mintd already exists at ${MINTD_BIN}"
+elif [ "$OS" = "darwin" ]; then
     echo "⚠️  Prebuilt binary v${CDK_VERSION} is Linux-only."
     echo "   macOS detected (${ARCH}). Building from source with cargo..."
 
     cargo install --git https://github.com/cashubtc/cdk --tag "v${CDK_VERSION}" --root "${BIN_DIR}/.cargo" cdk-mintd 2>&1
 
     # Move binary to expected location and clean up
-    mv "${BIN_DIR}/.cargo/bin/cdk-mintd" "${BIN_DIR}/cdk-mintd"
+    mv "${BIN_DIR}/.cargo/bin/cdk-mintd" "$MINTD_BIN"
     rm -rf "${BIN_DIR}/.cargo"
 
     echo "✅ Built cdk-mintd v${CDK_VERSION} from source"
@@ -44,41 +47,68 @@ else
     CHECKSUM_URL="https://github.com/cashubtc/cdk/releases/download/v${CDK_VERSION}/SHA256SUMS"
 
     echo "📥 Downloading ${ASSET_NAME}..."
-    curl -fsSL -o "${BIN_DIR}/cdk-mintd" "$DOWNLOAD_URL"
+    curl -fsSL -o "$MINTD_BIN" "$DOWNLOAD_URL"
     curl -fsSL -o "${BIN_DIR}/SHA256SUMS" "$CHECKSUM_URL"
 
     (cd "$BIN_DIR" && sha256sum -c SHA256SUMS --ignore-missing)
     rm -f "${BIN_DIR}/SHA256SUMS"
-    chmod +x "${BIN_DIR}/cdk-mintd"
+    chmod +x "$MINTD_BIN"
 
-    echo "✅ cdk-mintd binary ready at ${BIN_DIR}/cdk-mintd"
+    echo "✅ cdk-mintd binary ready at ${MINTD_BIN}"
 fi
 
 # Create work directory with config
 mkdir -p "$WORK_DIR"
+SEED_FILE="${WORK_DIR}/mint-seed"
+
+if [ ! -s "$SEED_FILE" ]; then
+    echo "🔐 Generating local-only CDK mint seed..."
+    if command -v openssl >/dev/null 2>&1; then
+        openssl rand -hex 32 > "$SEED_FILE"
+    else
+        od -An -N32 -tx1 /dev/urandom | tr -d ' \n' > "$SEED_FILE"
+    fi
+    chmod 600 "$SEED_FILE"
+fi
+
+MINT_SEED="$(cat "$SEED_FILE")"
 
 cat > "${WORK_DIR}/config.toml" << EOF
 # CDK mint config for integration tests (FakeWallet backend)
+[info]
+url = "http://127.0.0.1:${PORT}"
+listen_host = "127.0.0.1"
+listen_port = ${PORT}
+enable_info_page = true
+seed = "${MINT_SEED}"
+
 [mint_info]
 name = "CDK Test Mint"
 description = "Integration-test mint with FakeWallet backend"
-pubkey = ""
-version = "cdk-integration-test"
-contact = []
-
-[listen]
-host = "0.0.0.0"
-port = ${PORT}
 
 [database]
 engine = "sqlite"
-directory = ".cdk-workdir"
 
 [ln]
 ln_backend = "fakewallet"
+unit = "sat"
+min_mint = 1
+max_mint = 500000
+min_melt = 1
+max_melt = 500000
 
-[fakewallet]
-seed = "00000000000000000000000000000000"
+[onchain]
+onchain_backend = "fakewallet"
+min_mint = 1
+max_mint = 500000
+min_melt = 1
+max_melt = 500000
+
+[fake_wallet]
+fee_percent = 0.0
+reserve_fee_min = 0
+min_delay_time = 0
+max_delay_time = 1
 EOF
 
 echo "✅ Config written to ${WORK_DIR}/config.toml"

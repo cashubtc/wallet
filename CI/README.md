@@ -132,24 +132,38 @@ Set via environment variables in `start-nutshell.sh`:
 
 ```bash
 MINT_LISTEN_PORT=3338
-MINT_DATABASE=memory
-MINT_LIGHTNING_BACKEND=FakeWallet
-FAKE_WALLET_SECRET="toTheMoon"
+MINT_DATABASE=CI/.nutshell-workdir
+MINT_BACKEND_BOLT11_SAT=FakeWallet
+MINT_INPUT_FEE_PPK=0
 ```
 
 ### CDK Config
 
-Written to `CI/.cdk-workdir/config.toml` by `setup-cdk.sh`:
+Written to `CI/.cdk-workdir/config.toml` by `setup-cdk.sh`. The script also creates an ignored local mint seed file in the same work directory when one does not already exist.
 
 ```toml
-[lightning_backend]
-name = "fakewallet"
+[info]
+url = "http://127.0.0.1:3339"
+listen_host = "127.0.0.1"
+listen_port = 3339
 
-[fakewallet]
-seed = "0000000000000000000000000000000000000000000000000000000000000001"
+[mint_info]
+name = "CDK Test Mint"
+description = "Integration-test mint with FakeWallet backend"
 
 [database]
 engine = "sqlite"
+
+[ln]
+ln_backend = "fakewallet"
+unit = "sat"
+
+[onchain]
+onchain_backend = "fakewallet"
+
+[fake_wallet]
+fee_percent = 0.0
+reserve_fee_min = 0
 ```
 
 ## GitHub Actions Workflow
