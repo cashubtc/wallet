@@ -30,25 +30,45 @@ like a port, make the Android-native choice instead.
 ### Motion — M3 Expressive springs
 - `MaterialExpressiveTheme` + `MotionScheme.expressive()`: spring physics drive
   component motion. New motion should use `spring(...)` specs (or motion-scheme
-  tokens), not hand-tuned tweens.
+  tokens), not hand-tuned tweens. Choreography constants that are literal iOS
+  copies (70ms stagger step, 1100ms waiting-pulse, 900ms spinner period) live
+  in `ui/theme/Motion.kt` (`CashuMotion`).
+- **Shared motion primitives** (`ui/components/`): `SpinnerRing` (Canvas port
+  of the iOS trimmed-arc payment spinner; reduce-motion falls back to
+  `CircularProgressIndicator`), `IconSwap` (glyph replacement ≙ iOS
+  `.symbolEffect(.replace)`), `rememberBounceScale` (one-shot bounce ≙
+  `.symbolEffect(.bounce)`), `Modifier.materializeBlur()` (blur-to-sharp
+  success materialize, API 31+ only), `SkeletonValue` (redacted-style
+  fill-in for pending quote values, no shimmer). Reuse these instead of
+  re-deriving per screen.
 - **Navigation**: shared-axis X (slide + fade) for push/pop; fade-through for
   tab switches (`CashuNavHost.kt`). Predictive back is enabled
   (`android:enableOnBackInvokedCallback`).
 - **No hard cuts**: full-screen overlays (scanner, contactless) slide over the
   shell (`CashuApp.kt`); the bottom bar animates away on push
   (`WalletScaffold.kt`); the payment terminal fades/settles in
-  (`PaymentStatusScreen.kt`).
+  (`PaymentStatusScreen.kt`). The success check carries the one celebration
+  beat (bounce + materialize); failures stay deliberately still.
 - **Touch responds physically**: CTAs and number-pad keys spring-scale on press
-  (`Buttons.kt`, `NumberPad.kt`).
-- Lists animate placement (`Modifier.animateItem()`), reveals expand/shrink,
-  page dots stretch into pills.
-- **Reduce-motion**: decorative loops (waiting pulses) render their resting
-  state when system animations are off (`ui/theme/Motion.kt`
-  `rememberReducedMotion()`).
+  (`Buttons.kt`, `NumberPad.kt`); text buttons dim to 0.6 while pressed
+  (iOS `TextLinkButtonStyle`).
+- Lists animate placement (`Modifier.animateItem()` — History, Home recent,
+  Mint discovery), reveals expand/shrink, page dots stretch into pills.
+- **Numbers are sacred**: `AmountText` digit slots are keyed by position from
+  the *right* end of the string, so `999 → 1,000` rolls only the digits that
+  changed (never a full-row re-animate); pass `value =` for a single odometer
+  direction. Home's received-delta beat swaps into the fiat slot for 2.5s
+  with the sanctioned celebration spring (`BalanceDisplay`).
+- **Reduce-motion**: decorative loops (waiting pulses, spinner ring, bounces,
+  cascades) render their resting state when system animations are off.
+  `rememberReducedMotion()` is reactive — it observes
+  `ANIMATOR_DURATION_SCALE` and updates mid-session.
 
 ### Components — expressive first
 - Loaders are the expressive `LoadingIndicator` / `LinearWavyProgressIndicator`
-  — never the classic circular/linear spinners.
+  — never the classic circular/linear spinners. One carve-out: the payment
+  terminal uses the custom `SpinnerRing` (cross-platform brand parity with the
+  iOS pay-flow spinner).
 - Tab screens use `LargeFlexibleTopAppBar` (big collapsing titles).
 - Settings rows are M3 `ListItem`.
 - Button hierarchy: filled `Button` (primary action) → `FilledTonalButton`
@@ -59,8 +79,9 @@ like a port, make the Android-native choice instead.
   confirmation, destructive action tinted `error`.
 
 ### Layout invariants (kept from the structural pass)
-- Measure, never assume, overlay heights (Home pinned header uses
-  `onSizeChanged`; the list inset and fade mask derive from the measured px).
+- Measure, never assume, overlay heights (Home pinned header is pre-measured
+  via `SubcomposeLayout`, so the first frame lays out with the correct list
+  inset and fade mask — no hide-first-frame hacks).
 - Consume the shell scaffold's window insets exactly once
   (`.consumeWindowInsets(contentPadding)` on every tab).
 - Bottom inset spacers use `windowInsetsBottomHeight(WindowInsets.navigationBars)`.
@@ -91,8 +112,11 @@ contactless, onboarding. See git history for the parity passes.
    coordinator flow and restyle to the new charter.
 5. **Restore-over-units hardening** — loop restore across `mint.units` (do with
    iOS together).
-6. **Home received-delta beat** — transient `+amount` beat + success haptic on
-   background receives (needs a receive-event signal from WalletManager).
+6. **Home received-delta beat** — ✅ visual beat shipped (`BalanceDisplay`
+   `receivedDelta`, driven by a balance-rise watch in `HomeScreen`). Still
+   open: the success haptic for background receives, which needs a real
+   receive-event signal from WalletManager to avoid double-buzzing in-flow
+   receives.
 7. **Non-sat History** — needs a `unit` field on `WalletTransaction` (shared
    deferral with iOS).
 8. **Shared-element transitions** — transaction row → detail, QR card flows

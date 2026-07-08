@@ -1,5 +1,8 @@
 package org.cashu.wallet.ui.settings
 
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -209,7 +212,13 @@ fun NostrScreen(
                     ),
                 )
             } else {
-                Column(modifier = Modifier.fillMaxWidth()) {
+                // Relay add/remove animates the list resize (iOS
+                // .animation(value: settings.nostrRelays) parity).
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .animateContentSize(spring(stiffness = Spring.StiffnessMediumLow)),
+                ) {
                     settings.nostrRelays.forEachIndexed { index, relay ->
                         Row(
                             modifier = Modifier

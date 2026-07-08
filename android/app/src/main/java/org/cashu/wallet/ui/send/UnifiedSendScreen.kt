@@ -1,6 +1,12 @@
 package org.cashu.wallet.ui.send
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -558,21 +564,29 @@ private fun InputFace(
             singleLine = false,
             maxLines = 4,
             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None),
-            trailingIcon = when {
-                destination.isNotBlank() -> {
-                    {
-                        IconButton(onClick = onClear) {
-                            Icon(Icons.Outlined.Cancel, contentDescription = "Clear")
+            // Deliberate divergence from the iOS ClipboardPaymentChip: Android
+            // surfaces paste as an M3 trailing affordance. The Paste ↔ Clear
+            // swap cross-fades (no hard cut) as input state changes.
+            trailingIcon = if (destination.isNotBlank() || clipboardHasText) {
+                {
+                    AnimatedContent(
+                        targetState = destination.isNotBlank(),
+                        transitionSpec = {
+                            fadeIn(spring(stiffness = Spring.StiffnessMedium))
+                                .togetherWith(fadeOut(spring(stiffness = Spring.StiffnessMedium)))
+                        },
+                        label = "input-trailing",
+                    ) { hasInput ->
+                        if (hasInput) {
+                            IconButton(onClick = onClear) {
+                                Icon(Icons.Outlined.Cancel, contentDescription = "Clear")
+                            }
+                        } else {
+                            GhostButton(text = "Paste", onClick = onPaste)
                         }
                     }
                 }
-                clipboardHasText -> {
-                    {
-                        GhostButton(text = "Paste", onClick = onPaste)
-                    }
-                }
-                else -> null
-            },
+            } else null,
         )
         if (inputHint != null) {
             Spacer(Modifier.height(CashuTheme.spacing.default))
@@ -833,16 +847,21 @@ private fun ConfirmFace(
                     )
                     CanvasDivider(leadingInset = 16.dp)
                 }
+                // Fee/total land as a skeleton fill-in while the melt quote is
+                // in flight (iOS .redacted confirm rows) — no "…" flash.
+                val quoteLoading = quote == null && quoteError == null
                 InspectorRow(
                     label = "Network fee",
-                    value = quote?.let { "${it.feeReserve} sat" } ?: "…",
+                    value = quote?.let { "${it.feeReserve} sat" }.orEmpty(),
                     valueMonospaced = true,
+                    loading = quoteLoading,
                 )
                 CanvasDivider(leadingInset = 16.dp)
                 InspectorRow(
                     label = "Total",
-                    value = quote?.let { "${it.totalAmount} sat" } ?: "…",
+                    value = quote?.let { "${it.totalAmount} sat" }.orEmpty(),
                     valueMonospaced = true,
+                    loading = quoteLoading,
                 )
             } else {
                 InspectorRow(

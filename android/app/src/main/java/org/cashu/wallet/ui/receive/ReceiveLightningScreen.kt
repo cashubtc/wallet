@@ -81,6 +81,7 @@ import org.cashu.wallet.Models.MintQuoteState
 import org.cashu.wallet.Models.PaymentMethodKind
 import org.cashu.wallet.ui.components.AmountText
 import org.cashu.wallet.ui.components.GhostButton
+import org.cashu.wallet.ui.components.IconSwap
 import org.cashu.wallet.ui.components.InlineNotice
 import org.cashu.wallet.ui.components.MintAvatar
 import org.cashu.wallet.ui.components.MintPickerSheet
@@ -188,8 +189,10 @@ fun ReceiveLightningScreen(
                     if (supportedMethods.size > 1) {
                         var methodMenuOpen by remember { mutableStateOf(false) }
                         IconButton(onClick = { methodMenuOpen = true }) {
-                            Icon(
-                                imageVector = method.menuIcon,
+                            // Animated glyph replacement on method switch
+                            // (iOS .contentTransition(.symbolEffect(.replace))).
+                            IconSwap(
+                                icon = method.menuIcon,
                                 contentDescription = "Payment method",
                             )
                         }

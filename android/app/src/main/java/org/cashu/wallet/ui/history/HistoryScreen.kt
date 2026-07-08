@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.outlined.Check
@@ -78,6 +79,7 @@ import org.cashu.wallet.ui.components.CashuRequestRow
 import org.cashu.wallet.ui.components.requestRowAmount
 import org.cashu.wallet.ui.components.CashuSearchBar
 import org.cashu.wallet.ui.components.EmptyState
+import org.cashu.wallet.ui.components.IconSwap
 import org.cashu.wallet.ui.components.SectionHeader
 import org.cashu.wallet.ui.components.TransactionRow
 import org.cashu.wallet.ui.components.TransactionRowModel
@@ -153,8 +155,9 @@ fun HistoryScreen(
                     }
                     Box {
                         IconButton(onClick = { filterMenuOpen = true }) {
-                            Icon(
-                                imageVector = if (filter == HistoryFilter.All)
+                            // Outlined ↔ filled glyph swap animates (symbol-replace parity).
+                            IconSwap(
+                                icon = if (filter == HistoryFilter.All)
                                     Icons.Outlined.FilterList else Icons.Filled.FilterList,
                                 contentDescription = "Filter",
                             )
@@ -233,7 +236,17 @@ fun HistoryScreen(
                             .fillMaxWidth(),
                     )
                 } else {
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    val listState = rememberLazyListState()
+                    // Filter switches snap the list back to the top with motion
+                    // (iOS: withAnimation(.snappy) { proxy.scrollTo(first, .top) }).
+                    LaunchedEffect(filter) {
+                        if (listState.firstVisibleItemIndex > 0 ||
+                            listState.firstVisibleItemScrollOffset > 0
+                        ) {
+                            listState.animateScrollToItem(0)
+                        }
+                    }
+                    LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
                         sections.forEach { section ->
                             item(key = "header-${section.title}") {
                                 SectionHeader(section.title.uppercase())

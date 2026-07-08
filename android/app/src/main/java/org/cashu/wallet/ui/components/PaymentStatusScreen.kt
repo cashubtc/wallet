@@ -23,8 +23,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -53,8 +51,10 @@ enum class PaymentStatusPhase { Processing, Success, Failure }
 /**
  * The shared full-screen terminal for every pay flow (iOS PaymentStatusView):
  * processing → success/failure on the bare canvas. The glyph slot morphs
- * spinner → 64dp green check / red X with a smooth fade + a single gentle
- * scale-in (0.9 → 1, the one celebration beat — nothing else springs).
+ * spinner (custom [SpinnerRing]) → 64dp green check / red X with a smooth
+ * fade + scale-in from 0.9. The success check carries the one celebration
+ * beat — a single bounce and a blur-to-sharp materialize; nothing else
+ * springs, and failure stays deliberately still.
  * Success/failure require an explicit Done tap; processing shows no actions.
  * Terminal states may pass [rows] (InspectorRow metadata — Amount/Fee/Mint,
  * the iOS success detail rows) rendered under the title block.
@@ -132,16 +132,31 @@ fun PaymentStatusScreen(
                     contentAlignment = Alignment.Center,
                 ) {
                     when (current) {
-                        PaymentStatusPhase.Processing -> LoadingIndicator(
-                            modifier = Modifier.size(SpinnerSize),
+                        // Custom ring (iOS SpinnerRing port) — the shared
+                        // processing loop across every pay flow.
+                        PaymentStatusPhase.Processing -> SpinnerRing(
+                            size = SpinnerSize,
                             color = MaterialTheme.colorScheme.primary,
                         )
-                        PaymentStatusPhase.Success -> Icon(
-                            imageVector = Icons.Filled.CheckCircle,
-                            contentDescription = "Success",
-                            tint = CashuTheme.colors.received,
-                            modifier = Modifier.size(StatusGlyphSize),
-                        )
+                        // The one celebration beat: the check bounces once and
+                        // materializes blur-to-sharp (iOS .bounce + materializeBlur);
+                        // everything else stays de-sprung.
+                        PaymentStatusPhase.Success -> {
+                            val bounce = rememberBounceScale(trigger = current, bounceOnEntry = true)
+                            Icon(
+                                imageVector = Icons.Filled.CheckCircle,
+                                contentDescription = "Success",
+                                tint = CashuTheme.colors.received,
+                                modifier = Modifier
+                                    .size(StatusGlyphSize)
+                                    .graphicsLayer {
+                                        scaleX = bounce
+                                        scaleY = bounce
+                                    }
+                                    .materializeBlur(),
+                            )
+                        }
+                        // Failure stays still — deliberately no bounce (iOS parity).
                         PaymentStatusPhase.Failure -> Icon(
                             imageVector = Icons.Filled.Cancel,
                             contentDescription = "Failed",

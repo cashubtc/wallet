@@ -69,6 +69,7 @@ fun TransactionDetailScreen(
     settingsManager: SettingsManager,
     transactionId: String,
     onClose: () -> Unit,
+    onClaimReceiveToken: ((String) -> Unit)? = null,
 ) {
     val walletState by walletManager.state.collectAsState()
     val settings by settingsManager.state.collectAsState()
@@ -179,6 +180,28 @@ fun TransactionDetailScreen(
             if (explorerUrl != null) {
                 Spacer(Modifier.height(CashuTheme.spacing.snug))
                 ExplorerLinkRow(url = explorerUrl, onOpen = { context.openInBrowser(it) })
+            }
+
+            // A saved "Receive later" token is still claimable: surface the
+            // Receive CTA that opens the full-screen claim page (iOS: Home/
+            // History pending rows present ReceiveTokenDetailView).
+            val pendingReceiveToken = transaction.token?.takeIf {
+                transaction.isPendingToken &&
+                    transaction.type == TransactionType.Incoming &&
+                    transaction.status == TransactionStatus.Pending
+            }
+            if (pendingReceiveToken != null && onClaimReceiveToken != null) {
+                Spacer(Modifier.height(CashuTheme.spacing.snug))
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = CashuTheme.spacing.comfortable),
+                ) {
+                    PrimaryButton(
+                        text = "Receive",
+                        onClick = { onClaimReceiveToken(pendingReceiveToken) },
+                    )
+                }
             }
 
             if (copyableContent != null) {

@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import org.cashu.wallet.Core.Bech32
 import org.cashu.wallet.ui.components.CanvasDivider
+import org.cashu.wallet.ui.components.IconSwap
 import org.cashu.wallet.ui.components.PrimaryButton
 import org.cashu.wallet.ui.components.QrCard
 import org.cashu.wallet.ui.theme.CashuTheme
@@ -204,8 +205,8 @@ fun KeyCard(
                 maxLines = 1,
                 overflow = TextOverflow.MiddleEllipsis,
             )
-            Icon(
-                imageVector = if (copied) Icons.Outlined.Check else Icons.Outlined.ContentCopy,
+            IconSwap(
+                icon = if (copied) Icons.Outlined.Check else Icons.Outlined.ContentCopy,
                 contentDescription = "Copy this key",
                 tint = if (copied) CashuTheme.colors.received
                 else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -347,8 +348,8 @@ fun PrivateKeyRevealSheet(
                     )
                     Column(verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.micro)) {
                         IconButton(onClick = { revealed = !revealed }) {
-                            Icon(
-                                imageVector = if (revealed) Icons.Outlined.VisibilityOff
+                            IconSwap(
+                                icon = if (revealed) Icons.Outlined.VisibilityOff
                                 else Icons.Outlined.Visibility,
                                 contentDescription = if (revealed) "Hide key" else "Reveal key",
                             )
@@ -357,8 +358,8 @@ fun PrivateKeyRevealSheet(
                             clipboard.setText(AnnotatedString(nsec))
                             copied = true
                         }) {
-                            Icon(
-                                imageVector = if (copied) Icons.Outlined.Check
+                            IconSwap(
+                                icon = if (copied) Icons.Outlined.Check
                                 else Icons.Outlined.ContentCopy,
                                 contentDescription = "Copy key",
                                 tint = if (copied) CashuTheme.colors.received

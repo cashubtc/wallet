@@ -1,5 +1,12 @@
 package org.cashu.wallet.ui.mints
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,6 +40,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
@@ -46,6 +54,7 @@ import org.cashu.wallet.ui.components.CashuSearchBar
 import org.cashu.wallet.ui.components.EmptyState
 import org.cashu.wallet.ui.components.MintAvatar
 import org.cashu.wallet.ui.components.MintMethodChips
+import org.cashu.wallet.ui.components.rememberBounceScale
 import org.cashu.wallet.ui.theme.CashuTheme
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -133,15 +142,19 @@ fun MintDiscoveryContent(
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
                     items(filtered, key = { it.url }) { mint ->
                         val isConfigured = mint.url in configuredUrls
-                        DiscoveryRow(
-                            mint = mint,
-                            isConfigured = isConfigured,
-                            isBusy = walletState.isLoading,
-                            onAdd = {
-                                scope.launch { runCatching { walletManager.addMint(mint.url) } }
-                            },
-                        )
-                        if (mint != filtered.last()) CanvasDivider(leadingInset = 64.dp)
+                        // Spring-animated placement as mints arrive over Nostr /
+                        // move between states (iOS .animation on the List).
+                        Column(modifier = Modifier.animateItem()) {
+                            DiscoveryRow(
+                                mint = mint,
+                                isConfigured = isConfigured,
+                                isBusy = walletState.isLoading,
+                                onAdd = {
+                                    scope.launch { runCatching { walletManager.addMint(mint.url) } }
+                                },
+                            )
+                            if (mint != filtered.last()) CanvasDivider(leadingInset = 64.dp)
+                        }
                     }
                 }
             }
@@ -186,30 +199,55 @@ private fun DiscoveryRow(
                 MintMethodChips(mint = mint)
             }
         }
-        if (isConfigured) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.micro),
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.Check,
-                    contentDescription = null,
-                    tint = CashuTheme.colors.received,
-                    modifier = Modifier.size(CashuTheme.spacing.loose),
-                )
-                Text(
-                    text = "Added",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = CashuTheme.colors.received,
-                )
-            }
-        } else {
-            FilledTonalButton(
-                onClick = onAdd,
-                enabled = !isBusy,
-                shape = MaterialTheme.shapes.extraLarge,
-            ) {
-                Text("Add")
+        // Add ↔ Added swaps with a gentle grow-in; the check bounces once on
+        // arrival (iOS .symbolEffect(.bounce, value: added) parity).
+        AnimatedContent(
+            targetState = isConfigured,
+            transitionSpec = {
+                (
+                    fadeIn(spring(stiffness = Spring.StiffnessMedium)) +
+                        scaleIn(
+                            animationSpec = spring(
+                                dampingRatio = 0.7f,
+                                stiffness = Spring.StiffnessMediumLow,
+                            ),
+                            initialScale = 0.9f,
+                        )
+                    ).togetherWith(fadeOut(spring(stiffness = Spring.StiffnessMedium)))
+            },
+            label = "discovery-trailing",
+        ) { configured ->
+            if (configured) {
+                val bounce = rememberBounceScale(trigger = configured, bounceOnEntry = true)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.micro),
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Check,
+                        contentDescription = null,
+                        tint = CashuTheme.colors.received,
+                        modifier = Modifier
+                            .size(CashuTheme.spacing.loose)
+                            .graphicsLayer {
+                                scaleX = bounce
+                                scaleY = bounce
+                            },
+                    )
+                    Text(
+                        text = "Added",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = CashuTheme.colors.received,
+                    )
+                }
+            } else {
+                FilledTonalButton(
+                    onClick = onAdd,
+                    enabled = !isBusy,
+                    shape = MaterialTheme.shapes.extraLarge,
+                ) {
+                    Text("Add")
+                }
             }
         }
     }

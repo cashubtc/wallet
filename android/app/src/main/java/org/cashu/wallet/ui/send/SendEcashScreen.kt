@@ -3,6 +3,7 @@ package org.cashu.wallet.ui.send
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
@@ -468,6 +469,18 @@ private fun InputFace(
         )
 
         Spacer(Modifier.height(CashuTheme.spacing.snug))
+        // iOS AmountEntryView: the amount dims primary → secondary while the
+        // requested amount exceeds the spendable balance.
+        val insufficient = !balanceLoading && amountValue > 0 && amountValue > mintBalance
+        val amountColor by animateColorAsState(
+            targetValue = if (insufficient) {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            },
+            animationSpec = spring(stiffness = Spring.StiffnessMedium),
+            label = "amount-color",
+        )
         AmountText(
             text = when {
                 amount.isNotEmpty() -> amount
@@ -475,12 +488,34 @@ private fun InputFace(
                 else -> "0"
             },
             style = MaterialTheme.typography.displayMedium.withMonoDigits(),
+            color = amountColor,
         )
         Text(
             text = unitLabel,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        // Fade+scale warning (iOS .transition(.opacity.combined(with: .scale))),
+        // reduce-motion collapses to a plain fade.
+        val reduceMotion = rememberReducedMotion()
+        AnimatedVisibility(
+            visible = insufficient,
+            enter = if (reduceMotion) {
+                fadeIn(spring(stiffness = Spring.StiffnessMedium))
+            } else {
+                fadeIn(spring(stiffness = Spring.StiffnessMedium)) + scaleIn(
+                    animationSpec = spring(stiffness = Spring.StiffnessMedium),
+                    initialScale = 0.95f,
+                )
+            },
+            exit = fadeOut(spring(stiffness = Spring.StiffnessMedium)),
+        ) {
+            Text(
+                text = "Insufficient balance",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
 
         CashuTextField(
             value = memo,

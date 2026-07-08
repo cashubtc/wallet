@@ -7,7 +7,6 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -38,7 +37,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -50,9 +48,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
 import org.cashu.wallet.Core.AmountDisplayPrimary
 import org.cashu.wallet.Core.AmountFormatter
 import org.cashu.wallet.Core.CashuRequestStore
@@ -75,7 +73,6 @@ import org.cashu.wallet.ui.components.EmptyState
 import org.cashu.wallet.ui.components.GhostButton
 import org.cashu.wallet.ui.components.MintChip
 import org.cashu.wallet.ui.components.PrimaryButton
-import org.cashu.wallet.ui.components.SecondaryButton
 import org.cashu.wallet.ui.components.SectionHeader
 import org.cashu.wallet.ui.components.TransactionRow
 import org.cashu.wallet.ui.components.TransactionRowModel
@@ -83,6 +80,9 @@ import org.cashu.wallet.ui.components.formatRelativeTimestamp
 import org.cashu.wallet.ui.theme.CashuTheme
 
 private const val RECENT_LIMIT = 5
+
+// iOS MainWalletView: the received-delta beat auto-dismisses after 2.5s.
+private const val RECEIVED_DELTA_DISMISS_MS = 2_500L
 
 @Composable
 fun HomeScreen(
@@ -124,183 +124,222 @@ fun HomeScreen(
         unifiedRecent(walletState.transactions, requestState.requests, RECENT_LIMIT)
     }
 
-    val density = LocalDensity.current
+    // Received-delta beat (iOS MainWalletView "payment-received celebration"):
+    // when the balance rises while Home is composed (receives land behind the
+    // flow sheet), a transient monochrome "+N" takes over the fiat slot for
+    // 2.5s, then fiat fades back. Rapid receives coalesce last-write-wins (the
+    // LaunchedEffect restart cancels the prior dismiss timer); a balance drop
+    // clears the beat immediately. Tracking only starts once the wallet is
+    // initialized and idle, so the startup 0 → N load can't fire a spurious
+    // beat (iOS keys this off an explicit token-received notification instead).
+    var lastObservedBalance by remember { mutableStateOf<Long?>(null) }
+    var receivedDelta by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(walletState.balance, walletState.isInitialized, walletState.isLoading) {
+        if (!walletState.isInitialized || walletState.isLoading) return@LaunchedEffect
+        val previous = lastObservedBalance
+        lastObservedBalance = walletState.balance
+        if (previous != null && walletState.balance > previous) {
+            receivedDelta = "+" + formatter.formatSats(
+                walletState.balance - previous,
+                includeUnit = false,
+            )
+            delay(RECEIVED_DELTA_DISMISS_MS)
+            receivedDelta = null
+        } else {
+            receivedDelta = null
+        }
+    }
+
     // iOS parity: MainWalletView measures the pinned header (GeometryReader +
     // PreferenceKey) and derives the scroll inset + fade mask from the measured
-    // height. Mirror that here with onSizeChanged so the list clears the pinned
-    // region in every configuration (fiat line, unit pager, font scale, insets).
-    var pinnedTopPx by remember { mutableIntStateOf(0) }
-    val pinnedTopDp = with(density) { pinnedTopPx.toDp() }
-    val fadeBandPx = with(density) { FADE_BAND_HEIGHT.toPx() }
-
-    BoxWithConstraints(
+    // height. SubcomposeLayout measures the pinned header *before* the list is
+    // composed, so the very first frame lays out with the correct inset — this
+    // replaces the old onSizeChanged + hide-first-frame alpha hack.
+    SubcomposeLayout(
         modifier = Modifier
             .fillMaxSize()
             .padding(contentPadding)
             // The scaffold's contentPadding already carries the status-bar inset;
             // consume it so PinnedTop's statusBarsPadding() can't double-apply.
             .consumeWindowInsets(contentPadding),
-    ) {
-        val viewportHeight = maxHeight
+    ) { constraints ->
+        // Pinned top section (mint chip + balance + triptych), measured first.
+        val pinned = subcompose(HomeSlot.Pinned) {
+            PinnedTop(
+                mintChip = {
+                    MintChip(
+                        activeMint = walletState.activeMint,
+                        mints = walletState.mints,
+                        onSelect = { mint -> walletManager.launch { walletManager.setActiveMint(mint) } },
+                        onManage = onOpenMints,
+                    )
+                },
+                balance = {
+                    val satHero: @Composable () -> Unit = {
+                        BalanceDisplay(
+                            amount = balanceDisplay,
+                            // iOS: tapping the hero toggles the ₿ symbol vs "sat".
+                            onTogglePrimary = {
+                                settingsManager.setUseBitcoinSymbol(!settings.useBitcoinSymbol)
+                            },
+                            // Single odometer direction for all digit rolls
+                            // (iOS .numericText(value:) parity).
+                            value = walletState.balance.toDouble(),
+                            receivedDelta = receivedDelta,
+                        )
+                    }
+                    // Multi-unit pager carve-out: one hero number at a time, only
+                    // when the active mint is multi-unit AND non-sat balance is held.
+                    val showsPager = HomeBalance.showsUnitPager(
+                        activeMintSupportsMultipleUnits = walletState.activeMint?.supportsMultipleUnits == true,
+                        balancesByUnit = walletState.balancesByUnit,
+                    )
+                    if (showsPager) {
+                        UnitBalancePager(
+                            balancesByUnit = walletState.balancesByUnit,
+                            persistedUnit = settings.homeBalanceUnit,
+                            onUnitSelected = settingsManager::setHomeBalanceUnit,
+                            satHero = satHero,
+                        )
+                    } else {
+                        satHero()
+                    }
+                },
+                triptych = {
+                    ActionDuet(
+                        onReceive = { receiveChooserOpen = true },
+                        // Send opens the unified surface directly — no chooser.
+                        onSend = onSend,
+                        receiveEnabled = walletState.activeMint != null,
+                        sendEnabled = walletState.hasAnyBalance,
+                    )
+                },
+                onScan = onScan,
+            )
+        }.first().measure(constraints.copy(minHeight = 0))
+
+        val pinnedTopPx = pinned.height
+        val pinnedTopDp = pinnedTopPx.toDp()
+        val viewportHeight = constraints.maxHeight.toDp()
+
         // Scrolling body sits behind the pinned top with a soft fade-mask at the
         // top edge so rows dissolve into the pinned region as they scroll up,
         // matching the iOS LinearGradient scroll mask.
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer {
-                    compositingStrategy = CompositingStrategy.Offscreen
-                    // Hide the first frame until the pinned header has reported
-                    // its measured height and the inset below is correct.
-                    alpha = if (pinnedTopPx == 0) 0f else 1f
-                }
-                .drawWithCache {
-                    val total = size.height.coerceAtLeast(1f)
-                    val clearEnd = (pinnedTopPx / total).coerceIn(0f, 1f)
-                    val opaqueAt = ((pinnedTopPx + fadeBandPx) / total).coerceIn(0f, 1f)
-                    val brush = Brush.verticalGradient(
-                        0f to Color.Transparent,
-                        clearEnd to Color.Transparent,
-                        opaqueAt to Color.Black,
-                        1f to Color.Black,
-                    )
-                    onDrawWithContent {
-                        drawContent()
-                        drawRect(brush = brush, blendMode = BlendMode.DstIn)
+        val body = subcompose(HomeSlot.Body) {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        compositingStrategy = CompositingStrategy.Offscreen
                     }
-                },
-            contentPadding = PaddingValues(
-                top = pinnedTopDp,
-                bottom = CashuTheme.spacing.section,
-            ),
-        ) {
-            item("section-header") {
-                if (recentItems.isNotEmpty()) {
-                    SectionHeader(text = "Recent")
-                }
-            }
-            if (recentItems.isEmpty()) {
-                item("empty") {
-                    val hasMints = walletState.mints.isNotEmpty()
-                    // iOS: a single quiet tray empty state, centered in the region
-                    // below the pinned header (containerRelativeFrame parity) —
-                    // sized from the measured header, not a hardcoded height.
-                    val emptyHeight = (viewportHeight - pinnedTopDp - CashuTheme.spacing.section)
-                        .coerceAtLeast(EMPTY_STATE_MIN_HEIGHT)
-                    EmptyState(
-                        icon = if (hasMints) Icons.Outlined.Inbox else Icons.Outlined.AccountBalance,
-                        title = if (hasMints) "No Activity Yet" else "Add a mint to get started",
-                        supporting = if (hasMints) "Your recent payments will show up here."
-                        else "Mints custody your ecash. Add one to begin.",
-                        actionLabel = if (!hasMints) "Add mint" else null,
-                        onAction = if (!hasMints) onOpenMints else null,
-                        modifier = Modifier.height(emptyHeight),
-                    )
-                }
-            } else {
-                items(recentItems, key = { it.key }) { item ->
-                    when (item) {
-                        is HomeRecentItem.Tx -> {
-                            val tx = item.transaction
-                            TransactionRow(
-                                model = TransactionRowModel(
-                                    transaction = tx,
-                                    title = TransactionDisplay.title(tx),
-                                    timestamp = formatRelativeTimestamp(tx.dateEpochMillis),
-                                    primaryAmount = formatter.formatWalletSats(
-                                        tx.amount, settings.useBitcoinSymbol,
-                                    ),
-                                    secondaryAmount = if (settings.showFiatBalance && priceState.btcPrice > 0)
-                                        formatter.formatFiat(tx.amount, priceState.btcPrice, settings.bitcoinPriceCurrency)
-                                    else null,
-                                ),
-                                onClick = { onOpenTransaction(tx) },
-                            )
+                    .drawWithCache {
+                        val fadeBandPx = FADE_BAND_HEIGHT.toPx()
+                        val total = size.height.coerceAtLeast(1f)
+                        val clearEnd = (pinnedTopPx / total).coerceIn(0f, 1f)
+                        val opaqueAt = ((pinnedTopPx + fadeBandPx) / total).coerceIn(0f, 1f)
+                        val brush = Brush.verticalGradient(
+                            0f to Color.Transparent,
+                            clearEnd to Color.Transparent,
+                            opaqueAt to Color.Black,
+                            1f to Color.Black,
+                        )
+                        onDrawWithContent {
+                            drawContent()
+                            drawRect(brush = brush, blendMode = BlendMode.DstIn)
                         }
-                        is HomeRecentItem.Req -> {
-                            val req = item.request
-                            CashuRequestRow(
-                                request = req,
-                                timestamp = formatRelativeTimestamp(req.createdAtEpochMillis),
-                                primaryAmountText = requestRowAmount(
-                                    req, formatter, settings.useBitcoinSymbol,
-                                ),
-                                secondaryAmountText = null,
-                                onClick = { onOpenCashuRequest(req) },
-                            )
-                        }
+                    },
+                contentPadding = PaddingValues(
+                    top = pinnedTopDp,
+                    bottom = CashuTheme.spacing.section,
+                ),
+            ) {
+                item("section-header") {
+                    if (recentItems.isNotEmpty()) {
+                        SectionHeader(text = "Recent")
                     }
-                    if (item != recentItems.last()) CanvasDivider()
                 }
-                item("view-all") {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = CashuTheme.spacing.snug),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center,
-                    ) {
-                        // Chevron lives inside the button so the whole affordance
-                        // is one touch target (iOS: text + chevron in one Button).
-                        GhostButton(
-                            text = "View all activity",
-                            onClick = onOpenHistory,
-                            trailingIcon = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                if (recentItems.isEmpty()) {
+                    item("empty") {
+                        val hasMints = walletState.mints.isNotEmpty()
+                        // iOS: a single quiet tray empty state, centered in the region
+                        // below the pinned header (containerRelativeFrame parity) —
+                        // sized from the measured header, not a hardcoded height.
+                        val emptyHeight = (viewportHeight - pinnedTopDp - CashuTheme.spacing.section)
+                            .coerceAtLeast(EMPTY_STATE_MIN_HEIGHT)
+                        EmptyState(
+                            icon = if (hasMints) Icons.Outlined.Inbox else Icons.Outlined.AccountBalance,
+                            title = if (hasMints) "No Activity Yet" else "Add a mint to get started",
+                            supporting = if (hasMints) "Your recent payments will show up here."
+                            else "Mints custody your ecash. Add one to begin.",
+                            actionLabel = if (!hasMints) "Add mint" else null,
+                            onAction = if (!hasMints) onOpenMints else null,
+                            modifier = Modifier.height(emptyHeight),
                         )
                     }
+                } else {
+                    items(recentItems, key = { it.key }) { item ->
+                        // Spring-animated placement when the timeline reshuffles
+                        // (new payment lands, request claimed) — History parity.
+                        Column(modifier = Modifier.animateItem()) {
+                            when (item) {
+                                is HomeRecentItem.Tx -> {
+                                    val tx = item.transaction
+                                    TransactionRow(
+                                        model = TransactionRowModel(
+                                            transaction = tx,
+                                            title = TransactionDisplay.title(tx),
+                                            timestamp = formatRelativeTimestamp(tx.dateEpochMillis),
+                                            primaryAmount = formatter.formatWalletSats(
+                                                tx.amount, settings.useBitcoinSymbol,
+                                            ),
+                                            secondaryAmount = if (settings.showFiatBalance && priceState.btcPrice > 0)
+                                                formatter.formatFiat(tx.amount, priceState.btcPrice, settings.bitcoinPriceCurrency)
+                                            else null,
+                                        ),
+                                        onClick = { onOpenTransaction(tx) },
+                                    )
+                                }
+                                is HomeRecentItem.Req -> {
+                                    val req = item.request
+                                    CashuRequestRow(
+                                        request = req,
+                                        timestamp = formatRelativeTimestamp(req.createdAtEpochMillis),
+                                        primaryAmountText = requestRowAmount(
+                                            req, formatter, settings.useBitcoinSymbol,
+                                        ),
+                                        secondaryAmountText = null,
+                                        onClick = { onOpenCashuRequest(req) },
+                                    )
+                                }
+                            }
+                            if (item != recentItems.last()) CanvasDivider()
+                        }
+                    }
+                    item("view-all") {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = CashuTheme.spacing.snug),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center,
+                        ) {
+                            // Chevron lives inside the button so the whole affordance
+                            // is one touch target (iOS: text + chevron in one Button).
+                            GhostButton(
+                                text = "View all activity",
+                                onClick = onOpenHistory,
+                                trailingIcon = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                            )
+                        }
+                    }
                 }
             }
-        }
+        }.first().measure(constraints)
 
-        // Pinned top section (mint chip + balance + triptych).
-        PinnedTop(
-            mintChip = {
-                MintChip(
-                    activeMint = walletState.activeMint,
-                    mints = walletState.mints,
-                    onSelect = { mint -> walletManager.launch { walletManager.setActiveMint(mint) } },
-                    onManage = onOpenMints,
-                )
-            },
-            balance = {
-                val satHero: @Composable () -> Unit = {
-                    BalanceDisplay(
-                        amount = balanceDisplay,
-                        // iOS: tapping the hero toggles the ₿ symbol vs "sat".
-                        onTogglePrimary = {
-                            settingsManager.setUseBitcoinSymbol(!settings.useBitcoinSymbol)
-                        },
-                    )
-                }
-                // Multi-unit pager carve-out: one hero number at a time, only
-                // when the active mint is multi-unit AND non-sat balance is held.
-                val showsPager = HomeBalance.showsUnitPager(
-                    activeMintSupportsMultipleUnits = walletState.activeMint?.supportsMultipleUnits == true,
-                    balancesByUnit = walletState.balancesByUnit,
-                )
-                if (showsPager) {
-                    UnitBalancePager(
-                        balancesByUnit = walletState.balancesByUnit,
-                        persistedUnit = settings.homeBalanceUnit,
-                        onUnitSelected = settingsManager::setHomeBalanceUnit,
-                        satHero = satHero,
-                    )
-                } else {
-                    satHero()
-                }
-            },
-            triptych = {
-                ActionDuet(
-                    onReceive = { receiveChooserOpen = true },
-                    // Send opens the unified surface directly — no chooser.
-                    onSend = onSend,
-                    receiveEnabled = walletState.activeMint != null,
-                    sendEnabled = walletState.hasAnyBalance,
-                )
-            },
-            onScan = onScan,
-            modifier = Modifier.onSizeChanged { pinnedTopPx = it.height },
-        )
+        layout(constraints.maxWidth, constraints.maxHeight) {
+            body.place(0, 0)
+            pinned.place(0, 0)
+        }
     }
 
     if (receiveChooserOpen) {
@@ -320,6 +359,9 @@ private val FADE_BAND_HEIGHT = 24.dp
 // Floor for the empty-state slot when the pinned header dominates the viewport
 // (large font scales); keeps the tray glyph + copy visible and scrollable.
 private val EMPTY_STATE_MIN_HEIGHT = 240.dp
+
+/** SubcomposeLayout slots for the Home screen. */
+private enum class HomeSlot { Pinned, Body }
 
 @Composable
 private fun PinnedTop(
@@ -453,8 +495,8 @@ private fun ActionDuet(
     receiveEnabled: Boolean,
     sendEnabled: Boolean,
 ) {
-    // Filled + tonal pair: receive is the on-ramp (primary), send is one step
-    // quieter — standard M3 emphasis hierarchy.
+    // Twin primary CTAs (iOS parity): Receive and Send carry equal weight on
+    // the home canvas — no filled/tonal hierarchy between them.
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
@@ -466,7 +508,7 @@ private fun ActionDuet(
             modifier = Modifier.weight(1f),
             enabled = receiveEnabled,
         )
-        SecondaryButton(
+        PrimaryButton(
             text = "Send",
             onClick = onSend,
             modifier = Modifier.weight(1f),

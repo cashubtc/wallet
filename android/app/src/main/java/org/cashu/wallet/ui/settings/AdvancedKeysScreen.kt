@@ -1,5 +1,8 @@
 package org.cashu.wallet.ui.settings
 
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -118,9 +121,17 @@ fun AdvancedKeysScreen(
             } else {
                 Spacer(Modifier.height(CashuTheme.spacing.default))
                 SectionHeader("Device keys")
-                settings.p2pkKeys.forEachIndexed { index, key ->
-                    if (index > 0) CanvasDivider(leadingInset = 56.dp)
-                    DeviceKeyRow(key = key, onClick = { onOpenKey(key.id) })
+                // Key generation/import/removal animates the list resize (iOS
+                // .animation(value: settings.p2pkKeys) parity).
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .animateContentSize(spring(stiffness = Spring.StiffnessMediumLow)),
+                ) {
+                    settings.p2pkKeys.forEachIndexed { index, key ->
+                        if (index > 0) CanvasDivider(leadingInset = 56.dp)
+                        DeviceKeyRow(key = key, onClick = { onOpenKey(key.id) })
+                    }
                 }
                 FooterText(
                     "These keys aren't in your seed backup. Back up each one, or keep amounts small.",

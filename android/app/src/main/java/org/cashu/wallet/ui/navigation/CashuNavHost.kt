@@ -62,6 +62,7 @@ fun CashuNavHost(
     onSend: () -> Unit,
     pendingMintScan: String?,
     onPendingMintScanConsumed: () -> Unit,
+    onClaimReceiveToken: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     NavHost(
@@ -109,6 +110,7 @@ fun CashuNavHost(
                 settingsManager = container.settingsManager,
                 transactionId = txId,
                 onClose = { navController.popBackStack() },
+                onClaimReceiveToken = onClaimReceiveToken,
             )
         }
         composable(

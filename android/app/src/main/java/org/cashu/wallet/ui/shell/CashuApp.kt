@@ -42,6 +42,7 @@ import org.cashu.wallet.ui.onboarding.OnboardingScreen
 import org.cashu.wallet.ui.navigation.TopTab
 import org.cashu.wallet.ui.navigation.cashuRequestDetailRouteFor
 import org.cashu.wallet.ui.navigation.navigateToTab
+import org.cashu.wallet.ui.receive.ReceiveEcashDetailScreen
 import org.cashu.wallet.ui.receive.ReceiveEcashScreen
 import org.cashu.wallet.ui.receive.ReceiveLightningScreen
 import org.cashu.wallet.ui.send.SendEcashScreen
@@ -135,9 +136,17 @@ private fun AuthenticatedShell(container: AppContainer) {
     var pendingReceiveScan by remember { mutableStateOf<String?>(null) }
     var pendingSendScan by remember { mutableStateOf<String?>(null) }
     var pendingMintScan by remember { mutableStateOf<String?>(null) }
+    // Full-screen "Receive Ecash" page (iOS ReceiveTokenDetailView via
+    // .fullScreenCover): every token that arrives from *outside* the paste
+    // flow — scanner, cashu: deep link, token pasted into Send — lands here.
+    // The Receive sheet's Review face survives only for the paste flow and
+    // its in-sheet scan.
+    var receiveTokenDetail by remember { mutableStateOf<String?>(null) }
+    var receiveDetailDismissLocked by remember { mutableStateOf(false) }
 
     // A fresh flow starts unlocked, whatever the last one left behind.
     LaunchedEffect(activeFlow) { flowDismissLocked = false }
+    LaunchedEffect(receiveTokenDetail) { receiveDetailDismissLocked = false }
 
     val pendingDeepLink by container.navigationManager.pendingDeepLink.collectAsState()
     val connectivityState by container.connectivityObserver.state.collectAsState()
@@ -146,8 +155,15 @@ private fun AuthenticatedShell(container: AppContainer) {
         val deepLink = pendingDeepLink ?: return@LaunchedEffect
         when (deepLink.route) {
             CashuRoute.Receive -> {
-                pendingReceiveScan = deepLink.payload.orEmpty()
-                activeFlow = WalletFlow.ReceiveEcash
+                val payload = deepLink.payload.orEmpty()
+                if (payload.isNotBlank()) {
+                    // Deep-linked token: full-screen claim page (iOS presents
+                    // ReceiveTokenDetailView via .fullScreenCover from ContentView).
+                    receiveTokenDetail = payload
+                } else {
+                    // Bare cashu: link with no token — open the paste sheet.
+                    activeFlow = WalletFlow.ReceiveEcash
+                }
             }
             CashuRoute.Send -> {
                 pendingSendScan = deepLink.payload.orEmpty()
@@ -182,6 +198,8 @@ private fun AuthenticatedShell(container: AppContainer) {
             onSend = { activeFlow = WalletFlow.Send },
             pendingMintScan = pendingMintScan,
             onPendingMintScanConsumed = { pendingMintScan = null },
+            // Pending "Receive later" tokens claim on the full-screen page.
+            onClaimReceiveToken = { receiveTokenDetail = it },
             navController = navController,
         )
         AnimatedVisibility(
@@ -211,10 +229,15 @@ private fun AuthenticatedShell(container: AppContainer) {
                     routeScannedPayload(
                         target = lastScannerTarget,
                         payload = payload,
-                        onReceive = {
+                        // In-sheet scan (ScannerTarget.Receive): back to the
+                        // sheet's Review face — the user is inside the paste flow.
+                        onReceiveInSheet = {
                             pendingReceiveScan = it
                             activeFlow = WalletFlow.ReceiveEcash
                         },
+                        // Main scan button: tokens read as a brand-new full
+                        // screen, never the home sheet (iOS scanner parity).
+                        onReceiveDetail = { receiveTokenDetail = it },
                         onSend = {
                             pendingSendScan = it
                             activeFlow = WalletFlow.Send
@@ -227,15 +250,39 @@ private fun AuthenticatedShell(container: AppContainer) {
                 },
             )
         }
+        // Full-screen Receive Ecash claim page — rendered above the camera
+        // overlays (scanner closes before routing, so no live camera shows
+        // behind, matching the iOS fullScreenCover rationale).
+        // Remember the last payload so exit animates with content intact.
+        var lastReceiveTokenDetail by remember { mutableStateOf("") }
+        if (receiveTokenDetail != null) lastReceiveTokenDetail = receiveTokenDetail!!
+        AnimatedVisibility(
+            visible = receiveTokenDetail != null,
+            enter = overlayEnter,
+            exit = overlayExit,
+        ) {
+            ReceiveEcashDetailScreen(
+                walletManager = container.walletManager,
+                settingsManager = container.settingsManager,
+                priceService = container.priceService,
+                payload = lastReceiveTokenDetail,
+                onDone = { receiveTokenDetail = null },
+                onDismissLockChanged = { receiveDetailDismissLocked = it },
+            )
+        }
         // System back (including predictive back) must dismiss the topmost overlay
         // instead of popping the NavHost — or exiting the app — underneath it.
         // Declared after WalletScaffold so this callback registers last on the
         // OnBackPressedDispatcher and takes precedence over NavHost back handling
-        // while an overlay is visible. Scanner is rendered above Contactless, so
-        // it dismisses first. (Flow sheets live in their own window and handle
-        // back themselves.)
-        BackHandler(enabled = activeScannerTarget != null || showContactless) {
+        // while an overlay is visible. Receive detail renders above the scanner,
+        // which renders above Contactless — dismissal order matches. (Flow
+        // sheets live in their own window and handle back themselves.)
+        BackHandler(enabled = receiveTokenDetail != null || activeScannerTarget != null || showContactless) {
             when {
+                receiveTokenDetail != null -> {
+                    // Never abandon a redeem in flight.
+                    if (!receiveDetailDismissLocked) receiveTokenDetail = null
+                }
                 activeScannerTarget != null -> scannerTarget = null
                 else -> showContactless = false
             }
@@ -289,8 +336,11 @@ private fun AuthenticatedShell(container: AppContainer) {
                 },
                 onSendEcash = { activeFlow = WalletFlow.SendEcash },
                 onOpenReceiveToken = { token ->
-                    pendingReceiveScan = token
-                    activeFlow = WalletFlow.ReceiveEcash
+                    // A token pasted into Send is a receive: bounce it to the
+                    // full-screen claim page (iOS SendRoute.receiveToken →
+                    // fullScreenCover), closing the Send sheet.
+                    close()
+                    receiveTokenDetail = token
                 },
                 onOpenMints = {
                     close()
@@ -335,14 +385,15 @@ internal enum class ScannerTarget { Auto, Receive, Send, Mints }
 private fun routeScannedPayload(
     target: ScannerTarget,
     payload: String,
-    onReceive: (String) -> Unit,
+    onReceiveInSheet: (String) -> Unit,
+    onReceiveDetail: (String) -> Unit,
     onSend: (String) -> Unit,
     onMint: (String) -> Unit,
 ) {
     val trimmed = payload.trim()
     when (target) {
         ScannerTarget.Receive -> {
-            onReceive(TokenParser.extractToken(trimmed) ?: trimmed)
+            onReceiveInSheet(TokenParser.extractToken(trimmed) ?: trimmed)
             return
         }
         ScannerTarget.Send -> {
@@ -356,7 +407,7 @@ private fun routeScannedPayload(
         ScannerTarget.Auto -> Unit
     }
     TokenParser.extractToken(trimmed)?.let {
-        onReceive(it)
+        onReceiveDetail(it)
         return
     }
     when (PaymentRequestDecoder.decode(trimmed, includeCashuPaymentRequests = true, preferCashuPaymentRequests = true)) {

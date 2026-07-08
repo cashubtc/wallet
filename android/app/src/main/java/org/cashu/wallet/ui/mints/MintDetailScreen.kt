@@ -1,5 +1,8 @@
 package org.cashu.wallet.ui.mints
 
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -44,6 +47,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
 import org.cashu.wallet.Core.Protocols.CurrencyAmount
 import org.cashu.wallet.Core.Protocols.CurrencyRegistry
 import org.cashu.wallet.Core.WalletManager
@@ -53,6 +57,7 @@ import org.cashu.wallet.ui.components.AmountText
 import org.cashu.wallet.ui.components.CanvasDivider
 import org.cashu.wallet.ui.components.DestructiveTextButton
 import org.cashu.wallet.ui.components.GhostButton
+import org.cashu.wallet.ui.components.IconSwap
 import org.cashu.wallet.ui.components.InspectorRow
 import org.cashu.wallet.ui.components.MintAvatar
 import org.cashu.wallet.ui.components.MintMethodChips
@@ -107,12 +112,34 @@ fun MintDetailScreen(
 
             if (!mint.description.isNullOrBlank()) {
                 SectionHeader("About")
-                Text(
-                    text = mint.description,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = CashuTheme.spacing.comfortable),
-                )
+                // iOS MintDetailView "Read more": long descriptions clamp to
+                // three lines and the reflow animates (easeInOut 0.2 → spring).
+                var aboutExpanded by remember(mint.url) { mutableStateOf(false) }
+                // Sticky: once the collapsed layout reports overflow, keep the
+                // toggle even while expanded (no overflow in that state).
+                var aboutOverflows by remember(mint.url) { mutableStateOf(false) }
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .animateContentSize(spring(stiffness = Spring.StiffnessMediumLow)),
+                ) {
+                    Text(
+                        text = mint.description,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = if (aboutExpanded) Int.MAX_VALUE else ABOUT_COLLAPSED_LINES,
+                        overflow = TextOverflow.Ellipsis,
+                        onTextLayout = { aboutOverflows = aboutOverflows || it.hasVisualOverflow },
+                        modifier = Modifier.padding(horizontal = CashuTheme.spacing.comfortable),
+                    )
+                    if (aboutOverflows) {
+                        GhostButton(
+                            text = if (aboutExpanded) "Show less" else "Read more",
+                            onClick = { aboutExpanded = !aboutExpanded },
+                            modifier = Modifier.padding(horizontal = CashuTheme.spacing.default),
+                        )
+                    }
+                }
             }
 
             SectionHeader("Identity")
@@ -123,25 +150,38 @@ fun MintDetailScreen(
                     valueMonospaced = true,
                 )
                 CanvasDivider(leadingInset = 16.dp)
+                // Copy-confirm morph (iOS: doc.on.doc ↔ checkmark via
+                // .contentTransition(.symbolEffect(.replace)) + snappy 0.18).
+                var copiedUrl by remember(mint.url) { mutableStateOf(false) }
+                LaunchedEffect(copiedUrl) {
+                    if (copiedUrl) {
+                        delay(COPY_CONFIRM_RESET_MS)
+                        copiedUrl = false
+                    }
+                }
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { clipboard.setText(AnnotatedString(mint.url)) }
+                        .clickable {
+                            clipboard.setText(AnnotatedString(mint.url))
+                            copiedUrl = true
+                        }
                         .padding(
                             horizontal = CashuTheme.spacing.comfortable,
                             vertical = CashuTheme.spacing.default,
                         ),
                 ) {
-                    Icon(
-                        imageVector = Icons.Outlined.ContentCopy,
+                    IconSwap(
+                        icon = if (copiedUrl) Icons.Outlined.Check else Icons.Outlined.ContentCopy,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        tint = if (copiedUrl) CashuTheme.colors.received
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(COPY_ROW_ICON_SIZE),
                     )
                     Text(
-                        text = "Copy full URL",
+                        text = if (copiedUrl) "Copied" else "Copy full URL",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
@@ -334,3 +374,7 @@ private fun EmptyMintFallback(padding: PaddingValues, onClose: () -> Unit) {
 
 // Inline copy-row glyph (smaller than the body 20dp).
 private val COPY_ROW_ICON_SIZE = 18.dp
+
+// iOS parity: collapsed "About" clamp and the copy-confirm reset delay.
+private const val ABOUT_COLLAPSED_LINES = 3
+private const val COPY_CONFIRM_RESET_MS = 2_000L

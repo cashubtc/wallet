@@ -48,6 +48,7 @@ fun WalletScaffold(
     onSend: () -> Unit,
     pendingMintScan: String?,
     onPendingMintScanConsumed: () -> Unit,
+    onClaimReceiveToken: (String) -> Unit,
     navController: NavHostController = rememberNavController(),
 ) {
     val backStack by navController.currentBackStackEntryAsState()
@@ -91,6 +92,7 @@ fun WalletScaffold(
             onSend = onSend,
             pendingMintScan = pendingMintScan,
             onPendingMintScanConsumed = onPendingMintScanConsumed,
+            onClaimReceiveToken = onClaimReceiveToken,
         )
     }
 }

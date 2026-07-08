@@ -40,6 +40,8 @@ private val ButtonProgressSize = 24.dp
 // Chevron-scale glyph inside GhostButton labels.
 private val GhostButtonIconSize = 16.dp
 private const val PressedScale = 0.97f
+// iOS TextLinkButtonStyle: text links dim to 0.6 while pressed.
+private const val TextLinkPressedAlpha = 0.6f
 
 @Composable
 private fun rememberPressScale(interactionSource: MutableInteractionSource): Float {
@@ -50,6 +52,21 @@ private fun rememberPressScale(interactionSource: MutableInteractionSource): Flo
         label = "press-scale",
     )
     return scale
+}
+
+/**
+ * Pressed-opacity feedback for text-style buttons — the iOS
+ * `TextLinkButtonStyle` (opacity 0.6 while pressed) on a medium spring.
+ */
+@Composable
+private fun rememberPressAlpha(interactionSource: MutableInteractionSource): Float {
+    val pressed by interactionSource.collectIsPressedAsState()
+    val alpha by animateFloatAsState(
+        targetValue = if (pressed) TextLinkPressedAlpha else 1f,
+        animationSpec = spring(stiffness = Spring.StiffnessMedium),
+        label = "press-alpha",
+    )
+    return alpha
 }
 
 /**
@@ -132,10 +149,13 @@ fun GhostButton(
     enabled: Boolean = true,
     trailingIcon: ImageVector? = null,
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val alpha = rememberPressAlpha(interactionSource)
     TextButton(
         onClick = onClick,
-        modifier = modifier,
+        modifier = modifier.graphicsLayer { this.alpha = alpha },
         enabled = enabled,
+        interactionSource = interactionSource,
     ) {
         Text(text = text, style = MaterialTheme.typography.labelLarge)
         if (trailingIcon != null) {
@@ -157,10 +177,13 @@ fun DestructiveTextButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val alpha = rememberPressAlpha(interactionSource)
     TextButton(
         onClick = onClick,
-        modifier = modifier,
+        modifier = modifier.graphicsLayer { this.alpha = alpha },
         enabled = enabled,
+        interactionSource = interactionSource,
         colors = ButtonDefaults.textButtonColors(
             contentColor = MaterialTheme.colorScheme.error,
         ),

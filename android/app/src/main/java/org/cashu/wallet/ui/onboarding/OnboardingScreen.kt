@@ -81,6 +81,7 @@ import org.cashu.wallet.Core.WalletManager
 import org.cashu.wallet.ui.components.CanvasDivider
 import org.cashu.wallet.ui.components.CashuTextField
 import org.cashu.wallet.ui.components.GhostButton
+import org.cashu.wallet.ui.components.IconSwap
 import org.cashu.wallet.ui.components.InlineNotice
 import org.cashu.wallet.ui.components.PrimaryButton
 import org.cashu.wallet.ui.components.SecondaryButton
@@ -528,8 +529,9 @@ private fun ShowMnemonicFace(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
             ) {
-                Icon(
-                    imageVector = if (acknowledged) Icons.Filled.CheckCircle else Icons.Outlined.Circle,
+                // Circle ↔ check morphs (iOS .contentTransition(.symbolEffect(.replace))).
+                IconSwap(
+                    icon = if (acknowledged) Icons.Filled.CheckCircle else Icons.Outlined.Circle,
                     contentDescription = if (acknowledged) "Acknowledged" else "Not acknowledged",
                     tint = if (acknowledged) {
                         MaterialTheme.colorScheme.onSurface
@@ -827,8 +829,9 @@ private fun MintSelectRow(
                 overflow = TextOverflow.MiddleEllipsis,
             )
         }
-        Icon(
-            imageVector = if (selected) Icons.Filled.CheckCircle else Icons.Outlined.Circle,
+        // Selection glyph morphs instead of hard-cutting (symbol-replace parity).
+        IconSwap(
+            icon = if (selected) Icons.Filled.CheckCircle else Icons.Outlined.Circle,
             contentDescription = if (selected) "Selected" else "Not selected",
             tint = if (selected) {
                 MaterialTheme.colorScheme.onSurface
@@ -965,8 +968,8 @@ private fun RestoreInputFace(
                         .align(Alignment.BottomEnd)
                         .padding(CashuTheme.spacing.micro),
                 ) {
-                    Icon(
-                        imageVector = if (input.isBlank()) Icons.Outlined.ContentPaste else Icons.Filled.Cancel,
+                    IconSwap(
+                        icon = if (input.isBlank()) Icons.Outlined.ContentPaste else Icons.Filled.Cancel,
                         contentDescription = if (input.isBlank()) "Paste" else "Clear",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

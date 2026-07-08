@@ -2,6 +2,7 @@ package org.cashu.wallet.ui.components
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -31,6 +32,10 @@ private val InspectorEditHintSize = 16.dp
  * Two-column metadata row used inside Cashu Request / Transaction Detail inspector
  * groups. Optional leading icon, optional pencil affordance for editable rows
  * (which trigger a sub-sheet on tap).
+ *
+ * @param loading skeleton fill-in (iOS `.redacted(.placeholder)` on confirm fee
+ *   rows): while true a quiet placeholder bar holds the value slot, then the
+ *   real value crossfades in place when it lands.
  */
 @Composable
 fun InspectorRow(
@@ -41,6 +46,7 @@ fun InspectorRow(
     editable: Boolean = false,
     onClick: (() -> Unit)? = null,
     valueMonospaced: Boolean = false,
+    loading: Boolean = false,
 ) {
     val rowMod = if (onClick != null && editable) {
         modifier.fillMaxWidth().clickable(onClick = onClick)
@@ -70,17 +76,20 @@ fun InspectorRow(
         )
         // Value fills the remaining width and right-aligns its text so it sits
         // flush against the trailing edge, matching iOS (HStack + Spacer).
-        Text(
-            text = value,
-            style = if (valueMonospaced) {
-                MaterialTheme.typography.bodyMedium.withMonoDigits()
-            } else MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.MiddleEllipsis,
-            textAlign = TextAlign.End,
-            modifier = Modifier.weight(1f),
-        )
+        Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
+            SkeletonValue(loading = loading) {
+                Text(
+                    text = value,
+                    style = if (valueMonospaced) {
+                        MaterialTheme.typography.bodyMedium.withMonoDigits()
+                    } else MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.MiddleEllipsis,
+                    textAlign = TextAlign.End,
+                )
+            }
+        }
         if (editable) {
             Icon(
                 imageVector = Icons.Outlined.Edit,
