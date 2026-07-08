@@ -93,7 +93,7 @@ fun P2PKScreen(
                             onCopy = { clipboard.setText(AnnotatedString(key.publicKey)) },
                             onDelete = { keyToRemove = key },
                         )
-                        if (index != settings.p2pkKeys.lastIndex) CanvasDivider(leadingInset = 16)
+                        if (index != settings.p2pkKeys.lastIndex) CanvasDivider(leadingInset = 16.dp)
                     }
                 }
             }

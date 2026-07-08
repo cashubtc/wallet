@@ -2,12 +2,15 @@ package org.cashu.wallet.ui.components
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -15,6 +18,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import org.cashu.wallet.ui.theme.CashuTheme
 
@@ -23,6 +27,8 @@ import org.cashu.wallet.ui.theme.CashuTheme
 private val ButtonMinHeight = 56.dp
 private val ButtonContentVertical = 14.dp
 private val ButtonProgressSize = 20.dp
+// Chevron-scale glyph inside GhostButton labels (matches iOS caption2 chevron).
+private val GhostButtonIconSize = 16.dp
 
 /**
  * The Singular Button: every full-width CTA — primary and secondary — is the same
@@ -71,6 +77,7 @@ fun GhostButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    trailingIcon: ImageVector? = null,
 ) {
     TextButton(
         onClick = onClick,
@@ -78,6 +85,14 @@ fun GhostButton(
         enabled = enabled,
     ) {
         Text(text = text, style = MaterialTheme.typography.labelLarge)
+        if (trailingIcon != null) {
+            Spacer(Modifier.width(CashuTheme.spacing.micro))
+            Icon(
+                imageVector = trailingIcon,
+                contentDescription = null,
+                modifier = Modifier.size(GhostButtonIconSize),
+            )
+        }
     }
 }
 

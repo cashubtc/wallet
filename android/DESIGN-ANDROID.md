@@ -68,6 +68,25 @@ committed visual choice, exactly parallel to iOS's inverted-ink AccentColor.
 
 **Predictive back** is enabled (`android:enableOnBackInvokedCallback`) — navigation must feel Android-first.
 
+### Layout invariants (2026-07-08 structural pass)
+
+- **Measure, never assume, overlay heights.** Home's pinned top block (scan →
+  mint chip → balance hero → Receive/Send) is measured with `onSizeChanged`;
+  the LazyColumn's top `contentPadding` and the scroll fade-mask thresholds
+  derive from the measured px height (iOS `MainWalletView` GeometryReader +
+  PreferenceKey parity). Fixed constants like the retired `PINNED_TOP_HEIGHT`
+  break under fiat line / unit pager / font scale / tall status bars.
+- **Consume the shell insets exactly once.** `WalletScaffold`'s `Scaffold` has
+  no topBar, so its `innerPadding` carries the status-bar inset. Every tab
+  applies `.padding(contentPadding)` **and** `.consumeWindowInsets(contentPadding)`
+  so nested `TopAppBar`s / `statusBarsPadding()` cannot double-apply it.
+- **Scroll fade band = 24dp** under the pinned-header bottom edge (iOS
+  `scrollFadeBand: CGFloat = 24`).
+- **Bottom inset spacers** use `Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars)`,
+  not zero-height `navigationBarsPadding()` spacer hacks.
+- **Dimension parameters are `Dp`**, never raw `Int` (`CanvasDivider.leadingInset`,
+  `QrCard.size`, `MintAvatar.size`).
+
 ---
 
 ## 2. Token mapping (DESIGN.md → `ui/theme/`)
@@ -208,6 +227,13 @@ No other Android-only user-facing surfaces were found.
    needs a receive-event signal from WalletManager.
 9. **Non-sat History** — extending the timeline beyond sat requires a `unit`
    field on `WalletTransaction` first; do together with iOS (same deferral).
+10. **Chooser cascade timing** — iOS options cascade in with
+    `.smooth(0.32).delay(index * 0.07)` (fade + 12pt leading slide); verify the
+    Receive chooser matches or intentionally diverges.
+11. **Pending-amount sign audit** — DESIGN.md Quiet Pending Rule (amended):
+    pending row amounts are muted `.secondary` AND unsigned; sign + primary
+    color arrive together on settlement. Sweep `TransactionRow`/`Amount` sign
+    logic against the amended rule.
 
 ## 8. Known no-clean-equivalent flags
 

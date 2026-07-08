@@ -9,13 +9,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.IosShare
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -31,26 +31,23 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import org.cashu.wallet.Views.Components.QRCodeView
 import org.cashu.wallet.ui.theme.CashuTheme
 
-// QR canvas: 20dp corner is the M3 'large' shape token; 16dp padding cushions
-// the QR off the white surface. Off-limits to change the QR rendering itself
-// per memory — these are *around* QRCodeView.
-private val QrCardCornerRadius = 20.dp
-
 /**
  * White-cushioned wrapper around the legacy QRCodeView (which is off-limits per memory).
  * Long-press exposes a Copy / Share dropdown — the Share-At-Top toolbar still owns the
- * primary share affordance per UX_SPEC §0.
+ * primary share affordance per UX_SPEC §0. The 20dp corner comes from the M3 'large'
+ * shape token; 16dp padding cushions the QR off the white surface.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun QrCard(
     content: String,
     modifier: Modifier = Modifier,
-    sizeDp: Int = 280,
+    size: Dp = 280.dp,
     showQrControls: Boolean = false,
     staticOnly: Boolean = false,
     shareSubject: String = "Cashu",
@@ -63,7 +60,7 @@ fun QrCard(
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
         Box(
             modifier = Modifier
-                .clip(RoundedCornerShape(QrCardCornerRadius))
+                .clip(MaterialTheme.shapes.large)
                 .background(Color.White)
                 .combinedClickable(
                     onClick = {},
@@ -75,7 +72,7 @@ fun QrCard(
                     onLongClickLabel = "Show options",
                 )
                 .padding(CashuTheme.spacing.comfortable)
-                .size(sizeDp.dp),
+                .size(size),
         ) {
             QRCodeView(
                 content = content,

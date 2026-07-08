@@ -21,6 +21,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import org.cashu.wallet.Core.SettingsManager
 import org.cashu.wallet.ui.components.CanvasDivider
 import org.cashu.wallet.ui.components.SectionHeader
@@ -62,21 +63,21 @@ fun PrivacyScreen(
                 checked = settings.checkPendingOnStartup,
                 onCheckedChange = settingsManager::setCheckPendingOnStartup,
             )
-            CanvasDivider(leadingInset = 16)
+            CanvasDivider(leadingInset = 16.dp)
             ToggleRow(
                 title = "Check sent token claims",
                 subtitle = "Detect when recipients redeem tokens you sent",
                 checked = settings.checkSentTokens,
                 onCheckedChange = settingsManager::setCheckSentTokens,
             )
-            CanvasDivider(leadingInset = 16)
+            CanvasDivider(leadingInset = 16.dp)
             ToggleRow(
                 title = "Check incoming invoices",
                 subtitle = "Poll mint quotes while screens are open",
                 checked = settings.checkIncomingInvoices,
                 onCheckedChange = settingsManager::setCheckIncomingInvoices,
             )
-            CanvasDivider(leadingInset = 16)
+            CanvasDivider(leadingInset = 16.dp)
             ToggleRow(
                 title = "Periodic invoice checks",
                 subtitle = "Refresh quote status on a timer",

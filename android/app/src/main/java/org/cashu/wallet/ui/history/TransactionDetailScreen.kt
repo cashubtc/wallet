@@ -171,7 +171,7 @@ fun TransactionDetailScreen(
                         valueMonospaced = field.value.length > 24 ||
                             field.label in MonospacedLabels,
                     )
-                    if (index != fields.lastIndex) CanvasDivider(leadingInset = 16)
+                    if (index != fields.lastIndex) CanvasDivider(leadingInset = 16.dp)
                 }
             }
 

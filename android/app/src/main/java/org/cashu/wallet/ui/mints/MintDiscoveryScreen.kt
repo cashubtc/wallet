@@ -140,7 +140,7 @@ fun MintDiscoveryContent(
                                 scope.launch { runCatching { walletManager.addMint(mint.url) } }
                             },
                         )
-                        if (mint != filtered.last()) CanvasDivider(leadingInset = 64)
+                        if (mint != filtered.last()) CanvasDivider(leadingInset = 64.dp)
                     }
                 }
             }

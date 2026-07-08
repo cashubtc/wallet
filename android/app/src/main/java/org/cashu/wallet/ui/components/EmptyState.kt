@@ -21,6 +21,7 @@ import org.cashu.wallet.ui.theme.CashuTheme
 
 // M3 empty-state icon is 48dp (component-level, not on the spacing scale).
 private val EmptyStateIconSize = 48.dp
+private const val EmptyStateActionWidthFraction = 0.7f
 
 @Composable
 fun EmptyState(
@@ -65,7 +66,9 @@ fun EmptyState(
             PrimaryButton(
                 text = actionLabel,
                 onClick = onAction,
-                modifier = Modifier.fillMaxWidth(0.7f),
+                // Deliberately narrower than a full-width CTA: the empty-state
+                // action is an invitation, not the screen's primary commit.
+                modifier = Modifier.fillMaxWidth(EmptyStateActionWidthFraction),
             )
         }
     }

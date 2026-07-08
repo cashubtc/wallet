@@ -1,5 +1,6 @@
 package org.cashu.wallet.ui.components
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
@@ -30,60 +31,66 @@ fun MintChip(
 ) {
     var expanded by remember { mutableStateOf(false) }
     val label = activeMint?.name ?: "No mint"
-    AssistChip(
-        onClick = {
-            if (mints.isEmpty()) onManage() else expanded = true
-        },
-        modifier = modifier,
-        label = {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.bodyMedium,
-            )
-        },
-        leadingIcon = {
-            if (activeMint != null) {
-                MintAvatar(mint = activeMint, size = 20)
-            } else {
-                Icon(
-                    imageVector = Icons.Outlined.AccountBalance,
-                    contentDescription = null,
-                    modifier = Modifier.size(CashuTheme.spacing.loose),
+    // Box anchors the DropdownMenu to the chip; as a bare sibling its position
+    // would be at the mercy of whatever parent layout hosts the chip.
+    Box(modifier = modifier) {
+        AssistChip(
+            onClick = {
+                if (mints.isEmpty()) onManage() else expanded = true
+            },
+            label = {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            },
+            leadingIcon = {
+                if (activeMint != null) {
+                    MintAvatar(mint = activeMint, size = MintChipAvatarSize)
+                } else {
+                    Icon(
+                        imageVector = Icons.Outlined.AccountBalance,
+                        contentDescription = null,
+                        modifier = Modifier.size(CashuTheme.spacing.loose),
+                    )
+                }
+            },
+        )
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            mints.forEach { mint ->
+                val isActive = mint.url == activeMint?.url
+                DropdownMenuItem(
+                    text = { Text(mint.name) },
+                    onClick = {
+                        expanded = false
+                        if (!isActive) onSelect(mint)
+                    },
+                    trailingIcon = if (isActive) {
+                        {
+                            Icon(
+                                imageVector = Icons.Filled.Check,
+                                contentDescription = "Active",
+                                modifier = Modifier.size(CashuTheme.spacing.loose),
+                            )
+                        }
+                    } else null,
                 )
             }
-        },
-    )
-    DropdownMenu(
-        expanded = expanded,
-        onDismissRequest = { expanded = false },
-    ) {
-        mints.forEach { mint ->
-            val isActive = mint.url == activeMint?.url
-            DropdownMenuItem(
-                text = { Text(mint.name) },
-                onClick = {
-                    expanded = false
-                    if (!isActive) onSelect(mint)
-                },
-                trailingIcon = if (isActive) {
-                    {
-                        Icon(
-                            imageVector = Icons.Filled.Check,
-                            contentDescription = "Active",
-                            modifier = Modifier.size(CashuTheme.spacing.loose),
-                        )
-                    }
-                } else null,
-            )
-        }
-        if (mints.isNotEmpty()) {
-            DropdownMenuItem(
-                text = { Text("Add Mint") },
-                onClick = {
-                    expanded = false
-                    onManage()
-                },
-            )
+            if (mints.isNotEmpty()) {
+                DropdownMenuItem(
+                    text = { Text("Add Mint") },
+                    onClick = {
+                        expanded = false
+                        onManage()
+                    },
+                )
+            }
         }
     }
 }
+
+// iOS mint chip icon is 20×20 inside the capsule.
+private val MintChipAvatarSize = 20.dp

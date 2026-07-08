@@ -207,7 +207,7 @@ fun CashuRequestDetailScreen(
                     value = mintLabel,
                     leadingIcon = Icons.Outlined.AccountBalance,
                 )
-                CanvasDivider(leadingInset = 16)
+                CanvasDivider(leadingInset = 16.dp)
                 InspectorRow(
                     label = "Amount",
                     value = request.amount?.let {
@@ -216,20 +216,20 @@ fun CashuRequestDetailScreen(
                     leadingIcon = Icons.Outlined.AccountBalanceWallet,
                     valueMonospaced = true,
                 )
-                CanvasDivider(leadingInset = 16)
+                CanvasDivider(leadingInset = 16.dp)
                 InspectorRow(
                     label = "Unit",
                     value = request.unit.uppercase(),
                     leadingIcon = Icons.Outlined.CurrencyExchange,
                 )
-                CanvasDivider(leadingInset = 16)
+                CanvasDivider(leadingInset = 16.dp)
                 InspectorRow(
                     label = "Created",
                     value = formatDate(request.createdAtEpochMillis),
                     leadingIcon = Icons.Outlined.CalendarToday,
                 )
                 if (request.totalReceived > 0L) {
-                    CanvasDivider(leadingInset = 16)
+                    CanvasDivider(leadingInset = 16.dp)
                     InspectorRow(
                         label = "Total received",
                         value = formatRequestAmount(request.totalReceived),

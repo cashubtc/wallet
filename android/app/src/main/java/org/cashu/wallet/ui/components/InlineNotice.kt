@@ -51,7 +51,7 @@ fun InlineNotice(
             .background(container, MaterialTheme.shapes.small)
             .padding(
                 horizontal = CashuTheme.spacing.default,
-                vertical = CashuTheme.spacing.snug + 2.dp,
+                vertical = CashuTheme.spacing.default,
             ),
         verticalAlignment = Alignment.CenterVertically,
     ) {

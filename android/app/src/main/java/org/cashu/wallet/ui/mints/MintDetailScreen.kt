@@ -122,7 +122,7 @@ fun MintDetailScreen(
                     value = shortenMintUrl(mint.url),
                     valueMonospaced = true,
                 )
-                CanvasDivider(leadingInset = 16)
+                CanvasDivider(leadingInset = 16.dp)
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
@@ -154,13 +154,13 @@ fun MintDetailScreen(
                     label = "Receive",
                     value = mint.supportedMintMethods.joinToString { it.displayName }.ifBlank { "None" },
                 )
-                CanvasDivider(leadingInset = 16)
+                CanvasDivider(leadingInset = 16.dp)
                 InspectorRow(
                     label = "Send",
                     value = mint.supportedMeltMethods.joinToString { it.displayName }.ifBlank { "None" },
                 )
                 mint.onchainMintConfirmations?.let {
-                    CanvasDivider(leadingInset = 16)
+                    CanvasDivider(leadingInset = 16.dp)
                     InspectorRow(
                         label = "On-chain confirmations",
                         value = it.toString(),
@@ -188,7 +188,7 @@ fun MintDetailScreen(
                 }
             }
             nonSatUnits.forEach { unit ->
-                CanvasDivider(leadingInset = 16)
+                CanvasDivider(leadingInset = 16.dp)
                 InspectorRow(
                     label = "Balance (${unit.uppercase()})",
                     value = unitBalances[unit]?.let {
@@ -197,7 +197,7 @@ fun MintDetailScreen(
                     valueMonospaced = true,
                 )
             }
-            CanvasDivider(leadingInset = 16)
+            CanvasDivider(leadingInset = 16.dp)
             InspectorRow(
                 label = "Units",
                 value = mint.units.joinToString(", ").ifBlank { "sat" },
@@ -269,7 +269,7 @@ private fun HeaderBlock(mint: MintInfo, isActive: Boolean) {
             horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.comfortable),
         ) {
             Box {
-                MintAvatar(mint = mint, size = 72)
+                MintAvatar(mint = mint, size = 72.dp)
                 if (isActive) {
                     Box(
                         modifier = Modifier

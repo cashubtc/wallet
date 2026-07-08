@@ -95,7 +95,7 @@ fun LightningScreen(
                     statusColor = npcStatusColor(npcState),
                     onShowQr = { addressQrOpen = true },
                 )
-                CanvasDivider(leadingInset = 16)
+                CanvasDivider(leadingInset = 16.dp)
                 Column(
                     modifier = Modifier.fillMaxWidth().padding(
                         horizontal = CashuTheme.spacing.comfortable,
@@ -129,7 +129,7 @@ fun LightningScreen(
                 checked = npcState.isEnabled,
                 onCheckedChange = { npcService.setEnabled(it) },
             )
-            CanvasDivider(leadingInset = 16)
+            CanvasDivider(leadingInset = 16.dp)
             ToggleRow(
                 title = "Automatic claim",
                 subtitle = "Mint paid quotes without confirmation",

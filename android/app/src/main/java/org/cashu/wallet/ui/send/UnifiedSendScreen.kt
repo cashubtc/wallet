@@ -799,14 +799,14 @@ private fun ConfirmFace(
                         ),
                         valueMonospaced = true,
                     )
-                    CanvasDivider(leadingInset = 16)
+                    CanvasDivider(leadingInset = 16.dp)
                 }
                 InspectorRow(
                     label = "Network fee",
                     value = quote?.let { "${it.feeReserve} sat" } ?: "…",
                     valueMonospaced = true,
                 )
-                CanvasDivider(leadingInset = 16)
+                CanvasDivider(leadingInset = 16.dp)
                 InspectorRow(
                     label = "Total",
                     value = quote?.let { "${it.totalAmount} sat" } ?: "…",
@@ -819,7 +819,7 @@ private fun ConfirmFace(
                     valueMonospaced = true,
                 )
                 if (mint != null) {
-                    CanvasDivider(leadingInset = 16)
+                    CanvasDivider(leadingInset = 16.dp)
                     InspectorRow(
                         label = "Mint",
                         value = mint.name,

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -144,6 +145,9 @@ fun MintsScreen(
     Scaffold(
         modifier = Modifier
             .padding(contentPadding)
+            // The shell scaffold's padding already carries the status-bar inset;
+            // consume it so the nested TopAppBar doesn't apply it a second time.
+            .consumeWindowInsets(contentPadding)
             .nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             CenterAlignedTopAppBar(
@@ -176,7 +180,7 @@ fun MintsScreen(
                         },
                         onRequestRemove = { pendingRemoval = mint },
                     )
-                    if (mint != walletState.mints.last()) CanvasDivider(leadingInset = 64)
+                    if (mint != walletState.mints.last()) CanvasDivider(leadingInset = 64.dp)
                 }
             }
 

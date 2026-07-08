@@ -386,14 +386,14 @@ private fun ReviewFace(
                 },
                 leadingIcon = Icons.Outlined.Receipt,
             )
-            CanvasDivider(leadingInset = 16)
+            CanvasDivider(leadingInset = 16.dp)
             InspectorRow(
                 label = "Mint",
                 value = info.mint,
                 leadingIcon = Icons.Outlined.AccountBalance,
             )
             if (locked) {
-                CanvasDivider(leadingInset = 16)
+                CanvasDivider(leadingInset = 16.dp)
                 InspectorRow(
                     label = "P2PK",
                     value = "Requires your key",
@@ -401,7 +401,7 @@ private fun ReviewFace(
                 )
             }
             if (info.memo != null) {
-                CanvasDivider(leadingInset = 16)
+                CanvasDivider(leadingInset = 16.dp)
                 InspectorRow(
                     label = "Memo",
                     value = info.memo,

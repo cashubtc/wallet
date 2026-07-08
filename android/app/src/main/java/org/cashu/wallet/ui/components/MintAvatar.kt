@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccountBalance
 import androidx.compose.material3.Icon
@@ -19,6 +18,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
@@ -36,15 +36,17 @@ import org.cashu.wallet.Models.MintInfo
 fun MintAvatar(
     mint: MintInfo,
     modifier: Modifier = Modifier,
-    size: Int = 40,
+    size: Dp = 40.dp,
 ) {
-    val shape = if (size <= 48) CircleShape else RoundedCornerShape(16.dp)
+    // Chip/row sizes stay circular; hero sizes (mint detail) square off to the
+    // on-scale medium shape token.
+    val shape = if (size <= 48.dp) CircleShape else MaterialTheme.shapes.medium
     val context = LocalContext.current
     val iconUrl = mint.iconUrl?.takeIf { it.isNotBlank() }
     if (iconUrl != null) {
         Box(
             modifier = modifier
-                .size(size.dp)
+                .size(size)
                 .clip(shape),
             contentAlignment = Alignment.Center,
         ) {
@@ -66,7 +68,7 @@ fun MintAvatar(
     } else {
         Box(
             modifier = modifier
-                .size(size.dp)
+                .size(size)
                 .clip(shape),
         ) {
             GeneratedFallback(mint = mint, size = size)
@@ -75,7 +77,7 @@ fun MintAvatar(
 }
 
 @Composable
-private fun GeneratedFallback(mint: MintInfo, size: Int) {
+private fun GeneratedFallback(mint: MintInfo, size: Dp) {
     val initial = mint.name.firstOrNull()?.uppercase()
     val seed = mint.url.hashCode().toLong() and 0xFFFFFFFFL
     val hue = (seed % 360L).toFloat()
@@ -91,7 +93,7 @@ private fun GeneratedFallback(mint: MintInfo, size: Int) {
                 imageVector = Icons.Outlined.AccountBalance,
                 contentDescription = null,
                 tint = Color.White,
-                modifier = Modifier.size((size * 0.5f).dp),
+                modifier = Modifier.size(size * 0.5f),
             )
         } else {
             Text(

@@ -1,19 +1,17 @@
 package org.cashu.wallet.ui.home
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -28,15 +26,14 @@ import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.outlined.AccountBalance
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.QrCodeScanner
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -48,7 +45,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import org.cashu.wallet.Core.AmountDisplayPrimary
@@ -63,7 +60,6 @@ import org.cashu.wallet.Core.TransactionDisplay
 import org.cashu.wallet.Core.WalletManager
 import org.cashu.wallet.Core.displayText
 import org.cashu.wallet.Models.CashuRequest
-import org.cashu.wallet.Models.TransactionStatus
 import org.cashu.wallet.Models.WalletTransaction
 import org.cashu.wallet.ui.components.AmountText
 import org.cashu.wallet.ui.components.BalanceDisplay
@@ -73,6 +69,7 @@ import org.cashu.wallet.ui.components.requestRowAmount
 import org.cashu.wallet.ui.components.EmptyState
 import org.cashu.wallet.ui.components.GhostButton
 import org.cashu.wallet.ui.components.MintChip
+import org.cashu.wallet.ui.components.PrimaryButton
 import org.cashu.wallet.ui.components.SectionHeader
 import org.cashu.wallet.ui.components.TransactionRow
 import org.cashu.wallet.ui.components.TransactionRowModel
@@ -122,17 +119,35 @@ fun HomeScreen(
     }
 
     val density = LocalDensity.current
-    val pinnedTopPx = with(density) { PINNED_TOP_HEIGHT.toPx() }
+    // iOS parity: MainWalletView measures the pinned header (GeometryReader +
+    // PreferenceKey) and derives the scroll inset + fade mask from the measured
+    // height. Mirror that here with onSizeChanged so the list clears the pinned
+    // region in every configuration (fiat line, unit pager, font scale, insets).
+    var pinnedTopPx by remember { mutableIntStateOf(0) }
+    val pinnedTopDp = with(density) { pinnedTopPx.toDp() }
     val fadeBandPx = with(density) { FADE_BAND_HEIGHT.toPx() }
 
-    Box(modifier = Modifier.fillMaxSize().padding(contentPadding)) {
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(contentPadding)
+            // The scaffold's contentPadding already carries the status-bar inset;
+            // consume it so PinnedTop's statusBarsPadding() can't double-apply.
+            .consumeWindowInsets(contentPadding),
+    ) {
+        val viewportHeight = maxHeight
         // Scrolling body sits behind the pinned top with a soft fade-mask at the
         // top edge so rows dissolve into the pinned region as they scroll up,
         // matching the iOS LinearGradient scroll mask.
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                .graphicsLayer {
+                    compositingStrategy = CompositingStrategy.Offscreen
+                    // Hide the first frame until the pinned header has reported
+                    // its measured height and the inset below is correct.
+                    alpha = if (pinnedTopPx == 0) 0f else 1f
+                }
                 .drawWithCache {
                     val total = size.height.coerceAtLeast(1f)
                     val clearEnd = (pinnedTopPx / total).coerceIn(0f, 1f)
@@ -149,7 +164,7 @@ fun HomeScreen(
                     }
                 },
             contentPadding = PaddingValues(
-                top = PINNED_TOP_HEIGHT,
+                top = pinnedTopDp,
                 bottom = CashuTheme.spacing.section,
             ),
         ) {
@@ -161,8 +176,11 @@ fun HomeScreen(
             if (recentItems.isEmpty()) {
                 item("empty") {
                     val hasMints = walletState.mints.isNotEmpty()
-                    // iOS: a single quiet tray empty state; the add-mint CTA
-                    // survives only for the true first-run (no mints yet).
+                    // iOS: a single quiet tray empty state, centered in the region
+                    // below the pinned header (containerRelativeFrame parity) —
+                    // sized from the measured header, not a hardcoded height.
+                    val emptyHeight = (viewportHeight - pinnedTopDp - CashuTheme.spacing.section)
+                        .coerceAtLeast(EMPTY_STATE_MIN_HEIGHT)
                     EmptyState(
                         icon = if (hasMints) Icons.Outlined.Inbox else Icons.Outlined.AccountBalance,
                         title = if (hasMints) "No Activity Yet" else "Add a mint to get started",
@@ -170,7 +188,7 @@ fun HomeScreen(
                         else "Mints custody your ecash. Add one to begin.",
                         actionLabel = if (!hasMints) "Add mint" else null,
                         onAction = if (!hasMints) onOpenMints else null,
-                        modifier = Modifier.heightIn(min = 320.dp),
+                        modifier = Modifier.height(emptyHeight),
                     )
                 }
             } else {
@@ -216,12 +234,12 @@ fun HomeScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center,
                     ) {
-                        GhostButton(text = "View all activity", onClick = onOpenHistory)
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(VIEW_ALL_CHEVRON_SIZE),
+                        // Chevron lives inside the button so the whole affordance
+                        // is one touch target (iOS: text + chevron in one Button).
+                        GhostButton(
+                            text = "View all activity",
+                            onClick = onOpenHistory,
+                            trailingIcon = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
                         )
                     }
                 }
@@ -275,6 +293,7 @@ fun HomeScreen(
                 )
             },
             onScan = onScan,
+            modifier = Modifier.onSizeChanged { pinnedTopPx = it.height },
         )
     }
 
@@ -289,12 +308,12 @@ fun HomeScreen(
     }
 }
 
-// PINNED_TOP_HEIGHT must match the LazyColumn's top contentPadding so the fade
-// mask aligns with the bottom edge of the pinned region.
-private val PINNED_TOP_HEIGHT = 280.dp
-private val FADE_BAND_HEIGHT = 32.dp
-private val VIEW_ALL_CHEVRON_SIZE = 16.dp
-private val ACTION_BUTTON_MIN_HEIGHT = 56.dp
+// iOS scrollFadeBand: rows dissolve over a 24pt band beneath the measured
+// pinned-header bottom edge (MainWalletView.scrollFadeBand = 24).
+private val FADE_BAND_HEIGHT = 24.dp
+// Floor for the empty-state slot when the pinned header dominates the viewport
+// (large font scales); keeps the tray glyph + copy visible and scrollable.
+private val EMPTY_STATE_MIN_HEIGHT = 240.dp
 
 @Composable
 private fun PinnedTop(
@@ -302,9 +321,10 @@ private fun PinnedTop(
     balance: @Composable () -> Unit,
     triptych: @Composable () -> Unit,
     onScan: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             // Solid background; the fade effect lives on the LazyColumn mask below
             // (rows fade as they scroll up past the pinned region).
@@ -418,27 +438,24 @@ private fun ActionDuet(
     receiveEnabled: Boolean,
     sendEnabled: Boolean,
 ) {
+    // Same Singular Button as every other CTA (Buttons.kt) — no local re-implementation.
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        FilledTonalButton(
+        PrimaryButton(
+            text = "Receive",
             onClick = onReceive,
-            modifier = Modifier.weight(1f).heightIn(min = ACTION_BUTTON_MIN_HEIGHT),
-            shape = MaterialTheme.shapes.extraLarge,
+            modifier = Modifier.weight(1f),
             enabled = receiveEnabled,
-        ) {
-            Text("Receive", style = MaterialTheme.typography.labelLarge)
-        }
-        FilledTonalButton(
+        )
+        PrimaryButton(
+            text = "Send",
             onClick = onSend,
-            modifier = Modifier.weight(1f).heightIn(min = ACTION_BUTTON_MIN_HEIGHT),
-            shape = MaterialTheme.shapes.extraLarge,
+            modifier = Modifier.weight(1f),
             enabled = sendEnabled,
-        ) {
-            Text("Send", style = MaterialTheme.typography.labelLarge)
-        }
+        )
     }
 }
 

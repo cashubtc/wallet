@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import org.cashu.wallet.ui.theme.CashuTheme
 
@@ -12,17 +13,17 @@ private val HairlineThickness = 0.5.dp
 
 /**
  * Single hairline used to separate rows on canvas screens (History, Settings root, Mints).
- * 28dp leading inset (page spacing) aligns with the icon column.
+ * 28dp leading inset (spacing.page) aligns with the icon column by default.
  */
 @Composable
 fun CanvasDivider(
     modifier: Modifier = Modifier,
-    leadingInset: Int = 28,
+    leadingInset: Dp = 28.dp,
 ) {
     HorizontalDivider(
         thickness = HairlineThickness,
         color = CashuTheme.colors.canvasDivider,
-        modifier = modifier.padding(start = leadingInset.dp),
+        modifier = modifier.padding(start = leadingInset),
     )
 }
 

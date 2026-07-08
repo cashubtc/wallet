@@ -130,7 +130,7 @@ fun NostrScreen(
                 onClick = { clipboard.setText(AnnotatedString(nostrState.npub)) },
                 editable = nostrState.npub.isNotBlank(),
             )
-            CanvasDivider(leadingInset = 16)
+            CanvasDivider(leadingInset = 16.dp)
             InspectorRow(
                 label = "hex",
                 value = nostrState.publicKeyHex.ifBlank { "—" },
@@ -236,7 +236,7 @@ fun NostrScreen(
                                 )
                             }
                         }
-                        if (index != settings.nostrRelays.lastIndex) CanvasDivider(leadingInset = 16)
+                        if (index != settings.nostrRelays.lastIndex) CanvasDivider(leadingInset = 16.dp)
                     }
                 }
             }

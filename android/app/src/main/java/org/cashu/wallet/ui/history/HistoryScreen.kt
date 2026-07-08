@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -123,6 +124,9 @@ fun HistoryScreen(
     Scaffold(
         modifier = Modifier
             .padding(contentPadding)
+            // The shell scaffold's padding already carries the status-bar inset;
+            // consume it so the nested TopAppBar doesn't apply it a second time.
+            .consumeWindowInsets(contentPadding)
             .nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             CenterAlignedTopAppBar(
@@ -187,66 +191,75 @@ fun HistoryScreen(
                 .fillMaxSize()
                 .padding(padding),
         ) {
-            if (sections.isEmpty()) {
-                HistoryEmptyState(filter = filter, hasQuery = query.isNotBlank())
-            } else {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    if (searching) {
-                        item("search") {
-                            CashuSearchBar(
-                                value = query,
-                                onValueChange = { query = it },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(
-                                        horizontal = CashuTheme.spacing.comfortable,
-                                        vertical = CashuTheme.spacing.snug,
-                                    ),
-                                placeholder = "Search history",
-                            )
-                        }
-                    }
-                    sections.forEach { section ->
-                        item(key = "header-${section.title}") {
-                            SectionHeader(section.title.uppercase())
-                        }
-                        items(section.items, key = { it.key }) { item ->
-                            when (item) {
-                                is HistoryItem.Tx -> {
-                                    val tx = item.transaction
-                                    TransactionRow(
-                                        model = TransactionRowModel(
-                                            transaction = tx,
-                                            title = TransactionDisplay.title(tx),
-                                            timestamp = formatRelativeTimestamp(tx.dateEpochMillis),
-                                            primaryAmount = formatter.formatWalletSats(
-                                                tx.amount, settings.useBitcoinSymbol,
-                                            ),
-                                            secondaryAmount = if (settings.showFiatBalance && priceState.btcPrice > 0)
-                                                formatter.formatFiat(
-                                                    tx.amount,
-                                                    priceState.btcPrice,
-                                                    settings.bitcoinPriceCurrency,
-                                                )
-                                            else null,
-                                        ),
-                                        onClick = { onOpenTransaction(tx) },
-                                    )
-                                }
-                                is HistoryItem.Req -> {
-                                    CashuRequestRow(
-                                        request = item.request,
-                                        timestamp = formatRelativeTimestamp(item.request.createdAtEpochMillis),
-                                        primaryAmountText = requestRowAmount(
-                                            item.request, formatter, settings.useBitcoinSymbol,
-                                        ),
-                                        secondaryAmountText = null,
-                                        onClick = { onOpenCashuRequest(item.request) },
-                                        onLongClick = { requestPendingDelete = item.request },
-                                    )
-                                }
+            // The search field lives outside the list so it survives an
+            // empty result set (searching to zero matches must not unmount
+            // the field mid-typing) — iOS .searchable parity.
+            Column(modifier = Modifier.fillMaxSize()) {
+                if (searching) {
+                    CashuSearchBar(
+                        value = query,
+                        onValueChange = { query = it },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(
+                                horizontal = CashuTheme.spacing.comfortable,
+                                vertical = CashuTheme.spacing.snug,
+                            ),
+                        placeholder = "Search history",
+                    )
+                }
+                if (sections.isEmpty()) {
+                    HistoryEmptyState(
+                        filter = filter,
+                        hasQuery = query.isNotBlank(),
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                    )
+                } else {
+                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        sections.forEach { section ->
+                            item(key = "header-${section.title}") {
+                                SectionHeader(section.title.uppercase())
                             }
-                            if (item != section.items.last()) CanvasDivider()
+                            items(section.items, key = { it.key }) { item ->
+                                when (item) {
+                                    is HistoryItem.Tx -> {
+                                        val tx = item.transaction
+                                        TransactionRow(
+                                            model = TransactionRowModel(
+                                                transaction = tx,
+                                                title = TransactionDisplay.title(tx),
+                                                timestamp = formatRelativeTimestamp(tx.dateEpochMillis),
+                                                primaryAmount = formatter.formatWalletSats(
+                                                    tx.amount, settings.useBitcoinSymbol,
+                                                ),
+                                                secondaryAmount = if (settings.showFiatBalance && priceState.btcPrice > 0)
+                                                    formatter.formatFiat(
+                                                        tx.amount,
+                                                        priceState.btcPrice,
+                                                        settings.bitcoinPriceCurrency,
+                                                    )
+                                                else null,
+                                            ),
+                                            onClick = { onOpenTransaction(tx) },
+                                        )
+                                    }
+                                    is HistoryItem.Req -> {
+                                        CashuRequestRow(
+                                            request = item.request,
+                                            timestamp = formatRelativeTimestamp(item.request.createdAtEpochMillis),
+                                            primaryAmountText = requestRowAmount(
+                                                item.request, formatter, settings.useBitcoinSymbol,
+                                            ),
+                                            secondaryAmountText = null,
+                                            onClick = { onOpenCashuRequest(item.request) },
+                                            onLongClick = { requestPendingDelete = item.request },
+                                        )
+                                    }
+                                }
+                                if (item != section.items.last()) CanvasDivider()
+                            }
                         }
                     }
                 }
@@ -280,7 +293,11 @@ fun HistoryScreen(
 }
 
 @Composable
-private fun HistoryEmptyState(filter: HistoryFilter, hasQuery: Boolean) {
+private fun HistoryEmptyState(
+    filter: HistoryFilter,
+    hasQuery: Boolean,
+    modifier: Modifier = Modifier,
+) {
     val (icon, title, supporting) = when {
         hasQuery -> Triple(Icons.Outlined.Search, "No matches", null)
         filter == HistoryFilter.Pending -> Triple(
@@ -311,7 +328,7 @@ private fun HistoryEmptyState(filter: HistoryFilter, hasQuery: Boolean) {
         label = "empty-pulse-alpha",
     )
     Box(
-        modifier = Modifier.fillMaxSize(),
+        modifier = modifier,
         contentAlignment = Alignment.Center,
     ) {
         Column(
