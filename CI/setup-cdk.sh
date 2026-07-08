@@ -43,15 +43,18 @@ elif [ "$OS" = "darwin" ]; then
 else
     # Linux: download prebuilt + checksum verify
     ASSET_NAME="cdk-mintd-${CDK_VERSION}-${ASSET_ARCH}"
+    ASSET_PATH="${BIN_DIR}/${ASSET_NAME}"
+    CHECKSUM_FILE="${BIN_DIR}/SHA256SUMS"
     DOWNLOAD_URL="https://github.com/cashubtc/cdk/releases/download/v${CDK_VERSION}/${ASSET_NAME}"
     CHECKSUM_URL="https://github.com/cashubtc/cdk/releases/download/v${CDK_VERSION}/SHA256SUMS"
 
     echo "📥 Downloading ${ASSET_NAME}..."
-    curl -fsSL -o "$MINTD_BIN" "$DOWNLOAD_URL"
-    curl -fsSL -o "${BIN_DIR}/SHA256SUMS" "$CHECKSUM_URL"
+    curl -fsSL -o "$ASSET_PATH" "$DOWNLOAD_URL"
+    curl -fsSL -o "$CHECKSUM_FILE" "$CHECKSUM_URL"
 
     (cd "$BIN_DIR" && sha256sum -c SHA256SUMS --ignore-missing)
-    rm -f "${BIN_DIR}/SHA256SUMS"
+    mv "$ASSET_PATH" "$MINTD_BIN"
+    rm -f "$CHECKSUM_FILE"
     chmod +x "$MINTD_BIN"
 
     echo "✅ cdk-mintd binary ready at ${MINTD_BIN}"
