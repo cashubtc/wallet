@@ -338,7 +338,7 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
 
     override suspend fun calculateReceiveFee(tokenString: String): Long {
         val token = CdkToken.decode(tokenString)
-        val proofs = token.proofsSimple()
+        val proofs = runCatching { token.proofsSimple() }.getOrDefault(emptyList())
         val first = proofs.firstOrNull() ?: return 0
         val tokenUnit = token.unit() ?: CdkCurrencyUnit.Sat
         ensureWallet(token.mintUrl().url, tokenUnit.toDomainUnit())
@@ -354,7 +354,9 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
         val tokenObj = CdkToken.decode(token)
         val tokenUnit = tokenObj.unit() ?: CdkCurrencyUnit.Sat
         ensureWallet(mintUrl, tokenUnit.toDomainUnit())
-        val states = walletFor(mintUrl, tokenUnit).checkProofsSpent(tokenObj.proofsSimple())
+        val proofs = runCatching { tokenObj.proofsSimple() }.getOrNull() ?: return false
+        if (proofs.isEmpty()) return false
+        val states = walletFor(mintUrl, tokenUnit).checkProofsSpent(proofs)
         return states.any { it }
     }
 
