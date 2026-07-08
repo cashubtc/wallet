@@ -131,6 +131,8 @@ extension WalletManager {
     func completeOnboarding() {
         transactionService.loadCachedState()
         needsOnboarding = false
+        CashuRequestListener.shared.attach(walletManager: self)
+        Task { await CashuRequestListener.shared.start() }
     }
 
     /// Legacy restore for backward compatibility (initializes + completes without NUT-09)

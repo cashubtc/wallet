@@ -4,11 +4,21 @@ import SwiftUI
 /// NUT-18 receive-side listener. Foreground-only: opens a NIP-17 relay subscription
 /// at app launch, decrypts gift wraps, parses PaymentRequestPayload from the inner
 /// rumor, and forwards to the auto-claim path in WalletManager.
+///
+/// Payments that can't claim silently (auto-claim off, or the mint isn't
+/// tracked yet) are persisted as `PendingReceiveToken`s — the same store the
+/// "Receive Later" flow uses — so they survive restarts, show up in History as
+/// claimable pending rows, and don't depend on the relay lookback window.
 @MainActor
 final class CashuRequestListener: ObservableObject {
     static let shared = CashuRequestListener()
 
     @Published private(set) var isRunning: Bool = false
+
+    /// The most recently held payment, for the one-shot approval prompt at app
+    /// root. Clearing it is UI-only — the payment itself lives in the
+    /// pending-receive store and stays claimable from History.
+    @Published private(set) var heldForApproval: PendingReceiveToken?
 
     private var client: NostrInboxClient?
     private weak var walletManager: WalletManager?
@@ -32,6 +42,10 @@ final class CashuRequestListener: ObservableObject {
 
     func start() async {
         guard !isRunning else { return }
+        guard SettingsManager.shared.enablePaymentRequests else {
+            AppLogger.wallet.notice("CashuRequestListener: payment requests disabled in settings — not starting")
+            return
+        }
         let nostr = NostrService.shared
         guard nostr.isInitialized,
               !nostr.publicKeyHex.isEmpty,
@@ -73,9 +87,14 @@ final class CashuRequestListener: ObservableObject {
     /// the previous wallet's Nostr inbox; a new wallet has a new keypair, and a
     /// re-restored seed should re-attempt claims rather than skip them.
     func resetForWalletBoundary() {
+        let oldClient = client
+        client = nil
+        isRunning = false
         processedIds = []
         processedOrder = []
+        heldForApproval = nil
         UserDefaults.standard.removeObject(forKey: processedIdsKey)
+        Task { await oldClient?.stop() }
     }
 
     // MARK: - Event handling
@@ -99,8 +118,10 @@ final class CashuRequestListener: ObservableObject {
             markProcessed(event.id)
             return
         }
-        switch await tryClaim(rumorContent: rumor.content) {
-        case .claimed, .unclaimable:
+        switch await tryClaim(rumorContent: rumor.content, eventId: event.id) {
+        case .claimed, .unclaimable, .held:
+            // .held: the payment is persisted in the pending-receive store —
+            // that store owns it now, so the relay event is done.
             markProcessed(event.id)
         case .transientFailure:
             break  // leave unmarked so a later run retries
@@ -111,9 +132,10 @@ final class CashuRequestListener: ObservableObject {
         case claimed            // redeemed successfully
         case unclaimable        // malformed / un-redeemable payload — never retry
         case transientFailure   // redeem failed (mint/network) — retry later
+        case held               // persisted for an explicit user decision
     }
 
-    private func tryClaim(rumorContent content: String) async -> ClaimOutcome {
+    private func tryClaim(rumorContent content: String, eventId: String) async -> ClaimOutcome {
         guard let data = content.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return .unclaimable
@@ -136,6 +158,33 @@ final class CashuRequestListener: ObservableObject {
             AppLogger.wallet.error("CashuRequestListener: walletManager not attached")
             return .transientFailure
         }
+
+        // Silent claiming needs both: auto-claim enabled, and a mint the user
+        // already trusts (claiming creates a CDK wallet for the mint and adds
+        // it to the tracked list — never do that without consent). Everything
+        // else is persisted for an explicit decision on the receive screen.
+        let mintKnown = walletManager.isMintKnown(url: mintUrl)
+        let autoClaim = SettingsManager.shared.receivePaymentRequestsAutomatically
+        guard autoClaim && mintKnown else {
+            return holdForApproval(
+                tokenString: tokenString,
+                requestId: requestId,
+                mintUrl: mintUrl,
+                amount: proofsTotalAmount(proofs),
+                unit: PaymentRequestDecoder.unitDescription(PaymentRequestDecoder.currencyUnit(from: unit)),
+                memo: memo,
+                reason: mintKnown ? "auto-claim off" : "unknown mint"
+            )
+        }
+
+        return await claimNow(tokenString: tokenString, requestId: requestId)
+    }
+
+    private func claimNow(tokenString: String, requestId: String?) async -> ClaimOutcome {
+        guard let walletManager else {
+            AppLogger.wallet.error("CashuRequestListener: walletManager not attached")
+            return .transientFailure
+        }
         do {
             // A gift wrap can arrive exactly as the app backgrounds; hold a background-task
             // assertion so this SQLite-writing redeem finishes before suspension.
@@ -150,6 +199,120 @@ final class CashuRequestListener: ObservableObject {
         } catch {
             AppLogger.wallet.error("CashuRequestListener: redeem failed (will retry): \(String(describing: error), privacy: .public)")
             return .transientFailure
+        }
+    }
+
+    // MARK: - Held payments (persisted approval queue)
+
+    /// Cap on payments held in the pending-receive store by this listener, so
+    /// a spammer pushing payloads from throwaway mints can't grow UserDefaults
+    /// without bound. Overflow events stay unprocessed and are re-offered on a
+    /// later scan once the backlog drains. Only listener-held entries count —
+    /// manually parked "Receive Later" tokens are the user's own business.
+    private static let maxHeldPayments = 50
+
+    /// Persist a payment that needs an explicit user decision and surface the
+    /// one-shot approval prompt. Returns `.transientFailure` (leaving the
+    /// relay event unprocessed) when the payment can't be persisted, so it is
+    /// retried later rather than lost.
+    private func holdForApproval(
+        tokenString: String,
+        requestId: String?,
+        mintUrl: String,
+        amount: UInt64,
+        unit: String,
+        memo: String?,
+        reason: String
+    ) -> ClaimOutcome {
+        guard let walletManager else { return .transientFailure }
+
+        let existing = walletManager.pendingReceiveTokens
+        // Same proofs delivered under a second event id (relay echo, resend):
+        // already held, nothing to add.
+        if existing.contains(where: { $0.token == tokenString }) {
+            return .held
+        }
+        guard existing.filter({ $0.cashuRequestId != nil }).count < Self.maxHeldPayments else {
+            AppLogger.wallet.notice("CashuRequestListener: held-payment backlog full — deferring")
+            return .transientFailure
+        }
+
+        // A non-nil cashuRequestId marks the entry as listener-held (vs a
+        // manually parked "Receive Later" token); an empty string means the
+        // payload carried no request id.
+        let pending = PendingReceiveToken(
+            tokenId: UUID().uuidString,
+            token: tokenString,
+            amount: amount,
+            unit: unit,
+            date: Date(),
+            mintUrl: mintUrl,
+            cashuRequestId: requestId ?? "",
+            memo: memo
+        )
+        walletManager.savePendingReceiveToken(pending)
+        heldForApproval = pending
+        AppLogger.wallet.notice("CashuRequestListener: payment from \(mintUrl, privacy: .public) held for approval (\(reason, privacy: .public))")
+        Task { await walletManager.loadTransactions() }
+        return .held
+    }
+
+    /// User accepted (from the approval prompt): claim the held payment —
+    /// this adds its mint to the wallet if needed — then silently claim any
+    /// other held payments that no longer need a decision.
+    func claimHeldPayment(_ pending: PendingReceiveToken) async throws -> UInt64 {
+        guard let walletManager else { throw WalletError.notInitialized }
+        let amount = try await withBackgroundWriteAssertion("cashu-request-claim") {
+            try await walletManager.claimPendingReceiveToken(pending)
+        }
+        if heldForApproval?.tokenId == pending.tokenId { heldForApproval = nil }
+        AppLogger.wallet.notice("CashuRequestListener: user approved claim of \(amount) sat from \(pending.mintUrl, privacy: .public)")
+        await claimEligibleHeldPayments()
+        return amount
+    }
+
+    /// User declined: drop the held payment permanently.
+    func declineHeldPayment(_ pending: PendingReceiveToken) {
+        walletManager?.removePendingReceiveToken(tokenId: pending.tokenId)
+        if heldForApproval?.tokenId == pending.tokenId { heldForApproval = nil }
+        AppLogger.wallet.notice("CashuRequestListener: user declined payment from \(pending.mintUrl, privacy: .public)")
+        Task { await walletManager?.loadTransactions() }
+    }
+
+    /// "Not now": hide the prompt. The payment stays in the pending-receive
+    /// store and remains claimable from its History row.
+    func dismissHeldPayment() {
+        heldForApproval = nil
+    }
+
+    /// Claim held payments that no longer need a decision: auto-claim is on
+    /// and the mint is known (the user just approved a payment from that mint,
+    /// added the mint manually, or re-enabled auto-claim). No-op in manual
+    /// mode — there every payment gets its own confirmation. Only touches
+    /// listener-held entries, never manually parked "Receive Later" tokens.
+    func claimEligibleHeldPayments() async {
+        guard SettingsManager.shared.receivePaymentRequestsAutomatically else { return }
+        guard let walletManager else { return }
+        let eligible = walletManager.pendingReceiveTokens.filter {
+            $0.cashuRequestId != nil && walletManager.isMintKnown(url: $0.mintUrl)
+        }
+        for pending in eligible {
+            do {
+                let amount = try await withBackgroundWriteAssertion("cashu-request-claim") {
+                    try await walletManager.claimPendingReceiveToken(pending)
+                }
+                if heldForApproval?.tokenId == pending.tokenId { heldForApproval = nil }
+                AppLogger.wallet.notice("CashuRequestListener: claimed held payment of \(amount) sat from \(pending.mintUrl, privacy: .public)")
+            } catch {
+                AppLogger.wallet.error("CashuRequestListener: held-payment claim failed (stays claimable in History): \(String(describing: error), privacy: .public)")
+            }
+        }
+    }
+
+    private func proofsTotalAmount(_ proofs: [[String: Any]]) -> UInt64 {
+        proofs.reduce(UInt64(0)) { total, proof in
+            let amount = (proof["amount"] as? NSNumber)?.uint64Value ?? 0
+            return total &+ amount
         }
     }
 

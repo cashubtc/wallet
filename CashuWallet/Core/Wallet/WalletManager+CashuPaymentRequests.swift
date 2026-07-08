@@ -141,10 +141,15 @@ extension WalletManager {
         }
     }
 
-    /// Exact swap fee (sats) to pay `amountSats` from `mintURL`, or nil if it
+    /// Exact total fee (sats) to pay `amountSats` from `mintURL`, or nil if it
     /// can't be determined. Used only for the rare fee-charging mint, where the
     /// fee depends on coin selection: we `prepareSend` to read the real fee and
     /// immediately `cancel()` so no proofs stay reserved.
+    ///
+    /// Must mirror CDK's `pay_request`, which prepares with `includeFee: true`
+    /// (the token carries the recipient's redeem fee on top of the requested
+    /// amount). Estimating with `includeFee: false` here previously reported
+    /// only the swap fee — "No fee" while the actual pay debited amount + fee.
     func estimateCashuPaymentFee(amountSats: UInt64, mintURL: String) async -> UInt64? {
         guard let walletRepository, amountSats > 0 else { return nil }
         do {
@@ -154,7 +159,7 @@ extension WalletManager {
                 conditions: nil,
                 amountSplitTarget: SplitTarget.none,
                 sendKind: SendKind.onlineExact,
-                includeFee: false,
+                includeFee: true,
                 useP2bk: false,
                 maxProofs: nil,
                 metadata: [:],

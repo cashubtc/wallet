@@ -12,12 +12,14 @@ struct CashuRequestDetailView: View {
 
     @State private var requestId: String
     @State private var showCopied = false
-    @State private var paymentJustReceived = false
     @State private var showMintPicker = false
     @State private var showAmountPicker = false
     @State private var showUnitPicker = false
     @State private var receiveBaselineBalance: UInt64?
     @State private var didAutoComplete = false
+    /// Amount of the payment that just landed, for the shared success screen.
+    @State private var receivedAmount: UInt64?
+    @State private var showPaymentSuccess = false
 
     init(request: CashuRequest, onClose: (() -> Void)? = nil) {
         self._requestId = State(initialValue: request.id)
@@ -34,13 +36,16 @@ struct CashuRequestDetailView: View {
 
     var body: some View {
         Group {
-            if let request {
+            if showPaymentSuccess {
+                paymentSuccessView
+            } else if let request {
                 content(request: request)
             } else {
                 Text("Request not found")
                     .foregroundStyle(.secondary)
             }
         }
+        .animation(.smooth(duration: 0.3), value: showPaymentSuccess)
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
         .toolbarBackground(.hidden, for: .navigationBar)
@@ -106,7 +111,7 @@ struct CashuRequestDetailView: View {
             // assume the payment is for the request we're watching.
             if let paidId = note.userInfo?["requestId"] as? String, paidId != requestId { return }
             AppLogger.wallet.notice("CashuRequestDetailView: payment via notification")
-            markPaymentReceived()
+            markPaymentReceived(amount: note.userInfo?["amount"] as? UInt64)
         }
         .onChange(of: walletManager.balance) { _, newBalance in
             // Robust fallback: the transient .cashuTokenReceived notification can
@@ -115,29 +120,52 @@ struct CashuRequestDetailView: View {
             // increase while we're watching the QR is the payment landing.
             guard onClose != nil, let baseline = receiveBaselineBalance, newBalance > baseline else { return }
             AppLogger.wallet.notice("CashuRequestDetailView: payment via balance bump \(baseline)->\(newBalance)")
-            markPaymentReceived()
+            markPaymentReceived(amount: newBalance - baseline)
         }
     }
 
-    /// Single-fire transition into the "Payment received!" state. In the receive
-    /// flow it dwells ~1.2s then slides the sheet down (mirrors the Lightning
-    /// invoice); when inspecting it flashes then reverts to the persistent count.
-    private func markPaymentReceived() {
+    /// Single-fire transition into the shared full-screen success — the same
+    /// `PaymentStatusView` every other receive/pay flow ends on, so a paid
+    /// request reads identically to a paid invoice. Stays until Done.
+    private func markPaymentReceived(amount: UInt64?) {
         guard !didAutoComplete else { return }
         didAutoComplete = true
-        paymentJustReceived = true
-        HapticFeedback.notification(.success)
+        receivedAmount = amount ?? request?.amount
+        // PaymentStatusView owns the success haptic on appear — don't buzz here.
+        showPaymentSuccess = true
+    }
 
-        if let onClose {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-                onClose()
-            }
-        } else {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
-                paymentJustReceived = false
-                didAutoComplete = false
-            }
+    /// The shared success screen (checkmark → title → detail rows → Done).
+    private var paymentSuccessView: some View {
+        PaymentStatusView(
+            details: paymentSuccessRows,
+            phase: .success,
+            successTitle: "Payment Received!",
+            onDone: {
+                if let onClose { onClose() } else { dismiss() }
+            },
+            onRetry: {}
+        )
+    }
+
+    private var paymentSuccessRows: [PaymentStatusView.DetailRow] {
+        var rows: [PaymentStatusView.DetailRow] = []
+        if let receivedAmount {
+            rows.append(.init(
+                icon: "bitcoinsign",
+                label: "Amount",
+                value: request.map { formatAmount(receivedAmount, unit: $0.unit) }
+                    ?? AmountFormatter.sats(receivedAmount, useBitcoinSymbol: settings.useBitcoinSymbol)
+            ))
         }
+        if let request {
+            rows.append(.init(
+                icon: "bitcoinsign.bank.building",
+                label: "Mint",
+                value: mintDisplayValue(for: request)
+            ))
+        }
+        return rows
     }
 
     @ViewBuilder
@@ -260,16 +288,7 @@ struct CashuRequestDetailView: View {
 
     private var statusBadge: some View {
         Group {
-            if paymentJustReceived {
-                HStack(spacing: 6) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .symbolEffect(.bounce, value: reduceMotion ? false : paymentJustReceived)
-                    Text("Payment Received!")
-                }
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(.green)
-                .transition(reduceMotion ? .opacity : .asymmetric(insertion: .scale(scale: 0.9).combined(with: .opacity), removal: .opacity))
-            } else if paymentCount > 0 {
+            if paymentCount > 0 {
                 HStack(spacing: 6) {
                     Image(systemName: "checkmark.seal.fill")
                     Text(paymentCount == 1 ? "1 payment received" : "\(paymentCount) payments received")
@@ -286,7 +305,6 @@ struct CashuRequestDetailView: View {
                 .foregroundStyle(.orange)
             }
         }
-        .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.5, dampingFraction: 0.7), value: paymentJustReceived)
         .animation(.easeInOut(duration: 0.2), value: paymentCount)
     }
 
@@ -352,9 +370,16 @@ struct CashuRequestDetailView: View {
 
     private func amountDisplayValue(for request: CashuRequest) -> String {
         guard let amount = request.amount, amount > 0 else { return "Any" }
+        return formatAmount(amount, unit: request.unit)
+    }
+
+    private func formatAmount(_ amount: UInt64, unit: String) -> String {
+        if unit.lowercased() == "sat" {
+            return AmountFormatter.sats(amount, useBitcoinSymbol: settings.useBitcoinSymbol)
+        }
         return CurrencyAmount(
             value: amount,
-            currency: CurrencyRegistry.currency(forMintUnit: request.unit)
+            currency: CurrencyRegistry.currency(forMintUnit: unit)
         ).formatted()
     }
 

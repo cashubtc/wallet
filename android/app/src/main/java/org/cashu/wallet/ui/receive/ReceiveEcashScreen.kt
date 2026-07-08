@@ -459,12 +459,22 @@ private fun ReviewFace(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.loose),
     ) {
-        AmountText(
-            text = formatTokenAmount(info, formatter, useBitcoinSymbol),
-            style = MaterialTheme.typography.displayMedium.withMonoDigits(),
-        )
+        // Amount and fee render in the token's own unit. The hero shows what
+        // claiming will actually credit (token value minus the receive-swap
+        // fee) — a 5001-sat token that redeems for 5000 must read as 5000,
+        // with the fee row accounting for the difference. Mirrors iOS
+        // ReceiveTokenDetailView.netReceiveAmount.
         val isSatToken = info.unit.equals("sat", ignoreCase = true)
         val tokenCurrency = CurrencyRegistry.currencyForMintUnit(info.unit)
+        val netAmount = info.amount - fee.coerceIn(0L, info.amount)
+        AmountText(
+            text = if (isSatToken) {
+                formatter.formatWalletSats(netAmount, useBitcoinSymbol)
+            } else {
+                CurrencyAmount(netAmount, tokenCurrency).formatted()
+            },
+            style = MaterialTheme.typography.displayMedium.withMonoDigits(),
+        )
         Column(modifier = Modifier.fillMaxWidth()) {
             InspectorRow(
                 label = "Fee",
