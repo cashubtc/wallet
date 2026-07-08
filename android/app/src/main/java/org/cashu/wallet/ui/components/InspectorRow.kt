@@ -16,6 +16,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import org.cashu.wallet.ui.theme.CashuTheme
@@ -66,8 +67,9 @@ fun InspectorRow(
             text = label,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.weight(1f),
         )
+        // Value fills the remaining width and right-aligns its text so it sits
+        // flush against the trailing edge, matching iOS (HStack + Spacer).
         Text(
             text = value,
             style = if (valueMonospaced) {
@@ -76,7 +78,8 @@ fun InspectorRow(
             color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
             overflow = TextOverflow.MiddleEllipsis,
-            modifier = Modifier.weight(2f, fill = false),
+            textAlign = TextAlign.End,
+            modifier = Modifier.weight(1f),
         )
         if (editable) {
             Icon(
