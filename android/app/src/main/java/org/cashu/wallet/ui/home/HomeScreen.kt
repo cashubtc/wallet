@@ -30,6 +30,7 @@ import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.outlined.AccountBalance
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.QrCodeScanner
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -494,8 +495,17 @@ private fun ActionDuet(
     receiveEnabled: Boolean,
     sendEnabled: Boolean,
 ) {
-    // Twin primary CTAs (iOS parity): Receive and Send carry equal weight on
-    // the home canvas — no filled/tonal hierarchy between them.
+    // Twin CTAs (iOS parity): Receive and Send carry equal weight on the home
+    // canvas — no filled/tonal hierarchy between them. Styled as neutral
+    // tonal pills (same fill/content colors as the history row's arrow
+    // chips) rather than the inverted-ink PrimaryButton default, which reads
+    // as too strong for a pair of equally-weighted actions.
+    val actionColors = ButtonDefaults.buttonColors(
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+    )
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
@@ -506,12 +516,14 @@ private fun ActionDuet(
             onClick = onReceive,
             modifier = Modifier.weight(1f),
             enabled = receiveEnabled,
+            colors = actionColors,
         )
         PrimaryButton(
             text = "Send",
             onClick = onSend,
             modifier = Modifier.weight(1f),
             enabled = sendEnabled,
+            colors = actionColors,
         )
     }
 }

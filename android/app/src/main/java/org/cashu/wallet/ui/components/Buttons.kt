@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonColors
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
@@ -73,6 +74,10 @@ private fun rememberPressAlpha(interactionSource: MutableInteractionSource): Flo
  * The primary full-width CTA: filled M3 button on the theme's primary color
  * (inverted ink: black in light mode, white in dark), spring press-scale,
  * expressive loading indicator.
+ *
+ * Pass [colors] to override the default filled treatment (e.g. the home
+ * screen's tonal Receive/Send pair, which matches the history row's arrow
+ * chips instead of using the inverted-ink primary color).
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -82,6 +87,7 @@ fun PrimaryButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     loading: Boolean = false,
+    colors: ButtonColors? = null,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val scale = rememberPressScale(interactionSource)
@@ -96,6 +102,7 @@ fun PrimaryButton(
             },
         enabled = enabled && !loading,
         interactionSource = interactionSource,
+        colors = colors ?: ButtonDefaults.buttonColors(),
         contentPadding = PaddingValues(horizontal = CashuTheme.spacing.section, vertical = ButtonContentVertical),
     ) {
         Box(contentAlignment = Alignment.Center) {
