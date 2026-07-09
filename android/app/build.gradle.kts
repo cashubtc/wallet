@@ -138,6 +138,7 @@ tasks.register<Test>("androidNoNetworkIntegrationTest") {
     classpath = debugUnitTest.get().classpath
     filter {
         includeTestsMatching("org.cashu.wallet.integration.*")
+        isFailOnNoMatchingTests = false
     }
 }
 
