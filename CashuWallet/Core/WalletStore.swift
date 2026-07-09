@@ -74,6 +74,16 @@ final class WalletStore {
         set(fees, forKey: StorageKeys.meltQuoteFees)
     }
 
+    /// Melt quotes a mint accepted for asynchronous (NUT-05) settlement that we
+    /// haven't observed in a terminal state yet. Keyed by quote ID → mint URL.
+    func loadPendingMeltQuotes() -> [String: String] {
+        value(forKey: StorageKeys.pendingMeltQuotes) ?? [:]
+    }
+
+    func savePendingMeltQuotes(_ quotes: [String: String]) {
+        set(quotes, forKey: StorageKeys.pendingMeltQuotes)
+    }
+
     func loadMintQuoteTimestamps() -> [String: TimeInterval] {
         value(
             forKey: StorageKeys.mintQuoteTimestamps,

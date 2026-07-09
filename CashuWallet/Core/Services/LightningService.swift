@@ -679,14 +679,24 @@ class LightningService: ObservableObject {
         return normalized
     }
     
-    /// Pay a Lightning invoice (melt tokens)
+    /// Outcome of a melt confirmation. `pendingMelt` is non-nil when the mint
+    /// accepted the payment for asynchronous NUT-05 processing; the caller owns
+    /// waiting on it and finishing the bookkeeping once it settles.
+    struct MeltConfirmation {
+        let result: MeltPaymentResult
+        let pendingMelt: PendingMelt?
+    }
+
+    /// Pay a Lightning invoice or on-chain address (melt tokens)
     /// - Parameter quoteId: The quote ID to melt
-    /// - Returns: Melt result including payment proof and actual fee paid.
-    func meltTokens(quoteId: String, mintUrl preferredMintUrl: String? = nil) async throws -> MeltPaymentResult {
+    /// - Returns: Melt confirmation. Settled immediately for synchronous mints;
+    ///   carries a `PendingMelt` handle when the mint processes asynchronously
+    ///   (NUT-05 `Prefer: respond-async`), which on-chain melts typically do.
+    func meltTokens(quoteId: String, mintUrl preferredMintUrl: String? = nil) async throws -> MeltConfirmation {
         guard let repo = walletRepository() else {
             throw WalletError.notInitialized
         }
-        
+
         isLoading = true
         defer { isLoading = false }
 
@@ -698,13 +708,32 @@ class LightningService: ObservableObject {
         let wallet = try await repo.getWallet(mintUrl: mintUrl, unit: .sat)
 
         let preparedMelt = try await wallet.prepareMelt(quoteId: quoteId)
-        let result = try await preparedMelt.confirm()
-        return MeltPaymentResult(
-            preimage: result.preimage,
-            amount: result.amount.value,
-            feePaid: result.feePaid.value,
-            mintUrl: mintURLString
-        )
+        switch try await preparedMelt.confirmPreferAsync() {
+        case .paid(let finalized):
+            return MeltConfirmation(
+                result: MeltPaymentResult(
+                    preimage: finalized.preimage,
+                    amount: finalized.amount.value,
+                    feePaid: finalized.feePaid.value,
+                    mintUrl: mintURLString,
+                    settlement: .settled
+                ),
+                pendingMelt: nil
+            )
+        case .pending(let pendingMelt):
+            // Amount and fee aren't final until the payment settles; report the
+            // quote's numbers (fee = reserve upper bound) so the UI has facts to show.
+            return MeltConfirmation(
+                result: MeltPaymentResult(
+                    preimage: nil,
+                    amount: storedMeltQuote?.amount.value ?? 0,
+                    feePaid: storedMeltQuote?.feeReserve.value ?? 0,
+                    mintUrl: mintURLString,
+                    settlement: .pending
+                ),
+                pendingMelt: pendingMelt
+            )
+        }
     }
 
     private func mintQuoteInfo(

@@ -1045,6 +1045,9 @@ struct UnifiedSendView: View {
     @State private var amountString = ""
     @State private var meltQuote: MeltQuoteInfo?
     @State private var selectedMint: MintInfo?
+    /// True when the mint accepted the melt for asynchronous (NUT-05) settlement —
+    /// typical for on-chain — so the success screen says "processing", not "sent".
+    @State private var meltSettlementPending = false
 
     // Cashu-request live fee (ported from CashuPaymentRequestPayView)
     @State private var feeState: FeeState = .idle
@@ -1852,6 +1855,9 @@ struct UnifiedSendView: View {
         return PaymentStatusView(
             details: rows,
             phase: phase,
+            // An async-accepted (NUT-05) melt — typical for on-chain — isn't settled
+            // yet: the mint took the payment and pays out in the background.
+            successTitle: meltSettlementPending ? "Payment Processing" : "Payment Sent!",
             failureCTA: meltSwitchMintCTA,
             onDone: onClose,
             onRetry: {
@@ -1918,7 +1924,8 @@ struct UnifiedSendView: View {
         withAnimation(.smooth(duration: 0.3)) { step = .sending }
         Task { @MainActor in
             do {
-                _ = try await walletManager.meltTokens(quoteId: quote.id, mintUrl: quote.mintUrl)
+                let result = try await walletManager.meltTokens(quoteId: quote.id, mintUrl: quote.mintUrl)
+                meltSettlementPending = result.settlement == .pending
                 withAnimation(.smooth(duration: 0.3)) { step = .sent }
             } catch {
                 // Keep errorMessage set so the confirm screen's notice + switch-mint
@@ -2653,6 +2660,9 @@ struct MeltView: View {
     @State private var isPreparingInitialQuote: Bool
     @State private var isGettingQuote = false
     @State private var isPaying = false
+    /// True when the mint accepted the melt for asynchronous (NUT-05) settlement —
+    /// typical for on-chain — so the success screen says "processing", not "sent".
+    @State private var meltSettlementPending = false
     @State private var errorMessage: String?
     @State private var errorSeverity: ErrorSeverity = .error
     @State private var errorShowsMintAction = false
@@ -3261,6 +3271,9 @@ struct MeltView: View {
         return PaymentStatusView(
             details: rows,
             phase: phase,
+            // An async-accepted (NUT-05) melt — typical for on-chain — isn't settled
+            // yet: the mint took the payment and pays out in the background.
+            successTitle: meltSettlementPending ? "Payment Processing" : "Payment Sent!",
             onDone: close,
             onRetry: { withAnimation(.smooth(duration: 0.3)) { paymentPhase = nil } }
         )
@@ -3497,7 +3510,8 @@ struct MeltView: View {
 
         Task { @MainActor in
             do {
-                let _ = try await walletManager.meltTokens(quoteId: quote.id, mintUrl: quote.mintUrl)
+                let result = try await walletManager.meltTokens(quoteId: quote.id, mintUrl: quote.mintUrl)
+                meltSettlementPending = result.settlement == .pending
                 withAnimation(.smooth(duration: 0.3)) { paymentPhase = .success }
             } catch {
                 let walletMessage = error.walletMessage

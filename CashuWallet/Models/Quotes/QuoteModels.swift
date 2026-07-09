@@ -78,10 +78,20 @@ struct MeltQuoteInfo: Identifiable {
 
 /// Final result for a completed melt payment.
 struct MeltPaymentResult {
+    /// How the mint answered the melt confirmation. `.settled` is final (fee and
+    /// preimage are real). `.pending` means the mint accepted the payment for
+    /// asynchronous NUT-05 processing — common for on-chain melts — so `preimage`
+    /// is nil and `feePaid` is still the quote's fee reserve, not the actual fee.
+    enum Settlement {
+        case settled
+        case pending
+    }
+
     let preimage: String?
     let amount: UInt64
     let feePaid: UInt64
     let mintUrl: String
+    var settlement: Settlement = .settled
 }
 
 /// Wallet transaction

@@ -58,6 +58,12 @@ class WalletManager: ObservableObject {
     var lastMintQuoteSyncAt: Date?
     let mintQuoteSyncCooldown: TimeInterval = 45
 
+    /// In-process waiters for melts a mint accepted asynchronously (NUT-05),
+    /// keyed by quote ID. These die with the process; `walletStore`'s
+    /// pending-melt-quote record plus `syncPendingMeltQuotes()` are the
+    /// relaunch backstop.
+    var pendingMeltWaiters: [String: Task<Void, Never>] = [:]
+
     // MARK: - Services
 
     let walletStore = WalletStore()
