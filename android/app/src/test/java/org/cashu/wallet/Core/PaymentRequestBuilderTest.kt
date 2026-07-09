@@ -37,11 +37,11 @@ class PaymentRequestBuilderTest {
         )
 
         assertEquals(
-            "creqApmFpanJlcXVlc3QtaWRhYRgqYXVjc2F0YW2BdGh0dHBzOi8vbWludC5leGFtcGxlYWRmY29mZmVlYXSBo2F0ZW5vc3RyYWF4Z25wcm9maWxlMXFxczhuMG54MG11YWV3YXYya3N4OTl3d3N1OXN3cTVtbG5kam1uM2dtOXZsOXEybXptdXAweHFwemRtaHh1ZTY5dWhoeWV0dnY5dWp1ZXRjdjlraHFtcjk5bXZ0NTRhZ4GCYW5iMTc",
+            "creqAp2FpanJlcXVlc3QtaWRhYRgqYXVjc2F0YXP2YW2BdGh0dHBzOi8vbWludC5leGFtcGxlYWRmY29mZmVlYXSBo2F0ZW5vc3RyYWF4Z25wcm9maWxlMXFxczhuMG54MG11YWV3YXYya3N4OTl3d3N1OXN3cTVtbG5kam1uM2dtOXZsOXEybXptdXAweHFwemRtaHh1ZTY5dWhoeWV0dnY5dWp1ZXRjdjlraHFtcjk5bXZ0NTRhZ4GCYW5iMTc=",
             encoded,
         )
         val cbor = Base64.getUrlDecoder().decode(encoded.removePrefix("creqA"))
-        assertEquals(0xA6.toByte(), cbor.first())
+        assertEquals(0xA7.toByte(), cbor.first())
     }
 
     @Test

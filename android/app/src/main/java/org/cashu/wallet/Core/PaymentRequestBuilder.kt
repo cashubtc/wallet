@@ -29,11 +29,12 @@ object PaymentRequestBuilder {
         )
         val request = buildList {
             add(Nut18Key.Text("i") to Nut18Value.Text(id))
-            if (amount != null && amount > 0) add(Nut18Key.Text("a") to Nut18Value.UInt(amount))
-            if (!unit.isNullOrBlank()) add(Nut18Key.Text("u") to Nut18Value.Text(unit))
-            if (singleUse != null) add(Nut18Key.Text("s") to Nut18Value.Bool(singleUse))
+            add(Nut18Key.Text("a") to amount?.takeIf { it > 0 }?.let { Nut18Value.UInt(it) }.orNull())
+            add(Nut18Key.Text("u") to unit?.takeIf { it.isNotBlank() }?.let { Nut18Value.Text(it) }.orNull())
+            add(Nut18Key.Text("s") to singleUse?.let { Nut18Value.Bool(it) }.orNull())
             if (mints.isNotEmpty()) add(Nut18Key.Text("m") to Nut18Value.Array(mints.map { Nut18Value.Text(it) }))
-            if (!description.isNullOrBlank()) add(Nut18Key.Text("d") to Nut18Value.Text(description))
+            add(Nut18Key.Text("d") to description?.takeIf { it.isNotBlank() }?.let { Nut18Value.Text(it) }.orNull())
+            add(Nut18Key.Text("t") to Nut18Value.Array(listOf(Nut18Value.Map(transport))))
             // Optional NUT-10 lock (NUT-18). A payer's wallet reads this and locks
             // the proofs it creates to the given P2PK pubkey, so only its holder
             // can redeem them. Encoded as cashu-ts does: `"nut10": {"k": kind, "d": data}`.
@@ -47,10 +48,9 @@ object PaymentRequestBuilder {
                     ),
                 )
             }
-            add(Nut18Key.Text("t") to Nut18Value.Array(listOf(Nut18Value.Map(transport))))
         }
         val cbor = Nut18Cbor.encode(Nut18Value.Map(request))
-        return "creqA" + Base64.getUrlEncoder().withoutPadding().encodeToString(cbor)
+        return "creqA" + Base64.getUrlEncoder().encodeToString(cbor)
     }
 
     fun makeNprofile(pubkeyHex: String, relays: List<String>): String {
@@ -112,7 +112,10 @@ private sealed interface Nut18Value {
     data class Bool(val value: Boolean) : Nut18Value
     data class Array(val values: List<Nut18Value>) : Nut18Value
     data class Map(val values: List<Pair<Nut18Key, Nut18Value>>) : Nut18Value
+    data object Null : Nut18Value
 }
+
+private fun Nut18Value?.orNull(): Nut18Value = this ?: Nut18Value.Null
 
 private object Nut18Cbor {
     fun encode(value: Nut18Value): ByteArray {
@@ -130,6 +133,7 @@ private object Nut18Cbor {
             }
             is Nut18Value.UInt -> writeHeader(majorType = 0, length = value.value, output)
             is Nut18Value.Bool -> output += if (value.value) 0xF5.toByte() else 0xF4.toByte()
+            Nut18Value.Null -> output += 0xF6.toByte()
             is Nut18Value.Array -> {
                 writeHeader(majorType = 4, length = value.values.size.toLong(), output)
                 value.values.forEach { encodeInto(it, output) }
