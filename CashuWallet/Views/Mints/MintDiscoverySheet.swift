@@ -122,6 +122,9 @@ struct MintDiscoverySheet: View {
     @ViewBuilder
     private func addedRow(for mint: DiscoveredMint) -> some View {
         HStack(spacing: 12) {
+            MintAvatarView(iconUrl: avatarIconUrl(for: mint), name: mint.displayName, size: 36)
+                .accessibilityHidden(true)
+
             VStack(alignment: .leading, spacing: 2) {
                 Text(mint.displayName)
                     .font(.body)
@@ -146,6 +149,9 @@ struct MintDiscoverySheet: View {
     @ViewBuilder
     private func discoverableRow(for mint: DiscoveredMint) -> some View {
         HStack(spacing: 12) {
+            MintAvatarView(iconUrl: avatarIconUrl(for: mint), name: mint.displayName, size: 36)
+                .accessibilityHidden(true)
+
             VStack(alignment: .leading, spacing: 2) {
                 Text(mint.displayName)
                     .font(.body)
@@ -172,6 +178,10 @@ struct MintDiscoverySheet: View {
         }
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
+    }
+
+    private func avatarIconUrl(for mint: DiscoveredMint) -> String? {
+        mint.iconUrl ?? walletManager.mints.first(where: { $0.url == mint.url })?.iconUrl
     }
 }
 

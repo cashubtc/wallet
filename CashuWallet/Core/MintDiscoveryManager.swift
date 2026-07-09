@@ -6,6 +6,7 @@ struct DiscoveredMint: Identifiable, Hashable {
     let id = UUID()
     let url: String
     var name: String?
+    var iconUrl: String?
     let pubkey: String?
     let description: String?
 
@@ -163,18 +164,21 @@ class MintDiscoveryManager: ObservableObject {
         
         // Parse content
         var name: String? = nil
+        var iconUrl: String? = nil
         var description: String? = nil
         
         if let contentStr = event["content"] as? String,
            let contentData = contentStr.data(using: .utf8),
            let contentJson = try? JSONSerialization.jsonObject(with: contentData) as? [String: Any] {
             name = contentJson["name"] as? String
+            iconUrl = (contentJson["icon_url"] as? String) ?? (contentJson["iconUrl"] as? String)
             description = contentJson["description"] as? String
         }
         
         let discovered = DiscoveredMint(
             url: url,
             name: name,
+            iconUrl: iconUrl,
             pubkey: event["pubkey"] as? String,
             description: description
         )
@@ -182,18 +186,18 @@ class MintDiscoveryManager: ObservableObject {
         // Add to main list
         discoveredMints.append(discovered)
 
-        // The Nostr announcement often omits a name. Backfill the mint's real
-        // title from its /v1/info so the row shows something better than the
-        // hostname fallback.
-        if name == nil {
-            Task { await resolveName(forMintAt: url) }
+        // The Nostr announcement often omits identity fields. Backfill the
+        // mint's real title and avatar from its /v1/info when needed.
+        if name == nil || iconUrl == nil {
+            Task { await resolvePreview(forMintAt: url) }
         }
     }
 
-    /// Fetches the mint's declared name from `<url>/v1/info` and, on success,
-    /// updates the matching discovered mint in place. Failures are ignored —
-    /// `DiscoveredMint.displayName` falls back to the hostname.
-    private func resolveName(forMintAt url: String) async {
+    /// Fetches the mint's declared identity from `<url>/v1/info` and, on
+    /// success, updates the matching discovered mint in place. Failures are
+    /// ignored — `DiscoveredMint.displayName` and `MintAvatarView` both have
+    /// local fallbacks.
+    private func resolvePreview(forMintAt url: String) async {
         guard let infoURL = URL(string: "\(url)/v1/info") else { return }
 
         var request = URLRequest(url: infoURL)
@@ -202,14 +206,17 @@ class MintDiscoveryManager: ObservableObject {
         guard let (data, response) = try? await URLSession.shared.data(for: request),
               let http = response as? HTTPURLResponse,
               (200..<300).contains(http.statusCode),
-              let info = try? JSONDecoder().decode(MintInfoName.self, from: data),
-              let name = info.name,
-              !name.isEmpty else {
+              let info = try? JSONDecoder().decode(MintPreviewInfo.self, from: data) else {
             return
         }
 
         if let index = discoveredMints.firstIndex(where: { $0.url == url }) {
-            discoveredMints[index].name = name
+            if let name = info.name, !name.isEmpty {
+                discoveredMints[index].name = name
+            }
+            if let iconUrl = info.iconUrl, !iconUrl.isEmpty {
+                discoveredMints[index].iconUrl = iconUrl
+            }
         }
     }
     
@@ -231,7 +238,13 @@ class MintDiscoveryManager: ObservableObject {
     }
 }
 
-// Minimal decode of a mint's /v1/info response — just the display name.
-private struct MintInfoName: Decodable {
+// Minimal decode of a mint's /v1/info response — just display identity.
+private struct MintPreviewInfo: Decodable {
     let name: String?
+    let iconUrl: String?
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case iconUrl = "icon_url"
+    }
 }
