@@ -8,7 +8,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -91,6 +90,16 @@ fun PaymentStatusScreen(
         animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
         label = "status-entrance-scale",
     )
+    // Terminal details (title is crossfaded; rows + Done fade in) arrive with
+    // the glyph morph instead of popping. animateFloatAsState starts at its
+    // target, so screens mounted directly in a terminal phase skip the fade.
+    val detailsAlpha by animateFloatAsState(
+        targetValue = if (phase != PaymentStatusPhase.Processing) 1f else 0f,
+        animationSpec = tween(durationMillis = 220, delayMillis = 120),
+        label = "status-details-alpha",
+    )
+    // No background here: the terminal inherits its host surface (sheet
+    // container or full-screen Surface), so phases never shift the canvas color.
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -98,8 +107,7 @@ fun PaymentStatusScreen(
                 alpha = entranceAlpha
                 scaleX = entranceScale
                 scaleY = entranceScale
-            }
-            .background(MaterialTheme.colorScheme.background),
+            },
     ) {
         Column(
             modifier = Modifier
@@ -167,12 +175,20 @@ fun PaymentStatusScreen(
                 }
             }
             Spacer(Modifier.height(CashuTheme.spacing.section))
-            Text(
-                text = title,
-                style = MaterialTheme.typography.headlineSmall,
-                color = MaterialTheme.colorScheme.onSurface,
-                textAlign = TextAlign.Center,
-            )
+            // Crossfade the title so Processing → terminal reads as one screen
+            // whose message changes, not a new screen (single-call hosts).
+            AnimatedContent(
+                targetState = title,
+                transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(150)) },
+                label = "payment-status-title",
+            ) { currentTitle ->
+                Text(
+                    text = currentTitle,
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    textAlign = TextAlign.Center,
+                )
+            }
             if (detail != null) {
                 Spacer(Modifier.height(CashuTheme.spacing.snug))
                 Text(
@@ -186,7 +202,11 @@ fun PaymentStatusScreen(
             // title block; only terminal phases pass them so processing stays bare.
             if (rows != null && phase != PaymentStatusPhase.Processing) {
                 Spacer(Modifier.height(CashuTheme.spacing.section))
-                Column(modifier = Modifier.fillMaxWidth()) { rows() }
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .graphicsLayer { alpha = detailsAlpha },
+                ) { rows() }
             }
         }
         if (phase != PaymentStatusPhase.Processing && onDone != null) {
@@ -197,7 +217,8 @@ fun PaymentStatusScreen(
                     .align(Alignment.BottomCenter)
                     .padding(horizontal = CashuTheme.spacing.comfortable)
                     .navigationBarsPadding()
-                    .padding(bottom = CashuTheme.spacing.comfortable),
+                    .padding(bottom = CashuTheme.spacing.comfortable)
+                    .graphicsLayer { alpha = detailsAlpha },
             )
         }
     }

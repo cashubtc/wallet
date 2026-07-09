@@ -430,7 +430,7 @@ private fun InputFace(
         }
         Spacer(Modifier.weight(1f))
         NumberPad(amount = amount, onAmountChange = onAmountChange, decimals = decimals)
-        Spacer(Modifier.height(CashuTheme.spacing.micro))
+        Spacer(Modifier.height(CashuTheme.spacing.page))
         PrimaryButton(
             text = if (creating) "Creating…" else selectedMethod.createActionTitle,
             onClick = onCreate,

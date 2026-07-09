@@ -379,6 +379,18 @@ class WalletManager(
             val signingKeys = settingsManager.p2pkSigningKeysFor(p2pkPubkeys)
             gateway.receiveEcashToken(tokenString, signingKeys).also {
                 p2pkPubkeys.forEach(settingsManager::markP2PKKeyUsed)
+                // iOS parity (WalletManager+Tokens.receiveTokens): track the
+                // token's mint only after a successful receive, so an
+                // unredeemed token never adds the mint. Without this,
+                // refreshBalance/loadTransactions skip the unknown mint and
+                // the claimed funds stay invisible.
+                trackMintForReceivedToken(
+                    tokenString = tokenString,
+                    onTrackingFailed = {
+                        AppLogger.wallet.error("Failed to track mint for received token", it)
+                    },
+                    ensureMintTracked = { ensureMintTracked(it) },
+                )
                 refreshBalance()
                 loadTransactions()
             }

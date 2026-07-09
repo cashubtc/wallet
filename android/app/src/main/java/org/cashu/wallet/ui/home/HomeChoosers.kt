@@ -2,7 +2,7 @@ package org.cashu.wallet.ui.home
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CurrencyBitcoin
-import androidx.compose.material.icons.outlined.Money
+import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.runtime.Composable
 import org.cashu.wallet.ui.components.ChooserOption
 import org.cashu.wallet.ui.components.ChooserSheet
@@ -22,7 +22,7 @@ fun ReceiveChooserSheet(
             ChooserOption(
                 id = ReceiveAction.Ecash.name,
                 label = "Ecash",
-                icon = Icons.Outlined.Money,
+                icon = Icons.Outlined.Payments,
                 supporting = "Redeem a Cashu token or create a request",
             ),
             ChooserOption(

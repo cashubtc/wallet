@@ -44,7 +44,6 @@ import androidx.compose.material.icons.outlined.IosShare
 import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.Schedule
-import androidx.compose.material.icons.outlined.UnfoldMore
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -81,6 +80,7 @@ import org.cashu.wallet.ui.components.AmountText
 import org.cashu.wallet.ui.components.CashuTextField
 import org.cashu.wallet.ui.components.InlineNotice
 import org.cashu.wallet.ui.components.MintPickerSheet
+import org.cashu.wallet.ui.components.MintSelectorRow
 import org.cashu.wallet.ui.components.NumberPad
 import org.cashu.wallet.ui.components.PrimaryButton
 import org.cashu.wallet.ui.components.QrCard
@@ -271,27 +271,22 @@ fun SendEcashScreen(
                     },
                     memo = memo,
                     onMemoChange = { memo = it },
-                    activeMintName = activeMint?.name ?: "No mint",
-                    mintCount = walletState.mints.size,
+                    activeMint = activeMint,
                     onPickMint = { pickerOpen = true },
                     onUseMax = {
                         if (mintBalance > 0L) {
                             amount = UnitAmountEntry.entryString(mintBalance, currency.decimals)
                         }
                     },
-                    mintBalanceText = if (mintBalance > 0L) {
-                        if (isSatUnit) {
-                            formatter.formatWalletSats(mintBalance, settings.useBitcoinSymbol)
-                        } else {
-                            CurrencyAmount(mintBalance, currency).formatted()
-                        }
-                    } else null,
+                    canUseMax = mintBalance > 0L,
                     amountValue = amountValue,
                     mintBalance = mintBalance,
                     balanceLoading = balanceLoading,
+                    // Per-mint spendable balance, shown under the mint name
+                    // inside the selector card (iOS MintAmountSelectorRow).
                     balanceText = when {
                         balanceLoading -> "…"
-                        isSatUnit -> formatter.formatWalletSats(walletState.balance, settings.useBitcoinSymbol)
+                        isSatUnit -> formatter.formatWalletSats(mintBalance, settings.useBitcoinSymbol)
                         else -> CurrencyAmount(mintBalance, currency).formatted()
                     },
                     unitLabel = if (isSatUnit) "sat" else effectiveUnit.uppercase(),
@@ -417,11 +412,10 @@ private fun InputFace(
     onAmountChange: (String) -> Unit,
     memo: String,
     onMemoChange: (String) -> Unit,
-    activeMintName: String,
-    mintCount: Int,
+    activeMint: org.cashu.wallet.Models.MintInfo?,
     onPickMint: () -> Unit,
     onUseMax: () -> Unit,
-    mintBalanceText: String?,
+    canUseMax: Boolean,
     amountValue: Long,
     mintBalance: Long,
     balanceLoading: Boolean,
@@ -449,24 +443,16 @@ private fun InputFace(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Spacer(Modifier.height(CashuTheme.spacing.micro))
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
-        ) {
-            MintSelectorChip(name = activeMintName, mintCount = mintCount, onClick = onPickMint)
-            if (mintBalanceText != null) {
-                androidx.compose.material3.AssistChip(
-                    onClick = onUseMax,
-                    label = { Text("Use max", style = MaterialTheme.typography.labelSmall) },
-                )
-            }
+        // One card: avatar + name + balance + Use Max pill + chevron
+        // (iOS MintAmountSelectorRow parity).
+        if (activeMint != null) {
+            MintSelectorRow(
+                mint = activeMint,
+                balanceText = balanceText,
+                onPickMint = onPickMint,
+                onUseMax = if (canUseMax) onUseMax else null,
+            )
         }
-
-        Text(
-            text = "Balance $balanceText",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
 
         Spacer(Modifier.height(CashuTheme.spacing.snug))
         // iOS AmountEntryView: the amount dims primary → secondary while the
@@ -543,7 +529,7 @@ private fun InputFace(
 
         NumberPad(amount = amount, onAmountChange = onAmountChange, decimals = decimals)
 
-        Spacer(Modifier.height(CashuTheme.spacing.micro))
+        Spacer(Modifier.height(CashuTheme.spacing.page))
         PrimaryButton(
             text = if (sending) "Sending…" else "Send",
             onClick = onSend,
@@ -596,31 +582,6 @@ private fun P2pkLockSection(
             )
         }
     }
-}
-
-@Composable
-internal fun MintSelectorChip(
-    name: String,
-    mintCount: Int,
-    onClick: () -> Unit,
-) {
-    androidx.compose.material3.AssistChip(
-        onClick = onClick,
-        enabled = mintCount > 0,
-        label = { Text(name) },
-        leadingIcon = {
-            Icon(
-                imageVector = Icons.Outlined.AccountBalance,
-                contentDescription = null,
-            )
-        },
-        trailingIcon = {
-            Icon(
-                imageVector = Icons.Outlined.UnfoldMore,
-                contentDescription = null,
-            )
-        },
-    )
 }
 
 @Composable

@@ -198,6 +198,10 @@ internal fun TokenInspectorRows(
 /**
  * Maps a [TokenClaimStatus] to the shared [PaymentStatusScreen] terminal.
  * The caller decides the container (pinned sheet height vs. full screen).
+ *
+ * One call site for every status: the terminal stays mounted across
+ * Claiming → Claimed/Failed, so the entrance animation runs once and the
+ * spinner morphs into the check/X in place instead of a full re-entrance.
  */
 @Composable
 internal fun TokenClaimTerminal(
@@ -207,58 +211,62 @@ internal fun TokenClaimTerminal(
     onDone: () -> Unit,
     onRetry: () -> Unit,
 ) {
-    when (status) {
-        TokenClaimStatus.Claiming -> PaymentStatusScreen(
-            phase = PaymentStatusPhase.Processing,
-            title = "Claiming…",
-        )
-
-        is TokenClaimStatus.Claimed -> {
-            val isSat = status.unit.equals("sat", ignoreCase = true)
-            val currency = CurrencyRegistry.currencyForMintUnit(status.unit)
-            fun formatted(value: Long): String = if (isSat) {
-                formatter.formatWalletSats(value, useBitcoinSymbol)
-            } else {
-                CurrencyAmount(value, currency).formatted()
+    val phase = when (status) {
+        TokenClaimStatus.Claiming -> PaymentStatusPhase.Processing
+        is TokenClaimStatus.Claimed -> PaymentStatusPhase.Success
+        is TokenClaimStatus.Failed -> PaymentStatusPhase.Failure
+    }
+    PaymentStatusScreen(
+        phase = phase,
+        title = when (status) {
+            TokenClaimStatus.Claiming -> "Claiming…"
+            is TokenClaimStatus.Claimed -> "Payment received"
+            is TokenClaimStatus.Failed -> "Couldn't receive"
+        },
+        detail = (status as? TokenClaimStatus.Failed)?.message?.text,
+        // Terminal outcomes (already redeemed) can't be retried — offer Done;
+        // anything else returns to Review for another attempt.
+        doneLabel = if (status is TokenClaimStatus.Failed && !status.message.isTerminal) {
+            "Try again"
+        } else {
+            "Done"
+        },
+        onDone = when (status) {
+            TokenClaimStatus.Claiming -> null
+            is TokenClaimStatus.Claimed -> onDone
+            is TokenClaimStatus.Failed -> {
+                { if (status.message.isTerminal) onDone() else onRetry() }
             }
-            PaymentStatusScreen(
-                phase = PaymentStatusPhase.Success,
-                title = "Payment received",
-                onDone = onDone,
-                rows = {
-                    InspectorRow(
-                        label = "Amount",
-                        value = formatted(status.amount),
-                        leadingIcon = Icons.Outlined.Payments,
-                    )
-                    if (status.fee > 0L) {
-                        CanvasDivider(leadingInset = 16.dp)
-                        InspectorRow(
-                            label = "Fee",
-                            value = formatted(status.fee),
-                            leadingIcon = Icons.Outlined.Receipt,
-                        )
-                    }
+        },
+        rows = (status as? TokenClaimStatus.Claimed)?.let { claimed ->
+            {
+                val isSat = claimed.unit.equals("sat", ignoreCase = true)
+                val currency = CurrencyRegistry.currencyForMintUnit(claimed.unit)
+                fun formatted(value: Long): String = if (isSat) {
+                    formatter.formatWalletSats(value, useBitcoinSymbol)
+                } else {
+                    CurrencyAmount(value, currency).formatted()
+                }
+                InspectorRow(
+                    label = "Amount",
+                    value = formatted(claimed.amount),
+                    leadingIcon = Icons.Outlined.Payments,
+                )
+                if (claimed.fee > 0L) {
                     CanvasDivider(leadingInset = 16.dp)
                     InspectorRow(
-                        label = "Mint",
-                        value = status.mint,
-                        leadingIcon = Icons.Outlined.AccountBalance,
+                        label = "Fee",
+                        value = formatted(claimed.fee),
+                        leadingIcon = Icons.Outlined.Receipt,
                     )
-                },
-            )
-        }
-
-        is TokenClaimStatus.Failed -> PaymentStatusScreen(
-            phase = PaymentStatusPhase.Failure,
-            title = "Couldn't receive",
-            detail = status.message.text,
-            // Terminal outcomes (already redeemed) can't be retried — offer
-            // Done; anything else returns to Review for another attempt.
-            doneLabel = if (status.message.isTerminal) "Done" else "Try again",
-            onDone = {
-                if (status.message.isTerminal) onDone() else onRetry()
-            },
-        )
-    }
+                }
+                CanvasDivider(leadingInset = 16.dp)
+                InspectorRow(
+                    label = "Mint",
+                    value = claimed.mint,
+                    leadingIcon = Icons.Outlined.AccountBalance,
+                )
+            }
+        },
+    )
 }

@@ -71,7 +71,8 @@ private fun rememberPressAlpha(interactionSource: MutableInteractionSource): Flo
 
 /**
  * The primary full-width CTA: filled M3 button on the theme's primary color
- * (dynamic on Android 12+), spring press-scale, expressive loading indicator.
+ * (inverted ink: black in light mode, white in dark), spring press-scale,
+ * expressive loading indicator.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable

@@ -27,12 +27,10 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.AccountBalance
 import androidx.compose.material.icons.outlined.Cancel
 import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.Money
 import androidx.compose.material.icons.outlined.Nfc
 import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material.icons.outlined.Receipt
-import androidx.compose.material.icons.outlined.UnfoldMore
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
@@ -76,8 +74,8 @@ import org.cashu.wallet.ui.components.EmptyState
 import org.cashu.wallet.ui.components.GhostButton
 import org.cashu.wallet.ui.components.InlineNotice
 import org.cashu.wallet.ui.components.InspectorRow
-import org.cashu.wallet.ui.components.MintAvatar
 import org.cashu.wallet.ui.components.MintPickerSheet
+import org.cashu.wallet.ui.components.MintSelectorRow
 import org.cashu.wallet.ui.components.NoticeSeverity
 import org.cashu.wallet.ui.components.NumberPad
 import org.cashu.wallet.ui.components.PaymentStatusPhase
@@ -539,7 +537,7 @@ private fun InputFace(
         }
         !hasBalance -> {
             EmptyState(
-                icon = Icons.Outlined.Money,
+                icon = Icons.Outlined.Payments,
                 title = "Nothing to send yet",
                 supporting = "Receive some ecash before you can send.",
                 actionLabel = "Receive",
@@ -604,7 +602,7 @@ private fun InputFace(
                 onClick = onScan,
             )
             SendMethodButton(
-                icon = Icons.Outlined.Money,
+                icon = Icons.Outlined.Payments,
                 label = "Ecash",
                 onClick = onSendEcash,
             )
@@ -695,55 +693,6 @@ private fun ToPill(destination: String) {
     }
 }
 
-/** Mint row: avatar + name + balance, tap to change; optional Use Max. */
-@Composable
-private fun MintAmountRow(
-    mint: MintInfo,
-    balanceText: String?,
-    onPickMint: () -> Unit,
-    onUseMax: (() -> Unit)? = null,
-) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onPickMint)
-            .padding(
-                horizontal = CashuTheme.spacing.comfortable,
-                vertical = CashuTheme.spacing.snug,
-            ),
-    ) {
-        MintAvatar(mint = mint)
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = mint.name,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (balanceText != null) {
-                Text(
-                    text = "Balance $balanceText",
-                    style = MaterialTheme.typography.bodySmall.withMonoDigits(),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-        if (onUseMax != null) {
-            GhostButton(text = "Use Max", onClick = onUseMax)
-        }
-        Icon(
-            imageVector = Icons.Outlined.UnfoldMore,
-            contentDescription = "Change mint",
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(CashuTheme.spacing.loose),
-        )
-    }
-}
-
 @Composable
 private fun AmountFace(
     destination: String,
@@ -775,7 +724,7 @@ private fun AmountFace(
         )
         Spacer(Modifier.height(CashuTheme.spacing.default))
         if (mint != null) {
-            MintAmountRow(
+            MintSelectorRow(
                 mint = mint,
                 balanceText = balanceText,
                 onPickMint = onPickMint,
@@ -784,7 +733,7 @@ private fun AmountFace(
         }
         Spacer(Modifier.weight(1f))
         NumberPad(amount = amount, onAmountChange = onAmountChange)
-        Spacer(Modifier.height(CashuTheme.spacing.micro))
+        Spacer(Modifier.height(CashuTheme.spacing.page))
         PrimaryButton(
             text = "Continue",
             onClick = onContinue,
@@ -821,7 +770,7 @@ private fun ConfirmFace(
     ) {
         // Top accessory: paying mint + recipient (mint-at-top rule).
         if (mint != null) {
-            MintAmountRow(
+            MintSelectorRow(
                 mint = mint,
                 balanceText = formatter.formatWalletSats(mintBalance, useBitcoinSymbol),
                 onPickMint = onPickMint,

@@ -211,7 +211,9 @@ fun HomeScreen(
                         // Send opens the unified surface directly — no chooser.
                         onSend = onSend,
                         receiveEnabled = walletState.activeMint != null,
-                        sendEnabled = walletState.hasAnyBalance,
+                        // iOS parity: Send is tappable at zero balance; the sheet shows
+                        // "Nothing to send yet" with a Receive CTA instead of disabling here.
+                        sendEnabled = walletState.activeMint != null,
                     )
                 },
                 onScan = onScan,

@@ -8,6 +8,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalance
@@ -37,6 +38,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import org.cashu.wallet.App.AppContainer
 import org.cashu.wallet.Core.Platform.ConnectivityState
+import org.cashu.wallet.ui.components.CanvasDivider
 import org.cashu.wallet.ui.navigation.CashuNavHost
 import org.cashu.wallet.ui.navigation.Routes
 import org.cashu.wallet.ui.navigation.TopTab
@@ -107,24 +109,30 @@ private fun CashuNavigationBar(
     onSelect: (TopTab) -> Unit,
 ) {
     val haptics = LocalHapticFeedback.current
-    NavigationBar {
-        TopTab.entries.forEach { tab ->
-            val isSelected = tab == selected
-            NavigationBarItem(
-                selected = isSelected,
-                onClick = {
-                    if (!isSelected) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    onSelect(tab)
-                },
-                icon = {
-                    Icon(
-                        imageVector = if (isSelected) tab.iconSelected else tab.iconOutlined,
-                        contentDescription = tab.label,
-                        modifier = Modifier.size(26.dp),
-                    )
-                },
-                label = { Text(tab.label, style = MaterialTheme.typography.labelLarge) },
-            )
+    // Unified with the canvas: the bar shares the page background (white/black
+    // inverted ink) instead of sitting on a tonal surface band; a full-bleed
+    // hairline is the only separation — nearly invisible in dark mode.
+    Column {
+        CanvasDivider(leadingInset = 0.dp)
+        NavigationBar(containerColor = MaterialTheme.colorScheme.background) {
+            TopTab.entries.forEach { tab ->
+                val isSelected = tab == selected
+                NavigationBarItem(
+                    selected = isSelected,
+                    onClick = {
+                        if (!isSelected) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onSelect(tab)
+                    },
+                    icon = {
+                        Icon(
+                            imageVector = if (isSelected) tab.iconSelected else tab.iconOutlined,
+                            contentDescription = tab.label,
+                            modifier = Modifier.size(26.dp),
+                        )
+                    },
+                    label = { Text(tab.label, style = MaterialTheme.typography.labelLarge) },
+                )
+            }
         }
     }
 }

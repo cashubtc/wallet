@@ -1,11 +1,8 @@
 package org.cashu.wallet.ui.components
 
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.foundation.LocalIndication
-import androidx.compose.foundation.background
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -13,7 +10,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.material.icons.Icons
@@ -26,26 +22,23 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.unit.dp
 import org.cashu.wallet.Core.UnitAmountEntry
 
-// NumberPad spacing intentionally matches the iOS 10pt grid — between snug (8)
-// and default (12) on the token scale. Keypad keys are 56dp (M3 button height).
-private val KeyGap = 10.dp
-private val KeyHeight = 56.dp
+// Minimal keypad: no background boxes, just numbers with subtle press feedback.
+// Tighter vertical spacing for a cleaner iOS-style appearance.
+private val KeyGap = 4.dp
+private val KeyHeight = 52.dp
 
 /**
- * Numeric keypad for amount entry. With [decimals] == 0 the output is the plain
- * digit-only String; with decimals > 0 keys route through [UnitAmountEntry]'s
- * minor-unit accumulator ("5" → "0.05" → "0.50" → "5.00") for unit-native
- * fiat-ecash entry. Long-press delete clears all.
- *
- * Flat-By-Default: keys use a tonal fill, no border stroke (replaces the legacy
- * stroked outline pattern with a Material-correct surface treatment).
+ * Minimal numeric keypad for amount entry — no background boxes, just numbers
+ * with opacity-based press feedback (iOS-style). With [decimals] == 0 the output
+ * is the plain digit-only String; with decimals > 0 keys route through
+ * [UnitAmountEntry]'s minor-unit accumulator ("5" → "0.05" → "0.50" → "5.00")
+ * for unit-native fiat-ecash entry. Long-press delete clears all.
  */
 @Composable
 fun NumberPad(
@@ -120,24 +113,19 @@ private fun NumberPadKey(
     val haptics = LocalHapticFeedback.current
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
-    // Spring press-scale: keys physically respond to touch (M3 Expressive).
-    val scale by animateFloatAsState(
-        targetValue = if (pressed) 0.94f else 1f,
-        animationSpec = spring(stiffness = Spring.StiffnessMedium),
-        label = "key-press-scale",
+    // Opacity-based press feedback: subtle dim on press (iOS-style, no background).
+    val alpha by animateFloatAsState(
+        targetValue = if (pressed) 0.4f else 1f,
+        animationSpec = tween(durationMillis = 100),
+        label = "key-press-alpha",
     )
     Box(
         modifier = modifier
             .height(KeyHeight)
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-            }
-            .clip(MaterialTheme.shapes.medium)
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .graphicsLayer { this.alpha = alpha }
             .combinedClickable(
                 interactionSource = interactionSource,
-                indication = LocalIndication.current,
+                indication = null, // No ripple — opacity handles feedback
                 onClickLabel = contentDescription,
                 onLongClickLabel = onLongClick?.let { "Clear" },
                 onLongClick = onLongClick?.let {

@@ -11,15 +11,20 @@ like a port, make the Android-native choice instead.
 
 ## 1. Foundations
 
-### Color — Material You, always
-- **Dynamic color** (`dynamicLight/DarkColorScheme`) on Android 12+: the app's
-  palette comes from the user's wallpaper. Fallback: M3 baseline scheme
-  (violet family) on API 26–31. (`ui/theme/CashuTheme.kt`)
-- Full M3 color roles are used as designed: filled primary CTAs, tonal
-  secondaries, `secondaryContainer` nav indicator, tonal surface tiers.
+### Color — monochrome inverted ink
+- **Custom zero-chroma scheme** (`LightInkColorScheme` / `DarkInkColorScheme`
+  in `ui/theme/Color.kt`, applied in `ui/theme/CashuTheme.kt`): white canvas +
+  black ink in light mode, black canvas + white ink in dark mode — the brand
+  identity shared with iOS ("inverted ink"). All neutrals are pure grays.
+- **No Material You dynamic color** (locked decision, 2026-07-09): the palette
+  must never shift with the wallpaper. Brand > Monet.
+- Full M3 color roles are still used as designed: filled primary CTAs (black on
+  light / white on dark), tonal secondaries, `secondaryContainer` nav
+  indicator, tonal surface-container tiers (gray ramp). Components stay stock
+  Material — only the palette is branded.
 - **Semantic state hues stay fixed** (received green / pending orange / error
-  red via `CashuColors`) so payment state never shifts with the wallpaper.
-  These are the only hardcoded colors.
+  red via `CashuColors` + the `error` role) — chromatic color is reserved
+  exclusively for payment state.
 
 ### Type & shape — stock M3
 - `Typography()` and `Shapes()` defaults (`ui/theme/Type.kt`, `Shape.kt`).

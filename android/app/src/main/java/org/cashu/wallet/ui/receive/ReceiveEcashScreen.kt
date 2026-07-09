@@ -4,10 +4,14 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -62,11 +66,12 @@ private sealed interface ReceiveFace {
     data class Review(val review: TokenReview) : ReceiveFace
 }
 
-// Floor for the pinned claim-terminal height: enough room for the glyph +
-// title + failure copy + the bottom-anchored Done button, in case the review
-// face measured unusually short.
+// Floor for the pinned stage height (review face and claim terminal): enough
+// room for the glyph + title + failure copy + the bottom-anchored Done button,
+// in case the paste face measured unusually short.
 private val MinStatusHeight = 360.dp
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ReceiveEcashScreen(
     walletManager: WalletManager,
@@ -187,26 +192,30 @@ fun ReceiveEcashScreen(
         }
     }
 
-    // The claim terminal replaces the whole sheet body (header included) but —
-    // unlike the send flow's full-height takeover — keeps the sheet at the
-    // height the review face occupied. iOS runs the whole claim as a phase
-    // morph inside the `.medium`-detent sheet (ReceiveTokenDetailView), so the
-    // sheet must not balloon to full screen here. We measure the wrap-content
-    // body continuously; when Receive is tapped the pin equals the face on
-    // screen, so the review → "Claiming…" swap has zero height jump.
+    // Stable stage: the sheet settles at the paste face's height and stays
+    // there for the whole flow (review → claiming → terminal), so face swaps
+    // read as content changes rather than the sheet morphing. iOS runs the
+    // whole claim as a phase morph inside the `.medium`-detent sheet
+    // (ReceiveTokenDetailView). We measure the wrap-content body only while
+    // the paste face is up and the keyboard is closed — IME-inflated heights
+    // must not become the pin.
     val density = LocalDensity.current
-    var measuredBodyHeightPx by remember { mutableIntStateOf(0) }
-    val pinnedStatusHeight = with(density) { measuredBodyHeightPx.toDp() }.coerceAtLeast(MinStatusHeight)
+    var pasteBodyHeightPx by remember { mutableIntStateOf(0) }
+    val imeVisible = WindowInsets.isImeVisible
+    val pinnedBodyHeight = with(density) { pasteBodyHeightPx.toDp() }.coerceAtLeast(MinStatusHeight)
+    val pinBody = status != null || face is ReceiveFace.Review
     Column(
-        modifier = if (status != null) {
-            Modifier.fillMaxWidth().height(pinnedStatusHeight)
+        modifier = if (pinBody) {
+            Modifier.fillMaxWidth().height(pinnedBodyHeight)
         } else {
-            Modifier.fillMaxWidth().onSizeChanged { measuredBodyHeightPx = it.height }
+            Modifier.fillMaxWidth().onSizeChanged {
+                if (!imeVisible) pasteBodyHeightPx = it.height
+            }
         },
     ) {
         when (val current = status) {
             // Claiming / success / failure: the shared terminal, pinned to the
-            // height the review face occupied (see comment above).
+            // height the paste face occupied (see comment above).
             is TokenClaimStatus -> Box(Modifier.weight(1f).fillMaxWidth()) {
                 TokenClaimTerminal(
                     status = current,
@@ -247,10 +256,17 @@ fun ReceiveEcashScreen(
                 )
                 // iOS pushes ReceiveTokenDetailView onto the sheet's
                 // NavigationStack (ReceiveView.navigationDestination), so
-                // paste ↔ review reads as a horizontal push/pop — not a fade.
+                // paste ↔ review reads as a lateral push/pop — not a fade.
+                // The review face fills the pinned stage (weight is only safe
+                // once the body height is fixed; in a wrap-content column it
+                // would balloon the sheet to full height).
                 TwoFaceScreen(
                     targetState = face,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = if (pinBody) {
+                        Modifier.fillMaxWidth().weight(1f)
+                    } else {
+                        Modifier.fillMaxWidth()
+                    },
                     forward = { _, target -> target is ReceiveFace.Review },
                     label = "receive-ecash-face",
                 ) { currentFace ->
@@ -378,38 +394,47 @@ private fun ReviewFace(
     onReceiveLater: () -> Unit,
 ) {
     val info = review.info
+    // The face fills the pinned stage (paste-face height): details scroll in
+    // the top region, CTAs anchor to the bottom — standard sheet ergonomics.
     Column(
         modifier = Modifier
-            .fillMaxWidth()
-            .verticalScroll(rememberScrollState())
+            .fillMaxSize()
             .padding(
                 horizontal = CashuTheme.spacing.comfortable,
                 vertical = CashuTheme.spacing.comfortable,
             ),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.loose),
     ) {
-        // Amount and fee render in the token's own unit. The hero shows what
-        // claiming will actually credit (token value minus the receive-swap
-        // fee) — a 5001-sat token that redeems for 5000 must read as 5000,
-        // with the fee row accounting for the difference. Mirrors iOS
-        // ReceiveTokenDetailView.netReceiveAmount.
-        val isSatToken = info.unit.equals("sat", ignoreCase = true)
-        val tokenCurrency = CurrencyRegistry.currencyForMintUnit(info.unit)
-        val netAmount = info.amount - review.fee.coerceIn(0L, info.amount)
-        AmountText(
-            text = if (isSatToken) {
-                formatter.formatWalletSats(netAmount, useBitcoinSymbol)
-            } else {
-                CurrencyAmount(netAmount, tokenCurrency).formatted()
-            },
-            style = MaterialTheme.typography.displayMedium.withMonoDigits(),
-        )
-        TokenInspectorRows(
-            info = info,
-            fee = review.fee,
-            locked = review.locked,
-        )
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.loose),
+        ) {
+            // Amount and fee render in the token's own unit. The hero shows what
+            // claiming will actually credit (token value minus the receive-swap
+            // fee) — a 5001-sat token that redeems for 5000 must read as 5000,
+            // with the fee row accounting for the difference. Mirrors iOS
+            // ReceiveTokenDetailView.netReceiveAmount.
+            val isSatToken = info.unit.equals("sat", ignoreCase = true)
+            val tokenCurrency = CurrencyRegistry.currencyForMintUnit(info.unit)
+            val netAmount = info.amount - review.fee.coerceIn(0L, info.amount)
+            AmountText(
+                text = if (isSatToken) {
+                    formatter.formatWalletSats(netAmount, useBitcoinSymbol)
+                } else {
+                    CurrencyAmount(netAmount, tokenCurrency).formatted()
+                },
+                style = MaterialTheme.typography.displayMedium.withMonoDigits(),
+            )
+            TokenInspectorRows(
+                info = info,
+                fee = review.fee,
+                locked = review.locked,
+            )
+        }
         // Claim outcomes no longer land here: tapping Receive swaps the sheet
         // body to the PaymentStatusScreen terminal (success check / failure X).
         Spacer(modifier = Modifier.height(CashuTheme.spacing.snug))
