@@ -4,12 +4,13 @@
 # App Store / TestFlight upload validation.
 #
 # cashubtc/cdk-swift ships its Rust core as a *dynamic* framework whose
-# Info.plist is missing keys Apple requires for embedded frameworks:
+# Info.plist was missing keys Apple requires for embedded frameworks:
 #   - MinimumOSVersion           (upload errors 90360 / 90530)
 #   - CFBundleShortVersionString (upload error 90057)
-# The bug is present in v0.17.0 and v0.17.1, so bumping the package does not
-# help. We inject the missing keys into the embedded copy at build time and
-# re-sign the framework (editing Info.plist invalidates its signature).
+# The bug is present in v0.17.0 and v0.17.1; upstream ships both keys as of
+# v0.17.3-rc.0. Kept as a safety net: it overwrites the values to match the
+# app (Set falls back to Add if a key is absent) and re-signs the framework
+# (editing Info.plist invalidates its signature).
 #
 # Runs as the last build phase of the CashuWallet target.
 

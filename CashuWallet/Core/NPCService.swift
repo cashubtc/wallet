@@ -164,9 +164,21 @@ class NPCService: ObservableObject {
             let quotes = try await connectedClient.getQuotes(since: nil)
             print("NPC: Connected successfully, found \(quotes.count) quotes")
             
-            // If user hasn't selected a mint and we have quotes, use the mint from first quote
-            if selectedMintUrl == nil, let firstQuote = quotes.first, let mintUrl = firstQuote.mintUrl {
-                selectedMintUrl = mintUrl
+            // Reconcile the server-side mint with the local selection. The server
+            // falls back to its own default mint for accounts that never set one,
+            // so re-assert the user's choice on every connect.
+            if let selected = selectedMintUrl {
+                do {
+                    let response = try await connectedClient.setMintUrl(mintUrl: selected)
+                    if !response.error, let confirmed = response.mintUrl {
+                        configuredMintUrl = confirmed
+                    }
+                } catch {
+                    print("NPC: mint reconciliation failed: \(error)")
+                }
+            } else if let firstQuote = quotes.first, let mintUrl = firstQuote.mintUrl {
+                // No local choice yet: surface the server's mint for display,
+                // but don't persist it as if the user picked it.
                 configuredMintUrl = mintUrl
             }
             
@@ -192,22 +204,27 @@ class NPCService: ObservableObject {
     
     // MARK: - API Methods
     
-    /// Change configured mint on NpubCash server
+    /// Change configured mint on NpubCash server.
+    /// Local selection is only persisted once the server confirms the change,
+    /// otherwise incoming payments keep landing on the server's default mint.
     func changeMint(to mintUrl: String) async throws {
+        if client == nil {
+            await connect()
+        }
         guard let client = client else {
             throw NPCError.notConnected
         }
-        
+
         let response = try await client.setMintUrl(mintUrl: mintUrl)
-        
+
         if response.error {
             throw NPCError.apiError("Failed to change mint")
         }
-        
-        if let newMintUrl = response.mintUrl {
-            configuredMintUrl = newMintUrl
-            selectedMintUrl = newMintUrl
-        }
+
+        let confirmed = response.mintUrl ?? mintUrl
+        configuredMintUrl = confirmed
+        selectedMintUrl = confirmed
+        errorMessage = nil
     }
     
     /// Get quotes from NpubCash

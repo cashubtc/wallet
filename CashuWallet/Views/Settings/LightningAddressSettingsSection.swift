@@ -62,7 +62,11 @@ struct LightningAddressSettingsSection: View {
                 selectedMintUrl: $npcService.selectedMintUrl,
                 onSelect: { mintUrl in
                     Task {
-                        try? await npcService.changeMint(to: mintUrl)
+                        do {
+                            try await npcService.changeMint(to: mintUrl)
+                        } catch {
+                            npcService.errorMessage = error.userFacingWalletMessage
+                        }
                     }
                 }
             )

@@ -1526,7 +1526,9 @@ struct MintPickerSheet: View {
         NavigationStack {
             List(mints, id: \.url) { mint in
                 Button {
-                    selectedMintUrl = mint.url
+                    // Selection is confirmed by the server round-trip in
+                    // onSelect; writing it here would show a mint the server
+                    // never accepted.
                     onSelect(mint.url)
                     dismiss()
                 } label: {
