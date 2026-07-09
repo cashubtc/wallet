@@ -28,6 +28,7 @@ import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import okio.ByteString
+import org.cashu.wallet.Core.CDK.CdkWalletGateway
 import org.cashu.wallet.Models.MintInfo
 
 data class MintDiscoveryState(
@@ -37,6 +38,7 @@ data class MintDiscoveryState(
 
 class MintDiscoveryManager(
     private val settingsManager: SettingsManager,
+    private val gateway: CdkWalletGateway,
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(10, TimeUnit.SECONDS)
@@ -45,7 +47,6 @@ class MintDiscoveryManager(
     private val mutableState = MutableStateFlow(MintDiscoveryState())
     val state: StateFlow<MintDiscoveryState> = mutableState.asStateFlow()
     private val webSockets = CopyOnWriteArrayList<WebSocket>()
-    private val metadataFetcher = WalletMintMetadataFetcher()
     private val metadataScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     suspend fun discoverMints(): List<MintInfo> {
@@ -128,7 +129,9 @@ class MintDiscoveryManager(
 
     private fun fetchMintPreview(url: String) {
         metadataScope.launch {
-            val fetched = runCatching { metadataFetcher.fetchRawMintInfo(url) }.getOrNull() ?: return@launch
+            runCatching { gateway.ensureWallet(url) }
+                .onFailure { AppLogger.wallet.error("CDK wallet preparation failed for discovered mint $url", it) }
+            val fetched = runCatching { gateway.fetchMintInfo(url) }.getOrNull() ?: return@launch
             mutableState.update { current ->
                 val index = current.discoveredMints.indexOfFirst { it.url == url }
                 if (index < 0) {

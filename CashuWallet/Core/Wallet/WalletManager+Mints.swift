@@ -43,30 +43,39 @@ extension WalletManager {
         return try await wallet.fetchMintInfo()
     }
 
-    /// Best-effort, side-effect-free preview of a mint's identity (name + icon),
-    /// fetched straight from its `/v1/info` endpoint. Unlike `fetchFullMintInfo`
-    /// this creates no CDK wallet and tracks nothing — it's safe to call the
-    /// moment a user stages a mint URL, before they commit to restoring. Returns
-    /// `nil` (and the caller falls back to a monogram) on any failure.
-    nonisolated func fetchMintPreviewInfo(url: String) async -> (name: String?, iconUrl: String?)? {
-        let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        guard let infoURL = URL(string: "\(trimmed)/v1/info") else { return nil }
-
-        var request = URLRequest(url: infoURL)
-        request.timeoutInterval = 8
-
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
-              let http = response as? HTTPURLResponse,
-              (200..<300).contains(http.statusCode),
-              let info = try? JSONDecoder().decode(MintPreviewInfo.self, from: data) else {
+    /// Best-effort preview of a mint's identity (name + icon), fetched through
+    /// CashuDevKit. CDK requires a wallet entry before `fetchMintInfo()`, so this
+    /// may prepare the mint in the CDK repository, but it does not add the mint
+    /// to the app's saved mint list.
+    func fetchMintPreviewInfo(url: String) async -> (name: String?, iconUrl: String?)? {
+        guard let walletRepository else {
             return nil
         }
-        return (name: info.name, iconUrl: info.iconUrl)
+
+        let normalized = normalizePreviewMintUrl(url)
+        let mintUrl = MintUrl(url: normalized)
+        do {
+            if await !walletRepository.hasMint(mintUrl: mintUrl) {
+                try await walletRepository.createWallet(mintUrl: mintUrl, unit: .sat, targetProofCount: nil)
+            }
+            let wallet = try await walletRepository.getWallet(mintUrl: mintUrl, unit: .sat)
+            let info = try await wallet.fetchMintInfo()
+            return (name: info?.name, iconUrl: info?.iconUrl)
+        } catch {
+            AppLogger.wallet.error("Failed to fetch CDK mint preview for \(normalized): \(error)")
+            return nil
+        }
+    }
+
+    private func normalizePreviewMintUrl(_ url: String) -> String {
+        var normalized = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !normalized.contains("://") {
+            normalized = "https://" + normalized
+        }
+        return normalized.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
     }
 
     // MARK: - Balance Operations
-
     func refreshBalance() async {
         guard let walletRepository = walletRepository else { return }
         let mintUrls = trackedMintUrlsForWalletAccess()
@@ -114,17 +123,5 @@ extension WalletManager {
         mintService.updateMintBalances(balancesByMintURL)
         balance = total
         balancesByUnit = unitTotals
-    }
-}
-
-/// Minimal decode of a mint's `/v1/info` (NUT-06) — just the display identity
-/// used to preview a staged mint before it's restored.
-private struct MintPreviewInfo: Decodable {
-    let name: String?
-    let iconUrl: String?
-
-    enum CodingKeys: String, CodingKey {
-        case name
-        case iconUrl = "icon_url"
     }
 }

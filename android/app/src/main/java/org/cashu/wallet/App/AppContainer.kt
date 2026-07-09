@@ -43,7 +43,7 @@ class AppContainer(context: Context) {
         gateway = cdkGateway,
     )
     val priceService = PriceService(settingsStore)
-    val mintDiscoveryManager = MintDiscoveryManager(settingsManager)
+    val mintDiscoveryManager = MintDiscoveryManager(settingsManager, cdkGateway)
     val cashuRequestListener = CashuRequestListener(
         context = appContext,
         nostrService = nostrService,
