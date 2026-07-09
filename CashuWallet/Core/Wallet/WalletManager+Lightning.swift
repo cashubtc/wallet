@@ -110,15 +110,21 @@ extension WalletManager {
     }
 
     func meltTokens(quoteId: String, mintUrl: String? = nil) async throws -> MeltPaymentResult {
-        let result = try await lightningService.meltTokens(quoteId: quoteId, mintUrl: mintUrl)
-        // Persist preimage as proof of payment
-        if let preimage = result.preimage {
-            transactionService.savePreimage(quoteId: quoteId, preimage: preimage)
+        let confirmation = try await lightningService.meltTokens(quoteId: quoteId, mintUrl: mintUrl)
+        let result = confirmation.result
+        if let pendingMelt = confirmation.pendingMelt {
+            // Mint accepted the payment for asynchronous NUT-05 settlement (the
+            // usual case for on-chain melts). Remember the quote so a relaunch can
+            // pick it back up, then wait for it in the background.
+            rememberPendingMeltQuote(quoteId: quoteId, mintUrl: result.mintUrl)
+            watchPendingMelt(pendingMelt, quoteId: quoteId)
+            SentryService.breadcrumb("Melt accepted for async settlement", category: "wallet.lightning")
+        } else {
+            recordFinalizedMelt(quoteId: quoteId, preimage: result.preimage, feePaid: result.feePaid)
+            SentryService.breadcrumb("Lightning payment sent", category: "wallet.lightning")
         }
-        transactionService.saveMeltFeePaid(quoteId: quoteId, feePaid: result.feePaid)
         await refreshBalance()
         await loadTransactions()
-        SentryService.breadcrumb("Lightning payment sent", category: "wallet.lightning")
         return result
     }
 }
