@@ -4,6 +4,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import org.cashu.wallet.Core.LightningRequestParser
 import org.cashu.wallet.Core.NPCQuote
 import org.cashu.wallet.Core.mintQuoteAmountForDomain
@@ -59,51 +62,57 @@ import org.cashudevkit.proofsTotalAmount
 class CdkWalletGatewayImpl : CdkWalletGateway {
     private var database: CdkWalletSqliteDatabase? = null
     private var repository: CdkWalletRepository? = null
+    private val operationMutex = Mutex()
 
-    override suspend fun initializeLogging(level: String) {
+    override suspend fun initializeLogging(level: String) = cdkCall {
         initLogging(level)
     }
 
-    override suspend fun generateMnemonic(): String = cdkGenerateMnemonic()
+    override suspend fun generateMnemonic(): String = cdkCall { cdkGenerateMnemonic() }
 
-    override suspend fun mnemonicEntropy(mnemonic: String): ByteArray = mnemonicToEntropy(mnemonic)
+    override suspend fun mnemonicEntropy(mnemonic: String): ByteArray = cdkCall { mnemonicToEntropy(mnemonic) }
 
-    override suspend fun validateMnemonic(mnemonic: String): Boolean =
+    override suspend fun validateMnemonic(mnemonic: String): Boolean = cdkCall {
         runCatching { mnemonicToEntropy(mnemonic); true }.getOrDefault(false)
+    }
 
-    override suspend fun openWalletRepository(mnemonic: String, databasePath: String) {
-        closeWalletRepository()
+    override suspend fun openWalletRepository(mnemonic: String, databasePath: String) = cdkCall {
+        closeWalletRepositoryUnlocked()
         val db = CdkWalletSqliteDatabase(databasePath)
         database = db
         repository = CdkWalletRepository(mnemonic, customWalletStore(db))
     }
 
-    override suspend fun closeWalletRepository() {
+    override suspend fun closeWalletRepository() = cdkCall {
+        closeWalletRepositoryUnlocked()
+    }
+
+    private fun closeWalletRepositoryUnlocked() {
         runCatching { repository?.close() }
         runCatching { database?.close() }
         repository = null
         database = null
     }
 
-    override suspend fun ensureWallet(mintUrl: String, unit: String) {
-        requireRepository().createWallet(CdkMintUrl(mintUrl), cdkUnit(unit), null)
+    override suspend fun ensureWallet(mintUrl: String, unit: String) = cdkCall {
+        ensureWalletUnlocked(mintUrl, cdkUnit(unit))
     }
 
-    override suspend fun removeWallet(mintUrl: String, unit: String) {
+    override suspend fun removeWallet(mintUrl: String, unit: String) = cdkCall {
         requireRepository().removeWallet(CdkMintUrl(mintUrl), cdkUnit(unit))
     }
 
-    override suspend fun fetchMintInfo(mintUrl: String): MintInfo? {
+    override suspend fun fetchMintInfo(mintUrl: String): MintInfo? = cdkCall {
         val wallet = walletFor(mintUrl)
-        return wallet.fetchMintInfo()?.toDomain(mintUrl)
+        wallet.fetchMintInfo()?.toDomain(mintUrl)
     }
 
-    override suspend fun restoreMint(mintUrl: String): RestoreMintResult {
-        ensureWallet(mintUrl)
+    override suspend fun restoreMint(mintUrl: String): RestoreMintResult = cdkCall {
+        ensureWalletUnlocked(mintUrl)
         val wallet = walletFor(mintUrl)
         val info = runCatching { wallet.fetchMintInfo() }.getOrNull()
         val restored = wallet.restore()
-        return RestoreMintResult(
+        RestoreMintResult(
             mintUrl = mintUrl,
             mintName = info?.name ?: "Unknown Mint",
             spent = restored.spent.value.toLong(),
@@ -112,34 +121,38 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
         )
     }
 
-    override suspend fun totalBalance(mintUrl: String): Long =
+    override suspend fun totalBalance(mintUrl: String): Long = cdkCall {
         walletFor(mintUrl).totalBalance().value.toLong()
-
-    override suspend fun unitBalance(mintUrl: String, unit: String): Long {
-        ensureWallet(mintUrl, unit)
-        return walletFor(mintUrl, cdkUnit(unit)).totalBalance().value.toLong()
     }
 
-    override suspend fun unitBalanceIfExists(mintUrl: String, unit: String): Long? =
-        runCatching { walletFor(mintUrl, cdkUnit(unit)).totalBalance().value.toLong() }.getOrNull()
+    override suspend fun unitBalance(mintUrl: String, unit: String): Long = cdkCall {
+        val cdkUnit = cdkUnit(unit)
+        ensureWalletUnlocked(mintUrl, cdkUnit)
+        walletFor(mintUrl, cdkUnit).totalBalance().value.toLong()
+    }
 
-    override suspend fun createMintQuote(amount: Long?, method: PaymentMethodKind, mintUrl: String, unit: String): MintQuoteInfo {
-        if (!unit.equals("sat", ignoreCase = true)) ensureWallet(mintUrl, unit)
-        val wallet = walletFor(mintUrl, cdkUnit(unit))
+    override suspend fun unitBalanceIfExists(mintUrl: String, unit: String): Long? = cdkCall {
+        runCatching { walletFor(mintUrl, cdkUnit(unit)).totalBalance().value.toLong() }.getOrNull()
+    }
+
+    override suspend fun createMintQuote(amount: Long?, method: PaymentMethodKind, mintUrl: String, unit: String): MintQuoteInfo = cdkCall {
+        val cdkUnit = cdkUnit(unit)
+        if (!unit.equals("sat", ignoreCase = true)) ensureWalletUnlocked(mintUrl, cdkUnit)
+        val wallet = walletFor(mintUrl, cdkUnit)
         val quote = wallet.mintQuote(
             paymentMethod = cdkPaymentMethod(method),
             amount = amount?.toCdkAmount(),
             description = null,
             extra = if (method == PaymentMethodKind.Onchain) "{}" else null,
         )
-        return persistMintQuoteLocalMetadataIfNeeded(
+        persistMintQuoteLocalMetadataIfNeeded(
             quote = quote,
             method = method,
             fallbackAmount = amount,
         ).toDomain(fallbackAmount = amount, fallbackMethod = method)
     }
 
-    override suspend fun checkMintQuote(quoteId: String): MintQuoteInfo {
+    override suspend fun checkMintQuote(quoteId: String): MintQuoteInfo = cdkCall {
         val quote = database?.getMintQuote(quoteId)
             ?: throw CdkGatewayUnavailable("No stored mint quote for $quoteId.")
         // Resolve the same-unit wallet the quote was created against, so
@@ -156,32 +169,34 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
             .preservingLocalMetadataFrom(quote)
             .withLocalMintQuoteMetadata(method, fallbackAmount)
             .let { persistMintQuoteLocalMetadataIfNeeded(it, method, fallbackAmount = fallbackAmount) }
-        return refreshed.toDomain(
+        refreshed.toDomain(
             fallbackAmount = fallbackAmount,
             fallbackMethod = method,
         )
     }
 
     override fun subscribeToMintQuote(quoteId: String): Flow<MintQuoteInfo> = flow {
-        val quote = database?.getMintQuote(quoteId)
-            ?: throw CdkGatewayUnavailable("No stored mint quote for $quoteId.")
-        val method = quote.paymentMethod.toDomain()
-        val subscription = walletFor(quote.mintUrl.url, quote.unit)
-            .subscribeMintQuoteState(listOf(quoteId), cdkPaymentMethod(method))
+        val subscription = cdkCall {
+            val quote = database?.getMintQuote(quoteId)
+                ?: throw CdkGatewayUnavailable("No stored mint quote for $quoteId.")
+            val method = quote.paymentMethod.toDomain()
+            walletFor(quote.mintUrl.url, quote.unit)
+                .subscribeMintQuoteState(listOf(quoteId), cdkPaymentMethod(method))
+        }
         try {
             while (true) {
-                val payload = subscription.recv()
+                val payload = withContext(Dispatchers.IO) { subscription.recv() }
                 if (!payload.referencesMintQuote(quoteId)) continue
                 val refreshed = checkMintQuote(quoteId)
                 emit(refreshed)
                 if (refreshed.state == MintQuoteState.Paid || refreshed.state == MintQuoteState.Issued) return@flow
             }
         } finally {
-            subscription.close()
+            withContext(Dispatchers.IO) { subscription.close() }
         }
     }.flowOn(Dispatchers.IO)
 
-    override suspend fun listUnissuedMintQuotes(): List<MintQuoteInfo> =
+    override suspend fun listUnissuedMintQuotes(): List<MintQuoteInfo> = cdkCall {
         database?.getUnissuedMintQuotes().orEmpty().map { quote ->
             val method = quote.paymentMethod.toDomain()
             quote.withLocalMintQuoteMetadata(method).toDomain(
@@ -189,8 +204,9 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
                 fallbackMethod = method,
             )
         }
+    }
 
-    override suspend fun mintTokens(quoteId: String): Long {
+    override suspend fun mintTokens(quoteId: String): Long = cdkCall {
         val quote = database?.getMintQuote(quoteId)
             ?: throw CdkGatewayUnavailable("No stored mint quote for $quoteId.")
         val method = quote.paymentMethod.toDomain()
@@ -219,23 +235,23 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
             amountSplitTarget = CdkSplitTarget.None,
             spendingConditions = null,
         )
-        return proofsTotalAmount(proofs).value.toLong()
+        proofsTotalAmount(proofs).value.toLong()
     }
 
-    override suspend fun mintNPCQuote(quote: NPCQuote, p2pkPubkey: String?): Long {
+    override suspend fun mintNPCQuote(quote: NPCQuote, p2pkPubkey: String?): Long = cdkCall {
         val mintUrl = quote.mintUrl?.let(::normalizeMintUrl)
             ?: throw CdkGatewayUnavailable("npub.cash quote ${quote.id} has no mint URL.")
-        ensureWallet(mintUrl)
+        ensureWalletUnlocked(mintUrl)
         replaceStoredMintQuote(quote.toCdkMintQuote(mintUrl))
         val proofs = walletFor(mintUrl).mintUnified(
             quoteId = quote.id,
             amountSplitTarget = CdkSplitTarget.None,
             spendingConditions = p2pkPubkey?.let { CdkSpendingConditions.P2pk(it, null) },
         )
-        return proofsTotalAmount(proofs).value.toLong()
+        proofsTotalAmount(proofs).value.toLong()
     }
 
-    override suspend fun createMeltQuote(request: String, amountSats: Long?, preferredMintURL: String?): MeltQuoteInfo {
+    override suspend fun createMeltQuote(request: String, amountSats: Long?, preferredMintURL: String?): MeltQuoteInfo = cdkCall {
         val wallet = preferredMintURL?.let { walletFor(it) } ?: firstWallet()
         when (val decoded = PaymentRequestDecoder.decode(request)) {
             is PaymentRequestDecodeResult.LightningAddress -> {
@@ -245,7 +261,7 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
                     amountMsat = (amount * 1_000).toCdkAmount(),
                     network = bitcoinNetworkFor(wallet.mintUrl().url),
                 )
-                return quote.toDomain(fallbackMethod = PaymentMethodKind.Bolt11)
+                return@cdkCall quote.toDomain(fallbackMethod = PaymentMethodKind.Bolt11)
             }
             is PaymentRequestDecodeResult.Onchain -> {
                 val amount = requirePositiveAmount(amountSats, "On-chain payments require an amount.")
@@ -256,7 +272,7 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
                 )
                 val selected = options.firstOrNull()
                     ?: throw CdkGatewayUnavailable("Mint returned no on-chain fee options.")
-                return wallet.selectOnchainMeltQuote(selected).toDomain(fallbackMethod = PaymentMethodKind.Onchain)
+                return@cdkCall wallet.selectOnchainMeltQuote(selected).toDomain(fallbackMethod = PaymentMethodKind.Onchain)
             }
             else -> Unit
         }
@@ -268,20 +284,21 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
             options = null,
             extra = null,
         )
-        return quote.toDomain(fallbackMethod = method)
+        quote.toDomain(fallbackMethod = method)
     }
 
-    override suspend fun listMeltQuotes(): List<MeltQuoteInfo> =
+    override suspend fun listMeltQuotes(): List<MeltQuoteInfo> = cdkCall {
         database?.getMeltQuotes().orEmpty().map { quote ->
             quote.toDomain(fallbackMethod = quote.paymentMethod.toDomain())
         }
+    }
 
-    override suspend fun meltTokens(quoteId: String, mintUrl: String?): MeltPaymentResult {
+    override suspend fun meltTokens(quoteId: String, mintUrl: String?): MeltPaymentResult = cdkCall {
         val quote = database?.getMeltQuote(quoteId)
         val wallet = walletFor(mintUrl ?: quote?.mintUrl?.url ?: firstWallet().mintUrl().url)
         val prepared = wallet.prepareMelt(quoteId)
         val finalized = prepared.confirm()
-        return MeltPaymentResult(
+        MeltPaymentResult(
             preimage = finalized.preimage,
             amount = finalized.amount.value.toLong(),
             feePaid = finalized.feePaid.value.toLong(),
@@ -291,8 +308,9 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
         )
     }
 
-    override suspend fun sendEcashToken(amount: Long, memo: String?, p2pkPubkey: String?, mintUrl: String, unit: String, p2pkSigningKeys: List<String>): SendTokenResult {
-        if (!unit.equals("sat", ignoreCase = true)) ensureWallet(mintUrl, unit)
+    override suspend fun sendEcashToken(amount: Long, memo: String?, p2pkPubkey: String?, mintUrl: String, unit: String, p2pkSigningKeys: List<String>): SendTokenResult = cdkCall {
+        val cdkUnit = cdkUnit(unit)
+        if (!unit.equals("sat", ignoreCase = true)) ensureWalletUnlocked(mintUrl, cdkUnit)
         val conditions = p2pkPubkey?.let { CdkSpendingConditions.P2pk(it, null) }
         // includeFee = true — the token carries the recipient's redeem fee on top
         // of the requested amount, so receiving it credits the full amount and
@@ -313,19 +331,19 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
             p2pkSigningKeys = p2pkSigningKeys.map(::CdkSecretKey),
             p2pkLockedProofSendMode = CdkP2pkLockedProofSendMode.SWAP,
         )
-        val prepared = walletFor(mintUrl, cdkUnit(unit)).prepareSend(amount.toCdkAmount(), sendOptions)
+        val prepared = walletFor(mintUrl, cdkUnit).prepareSend(amount.toCdkAmount(), sendOptions)
         val fee = prepared.fee().value.toLong()
         val token = prepared.confirm(memo)
-        return SendTokenResult(token = token.encode(), fee = fee)
+        SendTokenResult(token = token.encode(), fee = fee)
     }
 
-    override suspend fun receiveEcashToken(tokenString: String, p2pkSigningKeys: List<String>): Long {
+    override suspend fun receiveEcashToken(tokenString: String, p2pkSigningKeys: List<String>): Long = cdkCall {
         val token = CdkToken.decode(tokenString)
         val mintUrl = token.mintUrl().url
         // Redeem into the token's own unit — a usd/eur token must never target
         // the sat wallet.
         val tokenUnit = token.unit() ?: CdkCurrencyUnit.Sat
-        ensureWallet(mintUrl, tokenUnit.toDomainUnit())
+        ensureWalletUnlocked(mintUrl, tokenUnit)
         val amount = walletFor(mintUrl, tokenUnit).receive(
             token = token,
             options = CdkReceiveOptions(
@@ -335,13 +353,13 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
                 metadata = emptyMap(),
             ),
         )
-        return amount.value.toLong()
+        amount.value.toLong()
     }
 
-    override suspend fun calculateReceiveFee(tokenString: String): Long {
+    override suspend fun calculateReceiveFee(tokenString: String): Long = cdkCall {
         val token = CdkToken.decode(tokenString)
         val tokenUnit = token.unit() ?: CdkCurrencyUnit.Sat
-        ensureWallet(token.mintUrl().url, tokenUnit.toDomainUnit())
+        ensureWalletUnlocked(token.mintUrl().url, tokenUnit)
         val wallet = walletFor(token.mintUrl().url, tokenUnit)
         // Resolve proofs with their FULL keyset ids: proofsSimple() can carry a
         // short/legacy IDv2 keyset id that getKeysetFeesById below can't look
@@ -350,11 +368,11 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
         val proofs = runCatching {
             token.proofs(wallet.getMintKeysets(org.cashudevkit.KeysetFilter.ALL))
         }.getOrElse { token.proofsSimple() }
-        if (proofs.isEmpty()) return 0
+        if (proofs.isEmpty()) return@cdkCall 0
         // NUT-02 fee: sum each input's fee_ppk, then one ceil over the total.
         // Don't use wallet.calculateFee here — the 0.17.x FFI helper floor-
         // divides (ppk * count / 1000), reporting 0 where the mint charges 1.
-        return runCatching {
+        runCatching {
             val ppkByKeyset = mutableMapOf<String, Long>()
             val totalPpk = proofs.sumOf { proof ->
                 ppkByKeyset.getOrPut(proof.keysetId) {
@@ -365,18 +383,18 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
         }.getOrDefault(0L)
     }
 
-    override suspend fun checkTokenSpendable(token: String, mintUrl: String): Boolean {
-        return runCatching {
+    override suspend fun checkTokenSpendable(token: String, mintUrl: String): Boolean = cdkCall {
+        runCatching {
             val tokenObj = CdkToken.decode(token)
             val tokenUnit = tokenObj.unit() ?: CdkCurrencyUnit.Sat
-            ensureWallet(mintUrl, tokenUnit.toDomainUnit())
+            ensureWalletUnlocked(mintUrl, tokenUnit)
             val states = walletFor(mintUrl, tokenUnit).checkProofsSpent(tokenObj.proofsSimple())
             states.any { it }
         }.getOrDefault(false)
     }
 
-    override suspend fun listTransactions(mintUrls: List<String>): List<WalletTransaction> {
-        return mintUrls.flatMap { mintUrl ->
+    override suspend fun listTransactions(mintUrls: List<String>): List<WalletTransaction> = cdkCall {
+        mintUrls.flatMap { mintUrl ->
             val wallet = runCatching { walletFor(mintUrl) }.getOrNull() ?: return@flatMap emptyList()
             val incoming = runCatching { wallet.listTransactions(CdkTransactionDirection.INCOMING) }.getOrDefault(emptyList())
             val outgoing = runCatching { wallet.listTransactions(CdkTransactionDirection.OUTGOING) }.getOrDefault(emptyList())
@@ -384,7 +402,7 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
         }
     }
 
-    override suspend fun payCashuPaymentRequest(encoded: String, customAmountSats: Long?, preferredMintURL: String?) {
+    override suspend fun payCashuPaymentRequest(encoded: String, customAmountSats: Long?, preferredMintURL: String?) = cdkCall {
         val cdkEncoded = PaymentRequestDecoder.cdkCompatibleCashuPaymentRequest(encoded) ?: encoded
         val request = decodePaymentRequest(cdkEncoded)
         when (request.unit()) {
@@ -401,6 +419,18 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
             ?: candidateMints.firstOrNull()
             ?: firstWallet().mintUrl().url
         walletFor(mintUrl).payRequest(request, if (request.amount() == null) amount else null)
+    }
+
+    private suspend fun <T> cdkCall(block: suspend () -> T): T =
+        withContext(Dispatchers.IO) {
+            operationMutex.withLock { block() }
+        }
+
+    private suspend fun ensureWalletUnlocked(
+        mintUrl: String,
+        unit: CdkCurrencyUnit = CdkCurrencyUnit.Sat,
+    ) {
+        requireRepository().createWallet(CdkMintUrl(mintUrl), unit, null)
     }
 
     private fun normalizeMintUrl(url: String): String = url.trim().trimEnd('/')
