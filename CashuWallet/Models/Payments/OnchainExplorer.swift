@@ -78,6 +78,14 @@ enum OnchainExplorer {
         expectedAmount: UInt64,
         createdAfter: Date
     ) async -> OnchainPaymentObservation? {
+        // Privacy gate for every automatic lookup (history refresh, receive
+        // polling): these requests hand the user's deposit address to a public
+        // third-party explorer, so they run only when explicitly opted in.
+        // User-initiated "view on explorer" web links are not affected.
+        guard await MainActor.run(body: { SettingsManager.shared.onchainExplorerLookupsEnabled }) else {
+            return nil
+        }
+
         guard let descriptor = descriptor(for: address, mintURL: mintURL) else {
             return nil
         }

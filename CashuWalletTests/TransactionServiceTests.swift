@@ -11,7 +11,7 @@ final class TransactionServiceTests: XCTestCase {
             walletRepository: { nil },
             walletDatabase: { nil },
             getTrackedMintUrls: { [] },
-            walletStore: WalletStore(storage: InMemoryStorage())
+            walletStore: WalletStore(storage: InMemoryStorage(), secureStorage: InMemorySecureStorage())
         )
     }
 

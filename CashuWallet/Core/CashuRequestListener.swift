@@ -13,7 +13,25 @@ import SwiftUI
 final class CashuRequestListener: ObservableObject {
     static let shared = CashuRequestListener()
 
-    @Published private(set) var isRunning: Bool = false
+    /// Listener lifecycle. `start()` suspends across relay connection setup, so
+    /// a plain running flag set at the end would let a second caller (app
+    /// launch racing scene-phase `.active`) pass the guard and open a duplicate
+    /// subscription. `.starting` closes that window: it is set synchronously
+    /// before the first await.
+    private enum ListenerState {
+        case stopped
+        case starting
+        case running
+    }
+
+    private var state: ListenerState = .stopped
+
+    /// Distinguishes overlapping start attempts: a start whose epoch is stale
+    /// (a stop + newer start happened during its awaits) must not publish its
+    /// outcome into `state`.
+    private var startEpoch: UInt64 = 0
+
+    var isRunning: Bool { state == .running }
 
     /// The most recently held payment, for the one-shot approval prompt at app
     /// root. Clearing it is UI-only — the payment itself lives in the
@@ -41,10 +59,27 @@ final class CashuRequestListener: ObservableObject {
     }
 
     func start() async {
-        guard !isRunning else { return }
+        // `.starting` and `.running` both refuse re-entry; the flag flips
+        // before any suspension, so concurrent starts can't double-subscribe.
+        guard state == .stopped else { return }
+        startEpoch &+= 1
+        let epoch = startEpoch
+        state = .starting
+
+        let started = await performStart()
+        // A stop (or stop + newer start) during our awaits already owns
+        // `state` — a stale attempt must not resurrect or stomp it.
+        if state == .starting, startEpoch == epoch {
+            state = started ? .running : .stopped
+        }
+    }
+
+    /// The suspending part of startup. Returns `true` once the relay
+    /// subscription is live and still wanted.
+    private func performStart() async -> Bool {
         guard SettingsManager.shared.enablePaymentRequests else {
             AppLogger.wallet.notice("CashuRequestListener: payment requests disabled in settings — not starting")
-            return
+            return false
         }
         let nostr = NostrService.shared
         guard nostr.isInitialized,
@@ -52,12 +87,12 @@ final class CashuRequestListener: ObservableObject {
               let privHex = nostr.getPrivateKeyHex(),
               let privateKey = Data(hex: privHex) else {
             AppLogger.wallet.error("CashuRequestListener: NostrService not initialized")
-            return
+            return false
         }
         let relays = SettingsManager.shared.nostrRelays
         guard !relays.isEmpty else {
             AppLogger.wallet.error("CashuRequestListener: no Nostr relays configured — cannot receive Cashu Request payments")
-            return
+            return false
         }
         loadProcessedIds()
         let since = Int64(Date().timeIntervalSince1970 - lookbackWindow)
@@ -72,15 +107,23 @@ final class CashuRequestListener: ObservableObject {
         }
         self.client = client
         await client.start()
-        isRunning = true
+
+        // A stop that landed while the subscription was connecting has already
+        // nilled (and stopped) `self.client`; shut this orphan down too.
+        guard self.client === client else {
+            await client.stop()
+            return false
+        }
+
         AppLogger.wallet.notice("CashuRequestListener: started on \(relays.count) relays, pubkey=\(String(pubkeyHex.prefix(8)), privacy: .public), since=\(since)")
+        return true
     }
 
     func stop() async {
+        state = .stopped
         guard let client else { return }
-        await client.stop()
         self.client = nil
-        isRunning = false
+        await client.stop()
     }
 
     /// Forget processed gift-wrap ids at a wallet boundary. The ids belong to
@@ -89,7 +132,7 @@ final class CashuRequestListener: ObservableObject {
     func resetForWalletBoundary() {
         let oldClient = client
         client = nil
-        isRunning = false
+        state = .stopped
         processedIds = []
         processedOrder = []
         heldForApproval = nil
@@ -205,7 +248,7 @@ final class CashuRequestListener: ObservableObject {
     // MARK: - Held payments (persisted approval queue)
 
     /// Cap on payments held in the pending-receive store by this listener, so
-    /// a spammer pushing payloads from throwaway mints can't grow UserDefaults
+    /// a spammer pushing payloads from throwaway mints can't grow the store
     /// without bound. Overflow events stay unprocessed and are re-offered on a
     /// later scan once the backlog drains. Only listener-held entries count —
     /// manually parked "Receive Later" tokens are the user's own business.

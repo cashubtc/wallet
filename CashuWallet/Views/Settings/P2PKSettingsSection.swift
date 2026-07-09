@@ -641,6 +641,7 @@ struct PrivateKeyRevealSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var revealed = false
     @State private var copied = false
+    @State private var authUnavailable = false
 
     private var hidden: String {
         String(repeating: "•", count: 24)
@@ -708,21 +709,33 @@ struct PrivateKeyRevealSheet: View {
                     Button("Cancel") { dismiss() }
                 }
             }
+            .alert("Authentication Unavailable", isPresented: $authUnavailable) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("Set a device passcode in iOS Settings to reveal or copy this key.")
+            }
         }
     }
 
+    /// Fail-closed: without a device passcode the key stays hidden — there is
+    /// no way to verify who is holding the phone.
     private func toggleReveal() {
         if revealed { revealed = false; return }
         Task {
-            if await AppLockManager.shared.authenticate(reason: "Reveal this private key") {
+            if await AppLockManager.shared.authenticateForSecrets(reason: "Reveal this private key") {
                 revealed = true
+            } else if !AppLockManager.canEvaluate() {
+                authUnavailable = true
             }
         }
     }
 
     private func copyKey() {
         Task {
-            guard await AppLockManager.shared.authenticate(reason: "Copy this private key") else { return }
+            guard await AppLockManager.shared.authenticateForSecrets(reason: "Copy this private key") else {
+                if !AppLockManager.canEvaluate() { authUnavailable = true }
+                return
+            }
             UIPasteboard.general.string = nsec
             copied = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) { copied = false }

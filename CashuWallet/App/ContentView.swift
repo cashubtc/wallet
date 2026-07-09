@@ -191,7 +191,13 @@ final class AppLockManager: ObservableObject {
         return ok
     }
 
-    /// Runs one biometric/passcode evaluation. Returns `true` on success.
+    /// Runs one biometric/passcode evaluation for the app-lock *gate*.
+    /// Returns `true` on success.
+    ///
+    /// Fail-open by design, for the gate only: if device auth became
+    /// unavailable (passcode removed) while the gate was up, unlocking beats
+    /// stranding the user away from their funds. Secret reveals must never
+    /// use this — see `authenticateForSecrets(reason:)`.
     @discardableResult
     func authenticate(reason: String = "Unlock your wallet") async -> Bool {
         guard !isAuthenticating else { return false }
@@ -218,6 +224,33 @@ final class AppLockManager: ObservableObject {
         } catch {
             // User cancelled / failed → stay locked; the lock view offers a retry.
             AppLogger.security.info("Authentication not completed")
+            return false
+        }
+    }
+
+    /// Fail-closed evaluation guarding secret material (seed phrase, private
+    /// keys) and the App Lock enable switch. Unlike `authenticate()`, a device
+    /// with no auth capability (no passcode set) gets `false` — a secret must
+    /// never be revealed with zero verification. Callers should check
+    /// `AppLockManager.canEvaluate()` to explain the denial.
+    func authenticateForSecrets(reason: String) async -> Bool {
+        guard !isAuthenticating else { return false }
+        isAuthenticating = true
+        defer { isAuthenticating = false }
+
+        let context = LAContext()
+        context.localizedFallbackTitle = ""
+
+        var policyError: NSError?
+        guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &policyError) else {
+            AppLogger.security.warning("Secret access denied — device auth unavailable: \(policyError?.localizedDescription ?? "unknown")")
+            return false
+        }
+
+        do {
+            return try await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason)
+        } catch {
+            AppLogger.security.info("Secret access authentication not completed")
             return false
         }
     }

@@ -2,6 +2,18 @@ import Foundation
 import Cdk
 import CryptoKit
 
+/// Typed contents of a BIP-21 `bitcoin:` URI (or a bare address).
+/// `amountSats`/`label`/`message` come from the query parameters that
+/// `normalizeBitcoinRequest` would otherwise discard.
+struct Bip21Payment: Equatable {
+    let address: String
+    let amountSats: UInt64?
+    let label: String?
+    let message: String?
+    /// Bundled unified-QR Lightning invoice/offer, if any (`lightning=` param).
+    let lightning: String?
+}
+
 enum PaymentRequestParser {
     static func normalizeLightningRequest(_ request: String) -> String {
         let trimmedRequest = request.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -33,6 +45,82 @@ enum PaymentRequestParser {
     static func isBitcoinAddress(_ request: String) -> Bool {
         let normalizedRequest = normalizeBitcoinRequest(request)
         return BitcoinAddressValidator.isValidAddress(normalizedRequest)
+    }
+
+    /// Parse a BIP-21 URI (or bare address) into its typed parts, so callers
+    /// can honor `amount=`/`label=` instead of silently dropping them. Returns
+    /// nil when the address part isn't a valid Bitcoin address.
+    static func parseBitcoinRequest(_ request: String) -> Bip21Payment? {
+        let address = normalizeBitcoinRequest(request)
+        guard BitcoinAddressValidator.isValidAddress(address) else {
+            return nil
+        }
+
+        let trimmedRequest = request.trimmingCharacters(in: .whitespacesAndNewlines)
+        let querySplit = trimmedRequest.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)
+        guard querySplit.count == 2 else {
+            return Bip21Payment(address: address, amountSats: nil, label: nil, message: nil, lightning: nil)
+        }
+
+        var amountSats: UInt64?
+        var label: String?
+        var message: String?
+        var lightning: String?
+
+        for pair in querySplit[1].split(separator: "&") {
+            let keyValue = pair.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+            guard keyValue.count == 2 else { continue }
+            let key = keyValue[0].lowercased()
+            let rawValue = String(keyValue[1])
+
+            switch key {
+            case "amount":
+                amountSats = satsFromBTCAmount(rawValue)
+            case "label":
+                label = rawValue.removingPercentEncoding ?? rawValue
+            case "message":
+                message = rawValue.removingPercentEncoding ?? rawValue
+            case "lightning", "lightninginvoice":
+                lightning = rawValue.removingPercentEncoding ?? rawValue
+            default:
+                break
+            }
+        }
+
+        return Bip21Payment(
+            address: address,
+            amountSats: amountSats,
+            label: label?.isEmpty == false ? label : nil,
+            message: message?.isEmpty == false ? message : nil,
+            lightning: lightning?.isEmpty == false ? lightning : nil
+        )
+    }
+
+    /// BIP-21 `amount` is a decimal BTC value with `.` as separator. Returns
+    /// nil for malformed, negative, fractional-sat, or out-of-range values —
+    /// a bad amount must degrade to manual entry, never to a wrong figure.
+    private static func satsFromBTCAmount(_ value: String) -> UInt64? {
+        let parts = value.split(separator: ".", maxSplits: 1, omittingEmptySubsequences: false)
+        guard !parts.isEmpty, parts.count <= 2,
+              parts.allSatisfy({ !$0.isEmpty && $0.allSatisfy(\.isNumber) }) else {
+            return nil
+        }
+
+        guard let wholeBTC = UInt64(parts[0]), wholeBTC <= 21_000_000 else {
+            return nil
+        }
+
+        var fractionalSats: UInt64 = 0
+        if parts.count == 2 {
+            let fraction = parts[1]
+            guard fraction.count <= 8 else { return nil }
+            let padded = fraction.padding(toLength: 8, withPad: "0", startingAt: 0)
+            guard let sats = UInt64(padded) else { return nil }
+            fractionalSats = sats
+        }
+
+        let sats = wholeBTC * 100_000_000 + fractionalSats
+        return sats > 0 ? sats : nil
     }
 
     static func isHumanReadableLightningAddress(_ request: String) -> Bool {

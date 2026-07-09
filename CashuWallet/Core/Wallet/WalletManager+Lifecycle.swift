@@ -175,6 +175,10 @@ extension WalletManager {
     private func installCleanWallet(mnemonic newMnemonic: String) async throws {
         let previousMnemonic = mnemonic ?? (try? keychainService.loadMnemonic())
         let defaultsSnapshot = walletBoundaryDefaultsSnapshot()
+        // Redeemable token entries live in the Keychain, outside the defaults
+        // snapshot — capture them separately so a failed swap can roll back
+        // without losing spendable ecash records.
+        let secureTokenSnapshot = walletStore.secureWalletDataSnapshot()
         let fileBackups = try backupWalletDatabaseFiles()
 
         do {
@@ -198,6 +202,7 @@ extension WalletManager {
             SentryService.capture(error)
             resetRuntimeState()
             restoreWalletBoundaryDefaults(defaultsSnapshot)
+            walletStore.restoreSecureWalletData(secureTokenSnapshot)
             CashuRequestStore.shared.reloadFromDefaults()
             try? removeWalletDatabaseFiles()
             try? restoreWalletFileBackups(fileBackups)
@@ -299,6 +304,13 @@ extension WalletManager {
             NotificationCenter.default.removeObserver(npcQuoteObserver)
             self.npcQuoteObserver = nil
         }
+
+        // Wallet boundary: invalidate every in-flight waiter/sync before the
+        // new wallet exists, so a settling melt from the old wallet can never
+        // finalize bookkeeping (preimages, fees, balance refreshes) into it.
+        bumpWalletGeneration()
+        for waiter in pendingMeltWaiters.values { waiter.cancel() }
+        pendingMeltWaiters.removeAll()
 
         walletRepository = nil
         db = nil

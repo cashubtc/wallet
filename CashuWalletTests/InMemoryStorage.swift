@@ -28,3 +28,25 @@ final class InMemoryStorage: StorageProtocol {
         data.keys.filter { $0.hasPrefix(prefix) }
     }
 }
+
+/// Volatile in-memory SecureStorageProtocol implementation for unit tests, so
+/// WalletStore's Keychain-backed token storage never touches a real Keychain.
+final class InMemorySecureStorage: SecureStorageProtocol {
+    private(set) var secrets: [String: String] = [:]
+
+    func saveSecret(_ secret: String, forKey key: String) throws {
+        secrets[key] = secret
+    }
+
+    func loadSecret(forKey key: String) throws -> String? {
+        secrets[key]
+    }
+
+    func deleteSecret(forKey key: String) throws {
+        secrets.removeValue(forKey: key)
+    }
+
+    func hasSecret(forKey key: String) -> Bool {
+        secrets[key] != nil
+    }
+}

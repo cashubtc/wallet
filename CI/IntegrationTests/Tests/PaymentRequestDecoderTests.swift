@@ -22,7 +22,10 @@ final class PaymentRequestDecoderTests: XCTestCase {
     }
 
     func testIconNameOnchain() {
-        XCTAssertEqual(PaymentRequestDecoder.iconName(.onchain("1A1zP1eP5")), "bitcoinsign.circle")
+        XCTAssertEqual(
+            PaymentRequestDecoder.iconName(.onchain(address: "1A1zP1eP5", amountSats: nil, label: nil)),
+            "bitcoinsign.circle"
+        )
     }
 
     func testIconNameUnrecognized() {
@@ -55,7 +58,10 @@ final class PaymentRequestDecoderTests: XCTestCase {
     }
 
     func testTypeLabelOnchain() {
-        XCTAssertEqual(PaymentRequestDecoder.typeLabel(.onchain("1A1z")), "Bitcoin address")
+        XCTAssertEqual(
+            PaymentRequestDecoder.typeLabel(.onchain(address: "1A1z", amountSats: nil, label: nil)),
+            "Bitcoin address"
+        )
     }
 
     func testTypeLabelUnrecognized() {
@@ -89,7 +95,7 @@ final class PaymentRequestDecoderTests: XCTestCase {
     }
 
     func testAmountLockedOnchainAlwaysFalse() {
-        XCTAssertFalse(PaymentRequestDecoder.amountLocked(.onchain("1A1z")))
+        XCTAssertFalse(PaymentRequestDecoder.amountLocked(.onchain(address: "1A1z", amountSats: nil, label: nil)))
     }
 
     func testAmountLockedUnrecognizedAlwaysFalse() {
@@ -182,6 +188,82 @@ final class PaymentRequestDecoderTests: XCTestCase {
         }
     }
 
+    func testDecodeBip21CarriesAmountAndLabel() {
+        let result = PaymentRequestDecoder.decode(
+            "bitcoin:1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa?amount=0.00021&label=Coffee%20Fund"
+        )
+        XCTAssertEqual(
+            result,
+            .onchain(address: "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa", amountSats: 21_000, label: "Coffee Fund")
+        )
+    }
+
+    func testDecodeBip21WithoutQueryHasNoAmount() {
+        let result = PaymentRequestDecoder.decode("bitcoin:1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa")
+        XCTAssertEqual(
+            result,
+            .onchain(address: "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa", amountSats: nil, label: nil)
+        )
+    }
+
+    // MARK: - PaymentRequestParser.parseBitcoinRequest (BIP-21)
+
+    func testParseBitcoinRequestWholeAndFractionalAmount() {
+        let payment = PaymentRequestParser.parseBitcoinRequest(
+            "bitcoin:1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa?amount=1.5"
+        )
+        XCTAssertEqual(payment?.amountSats, 150_000_000)
+    }
+
+    func testParseBitcoinRequestSmallestAmount() {
+        let payment = PaymentRequestParser.parseBitcoinRequest(
+            "bitcoin:1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa?amount=0.00000001"
+        )
+        XCTAssertEqual(payment?.amountSats, 1)
+    }
+
+    func testParseBitcoinRequestMalformedAmountDegradesToNil() {
+        for bad in ["abc", "1.2.3", "-1", "1,5", "0.000000001", ""] {
+            let payment = PaymentRequestParser.parseBitcoinRequest(
+                "bitcoin:1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa?amount=\(bad)"
+            )
+            XCTAssertNotNil(payment, "address must still parse for amount=\(bad)")
+            XCTAssertNil(payment?.amountSats, "amount=\(bad) must not produce a figure")
+        }
+    }
+
+    func testParseBitcoinRequestZeroAmountIsNil() {
+        let payment = PaymentRequestParser.parseBitcoinRequest(
+            "bitcoin:1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa?amount=0"
+        )
+        XCTAssertNil(payment?.amountSats)
+    }
+
+    func testParseBitcoinRequestPercentDecodesLabelAndMessage() {
+        let payment = PaymentRequestParser.parseBitcoinRequest(
+            "bitcoin:1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa?label=Luke%2DJr&message=Donation%20for%20project"
+        )
+        XCTAssertEqual(payment?.label, "Luke-Jr")
+        XCTAssertEqual(payment?.message, "Donation for project")
+    }
+
+    func testParseBitcoinRequestLightningParam() {
+        let payment = PaymentRequestParser.parseBitcoinRequest(
+            "bitcoin:1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa?lightning=lnbc1invoice"
+        )
+        XCTAssertEqual(payment?.lightning, "lnbc1invoice")
+    }
+
+    func testParseBitcoinRequestInvalidAddressIsNil() {
+        XCTAssertNil(PaymentRequestParser.parseBitcoinRequest("bitcoin:notanaddress?amount=1"))
+    }
+
+    func testParseBitcoinRequestBareAddress() {
+        let payment = PaymentRequestParser.parseBitcoinRequest("1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa")
+        XCTAssertEqual(payment?.address, "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa")
+        XCTAssertNil(payment?.amountSats)
+    }
+
     // MARK: - amountLabel
 
     func testAmountLabelWithAmount() {
@@ -220,7 +302,10 @@ final class PaymentRequestDecoderTests: XCTestCase {
     // MARK: - suggestedMode
 
     func testSuggestedModeOnchain() {
-        XCTAssertEqual(PaymentRequestDecoder.suggestedMode(.onchain("1A1z")), .onchain)
+        XCTAssertEqual(
+            PaymentRequestDecoder.suggestedMode(.onchain(address: "1A1z", amountSats: nil, label: nil)),
+            .onchain
+        )
     }
 
     func testSuggestedModeBolt11() {

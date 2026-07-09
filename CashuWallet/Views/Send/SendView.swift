@@ -1492,9 +1492,15 @@ struct UnifiedSendView: View {
         case .lightningAddress(let address):
             lockMelt(request: address, mode: .lightning, decoded: result)
             goToAmount()
-        case .onchain:
-            lockMelt(request: PaymentRequestParser.normalizeBitcoinRequest(raw), mode: .onchain, decoded: result)
+        case .onchain(let address, let amountSats, _):
+            lockMelt(request: address, mode: .onchain, decoded: result)
             goToAmount()
+            // Honor a BIP-21 requested amount (still editable on the keypad).
+            if let amountSats, amountSats > 0 {
+                amountString = entryUnit == .sats
+                    ? String(amountSats)
+                    : AmountFormatter.entryConverted(raw: String(amountSats), from: .sats, to: .fiat)
+            }
         case .cashuPaymentRequest(let summary):
             // Prefer ecash when a held mint can pay; otherwise fall back to a
             // bundled bolt11 (BIP-321) rather than dead-ending on an unheld mint.
@@ -2645,6 +2651,8 @@ struct MeltView: View {
     @ObservedObject private var priceService = PriceService.shared
 
     private let autoQuoteOnAppear: Bool
+    /// Amount requested by a scanned BIP-21 URI, pre-filled (still editable).
+    private let initialAmountSats: UInt64?
     private let onComplete: (() -> Void)?
 
     @State private var requestInput: String
@@ -2722,23 +2730,28 @@ struct MeltView: View {
         initialRequest: String = "",
         initialAmount: String = "",
         initialMode: MeltMode = .lightning,
+        initialAmountSats: UInt64? = nil,
         autoQuoteOnAppear: Bool = false,
         onComplete: (() -> Void)? = nil
     ) {
         self.autoQuoteOnAppear = autoQuoteOnAppear
         self.onComplete = onComplete
+        self.initialAmountSats = initialAmountSats
         _requestInput = State(initialValue: initialRequest)
         _amountString = State(initialValue: initialAmount)
         _meltMode = State(initialValue: initialMode)
 
         // Seed the loading-confirm state for the very first frame so a scanned / auto-quoted
-        // invoice slides up into the confirm layout, never the input screen. Only qualifies
-        // amount-carrying BOLT11/BOLT12 — the cases where the `.onAppear` auto-quote is
-        // guaranteed to fire and land on the confirm screen. Decode is synchronous.
+        // invoice slides up into the confirm layout, never the input screen. Qualifies
+        // amount-carrying BOLT11/BOLT12 and a BIP-21 scan that supplied an amount — the
+        // cases where the `.onAppear` auto-quote is guaranteed to fire and land on the
+        // confirm screen. Decode is synchronous.
         let hasKnownAmount: Bool
         switch PaymentRequestDecoder.decode(initialRequest) {
         case .bolt11(let amount, _), .bolt12(let amount, _):
             hasKnownAmount = amount != nil
+        case .onchain:
+            hasKnownAmount = initialAmountSats != nil
         default:
             hasKnownAmount = false
         }
@@ -2798,12 +2811,13 @@ struct MeltView: View {
                     .presentationDetents([.medium])
             }
             .onAppear {
+                seedInitialAmountIfNeeded()
                 syncMeltModeWithAvailableMints()
                 syncSelectedMeltMint()
                 detectClipboardSuggestion()
                 if autoQuoteOnAppear,
                    !requestInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                   !amountRequired {
+                   !amountRequired || amountSats > 0 {
                     getQuote()
                 } else {
                     // Auto-quote won't fire (amountless / on-chain / manual) — drop the
@@ -2873,6 +2887,19 @@ struct MeltView: View {
 
     /// Satoshis represented by the typed amount, interpreted per `entryUnit`.
     private var amountSats: UInt64 { AmountFormatter.entrySats(raw: amountString, unit: entryUnit) }
+
+    /// Pre-fill the keypad with a BIP-21 requested amount, converted into the
+    /// active entry unit. Editable — the URI amount is a request, not a lock.
+    private func seedInitialAmountIfNeeded() {
+        guard let initialAmountSats, initialAmountSats > 0, amountString.isEmpty else { return }
+        amountString = entryAmountString(forSats: initialAmountSats)
+    }
+
+    private func entryAmountString(forSats sats: UInt64) -> String {
+        entryUnit == .sats
+            ? String(sats)
+            : AmountFormatter.entryConverted(raw: String(sats), from: .sats, to: .fiat)
+    }
 
     private var knownPaymentAmount: UInt64? {
         let entered = amountSats
@@ -3110,8 +3137,8 @@ struct MeltView: View {
             return amount.map { "BOLT11 invoice — \($0) sat" } ?? "BOLT11 invoice — set amount"
         case .bolt12(let amount, _):
             return amount.map { "BOLT12 offer — \($0) sat" } ?? "BOLT12 offer — set amount"
-        case .onchain:
-            return "Bitcoin address"
+        case .onchain(_, let amount, _):
+            return amount.map { "Bitcoin address — \($0) sat" } ?? "Bitcoin address"
         case .cashuPaymentRequest:
             return "Cashu payment request"
         case .unrecognized:
@@ -3383,8 +3410,13 @@ struct MeltView: View {
 
         // Fill input with normalized request.
         switch result {
-        case .onchain:
-            requestInput = PaymentRequestParser.normalizeBitcoinRequest(raw)
+        case .onchain(let address, let amountSats, _):
+            requestInput = address
+            // Honor a BIP-21 requested amount; never overwrite what the user
+            // already typed.
+            if let amountSats, amountSats > 0, amountString.isEmpty {
+                amountString = entryAmountString(forSats: amountSats)
+            }
         case .bolt11, .bolt12:
             requestInput = PaymentRequestDecoder.encodedLightningRequest(from: raw)
                 ?? PaymentRequestParser.normalizeLightningRequest(raw)
@@ -3423,8 +3455,14 @@ struct MeltView: View {
 
             meltMode = .onchain
             syncSelectedMeltMint()
-            presentError("Switched to On-chain. Enter an amount to continue.", severity: .info)
-            requestInput = PaymentRequestParser.normalizeBitcoinRequest(trimmedInput)
+            let bip21 = PaymentRequestParser.parseBitcoinRequest(trimmedInput)
+            if let requestedSats = bip21?.amountSats, requestedSats > 0, amountString.isEmpty {
+                amountString = entryAmountString(forSats: requestedSats)
+                presentError("Switched to On-chain.", severity: .info)
+            } else {
+                presentError("Switched to On-chain. Enter an amount to continue.", severity: .info)
+            }
+            requestInput = bip21?.address ?? PaymentRequestParser.normalizeBitcoinRequest(trimmedInput)
             return
         }
 

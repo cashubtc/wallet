@@ -112,6 +112,7 @@ struct ScannerWrapperView: View {
     @State private var scannedMeltRequest: String?
     @State private var scannedCashuPaymentRequest: CashuPaymentRequestSummary?
     @State private var scannedMeltMode: MeltView.MeltMode = .lightning
+    @State private var scannedMeltAmountSats: UInt64?
     @State private var scannedMeltAutoQuote = false
     @State private var navigateToDetail = false
     @State private var navigateToMelt = false
@@ -234,6 +235,7 @@ struct ScannerWrapperView: View {
                     MeltView(
                         initialRequest: meltRequest,
                         initialMode: scannedMeltMode,
+                        initialAmountSats: scannedMeltAmountSats,
                         autoQuoteOnAppear: scannedMeltAutoQuote,
                         onComplete: {
                             dismiss()
@@ -357,6 +359,7 @@ struct ScannerWrapperView: View {
             case .payBolt11Fallback(let bolt11):
                 scannedMeltRequest = bolt11
                 scannedMeltMode = .lightning
+                scannedMeltAmountSats = nil
                 scannedMeltAutoQuote = true
                 navigateToMelt = true
             }
@@ -368,14 +371,18 @@ struct ScannerWrapperView: View {
                 let generator = UINotificationFeedbackGenerator()
                 generator.notificationOccurred(.success)
 
-                if case .onchain = decodedPaymentRequest {
-                    scannedMeltRequest = PaymentRequestParser.normalizeBitcoinRequest(content)
+                if case .onchain(let address, let amountSats, _) = decodedPaymentRequest {
+                    scannedMeltRequest = address
                     scannedMeltMode = .onchain
-                    scannedMeltAutoQuote = false
+                    scannedMeltAmountSats = amountSats
+                    // A BIP-21 amount makes the quote fetchable immediately,
+                    // same as an amount-carrying invoice.
+                    scannedMeltAutoQuote = amountSats != nil
                 } else {
                     scannedMeltRequest = PaymentRequestDecoder.encodedLightningRequest(from: content)
                         ?? PaymentRequestParser.normalizeLightningRequest(content)
                     scannedMeltMode = .lightning
+                    scannedMeltAmountSats = nil
                     scannedMeltAutoQuote = true
                 }
                 navigateToMelt = true
@@ -386,6 +393,7 @@ struct ScannerWrapperView: View {
 
                 scannedMeltRequest = content
                 scannedMeltMode = .lightning
+                scannedMeltAmountSats = nil
                 scannedMeltAutoQuote = false
                 navigateToMelt = true
 

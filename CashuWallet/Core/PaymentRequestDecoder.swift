@@ -96,7 +96,9 @@ enum PaymentRequestDecodeResult: Equatable, Sendable {
     case lightningAddress(String)
     case bolt11(amountSats: UInt64?, description: String?)
     case bolt12(amountSats: UInt64?, description: String?)
-    case onchain(String)
+    /// BIP-21 metadata rides along so scan/paste flows can prefill the
+    /// requested amount instead of forcing (error-prone) manual entry.
+    case onchain(address: String, amountSats: UInt64?, label: String?)
     case cashuPaymentRequest(CashuPaymentRequestSummary)
     case unrecognized
 }
@@ -149,8 +151,12 @@ enum PaymentRequestDecoder {
             return .lightningAddress(trimmed)
         }
 
-        if PaymentRequestParser.isBitcoinAddress(trimmed) {
-            return .onchain(PaymentRequestParser.normalizeBitcoinRequest(trimmed))
+        if let bip21 = PaymentRequestParser.parseBitcoinRequest(trimmed) {
+            return .onchain(
+                address: bip21.address,
+                amountSats: bip21.amountSats,
+                label: bip21.label ?? bip21.message
+            )
         }
 
         if includeCashuPaymentRequests,

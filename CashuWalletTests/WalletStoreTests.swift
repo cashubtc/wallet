@@ -26,10 +26,12 @@ final class CashuRequestStoreBoundaryTests: XCTestCase {
 
 final class WalletStoreTests: XCTestCase {
     private var store: WalletStore!
+    private var secureStorage: InMemorySecureStorage!
 
     override func setUp() {
         super.setUp()
-        store = WalletStore(storage: InMemoryStorage())
+        secureStorage = InMemorySecureStorage()
+        store = WalletStore(storage: InMemoryStorage(), secureStorage: secureStorage)
     }
 
     // MARK: - Mints
@@ -226,7 +228,7 @@ final class WalletStoreTests: XCTestCase {
         try! storage.set("current", forKey: StorageKeys.cashuRequestsCurrentId)
         try! storage.set(["id1"], forKey: StorageKeys.cashuRequestsProcessedNIP17Ids)
 
-        WalletStore(storage: storage).removeAllWalletData()
+        WalletStore(storage: storage, secureStorage: InMemorySecureStorage()).removeAllWalletData()
 
         XCTAssertFalse(storage.exists(forKey: StorageKeys.cashuRequests))
         XCTAssertFalse(storage.exists(forKey: StorageKeys.cashuRequestsCurrentId))
@@ -240,7 +242,7 @@ final class WalletStoreTests: XCTestCase {
         let legacyMint = mint("https://legacy.example.com", name: "Legacy")
         try! legacyStorage.set([legacyMint], forKey: StorageKeys.Legacy.mints)
 
-        let storeWithLegacy = WalletStore(storage: legacyStorage)
+        let storeWithLegacy = WalletStore(storage: legacyStorage, secureStorage: InMemorySecureStorage())
         let loaded = storeWithLegacy.loadMints()
         XCTAssertEqual(loaded.count, 1)
         XCTAssertEqual(loaded[0].url, "https://legacy.example.com")
@@ -251,10 +253,85 @@ final class WalletStoreTests: XCTestCase {
         let token = pendingToken(id: "legacy1", amount: 99)
         try! legacyStorage.set([token], forKey: StorageKeys.Legacy.pendingTokens)
 
-        let storeWithLegacy = WalletStore(storage: legacyStorage)
+        let storeWithLegacy = WalletStore(storage: legacyStorage, secureStorage: InMemorySecureStorage())
         let loaded = storeWithLegacy.loadPendingTokens()
         XCTAssertEqual(loaded.count, 1)
         XCTAssertEqual(loaded[0].tokenId, "legacy1")
+    }
+
+    // MARK: - Secure token storage (Keychain migration)
+
+    func testPendingTokensPersistToSecureStorageNotDefaults() {
+        let plain = InMemoryStorage()
+        let secure = InMemorySecureStorage()
+        let store = WalletStore(storage: plain, secureStorage: secure)
+
+        store.savePendingTokens([pendingToken(id: "sec1", amount: 5)])
+
+        XCTAssertFalse(plain.exists(forKey: StorageKeys.pendingTokens))
+        XCTAssertTrue(secure.hasSecret(forKey: StorageKeys.pendingTokens))
+        XCTAssertEqual(store.loadPendingTokens().first?.tokenId, "sec1")
+    }
+
+    func testPendingTokensMigrateFromDefaultsToSecureStorageOnLoad() {
+        let plain = InMemoryStorage()
+        let secure = InMemorySecureStorage()
+        // Simulate an older build that stored redeemable tokens in defaults.
+        try! plain.set([pendingToken(id: "old1", amount: 7)], forKey: StorageKeys.pendingTokens)
+
+        let store = WalletStore(storage: plain, secureStorage: secure)
+        let loaded = store.loadPendingTokens()
+
+        XCTAssertEqual(loaded.first?.tokenId, "old1")
+        XCTAssertTrue(secure.hasSecret(forKey: StorageKeys.pendingTokens))
+        XCTAssertFalse(plain.exists(forKey: StorageKeys.pendingTokens), "plaintext copy must be wiped after migration")
+    }
+
+    func testLegacyPendingTokensMigrateStraightToSecureStorage() {
+        let plain = InMemoryStorage()
+        let secure = InMemorySecureStorage()
+        try! plain.set([pendingToken(id: "legacy2", amount: 3)], forKey: StorageKeys.Legacy.pendingTokens)
+
+        let store = WalletStore(storage: plain, secureStorage: secure)
+        XCTAssertEqual(store.loadPendingTokens().first?.tokenId, "legacy2")
+        XCTAssertTrue(secure.hasSecret(forKey: StorageKeys.pendingTokens))
+        XCTAssertFalse(plain.exists(forKey: StorageKeys.Legacy.pendingTokens))
+    }
+
+    func testSavedTokensMigrateFromDefaults() {
+        let plain = InMemoryStorage()
+        let secure = InMemorySecureStorage()
+        try! plain.set(["tx9": "cashuAmigrated"], forKey: StorageKeys.savedTokens)
+
+        let store = WalletStore(storage: plain, secureStorage: secure)
+        XCTAssertEqual(store.loadSavedTokens()["tx9"], "cashuAmigrated")
+        XCTAssertFalse(plain.exists(forKey: StorageKeys.savedTokens))
+    }
+
+    func testRemoveAllWalletDataClearsSecureTokens() {
+        store.savePendingTokens([pendingToken(id: "gone", amount: 1)])
+        store.savePendingReceiveTokens([
+            PendingReceiveToken(tokenId: "gone2", token: "cashuAx", amount: 2, date: Date(), mintUrl: "https://m")
+        ])
+        store.saveSavedTokens(["tx": "cashuAy"])
+
+        store.removeAllWalletData()
+
+        XCTAssertTrue(store.loadPendingTokens().isEmpty)
+        XCTAssertTrue(store.loadPendingReceiveTokens().isEmpty)
+        XCTAssertTrue(store.loadSavedTokens().isEmpty)
+        XCTAssertFalse(secureStorage.hasSecret(forKey: StorageKeys.pendingTokens))
+    }
+
+    func testSecureSnapshotRestoreRoundTrip() {
+        store.savePendingTokens([pendingToken(id: "snap", amount: 11)])
+        let snapshot = store.secureWalletDataSnapshot()
+
+        store.removeAllWalletData()
+        XCTAssertTrue(store.loadPendingTokens().isEmpty)
+
+        store.restoreSecureWalletData(snapshot)
+        XCTAssertEqual(store.loadPendingTokens().first?.tokenId, "snap")
     }
 
     // MARK: - Helpers

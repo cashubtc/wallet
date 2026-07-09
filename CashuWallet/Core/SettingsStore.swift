@@ -118,6 +118,14 @@ final class SettingsStore {
         set { set(newValue, forKey: StorageKeys.sentryEnabled) }
     }
 
+    /// Opt-in: query a public block explorer (mempool.space / mutinynet.com)
+    /// to observe on-chain deposit payments. Off by default — the lookups
+    /// send deposit addresses to a third party.
+    var onchainExplorerLookupsEnabled: Bool {
+        get { bool(StorageKeys.onchainExplorerLookups, default: false) }
+        set { set(newValue, forKey: StorageKeys.onchainExplorerLookups) }
+    }
+
     var priceEnabled: Bool {
         get { bool(StorageKeys.priceEnabled, legacy: StorageKeys.Legacy.priceEnabled, default: false) }
         set { set(newValue, forKey: StorageKeys.priceEnabled) }

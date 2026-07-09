@@ -64,6 +64,17 @@ class WalletManager: ObservableObject {
     /// relaunch backstop.
     var pendingMeltWaiters: [String: Task<Void, Never>] = [:]
 
+    /// Monotonic wallet-boundary counter. Bumped by `resetRuntimeState()`
+    /// (delete, create, restore) so any long-lived task started against the
+    /// previous wallet — a pending-melt waiter mid-`wait()`, a quote sync
+    /// mid-poll — can detect the boundary and drop its result instead of
+    /// writing the old wallet's bookkeeping into the new one.
+    private(set) var walletGeneration: UInt64 = 0
+
+    func bumpWalletGeneration() {
+        walletGeneration &+= 1
+    }
+
     // MARK: - Services
 
     let walletStore = WalletStore()

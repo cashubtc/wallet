@@ -9,7 +9,7 @@ final class MintServiceTests: XCTestCase {
         super.setUp()
         service = MintService(
             walletRepository: { nil },
-            walletStore: WalletStore(storage: InMemoryStorage())
+            walletStore: WalletStore(storage: InMemoryStorage(), secureStorage: InMemorySecureStorage())
         )
     }
 
@@ -71,7 +71,7 @@ final class MintServiceTests: XCTestCase {
 
     func testIsMintTrackedTrueAfterLoad() {
         let storage = InMemoryStorage()
-        let ws = WalletStore(storage: storage)
+        let ws = WalletStore(storage: storage, secureStorage: InMemorySecureStorage())
         ws.saveMints([mint("https://mint.example.com", name: "Test")])
 
         let s = MintService(walletRepository: { nil }, walletStore: ws)
@@ -81,7 +81,7 @@ final class MintServiceTests: XCTestCase {
 
     func testIsMintTrackedNormalizesTrailingSlash() {
         let storage = InMemoryStorage()
-        let ws = WalletStore(storage: storage)
+        let ws = WalletStore(storage: storage, secureStorage: InMemorySecureStorage())
         ws.saveMints([mint("https://mint.example.com", name: "Test")])
 
         let s = MintService(walletRepository: { nil }, walletStore: ws)
@@ -93,7 +93,7 @@ final class MintServiceTests: XCTestCase {
 
     func testLoadCachedMintsSetsFirstAsActive() {
         let storage = InMemoryStorage()
-        let ws = WalletStore(storage: storage)
+        let ws = WalletStore(storage: storage, secureStorage: InMemorySecureStorage())
         let m = mint("https://mint.example.com", name: "First")
         ws.saveMints([m])
         ws.activeMintURL = m.url
@@ -105,7 +105,7 @@ final class MintServiceTests: XCTestCase {
 
     func testLoadCachedMintsFallsBackToFirstWhenNoActiveSaved() {
         let storage = InMemoryStorage()
-        let ws = WalletStore(storage: storage)
+        let ws = WalletStore(storage: storage, secureStorage: InMemorySecureStorage())
         ws.saveMints([
             mint("https://mint1.example.com", name: "Mint 1"),
             mint("https://mint2.example.com", name: "Mint 2"),
@@ -170,7 +170,7 @@ final class MintServiceTests: XCTestCase {
 
     func testSaveMintsPersistsToStore() {
         let storage = InMemoryStorage()
-        let ws = WalletStore(storage: storage)
+        let ws = WalletStore(storage: storage, secureStorage: InMemorySecureStorage())
         let s = MintService(walletRepository: { nil }, walletStore: ws)
         s.mints = [mint("https://mint.example.com", name: "Saved")]
         s.saveMints()

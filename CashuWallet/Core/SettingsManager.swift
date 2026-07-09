@@ -154,6 +154,14 @@ class SettingsManager: ObservableObject {
         }
     }
 
+    /// Opt-in third-party lookups of on-chain deposit addresses on a public
+    /// block explorer. See `OnchainExplorer.observePayment`.
+    @Published var onchainExplorerLookupsEnabled: Bool {
+        didSet {
+            settingsStore.onchainExplorerLookupsEnabled = onchainExplorerLookupsEnabled
+        }
+    }
+
     // MARK: - Initialization
     
     init() {
@@ -173,6 +181,7 @@ class SettingsManager: ObservableObject {
         self.amountDisplayPrimary = AmountDisplayPrimary(rawValue: settingsStore.amountDisplayPrimary) ?? .fiat
         self.appLockEnabled = settingsStore.appLockEnabled
         self.sentryEnabled = settingsStore.sentryEnabled
+        self.onchainExplorerLookupsEnabled = settingsStore.onchainExplorerLookupsEnabled
 
         persistP2PKKeys()
         

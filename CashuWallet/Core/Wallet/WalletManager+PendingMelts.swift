@@ -20,11 +20,22 @@ extension WalletManager {
     /// the process and `syncPendingMeltQuotes()` takes over after relaunch.
     func watchPendingMelt(_ pendingMelt: PendingMelt, quoteId: String) {
         guard pendingMeltWaiters[quoteId] == nil else { return }
+        // Waiters are cancelled and cleared at wallet boundaries
+        // (`resetRuntimeState()`), but `pendingMelt.wait()` is an FFI future
+        // that may not observe cancellation promptly — the generation check
+        // below is what guarantees a late completion from the old wallet
+        // can't touch a newly created/restored one.
+        let generation = walletGeneration
         pendingMeltWaiters[quoteId] = Task { [weak self] in
-            defer { self?.pendingMeltWaiters[quoteId] = nil }
+            defer {
+                if let self, self.walletGeneration == generation {
+                    self.pendingMeltWaiters[quoteId] = nil
+                }
+            }
             do {
                 let finalized = try await pendingMelt.wait()
-                await self?.finishPendingMelt(
+                guard let self, !Task.isCancelled, self.walletGeneration == generation else { return }
+                await self.finishPendingMelt(
                     quoteId: quoteId,
                     state: finalized.state,
                     preimage: finalized.preimage,
@@ -44,14 +55,19 @@ extension WalletManager {
     func syncPendingMeltQuotes() async {
         let tracked = walletStore.loadPendingMeltQuotes()
         guard !tracked.isEmpty, let repo = walletRepository else { return }
+        // A wallet reset while we're polling must stop this pass: the tracked
+        // record belongs to the previous wallet.
+        let generation = walletGeneration
 
         var settledAny = false
         for (quoteId, mintUrlString) in tracked {
+            guard walletGeneration == generation else { return }
             // An in-process waiter owns this quote's completion.
             guard pendingMeltWaiters[quoteId] == nil else { continue }
             do {
                 let wallet = try await repo.getWallet(mintUrl: MintUrl(url: mintUrlString), unit: .sat)
                 let quote = try await wallet.checkMeltQuoteStatus(quoteId: quoteId)
+                guard walletGeneration == generation else { return }
                 switch quote.state {
                 case .paid:
                     recordFinalizedMelt(quoteId: quoteId, preimage: quote.paymentProof, feePaid: nil)
@@ -75,7 +91,7 @@ extension WalletManager {
             }
         }
 
-        if settledAny {
+        if settledAny, walletGeneration == generation {
             await refreshBalance()
             await loadTransactions()
         }

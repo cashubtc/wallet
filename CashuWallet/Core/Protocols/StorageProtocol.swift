@@ -123,6 +123,7 @@ enum StorageKeys {
     static let amountDisplayPrimary = "settings.amountDisplayPrimary"
     static let appLockEnabled = "settings.appLockEnabled"
     static let sentryEnabled = "settings.sentryEnabled"
+    static let onchainExplorerLookups = "settings.onchainExplorerLookups"
 
     enum Legacy {
         static let mints = "savedMints"
@@ -179,6 +180,16 @@ enum StorageKeys {
     static func cachedBTCPriceDate(currency: String) -> String {
         "price.cachedBTCDate.\(currency.uppercased())"
     }
+
+    /// Wallet keys whose values embed redeemable ecash token strings. These
+    /// are stored in the Keychain (see `WalletStore`), never in UserDefaults;
+    /// they stay listed in `walletDataKeys` too so stale plaintext copies from
+    /// older builds are still wiped at wallet boundaries.
+    static let secureWalletDataKeys = [
+        pendingTokens,
+        pendingReceiveTokens,
+        savedTokens
+    ]
 
     static let walletDataKeys = [
         mints,

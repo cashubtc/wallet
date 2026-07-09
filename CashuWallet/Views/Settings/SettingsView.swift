@@ -368,6 +368,7 @@ struct SecuritySettingsSection: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+                .disabled(!biometryAvailable)
                 .padding(.horizontal, 4)
                 .padding(.vertical, 14)
             }
@@ -379,6 +380,23 @@ struct SecuritySettingsSection: View {
                     }
                     Text("Your seed phrase always requires authentication to reveal, even when App Lock is off.")
                 }
+            }
+
+            SettingsSectionGroup(nil) {
+                Toggle(isOn: $settings.onchainExplorerLookupsEnabled) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Check on-chain payments via explorer")
+                        Text("Look up deposit addresses on mempool.space.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.horizontal, 4)
+                .padding(.vertical, 14)
+            }
+
+            SettingsSectionFooter {
+                Text("Sends your on-chain deposit addresses to a public block explorer to show payment status before the mint confirms. Leave off for better privacy.")
             }
         }
         .task { refreshBiometry() }
@@ -393,7 +411,9 @@ struct SecuritySettingsSection: View {
     }
 
     /// Enabling first confirms with a live auth and reverts to off on failure —
-    /// you can't switch on a lock you can't satisfy.
+    /// you can't switch on a lock you can't satisfy. Fail-closed: on a device
+    /// with no passcode the confirmation is impossible, so App Lock stays off
+    /// (the toggle is also disabled in that state).
     private var appLockBinding: Binding<Bool> {
         Binding(
             get: { settings.appLockEnabled },
@@ -402,8 +422,14 @@ struct SecuritySettingsSection: View {
                     settings.appLockEnabled = false
                     return
                 }
+                guard AppLockManager.canEvaluate() else {
+                    settings.appLockEnabled = false
+                    refreshBiometry()
+                    authError = "Set a device passcode in iOS Settings to use App Lock."
+                    return
+                }
                 Task {
-                    let ok = await AppLockManager.shared.authenticate(reason: "Confirm to enable App Lock")
+                    let ok = await AppLockManager.shared.authenticateForSecrets(reason: "Confirm to enable App Lock")
                     settings.appLockEnabled = ok
                     if !ok {
                         authError = "Authentication failed. App Lock was not enabled."
@@ -1280,6 +1306,7 @@ struct BackupView: View {
 
     @State private var showWords = false
     @State private var copiedToClipboard = false
+    @State private var authUnavailable = false
 
     var body: some View {
         NavigationStack {
@@ -1354,26 +1381,37 @@ struct BackupView: View {
                     Button("Cancel") { dismiss() }
                 }
             }
+            .alert("Authentication Unavailable", isPresented: $authUnavailable) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("Set a device passcode in iOS Settings to reveal or copy your seed phrase.")
+            }
         }
     }
 
     /// Hiding is free; revealing always requires authentication, regardless of
-    /// the App Lock setting.
+    /// the App Lock setting. Fail-closed: with no device passcode there is no
+    /// way to verify the holder, so the words stay hidden.
     private func toggleReveal() {
         if showWords {
             showWords = false
             return
         }
         Task {
-            if await AppLockManager.shared.authenticate(reason: "Reveal your seed phrase") {
+            if await AppLockManager.shared.authenticateForSecrets(reason: "Reveal your seed phrase") {
                 showWords = true
+            } else if !AppLockManager.canEvaluate() {
+                authUnavailable = true
             }
         }
     }
 
     private func copyToClipboard() {
         Task {
-            guard await AppLockManager.shared.authenticate(reason: "Copy your seed phrase") else { return }
+            guard await AppLockManager.shared.authenticateForSecrets(reason: "Copy your seed phrase") else {
+                if !AppLockManager.canEvaluate() { authUnavailable = true }
+                return
+            }
             let words = walletManager.getMnemonicWords().joined(separator: " ")
             UIPasteboard.general.string = words
             copiedToClipboard = true
