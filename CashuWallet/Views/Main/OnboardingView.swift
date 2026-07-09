@@ -926,6 +926,8 @@ struct OnboardingView: View {
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .keyboardType(.URL)
+                .submitLabel(.done)
+                .onSubmit(commitCustomMintInput)
                 .font(.system(.subheadline, design: .monospaced))
                 .foregroundStyle(.primary)
                 .tint(.primary)

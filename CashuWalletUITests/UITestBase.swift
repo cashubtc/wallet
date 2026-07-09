@@ -93,11 +93,13 @@ class UITestBase: XCTestCase {
         XCTAssertTrue(field.waitForExistence(timeout: 5))
         field.tap()
         field.typeText(mintURL)
-
-        app.buttons["onboarding-commit-custom-mint"].tap()
+        let done = app.keyboards.buttons["Done"]
+        XCTAssertTrue(done.waitForExistence(timeout: 5), "URL keyboard should expose a Done button")
+        done.tap()
 
         let cont = app.buttons["onboarding-continue"]
         XCTAssertTrue(cont.waitForExistence(timeout: 5))
+        XCTAssertTrue(cont.isEnabled, "Continue should be enabled after adding the custom mint")
         cont.tap()
 
         waitForMainTab(timeout: 30)
