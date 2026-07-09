@@ -19,6 +19,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import org.cashu.wallet.Models.MintInfo
+import org.cashu.wallet.ui.theme.CapsuleShape
 import org.cashu.wallet.ui.theme.CashuTheme
 
 @Composable
@@ -38,6 +39,7 @@ fun MintChip(
             onClick = {
                 if (mints.isEmpty()) onManage() else expanded = true
             },
+            shape = CapsuleShape,
             label = {
                 Text(
                     text = label,

@@ -29,13 +29,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import org.cashu.wallet.ui.theme.CashuTheme
 
-// 56dp is the M3 CTA height; the 14dp internal vertical padding centers the
-// labelLarge baseline inside that height and doesn't belong on the spacing scale.
-private val ButtonMinHeight = 56.dp
-private val ButtonContentVertical = 14.dp
+// 58dp min height with 16dp vertical padding matches iOS's large glass capsule buttons.
+private val ButtonMinHeight = 58.dp
+private val ButtonContentVertical = 16.dp
 private val ButtonProgressSize = 24.dp
 // Chevron-scale glyph inside GhostButton labels.
 private val GhostButtonIconSize = 16.dp
@@ -106,7 +106,7 @@ fun PrimaryButton(
             } else {
                 Text(
                     text = text,
-                    style = MaterialTheme.typography.labelLarge,
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                 )
             }
         }
@@ -136,7 +136,7 @@ fun SecondaryButton(
         interactionSource = interactionSource,
         contentPadding = PaddingValues(horizontal = CashuTheme.spacing.section, vertical = ButtonContentVertical),
     ) {
-        Text(text = text, style = MaterialTheme.typography.labelLarge)
+        Text(text = text, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
     }
 }
 

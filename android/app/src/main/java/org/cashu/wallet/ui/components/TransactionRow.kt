@@ -68,7 +68,8 @@ fun TransactionRow(
         modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = CashuTheme.spacing.comfortable, vertical = CashuTheme.spacing.default),
+            // iOS HistoryView uses 16pt vertical padding; match for parity.
+            .padding(horizontal = CashuTheme.spacing.comfortable, vertical = CashuTheme.spacing.comfortable),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
     ) {

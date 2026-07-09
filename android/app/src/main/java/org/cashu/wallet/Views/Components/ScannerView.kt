@@ -15,12 +15,14 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Icon
@@ -121,19 +123,15 @@ fun ScannerView(
             },
             onError = { error -> cameraError = error },
         )
-        Row(
+        // Close button top-right (with status bar inset to avoid clipping on notched devices)
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .align(Alignment.TopCenter)
+                .align(Alignment.TopEnd)
+                .statusBarsPadding()
                 .padding(12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
+            contentAlignment = Alignment.TopEnd,
         ) {
-            Text(
-                text = "Scan QR Code",
-                color = Color.White,
-                style = MaterialTheme.typography.titleMedium,
-            )
             IconButton(onClick = onClose) {
                 Icon(Icons.Default.Close, contentDescription = "Close scanner", tint = Color.White)
             }
@@ -143,7 +141,8 @@ fun ScannerView(
             error = animatedError,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(24.dp),
+                .navigationBarsPadding()
+                .padding(bottom = 32.dp, start = 24.dp, end = 24.dp),
         )
     }
 }
@@ -155,7 +154,12 @@ private fun ScannerStatusOverlay(
     modifier: Modifier = Modifier,
 ) {
     Column(
-        modifier = modifier,
+        modifier = modifier
+            .background(
+                color = Color.Black.copy(alpha = 0.6f),
+                shape = RoundedCornerShape(20.dp),
+            )
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {

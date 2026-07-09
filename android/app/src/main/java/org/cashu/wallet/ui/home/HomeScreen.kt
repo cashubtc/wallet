@@ -30,8 +30,8 @@ import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.outlined.AccountBalance
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.QrCodeScanner
-import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -383,17 +383,14 @@ private fun PinnedTop(
         verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // Top-right scan affordance (iOS parity — scan lives in the top bar, not in the action row).
-        // Default M3 FilledTonalIconButton size is 40dp visual + 48dp touch target via
-        // minimumInteractiveComponentSize. No explicit size needed.
+        // Top-right scan affordance (iOS parity — minimal toolbar glyph, no tonal fill).
+        // 48dp touch target preserved via minimumInteractiveComponentSize.
         Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
-            FilledTonalIconButton(
-                onClick = onScan,
-                shape = CircleShape,
-            ) {
+            IconButton(onClick = onScan) {
                 Icon(
                     imageVector = Icons.Outlined.QrCodeScanner,
                     contentDescription = "Scan QR",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
