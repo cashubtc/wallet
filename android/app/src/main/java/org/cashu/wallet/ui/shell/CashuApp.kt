@@ -42,6 +42,7 @@ import org.cashu.wallet.ui.onboarding.OnboardingScreen
 import org.cashu.wallet.ui.navigation.TopTab
 import org.cashu.wallet.ui.navigation.cashuRequestDetailRouteFor
 import org.cashu.wallet.ui.navigation.navigateToTab
+import org.cashu.wallet.ui.navigation.shellBackAction
 import org.cashu.wallet.ui.receive.ReceiveEcashDetailScreen
 import org.cashu.wallet.ui.receive.ReceiveEcashScreen
 import org.cashu.wallet.ui.receive.ReceiveLightningScreen
@@ -295,13 +296,14 @@ private fun AuthenticatedShell(container: AppContainer) {
         // which renders above Contactless — dismissal order matches. (Flow
         // sheets live in their own window and handle back themselves.)
         BackHandler(enabled = !appLockState.isLocked && (receiveTokenDetail != null || activeScannerTarget != null || showContactless)) {
-            when {
-                receiveTokenDetail != null -> {
+            when (shellBackAction(receiveTokenDetail != null, activeScannerTarget != null, showContactless)) {
+                org.cashu.wallet.ui.navigation.ShellBackAction.CloseReceiveDetail -> {
                     // Never abandon a redeem in flight.
                     if (!receiveDetailDismissLocked) receiveTokenDetail = null
                 }
-                activeScannerTarget != null -> scannerTarget = null
-                else -> showContactless = false
+                org.cashu.wallet.ui.navigation.ShellBackAction.CloseScanner -> scannerTarget = null
+                org.cashu.wallet.ui.navigation.ShellBackAction.CloseContactless -> showContactless = false
+                null -> Unit
             }
         }
         if (appLockState.isObscured && !appLockState.isLocked) {

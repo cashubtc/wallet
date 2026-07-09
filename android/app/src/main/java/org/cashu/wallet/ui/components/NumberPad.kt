@@ -67,7 +67,7 @@ fun NumberPad(
                         "" -> Box(modifier = Modifier.weight(1f).height(KeyHeight))
                         "delete" -> NumberPadKey(
                             modifier = Modifier.weight(1f),
-                            contentDescription = "Delete",
+                            contentDescription = "Delete. Long press to clear.",
                             onClick = {
                                 if (amount.isNotEmpty()) {
                                     onAmountChange(UnitAmountEntry.backspace(amount, decimals))

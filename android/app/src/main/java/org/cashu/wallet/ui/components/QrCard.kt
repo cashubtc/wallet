@@ -30,6 +30,8 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -62,6 +64,9 @@ fun QrCard(
             modifier = Modifier
                 .clip(MaterialTheme.shapes.large)
                 .background(Color.White)
+                .semantics {
+                    contentDescription = "QR code. Long press for copy and share options."
+                }
                 .combinedClickable(
                     onClick = {},
                     onLongClick = {

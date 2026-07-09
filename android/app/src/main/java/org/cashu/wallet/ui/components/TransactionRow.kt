@@ -19,6 +19,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import org.cashu.wallet.Models.TransactionStatus
@@ -64,9 +66,21 @@ fun TransactionRow(
     } else {
         "${if (incoming) "+" else "−"}${model.primaryAmount}"
     }
+    val semanticAmount = if (pending) model.primaryAmount else "${if (incoming) "+" else "-"}${model.primaryAmount}"
+    val semanticParts = listOfNotNull(
+        model.title,
+        if (incoming) "Incoming" else "Outgoing",
+        tx.displayStatusText,
+        semanticAmount,
+        model.secondaryAmount,
+        model.timestamp,
+    )
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .semantics {
+                contentDescription = semanticParts.joinToString(", ")
+            }
             .clickable(onClick = onClick)
             // iOS HistoryView uses 16pt vertical padding; match for parity.
             .padding(horizontal = CashuTheme.spacing.comfortable, vertical = CashuTheme.spacing.comfortable),
