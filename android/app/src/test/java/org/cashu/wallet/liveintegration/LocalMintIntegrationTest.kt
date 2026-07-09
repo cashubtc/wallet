@@ -5,6 +5,7 @@ import java.net.URL
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -15,7 +16,6 @@ import org.cashu.wallet.Core.PaymentRequestBuilder
 import org.cashu.wallet.Core.PaymentRequestDecodeResult
 import org.cashu.wallet.Core.PaymentRequestDecoder
 import org.cashu.wallet.Core.TokenParser
-import org.cashu.wallet.Core.WalletMintMetadataFetcher
 import org.cashu.wallet.Models.PaymentMethodKind
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -37,19 +37,20 @@ class LocalMintIntegrationTest {
         assertMintEndpointReady(nutshellMintUrl)
         assertMintEndpointReady(cdkMintUrl)
 
-        val fetcher = WalletMintMetadataFetcher()
-        val nutshell = fetcher.fetchRawMintInfo(nutshellMintUrl)
-        assertTrue(nutshell.supportedMintMethods.contains(PaymentMethodKind.Bolt11))
-        assertTrue(nutshell.effectiveMintUnits.contains("sat"))
+        val nutshell = getJson(nutshellMintUrl, "/v1/info")
+        assertTrue(PaymentMethodKind.Bolt11.rawValue in nutshell.paymentMethods("4"))
+        assertTrue("sat" in nutshell.paymentUnits("4"))
 
-        val cdk = fetcher.fetchRawMintInfo(cdkMintUrl)
-        assertEquals("CDK Test Mint", cdk.name)
-        assertTrue(cdk.supportedMintMethods.contains(PaymentMethodKind.Bolt11))
-        assertTrue(cdk.supportedMintMethods.contains(PaymentMethodKind.Bolt12))
-        assertTrue(cdk.supportedMintMethods.contains(PaymentMethodKind.Onchain))
-        assertTrue(cdk.effectiveMintUnits.contains("sat"))
-        assertTrue(cdk.effectiveMintUnits.contains("usd"))
-        assertTrue(cdk.supportsMultipleMintUnits)
+        val cdk = getJson(cdkMintUrl, "/v1/info")
+        assertEquals("CDK Test Mint", cdk["name"]?.jsonPrimitive?.contentOrNull)
+        val cdkMethods = cdk.paymentMethods("4")
+        assertTrue(PaymentMethodKind.Bolt11.rawValue in cdkMethods)
+        assertTrue(PaymentMethodKind.Bolt12.rawValue in cdkMethods)
+        assertTrue(PaymentMethodKind.Onchain.rawValue in cdkMethods)
+        val cdkUnits = cdk.paymentUnits("4") + cdk.paymentUnits("5")
+        assertTrue("sat" in cdkUnits)
+        assertTrue("usd" in cdkUnits)
+        assertTrue(cdkUnits.size > 1)
     }
 
     @Test
@@ -177,6 +178,22 @@ class LocalMintIntegrationTest {
         return keysets.mapNotNull { keyset ->
             runCatching { keyset.jsonObject["unit"]?.jsonPrimitive?.contentOrNull }.getOrNull()
         }.toSet()
+    }
+
+    private fun JsonObject.paymentMethods(nutNumber: String): Set<String> =
+        nutMethodFields(nutNumber)
+            .mapNotNull { it["method"]?.jsonPrimitive?.contentOrNull?.lowercase() }
+            .toSet()
+
+    private fun JsonObject.paymentUnits(nutNumber: String): Set<String> =
+        nutMethodFields(nutNumber)
+            .map { it["unit"]?.jsonPrimitive?.contentOrNull ?: "sat" }
+            .toSet()
+
+    private fun JsonObject.nutMethodFields(nutNumber: String): List<JsonObject> {
+        val nut = this["nuts"]?.jsonObject?.get(nutNumber)?.jsonObject ?: return emptyList()
+        if (nut["disabled"]?.jsonPrimitive?.booleanOrNull == true) return emptyList()
+        return nut["methods"]?.jsonArray.orEmpty().map { it.jsonObject }
     }
 
     private fun assertMintQuote(
