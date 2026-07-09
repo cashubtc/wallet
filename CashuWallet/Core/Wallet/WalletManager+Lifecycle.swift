@@ -577,6 +577,10 @@ extension WalletManager {
                 )
             }
         }
+
+        // Saga recovery above only single-polls async-accepted (NUT-05) melts and
+        // skips them while still pending; re-arm their completion tracking here.
+        await syncPendingMeltQuotes()
     }
 
     private func recoverIncompleteSagasIfNeeded(wallet: Wallet, mintUrl: String) async {

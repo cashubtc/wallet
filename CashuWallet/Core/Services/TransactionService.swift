@@ -536,6 +536,13 @@ class TransactionService: ObservableObject {
     ) -> [WalletTransaction] {
         var transactions: [WalletTransaction] = []
 
+        // Melts the app accepted for async NUT-05 settlement. CDK's wallet saga
+        // does not persist `Pending` to the local melt_quote row (it leaves
+        // pending-durability to the caller), so an in-flight async melt stays
+        // stored as `.unpaid`. Without this set those rows would be dropped
+        // below and never surface in History while settlement is pending.
+        let pendingMeltQuoteIds = Set(walletStore.loadPendingMeltQuotes().keys)
+
         for quote in quotes {
             guard let mintUrl = quote.mintUrl,
                   trackedMintUrls.contains(mintUrl.url),
@@ -551,7 +558,12 @@ class TransactionService: ObservableObject {
             case .pending:
                 status = .pending
             case .unpaid:
-                continue
+                // Only surface an unpaid quote the app is tracking as an
+                // async-accepted melt; a genuinely unpaid quote stays hidden.
+                guard pendingMeltQuoteIds.contains(quote.id) else {
+                    continue
+                }
+                status = .pending
             }
 
             let timestamp = timestamps[quote.id] ?? Date().timeIntervalSince1970
