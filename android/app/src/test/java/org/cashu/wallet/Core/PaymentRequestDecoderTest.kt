@@ -23,6 +23,17 @@ class PaymentRequestDecoderTest {
         val parsed = LightningRequestParser.parse("lnbc10u1ptest")
         assertEquals(PaymentMethodKind.Bolt11, parsed.method)
         assertEquals("lnbc10u1ptest", parsed.request)
+        assertEquals(1_000L, parsed.amountSats)
+    }
+
+    @Test
+    fun bolt11AmountParserStopsAtMultiplierUnit() {
+        val parsed = LightningRequestParser.parse(
+            "lnbc2500u1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpu9qrsgquk0rl77nj30yxdy8j9vdx85fkpmdla2087ne0xh8nhedh8w27kyke0lp53ut353s06fv3qfegext0eh0ymjpf39tuven09sam30g4vgpfna3rh",
+        )
+
+        assertEquals(PaymentMethodKind.Bolt11, parsed.method)
+        assertEquals(250_000L, parsed.amountSats)
     }
 
     @Test
