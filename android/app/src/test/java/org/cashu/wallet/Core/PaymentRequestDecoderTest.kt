@@ -79,6 +79,29 @@ class PaymentRequestDecoderTest {
     }
 
     @Test
+    fun locallyBuiltLegacyCashuRequestsDecodeWithoutCdkFallback() {
+        val encoded = PaymentRequestBuilder.build(
+            id = "local-request",
+            amount = 7,
+            unit = "sat",
+            mints = listOf("http://localhost:3339"),
+            description = "Local request",
+            nostrPubkeyHex = "1".repeat(64),
+            relays = emptyList(),
+        )
+
+        val decoded = PaymentRequestDecoder.decode(
+            encoded,
+            includeCashuPaymentRequests = true,
+        ) as? PaymentRequestDecodeResult.CashuPaymentRequest
+
+        assertEquals(7L, decoded?.summary?.amount)
+        assertEquals("sat", decoded?.summary?.unit)
+        assertEquals("Local request", decoded?.summary?.description)
+        assertEquals(listOf("http://localhost:3339"), decoded?.summary?.mints)
+    }
+
+    @Test
     fun cashuWrappedTokensAreExtracted() {
         assertEquals("cashuA-test-token", TokenParser.extractToken("cashu:cashuA-test-token"))
         assertEquals("cashuB-test-token", TokenParser.extractToken("cashu://cashuB-test-token"))
