@@ -73,6 +73,8 @@ object PaymentRequestParser {
 }
 
 object PaymentRequestDecoder {
+    private const val CREQ_A_PREFIX = "creqA"
+
     fun decode(
         raw: String,
         includeCashuPaymentRequests: Boolean = false,
@@ -119,11 +121,23 @@ object PaymentRequestDecoder {
         return if (lower.startsWith("creqa") || lower.startsWith("creqb1")) withoutCashuScheme else null
     }
 
+    fun cdkCompatibleCashuPaymentRequest(raw: String): String? {
+        val encoded = encodedCashuPaymentRequest(raw) ?: return null
+        return if (encoded.startsWith(CREQ_A_PREFIX, ignoreCase = true)) {
+            val payload = encoded.drop(CREQ_A_PREFIX.length).trimEnd('=')
+            val padding = (4 - payload.length % 4) % 4
+            CREQ_A_PREFIX + payload + "=".repeat(padding)
+        } else {
+            encoded
+        }
+    }
+
     fun cashuPaymentRequestSummary(raw: String): CashuPaymentRequestSummary? {
         val encoded = encodedCashuPaymentRequest(raw) ?: return null
-        val request = runCatching { decodePaymentRequest(encoded) }.getOrNull() ?: return null
+        val cdkEncoded = cdkCompatibleCashuPaymentRequest(encoded) ?: encoded
+        val request = runCatching { decodePaymentRequest(cdkEncoded) }.getOrNull() ?: return null
         return CashuPaymentRequestSummary(
-            encoded = encoded,
+            encoded = cdkEncoded,
             amount = request.amount()?.value?.toLong(),
             unit = request.unit()?.toDomainUnit(),
             description = request.description(),

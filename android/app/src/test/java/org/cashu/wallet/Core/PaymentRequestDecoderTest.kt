@@ -72,6 +72,13 @@ class PaymentRequestDecoderTest {
     }
 
     @Test
+    fun cdkCompatibleLegacyCashuRequestsNormalizePrefixAndPadding() {
+        assertEquals("creqAabc=", PaymentRequestDecoder.cdkCompatibleCashuPaymentRequest("CREQAabc"))
+        assertEquals("creqAabc=", PaymentRequestDecoder.cdkCompatibleCashuPaymentRequest("cashu:creqAabc"))
+        assertEquals("CREQB1abc", PaymentRequestDecoder.cdkCompatibleCashuPaymentRequest("CREQB1abc"))
+    }
+
+    @Test
     fun cashuWrappedTokensAreExtracted() {
         assertEquals("cashuA-test-token", TokenParser.extractToken("cashu:cashuA-test-token"))
         assertEquals("cashuB-test-token", TokenParser.extractToken("cashu://cashuB-test-token"))

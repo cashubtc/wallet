@@ -385,7 +385,8 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
     }
 
     override suspend fun payCashuPaymentRequest(encoded: String, customAmountSats: Long?, preferredMintURL: String?) {
-        val request = decodePaymentRequest(encoded)
+        val cdkEncoded = PaymentRequestDecoder.cdkCompatibleCashuPaymentRequest(encoded) ?: encoded
+        val request = decodePaymentRequest(cdkEncoded)
         when (request.unit()) {
             null, CdkCurrencyUnit.Sat -> Unit
             else -> throw CdkGatewayUnavailable("Only sat Cashu payment requests are supported.")
