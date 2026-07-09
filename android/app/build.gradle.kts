@@ -1,3 +1,5 @@
+import org.gradle.api.tasks.testing.Test
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -67,14 +69,32 @@ android {
             excludes += "META-INF/versions/9/OSGI-INF/MANIFEST.MF"
         }
     }
+
+    testOptions {
+        managedDevices {
+            localDevices {
+                create("pixel2Api35") {
+                    device = "Pixel 2"
+                    apiLevel = 35
+                    systemImageSource = "aosp"
+                }
+            }
+        }
+    }
 }
 
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.navigation.compose)
+    implementation(libs.androidx.biometric)
+    implementation(libs.androidx.concurrent.futures)
+    implementation(libs.androidx.concurrent.futures.ktx)
+    implementation(libs.androidx.metrics.performance)
+    implementation(libs.androidx.profileinstaller)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.tooling.preview)
@@ -98,9 +118,47 @@ dependencies {
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.espresso.core)
+    androidTestImplementation(libs.androidx.concurrent.futures)
+    androidTestImplementation(libs.androidx.concurrent.futures.ktx)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
+}
+
+tasks.register<Test>("androidNoNetworkIntegrationTest") {
+    group = "verification"
+    description = "Runs Android JVM no-network integration coverage, including fake-gateway flows."
+    val debugUnitTest = tasks.named<Test>("testDebugUnitTest")
+    dependsOn("compileDebugUnitTestKotlin", "compileDebugUnitTestJavaWithJavac", "processDebugUnitTestJavaRes")
+    shouldRunAfter(debugUnitTest)
+    testClassesDirs = debugUnitTest.get().testClassesDirs
+    classpath = debugUnitTest.get().classpath
+    filter {
+        includeTestsMatching("org.cashu.wallet.integration.*")
+    }
+}
+
+tasks.register<Test>("androidLocalMintIntegrationTest") {
+    group = "verification"
+    description = "Runs Android JVM integration coverage against local Nutshell/CDK test mints."
+    val debugUnitTest = tasks.named<Test>("testDebugUnitTest")
+    dependsOn("compileDebugUnitTestKotlin", "compileDebugUnitTestJavaWithJavac", "processDebugUnitTestJavaRes")
+    shouldRunAfter("androidNoNetworkIntegrationTest")
+    testClassesDirs = debugUnitTest.get().testClassesDirs
+    classpath = debugUnitTest.get().classpath
+    systemProperty("cashu.localMintIntegration", "true")
+    systemProperty(
+        "cashu.nutshellMintUrl",
+        providers.gradleProperty("nutshellMintUrl").getOrElse("http://localhost:3338"),
+    )
+    systemProperty(
+        "cashu.cdkMintUrl",
+        providers.gradleProperty("cdkMintUrl").getOrElse("http://localhost:3339"),
+    )
+    filter {
+        includeTestsMatching("org.cashu.wallet.liveintegration.*")
+    }
 }

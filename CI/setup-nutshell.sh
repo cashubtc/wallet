@@ -9,9 +9,45 @@ VENV_DIR="${SCRIPT_DIR}/.nutshell-venv"
 
 echo "🔧 Setting up Nutshell (pip install from PyPI)..."
 
+# Cashu 0.20.x currently depends on native packages that do not build cleanly
+# with the newest Python runtimes, so prefer a stable CI-compatible interpreter.
+if [ -n "${PYTHON:-}" ]; then
+    PYTHON_BIN="$PYTHON"
+else
+    PYTHON_BIN=""
+    for candidate in python3.12 python3.11 python3.10; do
+        if command -v "$candidate" >/dev/null 2>&1; then
+            PYTHON_BIN="$candidate"
+            break
+        fi
+    done
+fi
+
+if [ -z "${PYTHON_BIN}" ]; then
+    echo "❌ No compatible Python found. Install Python 3.10-3.12 or set PYTHON=/path/to/python."
+    exit 1
+fi
+
+PYTHON_VERSION="$("$PYTHON_BIN" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+case "$PYTHON_VERSION" in
+    3.10|3.11|3.12) ;;
+    *)
+        echo "❌ Unsupported Python ${PYTHON_VERSION}. Use Python 3.10, 3.11, or 3.12 for Nutshell."
+        exit 1
+        ;;
+esac
+
+if [ -d "$VENV_DIR" ]; then
+    VENV_VERSION="$("$VENV_DIR/bin/python" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null || true)"
+    if [ "$VENV_VERSION" != "$PYTHON_VERSION" ]; then
+        echo "♻️  Recreating Nutshell venv with Python ${PYTHON_VERSION}..."
+        rm -rf "$VENV_DIR"
+    fi
+fi
+
 # Create venv and install Nutshell. The Cashu Nutshell mint is published to
 # PyPI as the `cashu` package; it exposes the `mint` console script.
-python3 -m venv "$VENV_DIR"
+"$PYTHON_BIN" -m venv "$VENV_DIR"
 "$VENV_DIR/bin/pip" install --upgrade pip
 # Transitive-dependency pins required by cashu 0.20.1:
 #   - marshmallow<4: cashu depends on environs<10, which breaks against

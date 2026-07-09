@@ -11,6 +11,101 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  android-gradle:
+    name: Android Gradle Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    defaults:
+      run:
+        working-directory: android
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup JDK
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: '21'
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+
+    - name: Run Android JVM tests
+      run: ./gradlew --no-daemon :app:testDebugUnitTest
+
+    - name: Run Android no-network integration tests
+      run: ./gradlew --no-daemon :app:androidNoNetworkIntegrationTest
+
+    - name: Setup Android local test mints
+      working-directory: .
+      run: |
+        chmod +x CI/setup-nutshell.sh CI/setup-cdk.sh
+        ./CI/setup-nutshell.sh
+        ./CI/setup-cdk.sh
+
+    - name: Start Android local test mints
+      working-directory: .
+      run: |
+        chmod +x CI/start-nutshell.sh CI/start-cdk.sh
+        ./CI/start-nutshell.sh
+        ./CI/start-cdk.sh
+
+    - name: Run Android local mint integration tests
+      run: ./gradlew --no-daemon :app:androidLocalMintIntegrationTest
+
+    - name: Stop Android local test mints
+      if: always()
+      working-directory: .
+      run: |
+        chmod +x CI/stop-nutshell.sh CI/stop-cdk.sh
+        ./CI/stop-nutshell.sh
+        ./CI/stop-cdk.sh
+
+    - name: Run Android lint
+      run: ./gradlew --no-daemon :app:lintDebug
+
+    - name: Build Android release APK
+      run: ./gradlew --no-daemon :app:assembleRelease
+
+  android-managed-device-tests:
+    name: Android Managed Device Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    defaults:
+      run:
+        working-directory: android
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup JDK
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: '21'
+
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+
+    - name: Enable KVM
+      run: |
+        echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+        sudo udevadm control --reload-rules
+        sudo udevadm trigger --name-match=kvm
+
+    - name: Run Android managed-device tests
+      run: ./gradlew --no-daemon :app:pixel2Api35DebugAndroidTest
+
   integration-tests:
     name: iOS Tests (Nutshell + CDK)
     runs-on: macos-26
