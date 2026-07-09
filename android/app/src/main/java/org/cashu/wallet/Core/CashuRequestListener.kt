@@ -18,6 +18,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import org.cashu.wallet.Core.Wallet.userFacingWalletMessage
 
 data class CashuRequestListenerState(
     val isRunning: Boolean = false,
@@ -107,7 +108,7 @@ class CashuRequestListener(
             scope.launch {
                 mutableState.value = CashuRequestListenerState(
                     isRunning = client != null,
-                    lastError = error.message ?: "Failed to redeem Cashu request payment.",
+                    lastError = error.userFacingWalletMessage,
                 )
             }
         }

@@ -366,11 +366,13 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
     }
 
     override suspend fun checkTokenSpendable(token: String, mintUrl: String): Boolean {
-        val tokenObj = CdkToken.decode(token)
-        val tokenUnit = tokenObj.unit() ?: CdkCurrencyUnit.Sat
-        ensureWallet(mintUrl, tokenUnit.toDomainUnit())
-        val states = walletFor(mintUrl, tokenUnit).checkProofsSpent(tokenObj.proofsSimple())
-        return states.any { it }
+        return runCatching {
+            val tokenObj = CdkToken.decode(token)
+            val tokenUnit = tokenObj.unit() ?: CdkCurrencyUnit.Sat
+            ensureWallet(mintUrl, tokenUnit.toDomainUnit())
+            val states = walletFor(mintUrl, tokenUnit).checkProofsSpent(tokenObj.proofsSimple())
+            states.any { it }
+        }.getOrDefault(false)
     }
 
     override suspend fun listTransactions(mintUrls: List<String>): List<WalletTransaction> {
