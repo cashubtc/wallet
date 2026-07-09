@@ -3820,10 +3820,10 @@ struct MintSelectorSheet: View {
 
 /// Medium-detent picker shown when a Cashu Request can only be paid by adding a
 /// mint the user doesn't hold yet. Lists the request's accepted mint URLs as
-/// rich rows — real name + icon fetched non-persistingly from each mint's
-/// `/v1/info` (`WalletManager.fetchMintPreviewInfo`), degrading to host +
-/// monogram when offline. Tapping a row hands the URL back to the caller, which
-/// runs the acquire-then-pay flow (and owns its own haptic). Replaces the old
+/// rich rows — real name + icon fetched through CDK
+/// (`WalletManager.fetchMintPreviewInfo`), degrading to host + monogram when
+/// offline. Tapping a row hands the URL back to the caller, which runs the
+/// acquire-then-pay flow (and owns its own haptic). Replaces the old
 /// `.confirmationDialog` balloon so this matches the app's other mint pickers.
 struct AddMintToPaySheet: View {
     @Environment(\.dismiss) private var dismiss
@@ -3832,8 +3832,8 @@ struct AddMintToPaySheet: View {
     let mints: [String]
     let onSelect: (String) -> Void
 
-    /// Non-persisting `/v1/info` previews keyed by mint URL. Rows show host +
-    /// monogram immediately and upgrade to real name + icon as these land.
+    /// CDK mint-info previews keyed by mint URL. Rows show host + monogram
+    /// immediately and upgrade to real name + icon as these land.
     @State private var previews: [String: MintPreview] = [:]
 
     private struct MintPreview {

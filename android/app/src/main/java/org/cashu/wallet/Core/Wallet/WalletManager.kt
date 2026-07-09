@@ -157,7 +157,8 @@ class WalletManager(
             }
             runCatching { gateway.ensureWallet(normalized) }
                 .onFailure { AppLogger.wallet.error("CDK wallet preparation is not available yet for $normalized", it) }
-            val fetched = gateway.fetchMintInfo(normalized) ?: mintMetadataFetcher.fetchRawMintInfo(normalized)
+            val fetched = gateway.fetchMintInfo(normalized)
+                ?: throw IllegalStateException("Mint did not return info via CDK.")
             val updated = mutableState.value.mints + fetched
             walletStore.saveMints(updated)
             if (mutableState.value.activeMint == null) walletStore.activeMintURL = fetched.url
@@ -601,14 +602,16 @@ class WalletManager(
             .onFailure { AppLogger.wallet.error("CDK wallet preparation is not available yet for $normalized", it) }
         if (walletStore.loadMints().any { it.url == normalized }) return normalized
 
-        val fetched = runCatching { gateway.fetchMintInfo(normalized) }
-            .getOrNull()
-            ?: runCatching { mintMetadataFetcher.fetchRawMintInfo(normalized) }.getOrElse {
-                MintInfo(
-                    url = normalized,
-                    name = runCatching { URL(normalized).host }.getOrNull() ?: "Unknown Mint",
-                )
-            }
+        val fetched = runCatching { gateway.fetchMintInfo(normalized) }.getOrElse {
+            AppLogger.wallet.error("Failed to fetch CDK mint info for $normalized", it)
+            MintInfo(
+                url = normalized,
+                name = runCatching { URL(normalized).host }.getOrNull() ?: "Unknown Mint",
+            )
+        } ?: MintInfo(
+            url = normalized,
+            name = runCatching { URL(normalized).host }.getOrNull() ?: "Unknown Mint",
+        )
         val updated = walletStore.loadMints().filterNot { it.url == normalized } + fetched
         walletStore.saveMints(updated)
         if (walletStore.activeMintURL == null) walletStore.activeMintURL = fetched.url

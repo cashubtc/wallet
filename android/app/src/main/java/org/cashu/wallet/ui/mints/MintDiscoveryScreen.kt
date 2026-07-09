@@ -16,16 +16,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.AddCircle
+import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.SignalCellularConnectedNoInternet0Bar
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -41,6 +43,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
@@ -72,16 +76,25 @@ fun MintDiscoveryContent(
     var query by remember { mutableStateOf("") }
 
     val configuredUrls = remember(walletState.mints) { walletState.mints.map { it.url }.toSet() }
+    var addedUrlsThisSession by remember { mutableStateOf(emptySet<String>()) }
+    val addedUrls = remember(configuredUrls, addedUrlsThisSession) { configuredUrls + addedUrlsThisSession }
 
-    val filtered by remember(discoveryState.discoveredMints, query, configuredUrls) {
+    val filtered by remember(discoveryState.discoveredMints, query) {
         derivedStateOf {
             val q = query.trim()
             discoveryState.discoveredMints.filter { mint ->
+                val displayName = mint.discoveryDisplayName()
                 q.isBlank() ||
-                    mint.name.contains(q, ignoreCase = true) ||
+                    displayName.contains(q, ignoreCase = true) ||
                     mint.url.contains(q, ignoreCase = true)
             }
         }
+    }
+    val addedMints by remember(filtered, addedUrls) {
+        derivedStateOf { filtered.filter { it.url in addedUrls } }
+    }
+    val discoverableMints by remember(filtered, addedUrls) {
+        derivedStateOf { filtered.filterNot { it.url in addedUrls } }
     }
 
     LaunchedEffect(settings.useWebsockets) {
@@ -121,15 +134,7 @@ fun MintDiscoveryContent(
         }
 
         when {
-            discoveryState.isDiscovering && discoveryState.discoveredMints.isEmpty() -> {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    LoadingIndicator()
-                }
-            }
-            filtered.isEmpty() -> {
+            filtered.isEmpty() && !discoveryState.isDiscovering -> {
                 EmptyState(
                     icon = Icons.Outlined.SignalCellularConnectedNoInternet0Bar,
                     title = if (query.isBlank()) "Listening on Nostr…" else "No matches",
@@ -139,21 +144,50 @@ fun MintDiscoveryContent(
                 )
             }
             else -> {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(filtered, key = { it.url }) { mint ->
-                        val isConfigured = mint.url in configuredUrls
-                        // Spring-animated placement as mints arrive over Nostr /
-                        // move between states (iOS .animation on the List).
-                        Column(modifier = Modifier.animateItem()) {
-                            DiscoveryRow(
-                                mint = mint,
-                                isConfigured = isConfigured,
-                                isBusy = walletState.isLoading,
-                                onAdd = {
-                                    scope.launch { runCatching { walletManager.addMint(mint.url) } }
-                                },
-                            )
-                            if (mint != filtered.last()) CanvasDivider(leadingInset = 64.dp)
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = CashuTheme.spacing.comfortable),
+                ) {
+                    if (discoveryState.isDiscovering) {
+                        item(key = "discovering") {
+                            DiscoveringRow()
+                        }
+                    }
+
+                    if (addedMints.isNotEmpty()) {
+                        item(key = "added-header") {
+                            DiscoverySectionHeader("Added")
+                        }
+                        items(addedMints, key = { "added-${it.url}" }) { mint ->
+                            Column(modifier = Modifier.animateItem()) {
+                                DiscoveryRow(
+                                    mint = mint,
+                                    state = DiscoveryRowState.Added,
+                                    isBusy = walletState.isLoading,
+                                    onAdd = {},
+                                )
+                                if (mint != addedMints.last()) CanvasDivider(leadingInset = 72.dp)
+                            }
+                        }
+                    }
+
+                    if (discoverableMints.isNotEmpty()) {
+                        item(key = "discovered-header") {
+                            DiscoverySectionHeader("Discovered")
+                        }
+                        items(discoverableMints, key = { "discovered-${it.url}" }) { mint ->
+                            Column(modifier = Modifier.animateItem()) {
+                                DiscoveryRow(
+                                    mint = mint,
+                                    state = DiscoveryRowState.Discovered,
+                                    isBusy = walletState.isLoading,
+                                    onAdd = {
+                                        addedUrlsThisSession = addedUrlsThisSession + mint.url
+                                        scope.launch { runCatching { walletManager.addMint(mint.url) } }
+                                    },
+                                )
+                                if (mint != discoverableMints.last()) CanvasDivider(leadingInset = 72.dp)
+                            }
                         }
                     }
                 }
@@ -165,10 +199,12 @@ fun MintDiscoveryContent(
 @Composable
 private fun DiscoveryRow(
     mint: MintInfo,
-    isConfigured: Boolean,
+    state: DiscoveryRowState,
     isBusy: Boolean,
     onAdd: () -> Unit,
 ) {
+    val displayName = mint.discoveryDisplayName()
+    val displayMint = remember(mint, displayName) { mint.copy(name = displayName) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -179,10 +215,10 @@ private fun DiscoveryRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
     ) {
-        MintAvatar(mint = mint)
+        MintAvatar(mint = displayMint, size = 40.dp)
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = mint.name,
+                text = displayName,
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
@@ -202,7 +238,7 @@ private fun DiscoveryRow(
         // Add ↔ Added swaps with a gentle grow-in; the check bounces once on
         // arrival (iOS .symbolEffect(.bounce, value: added) parity).
         AnimatedContent(
-            targetState = isConfigured,
+            targetState = state,
             transitionSpec = {
                 (
                     fadeIn(spring(stiffness = Spring.StiffnessMedium)) +
@@ -216,39 +252,85 @@ private fun DiscoveryRow(
                     ).togetherWith(fadeOut(spring(stiffness = Spring.StiffnessMedium)))
             },
             label = "discovery-trailing",
-        ) { configured ->
-            if (configured) {
-                val bounce = rememberBounceScale(trigger = configured, bounceOnEntry = true)
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.micro),
-                ) {
+        ) { rowState ->
+            when (rowState) {
+                DiscoveryRowState.Added -> {
+                    val bounce = rememberBounceScale(trigger = rowState, bounceOnEntry = true)
                     Icon(
-                        imageVector = Icons.Outlined.Check,
-                        contentDescription = null,
+                        imageVector = Icons.Outlined.CheckCircle,
+                        contentDescription = "Added",
                         tint = CashuTheme.colors.received,
                         modifier = Modifier
-                            .size(CashuTheme.spacing.loose)
+                            .size(28.dp)
                             .graphicsLayer {
                                 scaleX = bounce
                                 scaleY = bounce
                             },
                     )
-                    Text(
-                        text = "Added",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = CashuTheme.colors.received,
-                    )
                 }
-            } else {
-                FilledTonalButton(
+                DiscoveryRowState.Discovered -> FilledTonalIconButton(
                     onClick = onAdd,
                     enabled = !isBusy,
-                    shape = MaterialTheme.shapes.extraLarge,
+                    modifier = Modifier.size(48.dp),
                 ) {
-                    Text("Add")
+                    Icon(
+                        imageVector = Icons.Outlined.AddCircle,
+                        contentDescription = "Add $displayName",
+                    )
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun DiscoveringRow() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(
+                horizontal = CashuTheme.spacing.comfortable,
+                vertical = CashuTheme.spacing.snug,
+            )
+            .semantics { contentDescription = "Discovering mints" },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
+    ) {
+        Box(
+            modifier = Modifier.width(40.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            LoadingIndicator(modifier = Modifier.size(28.dp))
+        }
+        Text(
+            text = "Discovering mints…",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun DiscoverySectionHeader(title: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(
+            start = CashuTheme.spacing.comfortable,
+            end = CashuTheme.spacing.comfortable,
+            top = CashuTheme.spacing.default,
+            bottom = CashuTheme.spacing.micro,
+        ),
+    )
+}
+
+private enum class DiscoveryRowState { Added, Discovered }
+
+private fun MintInfo.discoveryDisplayName(): String {
+    val trimmed = name.trim()
+    return when {
+        trimmed.isNotEmpty() && !trimmed.equals("Unknown Mint", ignoreCase = true) -> trimmed
+        else -> shortenMintUrl(url)
     }
 }

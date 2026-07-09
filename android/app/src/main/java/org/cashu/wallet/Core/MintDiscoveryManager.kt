@@ -4,13 +4,16 @@ import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
@@ -25,6 +28,7 @@ import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import okio.ByteString
+import org.cashu.wallet.Core.CDK.CdkWalletGateway
 import org.cashu.wallet.Models.MintInfo
 
 data class MintDiscoveryState(
@@ -34,6 +38,7 @@ data class MintDiscoveryState(
 
 class MintDiscoveryManager(
     private val settingsManager: SettingsManager,
+    private val gateway: CdkWalletGateway,
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(10, TimeUnit.SECONDS)
@@ -42,6 +47,7 @@ class MintDiscoveryManager(
     private val mutableState = MutableStateFlow(MintDiscoveryState())
     val state: StateFlow<MintDiscoveryState> = mutableState.asStateFlow()
     private val webSockets = CopyOnWriteArrayList<WebSocket>()
+    private val metadataScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     suspend fun discoverMints(): List<MintInfo> {
         if (mutableState.value.isDiscovering) return mutableState.value.discoveredMints
@@ -109,11 +115,32 @@ class MintDiscoveryManager(
 
     private fun handleRelayMessage(message: String) {
         val discovered = NostrMintEventParser.parseRelayMessage(message) ?: return
+        if (mutableState.value.discoveredMints.any { it.url == discovered.url }) return
+
         mutableState.update { current ->
             if (current.discoveredMints.any { it.url == discovered.url }) {
                 current
             } else {
                 current.copy(discoveredMints = current.discoveredMints + discovered)
+            }
+        }
+        fetchMintPreview(discovered.url)
+    }
+
+    private fun fetchMintPreview(url: String) {
+        metadataScope.launch {
+            runCatching { gateway.ensureWallet(url) }
+                .onFailure { AppLogger.wallet.error("CDK wallet preparation failed for discovered mint $url", it) }
+            val fetched = runCatching { gateway.fetchMintInfo(url) }.getOrNull() ?: return@launch
+            mutableState.update { current ->
+                val index = current.discoveredMints.indexOfFirst { it.url == url }
+                if (index < 0) {
+                    current
+                } else {
+                    val updated = current.discoveredMints.toMutableList()
+                    updated[index] = current.discoveredMints[index].mergedWithPreview(fetched)
+                    current.copy(discoveredMints = updated)
+                }
             }
         }
     }
@@ -173,6 +200,20 @@ object NostrMintEventParser {
             url = mintUrl,
             name = contentJson?.get("name")?.jsonPrimitive?.contentOrNull ?: "Unknown Mint",
             description = contentJson?.get("description")?.jsonPrimitive?.contentOrNull,
+            iconUrl = contentJson?.get("icon_url")?.jsonPrimitive?.contentOrNull
+                ?: contentJson?.get("iconUrl")?.jsonPrimitive?.contentOrNull,
         )
     }.getOrNull()
 }
+
+private fun MintInfo.mergedWithPreview(preview: MintInfo): MintInfo = copy(
+    name = preview.name.takeIf { it.isNotBlank() } ?: name,
+    description = preview.description ?: description,
+    iconUrl = preview.iconUrl?.takeIf { it.isNotBlank() } ?: iconUrl,
+    units = preview.units,
+    mintUnits = preview.mintUnits,
+    supportedMintMethods = preview.supportedMintMethods,
+    supportedMeltMethods = preview.supportedMeltMethods,
+    onchainMintConfirmations = preview.onchainMintConfirmations,
+    lastUpdatedEpochMillis = preview.lastUpdatedEpochMillis,
+)

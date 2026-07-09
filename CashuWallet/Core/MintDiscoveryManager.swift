@@ -6,6 +6,7 @@ struct DiscoveredMint: Identifiable, Hashable {
     let id = UUID()
     let url: String
     var name: String?
+    var iconUrl: String?
     let pubkey: String?
     let description: String?
 
@@ -163,54 +164,27 @@ class MintDiscoveryManager: ObservableObject {
         
         // Parse content
         var name: String? = nil
+        var iconUrl: String? = nil
         var description: String? = nil
         
         if let contentStr = event["content"] as? String,
            let contentData = contentStr.data(using: .utf8),
            let contentJson = try? JSONSerialization.jsonObject(with: contentData) as? [String: Any] {
             name = contentJson["name"] as? String
+            iconUrl = (contentJson["icon_url"] as? String) ?? (contentJson["iconUrl"] as? String)
             description = contentJson["description"] as? String
         }
         
         let discovered = DiscoveredMint(
             url: url,
             name: name,
+            iconUrl: iconUrl,
             pubkey: event["pubkey"] as? String,
             description: description
         )
 
         // Add to main list
         discoveredMints.append(discovered)
-
-        // The Nostr announcement often omits a name. Backfill the mint's real
-        // title from its /v1/info so the row shows something better than the
-        // hostname fallback.
-        if name == nil {
-            Task { await resolveName(forMintAt: url) }
-        }
-    }
-
-    /// Fetches the mint's declared name from `<url>/v1/info` and, on success,
-    /// updates the matching discovered mint in place. Failures are ignored —
-    /// `DiscoveredMint.displayName` falls back to the hostname.
-    private func resolveName(forMintAt url: String) async {
-        guard let infoURL = URL(string: "\(url)/v1/info") else { return }
-
-        var request = URLRequest(url: infoURL)
-        request.timeoutInterval = 8
-
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
-              let http = response as? HTTPURLResponse,
-              (200..<300).contains(http.statusCode),
-              let info = try? JSONDecoder().decode(MintInfoName.self, from: data),
-              let name = info.name,
-              !name.isEmpty else {
-            return
-        }
-
-        if let index = discoveredMints.firstIndex(where: { $0.url == url }) {
-            discoveredMints[index].name = name
-        }
     }
     
     private func closeAllConnections() {
@@ -229,9 +203,4 @@ class MintDiscoveryManager: ObservableObject {
         webSocketTasks.removeAll { ObjectIdentifier($0) == ObjectIdentifier(task) }
         sessions.removeAll { ObjectIdentifier($0) == ObjectIdentifier(session) }
     }
-}
-
-// Minimal decode of a mint's /v1/info response — just the display name.
-private struct MintInfoName: Decodable {
-    let name: String?
 }

@@ -12,7 +12,7 @@ class MintDiscoveryManagerTest {
               "kind":38172,
               "pubkey":"abcdef",
               "tags":[["u","https://mint.example.com/"]],
-              "content":"{\"name\":\"Example Mint\",\"description\":\"Demo mint\"}"
+              "content":"{\"name\":\"Example Mint\",\"description\":\"Demo mint\",\"icon_url\":\"https://mint.example.com/icon.png\"}"
             }]
         """.trimIndent()
 
@@ -21,6 +21,7 @@ class MintDiscoveryManagerTest {
         assertEquals("https://mint.example.com", mint?.url)
         assertEquals("Example Mint", mint?.name)
         assertEquals("Demo mint", mint?.description)
+        assertEquals("https://mint.example.com/icon.png", mint?.iconUrl)
     }
 
     @Test

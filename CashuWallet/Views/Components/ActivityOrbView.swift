@@ -243,9 +243,8 @@ struct RecommendedMint: Identifiable {
     let name: String
     let url: String
     /// Curated logo for the suggestion avatar. These mints aren't tracked yet,
-    /// so there's no fetched `MintInfo.iconUrl` to fall back on — we ship the
-    /// published `/v1/info` icon for each. A miss degrades to the monogram in
-    /// `MintAvatarView`, so a stale URL never breaks the row.
+    /// so there's no fetched `MintInfo.iconUrl` to fall back on. A miss degrades
+    /// to the monogram in `MintAvatarView`, so a stale URL never breaks the row.
     var iconUrl: String? = nil
     var id: String { url }
 

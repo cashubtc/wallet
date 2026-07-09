@@ -1000,9 +1000,9 @@ struct RestoreWalletView: View {
         return true
     }
 
-    /// Pull the mint's name + logo from its `/v1/info` so the staged row shows the
-    /// mint's own profile pic. Best-effort and side-effect-free — failures leave
-    /// the monogram fallback in place.
+    /// Pull the mint's name + logo through CDK so the staged row shows the
+    /// mint's own profile pic. Best-effort failures leave the monogram fallback
+    /// in place.
     private func fetchStagedMintInfo(_ url: String) {
         guard stagedMintIconUrls[url] == nil, stagedMintNames[url] == nil else { return }
         Task { @MainActor in

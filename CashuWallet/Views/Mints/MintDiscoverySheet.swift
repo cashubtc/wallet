@@ -11,6 +11,7 @@ struct MintDiscoverySheet: View {
 
     @State private var searchText = ""
     @State private var addedURLsThisSession: Set<String> = []
+    @State private var previews: [String: MintIdentityPreview] = [:]
 
     var body: some View {
         NavigationStack {
@@ -24,7 +25,10 @@ struct MintDiscoverySheet: View {
                     }
                 }
         }
-        .onDisappear { discoveryManager.clearDiscoveredMints() }
+        .onDisappear {
+            previews = [:]
+            discoveryManager.clearDiscoveredMints()
+        }
     }
 
     @ViewBuilder
@@ -88,11 +92,18 @@ struct MintDiscoverySheet: View {
             }
             .animation(.smooth(duration: 0.3), value: addedURLsThisSession)
             .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search mints")
-            .refreshable { await discoveryManager.discoverMints() }
+            .refreshable {
+                await discoveryManager.discoverMints()
+                await loadMissingPreviews()
+            }
             .task {
                 if discoveryManager.discoveredMints.isEmpty {
                     await discoveryManager.discoverMints()
                 }
+                await loadMissingPreviews()
+            }
+            .task(id: discoveredMintURLsKey) {
+                await loadMissingPreviews()
             }
         }
     }
@@ -101,9 +112,13 @@ struct MintDiscoverySheet: View {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return discoveryManager.discoveredMints }
         return discoveryManager.discoveredMints.filter { mint in
-            mint.displayName.localizedCaseInsensitiveContains(query)
+            displayName(for: mint).localizedCaseInsensitiveContains(query)
                 || mint.url.localizedCaseInsensitiveContains(query)
         }
+    }
+
+    private var discoveredMintURLsKey: String {
+        discoveryManager.discoveredMints.map(\.url).joined(separator: "\n")
     }
 
     private var addedMints: [DiscoveredMint] {
@@ -122,8 +137,11 @@ struct MintDiscoverySheet: View {
     @ViewBuilder
     private func addedRow(for mint: DiscoveredMint) -> some View {
         HStack(spacing: 12) {
+            MintAvatarView(iconUrl: avatarIconUrl(for: mint), name: displayName(for: mint), size: 36)
+                .accessibilityHidden(true)
+
             VStack(alignment: .leading, spacing: 2) {
-                Text(mint.displayName)
+                Text(displayName(for: mint))
                     .font(.body)
                 Text(mint.url)
                     .font(.caption)
@@ -146,8 +164,11 @@ struct MintDiscoverySheet: View {
     @ViewBuilder
     private func discoverableRow(for mint: DiscoveredMint) -> some View {
         HStack(spacing: 12) {
+            MintAvatarView(iconUrl: avatarIconUrl(for: mint), name: displayName(for: mint), size: 36)
+                .accessibilityHidden(true)
+
             VStack(alignment: .leading, spacing: 2) {
-                Text(mint.displayName)
+                Text(displayName(for: mint))
                     .font(.body)
                 Text(mint.url)
                     .font(.caption)
@@ -168,11 +189,34 @@ struct MintDiscoverySheet: View {
                     .font(.title3)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Add \(mint.displayName)")
+            .accessibilityLabel("Add \(displayName(for: mint))")
         }
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
     }
+
+    private func avatarIconUrl(for mint: DiscoveredMint) -> String? {
+        previews[mint.url]?.iconUrl
+            ?? mint.iconUrl
+            ?? walletManager.mints.first(where: { $0.url == mint.url })?.iconUrl
+    }
+
+    private func displayName(for mint: DiscoveredMint) -> String {
+        if let name = previews[mint.url]?.name, !name.isEmpty { return name }
+        return mint.displayName
+    }
+
+    private func loadMissingPreviews() async {
+        for mint in discoveryManager.discoveredMints where previews[mint.url] == nil {
+            guard let info = await walletManager.fetchMintPreviewInfo(url: mint.url) else { continue }
+            previews[mint.url] = MintIdentityPreview(name: info.name, iconUrl: info.iconUrl)
+        }
+    }
+}
+
+private struct MintIdentityPreview {
+    let name: String?
+    let iconUrl: String?
 }
 
 #Preview {
