@@ -41,9 +41,6 @@ jobs:
     - name: Run Android JVM tests
       run: ./gradlew --no-daemon :app:testDebugUnitTest
 
-    - name: Run Android no-network integration tests
-      run: ./gradlew --no-daemon :app:androidNoNetworkIntegrationTest
-
     - name: Setup Android local test mints
       working-directory: .
       run: |

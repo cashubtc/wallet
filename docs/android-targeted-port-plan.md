@@ -32,9 +32,9 @@ Target:
 
 Plan:
 
-- Add Android CI jobs for `:app:testDebugUnitTest`, no-network integration, local-mint integration, `lintDebug`, and `assembleRelease`.
+- Add Android CI jobs for `:app:testDebugUnitTest`, local-mint integration, `lintDebug`, and `assembleRelease`.
 - Add managed-device test job and the `pixel2Api35` managed device config.
-- Add custom Gradle `Test` tasks: `androidNoNetworkIntegrationTest` and `androidLocalMintIntegrationTest`.
+- Add the custom Gradle `Test` task `androidLocalMintIntegrationTest`.
 - Port only required dependency aliases, such as Android test runner, biometric, lifecycle compose if needed, and benchmark/profile deps only if macrobenchmark is ported.
 - Do not port compile SDK downgrades or Material dependency reversions from the source branch.
 
@@ -303,8 +303,7 @@ Rewrite instead:
 Run Android commands from `android/`.
 
 1. `./gradlew --no-daemon :app:testDebugUnitTest`
-2. `./gradlew --no-daemon :app:androidNoNetworkIntegrationTest`
-3. Start local mints, then `./gradlew --no-daemon :app:androidLocalMintIntegrationTest`
-4. `./gradlew --no-daemon :app:lintDebug`
-5. `./gradlew --no-daemon :app:assembleRelease`
-6. Managed-device and instrumentation tests after Compose test selectors are updated.
+2. Start local mints, then `./gradlew --no-daemon :app:androidLocalMintIntegrationTest`
+3. `./gradlew --no-daemon :app:lintDebug`
+4. `./gradlew --no-daemon :app:assembleRelease`
+5. Managed-device and instrumentation tests after Compose test selectors are updated.

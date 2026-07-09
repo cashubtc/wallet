@@ -128,26 +128,12 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 }
 
-tasks.register<Test>("androidNoNetworkIntegrationTest") {
-    group = "verification"
-    description = "Runs Android JVM no-network integration coverage, including fake-gateway flows."
-    val debugUnitTest = tasks.named<Test>("testDebugUnitTest")
-    dependsOn("compileDebugUnitTestKotlin", "compileDebugUnitTestJavaWithJavac", "processDebugUnitTestJavaRes")
-    shouldRunAfter(debugUnitTest)
-    testClassesDirs = debugUnitTest.get().testClassesDirs
-    classpath = debugUnitTest.get().classpath
-    filter {
-        includeTestsMatching("org.cashu.wallet.integration.*")
-        isFailOnNoMatchingTests = false
-    }
-}
-
 tasks.register<Test>("androidLocalMintIntegrationTest") {
     group = "verification"
     description = "Runs Android JVM integration coverage against local Nutshell/CDK test mints."
     val debugUnitTest = tasks.named<Test>("testDebugUnitTest")
     dependsOn("compileDebugUnitTestKotlin", "compileDebugUnitTestJavaWithJavac", "processDebugUnitTestJavaRes")
-    shouldRunAfter("androidNoNetworkIntegrationTest")
+    shouldRunAfter(debugUnitTest)
     testClassesDirs = debugUnitTest.get().testClassesDirs
     classpath = debugUnitTest.get().classpath
     systemProperty("cashu.localMintIntegration", "true")
