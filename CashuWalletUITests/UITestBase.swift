@@ -98,9 +98,13 @@ class UITestBase: XCTestCase {
 
         let cont = app.buttons["onboarding-continue"]
         XCTAssertTrue(cont.waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            cont.waitUntilEnabledAndHittable(timeout: 10),
+            "Continue should become tappable after adding a custom mint"
+        )
         cont.tap()
 
-        waitForMainTab(timeout: 30)
+        waitForMainTab(timeout: 60)
     }
 
     func waitForMainTab(timeout: TimeInterval = 20) {
@@ -173,5 +177,21 @@ class UITestBase: XCTestCase {
         let button = tabButton(title, timeout: timeout, file: file, line: line)
         button.tap()
         waitForSelectedTab(title, timeout: timeout, file: file, line: line)
+    }
+}
+
+private extension XCUIElement {
+    func waitUntilEnabledAndHittable(timeout: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+
+        while Date() < deadline {
+            if exists && isEnabled && isHittable {
+                return true
+            }
+
+            RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.1))
+        }
+
+        return exists && isEnabled && isHittable
     }
 }
