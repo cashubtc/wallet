@@ -52,6 +52,17 @@ class AndroidReleaseConfigurationTest {
     }
 
     @Test
+    fun appLockUsesSecureWindowFlag() {
+        val source = sourceFile(
+            "src/main/java/org/cashu/wallet/ui/security/AppLockGate.kt",
+            "app/src/main/java/org/cashu/wallet/ui/security/AppLockGate.kt",
+        ).readText()
+
+        assertTrue(source.contains("WindowManager.LayoutParams.FLAG_SECURE"))
+        assertTrue(source.contains("fun SecureWindowEffect"))
+    }
+
+    @Test
     fun sentryServiceChecksOptInBeforeStarting() {
         val source = sourceFile(
             "src/main/java/org/cashu/wallet/Core/SentryService.kt",

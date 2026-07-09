@@ -23,6 +23,7 @@ data class SettingsState(
     val amountDisplayPrimary: String = "fiat",
     val homeBalanceUnit: String = "sat",
     val sentryEnabled: Boolean = false,
+    val appLockEnabled: Boolean = false,
     val checkIncomingInvoices: Boolean = true,
     val periodicallyCheckIncomingInvoices: Boolean = true,
     val nostrSignerType: String = "SEED",
@@ -180,6 +181,7 @@ class SettingsManager(
         if (value == previous) return
         if (value) sentryService?.initialize() else sentryService?.shutdown()
     }
+    fun setAppLockEnabled(value: Boolean) = update { settingsStore.appLockEnabled = value }
     fun setBitcoinPriceCurrency(value: String) = update {
         val normalized = value.uppercase()
         if (normalized in supportedFiatCurrencies) {
@@ -331,6 +333,7 @@ class SettingsManager(
         amountDisplayPrimary = AmountDisplayPrimary.fromRaw(settingsStore.amountDisplayPrimary).rawValue,
         homeBalanceUnit = settingsStore.homeBalanceUnit,
         sentryEnabled = settingsStore.sentryEnabled,
+        appLockEnabled = settingsStore.appLockEnabled,
         checkIncomingInvoices = settingsStore.checkIncomingInvoices,
         periodicallyCheckIncomingInvoices = settingsStore.periodicallyCheckIncomingInvoices,
         nostrSignerType = settingsStore.nostrSignerType,

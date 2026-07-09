@@ -59,7 +59,7 @@ class SentryServiceTest {
         service.breadcrumb("melt started")
 
         assertEquals(1, gateway.startedDsns.size)
-        assertEquals(listOf<Throwable>(error), gateway.captured)
+        assertEquals("RuntimeException: boom", gateway.captured.single().message)
         assertEquals(listOf("melt started" to "wallet"), gateway.breadcrumbs)
     }
 
@@ -72,6 +72,29 @@ class SentryServiceTest {
         service.breadcrumb("relay error", category = "nostr")
 
         assertEquals(listOf("quote paid" to "wallet", "relay error" to "nostr"), gateway.breadcrumbs)
+    }
+
+    @Test
+    fun breadcrumbsArePrivacySanitized() {
+        val gateway = FakeSentryGateway()
+        val service = SentryService(gateway, isEnabled = { true })
+
+        service.breadcrumb("paid token cashuAabcdefghijklmnopqrstuvwxyz0123456789 at https://mint.example.com")
+
+        assertEquals(
+            listOf("paid token <redacted-cashu-token> at <redacted-url>" to "wallet"),
+            gateway.breadcrumbs,
+        )
+    }
+
+    @Test
+    fun capturedErrorsArePrivacySanitized() {
+        val gateway = FakeSentryGateway()
+        val service = SentryService(gateway, isEnabled = { true })
+
+        service.capture(RuntimeException("token cashuAabcdefghijklmnopqrstuvwxyz0123456789"))
+
+        assertEquals("RuntimeException: token <redacted-cashu-token>", gateway.captured.single().message)
     }
 
     @Test
