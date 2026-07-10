@@ -356,6 +356,104 @@ struct NostrRelaysSettingsSection: View {
     }
 }
 
+// MARK: - Nostr Mint Backup Section
+
+/// Encrypted mint-list backup on Nostr (NUT-27, handled entirely by cdk), on
+/// the same single-canvas recipe: an auto-backup toggle, a manual backup row,
+/// and a footer carrying the last backup time. Self-contained — owns its own
+/// error state, mirroring the other sections in this file.
+struct NostrMintBackupSettingsSection: View {
+    @EnvironmentObject var walletManager: WalletManager
+    @ObservedObject var settings = SettingsManager.shared
+    @ObservedObject private var backupService = NostrMintBackupService.shared
+
+    @State private var backupError: String?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            SettingsSectionGroup("Mint backup") {
+                HStack(spacing: 14) {
+                    SettingsRowIcon(systemName: "tray.and.arrow.up")
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Automatic mint backup")
+                            .font(.body)
+                            .foregroundStyle(.primary)
+                        Text("Publish after every mint change.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 8)
+                    Toggle("", isOn: $settings.nostrMintBackupEnabled)
+                        .labelsHidden()
+                }
+                .padding(.horizontal, 4)
+                .padding(.vertical, 14)
+
+                CanvasDivider()
+
+                Button(action: backupNow) {
+                    HStack(spacing: 14) {
+                        SettingsRowIcon(systemName: "arrow.up.circle")
+                        Text(backupService.isBackingUp ? "Backing up…" : "Back up now")
+                            .font(.body)
+                            .foregroundStyle(.primary)
+                        Spacer(minLength: 8)
+                        if backupService.isBackingUp {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+                    }
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 14)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(backupService.isBackingUp || walletManager.mints.isEmpty)
+                .opacity(walletManager.mints.isEmpty ? 0.5 : 1)
+            }
+
+            if let backupError {
+                InlineNotice(message: backupError, severity: .error)
+                    .padding(.horizontal, 6)
+                    .padding(.top, 4)
+                    .transition(.opacity)
+            }
+
+            SettingsSectionFooter {
+                Text(footerText)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .animation(.easeInOut(duration: 0.2), value: backupError)
+    }
+
+    private var footerText: String {
+        guard !walletManager.mints.isEmpty else {
+            return "Add a mint to back up. The list is encrypted to your seed and published to your relays."
+        }
+        if let date = backupService.lastBackupDate {
+            let formatter = RelativeDateTimeFormatter()
+            formatter.unitsStyle = .short
+            return "Your mint list is encrypted to your seed and published to your relays. Last backup \(formatter.localizedString(for: date, relativeTo: Date()))."
+        }
+        return "Your mint list is encrypted to your seed and published to your relays, so restoring from seed can find your mints."
+    }
+
+    private func backupNow() {
+        HapticFeedback.selection()
+        backupError = nil
+
+        Task { @MainActor in
+            do {
+                try await backupService.backupMints()
+                HapticFeedback.notification(.success)
+            } catch {
+                backupError = error.localizedDescription
+            }
+        }
+    }
+}
+
 // MARK: - Shared row helper
 
 /// A plain single-canvas settings action row (leading glyph + title), matching

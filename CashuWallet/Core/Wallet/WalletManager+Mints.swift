@@ -8,6 +8,7 @@ extension WalletManager {
         try await mintService.addMint(url: url)
         await refreshBalance()
         performICloudBackup()
+        Task { await NostrMintBackupService.shared.backupCurrentMintsIfEnabled() }
         SentryService.breadcrumb("Mint added", category: "wallet.mint")
     }
 
@@ -15,6 +16,7 @@ extension WalletManager {
         await mintService.removeMint(at: offsets)
         await refreshBalance()
         performICloudBackup()
+        Task { await NostrMintBackupService.shared.backupCurrentMintsIfEnabled() }
         SentryService.breadcrumb("Mint removed", category: "wallet.mint")
     }
 

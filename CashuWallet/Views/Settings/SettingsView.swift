@@ -348,6 +348,7 @@ struct SettingsView: View {
                 SettingsSectionFooter {
                     Text("Let a Nostr app create invoices and pay Lightning invoices from this wallet.")
                 }
+                NostrMintBackupSettingsSection()
             }
             .padding(.horizontal)
             .padding(.bottom, 32)
@@ -488,6 +489,7 @@ struct QRPayload: Identifiable {
 struct RestoreWalletView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var walletManager: WalletManager
+    @ObservedObject private var nostrBackupService = NostrMintBackupService.shared
 
     @State private var step: RestoreStep = .seed
     @State private var restoreMnemonic = ""
@@ -693,6 +695,17 @@ struct RestoreWalletView: View {
                             }
                             .buttonStyle(.plain)
                             .accessibilityLabel("Paste mint URLs from clipboard")
+
+                            Button(action: searchNostrMintBackups) {
+                                capsuleChipLabel(
+                                    nostrBackupService.isSearching ? "Searching…" : "Nostr",
+                                    systemImage: "antenna.radiowaves.left.and.right"
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(nostrBackupService.isSearching)
+                            .opacity(nostrBackupService.isSearching ? 0.4 : 1)
+                            .accessibilityLabel("Find mints from your Nostr backup")
                         }
                     }
                     .padding(.horizontal)
@@ -1025,6 +1038,31 @@ struct RestoreWalletView: View {
             setMintNotice("Added \(addedCount) mint URL\(addedCount == 1 ? "" : "s"). Skipped \(invalidCount) invalid.")
         } else {
             mintError = nil
+        }
+    }
+
+    /// Look up the encrypted mint-list backup for this seed on the user's
+    /// relays (NUT-27, fetched by cdk) and stage every mint it contains.
+    private func searchNostrMintBackups() {
+        HapticFeedback.selection()
+
+        Task { @MainActor in
+            do {
+                let urls = try await nostrBackupService.fetchBackedUpMintURLs()
+                var addedCount = 0
+                for url in urls where addMintUrlToRestoreList(url, showDuplicateError: false, showValidationError: false) {
+                    addedCount += 1
+                }
+                if urls.isEmpty {
+                    setMintNotice("No Nostr mint backup found on your relays.", severity: .caution)
+                } else if addedCount == 0 {
+                    setMintNotice("Backup found — its mints are already in the list.")
+                } else {
+                    setMintNotice("Added \(addedCount) mint\(addedCount == 1 ? "" : "s") from your Nostr backup.")
+                }
+            } catch {
+                setMintNotice(error.localizedDescription, severity: .error)
+            }
         }
     }
 

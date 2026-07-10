@@ -3,6 +3,7 @@ import SwiftUI
 struct OnboardingView: View {
     @EnvironmentObject var walletManager: WalletManager
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject private var nostrBackupService = NostrMintBackupService.shared
 
     @State private var currentStep: OnboardingStep = .welcome
     @State private var restoreMnemonic = ""
@@ -1188,6 +1189,17 @@ struct OnboardingView: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("Paste mint URLs from clipboard")
+
+                        Button(action: searchNostrMintBackups) {
+                            restoreCapsuleChip(
+                                nostrBackupService.isSearching ? "Searching…" : "Nostr",
+                                systemImage: "antenna.radiowaves.left.and.right"
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(nostrBackupService.isSearching)
+                        .opacity(nostrBackupService.isSearching ? 0.4 : 1)
+                        .accessibilityLabel("Find mints from your Nostr backup")
                     }
                     .padding(.horizontal)
 
@@ -1554,6 +1566,31 @@ struct OnboardingView: View {
             setRestoreMintNotice("Added \(addedCount) mint URL\(addedCount == 1 ? "" : "s"). Skipped \(invalidCount) that didn't look like a mint URL.")
         } else {
             restoreMintError = nil
+        }
+    }
+
+    /// Look up the encrypted mint-list backup for this seed on the user's
+    /// relays (NUT-27, fetched by cdk) and stage every mint it contains.
+    private func searchNostrMintBackups() {
+        HapticFeedback.selection()
+
+        Task { @MainActor in
+            do {
+                let urls = try await nostrBackupService.fetchBackedUpMintURLs()
+                var addedCount = 0
+                for url in urls where addMintUrlToRestoreList(url, showDuplicateError: false, showValidationError: false) {
+                    addedCount += 1
+                }
+                if urls.isEmpty {
+                    setRestoreMintNotice("No Nostr mint backup found on your relays.", severity: .caution)
+                } else if addedCount == 0 {
+                    setRestoreMintNotice("Backup found — its mints are already in the list.")
+                } else {
+                    setRestoreMintNotice("Added \(addedCount) mint\(addedCount == 1 ? "" : "s") from your Nostr backup.")
+                }
+            } catch {
+                setRestoreMintNotice(error.localizedDescription, severity: .error)
+            }
         }
     }
 

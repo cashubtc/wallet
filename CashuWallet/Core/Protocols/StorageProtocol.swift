@@ -98,6 +98,7 @@ enum StorageKeys {
     static let pendingMeltQuotes = "wallet.pendingMeltQuotes"
     static let mintQuoteTimestamps = "wallet.mintQuoteTimestamps"
     static let processedNPCQuotes = "wallet.processedNPCQuotes"
+    static let nostrMintBackupLastBackupDate = "wallet.nostrMintBackup.lastBackupDate"
 
     // Cashu Requests (receive intents shown in History). Key names predate the
     // `wallet.` prefix convention and must stay stable for existing installs,
@@ -121,6 +122,7 @@ enum StorageKeys {
     static let periodicallyCheckIncomingInvoices = "settings.periodicallyCheckIncomingInvoices"
     static let nostrRelays = "settings.nostrRelays"
     static let nostrSignerType = "settings.nostrSignerType"
+    static let nostrMintBackupEnabled = "settings.nostrMintBackupEnabled"
     static let amountDisplayPrimary = "settings.amountDisplayPrimary"
     static let appLockEnabled = "settings.appLockEnabled"
     static let sentryEnabled = "settings.sentryEnabled"
@@ -199,6 +201,7 @@ enum StorageKeys {
         meltQuoteFees,
         mintQuoteTimestamps,
         processedNPCQuotes,
+        nostrMintBackupLastBackupDate,
         cashuRequests,
         cashuRequestsCurrentId,
         cashuRequestsProcessedNIP17Ids
@@ -220,6 +223,7 @@ enum StorageKeys {
         showP2PKButtonInDrawer,
         p2pkKeys,
         nostrSignerType,
+        nostrMintBackupEnabled,
         npcEnabled,
         npcAutomaticClaim,
         npcSelectedMint,
