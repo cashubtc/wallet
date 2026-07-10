@@ -40,6 +40,7 @@ class AppContainer(context: Context) {
     val walletManager = WalletManager(
         secureStorage = secureStorage,
         walletStore = walletStore,
+        cashuRequestStore = cashuRequestStore,
         settingsManager = settingsManager,
         nostrService = nostrService,
         npcService = npcService,
@@ -50,11 +51,10 @@ class AppContainer(context: Context) {
     val priceService = PriceService(settingsStore)
     val mintDiscoveryManager = MintDiscoveryManager(settingsManager, cdkGateway)
     val cashuRequestListener = CashuRequestListener(
-        context = appContext,
         nostrService = nostrService,
         settingsManager = settingsManager,
         walletManager = walletManager,
-        cashuRequestStore = cashuRequestStore,
+        walletStore = walletStore,
     )
 
     init {
@@ -69,5 +69,8 @@ class AppContainer(context: Context) {
                 .takeIf { it.length == 64 } ?: return@provider null
             PrimaryP2PKKey(publicKey = "02$publicKeyHex", privateKeyHex = privateKeyHex)
         }
+        walletManager.walletBoundaryPauseHandler = cashuRequestListener::pauseForWalletBoundary
+        walletManager.walletBoundaryResetHandler = cashuRequestListener::resetForWalletBoundary
+        walletManager.walletBoundaryResumeHandler = cashuRequestListener::start
     }
 }

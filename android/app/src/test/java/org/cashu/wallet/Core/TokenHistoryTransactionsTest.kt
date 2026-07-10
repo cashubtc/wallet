@@ -46,6 +46,9 @@ class TokenHistoryTransactionsTest {
                     amount = 21,
                     dateEpochMillis = 200,
                     mintUrl = MintUrl,
+                    unit = "usd",
+                    cashuRequestId = "request-1",
+                    memo = "held payment",
                 ),
             ),
         )
@@ -55,6 +58,8 @@ class TokenHistoryTransactionsTest {
         assertEquals(TransactionType.Incoming, row.type)
         assertEquals(TransactionStatus.Pending, row.status)
         assertEquals("cashu-receive", row.token)
+        assertEquals("request-1", row.cashuRequestId)
+        assertEquals("held payment", row.memo)
         assertEquals(0L, row.fee)
         assertTrue(row.isPendingToken)
     }
@@ -89,4 +94,3 @@ class TokenHistoryTransactionsTest {
         const val MintUrl = "https://mint.example.com"
     }
 }
-

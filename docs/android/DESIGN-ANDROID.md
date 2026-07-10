@@ -118,10 +118,14 @@ contactless, onboarding. See git history for the parity passes.
 
 ## 3. Ranked gap backlog (features, not design)
 
-1. **App Lock** — BiometricPrompt gate + `FLAG_SECURE` privacy scrim + Settings
-   toggle. Also unlocks auth-gating for the nsec reveal sheets.
+1. **Nostr Wallet Connect (NIP-47)** — deferred as a complete Android feature.
+   The current Android tree has no NWC runtime, settings model, or connection
+   UI. Port `NWCManager.swift` and `NWCSettingsSection.swift` together later;
+   do not expose a settings-only stub that suggests requests are being served.
 2. **Cloud seed backup** — Auto Backup / Blockstore / Drive decision pending.
-3. **Cashu Request editing UI** — inspector sub-sheets for Mint/Amount/Unit.
+3. **Non-sat History** — iOS now carries `unit` on `WalletTransaction`; Android
+   still needs the field propagated from CDK and rendered with the unit-native
+   amount format in rows and details.
 4. **NFC tap-to-pay parity check** — verify `ContactlessPayView` against iOS
    coordinator flow and restyle to the new charter.
 5. **Restore-over-units hardening** — loop restore across `mint.units` (do with
@@ -131,12 +135,13 @@ contactless, onboarding. See git history for the parity passes.
    open: the success haptic for background receives, which needs a real
    receive-event signal from WalletManager to avoid double-buzzing in-flow
    receives.
-7. **Non-sat History** — needs a `unit` field on `WalletTransaction` (shared
-   deferral with iOS).
-8. **Shared-element transitions** — transaction row → detail, QR card flows
+7. **Shared-element transitions** — transaction row → detail, QR card flows
    (`SharedTransitionLayout`), once nav-level motion has settled.
-9. **Expressive `ButtonGroup` / shape-morph press states** — evaluate for the
+8. **Expressive `ButtonGroup` / shape-morph press states** — evaluate for the
    Receive/Send pair and number pad when the APIs stabilize.
+
+App Lock and Cashu Request Mint/Amount/Unit editing are implemented; older
+versions of this backlog incorrectly listed them as open.
 
 ## 4. Protected areas
 

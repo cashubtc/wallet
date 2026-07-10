@@ -42,6 +42,7 @@ internal data class TokenReview(
     val info: TokenInfo,
     val fee: Long,
     val locked: Boolean,
+    val mintKnown: Boolean,
 )
 
 internal sealed interface TokenParseOutcome {
@@ -76,9 +77,16 @@ internal suspend fun tokenReviewDetails(
     val unlocked = if (locks.isEmpty()) {
         true
     } else {
-        settingsManager.p2pkSigningKeysFor(locks).isNotEmpty()
+        runCatching { settingsManager.p2pkSigningKeysFor(locks).isNotEmpty() }
+            .getOrDefault(false)
     }
-    return TokenReview(token = token, info = info, fee = fee, locked = !unlocked)
+    return TokenReview(
+        token = token,
+        info = info,
+        fee = fee,
+        locked = !unlocked,
+        mintKnown = walletManager.isMintKnown(info.mint),
+    )
 }
 
 /**
@@ -101,10 +109,24 @@ internal const val MinClaimingBeatMillis = 500L
 internal suspend fun claimToken(
     review: TokenReview,
     walletManager: WalletManager,
+    claimOverride: (suspend () -> Long)? = null,
 ): TokenClaimStatus {
     val startedAt = System.currentTimeMillis()
     val result = try {
-        Result.success(walletManager.receiveTokens(review.token))
+        Result.success(
+            if (claimOverride != null) {
+                claimOverride()
+            } else {
+                val pending = walletManager.state.value.pendingReceiveTokens.firstOrNull {
+                    it.token == review.token
+                }
+                if (pending != null) {
+                    walletManager.claimPendingReceiveToken(pending)
+                } else {
+                    walletManager.receiveTokens(review.token)
+                }
+            },
+        )
     } catch (c: CancellationException) {
         throw c
     } catch (t: Throwable) {
@@ -115,9 +137,6 @@ internal suspend fun claimToken(
     if (elapsed < MinClaimingBeatMillis) delay(MinClaimingBeatMillis - elapsed)
     return result.fold(
         onSuccess = { credited ->
-            // If this token was previously saved via "Receive later", clear the
-            // stored pending record — it's redeemed now.
-            walletManager.removePendingReceiveToken(review.token.take(64))
             TokenClaimStatus.Claimed(
                 // The gateway reports what was actually credited (net of the
                 // receive-swap fee); fall back to the reviewed net amount.
@@ -143,7 +162,12 @@ internal fun pendingReceiveTokenFrom(review: TokenReview): PendingReceiveToken =
         amount = review.info.amount,
         mintUrl = review.info.mint,
         dateEpochMillis = System.currentTimeMillis(),
+        unit = review.info.unit,
+        memo = review.info.memo,
     )
+
+internal fun shortMintHost(url: String): String =
+    runCatching { java.net.URI.create(url).host }.getOrNull() ?: url
 
 /**
  * Fee / Mint / P2PK / Memo inspector rows shared by the sheet Review face and

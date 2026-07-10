@@ -155,6 +155,14 @@ class NPCService(
         paymentCheckJob = scope.launch { checkAndClaimPaymentsNow() }
     }
 
+    fun appBecameActive() {
+        applyPollingPreferences()
+    }
+
+    fun appEnteredBackground() {
+        stopBackgroundRefresh()
+    }
+
     fun resetForWalletBoundary() {
         stopBackgroundRefresh()
         prefs.edit()
