@@ -54,6 +54,14 @@ class PriceService(private val settingsStore: SettingsStore) {
         scope.launch { refreshBitcoinPrice() }
     }
 
+    fun appBecameActive() {
+        syncFromSettings(refresh = false)
+    }
+
+    fun appEnteredBackground() {
+        stopAutoRefresh()
+    }
+
     suspend fun refreshBitcoinPrice(): Double? {
         syncFromSettings(refresh = false)
         val current = mutableState.value

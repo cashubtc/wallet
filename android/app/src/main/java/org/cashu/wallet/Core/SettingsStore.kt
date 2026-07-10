@@ -59,11 +59,11 @@ class SettingsStore(
         set(value) = store.putBoolean(StorageKeys.settingsUseWebsockets, value)
 
     var enablePaymentRequests: Boolean
-        get() = store.boolean(StorageKeys.settingsEnablePaymentRequests, false)
+        get() = store.boolean(StorageKeys.settingsEnablePaymentRequests, true)
         set(value) = store.putBoolean(StorageKeys.settingsEnablePaymentRequests, value)
 
     var receivePaymentRequestsAutomatically: Boolean
-        get() = store.boolean(StorageKeys.settingsReceivePaymentRequestsAutomatically, false)
+        get() = store.boolean(StorageKeys.settingsReceivePaymentRequestsAutomatically, true)
         set(value) = store.putBoolean(StorageKeys.settingsReceivePaymentRequestsAutomatically, value)
 
     var showP2PKButtonInDrawer: Boolean
@@ -184,6 +184,8 @@ class SettingsStore(
     }
 
     private val walletScopedKeys = setOf(
+        StorageKeys.settingsEnablePaymentRequests,
+        StorageKeys.settingsReceivePaymentRequestsAutomatically,
         StorageKeys.settingsP2PKKeys,
         StorageKeys.settingsNostrSignerType,
         StorageKeys.settingsNostrMintBackupEnabled,

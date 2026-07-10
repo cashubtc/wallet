@@ -109,6 +109,22 @@ fun PrivacyScreen(
                 onCheckedChange = settingsManager::setAutoPasteEcashReceive,
             )
 
+            SectionHeader("Payment requests")
+            ToggleRow(
+                title = "Listen for payment requests",
+                subtitle = "Receive ecash sent to your Nostr key while the app is open",
+                checked = settings.enablePaymentRequests,
+                onCheckedChange = settingsManager::setEnablePaymentRequests,
+            )
+            CanvasDivider(leadingInset = 16.dp)
+            ToggleRow(
+                title = "Claim received ecash automatically",
+                subtitle = "Turn off to approve each incoming payment before it is claimed",
+                checked = settings.receivePaymentRequestsAutomatically,
+                onCheckedChange = settingsManager::setReceivePaymentRequestsAutomatically,
+                enabled = settings.enablePaymentRequests,
+            )
+
             SectionHeader("Diagnostics")
             ToggleRow(
                 title = "Send anonymous crash reports",

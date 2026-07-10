@@ -30,6 +30,7 @@ import org.cashu.wallet.Models.SendTokenResult
 class WalletManager(
     private val secureStorage: SecureStorage,
     private val walletStore: WalletStore,
+    private val cashuRequestStore: CashuRequestStore,
     private val settingsManager: SettingsManager,
     private val nostrService: NostrService,
     private val npcService: NPCService,
@@ -49,6 +50,9 @@ class WalletManager(
     private val transactionLoader = WalletTransactionLoader(walletStore, gateway)
     private val npcQuotesInFlight = mutableSetOf<String>()
     private var processedNPCQuotes = walletStore.loadProcessedNPCQuotes().toMutableSet()
+    var walletBoundaryPauseHandler: (() -> Unit)? = null
+    var walletBoundaryResetHandler: (() -> Unit)? = null
+    var walletBoundaryResumeHandler: (() -> Unit)? = null
 
     override suspend fun initialize() {
         if (mutableState.value.isInitialized) return
@@ -132,6 +136,7 @@ class WalletManager(
 
     override suspend fun deleteWallet() {
         withLoading {
+            walletBoundaryPauseHandler?.invoke()
             gateway.closeWalletRepository()
             secureStorage.delete(StorageKeys.secureWalletMnemonic)
             secureStorage.delete(StorageKeys.secureNostrPrivateKey)
@@ -140,6 +145,7 @@ class WalletManager(
             settingsManager.resetWalletScopedData()
             npcService.resetForWalletBoundary()
             nostrMintBackupService.resetForWalletBoundary()
+            walletBoundaryResetHandler?.invoke()
             update {
                 WalletState(
                     isInitialized = true,
@@ -188,6 +194,12 @@ class WalletManager(
     override suspend fun setActiveMint(mint: MintInfo) {
         walletStore.activeMintURL = mint.url
         loadCachedState(needsOnboarding = false)
+    }
+
+    /** Whether a mint URL is already trusted/tracked by this wallet. */
+    fun isMintKnown(url: String): Boolean {
+        val candidate = normalizedMintIdentity(url)
+        return mutableState.value.mints.any { normalizedMintIdentity(it.url) == candidate }
     }
 
     override suspend fun restoreFromMint(url: String): RestoreMintResult =
@@ -413,21 +425,34 @@ class WalletManager(
             }
         }
 
-    suspend fun receiveCashuRequestPayment(tokenString: String, requestId: String?, processedId: String? = requestId): Long {
-        val normalizedProcessedId = processedId?.trim()?.takeIf { it.isNotEmpty() }
-        if (normalizedProcessedId != null && normalizedProcessedId in walletStore.loadProcessedCashuRequests()) {
-            return 0
-        }
+    suspend fun receiveCashuRequestPayment(tokenString: String, requestId: String?): Long {
+        val beforeIds = incomingTransactionIds(tokenString)
         val amount = receiveTokens(tokenString)
-        normalizedProcessedId?.let { id ->
-            walletStore.saveProcessedCashuRequests((walletStore.loadProcessedCashuRequests() + id).distinct().sorted())
+        val transactionId = incomingTransactionIds(tokenString).subtract(beforeIds).firstOrNull()
+        if (!requestId.isNullOrBlank() && transactionId != null) {
+            cashuRequestStore.attachPayment(
+                requestId = requestId,
+                transactionId = transactionId,
+                amount = amount,
+            )
         }
         return amount
     }
 
     fun savePendingReceiveToken(token: PendingReceiveToken) {
         val current = walletStore.loadPendingReceiveTokens()
-        val updated = current.filterNot { it.tokenId == token.tokenId } + token
+        val existing = current.firstOrNull { it.tokenId == token.tokenId || it.token == token.token }
+        val saved = if (existing == null) {
+            token
+        } else {
+            token.copy(
+                tokenId = existing.tokenId,
+                dateEpochMillis = existing.dateEpochMillis,
+                cashuRequestId = existing.cashuRequestId ?: token.cashuRequestId,
+                memo = token.memo ?: existing.memo,
+            )
+        }
+        val updated = current.filterNot { it.tokenId == existing?.tokenId } + saved
         walletStore.savePendingReceiveTokens(updated)
         update { copy(pendingReceiveTokens = updated) }
     }
@@ -439,8 +464,16 @@ class WalletManager(
     }
 
     suspend fun claimPendingReceiveToken(token: PendingReceiveToken): Long {
-        val amount = receiveTokens(token.token)
+        val amount = if (token.cashuRequestId != null) {
+            receiveCashuRequestPayment(
+                tokenString = token.token,
+                requestId = token.cashuRequestId.takeIf(String::isNotBlank),
+            )
+        } else {
+            receiveTokens(token.token)
+        }
         removePendingReceiveToken(token.tokenId)
+        loadTransactions()
         return amount
     }
 
@@ -579,6 +612,7 @@ class WalletManager(
         val backups = databasePathManager.backupWalletDatabaseFiles()
         val walletSnapshot = walletStore.snapshotWalletScopedData()
         val settingsSnapshot = settingsManager.snapshotWalletScopedData()
+        walletBoundaryPauseHandler?.invoke()
 
         runCatching {
             gateway.closeWalletRepository()
@@ -591,6 +625,7 @@ class WalletManager(
             settingsManager.deleteWalletScopedSecrets(settingsSnapshot, deleteNostrPrivateKey = true)
             npcService.resetForWalletBoundary()
             nostrMintBackupService.resetForWalletBoundary()
+            walletBoundaryResetHandler?.invoke()
             databasePathManager.removeWalletFileBackups(backups)
             loadCachedState(needsOnboarding = needsOnboarding)
         }.onFailure { error ->
@@ -606,8 +641,10 @@ class WalletManager(
                     openWalletRepositoryWithRecovery(previousMnemonic)
                     deriveNostrKey(previousMnemonic)
                     loadCachedState(needsOnboarding = false)
+                    walletBoundaryResumeHandler?.invoke()
                 }
             } else {
+                walletBoundaryResetHandler?.invoke()
                 secureStorage.delete(StorageKeys.secureWalletMnemonic)
                 update {
                     WalletState(
@@ -687,6 +724,27 @@ class WalletManager(
         }
         return normalized
     }
+
+    private suspend fun incomingTransactionIds(tokenString: String): Set<String> {
+        val mintUrl = org.cashu.wallet.Models.TokenInfo.parse(tokenString)?.mint ?: return emptySet()
+        return runCatching { gateway.listTransactions(listOf(mintUrl)) }
+            .getOrDefault(emptyList())
+            .filter {
+                it.type == org.cashu.wallet.Models.TransactionType.Incoming &&
+                    it.kind == org.cashu.wallet.Models.TransactionKind.Ecash
+            }
+            .mapTo(mutableSetOf()) { it.id }
+    }
+
+    private fun normalizedMintIdentity(url: String): String =
+        runCatching {
+            val parsed = java.net.URI.create(url.trim())
+            buildString {
+                append(parsed.host?.lowercase().orEmpty())
+                if (parsed.port != -1) append(":${parsed.port}")
+                append(parsed.path.orEmpty().trim('/'))
+            }
+        }.getOrDefault(url.trim().trimEnd('/').lowercase())
 
     private suspend fun deriveNostrKey(mnemonic: String) {
         // iOS parity (WalletManager+NPC.initializeNostrKeypairLocally): the Nostr

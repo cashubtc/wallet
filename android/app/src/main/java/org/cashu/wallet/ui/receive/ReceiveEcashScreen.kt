@@ -54,6 +54,7 @@ import org.cashu.wallet.ui.components.AmountText
 import org.cashu.wallet.ui.components.CashuTextField
 import org.cashu.wallet.ui.components.GhostButton
 import org.cashu.wallet.ui.components.InlineNotice
+import org.cashu.wallet.ui.components.NoticeSeverity
 import org.cashu.wallet.ui.components.PrimaryButton
 import org.cashu.wallet.ui.components.SecondaryButton
 import org.cashu.wallet.ui.components.SheetHeader
@@ -434,6 +435,12 @@ private fun ReviewFace(
                 fee = review.fee,
                 locked = review.locked,
             )
+            if (!review.mintKnown) {
+                InlineNotice(
+                    text = "You haven’t used ${shortMintHost(info.mint)} before. Receiving adds it to your wallet — only continue if you trust it.",
+                    severity = NoticeSeverity.Warning,
+                )
+            }
         }
         // Claim outcomes no longer land here: tapping Receive swaps the sheet
         // body to the PaymentStatusScreen terminal (success check / failure X).

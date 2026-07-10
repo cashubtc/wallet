@@ -16,6 +16,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import org.cashu.wallet.ui.theme.CashuTheme
@@ -43,9 +44,6 @@ fun NavRow(
     ListItem(
         modifier = modifier.clickable(enabled = enabled, onClick = onClick),
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-        headlineContent = {
-            Text(text = title, color = titleColor)
-        },
         supportingContent = subtitle?.let {
             { Text(text = it) }
         },
@@ -85,7 +83,9 @@ fun NavRow(
                 }
             }
         },
-    )
+    ) {
+        Text(text = title, color = titleColor)
+    }
 }
 
 /** Settings list row with a trailing Switch, on M3 [ListItem]. */
@@ -100,9 +100,10 @@ fun ToggleRow(
     leadingIcon: ImageVector? = null,
 ) {
     ListItem(
-        modifier = modifier.clickable(enabled = enabled) { onCheckedChange(!checked) },
+        modifier = modifier
+            .alpha(if (enabled) 1f else 0.5f)
+            .clickable(enabled = enabled) { onCheckedChange(!checked) },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-        headlineContent = { Text(text = title) },
         supportingContent = subtitle?.let {
             { Text(text = it) }
         },
@@ -123,5 +124,7 @@ fun ToggleRow(
                 enabled = enabled,
             )
         },
-    )
+    ) {
+        Text(text = title)
+    }
 }

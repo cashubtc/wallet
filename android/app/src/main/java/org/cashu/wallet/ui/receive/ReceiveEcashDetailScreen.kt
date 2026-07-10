@@ -40,6 +40,8 @@ import org.cashu.wallet.Core.WalletManager
 import org.cashu.wallet.ui.components.AmountFlipDisplay
 import org.cashu.wallet.ui.components.AmountText
 import org.cashu.wallet.ui.components.GhostButton
+import org.cashu.wallet.ui.components.InlineNotice
+import org.cashu.wallet.ui.components.NoticeSeverity
 import org.cashu.wallet.ui.components.PaymentStatusPhase
 import org.cashu.wallet.ui.components.PaymentStatusScreen
 import org.cashu.wallet.ui.components.PrimaryButton
@@ -66,6 +68,9 @@ fun ReceiveEcashDetailScreen(
     priceService: PriceService,
     payload: String,
     onDone: () -> Unit,
+    claimOverride: (suspend () -> Long)? = null,
+    secondaryActionTitle: String = "Receive later",
+    onSecondaryAction: (() -> Unit)? = null,
     onDismissLockChanged: (Boolean) -> Unit = {},
 ) {
     val settings by settingsManager.state.collectAsState()
@@ -102,7 +107,7 @@ fun ReceiveEcashDetailScreen(
         if (status != null) return
         status = TokenClaimStatus.Claiming
         scope.launch {
-            status = claimToken(target, walletManager)
+            status = claimToken(target, walletManager, claimOverride)
         }
     }
 
@@ -143,10 +148,15 @@ fun ReceiveEcashDetailScreen(
                     onFlipPrimary = { settingsManager.setAmountDisplayPrimary(it.rawValue) },
                     onClose = onDone,
                     onReceive = { review?.let(::claim) },
-                    onReceiveLater = {
-                        review?.let {
-                            walletManager.savePendingReceiveToken(pendingReceiveTokenFrom(it))
-                            onDone()
+                    secondaryActionTitle = secondaryActionTitle,
+                    onSecondaryAction = {
+                        if (onSecondaryAction != null) {
+                            onSecondaryAction()
+                        } else {
+                            review?.let {
+                                walletManager.savePendingReceiveToken(pendingReceiveTokenFrom(it))
+                                onDone()
+                            }
                         }
                     },
                 )
@@ -168,7 +178,8 @@ private fun ConfirmContent(
     onFlipPrimary: (AmountDisplayPrimary) -> Unit,
     onClose: () -> Unit,
     onReceive: () -> Unit,
-    onReceiveLater: () -> Unit,
+    secondaryActionTitle: String,
+    onSecondaryAction: () -> Unit,
 ) {
     val info = parsed.info
     val isSatToken = info.unit.equals("sat", ignoreCase = true)
@@ -184,7 +195,7 @@ private fun ConfirmContent(
                     Icon(Icons.Outlined.Close, contentDescription = "Close")
                 }
             },
-            colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+            colors = TopAppBarDefaults.topAppBarColors(
                 containerColor = MaterialTheme.colorScheme.background,
             ),
         )
@@ -222,6 +233,16 @@ private fun ConfirmContent(
             locked = review?.locked == true,
             modifier = Modifier.padding(horizontal = CashuTheme.spacing.comfortable),
         )
+        if (review != null && !review.mintKnown) {
+            InlineNotice(
+                text = "You haven’t used ${shortMintHost(info.mint)} before. Receiving adds it to your wallet — only continue if you trust it.",
+                severity = NoticeSeverity.Warning,
+                modifier = Modifier.padding(
+                    horizontal = CashuTheme.spacing.comfortable,
+                    vertical = CashuTheme.spacing.snug,
+                ),
+            )
+        }
         Spacer(Modifier.weight(FooterWeight))
         Column(
             modifier = Modifier
@@ -238,8 +259,8 @@ private fun ConfirmContent(
             )
             Spacer(Modifier.height(CashuTheme.spacing.snug))
             GhostButton(
-                text = "Receive later",
-                onClick = onReceiveLater,
+                text = secondaryActionTitle,
+                onClick = onSecondaryAction,
             )
             Spacer(Modifier.navigationBarsPadding())
         }

@@ -17,8 +17,8 @@ data class SettingsState(
     val checkSentTokens: Boolean = true,
     val autoPasteEcashReceive: Boolean = true,
     val useWebsockets: Boolean = true,
-    val enablePaymentRequests: Boolean = false,
-    val receivePaymentRequestsAutomatically: Boolean = false,
+    val enablePaymentRequests: Boolean = true,
+    val receivePaymentRequestsAutomatically: Boolean = true,
     val showP2PKButtonInDrawer: Boolean = false,
     val amountDisplayPrimary: String = "fiat",
     val homeBalanceUnit: String = "sat",
@@ -169,7 +169,6 @@ class SettingsManager(
     }
     fun setCheckSentTokens(value: Boolean) = update { settingsStore.checkSentTokens = value }
     fun setAutoPasteEcashReceive(value: Boolean) = update { settingsStore.autoPasteEcashReceive = value }
-    // TODO(runtime-parity): Payment request processing is not started from these Swift parity toggles yet.
     fun setEnablePaymentRequests(value: Boolean) = update { settingsStore.enablePaymentRequests = value }
     fun setReceivePaymentRequestsAutomatically(value: Boolean) = update {
         settingsStore.receivePaymentRequestsAutomatically = value

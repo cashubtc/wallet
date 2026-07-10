@@ -13,9 +13,14 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.LoadingIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -23,14 +28,17 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.navigation.compose.rememberNavController
+import kotlinx.coroutines.launch
 import org.cashu.wallet.App.AppContainer
 import org.cashu.wallet.Core.Navigation.CashuRoute
 import org.cashu.wallet.Core.PaymentRequestDecodeResult
@@ -71,6 +79,7 @@ fun CashuApp(container: AppContainer) {
         val walletState by container.walletManager.state.collectAsState()
         val settings by container.settingsManager.state.collectAsState()
         val lifecycleOwner = LocalLifecycleOwner.current
+        val appScope = rememberCoroutineScope()
         val isAuthenticated = walletState.isInitialized && !walletState.needsOnboarding
         SecureWindowEffect(enabled = settings.appLockEnabled)
 
@@ -80,31 +89,60 @@ fun CashuApp(container: AppContainer) {
         LaunchedEffect(isAuthenticated) {
             if (isAuthenticated) {
                 container.appLockManager.startAuthenticatedSession()
-                container.cashuRequestListener.start()
+                container.npcService.appBecameActive()
+                container.priceService.appBecameActive()
                 val settings = container.settingsManager.state.value
                 if (settings.checkPendingOnStartup && settings.checkSentTokens) {
                     container.walletManager.checkAllPendingTokens()
                 }
+                container.walletManager.syncPendingMintQuotes()
             } else {
                 container.appLockManager.endAuthenticatedSession()
+                container.npcService.appEnteredBackground()
+                container.priceService.appEnteredBackground()
+            }
+        }
+        LaunchedEffect(isAuthenticated, settings.enablePaymentRequests) {
+            if (isAuthenticated && settings.enablePaymentRequests) {
+                container.cashuRequestListener.start()
+            } else {
                 container.cashuRequestListener.stop()
+            }
+        }
+        LaunchedEffect(isAuthenticated, settings.receivePaymentRequestsAutomatically) {
+            if (isAuthenticated && settings.receivePaymentRequestsAutomatically) {
+                container.cashuRequestListener.claimEligibleHeldPayments()
             }
         }
         DisposableEffect(lifecycleOwner, isAuthenticated) {
             val observer = LifecycleEventObserver { _, event ->
                 if (!isAuthenticated) return@LifecycleEventObserver
                 when (event) {
-                    Lifecycle.Event.ON_START,
+                    Lifecycle.Event.ON_START -> {
+                        container.appLockManager.appBecameActive()
+                        container.cashuRequestListener.start()
+                        container.npcService.appBecameActive()
+                        container.priceService.appBecameActive()
+                        appScope.launch {
+                            val settings = container.settingsManager.state.value
+                            if (settings.checkPendingOnStartup && settings.checkSentTokens) {
+                                container.walletManager.checkAllPendingTokens()
+                            }
+                            container.walletManager.syncPendingMintQuotes()
+                        }
+                    }
                     Lifecycle.Event.ON_RESUME -> {
                         container.appLockManager.appBecameActive()
                         container.cashuRequestListener.start()
                     }
-                    Lifecycle.Event.ON_PAUSE,
+                    Lifecycle.Event.ON_PAUSE -> {
+                        container.appLockManager.appResignedActive()
+                    }
                     Lifecycle.Event.ON_STOP -> {
                         container.appLockManager.appResignedActive()
-                        if (event == Lifecycle.Event.ON_STOP) {
-                            container.cashuRequestListener.stop()
-                        }
+                        container.cashuRequestListener.stop()
+                        container.npcService.appEnteredBackground()
+                        container.priceService.appEnteredBackground()
                     }
                     else -> Unit
                 }
@@ -113,6 +151,8 @@ fun CashuApp(container: AppContainer) {
             onDispose {
                 lifecycleOwner.lifecycle.removeObserver(observer)
                 container.cashuRequestListener.stop()
+                container.npcService.appEnteredBackground()
+                container.priceService.appEnteredBackground()
             }
         }
 
@@ -162,6 +202,10 @@ private fun AuthenticatedShell(container: AppContainer) {
     // The Receive sheet's Review face survives only for the paste flow and
     // its in-sheet scan.
     var receiveTokenDetail by remember { mutableStateOf<String?>(null) }
+    // Local presentation copy, like iOS ContentView.claimApproval. The
+    // listener's StateFlow is only the one-shot offer; keeping a local item
+    // lets the success terminal finish even after the pending record is claimed.
+    var claimApproval by remember { mutableStateOf<org.cashu.wallet.Models.PendingReceiveToken?>(null) }
     var receiveDetailDismissLocked by remember { mutableStateOf(false) }
 
     // A fresh flow starts unlocked, whatever the last one left behind.
@@ -171,6 +215,23 @@ private fun AuthenticatedShell(container: AppContainer) {
     val pendingDeepLink by container.navigationManager.pendingDeepLink.collectAsState()
     val connectivityState by container.connectivityObserver.state.collectAsState()
     val appLockState by container.appLockManager.state.collectAsState()
+    val cashuRequestListenerState by container.cashuRequestListener.state.collectAsState()
+    val walletState by container.walletManager.state.collectAsState()
+
+    LaunchedEffect(
+        cashuRequestListenerState.heldForApproval,
+        receiveTokenDetail,
+        claimApproval,
+        walletState.pendingReceiveTokens,
+    ) {
+        val offered = cashuRequestListenerState.heldForApproval ?: return@LaunchedEffect
+        val isStillPending = walletState.pendingReceiveTokens.any { it.tokenId == offered.tokenId }
+        if (!isStillPending && claimApproval == null) {
+            container.cashuRequestListener.dismissHeldPayment()
+        } else if (claimApproval == null && receiveTokenDetail == null) {
+            claimApproval = offered
+        }
+    }
 
     LaunchedEffect(pendingDeepLink) {
         val deepLink = pendingDeepLink ?: return@LaunchedEffect
@@ -274,11 +335,25 @@ private fun AuthenticatedShell(container: AppContainer) {
         // Full-screen Receive Ecash claim page — rendered above the camera
         // overlays (scanner closes before routing, so no live camera shows
         // behind, matching the iOS fullScreenCover rationale).
+        // Incoming NUT-18 payments that need consent reuse this same native
+        // surface, but replace "Receive later" with an explicit Decline action.
+        // An already-open external token stays in front; the held payment is
+        // offered after it closes, matching iOS's present-if-idle behavior.
+        val heldForApproval = claimApproval.takeIf { receiveTokenDetail == null }
+        val activeReceivePayload = receiveTokenDetail ?: heldForApproval?.token
+        fun dismissReceiveOverlay() {
+            if (heldForApproval != null) {
+                container.cashuRequestListener.dismissHeldPayment()
+                claimApproval = null
+            } else {
+                receiveTokenDetail = null
+            }
+        }
         // Remember the last payload so exit animates with content intact.
         var lastReceiveTokenDetail by remember { mutableStateOf("") }
-        if (receiveTokenDetail != null) lastReceiveTokenDetail = receiveTokenDetail!!
+        if (activeReceivePayload != null) lastReceiveTokenDetail = activeReceivePayload
         AnimatedVisibility(
-            visible = receiveTokenDetail != null,
+            visible = activeReceivePayload != null,
             enter = overlayEnter,
             exit = overlayExit,
         ) {
@@ -287,7 +362,17 @@ private fun AuthenticatedShell(container: AppContainer) {
                 settingsManager = container.settingsManager,
                 priceService = container.priceService,
                 payload = lastReceiveTokenDetail,
-                onDone = { receiveTokenDetail = null },
+                onDone = ::dismissReceiveOverlay,
+                claimOverride = heldForApproval?.let { pending ->
+                    { container.cashuRequestListener.claimHeldPayment(pending) }
+                },
+                secondaryActionTitle = if (heldForApproval != null) "Decline" else "Receive later",
+                onSecondaryAction = heldForApproval?.let { pending ->
+                    {
+                        container.cashuRequestListener.declineHeldPayment(pending)
+                        claimApproval = null
+                    }
+                },
                 onDismissLockChanged = { receiveDetailDismissLocked = it },
             )
         }
@@ -298,11 +383,11 @@ private fun AuthenticatedShell(container: AppContainer) {
         // while an overlay is visible. Receive detail renders above the scanner,
         // which renders above Contactless — dismissal order matches. (Flow
         // sheets live in their own window and handle back themselves.)
-        BackHandler(enabled = !appLockState.isLocked && (receiveTokenDetail != null || activeScannerTarget != null || showContactless)) {
-            when (shellBackAction(receiveTokenDetail != null, activeScannerTarget != null, showContactless)) {
+        BackHandler(enabled = !appLockState.isLocked && (activeReceivePayload != null || activeScannerTarget != null || showContactless)) {
+            when (shellBackAction(activeReceivePayload != null, activeScannerTarget != null, showContactless)) {
                 org.cashu.wallet.ui.navigation.ShellBackAction.CloseReceiveDetail -> {
                     // Never abandon a redeem in flight.
-                    if (!receiveDetailDismissLocked) receiveTokenDetail = null
+                    if (!receiveDetailDismissLocked) dismissReceiveOverlay()
                 }
                 org.cashu.wallet.ui.navigation.ShellBackAction.CloseScanner -> scannerTarget = null
                 org.cashu.wallet.ui.navigation.ShellBackAction.CloseContactless -> showContactless = false
@@ -404,7 +489,18 @@ private val overlayExit = slideOutVertically(
 @Composable
 private fun LoadingScreen() {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        LoadingIndicator()
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(20.dp),
+        ) {
+            LoadingIndicator()
+            Text(
+                text = "Loading Wallet…",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 24.dp),
+            )
+        }
     }
 }
 

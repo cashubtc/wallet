@@ -25,6 +25,10 @@ class CashuRequestListenerTest {
         )
 
         assertEquals("request-1", result.requestId)
+        assertEquals("https://mint.example.com", result.mintUrl)
+        assertEquals(1L, result.amount)
+        assertEquals("sat", result.unit)
+        assertEquals("Thanks", result.memo)
         assertTrue(result.token.startsWith("cashuA"))
         val payload = String(Base64.getUrlDecoder().decode(result.token.removePrefix("cashuA")), Charsets.UTF_8)
         val fields = Json.parseToJsonElement(payload).jsonObject
@@ -33,5 +37,21 @@ class CashuRequestListenerTest {
         assertEquals("sat", fields["unit"]!!.jsonPrimitive.content)
         assertEquals("Thanks", fields["memo"]!!.jsonPrimitive.content)
         assertEquals(1, entry["proofs"]!!.jsonArray.size)
+    }
+
+    @Test
+    fun onlyKnownMintsAutoClaimWithoutConsent() {
+        assertEquals(
+            CashuRequestClaimAction.ClaimSilently,
+            CashuRequestApprovalPolicy.action(autoClaim = true, mintKnown = true),
+        )
+        assertEquals(
+            CashuRequestClaimAction.HoldForApproval,
+            CashuRequestApprovalPolicy.action(autoClaim = false, mintKnown = true),
+        )
+        assertEquals(
+            CashuRequestClaimAction.HoldForApproval,
+            CashuRequestApprovalPolicy.action(autoClaim = true, mintKnown = false),
+        )
     }
 }

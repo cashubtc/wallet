@@ -3,6 +3,7 @@ package org.cashu.wallet.Core
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.cashu.wallet.Models.PaymentMethodKind
+import org.cashu.wallet.Models.PendingReceiveToken
 import org.cashu.wallet.Models.TokenInfo
 import org.cashu.wallet.Models.TransactionKind
 import org.cashu.wallet.Models.TransactionStatus
@@ -47,6 +48,25 @@ class ModelsParityTest {
             }
         """.trimIndent()
         assertNull(Json.decodeFromString<WalletTransaction>(legacy).cashuRequestId)
+    }
+
+    @Test
+    fun legacyPendingReceiveTokenGetsNewParityDefaults() {
+        val legacy = """
+            {
+              "tokenId":"pending-1",
+              "token":"cashu-token",
+              "amount":5,
+              "dateEpochMillis":1000,
+              "mintUrl":"https://mint.example.com"
+            }
+        """.trimIndent()
+
+        val pending = Json.decodeFromString<PendingReceiveToken>(legacy)
+
+        assertEquals("sat", pending.unit)
+        assertNull(pending.cashuRequestId)
+        assertNull(pending.memo)
     }
 
     @Test
