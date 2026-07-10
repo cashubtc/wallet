@@ -40,8 +40,6 @@
 		6A8EC94A2F2590000058C21B /* PriceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A8EC94B2F2590000058C21B /* PriceService.swift */; };
 		6A8EC94C2F25A0000058C21B /* NostrService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A8EC94D2F25A0000058C21B /* NostrService.swift */; };
 		6A8EC94E2F25A0000058C21B /* NPCService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A8EC94F2F25A0000058C21B /* NPCService.swift */; };
-		CC000000000000A1 /* NWCManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000000000000A2 /* NWCManager.swift */; };
-		CC000000000000B1 /* NWCSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000000000000B2 /* NWCSettingsSection.swift */; };
 		6A8EC95B2F26983E0058C21B /* P256K in Frameworks */ = {isa = PBXBuildFile; productRef = 6A8EC95A2F26983E0058C21B /* P256K */; };
 		720E47A62FEC721E00E02CD0 /* Cdk in Frameworks */ = {isa = PBXBuildFile; productRef = 720E47A52FEC721E00E02CD0 /* Cdk */; };
 		72AF0EF32FEF2165001AD6AC /* Sentry in Frameworks */ = {isa = PBXBuildFile; productRef = AACC000000000002 /* Sentry */; };
@@ -79,6 +77,8 @@
 		CC00000000000007 /* AdvancedSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC00000000000017 /* AdvancedSettingsSection.swift */; };
 		CC00000000000008 /* LightningAddressSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC00000000000018 /* LightningAddressSettingsSection.swift */; };
 		CC00000000000020 /* PressableButtonStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC00000000000021 /* PressableButtonStyle.swift */; };
+		CC000000000000A1 /* NWCManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000000000000A2 /* NWCManager.swift */; };
+		CC000000000000B1 /* NWCSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000000000000B2 /* NWCSettingsSection.swift */; };
 		D200000000000101 /* WalletManager+Lifecycle.swift in Sources */ = {isa = PBXBuildFile; fileRef = D100000000000101 /* WalletManager+Lifecycle.swift */; };
 		D200000000000102 /* WalletManager+NPC.swift in Sources */ = {isa = PBXBuildFile; fileRef = D100000000000102 /* WalletManager+NPC.swift */; };
 		D200000000000103 /* WalletManager+Mints.swift in Sources */ = {isa = PBXBuildFile; fileRef = D100000000000103 /* WalletManager+Mints.swift */; };
@@ -187,8 +187,6 @@
 		6A8EC94B2F2590000058C21B /* PriceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PriceService.swift; sourceTree = "<group>"; };
 		6A8EC94D2F25A0000058C21B /* NostrService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NostrService.swift; sourceTree = "<group>"; };
 		6A8EC94F2F25A0000058C21B /* NPCService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NPCService.swift; sourceTree = "<group>"; };
-		CC000000000000A2 /* NWCManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NWCManager.swift; sourceTree = "<group>"; };
-		CC000000000000B2 /* NWCSettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NWCSettingsSection.swift; sourceTree = "<group>"; };
 		72AF0EF42FEF2300001AD6AC /* SentryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SentryService.swift; sourceTree = "<group>"; };
 		72DD529F60A8D9D1A81E3FBB /* NutshellIntegrationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NutshellIntegrationTests.swift; path = ../CI/IntegrationTests/Tests/NutshellIntegrationTests.swift; sourceTree = "<group>"; };
 		99846FC03810AE4BE904466F /* WalletIntegrationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = WalletIntegrationTests.swift; path = CashuWalletUITests/WalletIntegrationTests.swift; sourceTree = "<group>"; };
@@ -222,6 +220,8 @@
 		CC00000000000017 /* AdvancedSettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdvancedSettingsSection.swift; sourceTree = "<group>"; };
 		CC00000000000018 /* LightningAddressSettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LightningAddressSettingsSection.swift; sourceTree = "<group>"; };
 		CC00000000000021 /* PressableButtonStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PressableButtonStyle.swift; sourceTree = "<group>"; };
+		CC000000000000A2 /* NWCManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NWCManager.swift; sourceTree = "<group>"; };
+		CC000000000000B2 /* NWCSettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NWCSettingsSection.swift; sourceTree = "<group>"; };
 		D100000000000101 /* WalletManager+Lifecycle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WalletManager+Lifecycle.swift"; sourceTree = "<group>"; };
 		D100000000000102 /* WalletManager+NPC.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WalletManager+NPC.swift"; sourceTree = "<group>"; };
 		D100000000000103 /* WalletManager+Mints.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WalletManager+Mints.swift"; sourceTree = "<group>"; };
