@@ -89,6 +89,22 @@ class KeychainService: SecureStorageProtocol {
         hasSecret(forKey: nostrPrivateKeyKey)
     }
 
+    /// Delete every device-local secret owned by this wallet, including the
+    /// mnemonic, custom Nostr key, and dynamically named P2PK private keys.
+    /// The synchronizable iCloud recovery mnemonic is intentionally excluded.
+    func deleteLocalWalletSecrets() throws {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: serviceName,
+            kSecAttrSynchronizable as String: kCFBooleanFalse!
+        ]
+
+        let status = SecItemDelete(query as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw KeychainError.deleteFailed(status)
+        }
+    }
+
     // MARK: - Generic Secure Storage
 
     func saveSecret(_ secret: String, forKey key: String) throws {

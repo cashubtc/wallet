@@ -224,6 +224,14 @@ class NostrService: ObservableObject {
         nsec = ""
         isInitialized = false
     }
+
+    /// Re-apply the persisted signer preference after a wallet replacement was
+    /// rolled back. Key derivation happens immediately afterwards using the
+    /// restored mnemonic.
+    func reloadSignerTypeFromSettings() {
+        signerType = settingsStore.nostrSignerType
+            .flatMap(NostrSignerType.init(rawValue:)) ?? .seed
+    }
     
     /// Get the current nsec for copying
     func getNsec() -> String {

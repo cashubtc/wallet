@@ -97,6 +97,7 @@ enum StorageKeys {
     static let pendingMeltQuotes = "wallet.pendingMeltQuotes"
     static let mintQuoteTimestamps = "wallet.mintQuoteTimestamps"
     static let processedNPCQuotes = "wallet.processedNPCQuotes"
+    static let mintQuoteCreatedAt = "mintQuoteCreatedAt.v1"
 
     // Cashu Requests (receive intents shown in History). Key names predate the
     // `wallet.` prefix convention and must stay stable for existing installs,
@@ -190,8 +191,10 @@ enum StorageKeys {
         savedTokens,
         paymentPreimages,
         meltQuoteFees,
+        pendingMeltQuotes,
         mintQuoteTimestamps,
         processedNPCQuotes,
+        mintQuoteCreatedAt,
         cashuRequests,
         cashuRequestsCurrentId,
         cashuRequestsProcessedNIP17Ids

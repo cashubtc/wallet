@@ -76,7 +76,6 @@ extension WalletManager {
             throw WalletError.invalidMnemonic
         }
 
-        try proveWalletCanInitialize(mnemonic: normalizedMnemonic)
         try await installCleanWallet(mnemonic: normalizedMnemonic)
         SentryService.breadcrumb("Wallet restored from seed", category: "wallet.lifecycle")
     }
@@ -146,15 +145,14 @@ extension WalletManager {
         defer { isLoading = false }
 
         resetRuntimeState()
-        try keychainService.deleteMnemonic()
-        try? keychainService.deleteNostrPrivateKey()
-        try removeWalletDatabaseFiles()
+        try removeAllWalletDatabaseArtifacts()
         walletStore.removeAllWalletData()
         SettingsManager.shared.resetWalletScopedData()
         CashuRequestStore.shared.resetForWalletBoundary()
         CashuRequestListener.shared.resetForWalletBoundary()
         MintLogoCache.shared.clear()
         processedQuotes.removeAll()
+        try keychainService.deleteLocalWalletSecrets()
         // iCloud backup survives a local deletion — the user can restore it from
         // Restore Wallet → Restore from iCloud.
         needsOnboarding = true
@@ -173,12 +171,38 @@ extension WalletManager {
     }
 
     private func installCleanWallet(mnemonic newMnemonic: String) async throws {
-        let previousMnemonic = mnemonic ?? (try? keychainService.loadMnemonic())
+        // Build a disposable repository before touching the current wallet.
+        // This validates the seed and CDK/SQLite initialization as one staged
+        // operation, so a bad replacement cannot mutate live state.
+        try proveWalletCanInitialize(mnemonic: newMnemonic)
+
+        let previousMnemonic = try mnemonic ?? keychainService.loadMnemonic()
         let defaultsSnapshot = walletBoundaryDefaultsSnapshot()
-        let fileBackups = try backupWalletDatabaseFiles()
+
+        // Release SQLite/WAL handles before moving the live database into its
+        // rollback snapshot. If the move itself fails, restore the small amount
+        // of runtime/defaults state resetRuntimeState may have touched.
+        resetRuntimeState()
+        let fileBackups: [WalletFileBackup]
+        do {
+            fileBackups = try backupWalletDatabaseFiles()
+        } catch {
+            restoreWalletBoundaryDefaults(defaultsSnapshot)
+            if let previousMnemonic {
+                do {
+                    mnemonic = previousMnemonic
+                    try await initializeWalletForLaunch(mnemonic: previousMnemonic)
+                } catch let rollbackError {
+                    throw WalletReplacementRollbackError(
+                        replacementError: error,
+                        rollbackError: rollbackError
+                    )
+                }
+            }
+            throw error
+        }
 
         do {
-            resetRuntimeState()
             removeWalletBoundaryDefaults(defaultsSnapshot)
             walletStore.removeAllWalletData()
             SettingsStore.shared.clearWalletScopedData()
@@ -186,29 +210,82 @@ extension WalletManager {
             NPCService.shared.resetForWalletBoundary()
             CashuRequestStore.shared.resetForWalletBoundary()
             CashuRequestListener.shared.resetForWalletBoundary()
-            SettingsStore.shared.clearWalletScopedData()
 
             try initializeWalletForCreation(mnemonic: newMnemonic)
+
+            // Keychain is the commit point and deliberately the final throwing
+            // operation. Before this succeeds every mutation above can be rolled
+            // back to the prior database/defaults/runtime snapshot.
             try keychainService.saveMnemonic(newMnemonic)
             mnemonic = newMnemonic
             SettingsManager.shared.resetWalletScopedData(resetRuntimeServices: false)
-            try removeWalletFileBackups(fileBackups)
+            removeWalletFileBackupsAfterCommit(fileBackups)
             performICloudBackup()
         } catch {
             SentryService.capture(error)
-            resetRuntimeState()
-            restoreWalletBoundaryDefaults(defaultsSnapshot)
-            CashuRequestStore.shared.reloadFromDefaults()
-            try? removeWalletDatabaseFiles()
-            try? restoreWalletFileBackups(fileBackups)
-
-            if let previousMnemonic {
-                mnemonic = previousMnemonic
-                try? await initializeWalletForLaunch(mnemonic: previousMnemonic)
+            do {
+                try await rollbackWalletReplacement(
+                    previousMnemonic: previousMnemonic,
+                    defaultsSnapshot: defaultsSnapshot,
+                    fileBackups: fileBackups
+                )
+            } catch let rollbackError {
+                SentryService.capture(rollbackError)
+                throw WalletReplacementRollbackError(
+                    replacementError: error,
+                    rollbackError: rollbackError
+                )
             }
 
             throw error
         }
+    }
+
+    private func rollbackWalletReplacement(
+        previousMnemonic: String?,
+        defaultsSnapshot: UserDefaultsSnapshot,
+        fileBackups: [WalletFileBackup]
+    ) async throws {
+        resetRuntimeState()
+        restoreWalletBoundaryDefaults(defaultsSnapshot)
+        CashuRequestStore.shared.reloadFromDefaults()
+
+        var firstFailure: Error?
+        func record(_ error: Error) {
+            if firstFailure == nil {
+                firstFailure = error
+            }
+        }
+
+        do {
+            try removeWalletDatabaseFiles()
+        } catch {
+            record(error)
+        }
+
+        do {
+            try restoreWalletFileBackups(fileBackups)
+        } catch {
+            record(error)
+        }
+
+        do {
+            try restoreKeychainMnemonic(previousMnemonic)
+        } catch {
+            record(error)
+        }
+
+        if let firstFailure {
+            throw firstFailure
+        }
+
+        guard let previousMnemonic else { return }
+        NostrService.shared.reloadSignerTypeFromSettings()
+        NPCService.shared.reloadWalletScopedStateFromSettings()
+        mnemonic = previousMnemonic
+        try await initializeWalletForLaunch(mnemonic: previousMnemonic)
+        await NPCService.shared.initializeIfEnabled()
+        await CashuRequestListener.shared.start()
     }
 
     private func initializeWalletForLaunch(mnemonic: String) async throws {
@@ -304,10 +381,15 @@ extension WalletManager {
         db = nil
         mnemonic = nil
         balance = 0
+        balancesByUnit = [:]
         pendingBalance = 0
         activeUnit = "sat"
         errorMessage = nil
+        pendingMeltWaiters.values.forEach { $0.cancel() }
+        pendingMeltWaiters.removeAll()
         mintQuoteSyncsInFlight.removeAll()
+        isSyncingMintQuotes = false
+        lastMintQuoteSyncAt = nil
         npcQuotesInFlight.removeAll()
         processedQuotes.removeAll()
         mintService.clearState()
@@ -433,18 +515,23 @@ extension WalletManager {
         let timestamp = Int(Date().timeIntervalSince1970)
         var backups: [WalletFileBackup] = []
 
-        for originalURL in try walletDatabaseBoundaryURLs() {
-            guard fileManager.fileExists(atPath: originalURL.path) else { continue }
+        do {
+            for originalURL in try walletDatabaseBoundaryURLs() {
+                guard fileManager.fileExists(atPath: originalURL.path) else { continue }
 
-            let backupURL = originalURL.deletingLastPathComponent()
-                .appendingPathComponent("\(originalURL.lastPathComponent).replacing.\(timestamp).\(UUID().uuidString)")
+                let backupURL = originalURL.deletingLastPathComponent()
+                    .appendingPathComponent("\(originalURL.lastPathComponent).replacing.\(timestamp).\(UUID().uuidString)")
 
-            if fileManager.fileExists(atPath: backupURL.path) {
-                try fileManager.removeItem(at: backupURL)
+                if fileManager.fileExists(atPath: backupURL.path) {
+                    try fileManager.removeItem(at: backupURL)
+                }
+
+                try fileManager.moveItem(at: originalURL, to: backupURL)
+                backups.append(WalletFileBackup(originalURL: originalURL, backupURL: backupURL))
             }
-
-            try fileManager.moveItem(at: originalURL, to: backupURL)
-            backups.append(WalletFileBackup(originalURL: originalURL, backupURL: backupURL))
+        } catch {
+            try? restoreWalletFileBackups(backups)
+            throw error
         }
 
         return backups
@@ -472,10 +559,61 @@ extension WalletManager {
         }
     }
 
+    private func removeWalletFileBackupsAfterCommit(_ backups: [WalletFileBackup]) {
+        do {
+            try removeWalletFileBackups(backups)
+        } catch {
+            // The new mnemonic and repository are already committed. Never roll
+            // them back because cleanup of an inaccessible backup failed.
+            AppLogger.wallet.error("Failed to remove replaced wallet backup: \(error)")
+            SentryService.capture(error)
+        }
+    }
+
+    private func restoreKeychainMnemonic(_ previousMnemonic: String?) throws {
+        if let previousMnemonic {
+            try keychainService.saveMnemonic(previousMnemonic)
+        } else {
+            try keychainService.deleteMnemonic()
+        }
+    }
+
     private func removeWalletDatabaseFiles() throws {
         let fileManager = FileManager.default
 
         for url in try walletDatabaseBoundaryURLs() {
+            guard fileManager.fileExists(atPath: url.path) else { continue }
+            try fileManager.removeItem(at: url)
+        }
+    }
+
+    private func removeAllWalletDatabaseArtifacts() throws {
+        let fileManager = FileManager.default
+        var urls = try walletDatabaseBoundaryURLs()
+
+        let applicationSupportURL = try applicationSupportURL(create: false)
+        if let contents = try? fileManager.contentsOfDirectory(
+            at: applicationSupportURL,
+            includingPropertiesForKeys: nil
+        ) {
+            urls += contents.filter {
+                $0.lastPathComponent.hasPrefix("\(walletDatabaseDirectoryName).replacing.")
+                    || $0.lastPathComponent.hasPrefix("\(walletDatabaseDirectoryName).restore.")
+            }
+        }
+
+        let documentsURL = legacyWalletDatabaseURL().deletingLastPathComponent()
+        if let contents = try? fileManager.contentsOfDirectory(
+            at: documentsURL,
+            includingPropertiesForKeys: nil
+        ) {
+            urls += contents.filter {
+                $0.lastPathComponent.hasPrefix("cashu_wallet.db")
+                    && $0.lastPathComponent.contains(".replacing.")
+            }
+        }
+
+        for url in Set(urls) {
             guard fileManager.fileExists(atPath: url.path) else { continue }
             try fileManager.removeItem(at: url)
         }
@@ -615,5 +753,16 @@ extension WalletManager {
         let token = try tokenService.decodeToken(tokenString: tokenString)
         let tokenMintUrl = try token.mintUrl().url
         await mintService.ensureMintTracked(url: tokenMintUrl)
+    }
+}
+
+private struct WalletReplacementRollbackError: LocalizedError {
+    let replacementError: Error
+    let rollbackError: Error
+
+    var errorDescription: String? {
+        "Wallet replacement failed and the previous wallet could not be fully restored. "
+            + "Replacement error: \(replacementError.localizedDescription). "
+            + "Rollback error: \(rollbackError.localizedDescription)."
     }
 }

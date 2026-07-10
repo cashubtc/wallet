@@ -28,7 +28,7 @@ struct MintQuoteInfo: Identifiable {
 /// stable record the "Created" row would drift to "now" on every visit. Keyed by
 /// quote id; stamped once, read back forever after.
 enum MintQuoteCreatedAtStore {
-    private static let storageKey = "mintQuoteCreatedAt.v1"
+    private static let storageKey = StorageKeys.mintQuoteCreatedAt
 
     /// Returns the stored date for `quoteId`, stamping `date` first if absent.
     @discardableResult
