@@ -344,7 +344,7 @@ fun CashuRequestDetailScreen(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
             ) {
-                PrimaryButton(
+                SecondaryButton(
                     text = if (copied) "Copied" else "Copy",
                     onClick = {
                         clipboard.setText(AnnotatedString(request.encoded))
@@ -487,10 +487,11 @@ private fun CashuRequestAmountEditSheet(
     ) {
         Column(
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxSize()
                 .navigationBarsPadding()
                 .imePadding()
                 .padding(horizontal = CashuTheme.spacing.comfortable),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             SheetHeader(
                 title = "Amount",
@@ -498,7 +499,7 @@ private fun CashuRequestAmountEditSheet(
                 navigationContentDescription = "Close",
                 onNavigationClick = onDismiss,
             )
-            Spacer(Modifier.height(CashuTheme.spacing.comfortable))
+            Spacer(Modifier.weight(1f))
             AmountEntryHero(
                 entryRaw = amount,
                 isSat = isSat,
@@ -507,7 +508,7 @@ private fun CashuRequestAmountEditSheet(
                 useBitcoinSymbol = useBitcoinSymbol,
                 formatter = formatter,
             )
-            Spacer(Modifier.height(CashuTheme.spacing.comfortable))
+            Spacer(Modifier.weight(1f))
             NumberPad(amount = amount, onAmountChange = { amount = it }, decimals = decimals)
             Spacer(Modifier.height(CashuTheme.spacing.snug))
             PrimaryButton(
