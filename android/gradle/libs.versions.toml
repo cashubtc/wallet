@@ -29,7 +29,7 @@ androidxTestRunner = "1.7.0"
 espresso = "3.6.1"
 metricsPerformance = "1.0.0"
 uiAutomator = "2.4.0"
-cdkKotlin = "0.17.0-rc.2-onchain"
+cdkAndroid = "0.17.3-rc.0"
 coil = "2.7.0"
 sentry = "8.16.0"
 
@@ -65,7 +65,7 @@ mlkit-barcode-scanning = { module = "com.google.mlkit:barcode-scanning", version
 okhttp = { module = "com.squareup.okhttp3:okhttp", version.ref = "okHttp" }
 bcprov = { module = "org.bouncycastle:bcprov-jdk18on", version.ref = "bcprov" }
 bcur-kotlin = { module = "com.gorunjinian:bcur-kotlin", version.ref = "bcurKotlin" }
-cdk-kotlin = { module = "org.cashudevkit:cdk-kotlin", version.ref = "cdkKotlin" }
+cdk-android = { module = "org.cashudevkit:cdk-android", version.ref = "cdkAndroid" }
 coil-compose = { module = "io.coil-kt:coil-compose", version.ref = "coil" }
 sentry-android = { module = "io.sentry:sentry-android", version.ref = "sentry" }
 androidx-metrics-performance = { module = "androidx.metrics:metrics-performance", version.ref = "metricsPerformance" }

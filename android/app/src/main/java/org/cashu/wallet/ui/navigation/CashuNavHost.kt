@@ -132,6 +132,8 @@ fun CashuNavHost(
         composable(Routes.SETTINGS_BACKUP_RESTORE) {
             BackupRestoreScreen(
                 walletManager = container.walletManager,
+                settingsManager = container.settingsManager,
+                nostrMintBackupService = container.nostrMintBackupService,
                 onOpenBackup = { navController.navigate(Routes.SETTINGS_BACKUP) },
                 onClose = { navController.popBackStack() },
             )

@@ -133,7 +133,10 @@ fun CashuApp(container: AppContainer) {
         ) { target ->
             when (target) {
                 AppGate.Loading -> LoadingScreen()
-                AppGate.Onboarding -> OnboardingScreen(walletManager = container.walletManager)
+                AppGate.Onboarding -> OnboardingScreen(
+                    walletManager = container.walletManager,
+                    nostrMintBackupService = container.nostrMintBackupService,
+                )
                 AppGate.Shell -> AuthenticatedShell(container = container)
             }
         }

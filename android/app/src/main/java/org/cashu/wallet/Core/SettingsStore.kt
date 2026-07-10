@@ -103,6 +103,19 @@ class SettingsStore(
         get() = loadList(StorageKeys.settingsNostrRelays, String.serializer()).ifEmpty { defaultNostrRelays }
         set(value) = saveList(StorageKeys.settingsNostrRelays, String.serializer(), value)
 
+    var nostrMintBackupEnabled: Boolean
+        get() = store.boolean(StorageKeys.settingsNostrMintBackupEnabled, true)
+        set(value) = store.putBoolean(StorageKeys.settingsNostrMintBackupEnabled, value)
+
+    var nostrMintBackupLastBackupDate: Long?
+        get() = store.long(StorageKeys.walletNostrMintBackupLastBackupDate, Long.MIN_VALUE)
+            .takeIf { it != Long.MIN_VALUE }
+        set(value) = if (value == null) {
+            store.remove(StorageKeys.walletNostrMintBackupLastBackupDate)
+        } else {
+            store.putLong(StorageKeys.walletNostrMintBackupLastBackupDate, value)
+        }
+
     var p2pkKeys: List<P2PKKeyInfo>
         get() = loadList(StorageKeys.settingsP2PKKeys, P2PKKeyInfo.serializer())
         set(value) = saveList(StorageKeys.settingsP2PKKeys, P2PKKeyInfo.serializer(), value)
@@ -174,6 +187,8 @@ class SettingsStore(
     private val walletScopedKeys = setOf(
         StorageKeys.settingsP2PKKeys,
         StorageKeys.settingsNostrSignerType,
+        StorageKeys.settingsNostrMintBackupEnabled,
+        StorageKeys.walletNostrMintBackupLastBackupDate,
         StorageKeys.npcEnabled,
         StorageKeys.npcAutomaticClaim,
         StorageKeys.npcSelectedMint,

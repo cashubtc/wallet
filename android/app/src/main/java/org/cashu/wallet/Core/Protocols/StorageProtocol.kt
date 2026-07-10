@@ -74,6 +74,8 @@ object StorageKeys {
     const val settingsPeriodicallyCheckIncomingInvoices = "settings.periodicallyCheckIncomingInvoices"
     const val settingsNostrRelays = "settings.nostrRelays"
     const val settingsNostrSignerType = "settings.nostrSignerType"
+    const val settingsNostrMintBackupEnabled = "settings.nostrMintBackupEnabled"
+    const val walletNostrMintBackupLastBackupDate = "wallet.nostrMintBackup.lastBackupDate"
     const val settingsAmountDisplayPrimary = "settings.amountDisplayPrimary"
     const val settingsHomeBalanceUnit = "settings.homeBalanceUnit"
     const val settingsSentryEnabled = "settings.sentryEnabled"

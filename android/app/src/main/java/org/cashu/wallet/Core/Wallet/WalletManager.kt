@@ -33,6 +33,7 @@ class WalletManager(
     private val settingsManager: SettingsManager,
     private val nostrService: NostrService,
     private val npcService: NPCService,
+    private val nostrMintBackupService: NostrMintBackupService,
     private val databasePathManager: WalletDatabasePathManager,
     private val gateway: CdkWalletGateway,
 ) : WalletServiceProtocol, NPCQuoteClaimHandler {
@@ -138,6 +139,7 @@ class WalletManager(
             walletStore.removeAllWalletData()
             settingsManager.resetWalletScopedData()
             npcService.resetForWalletBoundary()
+            nostrMintBackupService.resetForWalletBoundary()
             update {
                 WalletState(
                     isInitialized = true,
@@ -165,6 +167,7 @@ class WalletManager(
             loadCachedState(needsOnboarding = false)
             refreshBalance()
         }
+        scope.launch { nostrMintBackupService.backupCurrentMintsIfEnabled() }
     }
 
     override suspend fun removeMint(mint: MintInfo) {
@@ -179,6 +182,7 @@ class WalletManager(
             loadCachedState(needsOnboarding = false)
             refreshBalance()
         }
+        scope.launch { nostrMintBackupService.backupCurrentMintsIfEnabled() }
     }
 
     override suspend fun setActiveMint(mint: MintInfo) {
@@ -561,6 +565,15 @@ class WalletManager(
         loadTransactions()
     }
 
+    /** Restore complete (iOS completeRestore): dismiss onboarding, then refresh the Nostr backup. */
+    suspend fun completeRestore() {
+        completeOnboarding()
+        // The restored mint list is final now — refresh the Nostr backup with it.
+        // (Must not run earlier: publishing while the repository is still empty
+        // would replace the addressable backup event with an empty list.)
+        scope.launch { nostrMintBackupService.backupCurrentMintsIfEnabled() }
+    }
+
     private suspend fun installCleanWallet(mnemonic: String, needsOnboarding: Boolean) {
         val previousMnemonic = secureStorage.loadString(StorageKeys.secureWalletMnemonic)
         val backups = databasePathManager.backupWalletDatabaseFiles()
@@ -577,12 +590,14 @@ class WalletManager(
             secureStorage.saveString(StorageKeys.secureWalletMnemonic, mnemonic)
             settingsManager.deleteWalletScopedSecrets(settingsSnapshot, deleteNostrPrivateKey = true)
             npcService.resetForWalletBoundary()
+            nostrMintBackupService.resetForWalletBoundary()
             databasePathManager.removeWalletFileBackups(backups)
             loadCachedState(needsOnboarding = needsOnboarding)
         }.onFailure { error ->
             gateway.closeWalletRepository()
             walletStore.restoreWalletScopedData(walletSnapshot)
             settingsManager.restoreWalletScopedData(settingsSnapshot)
+            nostrMintBackupService.reloadStoredState()
             databasePathManager.removeWalletDatabaseFiles()
             databasePathManager.restoreWalletFileBackups(backups)
             if (previousMnemonic != null) {

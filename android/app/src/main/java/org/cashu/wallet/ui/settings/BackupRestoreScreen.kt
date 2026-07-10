@@ -3,8 +3,11 @@ package org.cashu.wallet.ui.settings
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.outlined.Restore
 import androidx.compose.material.icons.outlined.VpnKey
 import androidx.compose.material3.AlertDialog
@@ -18,26 +21,46 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import kotlinx.coroutines.launch
+import org.cashu.wallet.Core.NostrMintBackupService
+import org.cashu.wallet.Core.SettingsManager
 import org.cashu.wallet.Core.WalletManager
+import org.cashu.wallet.ui.components.InlineNoticeHost
 import org.cashu.wallet.ui.components.NavRow
+import org.cashu.wallet.ui.components.SectionHeader
+import org.cashu.wallet.ui.components.ToggleRow
+import org.cashu.wallet.ui.components.formatRelativeTimestamp
+import org.cashu.wallet.ui.theme.CashuTheme
 
 /**
- * Settings → Backup & Restore (iOS BackupSettingsSection): seed-phrase backup
- * and the restore wizard behind one root row.
+ * Settings → Backup & Restore (iOS BackupSettingsSection): seed-phrase backup,
+ * the restore wizard behind one root row, and the encrypted NUT-27 mint-list
+ * backup on Nostr (iOS NostrMintBackupSettingsSection).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BackupRestoreScreen(
     walletManager: WalletManager,
+    settingsManager: SettingsManager,
+    nostrMintBackupService: NostrMintBackupService,
     onOpenBackup: () -> Unit,
     onClose: () -> Unit,
 ) {
+    val scope = rememberCoroutineScope()
+    val settings by settingsManager.state.collectAsState()
+    val walletState by walletManager.state.collectAsState()
+    val backupState by nostrMintBackupService.state.collectAsState()
+
     var confirmRestore by remember { mutableStateOf(false) }
+    var backupError by remember { mutableStateOf<String?>(null) }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -56,7 +79,8 @@ fun BackupRestoreScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding),
+                .padding(padding)
+                .verticalScroll(rememberScrollState()),
         ) {
             NavRow(
                 title = "Backup seed phrase",
@@ -69,6 +93,47 @@ fun BackupRestoreScreen(
                 subtitle = "Restore a wallet and recover ecash from mints.",
                 leadingIcon = Icons.Outlined.Restore,
                 onClick = { confirmRestore = true },
+            )
+
+            SectionHeader("Mint backup")
+            ToggleRow(
+                title = "Automatic mint backup",
+                subtitle = "Publish after every mint change.",
+                checked = settings.nostrMintBackupEnabled,
+                onCheckedChange = settingsManager::setNostrMintBackupEnabled,
+            )
+            NavRow(
+                title = if (backupState.isBackingUp) "Backing up…" else "Back up now",
+                leadingIcon = Icons.Outlined.CloudUpload,
+                enabled = !backupState.isBackingUp && walletState.mints.isNotEmpty(),
+                showChevron = false,
+                trailingIcon = null,
+                onClick = {
+                    backupError = null
+                    scope.launch {
+                        runCatching { nostrMintBackupService.backupMints() }
+                            .onFailure { backupError = it.message ?: "Could not back up the mint list." }
+                    }
+                },
+            )
+            InlineNoticeHost(
+                text = backupError,
+                modifier = Modifier.padding(
+                    horizontal = CashuTheme.spacing.comfortable,
+                    vertical = CashuTheme.spacing.tight,
+                ),
+            )
+            Text(
+                text = mintBackupFooter(
+                    hasMints = walletState.mints.isNotEmpty(),
+                    lastBackupEpochMillis = backupState.lastBackupDateEpochMillis,
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(
+                    horizontal = CashuTheme.spacing.comfortable,
+                    vertical = CashuTheme.spacing.tight,
+                ),
             )
         }
     }
@@ -94,4 +159,16 @@ fun BackupRestoreScreen(
             },
         )
     }
+}
+
+/** iOS NostrMintBackupSettingsSection.footerText. */
+private fun mintBackupFooter(hasMints: Boolean, lastBackupEpochMillis: Long?): String = when {
+    !hasMints ->
+        "Add a mint to back up. The list is encrypted to your seed and published to your relays."
+    lastBackupEpochMillis != null ->
+        "Your mint list is encrypted to your seed and published to your relays. " +
+            "Last backup ${formatRelativeTimestamp(lastBackupEpochMillis)}."
+    else ->
+        "Your mint list is encrypted to your seed and published to your relays, " +
+            "so restoring from seed can find your mints."
 }
