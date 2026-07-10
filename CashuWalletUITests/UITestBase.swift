@@ -16,12 +16,14 @@ class UITestBase: XCTestCase {
     var mintURL: String {
         ProcessInfo.processInfo.environment["NUTSHELL_MINT_URL"] ?? "http://localhost:3338"
     }
+    var cdkMintURL: String {
+        ProcessInfo.processInfo.environment["CDK_MINT_URL"] ?? "http://localhost:3339"
+    }
     var launchMode: LaunchMode { .emptyWallet }
 
     override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication()
-        app.terminate()
         app.launchEnvironment = launchEnvironment(for: launchMode)
         app.launch()
     }
@@ -36,6 +38,7 @@ class UITestBase: XCTestCase {
             "CI_INTEGRATION_TEST": "1",
             "RESET_WALLET": "1",
             "NUTSHELL_MINT_URL": mintURL,
+            "CDK_MINT_URL": cdkMintURL,
         ]
 
         switch mode {
@@ -82,7 +85,8 @@ class UITestBase: XCTestCase {
     }
 
     /// Full onboarding: create wallet, add live mint, wait for main tab bar.
-    func createWalletWithMint() {
+    func createWalletWithMint(at mintURL: String? = nil) {
+        let mintURL = mintURL ?? self.mintURL
         createWalletThroughSeed()
 
         let addCustom = app.buttons["onboarding-add-custom-mint"]

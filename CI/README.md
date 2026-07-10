@@ -31,9 +31,9 @@ This directory contains the complete CI infrastructure for running end-to-end in
 
 ## Prebuilt Binaries (Fast CI!)
 
-**No more 20+ minute builds!** These scripts use prebuilt binaries:
+CDK setup uses release binaries instead of compiling Rust in CI:
 
-- **CDK**: Downloads `cdk-mintd-0.17.1` from [GitHub releases](https://github.com/cashubtc/cdk/releases/tag/v0.17.1)
+- **CDK**: Downloads and verifies `cdk-mintd 0.17.3-rc.0`, including the native Apple Silicon binary
 - **Nutshell**: Installs via `pip install cashu` from PyPI (exposes the `mint` binary)
 
 ## Quick Start
@@ -43,17 +43,20 @@ This directory contains the complete CI infrastructure for running end-to-end in
 Run the full integration test suite locally:
 
 ```bash
-# Start mints
+# Set up and start mints
+./CI/setup-nutshell.sh
+./CI/setup-cdk.sh
 ./CI/start-nutshell.sh
 ./CI/start-cdk.sh
 
 # Run tests
+NUTSHELL_MINT_URL=http://localhost:3338 \
+CDK_MINT_URL=http://localhost:3339 \
 xcodebuild test \
   -project CashuWallet.xcodeproj \
-  -scheme CashuWalletIntegration \
-  -destination 'platform=iOS Simulator,name=iPhone 15' \
-  NUTSHELL_MINT_URL=http://localhost:3338 \
-  CDK_MINT_URL=http://localhost:3339
+  -scheme CashuWallet \
+  -destination 'platform=iOS Simulator,name=iPhone 17' \
+  -only-testing:CashuWalletTests
 
 # Stop mints when done
 ./CI/stop-nutshell.sh
@@ -113,8 +116,7 @@ CI/
     ├── Package.swift
     └── Tests/
         ├── IntegrationTestBase.swift
-        ├── NutshellIntegrationTests.swift
-        └── CDKIntegrationTests.swift
+        └── NutshellIntegrationTests.swift # Shared scenarios plus both mint suites
 ```
 
 ## Configuration
@@ -132,9 +134,9 @@ Set via environment variables in `start-nutshell.sh`:
 
 ```bash
 MINT_LISTEN_PORT=3338
-MINT_DATABASE=memory
-MINT_LIGHTNING_BACKEND=FakeWallet
-FAKE_WALLET_SECRET="toTheMoon"
+MINT_DATABASE=CI/.nutshell-workdir
+MINT_BACKEND_BOLT11_SAT=FakeWallet
+MINT_INPUT_FEE_PPK=0
 ```
 
 ### CDK Config
@@ -142,14 +144,25 @@ FAKE_WALLET_SECRET="toTheMoon"
 Written to `CI/.cdk-workdir/config.toml` by `setup-cdk.sh`:
 
 ```toml
-[lightning_backend]
-name = "fakewallet"
-
-[fakewallet]
-seed = "0000000000000000000000000000000000000000000000000000000000000001"
+[info]
+url = "http://127.0.0.1:3339"
+listen_host = "127.0.0.1"
+listen_port = 3339
+mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+input_fee_ppk = 0
 
 [database]
 engine = "sqlite"
+
+[ln]
+ln_backend = "fakewallet"
+unit = "sat"
+
+[fake_wallet]
+fee_percent = 0.0
+reserve_fee_min = 0
+min_delay_time = 0
+max_delay_time = 0
 ```
 
 ## GitHub Actions Workflow
@@ -158,13 +171,15 @@ The workflow (`.github/workflows/integration-tests.yml`) runs on every push/PR t
 
 1. Checks out code
 2. Setups Python 3.11 and Xcode
-3. Downloads Nutshell via pip (~15s)
-4. Downloads CDK binary from GitHub releases (~10s)
-5. Starts both mints
-6. Runs integration tests against both mints
-7. Uploads test results on failure
+3. Restores the Swift package cache
+4. Sets up and starts Nutshell and CDK in parallel
+5. Builds the iOS test products while the simulator boots
+6. Runs unit, protocol, and UI tests in one bounded-parallel Xcode session
+7. Exercises all live protocol scenarios and onboarding against both mints
+8. Uploads test results and both mint logs on failure
 
-**Total CI time: ~5 minutes** (down from 25+ minutes with source builds!)
+The optimized workflow targets roughly 6–9 minutes instead of the previous
+19–26 minute range; the exact duration depends on hosted-runner load and cache state.
 
 ## Manual Testing
 

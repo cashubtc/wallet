@@ -2,11 +2,11 @@ import XCTest
 
 /// UI tests for the Settings tab navigation and basic interactions.
 final class SettingsUITests: UITestBase {
+    override var launchMode: LaunchMode { .seededWallet }
 
     // MARK: - Helpers
 
     private func navigateToSettings() {
-        createWalletAndSkipMint()
         tapTab("Settings")
     }
 

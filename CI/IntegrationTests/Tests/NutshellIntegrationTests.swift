@@ -1,32 +1,28 @@
 // NutshellIntegrationTests.swift
 //
-// Integration tests against a live Nutshell mint running the FakeWallet
-// backend (auto-pays bolt11 quotes). Exercises the cdk-swift wallet API
-// end-to-end: discovery, minting, send/receive, and quote state.
+// Shared integration scenarios for live Nutshell and CDK mints running
+// FakeWallet backends. Exercises the cdk-swift wallet API end-to-end:
+// discovery, minting, send/receive, and quote state.
 //
-// Requires a running mint via `CI/setup-nutshell.sh` + `CI/start-nutshell.sh`.
+// Requires both mints started by the scripts in CI/.
 
 import XCTest
 import Cdk
 
-final class NutshellIntegrationTests: IntegrationTestBase {
-    override var mintUrlStr: String {
-        ProcessInfo.processInfo.environment["NUTSHELL_MINT_URL"] ?? "http://localhost:3338"
-    }
-
-    override var dbNamePrefix: String { "nutshell_test" }
+class MintIntegrationTestSuite: IntegrationTestBase {
+    var mintName: String { "Cashu" }
 
     // MARK: - Discovery
 
-    func testFetchMintInfo() async throws {
+    func runFetchMintInfo() async throws {
         let info = try await wallet.fetchMintInfo()
-        XCTAssertNotNil(info, "Nutshell mint should return mint info")
+        XCTAssertNotNil(info, "\(mintName) mint should return mint info")
         XCTAssertFalse(info?.name?.isEmpty ?? true, "Mint name should not be empty")
     }
 
-    func testGetMintKeysets() async throws {
+    func runGetMintKeysets() async throws {
         let keysets = try await wallet.getMintKeysets(filter: .active)
-        XCTAssertFalse(keysets.isEmpty, "Nutshell mint should have at least one active keyset")
+        XCTAssertFalse(keysets.isEmpty, "\(mintName) mint should have at least one active keyset")
         for keyset in keysets {
             XCTAssertEqual(keyset.unit, .sat, "Keyset unit should be sat")
         }
@@ -34,7 +30,7 @@ final class NutshellIntegrationTests: IntegrationTestBase {
 
     // MARK: - Minting
 
-    func testBalanceAfterMinting() async throws {
+    func runBalanceAfterMinting() async throws {
         let initialBalance = try await wallet.totalBalance()
         XCTAssertEqual(initialBalance.value, 0, "Initial balance should be 0")
         _ = try await mintSats(100)
@@ -42,7 +38,7 @@ final class NutshellIntegrationTests: IntegrationTestBase {
         XCTAssertEqual(finalBalance.value, 100, "Balance should be 100 after minting")
     }
 
-    func testMultipleTokensMinting() async throws {
+    func runMultipleTokensMinting() async throws {
         let batch1 = try await mintSats(21)
         let batch2 = try await mintSats(42)
 
@@ -58,13 +54,13 @@ final class NutshellIntegrationTests: IntegrationTestBase {
 
     // MARK: - Send
 
-    func testPrepareAndConfirmSend() async throws {
+    func runPrepareAndConfirmSend() async throws {
         _ = try await mintSats(50)
 
         let prepared = try await wallet.prepareSend(
             amount: Amount(value: 21),
             options: SendOptions(
-                memo: SendMemo(memo: "Nutshell test send", includeMemo: true),
+                memo: SendMemo(memo: "\(mintName) test send", includeMemo: true),
                 conditions: nil,
                 amountSplitTarget: .none,
                 sendKind: .onlineExact,
@@ -88,7 +84,7 @@ final class NutshellIntegrationTests: IntegrationTestBase {
         XCTAssertEqual(balance.value, 29, "Balance should be 29 after sending 21")
     }
 
-    func testCancelSendKeepsBalance() async throws {
+    func runCancelSendKeepsBalance() async throws {
         _ = try await mintSats(50)
 
         let prepared = try await wallet.prepareSend(
@@ -115,8 +111,8 @@ final class NutshellIntegrationTests: IntegrationTestBase {
 
     // MARK: - Receive
 
-    func testReceiveTokenFromAnotherWallet() async throws {
-        let senderDbPath = NSTemporaryDirectory().appending("nutshell_sender_\(UUID().uuidString).sqlite")
+    func runReceiveTokenFromAnotherWallet() async throws {
+        let senderDbPath = NSTemporaryDirectory().appending("\(dbNamePrefix)_sender_\(UUID().uuidString).sqlite")
         let senderRepo = try WalletRepository(
             mnemonic: try generateMnemonic(),
             store: .sqlite(path: senderDbPath)
@@ -166,7 +162,7 @@ final class NutshellIntegrationTests: IntegrationTestBase {
 
     // MARK: - Negative paths
 
-    func testSendMoreThanBalanceThrows() async throws {
+    func runSendMoreThanBalanceThrows() async throws {
         _ = try await mintSats(10)
 
         do {
@@ -193,7 +189,7 @@ final class NutshellIntegrationTests: IntegrationTestBase {
         }
     }
 
-    func testReceiveSameTokenTwiceFailsSecondTime() async throws {
+    func runReceiveSameTokenTwiceFailsSecondTime() async throws {
         // Mint proofs, build a token, receive it once, then attempt a second receive.
         _ = try await mintSats(30)
 
@@ -245,7 +241,7 @@ final class NutshellIntegrationTests: IntegrationTestBase {
         try? FileManager.default.removeItem(atPath: receiverDbPath)
     }
 
-    func testStaleCounterReceiveRecoversAfterRestore() async throws {
+    func runStaleCounterReceiveRecoversAfterRestore() async throws {
         // Reproduces the production "Blinded Message is already signed" bug and the
         // fix's core mechanism. A wallet whose NUT-13 keyset counter is behind what
         // the mint has already signed for its seed (same seed, fresh DB — e.g. a
@@ -319,7 +315,7 @@ final class NutshellIntegrationTests: IntegrationTestBase {
         try? FileManager.default.removeItem(atPath: walletBDbPath)
     }
 
-    func testMintQuoteBalanceZeroWithoutPayment() async throws {
+    func runMintQuoteBalanceZeroWithoutPayment() async throws {
         let quote = try await wallet.mintQuote(
             paymentMethod: .bolt11,
             amount: Amount(value: 50),
@@ -334,7 +330,7 @@ final class NutshellIntegrationTests: IntegrationTestBase {
 
     // MARK: - Quote State
 
-    func testMintQuoteStateTransitions() async throws {
+    func runMintQuoteStateTransitions() async throws {
         let quote = try await wallet.mintQuote(
             paymentMethod: .bolt11,
             amount: Amount(value: 42),
@@ -350,4 +346,56 @@ final class NutshellIntegrationTests: IntegrationTestBase {
         let paidQuote = try await wallet.checkMintQuote(quoteId: quote.id)
         XCTAssertEqual(paidQuote.state, .paid, "Quote should be paid after minting")
     }
+}
+
+final class NutshellIntegrationTests: MintIntegrationTestSuite {
+    override var mintUrlStr: String {
+        ProcessInfo.processInfo.environment["NUTSHELL_MINT_URL"] ?? "http://localhost:3338"
+    }
+
+    override var dbNamePrefix: String { "nutshell_test" }
+    override var mintName: String { "Nutshell" }
+
+    func testFetchMintInfo() async throws { try await runFetchMintInfo() }
+    func testGetMintKeysets() async throws { try await runGetMintKeysets() }
+    func testBalanceAfterMinting() async throws { try await runBalanceAfterMinting() }
+    func testMultipleTokensMinting() async throws { try await runMultipleTokensMinting() }
+    func testPrepareAndConfirmSend() async throws { try await runPrepareAndConfirmSend() }
+    func testCancelSendKeepsBalance() async throws { try await runCancelSendKeepsBalance() }
+    func testReceiveTokenFromAnotherWallet() async throws { try await runReceiveTokenFromAnotherWallet() }
+    func testSendMoreThanBalanceThrows() async throws { try await runSendMoreThanBalanceThrows() }
+    func testReceiveSameTokenTwiceFailsSecondTime() async throws { try await runReceiveSameTokenTwiceFailsSecondTime() }
+    func testStaleCounterReceiveRecoversAfterRestore() async throws {
+        try await runStaleCounterReceiveRecoversAfterRestore()
+    }
+    func testMintQuoteBalanceZeroWithoutPayment() async throws {
+        try await runMintQuoteBalanceZeroWithoutPayment()
+    }
+    func testMintQuoteStateTransitions() async throws { try await runMintQuoteStateTransitions() }
+}
+
+final class CDKIntegrationTests: MintIntegrationTestSuite {
+    override var mintUrlStr: String {
+        ProcessInfo.processInfo.environment["CDK_MINT_URL"] ?? "http://localhost:3339"
+    }
+
+    override var dbNamePrefix: String { "cdk_test" }
+    override var mintName: String { "CDK" }
+
+    func testFetchMintInfo() async throws { try await runFetchMintInfo() }
+    func testGetMintKeysets() async throws { try await runGetMintKeysets() }
+    func testBalanceAfterMinting() async throws { try await runBalanceAfterMinting() }
+    func testMultipleTokensMinting() async throws { try await runMultipleTokensMinting() }
+    func testPrepareAndConfirmSend() async throws { try await runPrepareAndConfirmSend() }
+    func testCancelSendKeepsBalance() async throws { try await runCancelSendKeepsBalance() }
+    func testReceiveTokenFromAnotherWallet() async throws { try await runReceiveTokenFromAnotherWallet() }
+    func testSendMoreThanBalanceThrows() async throws { try await runSendMoreThanBalanceThrows() }
+    func testReceiveSameTokenTwiceFailsSecondTime() async throws { try await runReceiveSameTokenTwiceFailsSecondTime() }
+    func testStaleCounterReceiveRecoversAfterRestore() async throws {
+        try await runStaleCounterReceiveRecoversAfterRestore()
+    }
+    func testMintQuoteBalanceZeroWithoutPayment() async throws {
+        try await runMintQuoteBalanceZeroWithoutPayment()
+    }
+    func testMintQuoteStateTransitions() async throws { try await runMintQuoteStateTransitions() }
 }

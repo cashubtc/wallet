@@ -6,8 +6,7 @@ import XCTest
 /// wipe any persisted wallet on startup so onboarding always begins from a
 /// known-empty state (see `IntegrationTestConfig` / `WalletManager.initialize`).
 ///
-/// The mint-add test connects to the live Nutshell mint, so a mint must be
-/// running on `http://localhost:3338` (see `CI/start-nutshell.sh`).
+/// The mint-add tests connect to the live Nutshell and CDK mints started by CI.
 final class WalletIntegrationTests: UITestBase {
 
     // MARK: - Tests
@@ -24,13 +23,21 @@ final class WalletIntegrationTests: UITestBase {
     }
 
     /// Create a wallet and connect the live Nutshell mint via a custom URL.
-    /// Reaching the wallet tab means `addMint` succeeded against the mint.
-    func testOnboardingAddLocalMint() throws {
-        createWalletWithMint()
+    func testOnboardingAddNutshellMint() throws {
+        assertCanAddMint(at: mintURL)
+    }
+
+    /// Create a wallet and connect the live CDK mint via a custom URL.
+    func testOnboardingAddCDKMint() throws {
+        assertCanAddMint(at: cdkMintURL)
+    }
+
+    private func assertCanAddMint(at url: String) {
+        createWalletWithMint(at: url)
 
         // The added mint should be listed on the Mints tab.
         tapTab("Mints")
-        let mintRow = app.staticTexts[mintURL]
+        let mintRow = app.staticTexts[url]
         XCTAssertTrue(mintRow.waitForExistence(timeout: 10), "Added mint should appear in the Mints list")
     }
 }

@@ -26,29 +26,35 @@ if [ -f "$PID_FILE" ]; then
     rm -f "$PID_FILE"
 fi
 
-echo "🚀 Starting CDK mint..."
+PORT=$(grep '^listen_port' "${WORK_DIR}/config.toml" 2>/dev/null | head -1 | sed 's/.*= *//')
+PORT=${PORT:-3339}
+
+echo "🚀 Starting CDK mint on port ${PORT}..."
 
 cd "$WORK_DIR"
-nohup "$MINTD_BIN" --work-dir "$WORK_DIR" > "$LOG_FILE" 2>&1 &
+nohup "$MINTD_BIN" --work-dir "$WORK_DIR" --enable-logging > "$LOG_FILE" 2>&1 &
 MINT_PID=$!
 echo "$MINT_PID" > "$PID_FILE"
 
 echo "✅ CDK started (PID: $MINT_PID)"
 echo "📝 Log: $LOG_FILE"
 
-# Wait for mint to be ready
-PORT=$(grep '^port' "${WORK_DIR}/config.toml" 2>/dev/null | head -1 | sed 's/.*= *//')
-PORT=${PORT:-3339}
-
 echo "⏳ Waiting for mint to be ready on port ${PORT}..."
-for i in {1..30}; do
+for i in {1..75}; do
     if curl -sf "http://localhost:${PORT}/v1/info" > /dev/null 2>&1; then
         echo "✅ CDK mint is ready!"
         exit 0
     fi
-    sleep 1
+
+    if ! kill -0 "$MINT_PID" 2>/dev/null; then
+        echo "❌ CDK mint exited before becoming ready"
+        cat "$LOG_FILE"
+        exit 1
+    fi
+
+    sleep 0.2
 done
 
-echo "❌ CDK mint failed to start within 30 seconds"
+echo "❌ CDK mint failed to start within 15 seconds"
 cat "$LOG_FILE"
 exit 1

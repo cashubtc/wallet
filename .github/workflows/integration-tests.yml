@@ -12,123 +12,140 @@ concurrency:
 
 jobs:
   integration-tests:
-    name: Integration Tests with Live Mints
+    name: iOS Tests (Nutshell + CDK)
     runs-on: macos-26
     timeout-minutes: 45
-    
+    env:
+      NUTSHELL_MINT_URL: http://localhost:3338
+      CDK_MINT_URL: http://127.0.0.1:3339
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      
+
     - name: Select Xcode version
       uses: maxim-lobanov/setup-xcode@v1
       with:
         xcode-version: '26.5'
-        
+
     - name: Setup Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
 
-    # NOTE: CDK mint integration is temporarily disabled — cashubtc/cdk only
-    # ships Linux prebuilt binaries (no macOS arm64), and building from source
-    # on the macOS runner is too slow/flaky. Re-enable once a macOS binary
-    # is published. Nutshell remains the live mint under test.
-    - name: Setup Nutshell mint (pip install)
+    - name: Cache Swift packages
+      uses: actions/cache@v4
+      with:
+        path: ${{ runner.temp }}/SourcePackages
+        key: xcode-spm-macos-26-arm64-26.5-${{ hashFiles('CashuWallet.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+
+    - name: Setup mints
       run: |
-        cd CI
-        chmod +x setup-nutshell.sh
-        ./setup-nutshell.sh
+        set -euo pipefail
+        chmod +x CI/setup-nutshell.sh CI/setup-cdk.sh
+
+        ./CI/setup-nutshell.sh &
+        NUTSHELL_SETUP_PID=$!
+        ./CI/setup-cdk.sh &
+        CDK_SETUP_PID=$!
+
+        STATUS=0
+        wait "$NUTSHELL_SETUP_PID" || STATUS=$?
+        wait "$CDK_SETUP_PID" || STATUS=$?
+        exit "$STATUS"
 
     - name: Start mints
       run: |
-        cd CI
-        chmod +x start-nutshell.sh
-        ./start-nutshell.sh
+        set -euo pipefail
+        chmod +x CI/start-nutshell.sh CI/start-cdk.sh
 
-    - name: Wait for mints to be ready
-      run: |
-        echo "Waiting for mints to initialize..."
+        ./CI/start-nutshell.sh &
+        NUTSHELL_START_PID=$!
+        ./CI/start-cdk.sh &
+        CDK_START_PID=$!
 
-        # Check Nutshell
-        for i in {1..30}; do
-          if curl -sf http://localhost:3338/v1/info > /dev/null 2>&1; then
-            echo "✓ Nutshell mint is ready"
-            break
-          fi
-          if [ $i -eq 30 ]; then
-            echo "✗ Nutshell mint failed to start"
-            cat CI/.nutshell.log 2>/dev/null || true
-            exit 1
-          fi
-          echo "Waiting for Nutshell... ($i/30)"
-          sleep 1
-        done
-
-    - name: Run CDK Swift Integration Tests (SPM)
-      env:
-        NUTSHELL_MINT_URL: http://localhost:3338
-      run: |
-        set -o pipefail
-        cd CI/IntegrationTests
-        swift test 2>&1 | tee ../../spm-integration-test-output.log
+        STATUS=0
+        wait "$NUTSHELL_START_PID" || STATUS=$?
+        wait "$CDK_START_PID" || STATUS=$?
+        exit "$STATUS"
 
     # Ad-hoc signing ("-") on the simulator applies the app entitlements
     # (keychain-access-groups) without a team/profile — required so the wallet
     # can write its mnemonic to the Keychain during UI tests.
-    - name: Build iOS app
+    - name: Build iOS tests
       run: |
-        set -o pipefail
-        xcodebuild clean build-for-testing \
+        set -euo pipefail
+
+        SIMULATOR_UDID="$(
+          xcrun simctl list devices available -j |
+            jq -r '[.devices | to_entries[] | select(.key | contains("iOS")) | .value[] | select(.name == "iPhone 17" and .isAvailable == true)] | last | .udid // empty'
+        )"
+        if [ -z "$SIMULATOR_UDID" ]; then
+          echo "iPhone 17 simulator is not available"
+          exit 1
+        fi
+        echo "SIMULATOR_UDID=$SIMULATOR_UDID" >> "$GITHUB_ENV"
+
+        xcrun simctl boot "$SIMULATOR_UDID" 2>/dev/null || true
+        xcrun simctl bootstatus "$SIMULATOR_UDID" -b > "$RUNNER_TEMP/simulator-boot.log" 2>&1 &
+        SIMULATOR_BOOT_PID=$!
+
+        xcodebuild build-for-testing \
           -project CashuWallet.xcodeproj \
           -scheme CashuWallet \
-          -destination 'platform=iOS Simulator,name=iPhone 17' \
+          -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" \
+          -derivedDataPath "$RUNNER_TEMP/CashuWalletDerivedData" \
+          -clonedSourcePackagesDirPath "$RUNNER_TEMP/SourcePackages" \
+          -skipPackageUpdates \
+          -showBuildTimingSummary \
+          COMPILER_INDEX_STORE_ENABLE=NO \
           CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="-" \
           | tee build-output.log | xcbeautify
 
-    - name: Run Integration Tests (Nutshell mint)
-      env:
-        NUTSHELL_MINT_URL: http://localhost:3338
-      run: |
-        set -o pipefail
-        xcodebuild test-without-building \
-          -project CashuWallet.xcodeproj \
-          -scheme CashuWallet \
-          -destination 'platform=iOS Simulator,name=iPhone 17' \
-          -only-testing:CashuWalletTests \
-          CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="-" \
-          | tee integration-test-output.log | xcbeautify
+        if ! wait "$SIMULATOR_BOOT_PID"; then
+          cat "$RUNNER_TEMP/simulator-boot.log"
+          exit 1
+        fi
 
-    - name: Run UI Integration Tests
-      env:
-        NUTSHELL_MINT_URL: http://localhost:3338
+    - name: Run iOS test suite
       run: |
         set -o pipefail
         xcodebuild test-without-building \
           -project CashuWallet.xcodeproj \
           -scheme CashuWallet \
-          -destination 'platform=iOS Simulator,name=iPhone 17' \
+          -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" \
+          -derivedDataPath "$RUNNER_TEMP/CashuWalletDerivedData" \
+          -clonedSourcePackagesDirPath "$RUNNER_TEMP/SourcePackages" \
+          -only-testing:CashuWalletTests \
           -only-testing:CashuWalletUITests \
-          -parallel-testing-enabled NO \
+          -parallel-testing-enabled YES \
+          -maximum-parallel-testing-workers 2 \
+          -resultBundlePath "$RUNNER_TEMP/CashuWalletTests.xcresult" \
           CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="-" \
-          | tee ui-test-output.log | xcbeautify
+          | tee ios-test-output.log | xcbeautify
 
     - name: Stop mints
       if: always()
       run: |
-        cd CI
-        chmod +x stop-nutshell.sh
-        ./stop-nutshell.sh
-        
+        chmod +x CI/stop-nutshell.sh CI/stop-cdk.sh
+        ./CI/stop-nutshell.sh &
+        NUTSHELL_STOP_PID=$!
+        ./CI/stop-cdk.sh &
+        CDK_STOP_PID=$!
+        wait "$NUTSHELL_STOP_PID" || true
+        wait "$CDK_STOP_PID" || true
+
     - name: Upload test results
       if: failure()
       uses: actions/upload-artifact@v4
       with:
         name: test-results-${{ github.sha }}
         path: |
+          build-output.log
           *-test-output.log
-          spm-integration-test-output.log
-          
+          ${{ runner.temp }}/CashuWalletTests.xcresult
+          ${{ runner.temp }}/simulator-boot.log
+
     - name: Upload mint logs
       if: failure()
       uses: actions/upload-artifact@v4
@@ -136,3 +153,4 @@ jobs:
         name: mint-logs-${{ github.sha }}
         path: |
           CI/.nutshell.log
+          CI/.cdk.log

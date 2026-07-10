@@ -2,11 +2,11 @@ import XCTest
 
 /// UI tests verifying tab-bar navigation after wallet creation.
 final class MainTabUITests: UITestBase {
+    override var launchMode: LaunchMode { .seededWallet }
 
     // MARK: - Tests
 
     func testAllTabsExist() throws {
-        createWalletAndSkipMint()
         waitForMainTab()
 
         XCTAssertTrue(tabButton("Wallet").exists)
@@ -16,7 +16,6 @@ final class MainTabUITests: UITestBase {
     }
 
     func testNavigateToHistoryTab() throws {
-        createWalletAndSkipMint()
         waitForMainTab()
 
         tapTab("History")
@@ -28,7 +27,6 @@ final class MainTabUITests: UITestBase {
     }
 
     func testNavigateToMintsTab() throws {
-        createWalletAndSkipMint()
         waitForMainTab()
 
         tapTab("Mints")
@@ -36,7 +34,6 @@ final class MainTabUITests: UITestBase {
 
     /// With no mint configured, the Mints tab shows its add-mint form.
     func testMintsTabShowsAddMintWithoutMint() throws {
-        createWalletAndSkipMint()
         waitForMainTab()
 
         tapTab("Mints")
@@ -52,21 +49,18 @@ final class MainTabUITests: UITestBase {
     }
 
     func testNavigateToSettingsTab() throws {
-        createWalletAndSkipMint()
         waitForMainTab()
 
         tapTab("Settings")
     }
 
     func testWalletTabIsDefaultSelected() throws {
-        createWalletAndSkipMint()
         waitForMainTab()
 
         waitForSelectedTab("Wallet")
     }
 
     func testNavigateBetweenMultipleTabs() throws {
-        createWalletAndSkipMint()
         waitForMainTab()
 
         tapTab("Mints")

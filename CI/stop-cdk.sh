@@ -13,7 +13,10 @@ if [ -f "$PID_FILE" ]; then
     if kill -0 "$PID" 2>/dev/null; then
         echo "🛑 Stopping CDK mint (PID: $PID)..."
         kill "$PID" 2>/dev/null || true
-        sleep 1
+        for _ in {1..20}; do
+            kill -0 "$PID" 2>/dev/null || break
+            sleep 0.1
+        done
     fi
     rm -f "$PID_FILE"
     echo "✅ CDK stopped"
