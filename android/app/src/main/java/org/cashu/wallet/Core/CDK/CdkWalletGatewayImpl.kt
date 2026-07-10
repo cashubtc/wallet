@@ -384,13 +384,21 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
     }
 
     override suspend fun checkTokenSpendable(token: String, mintUrl: String): Boolean = cdkCall {
-        runCatching {
-            val tokenObj = CdkToken.decode(token)
-            val tokenUnit = tokenObj.unit() ?: CdkCurrencyUnit.Sat
-            ensureWalletUnlocked(mintUrl, tokenUnit)
-            val states = walletFor(mintUrl, tokenUnit).checkProofsSpent(tokenObj.proofsSimple())
-            states.any { it }
-        }.getOrDefault(false)
+        val tokenObj = CdkToken.decode(token)
+        val tokenUnit = tokenObj.unit() ?: CdkCurrencyUnit.Sat
+        ensureWalletUnlocked(mintUrl, tokenUnit)
+        val wallet = walletFor(mintUrl, tokenUnit)
+        // Resolve proofs with their FULL keyset ids: proofsSimple() can carry a
+        // short/legacy IDv2 keyset id that checkProofsSpent rejects ("Short
+        // keyset id does not match any of the provided IDv2s"), which would
+        // fail every spend check for tokens minted under an IDv2 keyset.
+        // Errors must propagate, not coerce to false — false means "unspent",
+        // and callers treat it as a definitive claim-state answer.
+        val proofs = runCatching {
+            tokenObj.proofs(wallet.getMintKeysets(org.cashudevkit.KeysetFilter.ALL))
+        }.getOrElse { tokenObj.proofsSimple() }
+        val states = wallet.checkProofsSpent(proofs)
+        states.any { it }
     }
 
     override suspend fun listTransactions(mintUrls: List<String>): List<WalletTransaction> = cdkCall {

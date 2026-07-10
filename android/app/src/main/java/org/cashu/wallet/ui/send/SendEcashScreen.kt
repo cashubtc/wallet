@@ -599,11 +599,13 @@ private fun GeneratedFace(
         while (claimState != ClaimState.Claimed) {
             delay(4_000)
             claimState = ClaimState.Checking
-            val stillSpendable = runCatching {
+            // checkTokenSpent returns true once any proof is spent (redeemed);
+            // null means the check failed — stay Pending, never fake a claim.
+            val spent = runCatching {
                 walletManager.checkTokenSpent(result.token, mintUrl)
             }.getOrNull()
             claimState = when {
-                stillSpendable == false -> ClaimState.Claimed
+                spent == true -> ClaimState.Claimed
                 else -> ClaimState.Pending
             }
         }
