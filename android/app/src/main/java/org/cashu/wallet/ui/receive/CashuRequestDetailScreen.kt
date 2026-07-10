@@ -31,6 +31,7 @@ import androidx.compose.material.icons.outlined.CalendarToday
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.CurrencyExchange
 import androidx.compose.material.icons.outlined.IosShare
+import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -56,6 +57,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import java.text.DateFormat
 import java.util.Date
@@ -71,6 +73,8 @@ import org.cashu.wallet.ui.components.CanvasDivider
 import org.cashu.wallet.ui.components.DestructiveTextButton
 import org.cashu.wallet.ui.components.GhostButton
 import org.cashu.wallet.ui.components.InspectorRow
+import org.cashu.wallet.ui.components.PaymentStatusPhase
+import org.cashu.wallet.ui.components.PaymentStatusScreen
 import org.cashu.wallet.ui.components.PrimaryButton
 import org.cashu.wallet.ui.components.QrCard
 import org.cashu.wallet.ui.components.SectionHeader
@@ -87,6 +91,10 @@ fun CashuRequestDetailScreen(
     cashuRequestStore: CashuRequestStore,
     requestId: String,
     onClose: () -> Unit,
+    // True when opened straight after creating the request (actively waiting).
+    // Only then does the first payment take over full-screen (iOS parity);
+    // from history the screen stays inline/persistent (reusable, multi-payment).
+    isReceiveFlow: Boolean = false,
     snackbarHostState: SnackbarHostState? = null,
 ) {
     val storeState by cashuRequestStore.state.collectAsState()
@@ -111,13 +119,39 @@ fun CashuRequestDetailScreen(
     val paymentCount = request?.receivedPayments?.size ?: 0
     var previousCount by remember(requestId) { mutableStateOf(paymentCount) }
     var celebrate by remember { mutableStateOf(false) }
+    // Fresh receive-flow only: the first payment arms a single-fire full-screen
+    // takeover (iOS `didAutoComplete`). History views never set this.
+    var didComplete by remember(requestId) { mutableStateOf(false) }
     LaunchedEffect(paymentCount) {
         if (paymentCount > previousCount && previousCount >= 0) {
+            if (isReceiveFlow) didComplete = true
             celebrate = true
             delay(2500)
             celebrate = false
         }
         previousCount = paymentCount
+    }
+
+    // Fresh + paid → replace the whole screen with the shared success terminal,
+    // auto-dismissing after a brief dwell (no Done button, matching Receive
+    // Lightning). Reusable/history requests never reach here.
+    if (isReceiveFlow && didComplete && request != null) {
+        val isSatRequest = request.unit.equals("sat", ignoreCase = true)
+        val requestCurrency = CurrencyRegistry.currencyForMintUnit(request.unit)
+        val receivedAmount = request.amount?.takeIf { it > 0L } ?: request.totalReceived.takeIf { it > 0L }
+        val amountLabel = receivedAmount?.let {
+            if (isSatRequest) formatter.formatWalletSats(it, settings.useBitcoinSymbol)
+            else CurrencyAmount(it, requestCurrency).formatted()
+        }
+        val mintName = request.mints.firstOrNull()?.let { url ->
+            walletState.mints.firstOrNull { it.url == url }?.name ?: url
+        } ?: "Any mint"
+        CashuRequestSuccessTerminal(
+            amountLabel = amountLabel,
+            mintName = mintName,
+            onDone = onClose,
+        )
+        return
     }
 
     Scaffold(
@@ -194,7 +228,9 @@ fun CashuRequestDetailScreen(
             if (request.amount != null && request.amount > 0L) {
                 AmountText(
                     text = formatRequestAmount(request.amount),
-                    style = MaterialTheme.typography.headlineSmall.withMonoDigits(),
+                    style = MaterialTheme.typography.headlineMedium
+                        .copy(fontWeight = FontWeight.SemiBold)
+                        .withMonoDigits(),
                 )
             }
 
@@ -363,3 +399,41 @@ private fun StatusBlock(received: Boolean, paymentCount: Int, celebrate: Boolean
 
 private fun formatDate(epochMillis: Long): String =
     DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(epochMillis))
+
+/** Full-screen shared success terminal for a fresh request's first payment
+ *  (iOS `CashuRequestDetailView.paymentSuccessView`). Auto-dismisses after a
+ *  brief dwell — no Done button, mirroring Receive Lightning. */
+@Composable
+private fun CashuRequestSuccessTerminal(
+    amountLabel: String?,
+    mintName: String?,
+    onDone: () -> Unit,
+) {
+    LaunchedEffect(Unit) {
+        delay(1800)
+        onDone()
+    }
+    PaymentStatusScreen(
+        phase = PaymentStatusPhase.Success,
+        title = "Payment Received!",
+        onDone = null,
+        rows = {
+            if (amountLabel != null) {
+                InspectorRow(
+                    label = "Amount",
+                    value = amountLabel,
+                    leadingIcon = Icons.Outlined.Payments,
+                    valueMonospaced = true,
+                )
+            }
+            if (mintName != null) {
+                if (amountLabel != null) CanvasDivider(leadingInset = 16.dp)
+                InspectorRow(
+                    label = "Mint",
+                    value = mintName,
+                    leadingIcon = Icons.Outlined.AccountBalance,
+                )
+            }
+        },
+    )
+}

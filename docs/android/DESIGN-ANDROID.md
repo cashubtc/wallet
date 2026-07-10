@@ -62,17 +62,23 @@ like a port, make the Android-native choice instead.
   shell (`CashuApp.kt`); the bottom bar animates away on push
   (`WalletScaffold.kt`); the payment terminal fades/settles in
   (`PaymentStatusScreen.kt`). The success check carries the one celebration
-  beat (bounce + materialize); failures stay deliberately still.
+  beat (bounce + materialize); failures stay deliberately still. **Every**
+  completion routes through the shared `PaymentStatusScreen` — including Receive
+  Lightning (paid invoice) and a fresh Cashu Request's first payment, which
+  cross-fade the whole sheet body to the terminal and auto-dismiss after ~1.8s
+  with no Done button (Android carve-out; iOS keeps Done). A Cashu Request opened
+  from *history* stays inline/persistent — it's reusable and multi-payment.
 - **Touch responds physically**: CTAs and number-pad keys spring-scale on press
   (`Buttons.kt`, `NumberPad.kt`); text buttons dim to 0.6 while pressed
   (iOS `TextLinkButtonStyle`).
 - Lists animate placement (`Modifier.animateItem()` — History, Home recent,
   Mint discovery), reveals expand/shrink, page dots stretch into pills.
-- **Numbers are sacred**: `AmountText` digit slots are keyed by position from
-  the *right* end of the string, so `999 → 1,000` rolls only the digits that
-  changed (never a full-row re-animate); pass `value =` for a single odometer
-  direction. Home's received-delta beat swaps into the fiat slot for 2.5s
-  with the sanctioned celebration spring (`BalanceDisplay`).
+- **Numbers are quiet**: `AmountText` cross-fades the whole string on change
+  (`Spring.StiffnessMedium`, no per-digit slide) — the same restrained
+  transition every other amount swap uses (`AmountFlipDisplay`, `BalanceDisplay`).
+  The earlier per-digit odometer roll read as too much and was retired
+  (2026-07-10). Home's received-delta beat still swaps into the fiat slot for
+  2.5s with the sanctioned celebration spring (`BalanceDisplay`).
 - **Reduce-motion**: decorative loops (waiting pulses, spinner ring, bounces,
   cascades) render their resting state when system animations are off.
   `rememberReducedMotion()` is reactive — it observes

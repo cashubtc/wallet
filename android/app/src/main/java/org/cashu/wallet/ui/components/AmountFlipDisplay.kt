@@ -40,9 +40,8 @@ private val FlipPillIconSize = 14.dp
  * Hero amount with a tappable unit-flip pill beneath it — the Compose port of
  * iOS `CurrencyAmountDisplay`: the primary amount renders large, the secondary
  * (fiat or sats) sits in a small capsule with a ↕ glyph; tapping the pill
- * swaps which unit leads. The swap cross-fades (iOS `.animation(.snappy,
- * value: effectivePrimary)`); subsequent value changes roll digit-by-digit
- * via [AmountText]'s keyed ticker.
+ * swaps which unit leads. The swap cross-fades, same as subsequent value
+ * changes via [AmountText].
  *
  * When no fiat price is available the pill is omitted and the amount renders
  * plain in sats.
@@ -95,7 +94,6 @@ fun AmountFlipDisplay(
             AmountText(
                 text = stateDisplay.primary,
                 style = MaterialTheme.typography.displayMedium.withMonoDigits(),
-                value = amountSats.toDouble(),
             )
         }
         val secondary = display.secondary

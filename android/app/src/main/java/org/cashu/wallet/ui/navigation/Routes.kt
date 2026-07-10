@@ -20,7 +20,9 @@ object Routes {
     // With arguments
     const val MINT_DETAIL = "mints/{mintUrl}"
     const val TRANSACTION_DETAIL = "history/transaction/{transactionId}"
-    const val CASHU_REQUEST_DETAIL = "request/{requestId}"
+    // `fresh` = opened straight after creating the request (actively waiting),
+    // vs. from history. Only the fresh context takes over full-screen on payment.
+    const val CASHU_REQUEST_DETAIL = "request/{requestId}?fresh={fresh}"
 
     // Settings sub-screens
     const val SETTINGS_BACKUP_RESTORE = "settings/backup-restore"

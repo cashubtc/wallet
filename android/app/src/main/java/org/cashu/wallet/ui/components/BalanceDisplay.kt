@@ -43,10 +43,8 @@ private sealed interface BalanceStatusLine {
 
 /**
  * Large hero balance with optional secondary line. Tap to toggle the primary unit.
- * Numbers animate digit-by-digit via [AmountText].
+ * Numbers cross-fade on change via [AmountText].
  *
- * @param value the numeric balance behind [amount], used to give all digit
- *   rolls a single odometer direction (iOS `.numericText(value:)` parity).
  * @param receivedDelta transient received-delta beat ("+2,500"): while non-null
  *   it takes over the secondary slot with the sanctioned celebration spring
  *   (scale 0.9 + fade in, fade out), then the fiat line fades back. Same slot,
@@ -58,7 +56,6 @@ fun BalanceDisplay(
     modifier: Modifier = Modifier,
     onTogglePrimary: ((AmountDisplayPrimary) -> Unit)? = null,
     padding: PaddingValues = PaddingValues(),
-    value: Double? = null,
     receivedDelta: String? = null,
 ) {
     val haptics = LocalHapticFeedback.current
@@ -87,7 +84,6 @@ fun BalanceDisplay(
             text = amount.primary,
             style = MaterialTheme.typography.displayMedium.copy(fontWeight = FontWeight.Bold),
             color = LocalContentColor.current,
-            value = value,
         )
         val statusLine: BalanceStatusLine = when {
             receivedDelta != null -> BalanceStatusLine.Delta(receivedDelta)
