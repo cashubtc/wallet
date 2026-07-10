@@ -27,6 +27,8 @@ final class NostrMintBackupService: ObservableObject {
         guard SettingsManager.shared.nostrMintBackupEnabled else { return }
         do {
             try await backupMints()
+        } catch NostrMintBackupError.nothingToBackUp {
+            // Empty wallet — nothing worth publishing, not a failure.
         } catch {
             AppLogger.wallet.error("Nostr mint backup failed: \(error)")
         }
@@ -42,6 +44,14 @@ final class NostrMintBackupService: ObservableObject {
         let relays = normalizedRelays(SettingsManager.shared.nostrRelays)
         guard !relays.isEmpty else {
             throw NostrMintBackupError.noRelays
+        }
+
+        // NUT-27 backups are addressable events: publishing replaces the
+        // previous backup for this seed on the relay. Never push an empty
+        // list — a freshly initialized wallet (e.g. mid-restore) would
+        // otherwise wipe the backup it is about to read.
+        guard await !walletRepository.getWallets().isEmpty else {
+            throw NostrMintBackupError.nothingToBackUp
         }
 
         isBackingUp = true
@@ -102,6 +112,7 @@ enum NostrMintBackupError: LocalizedError {
     case notInitialized
     case noRelays
     case webSocketsDisabled
+    case nothingToBackUp
 
     var errorDescription: String? {
         switch self {
@@ -111,6 +122,8 @@ enum NostrMintBackupError: LocalizedError {
             return "No Nostr relays are configured."
         case .webSocketsDisabled:
             return "Websocket connections are disabled."
+        case .nothingToBackUp:
+            return "There are no mints to back up yet."
         }
     }
 }

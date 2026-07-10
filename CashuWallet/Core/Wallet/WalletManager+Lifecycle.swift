@@ -126,6 +126,10 @@ extension WalletManager {
     /// Restore wallet from mnemonic - Phase 3: Complete restore and dismiss onboarding
     func completeRestore() async {
         completeOnboarding()
+        // The restored mint list is final now — refresh the Nostr backup with it.
+        // (Must not run earlier: publishing while the repository is still empty
+        // would replace the addressable backup event with an empty list.)
+        Task { await NostrMintBackupService.shared.backupCurrentMintsIfEnabled() }
     }
 
     func completeOnboarding() {
@@ -194,7 +198,6 @@ extension WalletManager {
             SettingsManager.shared.resetWalletScopedData(resetRuntimeServices: false)
             try removeWalletFileBackups(fileBackups)
             performICloudBackup()
-            Task { await NostrMintBackupService.shared.backupCurrentMintsIfEnabled() }
         } catch {
             SentryService.capture(error)
             resetRuntimeState()
