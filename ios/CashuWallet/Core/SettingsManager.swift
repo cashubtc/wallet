@@ -17,7 +17,6 @@ class SettingsManager: ObservableObject {
 
     static let defaultNostrRelays: [String] = [
         "wss://relay.damus.io",
-        "wss://relay.8333.space/",
         "wss://nos.lol",
         "wss://relay.primal.net"
     ]

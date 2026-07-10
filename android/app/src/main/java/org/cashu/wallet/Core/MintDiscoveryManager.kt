@@ -164,7 +164,6 @@ class MintDiscoveryManager(
         const val NORMAL_CLOSURE = 1000
         val DEFAULT_RELAYS = listOf(
             "wss://relay.damus.io",
-            "wss://relay.8333.space/",
             "wss://nos.lol",
             "wss://relay.primal.net",
         )
