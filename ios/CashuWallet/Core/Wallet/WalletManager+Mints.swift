@@ -85,6 +85,7 @@ extension WalletManager {
         guard !mintUrls.isEmpty else {
             balance = 0
             balancesByUnit = [:]
+            walletStore.saveBalancesByUnit([:])
             return
         }
 
@@ -125,5 +126,6 @@ extension WalletManager {
         mintService.updateMintBalances(balancesByMintURL)
         balance = total
         balancesByUnit = unitTotals
+        walletStore.saveBalancesByUnit(unitTotals)
     }
 }

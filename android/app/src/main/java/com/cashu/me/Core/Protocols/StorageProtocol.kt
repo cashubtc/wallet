@@ -46,6 +46,7 @@ object StorageKeys {
 
     const val walletMints = "wallet.mints"
     const val walletActiveMintUrl = "wallet.activeMintUrl"
+    const val walletBalancesByUnit = "wallet.balancesByUnit"
     const val walletPendingTokens = "wallet.pendingTokens"
     const val walletPendingReceiveTokens = "wallet.pendingReceiveTokens"
     const val walletClaimedTokens = "wallet.claimedTokens"
@@ -100,6 +101,7 @@ object StorageKeys {
     val walletBoundaryKeys = setOf(
         walletMints,
         walletActiveMintUrl,
+        walletBalancesByUnit,
         walletPendingTokens,
         walletPendingReceiveTokens,
         walletClaimedTokens,

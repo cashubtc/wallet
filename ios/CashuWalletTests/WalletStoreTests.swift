@@ -64,6 +64,11 @@ final class WalletStoreTests: XCTestCase {
         XCTAssertEqual(store.loadMints().count, 2)
     }
 
+    func testSaveAndLoadBalancesByUnit() {
+        store.saveBalancesByUnit(["sat": 21, "usd": 500])
+        XCTAssertEqual(store.loadBalancesByUnit(), ["sat": 21, "usd": 500])
+    }
+
     // MARK: - Active Mint URL
 
     func testActiveMintURLNilByDefault() {
@@ -194,12 +199,38 @@ final class WalletStoreTests: XCTestCase {
         XCTAssertEqual(store.loadMintQuoteTimestamps()["quoteA"], ts)
     }
 
+    func testSaveAndLoadMintKeysetRefreshTimestamps() {
+        let ts: TimeInterval = 1_700_000_000
+        store.saveMintKeysetRefreshTimestamps(["https://mint.example.com": ts])
+        XCTAssertEqual(store.loadMintKeysetRefreshTimestamps()["https://mint.example.com"], ts)
+    }
+
+    func testWalletStartupPolicyRefreshesMissingOrStaleKeysets() {
+        let now: TimeInterval = 10_000
+        XCTAssertTrue(WalletStartupPolicy.shouldRefreshKeysets(lastRefresh: nil, now: now))
+        XCTAssertTrue(WalletStartupPolicy.shouldRefreshKeysets(
+            lastRefresh: now - WalletStartupPolicy.keysetRefreshInterval,
+            now: now
+        ))
+        XCTAssertFalse(WalletStartupPolicy.shouldRefreshKeysets(
+            lastRefresh: now - WalletStartupPolicy.keysetRefreshInterval + 1,
+            now: now
+        ))
+        XCTAssertTrue(WalletStartupPolicy.shouldRefreshKeysets(lastRefresh: now + 1, now: now))
+    }
+
     // MARK: - removeAllWalletData
 
     func testRemoveAllWalletDataClearsMints() {
         store.saveMints([mint("https://mint.example.com", name: "X")])
         store.removeAllWalletData()
         XCTAssertTrue(store.loadMints().isEmpty)
+    }
+
+    func testRemoveAllWalletDataClearsBalancesByUnit() {
+        store.saveBalancesByUnit(["sat": 21, "eur": 100])
+        store.removeAllWalletData()
+        XCTAssertTrue(store.loadBalancesByUnit().isEmpty)
     }
 
     func testRemoveAllWalletDataClearsPendingTokens() {
@@ -218,6 +249,12 @@ final class WalletStoreTests: XCTestCase {
         store.saveSavedTokens(["tx": "cashuAtoken"])
         store.removeAllWalletData()
         XCTAssertTrue(store.loadSavedTokens().isEmpty)
+    }
+
+    func testRemoveAllWalletDataClearsMintKeysetRefreshTimestamps() {
+        store.saveMintKeysetRefreshTimestamps(["https://mint.example.com": 123])
+        store.removeAllWalletData()
+        XCTAssertTrue(store.loadMintKeysetRefreshTimestamps().isEmpty)
     }
 
     func testRemoveAllWalletDataClearsCashuRequestKeys() {

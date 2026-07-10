@@ -219,6 +219,7 @@ class WalletManager(
         }
         unitTotals["sat"] = total
         walletStore.saveMints(updated)
+        walletStore.saveBalancesByUnit(unitTotals)
         update {
             copy(
                 balance = total,
@@ -466,9 +467,14 @@ class WalletManager(
             claimed
         }
 
-    suspend fun checkAllPendingTokens(): Int =
-        withLoadingResult {
-            val pendingTokens = walletStore.loadPendingTokens()
+    suspend fun checkAllPendingTokens(): Int {
+        // Cached transactions are already published by loadCachedState().
+        // Avoid locking the CDK gateway for a full all-mint history pass when
+        // startup has no outgoing tokens whose spent state needs checking.
+        val pendingTokens = walletStore.loadPendingTokens()
+        if (pendingTokens.isEmpty()) return 0
+
+        return withLoadingResult {
             var claimedCount = 0
             pendingTokens.forEach { token ->
                 val claimed = runCatching { gateway.checkTokenSpendable(token.token, token.mintUrl) }
@@ -487,6 +493,7 @@ class WalletManager(
             loadTransactions()
             claimedCount
         }
+    }
 
     suspend fun reclaimPendingToken(pendingToken: PendingToken): Long {
         val amount = receiveTokens(pendingToken.token)
@@ -623,6 +630,10 @@ class WalletManager(
 
     private fun loadCachedState(needsOnboarding: Boolean) {
         val mints = walletStore.loadMints()
+        val cachedBalance = mints.sumOf { it.balance }
+        val cachedBalancesByUnit = walletStore.loadBalancesByUnit().toMutableMap().apply {
+            this["sat"] = cachedBalance
+        }
         val active = activeMintFrom(mints)
         val preimages = walletStore.loadPaymentPreimages()
         val meltFees = walletStore.loadMeltQuoteFees()
@@ -634,7 +645,8 @@ class WalletManager(
         processedNPCQuotes = walletStore.loadProcessedNPCQuotes().toMutableSet()
         update {
             copy(
-                balance = mints.sumOf { it.balance },
+                balance = cachedBalance,
+                balancesByUnit = cachedBalancesByUnit,
                 isInitialized = true,
                 isLoading = false,
                 needsOnboarding = needsOnboarding,

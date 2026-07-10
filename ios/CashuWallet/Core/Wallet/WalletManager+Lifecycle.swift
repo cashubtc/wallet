@@ -1,6 +1,21 @@
 import Foundation
 import Cdk
 
+enum WalletStartupPolicy {
+    /// Keysets are persisted by CDK. Refresh them periodically in the
+    /// background instead of making every cold launch depend on every mint.
+    static let keysetRefreshInterval: TimeInterval = 60 * 60
+
+    static func shouldRefreshKeysets(
+        lastRefresh: TimeInterval?,
+        now: TimeInterval
+    ) -> Bool {
+        guard let lastRefresh else { return true }
+        guard lastRefresh <= now else { return true }
+        return now - lastRefresh >= keysetRefreshInterval
+    }
+}
+
 extension WalletManager {
     // MARK: - Public Initialization
 
@@ -26,19 +41,20 @@ extension WalletManager {
             }
         }
 
-        await loadWalletState()
+        loadWalletState()
     }
 
-    private func loadWalletState() async {
+    private func loadWalletState() {
         do {
             NSUbiquitousKeyValueStore.default.synchronize()
             Cdk.initLogging(level: "info")
 
             if let storedMnemonic = try keychainService.loadMnemonic() {
                 mnemonic = storedMnemonic
-                try await initializeWalletForLaunch(mnemonic: storedMnemonic)
+                try initializeWalletForLaunch(mnemonic: storedMnemonic)
                 needsOnboarding = false
                 isInitialized = true
+                startDeferredStartupMaintenance()
                 SentryService.breadcrumb("Wallet loaded", category: "wallet.lifecycle")
             } else {
                 needsOnboarding = true
@@ -210,24 +226,33 @@ extension WalletManager {
 
             if let previousMnemonic {
                 mnemonic = previousMnemonic
-                try? await initializeWalletForLaunch(mnemonic: previousMnemonic)
+                do {
+                    try initializeWalletForLaunch(mnemonic: previousMnemonic)
+                    startDeferredStartupMaintenance()
+                } catch {
+                    AppLogger.wallet.error("Failed to reopen previous wallet after replacement error: \(error)")
+                }
             }
 
             throw error
         }
     }
 
-    private func initializeWalletForLaunch(mnemonic: String) async throws {
+    /// Open only local state needed for an immediately usable wallet. Network
+    /// reconciliation is deliberately scheduled after `isInitialized` flips.
+    private func initializeWalletForLaunch(mnemonic: String) throws {
         try initializeWalletRepository(mnemonic: mnemonic)
 
         mintService.loadCachedMints()
-        await performBestEffortWalletStartupMaintenance()
-        await refreshBalance()
+        let cachedSatBalance = mints.reduce(UInt64(0)) { $0 + $1.balance }
+        balance = cachedSatBalance
+        var cachedUnitBalances = walletStore.loadBalancesByUnit()
+        cachedUnitBalances["sat"] = cachedSatBalance
+        balancesByUnit = cachedUnitBalances
         transactionService.loadCachedState()
 
         initializeNostrKeypairLocally(mnemonic: mnemonic)
         setupNPCQuoteListener()
-        await NWCManager.shared.startIfEnabled()
     }
 
     private func initializeWalletForCreation(mnemonic: String) throws {
@@ -235,6 +260,7 @@ extension WalletManager {
 
         mintService.loadCachedMints()
         balance = mints.reduce(UInt64(0)) { $0 + $1.balance }
+        balancesByUnit = ["sat": balance]
         transactionService.loadCachedState()
 
         initializeNostrKeypairLocally(mnemonic: mnemonic)
@@ -303,6 +329,9 @@ extension WalletManager {
     }
 
     private func resetRuntimeState() {
+        startupMaintenanceTask?.cancel()
+        startupMaintenanceTask = nil
+
         if let npcQuoteObserver {
             NotificationCenter.default.removeObserver(npcQuoteObserver)
             self.npcQuoteObserver = nil
@@ -313,6 +342,7 @@ extension WalletManager {
         db = nil
         mnemonic = nil
         balance = 0
+        balancesByUnit = [:]
         pendingBalance = 0
         activeUnit = "sat"
         errorMessage = nil
@@ -558,28 +588,80 @@ extension WalletManager {
     }
 
     func trackedMintUrlsForWalletAccess() -> [String] {
-        var urls = mints.map(\.url).filter { !$0.isEmpty }
-        
-        if let activeUrl = activeMint?.url, !activeUrl.isEmpty, !urls.contains(activeUrl) {
+        var urls: [String] = []
+
+        // Make the mint the user can act on first in every deferred pass.
+        if let activeUrl = activeMint?.url, !activeUrl.isEmpty {
             urls.append(activeUrl)
         }
-        
-        return Array(Set(urls))
+
+        for url in mints.map(\.url) where !url.isEmpty && !urls.contains(url) {
+            urls.append(url)
+        }
+
+        return urls
     }
 
-    private func performBestEffortWalletStartupMaintenance() async {
-        guard let walletRepository else { return }
+    private func startDeferredStartupMaintenance() {
+        guard startupMaintenanceTask == nil else { return }
+
+        startupMaintenanceTask = Task(priority: .utility) { [weak self] in
+            // Give SwiftUI a scheduling opportunity to replace LoadingView with
+            // the cached wallet before any O(mints) CDK work begins.
+            await Task.yield()
+            guard let self, !Task.isCancelled else { return }
+
+            // `totalBalance()` is local CDK state and can correct an app-cache
+            // mismatch without requiring mint connectivity.
+            await self.refreshBalance()
+            guard !Task.isCancelled else { return }
+
+            let recoveredWalletState = await self.performBestEffortWalletStartupMaintenance()
+            guard !Task.isCancelled else { return }
+
+            if recoveredWalletState {
+                await self.refreshBalance()
+            }
+            guard !Task.isCancelled else { return }
+
+            await NWCManager.shared.startIfEnabled()
+            self.startupMaintenanceTask = nil
+        }
+    }
+
+    /// Returns true when saga recovery changed local wallet state and balances
+    /// should be read again.
+    private func performBestEffortWalletStartupMaintenance() async -> Bool {
+        guard let walletRepository else { return false }
         let mintUrls = trackedMintUrlsForWalletAccess()
-        guard !mintUrls.isEmpty else { return }
+        guard !mintUrls.isEmpty else { return false }
+
+        let now = Date().timeIntervalSince1970
+        let storedKeysetRefreshTimestamps = walletStore.loadMintKeysetRefreshTimestamps()
+        var keysetRefreshTimestamps = storedKeysetRefreshTimestamps
+            .filter { mintUrls.contains($0.key) }
+        var timestampsChanged = keysetRefreshTimestamps != storedKeysetRefreshTimestamps
+        var recoveredWalletState = false
 
         for mintUrlString in mintUrls {
+            guard !Task.isCancelled else { break }
             do {
                 let wallet = try await walletRepository.getWallet(
                     mintUrl: MintUrl(url: mintUrlString),
                     unit: .sat
                 )
-                await recoverIncompleteSagasIfNeeded(wallet: wallet, mintUrl: mintUrlString)
-                await refreshKeysetsIfNeeded(wallet: wallet, mintUrl: mintUrlString)
+                if await recoverIncompleteSagasIfNeeded(wallet: wallet, mintUrl: mintUrlString) {
+                    recoveredWalletState = true
+                }
+                if await refreshKeysetsIfNeeded(
+                    wallet: wallet,
+                    mintUrl: mintUrlString,
+                    lastRefresh: keysetRefreshTimestamps[mintUrlString],
+                    now: now
+                ) {
+                    keysetRefreshTimestamps[mintUrlString] = now
+                    timestampsChanged = true
+                }
             } catch {
                 AppLogger.wallet.error(
                     "Wallet startup maintenance failed for mint \(mintUrlString, privacy: .public): \(String(describing: error), privacy: .public)"
@@ -587,12 +669,19 @@ extension WalletManager {
             }
         }
 
+        if timestampsChanged {
+            walletStore.saveMintKeysetRefreshTimestamps(keysetRefreshTimestamps)
+        }
+
         // Saga recovery above only single-polls async-accepted (NUT-05) melts and
         // skips them while still pending; re-arm their completion tracking here.
-        await syncPendingMeltQuotes()
+        if !Task.isCancelled {
+            await syncPendingMeltQuotes()
+        }
+        return recoveredWalletState
     }
 
-    private func recoverIncompleteSagasIfNeeded(wallet: Wallet, mintUrl: String) async {
+    private func recoverIncompleteSagasIfNeeded(wallet: Wallet, mintUrl: String) async -> Bool {
         do {
             let report = try await wallet.recoverIncompleteSagas()
             if report.recovered > 0 || report.compensated > 0 || report.skipped > 0 || report.failed > 0 {
@@ -600,23 +689,36 @@ extension WalletManager {
                     "Recovered wallet sagas for mint \(mintUrl, privacy: .public): recovered=\(report.recovered, privacy: .public) compensated=\(report.compensated, privacy: .public) skipped=\(report.skipped, privacy: .public) failed=\(report.failed, privacy: .public)"
                 )
             }
+            return report.recovered > 0 || report.compensated > 0
         } catch {
             AppLogger.wallet.error(
                 "Failed to recover wallet sagas for mint \(mintUrl, privacy: .public): \(String(describing: error), privacy: .public)"
             )
+            return false
         }
     }
 
-    private func refreshKeysetsIfNeeded(wallet: Wallet, mintUrl: String) async {
+    private func refreshKeysetsIfNeeded(
+        wallet: Wallet,
+        mintUrl: String,
+        lastRefresh: TimeInterval?,
+        now: TimeInterval
+    ) async -> Bool {
+        guard WalletStartupPolicy.shouldRefreshKeysets(lastRefresh: lastRefresh, now: now) else {
+            return false
+        }
+
         do {
             let keysets = try await wallet.refreshKeysets()
             AppLogger.wallet.info(
                 "Refreshed \(keysets.count, privacy: .public) keysets for mint \(mintUrl, privacy: .public)"
             )
+            return true
         } catch {
             AppLogger.wallet.error(
                 "Failed to refresh keysets for mint \(mintUrl, privacy: .public): \(String(describing: error), privacy: .public)"
             )
+            return false
         }
     }
 

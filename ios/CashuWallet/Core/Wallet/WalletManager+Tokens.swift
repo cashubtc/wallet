@@ -219,6 +219,10 @@ extension WalletManager {
     }
 
     func checkAllPendingTokens() async {
+        // MainWalletView already loads history after the cached shell appears.
+        // Avoid a second all-mint transaction pass on the common empty queue.
+        guard !pendingTokens.isEmpty else { return }
+
         for token in pendingTokens {
             await checkPendingTokenStatus(pendingToken: token)
         }
