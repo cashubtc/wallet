@@ -13,6 +13,7 @@ class NPCService: ObservableObject {
     @Published var isEnabled: Bool {
         didSet {
             settingsStore.npcEnabled = isEnabled
+            guard !suppressConnectionSideEffects else { return }
             if isEnabled {
                 Task { await connect() }
             } else {
@@ -64,6 +65,7 @@ class NPCService: ObservableObject {
     private var nostrPubkey: String?
     private var refreshTimer: Timer?
     private var paymentCheckInProgress = false
+    private var suppressConnectionSideEffects = false
     private let settingsStore = SettingsStore.shared
     private let refreshInterval: TimeInterval = 120  // Check every 2 minutes
     private var shouldCheckIncomingInvoices: Bool {
@@ -360,6 +362,18 @@ class NPCService: ObservableObject {
         lastCheck = nil
         automaticClaim = true
         isEnabled = false
+    }
+
+    /// Restore in-memory preferences after a failed wallet replacement.
+    /// Connection work remains paused until the old seed has been reinstalled.
+    func reloadWalletScopedStateFromSettings() {
+        suppressConnectionSideEffects = true
+        defer { suppressConnectionSideEffects = false }
+
+        isEnabled = settingsStore.npcEnabled
+        automaticClaim = settingsStore.npcAutomaticClaim
+        selectedMintUrl = settingsStore.npcSelectedMint
+        lastCheck = settingsStore.npcLastCheck
     }
 
     deinit {

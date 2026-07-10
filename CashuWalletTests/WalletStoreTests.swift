@@ -220,6 +220,44 @@ final class WalletStoreTests: XCTestCase {
         XCTAssertTrue(store.loadSavedTokens().isEmpty)
     }
 
+    func testRemoveAllWalletDataClearsPendingMeltQuotes() {
+        store.savePendingMeltQuotes(["quote": "https://mint.example.com"])
+        store.removeAllWalletData()
+        XCTAssertTrue(store.loadPendingMeltQuotes().isEmpty)
+    }
+
+    func testRemoveAllWalletDataClearsUnprefixedMintQuoteMetadata() throws {
+        let storage = InMemoryStorage()
+        try storage.set(["quote": Date()], forKey: StorageKeys.mintQuoteCreatedAt)
+
+        WalletStore(storage: storage).removeAllWalletData()
+
+        XCTAssertFalse(storage.exists(forKey: StorageKeys.mintQuoteCreatedAt))
+    }
+
+    func testWalletDataKeysEnumerateAllWalletStoreState() {
+        let expectedKeys: Set<String> = [
+            StorageKeys.mints,
+            StorageKeys.activeMintUrl,
+            StorageKeys.pendingTokens,
+            StorageKeys.pendingReceiveTokens,
+            StorageKeys.claimedTokens,
+            StorageKeys.transactions,
+            StorageKeys.savedTokens,
+            StorageKeys.paymentPreimages,
+            StorageKeys.meltQuoteFees,
+            StorageKeys.pendingMeltQuotes,
+            StorageKeys.mintQuoteTimestamps,
+            StorageKeys.processedNPCQuotes,
+            StorageKeys.mintQuoteCreatedAt,
+            StorageKeys.cashuRequests,
+            StorageKeys.cashuRequestsCurrentId,
+            StorageKeys.cashuRequestsProcessedNIP17Ids,
+        ]
+
+        XCTAssertEqual(Set(StorageKeys.walletDataKeys), expectedKeys)
+    }
+
     func testRemoveAllWalletDataClearsCashuRequestKeys() {
         let storage = InMemoryStorage()
         try! storage.set("payload", forKey: StorageKeys.cashuRequests)
