@@ -5,6 +5,7 @@ import android.util.Log
 object AppLogger {
     private const val prefix = "CashuWallet"
     private val nostrSecretPattern = Regex("""\bnsec1[023456789acdefghjklmnpqrstuvwxyz]+\b""", RegexOption.IGNORE_CASE)
+    private val nwcUriPattern = Regex("""\bnostr\+walletconnect://[^\s,;)"']+""", RegexOption.IGNORE_CASE)
     private val cashuTokenPattern = Regex("""\bcashu[ab][a-z0-9_\-=]{16,}\b""", RegexOption.IGNORE_CASE)
     private val urlPattern = Regex("""https?://[^\s,;)"']+""", RegexOption.IGNORE_CASE)
     private val localPathPattern = Regex("""(?<![A-Za-z0-9])/(?:Users|private|data|var|tmp|storage|sdcard)/[^\s,;)"']+""")
@@ -39,6 +40,7 @@ object AppLogger {
     internal fun privacySafeMessage(message: String): String {
         return message
             .replace(nostrSecretPattern, "<redacted-nsec>")
+            .replace(nwcUriPattern, "<redacted-nwc-uri>")
             .replace(cashuTokenPattern, "<redacted-cashu-token>")
             .replace(urlPattern, "<redacted-url>")
             .replace(localPathPattern, "<redacted-path>")

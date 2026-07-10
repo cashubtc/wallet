@@ -41,6 +41,14 @@ class AndroidSecureStorage(context: Context) : SecureStorage {
         prefs.edit().remove(key).apply()
     }
 
+    override fun deletePrefix(prefix: String) {
+        val matchingKeys = prefs.all.keys.filter { it.startsWith(prefix) }
+        if (matchingKeys.isEmpty()) return
+        prefs.edit().apply {
+            matchingKeys.forEach(::remove)
+        }.apply()
+    }
+
     override fun contains(key: String): Boolean = prefs.contains(key)
 
     private fun getOrCreateKey(): SecretKey {

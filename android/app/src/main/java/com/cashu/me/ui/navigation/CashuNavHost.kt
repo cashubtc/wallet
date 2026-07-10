@@ -40,6 +40,7 @@ import com.cashu.me.ui.settings.BackupScreen
 import com.cashu.me.ui.settings.DeviceKeyDetailScreen
 import com.cashu.me.ui.settings.LightningScreen
 import com.cashu.me.ui.settings.NostrScreen
+import com.cashu.me.ui.settings.NwcSettingsScreen
 import com.cashu.me.ui.settings.P2PKScreen
 import com.cashu.me.ui.settings.PrivacyScreen
 import com.cashu.me.ui.settings.SettingsScreen
@@ -189,6 +190,16 @@ fun CashuNavHost(
             NostrScreen(
                 nostrService = container.nostrService,
                 settingsManager = container.settingsManager,
+                nwcManager = container.nwcManager,
+                onOpenWalletConnect = { navController.navigate(Routes.SETTINGS_NWC) },
+                onClose = { navController.popBackStack() },
+            )
+        }
+        composable(Routes.SETTINGS_NWC) {
+            NwcSettingsScreen(
+                walletManager = container.walletManager,
+                settingsManager = container.settingsManager,
+                nwcManager = container.nwcManager,
                 onClose = { navController.popBackStack() },
             )
         }

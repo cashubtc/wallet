@@ -1,6 +1,7 @@
 package com.cashu.me.App
 
 import android.content.Context
+import java.security.MessageDigest
 import com.cashu.me.Core.CDK.CdkWalletGatewayImpl
 import com.cashu.me.Core.AppLockManager
 import com.cashu.me.Core.CashuRequestListener
@@ -10,6 +11,7 @@ import com.cashu.me.Core.NPCService
 import com.cashu.me.Core.Navigation.NavigationManager
 import com.cashu.me.Core.NostrMintBackupService
 import com.cashu.me.Core.NostrService
+import com.cashu.me.Core.NwcManager
 import com.cashu.me.Core.Platform.AndroidConnectivityObserver
 import com.cashu.me.Core.Platform.AndroidSecureStorage
 import com.cashu.me.Core.Platform.WalletDatabasePathManager
@@ -20,6 +22,7 @@ import com.cashu.me.Core.SettingsManager
 import com.cashu.me.Core.SettingsStore
 import com.cashu.me.Core.WalletManager
 import com.cashu.me.Core.WalletStore
+import com.cashu.me.Core.Protocols.StorageKeys
 
 class AppContainer(context: Context) {
     private val appContext = context.applicationContext
@@ -35,6 +38,17 @@ class AppContainer(context: Context) {
     val connectivityObserver = AndroidConnectivityObserver(appContext)
     val walletDatabasePathManager = WalletDatabasePathManager(appContext)
     val cdkGateway = CdkWalletGatewayImpl()
+    val nwcManager = NwcManager(
+        settingsStore = settingsStore,
+        secureStorage = secureStorage,
+        gateway = cdkGateway,
+        seedProvider = {
+            secureStorage.loadString(StorageKeys.secureWalletMnemonic)?.let { mnemonic ->
+                MessageDigest.getInstance("SHA-512").digest(mnemonic.toByteArray(Charsets.UTF_8))
+            }
+        },
+        relayProvider = { settingsManager.state.value.nostrRelays },
+    )
     val npcService = NPCService(appContext, nostrService, settingsManager)
     val nostrMintBackupService = NostrMintBackupService(settingsManager, settingsStore, cdkGateway)
     val walletManager = WalletManager(
@@ -43,6 +57,7 @@ class AppContainer(context: Context) {
         settingsManager = settingsManager,
         nostrService = nostrService,
         npcService = npcService,
+        nwcManager = nwcManager,
         nostrMintBackupService = nostrMintBackupService,
         databasePathManager = walletDatabasePathManager,
         gateway = cdkGateway,
