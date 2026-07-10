@@ -3,7 +3,7 @@ import Security
 
 /// Secure storage for the mnemonic seed phrase using iOS Keychain
 class KeychainService: SecureStorageProtocol {
-    private let serviceName = "com.cashu.wallet"
+    private let serviceName = "com.cashu.me"
     private let mnemonicKey = "wallet_mnemonic"
     private let nostrPrivateKeyKey = "nostr_private_key"
     

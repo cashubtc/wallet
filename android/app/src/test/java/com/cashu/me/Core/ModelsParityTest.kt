@@ -1,0 +1,92 @@
+package com.cashu.me.Core
+
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import com.cashu.me.Models.PaymentMethodKind
+import com.cashu.me.Models.PendingReceiveToken
+import com.cashu.me.Models.TokenInfo
+import com.cashu.me.Models.TransactionKind
+import com.cashu.me.Models.TransactionStatus
+import com.cashu.me.Models.TransactionType
+import com.cashu.me.Models.WalletTransaction
+import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Test
+
+class ModelsParityTest {
+    @Test
+    fun paymentMethodSymbolsMatchSwiftModel() {
+        assertEquals("\u26A1", PaymentMethodKind.Bolt11.symbol)
+        assertEquals("\uD83D\uDD17", PaymentMethodKind.Bolt12.symbol)
+        assertEquals("\u20BF", PaymentMethodKind.Onchain.symbol)
+    }
+
+    @Test
+    fun walletTransactionCarriesCashuRequestIdAndDefaultsToNull() {
+        val transaction = WalletTransaction(
+            id = "tx1",
+            amount = 21,
+            type = TransactionType.Incoming,
+            kind = TransactionKind.Ecash,
+            dateEpochMillis = 1_000,
+            status = TransactionStatus.Completed,
+            cashuRequestId = "request1",
+        )
+
+        val encoded = Json.encodeToString(transaction)
+        assertEquals("request1", Json.decodeFromString<WalletTransaction>(encoded).cashuRequestId)
+        assertEquals("sat", Json.decodeFromString<WalletTransaction>(encoded).unit)
+
+        val legacy = """
+            {
+              "id":"tx2",
+              "amount":21,
+              "type":"Incoming",
+              "kind":"Ecash",
+              "dateEpochMillis":1000,
+              "status":"Completed"
+            }
+        """.trimIndent()
+        val decodedLegacy = Json.decodeFromString<WalletTransaction>(legacy)
+        assertNull(decodedLegacy.cashuRequestId)
+        assertEquals("sat", decodedLegacy.unit)
+    }
+
+    @Test
+    fun legacyPendingReceiveTokenGetsNewParityDefaults() {
+        val legacy = """
+            {
+              "tokenId":"pending-1",
+              "token":"cashu-token",
+              "amount":5,
+              "dateEpochMillis":1000,
+              "mintUrl":"https://mint.example.com"
+            }
+        """.trimIndent()
+
+        val pending = Json.decodeFromString<PendingReceiveToken>(legacy)
+
+        assertEquals("sat", pending.unit)
+        assertNull(pending.cashuRequestId)
+        assertNull(pending.memo)
+    }
+
+    @Test
+    fun tokenInfoParseDelegatesToTokenParser() {
+        assertNull(TokenInfo.parse("not-a-token"))
+    }
+
+    @Test
+    fun byteArraySha256MatchesKnownDigest() {
+        assertArrayEquals(
+            byteArrayOf(
+                0xBA.toByte(), 0x78, 0x16, 0xBF.toByte(), 0x8F.toByte(), 0x01, 0xCF.toByte(), 0xEA.toByte(),
+                0x41, 0x41, 0x40, 0xDE.toByte(), 0x5D, 0xAE.toByte(), 0x22, 0x23,
+                0xB0.toByte(), 0x03, 0x61, 0xA3.toByte(), 0x96.toByte(), 0x17, 0x7A, 0x9C.toByte(),
+                0xB4.toByte(), 0x10, 0xFF.toByte(), 0x61, 0xF2.toByte(), 0x00, 0x15, 0xAD.toByte(),
+            ),
+            "abc".toByteArray().sha256(),
+        )
+    }
+}

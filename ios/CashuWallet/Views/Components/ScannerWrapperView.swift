@@ -1300,9 +1300,22 @@ class QRScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsD
         }
     }
     
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+
+        // A cancelled interactive sheet dismissal fires viewWillDisappear (which
+        // stops the session) and then viewWillAppear without reloading the view,
+        // so the session must be restarted here or the preview stays frozen.
+        if (captureSession?.isRunning == false) {
+            DispatchQueue.global(qos: .userInitiated).async {
+                self.captureSession.startRunning()
+            }
+        }
+    }
+
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        
+
         if (captureSession?.isRunning == true) {
             captureSession.stopRunning()
         }

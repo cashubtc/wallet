@@ -78,11 +78,11 @@ Source:
 
 Target:
 
-- `android/app/src/test/java/org/cashu/wallet/liveintegration/LocalMintIntegrationTest.kt`
-- `android/app/src/androidTest/java/org/cashu/wallet/liveintegration/NativeWalletLocalMintInstrumentedTest.kt`
+- `android/app/src/test/java/com/cashu/me/liveintegration/LocalMintIntegrationTest.kt`
+- `android/app/src/androidTest/java/com/cashu/me/liveintegration/NativeWalletLocalMintInstrumentedTest.kt`
 - `android/app/src/debug/AndroidManifest.xml`
 - `android/app/src/debug/res/xml/debug_network_security_config.xml`
-- `android/app/src/test/java/org/cashu/wallet/App/AndroidReleaseConfigurationTest.kt`
+- `android/app/src/test/java/com/cashu/me/App/AndroidReleaseConfigurationTest.kt`
 
 Plan:
 
@@ -103,18 +103,18 @@ Source:
 
 Target:
 
-- `android/app/src/main/java/org/cashu/wallet/Core/AppLockManager.kt`
-- `android/app/src/main/java/org/cashu/wallet/Core/AppLockPolicy.kt`
-- `android/app/src/main/java/org/cashu/wallet/ui/security/AppLockGate.kt`
-- `android/app/src/main/java/org/cashu/wallet/ui/security/WalletAuthentication.kt`
-- `android/app/src/main/java/org/cashu/wallet/App/AppContainer.kt`
-- `android/app/src/main/java/org/cashu/wallet/App/MainActivity.kt`
-- `android/app/src/main/java/org/cashu/wallet/Core/SettingsManager.kt`
-- `android/app/src/main/java/org/cashu/wallet/Core/SettingsStore.kt`
-- `android/app/src/main/java/org/cashu/wallet/Core/Protocols/StorageProtocol.kt`
-- `android/app/src/main/java/org/cashu/wallet/ui/shell/CashuApp.kt`
-- `android/app/src/main/java/org/cashu/wallet/ui/settings/PrivacyScreen.kt`
-- `android/app/src/test/java/org/cashu/wallet/Core/AppLockPolicyTest.kt`
+- `android/app/src/main/java/com/cashu/me/Core/AppLockManager.kt`
+- `android/app/src/main/java/com/cashu/me/Core/AppLockPolicy.kt`
+- `android/app/src/main/java/com/cashu/me/ui/security/AppLockGate.kt`
+- `android/app/src/main/java/com/cashu/me/ui/security/WalletAuthentication.kt`
+- `android/app/src/main/java/com/cashu/me/App/AppContainer.kt`
+- `android/app/src/main/java/com/cashu/me/App/MainActivity.kt`
+- `android/app/src/main/java/com/cashu/me/Core/SettingsManager.kt`
+- `android/app/src/main/java/com/cashu/me/Core/SettingsStore.kt`
+- `android/app/src/main/java/com/cashu/me/Core/Protocols/StorageProtocol.kt`
+- `android/app/src/main/java/com/cashu/me/ui/shell/CashuApp.kt`
+- `android/app/src/main/java/com/cashu/me/ui/settings/PrivacyScreen.kt`
+- `android/app/src/test/java/com/cashu/me/Core/AppLockPolicyTest.kt`
 
 Plan:
 
@@ -137,12 +137,12 @@ Source:
 
 Target:
 
-- `android/app/src/main/java/org/cashu/wallet/Core/AppLogger.kt`
-- `android/app/src/main/java/org/cashu/wallet/Core/SentryService.kt`
+- `android/app/src/main/java/com/cashu/me/Core/AppLogger.kt`
+- `android/app/src/main/java/com/cashu/me/Core/SentryService.kt`
 - `android/app/src/main/AndroidManifest.xml`
-- `android/app/src/test/java/org/cashu/wallet/Core/AppLoggerTest.kt`
-- `android/app/src/test/java/org/cashu/wallet/Core/SentryServiceTest.kt`
-- `android/app/src/test/java/org/cashu/wallet/App/AndroidReleaseConfigurationTest.kt`
+- `android/app/src/test/java/com/cashu/me/Core/AppLoggerTest.kt`
+- `android/app/src/test/java/com/cashu/me/Core/SentryServiceTest.kt`
+- `android/app/src/test/java/com/cashu/me/App/AndroidReleaseConfigurationTest.kt`
 
 Plan:
 
@@ -160,8 +160,8 @@ Source:
 
 Target:
 
-- `android/app/src/main/java/org/cashu/wallet/ui/onboarding/OnboardingScreen.kt`
-- `android/app/src/main/java/org/cashu/wallet/Core/Wallet/WalletManager.kt`
+- `android/app/src/main/java/com/cashu/me/ui/onboarding/OnboardingScreen.kt`
+- `android/app/src/main/java/com/cashu/me/Core/Wallet/WalletManager.kt`
 
 Plan:
 
@@ -182,10 +182,10 @@ Source:
 
 Target:
 
-- `android/app/src/main/java/org/cashu/wallet/Core/CashuRequestStore.kt`
-- `android/app/src/main/java/org/cashu/wallet/Core/CashuRequestListener.kt`
-- `android/app/src/main/java/org/cashu/wallet/Models/Requests/CashuRequest.kt`
-- `android/app/src/test/java/org/cashu/wallet/Core/CashuRequestStoreTest.kt`
+- `android/app/src/main/java/com/cashu/me/Core/CashuRequestStore.kt`
+- `android/app/src/main/java/com/cashu/me/Core/CashuRequestListener.kt`
+- `android/app/src/main/java/com/cashu/me/Models/Requests/CashuRequest.kt`
+- `android/app/src/test/java/com/cashu/me/Core/CashuRequestStoreTest.kt`
 
 Plan:
 
@@ -210,13 +210,13 @@ Source:
 
 Target:
 
-- `android/app/src/main/java/org/cashu/wallet/Core/CashuPaymentRequestMintSelector.kt`
-- `android/app/src/main/java/org/cashu/wallet/Core/Wallet/WalletCashuRequestPayment.kt`
-- `android/app/src/main/java/org/cashu/wallet/ui/send/SendCashuRequestTopUp.kt`
-- `android/app/src/main/java/org/cashu/wallet/ui/send/SendDestinationResolver.kt`
-- `android/app/src/main/java/org/cashu/wallet/Core/Wallet/WalletManager.kt`
-- `android/app/src/main/java/org/cashu/wallet/ui/send/UnifiedSendScreen.kt`
-- matching tests under `android/app/src/test/java/org/cashu/wallet`
+- `android/app/src/main/java/com/cashu/me/Core/CashuPaymentRequestMintSelector.kt`
+- `android/app/src/main/java/com/cashu/me/Core/Wallet/WalletCashuRequestPayment.kt`
+- `android/app/src/main/java/com/cashu/me/ui/send/SendCashuRequestTopUp.kt`
+- `android/app/src/main/java/com/cashu/me/ui/send/SendDestinationResolver.kt`
+- `android/app/src/main/java/com/cashu/me/Core/Wallet/WalletManager.kt`
+- `android/app/src/main/java/com/cashu/me/ui/send/UnifiedSendScreen.kt`
+- matching tests under `android/app/src/test/java/com/cashu/me`
 
 Plan:
 
@@ -238,10 +238,10 @@ Source:
 
 Target:
 
-- `android/app/src/main/java/org/cashu/wallet/Core/CDK/CdkWalletGateway.kt`
-- `android/app/src/main/java/org/cashu/wallet/Core/CDK/CdkWalletGatewayImpl.kt`
-- `android/app/src/main/java/org/cashu/wallet/Core/CDK/ReceiveFeeEstimator.kt`
-- `android/app/src/test/java/org/cashu/wallet/Core/CDK/ReceiveFeeEstimatorTest.kt`
+- `android/app/src/main/java/com/cashu/me/Core/CDK/CdkWalletGateway.kt`
+- `android/app/src/main/java/com/cashu/me/Core/CDK/CdkWalletGatewayImpl.kt`
+- `android/app/src/main/java/com/cashu/me/Core/CDK/ReceiveFeeEstimator.kt`
+- `android/app/src/test/java/com/cashu/me/Core/CDK/ReceiveFeeEstimatorTest.kt`
 
 Plan:
 
@@ -264,11 +264,11 @@ Source:
 
 Target:
 
-- `android/app/src/main/java/org/cashu/wallet/ui/navigation/BackNavigationPolicy.kt`
-- `android/app/src/test/java/org/cashu/wallet/ui/navigation/BackNavigationPolicyTest.kt`
-- `android/app/src/androidTest/java/org/cashu/wallet/ui/navigation/BackNavigationComposeTest.kt`
-- `android/app/src/androidTest/java/org/cashu/wallet/ui/components/AccessibilitySemanticsComposeTest.kt`
-- `android/app/src/androidTest/java/org/cashu/wallet/ui/components/LargeFontPickerComposeTest.kt`
+- `android/app/src/main/java/com/cashu/me/ui/navigation/BackNavigationPolicy.kt`
+- `android/app/src/test/java/com/cashu/me/ui/navigation/BackNavigationPolicyTest.kt`
+- `android/app/src/androidTest/java/com/cashu/me/ui/navigation/BackNavigationComposeTest.kt`
+- `android/app/src/androidTest/java/com/cashu/me/ui/components/AccessibilitySemanticsComposeTest.kt`
+- `android/app/src/androidTest/java/com/cashu/me/ui/components/LargeFontPickerComposeTest.kt`
 - `android/macrobenchmark`
 
 Plan:
