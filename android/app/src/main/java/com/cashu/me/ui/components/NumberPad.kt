@@ -10,8 +10,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.windowInsetsBottomHeight
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Backspace
 import androidx.compose.material3.Icon
@@ -29,6 +33,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.cashu.me.Core.UnitAmountEntry
+import com.cashu.me.ui.theme.CashuTheme
 
 // Minimal keypad: no background boxes, just numbers with subtle press feedback.
 // Tighter vertical spacing for a cleaner iOS-style appearance.
@@ -100,6 +105,36 @@ fun NumberPad(
                 }
             }
         }
+    }
+}
+
+/**
+ * Shared tail for every amount-entry screen: [NumberPad] followed by a primary
+ * action button, spaced with the app-wide keypad→button gap (`spacing.page`)
+ * and a bottom spacer sized to the real navigation-bar/gesture-bar inset.
+ * Centralizing this stops each screen from hand-deriving its own spacing.
+ */
+@Composable
+fun NumberPadFooter(
+    amount: String,
+    onAmountChange: (String) -> Unit,
+    buttonText: String,
+    onButtonClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    decimals: Int = 0,
+    buttonEnabled: Boolean = true,
+    buttonLoading: Boolean = false,
+) {
+    Column(modifier = modifier) {
+        NumberPad(amount = amount, onAmountChange = onAmountChange, decimals = decimals)
+        Spacer(Modifier.height(CashuTheme.spacing.page))
+        PrimaryButton(
+            text = buttonText,
+            onClick = onButtonClick,
+            enabled = buttonEnabled,
+            loading = buttonLoading,
+        )
+        Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
     }
 }
 

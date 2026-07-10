@@ -86,7 +86,7 @@ import com.cashu.me.ui.components.InlineNotice
 import com.cashu.me.ui.components.InspectorRow
 import com.cashu.me.ui.components.MintAvatar
 import com.cashu.me.ui.components.MintPickerSheet
-import com.cashu.me.ui.components.NumberPad
+import com.cashu.me.ui.components.NumberPadFooter
 import com.cashu.me.ui.components.PaymentStatusPhase
 import com.cashu.me.ui.components.PaymentStatusScreen
 import com.cashu.me.ui.components.PrimaryButton
@@ -448,15 +448,15 @@ private fun InputFace(
             InlineNotice(text = errorText)
         }
         Spacer(Modifier.weight(1f))
-        NumberPad(amount = amount, onAmountChange = onAmountChange, decimals = decimals)
-        Spacer(Modifier.height(CashuTheme.spacing.page))
-        PrimaryButton(
-            text = if (creating) "Creating…" else selectedMethod.createActionTitle,
-            onClick = onCreate,
-            enabled = !creating,
-            loading = creating,
+        NumberPadFooter(
+            amount = amount,
+            onAmountChange = onAmountChange,
+            decimals = decimals,
+            buttonText = if (creating) "Creating…" else selectedMethod.createActionTitle,
+            onButtonClick = onCreate,
+            buttonEnabled = !creating,
+            buttonLoading = creating,
         )
-        Spacer(Modifier.navigationBarsPadding())
     }
 }
 

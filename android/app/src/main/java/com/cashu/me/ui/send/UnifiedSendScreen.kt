@@ -83,7 +83,7 @@ import com.cashu.me.ui.components.InspectorRow
 import com.cashu.me.ui.components.MintPickerSheet
 import com.cashu.me.ui.components.MintSelectorRow
 import com.cashu.me.ui.components.NoticeSeverity
-import com.cashu.me.ui.components.NumberPad
+import com.cashu.me.ui.components.NumberPadFooter
 import com.cashu.me.ui.components.PaymentStatusPhase
 import com.cashu.me.ui.components.PaymentStatusScreen
 import com.cashu.me.ui.components.PrimaryButton
@@ -782,14 +782,13 @@ private fun AmountFace(
             )
         }
         Spacer(Modifier.weight(1f))
-        NumberPad(amount = amount, onAmountChange = onAmountChange)
-        Spacer(Modifier.height(CashuTheme.spacing.page))
-        PrimaryButton(
-            text = "Continue",
-            onClick = onContinue,
-            enabled = amountValue > 0,
+        NumberPadFooter(
+            amount = amount,
+            onAmountChange = onAmountChange,
+            buttonText = "Continue",
+            onButtonClick = onContinue,
+            buttonEnabled = amountValue > 0,
         )
-        Spacer(Modifier.navigationBarsPadding())
     }
 }
 

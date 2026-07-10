@@ -81,7 +81,7 @@ import com.cashu.me.ui.components.CashuTextField
 import com.cashu.me.ui.components.InlineNotice
 import com.cashu.me.ui.components.MintPickerSheet
 import com.cashu.me.ui.components.MintSelectorRow
-import com.cashu.me.ui.components.NumberPad
+import com.cashu.me.ui.components.NumberPadFooter
 import com.cashu.me.ui.components.PrimaryButton
 import com.cashu.me.ui.components.QrCard
 import com.cashu.me.ui.components.SheetHeader
@@ -515,17 +515,15 @@ private fun InputFace(
 
         Spacer(modifier = Modifier.weight(1f, fill = true))
 
-        NumberPad(amount = amount, onAmountChange = onAmountChange, decimals = decimals)
-
-        Spacer(Modifier.height(CashuTheme.spacing.page))
-        PrimaryButton(
-            text = if (sending) "Sending…" else "Send",
-            onClick = onSend,
-            enabled = canSend,
-            loading = sending,
+        NumberPadFooter(
+            amount = amount,
+            onAmountChange = onAmountChange,
+            decimals = decimals,
+            buttonText = if (sending) "Sending…" else "Send",
+            onButtonClick = onSend,
+            buttonEnabled = canSend,
+            buttonLoading = sending,
         )
-        // Idiomatic inset spacer: exactly the navigation-bar height at the bottom.
-        Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
     }
 }
 
