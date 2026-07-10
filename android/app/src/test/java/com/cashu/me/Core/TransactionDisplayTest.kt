@@ -1,0 +1,105 @@
+package com.cashu.me.Core
+
+import com.cashu.me.Models.TransactionKind
+import com.cashu.me.Models.TransactionStatus
+import com.cashu.me.Models.TransactionType
+import com.cashu.me.Models.WalletTransaction
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class TransactionDisplayTest {
+    @Test
+    fun outgoingLightningTransactionUsesPaymentLabels() {
+        val transaction = transaction(
+            kind = TransactionKind.Lightning,
+            type = TransactionType.Outgoing,
+            invoice = "lnbc1test",
+            preimage = "proof",
+            fee = 2,
+        )
+
+        assertEquals("Lightning paid", TransactionDisplay.title(transaction))
+        assertEquals("Paid", TransactionDisplay.statusText(transaction))
+        assertEquals("lnbc1test", TransactionDisplay.qrContent(transaction))
+
+        // Detail canon: monochrome Status row first, Date second, Fee when > 0.
+        // The lightning preimage row stays dropped (on-chain keeps Address/TxID).
+        val fields = TransactionDisplay.detailFields(transaction)
+        assertEquals("Status", fields.first().label)
+        assertEquals("Date", fields[1].label)
+        assertTrue(fields.any { it.label == "Fee" && it.value == "2 sat" })
+        assertTrue(fields.none { it.label == "Payment Proof" })
+    }
+
+    @Test
+    fun settledArtifactsAreNotScannableButEcashKeepsCopyReceipt() {
+        val settledEcash = transaction(
+            kind = TransactionKind.Ecash,
+            type = TransactionType.Outgoing,
+            token = "cashu-token",
+        )
+        assertTrue(!TransactionDisplay.showsQr(settledEcash))
+        assertEquals("cashu-token", TransactionDisplay.copyableContent(settledEcash))
+
+        val pendingEcash = settledEcash.copy(status = TransactionStatus.Pending)
+        assertTrue(TransactionDisplay.showsQr(pendingEcash))
+
+        val reusableOffer = transaction(
+            kind = TransactionKind.Lightning,
+            type = TransactionType.Incoming,
+            invoice = "lno1offer",
+        )
+        assertTrue(TransactionDisplay.showsQr(reusableOffer))
+    }
+
+    @Test
+    fun onchainPreimageIsShownAsTransactionId() {
+        val transaction = transaction(
+            kind = TransactionKind.Onchain,
+            type = TransactionType.Outgoing,
+            invoice = "bc1qaddress",
+            preimage = "txid",
+        )
+
+        val fields = TransactionDisplay.detailFields(transaction)
+
+        assertEquals("Bitcoin sent", TransactionDisplay.title(transaction))
+        assertTrue(fields.any { it.label == "Address" && it.value == "bc1qaddress" })
+        assertTrue(fields.any { it.label == "Transaction ID" && it.value == "txid" })
+    }
+
+    @Test
+    fun tokenTakesPrecedenceForQrContent() {
+        val transaction = transaction(
+            kind = TransactionKind.Ecash,
+            type = TransactionType.Outgoing,
+            token = "cashu-token",
+            invoice = "request",
+        )
+
+        assertEquals("cashu-token", TransactionDisplay.qrContent(transaction))
+        assertEquals("Ecash token", TransactionDisplay.qrLabel(transaction))
+    }
+
+    private fun transaction(
+        kind: TransactionKind,
+        type: TransactionType,
+        token: String? = null,
+        invoice: String? = null,
+        preimage: String? = null,
+        fee: Long = 0,
+    ) = WalletTransaction(
+        id = "tx",
+        amount = 10,
+        type = type,
+        kind = kind,
+        dateEpochMillis = 1_700_000_000,
+        status = TransactionStatus.Completed,
+        mintUrl = "https://mint.example.com",
+        preimage = preimage,
+        token = token,
+        invoice = invoice,
+        fee = fee,
+    )
+}

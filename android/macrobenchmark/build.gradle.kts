@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "org.cashu.wallet.benchmark"
+    namespace = "com.cashu.me.benchmark"
     compileSdk = 37
 
     defaultConfig {
@@ -13,7 +13,7 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         testInstrumentationRunnerArguments["targetPackage"] = providers
             .gradleProperty("benchmarkTargetPackage")
-            .getOrElse("com.jcashu.wallet.debug")
+            .getOrElse("com.cashu.me.debug")
     }
 
     targetProjectPath = ":app"
