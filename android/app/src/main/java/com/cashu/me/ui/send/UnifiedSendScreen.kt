@@ -780,15 +780,6 @@ private fun AmountFace(
             ToPill(destination = destination)
             Spacer(Modifier.height(CashuTheme.spacing.section))
         }
-        AmountEntryHero(
-            entryRaw = amount,
-            isSat = true,
-            unit = "sat",
-            decimals = 0,
-            useBitcoinSymbol = useBitcoinSymbol,
-            formatter = formatter,
-        )
-        Spacer(Modifier.height(CashuTheme.spacing.default))
         if (mint != null) {
             MintSelectorRow(
                 mint = mint,
@@ -797,6 +788,15 @@ private fun AmountFace(
                 onUseMax = onUseMax,
             )
         }
+        Spacer(Modifier.weight(1f))
+        AmountEntryHero(
+            entryRaw = amount,
+            isSat = true,
+            unit = "sat",
+            decimals = 0,
+            useBitcoinSymbol = useBitcoinSymbol,
+            formatter = formatter,
+        )
         Spacer(Modifier.weight(1f))
         NumberPadFooter(
             amount = amount,
