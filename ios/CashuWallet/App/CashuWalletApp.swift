@@ -56,7 +56,9 @@ struct CashuWalletApp: App {
                         await walletManager.initialize()
                         CashuRequestListener.shared.attach(walletManager: walletManager)
                         await CashuRequestListener.shared.start()
-                        await walletManager.checkAllPendingTokens()
+                        if SettingsManager.shared.checkSentTokens {
+                            await walletManager.checkAllPendingTokens()
+                        }
                     }
                     .onOpenURL { url in
                         navigationManager.handleDeepLink(url: url)
@@ -81,7 +83,9 @@ struct CashuWalletApp: App {
                 case .active:
                     appLockManager.appBecameActive()
                     Task { await CashuRequestListener.shared.start() }
-                    Task { await walletManager.checkAllPendingTokens() }
+                    if SettingsManager.shared.checkSentTokens {
+                        Task { await walletManager.checkAllPendingTokens() }
+                    }
                     Task { await walletManager.syncPendingMintQuotesIfStale() }
                     Task { await walletManager.syncPendingMeltQuotes() }
                     Task { await NWCManager.shared.startIfEnabled() }

@@ -88,6 +88,7 @@ enum StorageKeys {
     // Wallet
     static let mints = "wallet.mints"
     static let activeMintUrl = "wallet.activeMintUrl"
+    static let balancesByUnit = "wallet.balancesByUnit"
     static let pendingTokens = "wallet.pendingTokens"
     static let pendingReceiveTokens = "wallet.pendingReceiveTokens"
     static let claimedTokens = "wallet.claimedTokens"
@@ -97,6 +98,7 @@ enum StorageKeys {
     static let meltQuoteFees = "wallet.meltQuoteFees"
     static let pendingMeltQuotes = "wallet.pendingMeltQuotes"
     static let mintQuoteTimestamps = "wallet.mintQuoteTimestamps"
+    static let mintKeysetRefreshTimestamps = "wallet.mintKeysetRefreshTimestamps"
     static let processedNPCQuotes = "wallet.processedNPCQuotes"
     static let nostrMintBackupLastBackupDate = "wallet.nostrMintBackup.lastBackupDate"
 
@@ -192,6 +194,7 @@ enum StorageKeys {
     static let walletDataKeys = [
         mints,
         activeMintUrl,
+        balancesByUnit,
         pendingTokens,
         pendingReceiveTokens,
         claimedTokens,
@@ -199,7 +202,9 @@ enum StorageKeys {
         savedTokens,
         paymentPreimages,
         meltQuoteFees,
+        pendingMeltQuotes,
         mintQuoteTimestamps,
+        mintKeysetRefreshTimestamps,
         processedNPCQuotes,
         nostrMintBackupLastBackupDate,
         cashuRequests,

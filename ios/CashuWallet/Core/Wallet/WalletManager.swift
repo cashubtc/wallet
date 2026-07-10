@@ -137,6 +137,9 @@ class WalletManager: ObservableObject {
     let keychainService = KeychainService()
     var mnemonic: String?
     var hasInitialized = false
+    /// Per-mint launch reconciliation. The usable wallet state is published
+    /// before this task starts, and wallet-boundary resets cancel it.
+    var startupMaintenanceTask: Task<Void, Never>?
     var npcQuoteObserver: NSObjectProtocol?
     var serviceChangeCancellables: Set<AnyCancellable> = []
     let walletDatabaseDirectoryName = "cashu-swift"

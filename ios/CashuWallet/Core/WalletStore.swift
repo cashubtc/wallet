@@ -20,6 +20,14 @@ final class WalletStore {
         set(mints, forKey: StorageKeys.mints)
     }
 
+    func loadBalancesByUnit() -> [String: UInt64] {
+        value(forKey: StorageKeys.balancesByUnit) ?? [:]
+    }
+
+    func saveBalancesByUnit(_ balances: [String: UInt64]) {
+        set(balances, forKey: StorageKeys.balancesByUnit)
+    }
+
     func loadPendingTokens() -> [PendingToken] {
         value(forKey: StorageKeys.pendingTokens, legacyKeys: [StorageKeys.Legacy.pendingTokens]) ?? []
     }
@@ -93,6 +101,16 @@ final class WalletStore {
 
     func saveMintQuoteTimestamps(_ timestamps: [String: TimeInterval]) {
         set(timestamps, forKey: StorageKeys.mintQuoteTimestamps)
+    }
+
+    /// Last successful online keyset refresh per mint. Startup uses this to
+    /// avoid contacting every configured mint on every app launch.
+    func loadMintKeysetRefreshTimestamps() -> [String: TimeInterval] {
+        value(forKey: StorageKeys.mintKeysetRefreshTimestamps) ?? [:]
+    }
+
+    func saveMintKeysetRefreshTimestamps(_ timestamps: [String: TimeInterval]) {
+        set(timestamps, forKey: StorageKeys.mintKeysetRefreshTimestamps)
     }
 
     func loadProcessedNPCQuotes() -> [String] {

@@ -28,6 +28,11 @@ class WalletStore(
     fun loadMints(): List<MintInfo> = loadList(StorageKeys.walletMints, MintInfo.serializer())
     fun saveMints(mints: List<MintInfo>) = saveList(StorageKeys.walletMints, MintInfo.serializer(), mints)
 
+    fun loadBalancesByUnit(): Map<String, Long> =
+        loadMap(StorageKeys.walletBalancesByUnit, Long.serializer())
+    fun saveBalancesByUnit(balances: Map<String, Long>) =
+        saveMap(StorageKeys.walletBalancesByUnit, Long.serializer(), balances)
+
     fun loadPendingTokens(): List<PendingToken> = loadList(StorageKeys.walletPendingTokens, PendingToken.serializer())
     fun savePendingTokens(tokens: List<PendingToken>) = saveList(StorageKeys.walletPendingTokens, PendingToken.serializer(), tokens)
 
