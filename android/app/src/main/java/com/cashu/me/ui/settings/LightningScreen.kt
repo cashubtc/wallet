@@ -1,5 +1,8 @@
 package com.cashu.me.ui.settings
 
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -89,37 +92,43 @@ fun LightningScreen(
             verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
         ) {
             SectionHeader("Lightning address")
-            if (npcState.lightningAddress.isNotBlank()) {
-                LightningAddressRow(
-                    address = npcState.lightningAddress,
-                    statusColor = npcStatusColor(npcState),
-                    onShowQr = { addressQrOpen = true },
-                )
-                CanvasDivider(leadingInset = 16.dp)
-                Column(
-                    modifier = Modifier.fillMaxWidth().padding(
-                        horizontal = CashuTheme.spacing.comfortable,
-                        vertical = CashuTheme.spacing.snug,
-                    ),
-                ) {
-                    GhostButton(
-                        text = "Copy address",
-                        onClick = {
-                            clipboard.setText(AnnotatedString(npcState.lightningAddress))
-                        },
-                        modifier = Modifier.fillMaxWidth(),
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .animateContentSize(spring(stiffness = Spring.StiffnessMediumLow)),
+            ) {
+                if (npcState.lightningAddress.isNotBlank()) {
+                    LightningAddressRow(
+                        address = npcState.lightningAddress,
+                        statusColor = npcStatusColor(npcState),
+                        onShowQr = { addressQrOpen = true },
+                    )
+                    CanvasDivider(leadingInset = 16.dp)
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(
+                            horizontal = CashuTheme.spacing.comfortable,
+                            vertical = CashuTheme.spacing.snug,
+                        ),
+                    ) {
+                        GhostButton(
+                            text = "Copy address",
+                            onClick = {
+                                clipboard.setText(AnnotatedString(npcState.lightningAddress))
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                } else {
+                    Text(
+                        text = "No Lightning address configured. Enable below to receive at an @ address.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(
+                            horizontal = CashuTheme.spacing.comfortable,
+                            vertical = CashuTheme.spacing.snug,
+                        ),
                     )
                 }
-            } else {
-                Text(
-                    text = "No Lightning address configured. Enable below to receive at an @ address.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(
-                        horizontal = CashuTheme.spacing.comfortable,
-                        vertical = CashuTheme.spacing.snug,
-                    ),
-                )
             }
 
             SectionHeader("Settings")
@@ -149,12 +158,18 @@ fun LightningScreen(
                 onClick = { if (walletState.mints.isNotEmpty()) mintPickerOpen = true },
             )
 
-            if (npcState.errorMessage != null) {
-                Spacer(Modifier.height(CashuTheme.spacing.snug))
-                InlineNotice(
-                    text = npcState.errorMessage!!,
-                    modifier = Modifier.padding(horizontal = CashuTheme.spacing.comfortable),
-                )
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .animateContentSize(spring(stiffness = Spring.StiffnessMediumLow)),
+            ) {
+                if (npcState.errorMessage != null) {
+                    Spacer(Modifier.height(CashuTheme.spacing.snug))
+                    InlineNotice(
+                        text = npcState.errorMessage!!,
+                        modifier = Modifier.padding(horizontal = CashuTheme.spacing.comfortable),
+                    )
+                }
             }
 
             Spacer(Modifier.height(CashuTheme.spacing.comfortable))

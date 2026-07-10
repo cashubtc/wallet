@@ -16,6 +16,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.ContentCopy
@@ -35,6 +36,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -54,12 +56,16 @@ import com.cashu.me.Core.SettingsManager
 import com.cashu.me.ui.components.CanvasDivider
 import com.cashu.me.ui.components.CashuTextField
 import com.cashu.me.ui.components.GhostButton
+import com.cashu.me.ui.components.IconSwap
 import com.cashu.me.ui.components.InlineNotice
 import com.cashu.me.ui.components.InspectorRow
 import com.cashu.me.ui.components.NavRow
 import com.cashu.me.ui.components.PrimaryButton
 import com.cashu.me.ui.components.SectionHeader
 import com.cashu.me.ui.theme.CashuTheme
+import kotlinx.coroutines.delay
+
+private const val NsecCopiedFeedbackMillis = 2_000L
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -75,6 +81,13 @@ fun NostrScreen(
     val nwcState by nwcManager.state.collectAsState()
     val clipboard = LocalClipboardManager.current
     var nsecRevealed by remember { mutableStateOf(false) }
+    var nsecCopied by remember { mutableStateOf(false) }
+    LaunchedEffect(nsecCopied) {
+        if (nsecCopied) {
+            delay(NsecCopiedFeedbackMillis)
+            nsecCopied = false
+        }
+    }
     var showImport by remember { mutableStateOf(false) }
     var importError by remember { mutableStateOf<String?>(null) }
     var addRelayOpen by remember { mutableStateOf(false) }
@@ -176,12 +189,17 @@ fun NostrScreen(
                     )
                 }
                 IconButton(
-                    onClick = { clipboard.setText(AnnotatedString(nostrState.nsec)) },
+                    onClick = {
+                        clipboard.setText(AnnotatedString(nostrState.nsec))
+                        nsecCopied = true
+                    },
                     enabled = nostrState.nsec.isNotBlank(),
                 ) {
-                    Icon(
-                        imageVector = Icons.Outlined.ContentCopy,
+                    IconSwap(
+                        icon = if (nsecCopied) Icons.Outlined.Check else Icons.Outlined.ContentCopy,
                         contentDescription = "Copy nsec",
+                        tint = if (nsecCopied) CashuTheme.colors.received else MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(CashuTheme.spacing.comfortable),
                     )
                 }
             }

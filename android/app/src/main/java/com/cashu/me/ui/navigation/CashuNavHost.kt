@@ -112,6 +112,7 @@ fun CashuNavHost(
                 transactionId = txId,
                 onClose = { navController.popBackStack() },
                 onClaimReceiveToken = onClaimReceiveToken,
+                snackbarHostState = container.snackbarHostState,
             )
         }
         composable(
@@ -126,6 +127,7 @@ fun CashuNavHost(
                 cashuRequestStore = container.cashuRequestStore,
                 requestId = requestId,
                 onClose = { navController.popBackStack() },
+                snackbarHostState = container.snackbarHostState,
             )
         }
 

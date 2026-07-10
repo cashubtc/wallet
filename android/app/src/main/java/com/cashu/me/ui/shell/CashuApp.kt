@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.LoadingIndicator
+import androidx.compose.material3.SnackbarHost
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -122,23 +123,32 @@ fun CashuApp(container: AppContainer) {
             walletState.needsOnboarding -> AppGate.Onboarding
             else -> AppGate.Shell
         }
-        AnimatedContent(
-            targetState = gate,
-            transitionSpec = {
-                (fadeIn(spring(stiffness = Spring.StiffnessMedium)) +
-                    scaleIn(initialScale = 0.98f, animationSpec = spring(stiffness = Spring.StiffnessMedium)))
-                    .togetherWith(fadeOut(spring(stiffness = Spring.StiffnessMedium)))
-            },
-            label = "app-gate",
-        ) { target ->
-            when (target) {
-                AppGate.Loading -> LoadingScreen()
-                AppGate.Onboarding -> OnboardingScreen(
-                    walletManager = container.walletManager,
-                    nostrMintBackupService = container.nostrMintBackupService,
-                )
-                AppGate.Shell -> AuthenticatedShell(container = container)
+        Box(modifier = Modifier.fillMaxSize()) {
+            AnimatedContent(
+                targetState = gate,
+                transitionSpec = {
+                    (fadeIn(spring(stiffness = Spring.StiffnessMedium)) +
+                        scaleIn(initialScale = 0.98f, animationSpec = spring(stiffness = Spring.StiffnessMedium)))
+                        .togetherWith(fadeOut(spring(stiffness = Spring.StiffnessMedium)))
+                },
+                label = "app-gate",
+            ) { target ->
+                when (target) {
+                    AppGate.Loading -> LoadingScreen()
+                    AppGate.Onboarding -> OnboardingScreen(
+                        walletManager = container.walletManager,
+                        nostrMintBackupService = container.nostrMintBackupService,
+                    )
+                    AppGate.Shell -> AuthenticatedShell(container = container)
+                }
             }
+            // Covers pushed nav destinations and the base shell; money-flow
+            // sheets mount their own host below since ModalBottomSheet renders
+            // in a separate Android Window this one can't reach.
+            SnackbarHost(
+                hostState = container.snackbarHostState,
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
         }
     }
 }
@@ -321,6 +331,7 @@ private fun AuthenticatedShell(container: AppContainer) {
         flow = activeFlow,
         dismissLocked = flowDismissLocked,
         onDismissed = { activeFlow = null },
+        snackbarHostState = container.snackbarHostState,
     ) { flow, close ->
         when (flow) {
             WalletFlow.ReceiveEcash -> ReceiveEcashScreen(

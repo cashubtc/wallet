@@ -25,6 +25,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -70,6 +71,7 @@ fun TransactionDetailScreen(
     transactionId: String,
     onClose: () -> Unit,
     onClaimReceiveToken: ((String) -> Unit)? = null,
+    snackbarHostState: SnackbarHostState? = null,
 ) {
     val walletState by walletManager.state.collectAsState()
     val settings by settingsManager.state.collectAsState()
@@ -142,6 +144,7 @@ fun TransactionDetailScreen(
                     content = qrContent,
                     staticOnly = transaction.kind != TransactionKind.Ecash,
                     shareSubject = title,
+                    snackbarHostState = snackbarHostState,
                 )
                 transaction.status == TransactionStatus.Completed -> Icon(
                     imageVector = Icons.Filled.CheckCircle,

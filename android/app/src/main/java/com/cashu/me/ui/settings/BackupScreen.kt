@@ -1,5 +1,8 @@
 package com.cashu.me.ui.settings
 
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -95,36 +98,43 @@ fun BackupScreen(
             WarningBanner(
                 "Anyone with these words can spend your wallet. Store them offline."
             )
-            if (revealed) {
-                SectionHeader("Recovery phrase")
-                SeedGrid(words = words)
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(CashuThemeTokens.spacing.snug),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .animateContentSize(spring(stiffness = Spring.StiffnessMediumLow)),
+                verticalArrangement = Arrangement.spacedBy(CashuThemeTokens.spacing.comfortable),
+            ) {
+                if (revealed) {
+                    SectionHeader("Recovery phrase")
+                    SeedGrid(words = words)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(CashuThemeTokens.spacing.snug),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        PrimaryButton(
+                            text = if (copied) "Copied" else "Copy phrase",
+                            onClick = {
+                                clipboard.setText(AnnotatedString(mnemonic))
+                                copied = true
+                            },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    GhostButton(
+                        text = if (verifying) "Hide verify quiz" else "Verify phrase",
+                        onClick = { verifying = !verifying },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    if (verifying) {
+                        VerifyQuiz(words = words)
+                    }
+                } else {
                     PrimaryButton(
-                        text = if (copied) "Copied" else "Copy phrase",
-                        onClick = {
-                            clipboard.setText(AnnotatedString(mnemonic))
-                            copied = true
-                        },
-                        modifier = Modifier.weight(1f),
+                        text = "Reveal phrase",
+                        onClick = { revealed = true },
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
-                GhostButton(
-                    text = if (verifying) "Hide verify quiz" else "Verify phrase",
-                    onClick = { verifying = !verifying },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                if (verifying) {
-                    VerifyQuiz(words = words)
-                }
-            } else {
-                PrimaryButton(
-                    text = "Reveal phrase",
-                    onClick = { revealed = true },
-                    modifier = Modifier.fillMaxWidth(),
-                )
             }
             Spacer(Modifier.height(CashuThemeTokens.spacing.section))
         }

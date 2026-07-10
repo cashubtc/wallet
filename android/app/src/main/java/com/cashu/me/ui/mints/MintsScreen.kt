@@ -164,18 +164,20 @@ fun MintsScreen(
             if (walletState.mints.isNotEmpty()) {
                 items(walletState.mints, key = { it.url }) { mint ->
                     val isActive = walletState.activeMint?.url == mint.url
-                    SwipeableMintRow(
-                        mint = mint,
-                        isActive = isActive,
-                        onOpen = { onOpenMint(mint) },
-                        onSetActive = {
-                            if (!isActive) {
-                                scope.launch { walletManager.setActiveMint(mint) }
-                            }
-                        },
-                        onRequestRemove = { pendingRemoval = mint },
-                    )
-                    if (mint != walletState.mints.last()) CanvasDivider(leadingInset = 64.dp)
+                    Column(modifier = Modifier.animateItem()) {
+                        SwipeableMintRow(
+                            mint = mint,
+                            isActive = isActive,
+                            onOpen = { onOpenMint(mint) },
+                            onSetActive = {
+                                if (!isActive) {
+                                    scope.launch { walletManager.setActiveMint(mint) }
+                                }
+                            },
+                            onRequestRemove = { pendingRemoval = mint },
+                        )
+                        if (mint != walletState.mints.last()) CanvasDivider(leadingInset = 64.dp)
+                    }
                 }
             }
 

@@ -13,8 +13,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -69,6 +70,7 @@ fun PrivacyCover() {
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun AppLockGate(
     appLockManager: AppLockManager,
@@ -117,7 +119,7 @@ fun AppLockGate(
             )
             if (state.isAuthenticating) {
                 Spacer(Modifier.height(CashuTheme.spacing.snug))
-                CircularProgressIndicator()
+                LoadingIndicator()
             }
         }
         PrimaryButton(

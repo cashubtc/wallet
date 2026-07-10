@@ -1,8 +1,12 @@
 package com.cashu.me.ui.components
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
@@ -112,10 +116,19 @@ fun PrimaryButton(
                     color = LocalContentColor.current,
                 )
             } else {
-                Text(
-                    text = text,
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                )
+                AnimatedContent(
+                    targetState = text,
+                    transitionSpec = {
+                        fadeIn(spring(stiffness = Spring.StiffnessMedium))
+                            .togetherWith(fadeOut(spring(stiffness = Spring.StiffnessMedium)))
+                    },
+                    label = "primary-button-text",
+                ) { current ->
+                    Text(
+                        text = current,
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                    )
+                }
             }
         }
     }
