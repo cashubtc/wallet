@@ -49,6 +49,7 @@ internal fun pendingMintQuoteTransactions(
             },
             mintUrl = mintUrl,
             invoice = quote.request,
+            unit = quote.unit,
             quoteId = quote.id,
         )
     }

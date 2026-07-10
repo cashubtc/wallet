@@ -21,6 +21,7 @@ internal fun pendingSentTokenTransactions(tokens: List<PendingToken>): List<Wall
             mintUrl = token.mintUrl,
             token = token.token,
             fee = token.fee,
+            unit = token.unit,
             isPendingToken = true,
         )
     }
@@ -37,6 +38,7 @@ internal fun pendingReceiveTokenTransactions(tokens: List<PendingReceiveToken>):
             status = TransactionStatus.Pending,
             mintUrl = token.mintUrl,
             token = token.token,
+            unit = token.unit,
             isPendingToken = true,
             cashuRequestId = token.cashuRequestId?.takeIf(String::isNotBlank),
         )
@@ -55,6 +57,7 @@ internal fun claimedTokenTransactions(tokens: List<ClaimedToken>): List<WalletTr
             mintUrl = token.mintUrl,
             token = token.token,
             fee = token.fee,
+            unit = token.unit,
         )
     }
 
@@ -87,10 +90,14 @@ internal fun mergeSentTokenTransactions(
     fun normalizedMint(url: String?): String =
         url.orEmpty().trim().trimEnd('/').lowercase()
 
-    fun claimMatch(mintUrl: String, amount: Long, dateEpochMillis: Long): Int? {
+    fun claimMatch(mintUrl: String, amount: Long, unit: String, dateEpochMillis: Long): Int? {
         val target = normalizedMint(mintUrl)
         val best = available
-            .filter { rows[it].amount == amount && normalizedMint(rows[it].mintUrl) == target }
+            .filter {
+                rows[it].amount == amount &&
+                    rows[it].unit.equals(unit, ignoreCase = true) &&
+                    normalizedMint(rows[it].mintUrl) == target
+            }
             .minByOrNull { kotlin.math.abs(rows[it].dateEpochMillis - dateEpochMillis) }
         if (best != null) available.remove(best)
         return best
@@ -99,7 +106,7 @@ internal fun mergeSentTokenTransactions(
     val leftovers = mutableListOf<WalletTransaction>()
 
     pendingTokens.forEach { token ->
-        val index = claimMatch(token.mintUrl, token.amount, token.dateEpochMillis)
+        val index = claimMatch(token.mintUrl, token.amount, token.unit, token.dateEpochMillis)
         if (index != null) {
             val row = rows[index]
             rows[index] = row.copy(
@@ -114,7 +121,7 @@ internal fun mergeSentTokenTransactions(
     }
 
     claimedTokens.forEach { token ->
-        val index = claimMatch(token.mintUrl, token.amount, token.dateEpochMillis)
+        val index = claimMatch(token.mintUrl, token.amount, token.unit, token.dateEpochMillis)
         if (index != null) {
             val row = rows[index]
             rows[index] = row.copy(

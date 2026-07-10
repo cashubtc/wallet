@@ -24,6 +24,17 @@ class AmountFormatterTest {
     }
 
     @Test
+    fun walletAmountFormatsFiatMintUnitsInMinorUnits() {
+        assertEquals("$5.00", formatter.formatWalletAmount(500, "usd", useBitcoinSymbol = false))
+        assertEquals("€12.34", formatter.formatWalletAmount(1_234, "EUR", useBitcoinSymbol = true))
+    }
+
+    @Test
+    fun walletAmountFormatsUnknownMintUnitsWithTheirCode() {
+        assertEquals("42 POINTS", formatter.formatWalletAmount(42, "points", useBitcoinSymbol = false))
+    }
+
+    @Test
     fun amountDisplayPrimaryNormalizesStoredValues() {
         assertEquals(AmountDisplayPrimary.Sats, AmountDisplayPrimary.fromRaw(" SATS "))
         assertEquals(AmountDisplayPrimary.Fiat, AmountDisplayPrimary.fromRaw("unknown"))

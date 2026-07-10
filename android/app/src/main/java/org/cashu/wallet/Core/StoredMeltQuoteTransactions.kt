@@ -16,6 +16,7 @@ internal fun storedMeltQuoteTransactions(
     nowEpochMillis: Long,
     preimages: Map<String, String>,
     fees: Map<String, Long>,
+    pendingMeltQuoteIds: Set<String> = emptySet(),
 ): List<WalletTransaction> =
     quotes.mapNotNull { quote ->
         val mintUrl = quote.mintUrl.takeIf { it.isNotBlank() && it in trackedMintUrls } ?: return@mapNotNull null
@@ -25,7 +26,14 @@ internal fun storedMeltQuoteTransactions(
             MeltQuoteState.Paid -> TransactionStatus.Completed
             MeltQuoteState.Pending -> TransactionStatus.Pending
             MeltQuoteState.Failed -> TransactionStatus.Failed
-            MeltQuoteState.Unpaid, MeltQuoteState.Unknown -> return@mapNotNull null
+            // CDK intentionally leaves an async-accepted melt's local quote
+            // unpaid; the app-side durable marker is the pending state.
+            MeltQuoteState.Unpaid -> if (quote.id in pendingMeltQuoteIds) {
+                TransactionStatus.Pending
+            } else {
+                return@mapNotNull null
+            }
+            MeltQuoteState.Unknown -> return@mapNotNull null
         }
 
         WalletTransaction(
@@ -46,4 +54,3 @@ internal fun storedMeltQuoteTransactions(
             quoteId = quote.id,
         )
     }
-

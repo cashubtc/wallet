@@ -2,9 +2,12 @@ package org.cashu.wallet.Core
 
 import java.net.URL
 import java.util.UUID
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,6 +22,8 @@ import org.cashu.wallet.Core.Protocols.StorageKeys
 import org.cashu.wallet.Core.Protocols.WalletServiceProtocol
 import org.cashu.wallet.Models.MeltPaymentResult
 import org.cashu.wallet.Models.MeltQuoteInfo
+import org.cashu.wallet.Models.MeltQuoteState
+import org.cashu.wallet.Models.MeltSettlement
 import org.cashu.wallet.Models.MintInfo
 import org.cashu.wallet.Models.MintQuoteInfo
 import org.cashu.wallet.Models.PaymentMethodKind
@@ -49,6 +54,7 @@ class WalletManager(
     private val mintQuoteSyncService = WalletMintQuoteSyncService(gateway, walletStore)
     private val transactionLoader = WalletTransactionLoader(walletStore, gateway)
     private val npcQuotesInFlight = mutableSetOf<String>()
+    private val pendingMeltWaiters = mutableMapOf<String, Job>()
     private var processedNPCQuotes = walletStore.loadProcessedNPCQuotes().toMutableSet()
     var walletBoundaryPauseHandler: (() -> Unit)? = null
     var walletBoundaryResetHandler: (() -> Unit)? = null
@@ -136,6 +142,7 @@ class WalletManager(
 
     override suspend fun deleteWallet() {
         withLoading {
+            cancelPendingMeltWaiters()
             walletBoundaryPauseHandler?.invoke()
             gateway.closeWalletRepository()
             secureStorage.delete(StorageKeys.secureWalletMnemonic)
@@ -364,11 +371,104 @@ class WalletManager(
     override suspend fun meltTokens(quoteId: String, mintUrl: String?): MeltPaymentResult =
         withLoadingResult {
             val result = gateway.meltTokens(quoteId, mintUrl)
-            transactionLoader.saveMeltPaymentMetadata(quoteId, result)
+            if (result.settlement == MeltSettlement.Pending) {
+                rememberPendingMeltQuote(quoteId, result.mintUrl)
+                watchPendingMelt(quoteId)
+            } else {
+                transactionLoader.saveMeltPaymentMetadata(quoteId, result)
+            }
             refreshBalance()
             loadTransactions()
             result
         }
+
+    /** Reconcile async-accepted NUT-05 melts after process death or foregrounding. */
+    suspend fun syncPendingMeltQuotes(): Int {
+        val tracked = walletStore.loadPendingMeltQuotes()
+        if (tracked.isEmpty()) return 0
+
+        var terminalCount = 0
+        tracked.forEach { (quoteId, mintUrl) ->
+            if (pendingMeltWaiters[quoteId]?.isActive == true) return@forEach
+            runCatching { gateway.checkMeltQuote(quoteId, mintUrl) }
+                .onSuccess { quote ->
+                    when (quote.state) {
+                        MeltQuoteState.Paid -> {
+                            transactionLoader.saveMeltPaymentMetadata(
+                                quoteId,
+                                MeltPaymentResult(
+                                    preimage = quote.paymentProof,
+                                    amount = quote.amount,
+                                    // The actual fee is unavailable after relaunch;
+                                    // retain the quote reserve as the display fallback.
+                                    feePaid = quote.feeReserve,
+                                    mintUrl = quote.mintUrl,
+                                    paymentMethod = quote.paymentMethod,
+                                    request = quote.request,
+                                ),
+                                persistActualFee = false,
+                            )
+                            forgetPendingMeltQuote(quoteId)
+                            terminalCount += 1
+                        }
+                        MeltQuoteState.Unpaid, MeltQuoteState.Failed -> {
+                            // Once async processing was accepted, unpaid is a
+                            // terminal compensated saga, not a quote to retry.
+                            forgetPendingMeltQuote(quoteId)
+                            transactionLoader.removeMeltTransaction(quoteId)
+                            terminalCount += 1
+                        }
+                        MeltQuoteState.Pending, MeltQuoteState.Unknown -> Unit
+                    }
+                }
+                .onFailure { AppLogger.wallet.error("Pending melt status check failed for $quoteId", it) }
+        }
+        if (terminalCount > 0) {
+            refreshBalance()
+            loadTransactions()
+        }
+        return terminalCount
+    }
+
+    private fun watchPendingMelt(quoteId: String) {
+        if (pendingMeltWaiters[quoteId]?.isActive == true) return
+        val job = scope.launch(start = CoroutineStart.LAZY) {
+            try {
+                val completion = gateway.waitForPendingMelt(quoteId) ?: return@launch
+                when (completion.state) {
+                    MeltQuoteState.Paid -> transactionLoader.saveMeltPaymentMetadata(quoteId, completion.result)
+                    MeltQuoteState.Unpaid, MeltQuoteState.Failed -> transactionLoader.removeMeltTransaction(quoteId)
+                    MeltQuoteState.Pending, MeltQuoteState.Unknown -> return@launch
+                }
+                forgetPendingMeltQuote(quoteId)
+                refreshBalance()
+                loadTransactions()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                // Keep the durable marker; foreground sync will retry.
+                AppLogger.wallet.error("Pending melt wait failed for $quoteId", error)
+            } finally {
+                pendingMeltWaiters.remove(quoteId)
+            }
+        }
+        pendingMeltWaiters[quoteId] = job
+        job.start()
+    }
+
+    private fun rememberPendingMeltQuote(quoteId: String, mintUrl: String) {
+        walletStore.savePendingMeltQuotes(walletStore.loadPendingMeltQuotes() + (quoteId to mintUrl))
+    }
+
+    private fun forgetPendingMeltQuote(quoteId: String) {
+        val tracked = walletStore.loadPendingMeltQuotes()
+        if (quoteId in tracked) walletStore.savePendingMeltQuotes(tracked - quoteId)
+    }
+
+    private fun cancelPendingMeltWaiters() {
+        pendingMeltWaiters.values.forEach(Job::cancel)
+        pendingMeltWaiters.clear()
+    }
 
     override suspend fun sendTokens(amount: Long, memo: String?, p2pkPubkey: String?, mintUrl: String?, unit: String): SendTokenResult {
         val selectedMint = mintUrl ?: mutableState.value.activeMint?.url ?: throw IllegalStateException("No active mint.")
@@ -612,6 +712,7 @@ class WalletManager(
         val backups = databasePathManager.backupWalletDatabaseFiles()
         val walletSnapshot = walletStore.snapshotWalletScopedData()
         val settingsSnapshot = settingsManager.snapshotWalletScopedData()
+        cancelPendingMeltWaiters()
         walletBoundaryPauseHandler?.invoke()
 
         runCatching {

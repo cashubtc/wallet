@@ -190,6 +190,7 @@ fun HistoryScreen(
                     // mint quotes, then re-verify pending sent tokens.
                     runCatching {
                         walletManager.syncPendingMintQuotes()
+                        walletManager.syncPendingMeltQuotes()
                         walletManager.loadTransactions()
                         if (walletState.pendingTokens.isNotEmpty()) {
                             walletManager.checkAllPendingTokens()
@@ -258,10 +259,14 @@ fun HistoryScreen(
                                                 transaction = tx,
                                                 title = TransactionDisplay.title(tx),
                                                 timestamp = formatRelativeTimestamp(tx.dateEpochMillis),
-                                                primaryAmount = formatter.formatWalletSats(
-                                                    tx.amount, settings.useBitcoinSymbol,
+                                                primaryAmount = formatter.formatWalletAmount(
+                                                    tx.amount, tx.unit, settings.useBitcoinSymbol,
                                                 ),
-                                                secondaryAmount = if (settings.showFiatBalance && priceState.btcPrice > 0)
+                                                secondaryAmount = if (
+                                                    tx.unit.equals("sat", ignoreCase = true) &&
+                                                    settings.showFiatBalance &&
+                                                    priceState.btcPrice > 0
+                                                )
                                                     formatter.formatFiat(
                                                         tx.amount,
                                                         priceState.btcPrice,
@@ -490,4 +495,3 @@ internal fun groupHistoryItems(
         list.takeIf { it.isNotEmpty() }?.let { HistorySection2(title, it) }
     }
 }
-

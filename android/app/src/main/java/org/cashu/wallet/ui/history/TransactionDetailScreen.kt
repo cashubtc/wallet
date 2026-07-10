@@ -241,7 +241,11 @@ private fun HeroAmount(
     formatter: AmountFormatter,
     useBitcoinSymbol: Boolean,
 ) {
-    val formatted = formatter.formatWalletSats(transaction.amount, useBitcoinSymbol)
+    val formatted = formatter.formatWalletAmount(
+        transaction.amount,
+        transaction.unit,
+        useBitcoinSymbol,
+    )
     val text = if (transaction.status == TransactionStatus.Pending) {
         formatted
     } else {

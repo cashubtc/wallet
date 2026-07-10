@@ -82,6 +82,23 @@ class StoredMeltQuoteTransactionsTest {
     }
 
     @Test
+    fun surfacesDurablyTrackedUnpaidAsyncMeltAsPending() {
+        val rows = storedMeltQuoteTransactions(
+            quotes = listOf(quote(id = "async-melt", state = MeltQuoteState.Unpaid)),
+            trackedMintUrls = setOf(MintUrl),
+            completedQuoteIds = emptySet(),
+            timestamps = mutableMapOf(),
+            nowEpochMillis = 42,
+            preimages = emptyMap(),
+            fees = emptyMap(),
+            pendingMeltQuoteIds = setOf("async-melt"),
+        )
+
+        assertEquals(TransactionStatus.Pending, rows.single().status)
+        assertEquals("async-melt", rows.single().quoteId)
+    }
+
+    @Test
     fun timestampPruningKeepsOutgoingQuoteRows() {
         val outgoing = WalletTransaction(
             id = "melt",

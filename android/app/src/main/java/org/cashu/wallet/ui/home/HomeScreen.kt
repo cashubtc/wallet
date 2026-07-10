@@ -292,10 +292,14 @@ fun HomeScreen(
                                             transaction = tx,
                                             title = TransactionDisplay.title(tx),
                                             timestamp = formatRelativeTimestamp(tx.dateEpochMillis),
-                                            primaryAmount = formatter.formatWalletSats(
-                                                tx.amount, settings.useBitcoinSymbol,
+                                            primaryAmount = formatter.formatWalletAmount(
+                                                tx.amount, tx.unit, settings.useBitcoinSymbol,
                                             ),
-                                            secondaryAmount = if (settings.showFiatBalance && priceState.btcPrice > 0)
+                                            secondaryAmount = if (
+                                                tx.unit.equals("sat", ignoreCase = true) &&
+                                                settings.showFiatBalance &&
+                                                priceState.btcPrice > 0
+                                            )
                                                 formatter.formatFiat(tx.amount, priceState.btcPrice, settings.bitcoinPriceCurrency)
                                             else null,
                                         ),

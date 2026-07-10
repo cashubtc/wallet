@@ -36,6 +36,7 @@ class ModelsParityTest {
 
         val encoded = Json.encodeToString(transaction)
         assertEquals("request1", Json.decodeFromString<WalletTransaction>(encoded).cashuRequestId)
+        assertEquals("sat", Json.decodeFromString<WalletTransaction>(encoded).unit)
 
         val legacy = """
             {
@@ -47,7 +48,9 @@ class ModelsParityTest {
               "status":"Completed"
             }
         """.trimIndent()
-        assertNull(Json.decodeFromString<WalletTransaction>(legacy).cashuRequestId)
+        val decodedLegacy = Json.decodeFromString<WalletTransaction>(legacy)
+        assertNull(decodedLegacy.cashuRequestId)
+        assertEquals("sat", decodedLegacy.unit)
     }
 
     @Test

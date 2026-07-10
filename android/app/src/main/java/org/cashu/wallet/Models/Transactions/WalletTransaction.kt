@@ -17,6 +17,8 @@ data class WalletTransaction(
     val token: String? = null,
     val invoice: String? = null,
     val fee: Long = 0,
+    /** Mint account unit for amount (sat, usd, eur, or a custom unit). */
+    val unit: String = "sat",
     val isPendingToken: Boolean = false,
     val quoteId: String? = null,
     val cashuRequestId: String? = null,

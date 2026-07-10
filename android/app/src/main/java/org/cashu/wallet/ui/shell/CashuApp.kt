@@ -96,6 +96,7 @@ fun CashuApp(container: AppContainer) {
                     container.walletManager.checkAllPendingTokens()
                 }
                 container.walletManager.syncPendingMintQuotes()
+                container.walletManager.syncPendingMeltQuotes()
             } else {
                 container.appLockManager.endAuthenticatedSession()
                 container.npcService.appEnteredBackground()
@@ -129,6 +130,7 @@ fun CashuApp(container: AppContainer) {
                                 container.walletManager.checkAllPendingTokens()
                             }
                             container.walletManager.syncPendingMintQuotes()
+                            container.walletManager.syncPendingMeltQuotes()
                         }
                     }
                     Lifecycle.Event.ON_RESUME -> {

@@ -20,6 +20,7 @@ class CdkGatewayThreadingTest {
             .findAll(source)
             .map { it.groupValues[1] }
             .filter { method ->
+                if (method == "waitForPendingMelt") return@filter false
                 val declarationStart = source.indexOf("override suspend fun $method")
                 val declarationEnd = source.indexOf('\n', declarationStart).takeIf { it >= 0 } ?: source.length
                 !source.substring(declarationStart, declarationEnd).contains("= cdkCall")
@@ -27,6 +28,9 @@ class CdkGatewayThreadingTest {
             .toList()
 
         assertTrue("Expected CDK suspend methods to use cdkCall: $missingGuard", missingGuard.isEmpty())
+        // A pending melt may wait for minutes. It must leave the gateway mutex
+        // free while the native cancellable handle polls in the background.
+        assertTrue(source.contains("withContext(Dispatchers.IO) { record.handle.wait() }"))
     }
 
     @Test

@@ -2,7 +2,9 @@ package org.cashu.wallet.Core
 
 import java.text.NumberFormat
 import java.util.Locale
+import org.cashu.wallet.Core.Protocols.CurrencyAmount
 import org.cashu.wallet.Core.Protocols.CurrencyDisplay
+import org.cashu.wallet.Core.Protocols.CurrencyRegistry
 
 class AmountFormatter(
     private val locale: Locale = Locale.getDefault(),
@@ -18,6 +20,13 @@ class AmountFormatter(
     fun formatWalletSats(amount: Long, useBitcoinSymbol: Boolean, includeUnit: Boolean = true): String {
         return formatSatsValue(amount, includeUnit = includeUnit, useBitcoinSymbol = useBitcoinSymbol)
     }
+
+    fun formatWalletAmount(amount: Long, unit: String, useBitcoinSymbol: Boolean): String =
+        if (unit.equals("sat", ignoreCase = true)) {
+            formatWalletSats(amount, useBitcoinSymbol)
+        } else {
+            CurrencyAmount(amount, CurrencyRegistry.currencyForMintUnit(unit)).formatted(locale = locale)
+        }
 
     private fun formatSatsValue(amount: Long, includeUnit: Boolean, useBitcoinSymbol: Boolean): String {
         val formatted = NumberFormat.getIntegerInstance(locale).format(amount)

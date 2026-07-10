@@ -7,6 +7,7 @@ import org.cashu.wallet.Models.MeltQuoteInfo
 import org.cashu.wallet.Models.MintInfo
 import org.cashu.wallet.Models.MintQuoteInfo
 import org.cashu.wallet.Models.PaymentMethodKind
+import org.cashu.wallet.Models.PendingMeltCompletion
 import org.cashu.wallet.Models.RestoreMintResult
 import org.cashu.wallet.Models.SendTokenResult
 import org.cashu.wallet.Models.WalletTransaction
@@ -51,6 +52,10 @@ interface CdkWalletGateway {
     suspend fun createMeltQuote(request: String, amountSats: Long? = null, preferredMintURL: String? = null): MeltQuoteInfo
     suspend fun listMeltQuotes(): List<MeltQuoteInfo>
     suspend fun meltTokens(quoteId: String, mintUrl: String? = null): MeltPaymentResult
+    /** Wait for an in-process NUT-05 async melt handle, or null after relaunch. */
+    suspend fun waitForPendingMelt(quoteId: String): PendingMeltCompletion?
+    /** Poll a stored melt and let CDK finish or compensate its wallet saga. */
+    suspend fun checkMeltQuote(quoteId: String, mintUrl: String): MeltQuoteInfo
     suspend fun sendEcashToken(amount: Long, memo: String?, p2pkPubkey: String?, mintUrl: String, unit: String = "sat", p2pkSigningKeys: List<String> = emptyList()): SendTokenResult
     suspend fun receiveEcashToken(tokenString: String, p2pkSigningKeys: List<String> = emptyList()): Long
     suspend fun calculateReceiveFee(tokenString: String): Long

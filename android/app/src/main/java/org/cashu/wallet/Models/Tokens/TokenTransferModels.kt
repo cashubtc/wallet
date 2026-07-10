@@ -50,6 +50,7 @@ data class ClaimedToken(
     val mintUrl: String,
     val memo: String? = null,
     val claimedDateEpochMillis: Long,
+    val unit: String = "sat",
 ) {
     val id: String get() = tokenId
 }

@@ -70,6 +70,7 @@ import org.cashu.wallet.Core.WalletManager
 import org.cashu.wallet.Core.routeForCashuPaymentRequest
 import org.cashu.wallet.Models.MeltPaymentResult
 import org.cashu.wallet.Models.MeltQuoteInfo
+import org.cashu.wallet.Models.MeltSettlement
 import org.cashu.wallet.Models.MintInfo
 import org.cashu.wallet.Models.MintQuoteInfo
 import org.cashu.wallet.ui.components.AmountEntryHero
@@ -193,7 +194,8 @@ fun UnifiedSendScreen(
     }
     val activeMint = when (val route = cashuRoute) {
         is CashuPaymentRequestRoute.PayWithEcash -> route.mint
-        else -> walletState.mints.firstOrNull { it.url == activeMintUrl } ?: walletState.activeMint
+        else -> walletState.mints.firstOrNull { it.url == (meltQuote?.mintUrl ?: activeMintUrl) }
+            ?: walletState.activeMint
     }
 
     fun reset(toInput: Boolean = true) {
@@ -251,7 +253,7 @@ fun UnifiedSendScreen(
                 when (rail) {
                     is LockedRail.Melt -> {
                         val quote = meltQuote ?: error("No quote.")
-                        val result = walletManager.meltTokens(quote.id, activeMintUrl)
+                        val result = walletManager.meltTokens(quote.id, quote.mintUrl)
                         status = SendStatus.Sent(result)
                     }
                     is LockedRail.Creq -> {
@@ -265,7 +267,7 @@ fun UnifiedSendScreen(
                                     amountSats = null,
                                     preferredMintURL = activeMintUrl,
                                 )
-                                val result = walletManager.meltTokens(quote.id, activeMintUrl)
+                                val result = walletManager.meltTokens(quote.id, quote.mintUrl)
                                 status = SendStatus.Sent(result)
                                 return@launch
                             }
@@ -379,7 +381,11 @@ fun UnifiedSendScreen(
                 val sentMint = current.result?.mintUrl ?: activeMintUrl
                 PaymentStatusScreen(
                     phase = PaymentStatusPhase.Success,
-                    title = "Payment sent",
+                    title = if (current.result?.settlement == MeltSettlement.Pending) {
+                        "Payment processing"
+                    } else {
+                        "Payment sent"
+                    },
                     onDone = onClose,
                     rows = {
                         if (sentAmount > 0L) {

@@ -34,6 +34,7 @@ internal class WalletTransactionLoader(
         val pendingTokens = walletStore.loadPendingTokens()
         val pendingReceiveTokens = walletStore.loadPendingReceiveTokens()
         val claimedTokens = walletStore.loadClaimedTokens()
+        val pendingMeltQuoteIds = walletStore.loadPendingMeltQuotes().keys
         val remote = runCatching { gateway.listTransactions(mintUrls) }.getOrDefault(emptyList())
             .map { it.withStoredMeltMetadata(preimages, meltFees) }
         val completedQuoteIds = remote.mapNotNull { it.quoteId }.toSet()
@@ -63,6 +64,7 @@ internal class WalletTransactionLoader(
                     nowEpochMillis = System.currentTimeMillis(),
                     preimages = preimages,
                     fees = meltFees,
+                    pendingMeltQuoteIds = pendingMeltQuoteIds,
                 )
             }
         val receiveTokenTransactions = pendingReceiveTokenTransactions(pendingReceiveTokens)
@@ -99,6 +101,7 @@ internal class WalletTransactionLoader(
             mintUrl = pendingToken.mintUrl,
             memo = pendingToken.memo,
             claimedDateEpochMillis = System.currentTimeMillis(),
+            unit = pendingToken.unit,
         )
         val claimed = walletStore.loadClaimedTokens()
             .filterNot { it.tokenId == pendingToken.tokenId } + claimedToken
@@ -107,11 +110,17 @@ internal class WalletTransactionLoader(
         return TokenHistoryMutation(pendingTokens = pending, claimedTokens = claimed)
     }
 
-    fun saveMeltPaymentMetadata(quoteId: String, result: MeltPaymentResult) {
+    fun saveMeltPaymentMetadata(
+        quoteId: String,
+        result: MeltPaymentResult,
+        persistActualFee: Boolean = true,
+    ) {
         result.preimage?.let { preimage ->
             walletStore.savePaymentPreimages(walletStore.loadPaymentPreimages() + (quoteId to preimage))
         }
-        walletStore.saveMeltQuoteFees(walletStore.loadMeltQuoteFees() + (quoteId to result.feePaid))
+        if (persistActualFee) {
+            walletStore.saveMeltQuoteFees(walletStore.loadMeltQuoteFees() + (quoteId to result.feePaid))
+        }
 
         val current = walletStore.loadTransactions()
         val existing = current.firstOrNull { it.quoteId == quoteId || it.id == quoteId }
@@ -134,6 +143,12 @@ internal class WalletTransactionLoader(
         )
         walletStore.saveTransactions(
             listOf(transaction) + current.filterNot { it.id == transaction.id || it.quoteId == quoteId },
+        )
+    }
+
+    fun removeMeltTransaction(quoteId: String) {
+        walletStore.saveTransactions(
+            walletStore.loadTransactions().filterNot { it.id == quoteId || it.quoteId == quoteId },
         )
     }
 

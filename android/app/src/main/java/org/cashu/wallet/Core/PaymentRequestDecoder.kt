@@ -28,6 +28,13 @@ sealed interface PaymentRequestDecodeResult {
     data object Unrecognized : PaymentRequestDecodeResult
 }
 
+data class LightningRequestMetadata(
+    val normalizedRequest: String,
+    val paymentMethod: PaymentMethodKind,
+    val amountSats: Long?,
+    val amountMsat: Long?,
+)
+
 object PaymentRequestParser {
     fun normalizeLightningRequest(request: String): String {
         val trimmed = request.trim()
@@ -113,6 +120,25 @@ object PaymentRequestDecoder {
         return if (runCatching { decodeInvoice(normalized) }.isSuccess) normalized else null
     }
 
+    fun lightningMetadata(raw: String): LightningRequestMetadata? {
+        val normalized = encodedLightningRequest(raw)
+            ?: PaymentRequestParser.normalizeLightningRequest(raw)
+        val decoded = runCatching { decodeInvoice(normalized) }.getOrNull() ?: return null
+        val amountMsat = decoded.amountMsat
+            ?.takeIf { it <= Long.MAX_VALUE.toULong() }
+            ?.toLong()
+        val method = when (decoded.paymentType) {
+            CdkPaymentType.BOLT11 -> PaymentMethodKind.Bolt11
+            CdkPaymentType.BOLT12 -> PaymentMethodKind.Bolt12
+        }
+        return LightningRequestMetadata(
+            normalizedRequest = normalized,
+            paymentMethod = method,
+            amountSats = amountMsat?.let(::satsCeiling),
+            amountMsat = amountMsat,
+        )
+    }
+
     fun encodedCashuPaymentRequest(raw: String): String? {
         val trimmed = raw.trim()
         if (trimmed.isEmpty()) return null
@@ -149,14 +175,17 @@ object PaymentRequestDecoder {
     }
 
     private fun decodedLightningRequest(raw: String): PaymentRequestDecodeResult? {
-        val normalized = encodedLightningRequest(raw) ?: return null
-        val decoded = runCatching { decodeInvoice(normalized) }.getOrNull() ?: return null
-        val amountSats = decoded.amountMsat?.let { (it.toLong() + 999) / 1000 }
-        return when (decoded.paymentType) {
-            CdkPaymentType.BOLT11 -> PaymentRequestDecodeResult.Bolt11(amountSats, decoded.description)
-            CdkPaymentType.BOLT12 -> PaymentRequestDecodeResult.Bolt12(amountSats, decoded.description)
+        val metadata = lightningMetadata(raw) ?: return null
+        val description = runCatching { decodeInvoice(metadata.normalizedRequest).description }.getOrNull()
+        return when (metadata.paymentMethod) {
+            PaymentMethodKind.Bolt11 -> PaymentRequestDecodeResult.Bolt11(metadata.amountSats, description)
+            PaymentMethodKind.Bolt12 -> PaymentRequestDecodeResult.Bolt12(metadata.amountSats, description)
+            PaymentMethodKind.Onchain -> null
         }
     }
+
+    private fun satsCeiling(amountMsat: Long): Long =
+        amountMsat / 1_000 + if (amountMsat % 1_000 == 0L) 0 else 1
 
     fun amountLocked(result: PaymentRequestDecodeResult): Boolean = when (result) {
         is PaymentRequestDecodeResult.Bolt11 -> result.amountSats != null

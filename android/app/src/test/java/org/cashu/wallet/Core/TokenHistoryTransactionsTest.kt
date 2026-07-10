@@ -60,6 +60,7 @@ class TokenHistoryTransactionsTest {
         assertEquals("cashu-receive", row.token)
         assertEquals("request-1", row.cashuRequestId)
         assertEquals("held payment", row.memo)
+        assertEquals("usd", row.unit)
         assertEquals(0L, row.fee)
         assertTrue(row.isPendingToken)
     }
@@ -77,6 +78,7 @@ class TokenHistoryTransactionsTest {
                     mintUrl = MintUrl,
                     memo = "claimed memo",
                     claimedDateEpochMillis = 400,
+                    unit = "eur",
                 ),
             ),
         )
@@ -88,6 +90,7 @@ class TokenHistoryTransactionsTest {
         assertEquals("cashu-claimed", row.token)
         assertEquals(2L, row.fee)
         assertEquals("claimed memo", row.memo)
+        assertEquals("eur", row.unit)
     }
 
     private companion object {

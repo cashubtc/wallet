@@ -1,12 +1,16 @@
 package org.cashu.wallet.Core.CDK
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.util.concurrent.ConcurrentHashMap
+import org.cashu.wallet.Core.LightningAddressResolver
+import org.cashu.wallet.Core.LightningAddressResolverError
 import org.cashu.wallet.Core.LightningRequestParser
 import org.cashu.wallet.Core.NPCQuote
 import org.cashu.wallet.Core.mintQuoteAmountForDomain
@@ -18,10 +22,12 @@ import org.cashu.wallet.Core.PaymentRequestParser
 import org.cashu.wallet.Models.MeltPaymentResult
 import org.cashu.wallet.Models.MeltQuoteInfo
 import org.cashu.wallet.Models.MeltQuoteState
+import org.cashu.wallet.Models.MeltSettlement
 import org.cashu.wallet.Models.MintInfo
 import org.cashu.wallet.Models.MintQuoteInfo
 import org.cashu.wallet.Models.MintQuoteState
 import org.cashu.wallet.Models.PaymentMethodKind
+import org.cashu.wallet.Models.PendingMeltCompletion
 import org.cashu.wallet.Models.RestoreMintResult
 import org.cashu.wallet.Models.SendTokenResult
 import org.cashu.wallet.Models.TransactionKind
@@ -33,11 +39,13 @@ import org.cashudevkit.BackupOptions as CdkBackupOptions
 import org.cashudevkit.BitcoinNetwork as CdkBitcoinNetwork
 import org.cashudevkit.CurrencyUnit as CdkCurrencyUnit
 import org.cashudevkit.MeltQuote as CdkMeltQuote
+import org.cashudevkit.MeltConfirmOutcome as CdkMeltConfirmOutcome
 import org.cashudevkit.MintInfo as CdkMintInfo
 import org.cashudevkit.MintQuote as CdkMintQuote
 import org.cashudevkit.MintUrl as CdkMintUrl
 import org.cashudevkit.NotificationPayload as CdkNotificationPayload
 import org.cashudevkit.P2pkLockedProofSendMode as CdkP2pkLockedProofSendMode
+import org.cashudevkit.PendingMelt as CdkPendingMelt
 import org.cashudevkit.PaymentMethod as CdkPaymentMethod
 import org.cashudevkit.QuoteState as CdkQuoteState
 import org.cashudevkit.ReceiveOptions as CdkReceiveOptions
@@ -65,6 +73,8 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
     private var database: CdkWalletSqliteDatabase? = null
     private var repository: CdkWalletRepository? = null
     private val operationMutex = Mutex()
+    private val lightningAddressResolver = LightningAddressResolver()
+    private val pendingMelts = ConcurrentHashMap<String, PendingMeltRecord>()
 
     override suspend fun initializeLogging(level: String) = cdkCall {
         initLogging(level)
@@ -105,6 +115,8 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
     }
 
     private fun closeWalletRepositoryUnlocked() {
+        pendingMelts.values.forEach { runCatching { it.handle.close() } }
+        pendingMelts.clear()
         runCatching { repository?.close() }
         runCatching { database?.close() }
         repository = null
@@ -269,38 +281,67 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
     }
 
     override suspend fun createMeltQuote(request: String, amountSats: Long?, preferredMintURL: String?): MeltQuoteInfo = cdkCall {
-        val wallet = preferredMintURL?.let { walletFor(it) } ?: firstWallet()
+        val candidates = meltCandidateWallets(preferredMintURL)
         when (val decoded = PaymentRequestDecoder.decode(request)) {
             is PaymentRequestDecodeResult.LightningAddress -> {
                 val amount = requirePositiveAmount(amountSats, "Lightning address payments require an amount.")
-                val quote = wallet.meltHumanReadable(
-                    address = decoded.address,
-                    amountMsat = (amount * 1_000).toCdkAmount(),
-                    network = bitcoinNetworkFor(wallet.mintUrl().url),
-                )
-                return@cdkCall quote.toDomain(fallbackMethod = PaymentMethodKind.Bolt11)
+                if (amount > Long.MAX_VALUE / 1_000) {
+                    throw CdkGatewayUnavailable("Amount is too large.")
+                }
+                val amountMsat = amount * 1_000
+                val resolvedBolt11 = try {
+                    lightningAddressResolver.resolveBolt11Invoice(decoded.address, amountMsat)
+                } catch (error: LightningAddressResolverError) {
+                    if (error.indicatesNoLnurlPayEndpoint) null else throw CdkGatewayUnavailable(error.message.orEmpty())
+                }
+                if (resolvedBolt11 != null) {
+                    val quote = createAffordableMeltQuote(candidates) { wallet ->
+                        wallet.meltQuote(
+                            method = CdkPaymentMethod.Bolt11,
+                            request = resolvedBolt11,
+                            options = null,
+                            extra = null,
+                        )
+                    }
+                    return@cdkCall quote.toDomain(fallbackMethod = PaymentMethodKind.Bolt11)
+                }
+
+                // No LNURL-pay endpoint: let CDK resolve the name through BIP-353.
+                val quote = createAffordableMeltQuote(candidates) { wallet ->
+                    wallet.meltHumanReadable(
+                        address = decoded.address,
+                        amountMsat = amountMsat.toCdkAmount(),
+                        network = bitcoinNetworkFor(wallet.mintUrl().url),
+                    )
+                }
+                return@cdkCall quote.toDomain(fallbackMethod = PaymentMethodKind.Bolt12)
             }
             is PaymentRequestDecodeResult.Onchain -> {
                 val amount = requirePositiveAmount(amountSats, "On-chain payments require an amount.")
-                val options = wallet.quoteOnchainMeltOptions(
-                    address = decoded.address,
-                    amount = amount.toCdkAmount(),
-                    maxFeeAmount = null,
-                )
-                val selected = options.firstOrNull()
-                    ?: throw CdkGatewayUnavailable("Mint returned no on-chain fee options.")
-                return@cdkCall wallet.selectOnchainMeltQuote(selected).toDomain(fallbackMethod = PaymentMethodKind.Onchain)
+                val quote = createAffordableMeltQuote(candidates) { wallet ->
+                    val options = wallet.quoteOnchainMeltOptions(
+                        address = decoded.address,
+                        amount = amount.toCdkAmount(),
+                        maxFeeAmount = null,
+                    )
+                    val selected = options.firstOrNull()
+                        ?: throw CdkGatewayUnavailable("Mint returned no on-chain fee options.")
+                    wallet.selectOnchainMeltQuote(selected)
+                }
+                return@cdkCall quote.toDomain(fallbackMethod = PaymentMethodKind.Onchain)
             }
             else -> Unit
         }
         val method = PaymentRequestParser.paymentMethod(request) ?: PaymentMethodKind.Bolt11
         val normalized = PaymentRequestDecoder.encodedLightningRequest(request) ?: request.trim()
-        val quote = wallet.meltQuote(
-            method = cdkPaymentMethod(method),
-            request = normalized,
-            options = null,
-            extra = null,
-        )
+        val quote = createAffordableMeltQuote(candidates) { wallet ->
+            wallet.meltQuote(
+                method = cdkPaymentMethod(method),
+                request = normalized,
+                options = null,
+                extra = null,
+            )
+        }
         quote.toDomain(fallbackMethod = method)
     }
 
@@ -314,15 +355,63 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
         val quote = database?.getMeltQuote(quoteId)
         val wallet = walletFor(mintUrl ?: quote?.mintUrl?.url ?: firstWallet().mintUrl().url)
         val prepared = wallet.prepareMelt(quoteId)
-        val finalized = prepared.confirm()
-        MeltPaymentResult(
-            preimage = finalized.preimage,
-            amount = finalized.amount.value.toLong(),
-            feePaid = finalized.feePaid.value.toLong(),
-            mintUrl = wallet.mintUrl().url,
-            paymentMethod = quote?.paymentMethod?.toDomain(),
-            request = quote?.request,
-        )
+        when (val outcome = prepared.confirmPreferAsync()) {
+            is CdkMeltConfirmOutcome.Paid -> MeltPaymentResult(
+                preimage = outcome.finalized.preimage,
+                amount = outcome.finalized.amount.value.toLong(),
+                feePaid = outcome.finalized.feePaid.value.toLong(),
+                mintUrl = wallet.mintUrl().url,
+                paymentMethod = quote?.paymentMethod?.toDomain(),
+                request = quote?.request,
+            )
+            is CdkMeltConfirmOutcome.Pending -> {
+                val record = PendingMeltRecord(
+                    handle = outcome.pending,
+                    mintUrl = wallet.mintUrl().url,
+                    paymentMethod = quote?.paymentMethod?.toDomain(),
+                    request = quote?.request,
+                )
+                pendingMelts.put(quoteId, record)?.let { previous ->
+                    runCatching { previous.handle.close() }
+                }
+                MeltPaymentResult(
+                    preimage = null,
+                    amount = quote?.amount?.value?.toLong() ?: 0,
+                    feePaid = quote?.feeReserve?.value?.toLong() ?: 0,
+                    mintUrl = record.mintUrl,
+                    paymentMethod = record.paymentMethod,
+                    request = record.request,
+                    settlement = MeltSettlement.Pending,
+                )
+            }
+        }
+    }
+
+    override suspend fun waitForPendingMelt(quoteId: String): PendingMeltCompletion? {
+        val record = pendingMelts[quoteId] ?: return null
+        return try {
+            val finalized = withContext(Dispatchers.IO) { record.handle.wait() }
+            PendingMeltCompletion(
+                state = finalized.state.toMeltState(),
+                result = MeltPaymentResult(
+                    preimage = finalized.preimage,
+                    amount = finalized.amount.value.toLong(),
+                    feePaid = finalized.feePaid.value.toLong(),
+                    mintUrl = record.mintUrl,
+                    paymentMethod = record.paymentMethod,
+                    request = record.request,
+                ),
+            )
+        } finally {
+            if (pendingMelts.remove(quoteId, record)) runCatching { record.handle.close() }
+        }
+    }
+
+    override suspend fun checkMeltQuote(quoteId: String, mintUrl: String): MeltQuoteInfo = cdkCall {
+        val stored = database?.getMeltQuote(quoteId)
+            ?: throw CdkGatewayUnavailable("No stored melt quote for $quoteId.")
+        walletFor(mintUrl).checkMeltQuoteStatus(quoteId)
+            .toDomain(fallbackMethod = stored.paymentMethod.toDomain())
     }
 
     override suspend fun sendEcashToken(amount: Long, memo: String?, p2pkPubkey: String?, mintUrl: String, unit: String, p2pkSigningKeys: List<String>): SendTokenResult = cdkCall {
@@ -471,6 +560,41 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
     private suspend fun firstWallet(): CdkWallet =
         requireRepository().getWallets().firstOrNull()
             ?: throw CdkGatewayUnavailable("No mint wallet is available.")
+
+    /** Preferred mint first, then every other tracked sat wallet as fallback. */
+    private suspend fun meltCandidateWallets(preferredMintUrl: String?): List<CdkWallet> {
+        val urls = buildList {
+            preferredMintUrl?.let { add(normalizeMintUrl(it)) }
+            addAll(requireRepository().getWallets().map { normalizeMintUrl(it.mintUrl().url) })
+        }.distinct()
+        val wallets = urls.mapNotNull { url -> runCatching { walletFor(url) }.getOrNull() }
+        if (wallets.isEmpty()) throw CdkGatewayUnavailable("No mint wallet is available.")
+        return wallets
+    }
+
+    /** Create with the first capable, sufficiently funded mint, preserving preferred order. */
+    private suspend fun createAffordableMeltQuote(
+        candidates: List<CdkWallet>,
+        create: suspend (CdkWallet) -> CdkMeltQuote,
+    ): CdkMeltQuote {
+        var lastError: Throwable? = null
+        candidates.forEach { wallet ->
+            try {
+                val quote = create(wallet)
+                val required = quote.amount.value + quote.feeReserve.value
+                val available = wallet.totalBalance().value
+                if (available >= required) return quote
+                lastError = CdkGatewayUnavailable(
+                    "Insufficient balance: ${required.toLong()} sat required, ${available.toLong()} sat available.",
+                )
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                lastError = error
+            }
+        }
+        throw lastError ?: CdkGatewayUnavailable("No mint could create this payment quote.")
+    }
 
     private fun cdkUnit(unit: String): CdkCurrencyUnit = when (unit.lowercase()) {
         "sat" -> CdkCurrencyUnit.Sat
@@ -684,6 +808,7 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
             preimage = paymentProof,
             invoice = paymentRequest,
             fee = fee.value.toLong(),
+            unit = unit.toDomainUnit(),
             quoteId = quoteId,
         )
     }
@@ -705,4 +830,11 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
     }
 
     private fun Long.toCdkAmount(): CdkAmount = CdkAmount(toULong())
+
+    private data class PendingMeltRecord(
+        val handle: CdkPendingMelt,
+        val mintUrl: String,
+        val paymentMethod: PaymentMethodKind?,
+        val request: String?,
+    )
 }

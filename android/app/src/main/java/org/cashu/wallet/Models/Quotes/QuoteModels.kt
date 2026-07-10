@@ -61,6 +61,12 @@ data class MeltQuoteInfo(
 }
 
 @Serializable
+enum class MeltSettlement {
+    Settled,
+    Pending,
+}
+
+@Serializable
 data class MeltPaymentResult(
     val preimage: String?,
     val amount: Long,
@@ -68,4 +74,11 @@ data class MeltPaymentResult(
     val mintUrl: String,
     val paymentMethod: PaymentMethodKind? = null,
     val request: String? = null,
+    /** Pending means the mint accepted NUT-05 asynchronous settlement. */
+    val settlement: MeltSettlement = MeltSettlement.Settled,
+)
+
+data class PendingMeltCompletion(
+    val state: MeltQuoteState,
+    val result: MeltPaymentResult,
 )

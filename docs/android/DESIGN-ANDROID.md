@@ -123,25 +123,27 @@ contactless, onboarding. See git history for the parity passes.
    UI. Port `NWCManager.swift` and `NWCSettingsSection.swift` together later;
    do not expose a settings-only stub that suggests requests are being served.
 2. **Cloud seed backup** — Auto Backup / Blockstore / Drive decision pending.
-3. **Non-sat History** — iOS now carries `unit` on `WalletTransaction`; Android
-   still needs the field propagated from CDK and rendered with the unit-native
-   amount format in rows and details.
-4. **NFC tap-to-pay parity check** — verify `ContactlessPayView` against iOS
+3. **NFC tap-to-pay parity check** — verify `ContactlessPayView` against iOS
    coordinator flow and restyle to the new charter.
-5. **Restore-over-units hardening** — loop restore across `mint.units` (do with
+4. **Restore-over-units hardening** — loop restore across `mint.units` (do with
    iOS together).
-6. **Home received-delta beat** — ✅ visual beat shipped (`BalanceDisplay`
+5. **Home received-delta beat** — ✅ visual beat shipped (`BalanceDisplay`
    `receivedDelta`, driven by a balance-rise watch in `HomeScreen`). Still
    open: the success haptic for background receives, which needs a real
    receive-event signal from WalletManager to avoid double-buzzing in-flow
    receives.
-7. **Shared-element transitions** — transaction row → detail, QR card flows
+6. **Shared-element transitions** — transaction row → detail, QR card flows
    (`SharedTransitionLayout`), once nav-level motion has settled.
-8. **Expressive `ButtonGroup` / shape-morph press states** — evaluate for the
+7. **Expressive `ButtonGroup` / shape-morph press states** — evaluate for the
    Receive/Send pair and number pad when the APIs stabilize.
 
 App Lock and Cashu Request Mint/Amount/Unit editing are implemented; older
 versions of this backlog incorrectly listed them as open.
+
+Non-sat History is implemented: CDK transaction units and locally pending or
+claimed token units flow into `WalletTransaction`, and Home/History/detail
+surfaces use the unit-native formatter with `sat` as the backward-compatible
+default.
 
 ## 4. Protected areas
 
