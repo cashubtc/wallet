@@ -152,14 +152,14 @@ Mirrored source layout target:
 
 | Swift section | Kotlin/Android section target | Compatibility rule |
 | --- | --- | --- |
-| `ios/CashuWallet/App` | `android/app/src/main/java/org/cashu/wallet/App` | Android entry files may add `MainActivity`, but app lifecycle and root state stay here. |
-| `ios/CashuWallet/Core` | `android/app/src/main/java/org/cashu/wallet/Core` | Wallet managers, stores, parsers, utilities, network services, and platform facades stay here. |
-| `ios/CashuWallet/Core/Protocols` | `android/app/src/main/java/org/cashu/wallet/Core/Protocols` | Kotlin interfaces replace Swift protocols with matching responsibilities. |
-| `ios/CashuWallet/Core/Services` | `android/app/src/main/java/org/cashu/wallet/Core/Services` | CDK-backed services and NFC/NDEF services stay parallel to Swift. |
-| `ios/CashuWallet/Core/Navigation` | `android/app/src/main/java/org/cashu/wallet/Core/Navigation` | Navigation Compose route definitions mirror Swift navigation concepts. |
-| `ios/CashuWallet/Models` | `android/app/src/main/java/org/cashu/wallet/Models` | Kotlin data classes mirror Swift models and serialized field behavior. |
-| `ios/CashuWallet/Resources` | `android/app/src/main/res` plus `android/app/src/main/java/org/cashu/wallet/Resources` when typed tokens are needed | Android resources replace asset catalogs while preserving app icon/accent/design-token intent. |
-| `ios/CashuWallet/Views` | `android/app/src/main/java/org/cashu/wallet/Views` | Compose screens mirror SwiftUI view folders: `Components`, `Main`, `History`, `Mints`, `Receive`, `Send`, `Settings`. |
+| `ios/CashuWallet/App` | `android/app/src/main/java/com/cashu/me/App` | Android entry files may add `MainActivity`, but app lifecycle and root state stay here. |
+| `ios/CashuWallet/Core` | `android/app/src/main/java/com/cashu/me/Core` | Wallet managers, stores, parsers, utilities, network services, and platform facades stay here. |
+| `ios/CashuWallet/Core/Protocols` | `android/app/src/main/java/com/cashu/me/Core/Protocols` | Kotlin interfaces replace Swift protocols with matching responsibilities. |
+| `ios/CashuWallet/Core/Services` | `android/app/src/main/java/com/cashu/me/Core/Services` | CDK-backed services and NFC/NDEF services stay parallel to Swift. |
+| `ios/CashuWallet/Core/Navigation` | `android/app/src/main/java/com/cashu/me/Core/Navigation` | Navigation Compose route definitions mirror Swift navigation concepts. |
+| `ios/CashuWallet/Models` | `android/app/src/main/java/com/cashu/me/Models` | Kotlin data classes mirror Swift models and serialized field behavior. |
+| `ios/CashuWallet/Resources` | `android/app/src/main/res` plus `android/app/src/main/java/com/cashu/me/Resources` when typed tokens are needed | Android resources replace asset catalogs while preserving app icon/accent/design-token intent. |
+| `ios/CashuWallet/Views` | `android/app/src/main/java/com/cashu/me/Views` | Compose screens mirror SwiftUI view folders: `Components`, `Main`, `History`, `Mints`, `Receive`, `Send`, `Settings`. |
 | Root docs/config | root Android docs/config equivalents | Keep product/design/build docs next to both projects for shared ownership. |
 
 ## Proposed Kotlin Architecture
@@ -621,7 +621,7 @@ Implementation notes:
 - [x] Added animated UR scanner reassembly with `bcur-kotlin`: CameraX scanning keeps analysis active for multipart `ur:` frames, shows progress, decodes Swift-style `ur:bytes` CBOR payloads, and only completes routing once content is reconstructed.
 - [x] Verification after animated UR scanner changes: focused `AnimatedUrDecoderTest`, `./gradlew --no-daemon :app:assembleDebug :app:testDebugUnitTest --stacktrace`, and `./gradlew --no-daemon :app:lintDebug :app:assembleRelease --stacktrace` passed on 2026-05-21.
 - [x] Added animated QR generation with `bcur-kotlin`: long non-static QR payloads render rotating `ur:bytes` frames, Swift-style speed/size controls are available where enabled, Send token QR hides production controls while still animating, and Lightning/on-chain receive quotes stay static.
-- [x] Verification after animated QR generation changes: focused `QRCodeViewTest` and `AnimatedUrDecoderTest` passed on 2026-05-21 with `./gradlew --no-daemon :app:testDebugUnitTest --tests org.cashu.wallet.Views.Components.QRCodeViewTest --tests org.cashu.wallet.Core.AnimatedUrDecoderTest --stacktrace`, followed by full `./gradlew --no-daemon :app:assembleDebug :app:testDebugUnitTest --stacktrace` and `./gradlew --no-daemon :app:lintDebug :app:assembleRelease --stacktrace` gates.
+- [x] Verification after animated QR generation changes: focused `QRCodeViewTest` and `AnimatedUrDecoderTest` passed on 2026-05-21 with `./gradlew --no-daemon :app:testDebugUnitTest --tests com.cashu.me.Views.Components.QRCodeViewTest --tests com.cashu.me.Core.AnimatedUrDecoderTest --stacktrace`, followed by full `./gradlew --no-daemon :app:assembleDebug :app:testDebugUnitTest --stacktrace` and `./gradlew --no-daemon :app:lintDebug :app:assembleRelease --stacktrace` gates.
 - [x] Added Mints clipboard parity: Mints now normalizes scanned/pasted mint URLs with the shared helper, offers a paste-from-clipboard action and clipboard suggestion chip for valid mint URLs, and exposes copy/share actions for configured and discovered mint URLs.
 - [x] Verification after Mints clipboard changes: `./gradlew --no-daemon :app:assembleDebug :app:testDebugUnitTest --stacktrace` and `./gradlew --no-daemon :app:lintDebug :app:assembleRelease --stacktrace` passed on 2026-05-21.
 - [x] Added History pull-to-refresh parity: the transaction list now uses Material 3 pull-to-refresh to reload transactions and refresh pending mint quotes/sent tokens, matching Swift's `.refreshable` behavior while keeping the explicit pending-status action.

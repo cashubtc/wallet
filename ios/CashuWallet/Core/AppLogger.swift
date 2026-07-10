@@ -4,10 +4,10 @@ import Darwin
 
 /// Structured logging using os.Logger for diagnostics and debugging
 enum AppLogger {
-    static let wallet = Logger(subsystem: "com.cashu.wallet", category: "wallet")
-    static let network = Logger(subsystem: "com.cashu.wallet", category: "network")
-    static let security = Logger(subsystem: "com.cashu.wallet", category: "security")
-    static let ui = Logger(subsystem: "com.cashu.wallet", category: "ui")
+    static let wallet = Logger(subsystem: "com.cashu.me", category: "wallet")
+    static let network = Logger(subsystem: "com.cashu.me", category: "network")
+    static let security = Logger(subsystem: "com.cashu.me", category: "security")
+    static let ui = Logger(subsystem: "com.cashu.me", category: "ui")
 
     /// Point the process's stdout/stderr at a real writable file before any CDK call.
     ///

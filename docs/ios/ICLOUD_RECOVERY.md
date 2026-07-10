@@ -36,7 +36,7 @@ Two independent iCloud systems are used (`WalletManager+Backup.swift`,
 
 | Item | API | Key / identifier | Encryption |
 |---|---|---|---|
-| Seed | iCloud Keychain via `kSecAttrSynchronizable` | service `com.cashu.wallet`, account `wallet_mnemonic_icloud` | Apple **end-to-end** (Apple cannot read it) |
+| Seed | iCloud Keychain via `kSecAttrSynchronizable` | service `com.cashu.me`, account `wallet_mnemonic_icloud` | Apple **end-to-end** (Apple cannot read it) |
 | Mint URLs | `NSUbiquitousKeyValueStore` | `cashu.icloud.mintURLs` | Apple server-side |
 | Timestamp | `NSUbiquitousKeyValueStore` | `cashu.icloud.backupTimestamp` | Apple server-side |
 

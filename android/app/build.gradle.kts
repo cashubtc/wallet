@@ -8,12 +8,12 @@ plugins {
 }
 
 android {
-    namespace = "org.cashu.wallet"
+    namespace = "com.cashu.me"
     // 37: required by the compose 1.12/material3 1.5 alpha line (M3 Expressive).
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.jcashu.wallet"
+        applicationId = "com.cashu.me"
         minSdk = 26
         targetSdk = 36
         versionCode = 1
@@ -146,6 +146,6 @@ tasks.register<Test>("androidLocalMintIntegrationTest") {
         providers.gradleProperty("cdkMintUrl").getOrElse("http://localhost:3339"),
     )
     filter {
-        includeTestsMatching("org.cashu.wallet.liveintegration.*")
+        includeTestsMatching("com.cashu.me.liveintegration.*")
     }
 }
