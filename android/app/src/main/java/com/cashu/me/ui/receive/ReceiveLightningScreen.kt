@@ -1,17 +1,12 @@
 package com.cashu.me.ui.receive
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -32,13 +27,15 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.outlined.AccountBalance
 import androidx.compose.material.icons.outlined.Bolt
-import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.CurrencyBitcoin
 import androidx.compose.material.icons.outlined.IosShare
+import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.UnfoldMore
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -75,18 +72,23 @@ import com.cashu.me.Core.SettingsManager
 import com.cashu.me.Core.UnitAmountEntry
 import com.cashu.me.Core.Wallet.userFacingWalletMessage
 import com.cashu.me.Core.WalletManager
+import com.cashu.me.Core.mintQuoteDisplayExpiry
+import com.cashu.me.Core.quoteExpiryText
 import com.cashu.me.Models.MintInfo
 import com.cashu.me.Models.MintQuoteInfo
 import com.cashu.me.Models.MintQuoteState
 import com.cashu.me.Models.PaymentMethodKind
 import com.cashu.me.ui.components.AmountEntryHero
 import com.cashu.me.ui.components.AmountText
-import com.cashu.me.ui.components.GhostButton
+import com.cashu.me.ui.components.CanvasDivider
 import com.cashu.me.ui.components.IconSwap
 import com.cashu.me.ui.components.InlineNotice
+import com.cashu.me.ui.components.InspectorRow
 import com.cashu.me.ui.components.MintAvatar
 import com.cashu.me.ui.components.MintPickerSheet
 import com.cashu.me.ui.components.NumberPad
+import com.cashu.me.ui.components.PaymentStatusPhase
+import com.cashu.me.ui.components.PaymentStatusScreen
 import com.cashu.me.ui.components.PrimaryButton
 import com.cashu.me.ui.components.QrCard
 import com.cashu.me.ui.components.SheetHeader
@@ -122,7 +124,9 @@ fun ReceiveLightningScreen(
     var method by remember { mutableStateOf(PaymentMethodKind.Bolt11) }
     var creating by remember { mutableStateOf(false) }
     var errorText by remember { mutableStateOf<String?>(null) }
-    var paymentJustReceived by remember { mutableStateOf(false) }
+    // When a payment lands the whole screen crossfades to the shared full-screen
+    // success terminal (iOS parity — no inline "Paid" row, no Done button).
+    var successInfo by remember { mutableStateOf<ReceiveSuccessInfo?>(null) }
     var selectedReceiveUnit by remember { mutableStateOf<String?>(null) }
     var unitPickerOpen by remember { mutableStateOf(false) }
     var mintPickerOpen by remember { mutableStateOf(false) }
@@ -148,11 +152,18 @@ fun ReceiveLightningScreen(
         method != PaymentMethodKind.Onchain
 
     // System back unwinds Display → Input; from Input the sheet handles it.
-    BackHandler(enabled = face is ReceiveLnFace.Display) {
+    // Suppressed once the success terminal is showing (it auto-dismisses).
+    BackHandler(enabled = face is ReceiveLnFace.Display && successInfo == null) {
         face = ReceiveLnFace.Input
     }
 
-    Column(modifier = Modifier.fillMaxHeight()) {
+    // The paid terminal replaces the whole sheet body (header + faces), fading
+    // in over the QR the way iOS swaps `body` to the success view.
+    Crossfade(targetState = successInfo, label = "receive-ln-terminal") { terminal ->
+      if (terminal != null) {
+        ReceiveSuccessTerminal(info = terminal, onDone = onClose)
+      } else {
+        Column(modifier = Modifier.fillMaxHeight()) {
         SheetHeader(
             title = when (val current = face) {
                 ReceiveLnFace.Input -> "Receive"
@@ -303,35 +314,41 @@ fun ReceiveLightningScreen(
                                 ?.let { liveQuote = it }
                         }
                     }
+                    val amountLabel = liveQuote.amount?.let {
+                        if (liveQuote.unit.equals("sat", ignoreCase = true)) {
+                            formatter.formatWalletSats(it, settings.useBitcoinSymbol)
+                        } else {
+                            CurrencyAmount(
+                                it,
+                                CurrencyRegistry.currencyForMintUnit(liveQuote.unit),
+                            ).formatted()
+                        }
+                    }
                     LaunchedEffect(liveQuote.state) {
-                        if (liveQuote.state == MintQuoteState.Paid) {
-                            runCatching { walletManager.mintTokens(liveQuote.id) }
-                            paymentJustReceived = true
-                            // Receive-flow resolution: dwell on the celebration,
-                            // then the screen dismisses itself (iOS parity).
-                            delay(1_200)
-                            onClose()
+                        if (liveQuote.state == MintQuoteState.Paid ||
+                            liveQuote.state == MintQuoteState.Issued
+                        ) {
+                            // Finish the UX immediately and mint on the wallet's
+                            // app-lifetime scope so the dismiss never cancels it
+                            // (iOS: unstructured task that outlives the sheet).
+                            walletManager.launch { runCatching { walletManager.mintTokens(liveQuote.id) } }
+                            successInfo = ReceiveSuccessInfo(
+                                amountLabel = amountLabel,
+                                mintName = activeMint?.name,
+                            )
                         }
                     }
                     DisplayFace(
                         quote = liveQuote,
-                        amountLabel = liveQuote.amount?.let {
-                            if (liveQuote.unit.equals("sat", ignoreCase = true)) {
-                                formatter.formatWalletSats(it, settings.useBitcoinSymbol)
-                            } else {
-                                CurrencyAmount(
-                                    it,
-                                    CurrencyRegistry.currencyForMintUnit(liveQuote.unit),
-                                ).formatted()
-                            }
-                        },
-                        showCelebration = paymentJustReceived,
+                        amountLabel = amountLabel,
+                        mintName = activeMint?.name,
                         onCopy = { clipboard.setText(AnnotatedString(liveQuote.request)) },
-                        onDone = onClose,
                     )
                 }
             }
         }
+      }
+    }
     }
 
     if (mintPickerOpen) {
@@ -499,17 +516,20 @@ private val PaymentMethodKind.createActionTitle: String
         PaymentMethodKind.Onchain -> "Get Address"
     }
 
+private val PaymentMethodKind.copyActionTitle: String
+    get() = when (this) {
+        PaymentMethodKind.Bolt11 -> "Copy invoice"
+        PaymentMethodKind.Bolt12 -> "Copy offer"
+        PaymentMethodKind.Onchain -> "Copy address"
+    }
+
 @Composable
 private fun DisplayFace(
     quote: MintQuoteInfo,
     amountLabel: String?,
-    showCelebration: Boolean,
+    mintName: String?,
     onCopy: () -> Unit,
-    onDone: () -> Unit,
 ) {
-    val isPaid = quote.state == MintQuoteState.Paid ||
-        quote.state == MintQuoteState.Issued ||
-        quote.amountIssued > 0L
     var copied by remember { mutableStateOf(false) }
     LaunchedEffect(copied) {
         if (copied) {
@@ -517,98 +537,162 @@ private fun DisplayFace(
             copied = false
         }
     }
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(
-                horizontal = CashuTheme.spacing.comfortable,
-                vertical = CashuTheme.spacing.comfortable,
-            ),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.comfortable),
-    ) {
-        QrCard(content = quote.request, shareSubject = "Payment request", staticOnly = true)
-        if (amountLabel != null) {
-            AmountText(
-                text = amountLabel,
-                style = MaterialTheme.typography.headlineSmall.withMonoDigits(),
-            )
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Scrolling content region; the copy CTA is pinned to the bottom (iOS
+        // parity — the QR is the focal element, actions sit below the fold).
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.comfortable),
+        ) {
+            Spacer(Modifier.height(CashuTheme.spacing.comfortable))
+            QrCard(content = quote.request, shareSubject = "Payment request", staticOnly = true)
+            if (amountLabel != null) {
+                // SemiBold headlineMedium (~28sp) — heavier than the old thin
+                // headlineSmall, but still secondary to the QR (iOS 32pt intent).
+                AmountText(
+                    text = amountLabel,
+                    style = MaterialTheme.typography.headlineMedium
+                        .copy(fontWeight = FontWeight.SemiBold)
+                        .withMonoDigits(),
+                )
+            }
+            WaitingForPaymentRow()
+            ExpiryCaption(expirySeconds = quote.expiryEpochSeconds)
+            if (mintName != null) {
+                InspectorRow(
+                    label = "Mint",
+                    value = mintName,
+                    leadingIcon = Icons.Outlined.AccountBalance,
+                )
+            }
         }
-        QuoteStatusRow(isPaid = isPaid, showCelebration = showCelebration)
-        Spacer(Modifier.height(CashuTheme.spacing.snug))
         PrimaryButton(
-            text = if (copied) "Copied" else "Copy request",
+            text = if (copied) "Copied" else quote.paymentMethod.copyActionTitle,
             onClick = {
                 onCopy()
                 copied = true
             },
-        )
-        GhostButton(
-            text = "Done",
-            onClick = onDone,
+            modifier = Modifier.padding(horizontal = CashuTheme.spacing.comfortable),
         )
         Spacer(Modifier.navigationBarsPadding())
     }
 }
 
+/** Pulsing clock + "Waiting for payment…" — the only pending status now that a
+ *  paid quote crossfades to the full-screen success terminal. */
 @Composable
-private fun QuoteStatusRow(isPaid: Boolean, showCelebration: Boolean) {
+private fun WaitingForPaymentRow() {
+    val reducedMotion = rememberReducedMotion()
+    val transition = rememberInfiniteTransition(label = "waiting-pulse")
+    val alpha by transition.animateFloat(
+        initialValue = 1f,
+        targetValue = 0.4f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1100),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "waiting-pulse-alpha",
+    )
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
-        modifier = Modifier.fillMaxWidth(),
     ) {
-        Spacer(modifier = Modifier.weight(1f))
-        if (isPaid) {
-            // Single celebration beat: one green check grows in gently (0.9 → 1);
-            // the label carries the moment, no doubled glyphs.
-            AnimatedVisibility(
-                visible = true,
-                enter = scaleIn(
-                    animationSpec = spring(dampingRatio = 0.7f, stiffness = Spring.StiffnessMediumLow),
-                    initialScale = 0.9f,
-                ) + fadeIn(),
-                exit = fadeOut(),
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.CheckCircle,
-                    contentDescription = null,
-                    tint = CashuTheme.colors.received,
-                    modifier = Modifier.size(CashuTheme.spacing.loose),
-                )
-            }
-            Text(
-                text = if (showCelebration) "Payment received!" else "Paid",
-                style = MaterialTheme.typography.titleMedium,
-                color = CashuTheme.colors.received,
-            )
-        } else {
-            val reducedMotion = rememberReducedMotion()
-            val transition = rememberInfiniteTransition(label = "waiting-pulse")
-            val alpha by transition.animateFloat(
-                initialValue = 1f,
-                targetValue = 0.4f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(1100),
-                    repeatMode = RepeatMode.Reverse,
-                ),
-                label = "waiting-pulse-alpha",
-            )
-            Box(modifier = Modifier.alpha(if (reducedMotion) 1f else alpha)) {
-                Icon(
-                    imageVector = Icons.Outlined.Schedule,
-                    contentDescription = null,
-                    tint = CashuTheme.colors.pending,
-                    modifier = Modifier.size(CashuTheme.spacing.loose),
-                )
-            }
-            Text(
-                text = "Waiting for payment…",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface,
+        Box(modifier = Modifier.alpha(if (reducedMotion) 1f else alpha)) {
+            Icon(
+                imageVector = Icons.Outlined.Schedule,
+                contentDescription = null,
+                tint = CashuTheme.colors.pending,
+                modifier = Modifier.size(CashuTheme.spacing.loose),
             )
         }
-        Spacer(modifier = Modifier.weight(1f))
+        Text(
+            text = "Waiting for payment…",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
     }
+}
+
+/** Plain "Expires in 12m 30s" caption, ticking every second and turning red
+ *  under a minute. Reuses the shared [quoteExpiryText] formatter; hidden for
+ *  never-expiring reusable offers (BOLT12 amountless). */
+@Composable
+private fun ExpiryCaption(expirySeconds: Long?) {
+    val displayExpiry = mintQuoteDisplayExpiry(expirySeconds) ?: return
+    var nowSeconds by remember(displayExpiry) { mutableStateOf(System.currentTimeMillis() / 1000) }
+    LaunchedEffect(displayExpiry) {
+        while (nowSeconds < displayExpiry) {
+            delay(1000)
+            nowSeconds = System.currentTimeMillis() / 1000
+        }
+    }
+    val text = quoteExpiryText(expirySeconds, nowSeconds) ?: return
+    val remaining = displayExpiry - nowSeconds
+    val urgent = remaining < 60
+    val color = if (urgent) {
+        MaterialTheme.colorScheme.error
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.micro),
+    ) {
+        Icon(
+            imageVector = Icons.Outlined.Timer,
+            contentDescription = null,
+            tint = color,
+            modifier = Modifier.size(14.dp),
+        )
+        Text(
+            text = if (remaining <= 0) "Expired" else "Expires in $text",
+            style = MaterialTheme.typography.labelMedium.withMonoDigits(),
+            color = color,
+        )
+    }
+}
+
+/** Success-row data lifted out of the paid quote so the terminal renders even
+ *  after the sheet body crossfades away. */
+private data class ReceiveSuccessInfo(
+    val amountLabel: String?,
+    val mintName: String?,
+)
+
+/** Full-screen shared success terminal for a paid receive (iOS
+ *  `receiveSuccessView`). Auto-dismisses after a brief dwell — no Done button
+ *  (Android carve-out; the mint runs on the wallet's app-lifetime scope). */
+@Composable
+private fun ReceiveSuccessTerminal(info: ReceiveSuccessInfo, onDone: () -> Unit) {
+    LaunchedEffect(Unit) {
+        delay(1800)
+        onDone()
+    }
+    PaymentStatusScreen(
+        phase = PaymentStatusPhase.Success,
+        title = "Payment Received!",
+        onDone = null,
+        rows = {
+            if (info.amountLabel != null) {
+                InspectorRow(
+                    label = "Amount",
+                    value = info.amountLabel,
+                    leadingIcon = Icons.Outlined.Payments,
+                    valueMonospaced = true,
+                )
+            }
+            if (info.mintName != null) {
+                if (info.amountLabel != null) CanvasDivider(leadingInset = 16.dp)
+                InspectorRow(
+                    label = "Mint",
+                    value = info.mintName,
+                    leadingIcon = Icons.Outlined.AccountBalance,
+                )
+            }
+        },
+    )
 }

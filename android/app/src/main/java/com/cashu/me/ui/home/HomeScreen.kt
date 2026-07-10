@@ -183,9 +183,6 @@ fun HomeScreen(
                             onTogglePrimary = {
                                 settingsManager.setUseBitcoinSymbol(!settings.useBitcoinSymbol)
                             },
-                            // Single odometer direction for all digit rolls
-                            // (iOS .numericText(value:) parity).
-                            value = walletState.balance.toDouble(),
                             receivedDelta = receivedDelta,
                         )
                     }

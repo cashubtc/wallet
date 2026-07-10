@@ -117,7 +117,10 @@ fun CashuNavHost(
         }
         composable(
             route = Routes.CASHU_REQUEST_DETAIL,
-            arguments = listOf(navArgument("requestId") { type = NavType.StringType }),
+            arguments = listOf(
+                navArgument("requestId") { type = NavType.StringType },
+                navArgument("fresh") { type = NavType.BoolType; defaultValue = false },
+            ),
         ) { entry ->
             val encoded = entry.arguments?.getString("requestId").orEmpty()
             val requestId = URLDecoder.decode(encoded, StandardCharsets.UTF_8.name())
@@ -126,6 +129,7 @@ fun CashuNavHost(
                 settingsManager = container.settingsManager,
                 cashuRequestStore = container.cashuRequestStore,
                 requestId = requestId,
+                isReceiveFlow = entry.arguments?.getBoolean("fresh") == true,
                 onClose = { navController.popBackStack() },
                 snackbarHostState = container.snackbarHostState,
             )
@@ -224,9 +228,9 @@ internal fun transactionDetailRouteFor(transactionId: String): String {
     return Routes.TRANSACTION_DETAIL.replace("{transactionId}", encoded)
 }
 
-internal fun cashuRequestDetailRouteFor(requestId: String): String {
+internal fun cashuRequestDetailRouteFor(requestId: String, fresh: Boolean = false): String {
     val encoded = URLEncoder.encode(requestId, StandardCharsets.UTF_8.name())
-    return Routes.CASHU_REQUEST_DETAIL.replace("{requestId}", encoded)
+    return "request/$encoded?fresh=$fresh"
 }
 
 private fun NavGraphBuilder.tabDestinations(

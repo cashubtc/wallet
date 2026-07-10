@@ -341,7 +341,9 @@ private fun AuthenticatedShell(container: AppContainer) {
                 cashuRequestStore = container.cashuRequestStore,
                 onOpenRequest = { id ->
                     close()
-                    navController.navigate(cashuRequestDetailRouteFor(id))
+                    // Fresh (just-created, actively waiting) → arms the full-screen
+                    // takeover on the first payment; history entries pass fresh=false.
+                    navController.navigate(cashuRequestDetailRouteFor(id, fresh = true))
                 },
                 onClose = close,
                 // Camera overlays render in the activity window, underneath this
