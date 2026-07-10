@@ -28,6 +28,7 @@ data class SettingsState(
     val periodicallyCheckIncomingInvoices: Boolean = true,
     val nostrSignerType: String = "SEED",
     val nostrRelays: List<String> = emptyList(),
+    val nostrMintBackupEnabled: Boolean = true,
     val p2pkKeys: List<P2PKKeyInfo> = emptyList(),
 )
 
@@ -209,6 +210,10 @@ class SettingsManager(
         settingsStore.resetNostrRelaysToDefault()
     }
 
+    fun setNostrMintBackupEnabled(value: Boolean) = update {
+        settingsStore.nostrMintBackupEnabled = value
+    }
+
     fun importP2PKPublicKey(publicKey: String, label: String = "P2PK key") {
         val normalized = normalizeP2PKForComparison(publicKey)
         val key = P2PKKeyInfo(
@@ -338,6 +343,7 @@ class SettingsManager(
         periodicallyCheckIncomingInvoices = settingsStore.periodicallyCheckIncomingInvoices,
         nostrSignerType = settingsStore.nostrSignerType,
         nostrRelays = settingsStore.nostrRelays,
+        nostrMintBackupEnabled = settingsStore.nostrMintBackupEnabled,
         p2pkKeys = settingsStore.p2pkKeys,
     )
 

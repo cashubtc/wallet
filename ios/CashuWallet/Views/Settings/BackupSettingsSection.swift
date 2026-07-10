@@ -45,6 +45,8 @@ struct BackupSettingsSection: View {
                 }
                 .buttonStyle(.plain)
             }
+
+            NostrMintBackupSettingsSection()
         }
     }
 

@@ -8,6 +8,7 @@ import org.cashu.wallet.Core.CashuRequestStore
 import org.cashu.wallet.Core.MintDiscoveryManager
 import org.cashu.wallet.Core.NPCService
 import org.cashu.wallet.Core.Navigation.NavigationManager
+import org.cashu.wallet.Core.NostrMintBackupService
 import org.cashu.wallet.Core.NostrService
 import org.cashu.wallet.Core.Platform.AndroidConnectivityObserver
 import org.cashu.wallet.Core.Platform.AndroidSecureStorage
@@ -35,12 +36,14 @@ class AppContainer(context: Context) {
     val walletDatabasePathManager = WalletDatabasePathManager(appContext)
     val cdkGateway = CdkWalletGatewayImpl()
     val npcService = NPCService(appContext, nostrService, settingsManager)
+    val nostrMintBackupService = NostrMintBackupService(settingsManager, settingsStore, cdkGateway)
     val walletManager = WalletManager(
         secureStorage = secureStorage,
         walletStore = walletStore,
         settingsManager = settingsManager,
         nostrService = nostrService,
         npcService = npcService,
+        nostrMintBackupService = nostrMintBackupService,
         databasePathManager = walletDatabasePathManager,
         gateway = cdkGateway,
     )

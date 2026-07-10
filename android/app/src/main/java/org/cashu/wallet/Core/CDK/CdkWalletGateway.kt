@@ -18,6 +18,15 @@ interface CdkWalletGateway {
     suspend fun validateMnemonic(mnemonic: String): Boolean
     suspend fun openWalletRepository(mnemonic: String, databasePath: String)
     suspend fun closeWalletRepository()
+
+    /** Whether the repository currently tracks any mint wallets. */
+    suspend fun hasWallets(): Boolean
+
+    /** NUT-27: publish the encrypted mint-list backup for the open seed to the given relays. */
+    suspend fun backupMints(relays: List<String>, client: String)
+
+    /** NUT-27: fetch the newest mint-list backup for the open seed; returns the backed-up mint URLs. */
+    suspend fun fetchMintBackup(relays: List<String>, timeoutSecs: ULong): List<String>
     suspend fun ensureWallet(mintUrl: String, unit: String = "sat")
     suspend fun removeWallet(mintUrl: String, unit: String = "sat")
     suspend fun fetchMintInfo(mintUrl: String): MintInfo?

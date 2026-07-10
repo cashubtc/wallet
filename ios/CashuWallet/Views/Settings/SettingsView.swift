@@ -348,7 +348,6 @@ struct SettingsView: View {
                 SettingsSectionFooter {
                     Text("Let a Nostr app create invoices and pay Lightning invoices from this wallet.")
                 }
-                NostrMintBackupSettingsSection()
             }
             .padding(.horizontal)
             .padding(.bottom, 32)

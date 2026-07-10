@@ -29,6 +29,7 @@ import org.cashu.wallet.Models.TransactionStatus
 import org.cashu.wallet.Models.TransactionType
 import org.cashu.wallet.Models.WalletTransaction
 import org.cashudevkit.Amount as CdkAmount
+import org.cashudevkit.BackupOptions as CdkBackupOptions
 import org.cashudevkit.BitcoinNetwork as CdkBitcoinNetwork
 import org.cashudevkit.CurrencyUnit as CdkCurrencyUnit
 import org.cashudevkit.MeltQuote as CdkMeltQuote
@@ -40,6 +41,7 @@ import org.cashudevkit.P2pkLockedProofSendMode as CdkP2pkLockedProofSendMode
 import org.cashudevkit.PaymentMethod as CdkPaymentMethod
 import org.cashudevkit.QuoteState as CdkQuoteState
 import org.cashudevkit.ReceiveOptions as CdkReceiveOptions
+import org.cashudevkit.RestoreOptions as CdkRestoreOptions
 import org.cashudevkit.SendKind as CdkSendKind
 import org.cashudevkit.SendMemo as CdkSendMemo
 import org.cashudevkit.SendOptions as CdkSendOptions
@@ -85,6 +87,21 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
 
     override suspend fun closeWalletRepository() = cdkCall {
         closeWalletRepositoryUnlocked()
+    }
+
+    override suspend fun hasWallets(): Boolean = cdkCall {
+        requireRepository().getWallets().isNotEmpty()
+    }
+
+    override suspend fun backupMints(relays: List<String>, client: String) = cdkCall {
+        requireRepository().backupMints(relays, CdkBackupOptions(client = client))
+        Unit
+    }
+
+    override suspend fun fetchMintBackup(relays: List<String>, timeoutSecs: ULong): List<String> = cdkCall {
+        requireRepository().fetchMintBackup(relays, CdkRestoreOptions(timeoutSecs = timeoutSecs))
+            .mints
+            .map { it.url }
     }
 
     private fun closeWalletRepositoryUnlocked() {

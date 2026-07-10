@@ -79,6 +79,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.cashu.wallet.Core.Bip39WordList
 import org.cashu.wallet.Core.MnemonicInput
+import org.cashu.wallet.Core.NostrMintBackupService
 import org.cashu.wallet.Core.WalletManager
 import org.cashu.wallet.Core.mintUrlCandidates
 import org.cashu.wallet.Models.RestoreMintResult
@@ -166,7 +167,10 @@ private fun rememberAppeared(): Boolean {
 }
 
 @Composable
-fun OnboardingScreen(walletManager: WalletManager) {
+fun OnboardingScreen(
+    walletManager: WalletManager,
+    nostrMintBackupService: NostrMintBackupService,
+) {
     val scope = rememberCoroutineScope()
 
     var step: OnboardingStep by remember { mutableStateOf(OnboardingStep.Welcome) }
@@ -274,12 +278,26 @@ fun OnboardingScreen(walletManager: WalletManager) {
                 onClearError = { restoreError = null },
                 onBack = { step = OnboardingStep.RestoreMethod },
                 onRestore = { mnemonic ->
-                    restoreError = null
-                    step = OnboardingStep.RestoreMints(MnemonicInput.normalize(mnemonic))
+                    // iOS initializeAndProceed: install the restored wallet before
+                    // the mint-staging step so the repository is keyed to this
+                    // seed — the Nostr backup search derives its keys from it.
+                    scope.launch {
+                        restoring = true
+                        restoreError = null
+                        val normalized = MnemonicInput.normalize(mnemonic)
+                        runCatching { walletManager.initializeRestoredWallet(normalized) }
+                            .onSuccess { step = OnboardingStep.RestoreMints(normalized) }
+                            .onFailure {
+                                restoreError = it.message
+                                    ?: "That seed phrase doesn't look right. Check the spelling and try again."
+                            }
+                        restoring = false
+                    }
                 },
             )
 
             is OnboardingStep.RestoreMints -> RestoreMintsFace(
+                nostrMintBackupService = nostrMintBackupService,
                 onBack = { step = OnboardingStep.RestoreInput },
                 onRestore = { mintUrls ->
                     step = OnboardingStep.RestoreProgress(current.mnemonic, mintUrls)
@@ -288,12 +306,11 @@ fun OnboardingScreen(walletManager: WalletManager) {
 
             is OnboardingStep.RestoreProgress -> RestoreProgressFace(
                 walletManager = walletManager,
-                mnemonic = current.mnemonic,
                 mintUrls = current.mintUrls,
                 onBack = { step = OnboardingStep.RestoreMints(current.mnemonic) },
                 onOpenWallet = {
                     scope.launch {
-                        runCatching { walletManager.completeOnboarding() }
+                        runCatching { walletManager.completeRestore() }
                     }
                 },
             )
@@ -1096,14 +1113,39 @@ private fun RestoreInputFace(
 
 @Composable
 private fun RestoreMintsFace(
+    nostrMintBackupService: NostrMintBackupService,
     onBack: () -> Unit,
     onRestore: (List<String>) -> Unit,
 ) {
     val appeared = rememberAppeared()
+    val scope = rememberCoroutineScope()
+    val backupState by nostrMintBackupService.state.collectAsState()
     var input by remember { mutableStateOf("") }
     var staged by remember { mutableStateOf<List<String>>(emptyList()) }
     var notice by remember { mutableStateOf<String?>(null) }
     val clipboard = LocalClipboardManager.current
+
+    // iOS searchNostrMintBackups: look up the encrypted mint-list backup for
+    // this seed on the user's relays (NUT-27, fetched by cdk) and stage every
+    // mint it contains.
+    fun searchNostrBackup() {
+        scope.launch {
+            runCatching { nostrMintBackupService.fetchBackedUpMintUrls() }
+                .onSuccess { urls ->
+                    val normalized = urls.mapNotNull(::normalizeMintUrl)
+                    val fresh = normalized.filterNot { candidate ->
+                        staged.any { it.equals(candidate, ignoreCase = true) }
+                    }
+                    staged = staged + fresh
+                    notice = when {
+                        normalized.isEmpty() -> "No Nostr mint backup found on your relays."
+                        fresh.isEmpty() -> "Backup found — its mints are already in the list."
+                        else -> "Added ${fresh.size} mint${if (fresh.size == 1) "" else "s"} from your Nostr backup."
+                    }
+                }
+                .onFailure { notice = it.message ?: "Could not search your relays." }
+        }
+    }
 
     fun addInput() {
         val candidates = mintUrlCandidates(input)
@@ -1190,6 +1232,12 @@ private fun RestoreMintsFace(
                 enabled = input.isNotBlank(),
                 modifier = Modifier.fillMaxWidth(),
             )
+            GhostButton(
+                text = if (backupState.isSearching) "Searching…" else "Find Mints from Nostr Backup",
+                onClick = ::searchNostrBackup,
+                enabled = !backupState.isSearching,
+                modifier = Modifier.fillMaxWidth(),
+            )
             if (notice != null) {
                 InlineNotice(text = notice!!)
             }
@@ -1271,7 +1319,6 @@ private sealed interface RestorePhase {
 @Composable
 private fun RestoreProgressFace(
     walletManager: WalletManager,
-    mnemonic: String,
     mintUrls: List<String>,
     onBack: () -> Unit,
     onOpenWallet: () -> Unit,
@@ -1283,7 +1330,6 @@ private fun RestoreProgressFace(
     }
     val scope = rememberCoroutineScope()
     var completed by remember { mutableStateOf(false) }
-    var topError by remember { mutableStateOf<String?>(null) }
 
     suspend fun restoreMint(url: String) {
         phases[url] = RestorePhase.Restoring
@@ -1292,16 +1338,11 @@ private fun RestoreProgressFace(
             .onFailure { phases[url] = RestorePhase.Failed(it.message ?: "Could not restore from this mint.") }
     }
 
-    LaunchedEffect(mnemonic, mintUrls) {
+    // The restored wallet was already installed on the seed-entry step (iOS
+    // initializeAndProceed) — this face only runs the per-mint recovery.
+    LaunchedEffect(mintUrls) {
         completed = false
-        topError = null
         phases.keys.forEach { phases[it] = RestorePhase.Pending }
-        runCatching { walletManager.initializeRestoredWallet(mnemonic) }
-            .onFailure {
-                topError = it.message ?: "That seed phrase doesn't look right. Check the spelling and try again."
-                completed = true
-                return@LaunchedEffect
-            }
         mintUrls.forEach { url -> restoreMint(url) }
         completed = true
     }
@@ -1339,9 +1380,6 @@ private fun RestoreProgressFace(
                 .padding(top = CashuTheme.spacing.section),
             verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
         ) {
-            if (topError != null) {
-                InlineNotice(text = topError!!)
-            }
             mintUrls.forEach { url ->
                 RestoreProgressRow(
                     url = url,
@@ -1354,7 +1392,7 @@ private fun RestoreProgressFace(
                     },
                 )
             }
-            if (mintUrls.isEmpty() && topError == null) {
+            if (mintUrls.isEmpty()) {
                 Text(
                     text = "No mints selected.",
                     style = MaterialTheme.typography.bodyMedium,
@@ -1372,7 +1410,7 @@ private fun RestoreProgressFace(
             PrimaryButton(
                 text = if (completed) "Open Wallet" else "Restoring…",
                 onClick = onOpenWallet,
-                enabled = completed && !isWorking && topError == null,
+                enabled = completed && !isWorking,
                 loading = !completed || isWorking,
             )
             GhostButton(
