@@ -38,6 +38,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -86,6 +87,7 @@ fun CashuRequestDetailScreen(
     cashuRequestStore: CashuRequestStore,
     requestId: String,
     onClose: () -> Unit,
+    snackbarHostState: SnackbarHostState? = null,
 ) {
     val storeState by cashuRequestStore.state.collectAsState()
     val walletState by walletManager.state.collectAsState()
@@ -173,7 +175,12 @@ fun CashuRequestDetailScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Spacer(Modifier.height(CashuTheme.spacing.snug))
-            QrCard(content = request.encoded, shareSubject = "Cashu Request", staticOnly = true)
+            QrCard(
+                content = request.encoded,
+                shareSubject = "Cashu Request",
+                staticOnly = true,
+                snackbarHostState = snackbarHostState,
+            )
 
             // Request amounts render in the request's own unit.
             val isSatRequest = request.unit.equals("sat", ignoreCase = true)

@@ -1,5 +1,11 @@
 package org.cashu.wallet.ui.components
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
@@ -54,14 +60,23 @@ fun SheetHeader(
         } else {
             Spacer(Modifier.width(SheetHeaderTitleInset))
         }
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+        AnimatedContent(
+            targetState = title,
+            transitionSpec = {
+                fadeIn(spring(stiffness = Spring.StiffnessMedium))
+                    .togetherWith(fadeOut(spring(stiffness = Spring.StiffnessMedium)))
+            },
+            label = "sheet-header-title",
             modifier = Modifier.weight(1f),
-        )
+        ) { current ->
+            Text(
+                text = current,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
         actions()
     }
 }

@@ -16,6 +16,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Visibility
@@ -34,6 +35,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -46,17 +48,21 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
 import org.cashu.wallet.Core.NostrService
 import org.cashu.wallet.Core.NostrSignerType
 import org.cashu.wallet.Core.SettingsManager
 import org.cashu.wallet.ui.components.CanvasDivider
 import org.cashu.wallet.ui.components.CashuTextField
 import org.cashu.wallet.ui.components.GhostButton
+import org.cashu.wallet.ui.components.IconSwap
 import org.cashu.wallet.ui.components.InlineNotice
 import org.cashu.wallet.ui.components.InspectorRow
 import org.cashu.wallet.ui.components.PrimaryButton
 import org.cashu.wallet.ui.components.SectionHeader
 import org.cashu.wallet.ui.theme.CashuTheme
+
+private const val NsecCopiedFeedbackMillis = 2_000L
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -69,6 +75,13 @@ fun NostrScreen(
     val settings by settingsManager.state.collectAsState()
     val clipboard = LocalClipboardManager.current
     var nsecRevealed by remember { mutableStateOf(false) }
+    var nsecCopied by remember { mutableStateOf(false) }
+    LaunchedEffect(nsecCopied) {
+        if (nsecCopied) {
+            delay(NsecCopiedFeedbackMillis)
+            nsecCopied = false
+        }
+    }
     var showImport by remember { mutableStateOf(false) }
     var importError by remember { mutableStateOf<String?>(null) }
     var addRelayOpen by remember { mutableStateOf(false) }
@@ -170,12 +183,17 @@ fun NostrScreen(
                     )
                 }
                 IconButton(
-                    onClick = { clipboard.setText(AnnotatedString(nostrState.nsec)) },
+                    onClick = {
+                        clipboard.setText(AnnotatedString(nostrState.nsec))
+                        nsecCopied = true
+                    },
                     enabled = nostrState.nsec.isNotBlank(),
                 ) {
-                    Icon(
-                        imageVector = Icons.Outlined.ContentCopy,
+                    IconSwap(
+                        icon = if (nsecCopied) Icons.Outlined.Check else Icons.Outlined.ContentCopy,
                         contentDescription = "Copy nsec",
+                        tint = if (nsecCopied) CashuTheme.colors.received else MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(CashuTheme.spacing.comfortable),
                     )
                 }
             }

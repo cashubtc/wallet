@@ -6,15 +6,21 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SheetValue
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import kotlinx.coroutines.launch
 
 /**
@@ -48,6 +54,7 @@ fun WalletFlowSheetHost(
     flow: WalletFlow?,
     dismissLocked: Boolean,
     onDismissed: () -> Unit,
+    snackbarHostState: SnackbarHostState,
     content: @Composable (flow: WalletFlow, close: () -> Unit) -> Unit,
 ) {
     if (flow == null) return
@@ -68,15 +75,24 @@ fun WalletFlowSheetHost(
         onDismissRequest = onDismissed,
         sheetState = sheetState,
     ) {
-        AnimatedContent(
-            targetState = flow,
-            transitionSpec = {
-                fadeIn(spring(stiffness = Spring.StiffnessMedium))
-                    .togetherWith(fadeOut(spring(stiffness = Spring.StiffnessMedium)))
-            },
-            label = "wallet-flow",
-        ) { current ->
-            content(current, close)
+        Box(modifier = Modifier.fillMaxWidth()) {
+            AnimatedContent(
+                targetState = flow,
+                transitionSpec = {
+                    fadeIn(spring(stiffness = Spring.StiffnessMedium))
+                        .togetherWith(fadeOut(spring(stiffness = Spring.StiffnessMedium)))
+                },
+                label = "wallet-flow",
+            ) { current ->
+                content(current, close)
+            }
+            // Sheet renders in its own Android Window — the root-mounted host
+            // in CashuApp.kt can't reach here, so mount a second one observing
+            // the same SnackbarHostState.
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
         }
     }
 }

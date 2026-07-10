@@ -1,6 +1,7 @@
 package org.cashu.wallet.App
 
 import android.content.Context
+import androidx.compose.material3.SnackbarHostState
 import org.cashu.wallet.Core.CDK.CdkWalletGatewayImpl
 import org.cashu.wallet.Core.AppLockManager
 import org.cashu.wallet.Core.CashuRequestListener
@@ -32,6 +33,7 @@ class AppContainer(context: Context) {
     val sentryService = SentryService(appContext, settingsStore)
     val nostrService = NostrService(secureStorage, settingsStore)
     val navigationManager = NavigationManager()
+    val snackbarHostState = SnackbarHostState()
     val connectivityObserver = AndroidConnectivityObserver(appContext)
     val walletDatabasePathManager = WalletDatabasePathManager(appContext)
     val cdkGateway = CdkWalletGatewayImpl()
