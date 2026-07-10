@@ -46,7 +46,7 @@ jobs:
       run: |
         chmod +x CI/setup-nutshell.sh CI/setup-cdk.sh
         ./CI/setup-nutshell.sh
-        ./CI/setup-cdk.sh
+        ./CI/setup-cdk.sh 3339 android
 
     - name: Start Android local test mints
       working-directory: .
@@ -189,6 +189,7 @@ jobs:
           -derivedDataPath "$RUNNER_TEMP/CashuWalletDerivedData" \
           -clonedSourcePackagesDirPath "$RUNNER_TEMP/SourcePackages" \
           -skipPackageUpdates \
+          -skipPackagePluginValidation \
           -showBuildTimingSummary \
           COMPILER_INDEX_STORE_ENABLE=NO \
           CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="-" \
@@ -208,6 +209,7 @@ jobs:
           -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" \
           -derivedDataPath "$RUNNER_TEMP/CashuWalletDerivedData" \
           -clonedSourcePackagesDirPath "$RUNNER_TEMP/SourcePackages" \
+          -skipPackagePluginValidation \
           -only-testing:CashuWalletTests \
           -only-testing:CashuWalletUITests \
           -parallel-testing-enabled YES \

@@ -2,16 +2,54 @@
 set -euo pipefail
 
 # setup-cdk.sh — Download and configure the prebuilt cdk-mintd release.
-# Usage: ./CI/setup-cdk.sh [port]
+# Usage: ./CI/setup-cdk.sh [port] [default|android]
 
 PORT=${1:-3339}
+PROFILE=${2:-default}
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CDK_VERSION="0.17.3-rc.0"
 BIN_DIR="${SCRIPT_DIR}/.cdk-bin"
 WORK_DIR="${SCRIPT_DIR}/.cdk-workdir"
 MINTD_BIN="${BIN_DIR}/cdk-mintd"
 
-echo "🔧 Setting up CDK mint (v${CDK_VERSION}) on port ${PORT}..."
+case "$PROFILE" in
+    default)
+        MINT_NAME="CDK CI Mint"
+        LN_CONFIG='[ln]
+ln_backend = "fakewallet"
+unit = "sat"
+min_mint = 1
+max_mint = 500000
+min_melt = 1
+max_melt = 500000'
+        SUPPORTED_UNITS='["sat"]'
+        ;;
+    android)
+        MINT_NAME="CDK Test Mint"
+        LN_CONFIG='[[ln]]
+ln_backend = "fakewallet"
+unit = "sat"
+min_mint = 1
+max_mint = 500000
+min_melt = 1
+max_melt = 500000
+
+[[ln]]
+ln_backend = "fakewallet"
+unit = "usd"
+min_mint = 1
+max_mint = 100000
+min_melt = 1
+max_melt = 100000'
+        SUPPORTED_UNITS='["sat", "usd"]'
+        ;;
+    *)
+        echo "❌ Unknown CDK test profile: $PROFILE (expected default or android)"
+        exit 1
+        ;;
+esac
+
+echo "🔧 Setting up CDK mint (v${CDK_VERSION}) on port ${PORT} with ${PROFILE} profile..."
 
 OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
 ARCH="$(uname -m)"
@@ -91,22 +129,16 @@ output = "stderr"
 console_level = "info"
 
 [mint_info]
-name = "CDK CI Mint"
+name = "${MINT_NAME}"
 description = "Local CDK integration-test mint"
 
 [database]
 engine = "sqlite"
 
-[ln]
-ln_backend = "fakewallet"
-unit = "sat"
-min_mint = 1
-max_mint = 500000
-min_melt = 1
-max_melt = 500000
+${LN_CONFIG}
 
 [fake_wallet]
-supported_units = ["sat"]
+supported_units = ${SUPPORTED_UNITS}
 fee_percent = 0.0
 reserve_fee_min = 0
 custom_payment_methods = []
