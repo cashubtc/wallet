@@ -65,15 +65,19 @@ internal class WalletTransactionLoader(
                     fees = meltFees,
                 )
             }
-        val tokenTransactions = pendingSentTokenTransactions(pendingTokens) +
-            pendingReceiveTokenTransactions(pendingReceiveTokens) +
-            claimedTokenTransactions(claimedTokens)
+        val receiveTokenTransactions = pendingReceiveTokenTransactions(pendingReceiveTokens)
         val cached = walletStore.loadTransactions()
             .filterNot { it.isPendingToken }
             .map { it.withStoredMeltMetadata(preimages, meltFees) }
-        val merged = (remote + pendingQuoteTransactions + storedMeltTransactions + tokenTransactions + cached)
-            .distinctBy { "${it.mintUrl.orEmpty()}|${it.quoteId ?: it.id}" }
-            .sortedByDescending { it.dateEpochMillis }
+        // Dedupe remote/cached first so sent tokens fold into the surviving CDK
+        // row, then merge — otherwise each send lists twice (CDK row + local
+        // pending-token row).
+        val merged = mergeSentTokenTransactions(
+            transactions = (remote + pendingQuoteTransactions + storedMeltTransactions + receiveTokenTransactions + cached)
+                .distinctBy { "${it.mintUrl.orEmpty()}|${it.quoteId ?: it.id}" },
+            pendingTokens = pendingTokens,
+            claimedTokens = claimedTokens,
+        ).sortedByDescending { it.dateEpochMillis }
         walletStore.saveTransactions(merged)
         walletStore.saveMintQuoteTimestamps(pruneMintQuoteTimestamps(merged, mintQuoteTimestamps))
         return WalletTransactionLoadResult(
