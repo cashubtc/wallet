@@ -194,6 +194,7 @@ extension WalletManager {
             SettingsManager.shared.resetWalletScopedData(resetRuntimeServices: false)
             try removeWalletFileBackups(fileBackups)
             performICloudBackup()
+            Task { await NostrMintBackupService.shared.backupCurrentMintsIfEnabled() }
         } catch {
             SentryService.capture(error)
             resetRuntimeState()
@@ -277,6 +278,7 @@ extension WalletManager {
         
         db = repository.db
         walletRepository = repository.repository
+        NostrMintBackupService.shared.walletRepository = repository.repository
         processedQuotes = Set(walletStore.loadProcessedNPCQuotes())
     }
 
@@ -301,6 +303,7 @@ extension WalletManager {
         }
 
         walletRepository = nil
+        NostrMintBackupService.shared.walletRepository = nil
         db = nil
         mnemonic = nil
         balance = 0

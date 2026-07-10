@@ -128,6 +128,12 @@ class SettingsManager: ObservableObject {
         }
     }
 
+    @Published var nostrMintBackupEnabled: Bool {
+        didSet {
+            settingsStore.nostrMintBackupEnabled = nostrMintBackupEnabled
+        }
+    }
+
     @Published var amountDisplayPrimary: AmountDisplayPrimary {
         didSet {
             settingsStore.amountDisplayPrimary = amountDisplayPrimary.rawValue
@@ -170,6 +176,7 @@ class SettingsManager: ObservableObject {
         self.enablePaymentRequests = settingsStore.enablePaymentRequests
         self.receivePaymentRequestsAutomatically = settingsStore.receivePaymentRequestsAutomatically
         self.nostrRelays = settingsStore.nostrRelays
+        self.nostrMintBackupEnabled = settingsStore.nostrMintBackupEnabled
         self.amountDisplayPrimary = AmountDisplayPrimary(rawValue: settingsStore.amountDisplayPrimary) ?? .fiat
         self.appLockEnabled = settingsStore.appLockEnabled
         self.sentryEnabled = settingsStore.sentryEnabled
@@ -254,6 +261,7 @@ class SettingsManager: ObservableObject {
 
         showP2PKButtonInDrawer = false
         p2pkKeys = []
+        nostrMintBackupEnabled = true
         let previousSuppression = suppressPaymentRequestSideEffects
         suppressPaymentRequestSideEffects = resetRuntimeServices
         defer { suppressPaymentRequestSideEffects = previousSuppression }
@@ -264,6 +272,7 @@ class SettingsManager: ObservableObject {
             NostrService.shared.resetForWalletBoundary()
             NPCService.shared.resetForWalletBoundary()
         }
+        NostrMintBackupService.shared.resetForWalletBoundary()
         settingsStore.clearWalletScopedData()
     }
     

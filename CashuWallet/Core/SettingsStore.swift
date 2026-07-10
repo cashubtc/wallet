@@ -103,6 +103,11 @@ final class SettingsStore {
         set { setOptional(newValue, forKey: StorageKeys.nostrSignerType) }
     }
 
+    var nostrMintBackupEnabled: Bool {
+        get { bool(StorageKeys.nostrMintBackupEnabled, default: true) }
+        set { set(newValue, forKey: StorageKeys.nostrMintBackupEnabled) }
+    }
+
     var amountDisplayPrimary: String {
         get { value(StorageKeys.amountDisplayPrimary) ?? "fiat" }
         set { set(newValue, forKey: StorageKeys.amountDisplayPrimary) }
