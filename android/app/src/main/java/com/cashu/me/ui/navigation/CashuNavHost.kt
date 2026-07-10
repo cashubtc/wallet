@@ -127,6 +127,7 @@ fun CashuNavHost(
             CashuRequestDetailScreen(
                 walletManager = container.walletManager,
                 settingsManager = container.settingsManager,
+                nostrService = container.nostrService,
                 cashuRequestStore = container.cashuRequestStore,
                 requestId = requestId,
                 isReceiveFlow = entry.arguments?.getBoolean("fresh") == true,

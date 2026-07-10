@@ -189,7 +189,7 @@ fun LightningScreen(
             mints = walletState.mints,
             activeMintUrl = npcState.selectedMintUrl ?: walletState.activeMint?.url,
             onSelect = { mint ->
-                npcService.changeMint(mint.url)
+                mint?.let { npcService.changeMint(it.url) }
                 mintPickerOpen = false
             },
             onDismiss = { mintPickerOpen = false },

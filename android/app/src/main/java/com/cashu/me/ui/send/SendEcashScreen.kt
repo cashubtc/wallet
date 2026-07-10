@@ -378,8 +378,8 @@ fun SendEcashScreen(
         MintPickerSheet(
             mints = walletState.mints,
             activeMintUrl = activeMintUrl,
-            onSelect = {
-                selectedMintUrl = it.url
+            onSelect = { mint ->
+                mint?.let { selectedMintUrl = it.url }
                 selectedUnit = null
                 amount = ""
                 nonSatBalance = null

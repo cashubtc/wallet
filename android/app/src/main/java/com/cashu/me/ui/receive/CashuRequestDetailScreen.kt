@@ -19,31 +19,33 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.AccountBalance
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.CalendarToday
 import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.CurrencyExchange
 import androidx.compose.material.icons.outlined.IosShare
 import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.Schedule
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -64,20 +66,29 @@ import java.util.Date
 import kotlinx.coroutines.delay
 import com.cashu.me.Core.AmountFormatter
 import com.cashu.me.Core.CashuRequestStore
+import com.cashu.me.Core.NostrService
+import com.cashu.me.Core.PaymentRequestBuilder
 import com.cashu.me.Core.Protocols.CurrencyAmount
 import com.cashu.me.Core.Protocols.CurrencyRegistry
 import com.cashu.me.Core.SettingsManager
+import com.cashu.me.Core.UnitAmountEntry
+import com.cashu.me.Core.Wallet.userFacingWalletMessage
 import com.cashu.me.Core.WalletManager
+import com.cashu.me.ui.components.AmountEntryHero
 import com.cashu.me.ui.components.AmountText
 import com.cashu.me.ui.components.CanvasDivider
-import com.cashu.me.ui.components.DestructiveTextButton
 import com.cashu.me.ui.components.GhostButton
+import com.cashu.me.ui.components.InlineNoticeHost
 import com.cashu.me.ui.components.InspectorRow
+import com.cashu.me.ui.components.MintPickerSheet
+import com.cashu.me.ui.components.NumberPad
 import com.cashu.me.ui.components.PaymentStatusPhase
 import com.cashu.me.ui.components.PaymentStatusScreen
 import com.cashu.me.ui.components.PrimaryButton
 import com.cashu.me.ui.components.QrCard
+import com.cashu.me.ui.components.SecondaryButton
 import com.cashu.me.ui.components.SectionHeader
+import com.cashu.me.ui.components.SheetHeader
 import com.cashu.me.ui.components.shareText
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.rememberReducedMotion
@@ -88,6 +99,7 @@ import com.cashu.me.ui.theme.withMonoDigits
 fun CashuRequestDetailScreen(
     walletManager: WalletManager,
     settingsManager: SettingsManager,
+    nostrService: NostrService,
     cashuRequestStore: CashuRequestStore,
     requestId: String,
     onClose: () -> Unit,
@@ -106,7 +118,45 @@ fun CashuRequestDetailScreen(
 
     val request = storeState.requests.firstOrNull { it.id == requestId }
     var copied by remember { mutableStateOf(false) }
-    var confirmDelete by remember { mutableStateOf(false) }
+    var mintPickerOpen by remember { mutableStateOf(false) }
+    var amountPickerOpen by remember { mutableStateOf(false) }
+    var regenerateError by remember { mutableStateOf<String?>(null) }
+
+    // Re-signs the same NUT-18 request in place (same id/history entry) — used
+    // by the Mint sheet, the Amount sheet's Done, and "New Request" (called
+    // with no args, which just re-signs the current values).
+    fun regenerate(nextAmount: Long? = request?.amount, nextMints: List<String> = request?.mints.orEmpty()) {
+        val req = request ?: return
+        val nostr = nostrService.state.value
+        val relays = settings.nostrRelays
+        if (nostr.publicKeyHex.isBlank() || relays.isEmpty()) {
+            regenerateError = "Nostr isn't ready — check your relays in Settings."
+            return
+        }
+        val nextUnit = walletState.mints.firstOrNull { it.url == nextMints.firstOrNull() }
+            ?.resolvedMintUnit(req.unit) ?: req.unit
+        runCatching {
+            PaymentRequestBuilder.build(
+                id = req.id,
+                amount = nextAmount,
+                unit = nextUnit,
+                mints = nextMints,
+                description = req.memo,
+                nostrPubkeyHex = nostr.publicKeyHex,
+                relays = relays,
+            )
+        }.onSuccess { encoded ->
+            cashuRequestStore.update(
+                id = req.id,
+                amount = nextAmount,
+                unit = nextUnit,
+                mints = nextMints,
+                memo = req.memo,
+                encoded = encoded,
+            )
+            regenerateError = null
+        }.onFailure { regenerateError = it.userFacingWalletMessage }
+    }
 
     LaunchedEffect(copied) {
         if (copied) {
@@ -161,8 +211,8 @@ fun CashuRequestDetailScreen(
                 navigationIcon = {
                     IconButton(onClick = onClose) {
                         Icon(
-                            imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                            contentDescription = "Back",
+                            imageVector = Icons.Outlined.Close,
+                            contentDescription = "Close",
                         )
                     }
                 },
@@ -250,6 +300,8 @@ fun CashuRequestDetailScreen(
                     label = "Mint",
                     value = mintLabel,
                     leadingIcon = Icons.Outlined.AccountBalance,
+                    editable = true,
+                    onClick = { mintPickerOpen = true },
                 )
                 CanvasDivider(leadingInset = 16.dp)
                 InspectorRow(
@@ -259,6 +311,8 @@ fun CashuRequestDetailScreen(
                     } ?: "Any",
                     leadingIcon = Icons.Outlined.AccountBalanceWallet,
                     valueMonospaced = true,
+                    editable = true,
+                    onClick = { amountPickerOpen = true },
                 )
                 CanvasDivider(leadingInset = 16.dp)
                 InspectorRow(
@@ -283,50 +337,60 @@ fun CashuRequestDetailScreen(
                 }
             }
 
+            InlineNoticeHost(text = regenerateError, modifier = Modifier.fillMaxWidth())
+
             Spacer(Modifier.height(CashuTheme.spacing.snug))
-            Column(
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
+                horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
             ) {
                 PrimaryButton(
-                    text = if (copied) "Copied" else "Copy request",
+                    text = if (copied) "Copied" else "Copy",
                     onClick = {
                         clipboard.setText(AnnotatedString(request.encoded))
                         copied = true
                     },
+                    modifier = Modifier.weight(1f),
                 )
-                DestructiveTextButton(
-                    text = "Remove from history",
-                    onClick = { confirmDelete = true },
-                    modifier = Modifier.fillMaxWidth(),
+                SecondaryButton(
+                    text = "New Request",
+                    onClick = { regenerate() },
+                    modifier = Modifier.weight(1f),
                 )
             }
             Spacer(Modifier.height(CashuTheme.spacing.section))
         }
     }
 
-    if (confirmDelete) {
-        AlertDialog(
-            onDismissRequest = { confirmDelete = false },
-            title = { Text("Remove from history?") },
-            text = {
-                Text(
-                    "The request will be removed from this device. Any payments already received stay in your wallet.",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
+    if (mintPickerOpen && request != null) {
+        val activeMintUrl = request.mints.firstOrNull()
+        MintPickerSheet(
+            mints = walletState.mints,
+            activeMintUrl = activeMintUrl,
+            allowAnyMint = true,
+            onSelect = { mint ->
+                regenerate(nextMints = listOfNotNull(mint?.url))
+                mintPickerOpen = false
             },
-            confirmButton = {
-                TextButton(onClick = {
-                    confirmDelete = false
-                    cashuRequestStore.delete(request!!.id)
-                    onClose()
-                }) {
-                    Text("Remove", color = MaterialTheme.colorScheme.error)
-                }
+            onDismiss = { mintPickerOpen = false },
+        )
+    }
+
+    if (amountPickerOpen && request != null) {
+        val isSatRequest = request.unit.equals("sat", ignoreCase = true)
+        val requestCurrency = CurrencyRegistry.currencyForMintUnit(request.unit)
+        CashuRequestAmountEditSheet(
+            initialAmount = request.amount,
+            isSat = isSatRequest,
+            unit = request.unit,
+            decimals = requestCurrency.decimals,
+            useBitcoinSymbol = settings.useBitcoinSymbol,
+            formatter = formatter,
+            onDone = { value ->
+                regenerate(nextAmount = value)
+                amountPickerOpen = false
             },
-            dismissButton = {
-                TextButton(onClick = { confirmDelete = false }) { Text("Cancel") }
-            },
+            onDismiss = { amountPickerOpen = false },
         )
     }
 }
@@ -398,7 +462,62 @@ private fun StatusBlock(received: Boolean, paymentCount: Int, celebrate: Boolean
 }
 
 private fun formatDate(epochMillis: Long): String =
-    DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(epochMillis))
+    DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(epochMillis))
+
+/** Amount-only edit sheet for an existing Cashu Request (iOS
+ *  `CashuRequestAmountPickerSheet` parity). An empty pad on Done naturally
+ *  produces null ("Any") — no separate clear action needed. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CashuRequestAmountEditSheet(
+    initialAmount: Long?,
+    isSat: Boolean,
+    unit: String,
+    decimals: Int,
+    useBitcoinSymbol: Boolean,
+    formatter: AmountFormatter,
+    onDone: (Long?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var amount by remember { mutableStateOf(UnitAmountEntry.entryString(initialAmount ?: 0, decimals)) }
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .imePadding()
+                .padding(horizontal = CashuTheme.spacing.comfortable),
+        ) {
+            SheetHeader(
+                title = "Amount",
+                navigationIcon = Icons.Outlined.Close,
+                navigationContentDescription = "Close",
+                onNavigationClick = onDismiss,
+            )
+            Spacer(Modifier.height(CashuTheme.spacing.comfortable))
+            AmountEntryHero(
+                entryRaw = amount,
+                isSat = isSat,
+                unit = unit,
+                decimals = decimals,
+                useBitcoinSymbol = useBitcoinSymbol,
+                formatter = formatter,
+            )
+            Spacer(Modifier.height(CashuTheme.spacing.comfortable))
+            NumberPad(amount = amount, onAmountChange = { amount = it }, decimals = decimals)
+            Spacer(Modifier.height(CashuTheme.spacing.snug))
+            PrimaryButton(
+                text = "Done",
+                onClick = { onDone(UnitAmountEntry.baseUnits(amount, decimals).takeIf { it > 0 }) },
+            )
+            Spacer(Modifier.height(CashuTheme.spacing.snug))
+        }
+    }
+}
 
 /** Full-screen shared success terminal for a fresh request's first payment
  *  (iOS `CashuRequestDetailView.paymentSuccessView`). Auto-dismisses after a

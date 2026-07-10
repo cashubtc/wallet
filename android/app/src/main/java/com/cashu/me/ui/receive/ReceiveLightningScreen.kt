@@ -356,7 +356,7 @@ fun ReceiveLightningScreen(
             mints = walletState.mints,
             activeMintUrl = activeMint?.url,
             onSelect = { mint ->
-                scope.launch { walletManager.setActiveMint(mint) }
+                mint?.let { scope.launch { walletManager.setActiveMint(it) } }
                 amount = ""
                 errorText = null
                 mintPickerOpen = false

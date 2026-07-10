@@ -544,8 +544,8 @@ fun UnifiedSendScreen(
         MintPickerSheet(
             mints = walletState.mints,
             activeMintUrl = activeMintUrl,
-            onSelect = {
-                selectedMintUrl = it.url
+            onSelect = { mint ->
+                mint?.let { selectedMintUrl = it.url }
                 mintPickerOpen = false
             },
             onDismiss = { mintPickerOpen = false },

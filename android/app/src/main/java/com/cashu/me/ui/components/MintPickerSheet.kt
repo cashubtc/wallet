@@ -30,9 +30,10 @@ import com.cashu.me.ui.theme.CashuTheme
 fun MintPickerSheet(
     mints: List<MintInfo>,
     activeMintUrl: String?,
-    onSelect: (MintInfo) -> Unit,
+    onSelect: (MintInfo?) -> Unit,
     onDismiss: () -> Unit,
     title: String = "Choose mint",
+    allowAnyMint: Boolean = false,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(
@@ -53,6 +54,36 @@ fun MintPickerSheet(
                     vertical = CashuTheme.spacing.default,
                 ),
             )
+            if (allowAnyMint) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onSelect(null) }
+                        .padding(
+                            horizontal = CashuTheme.spacing.snug,
+                            vertical = CashuTheme.spacing.default,
+                        ),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Any mint", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "Sender chooses the mint",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (activeMintUrl == null) {
+                        Icon(
+                            imageVector = Icons.Filled.Check,
+                            contentDescription = "Active",
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(CashuTheme.spacing.loose),
+                        )
+                    }
+                }
+            }
             mints.forEach { mint ->
                 val isActive = mint.url == activeMintUrl
                 Row(
