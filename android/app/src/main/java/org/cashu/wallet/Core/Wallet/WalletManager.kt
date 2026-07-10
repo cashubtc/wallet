@@ -33,6 +33,7 @@ class WalletManager(
     private val settingsManager: SettingsManager,
     private val nostrService: NostrService,
     private val npcService: NPCService,
+    private val nwcManager: NwcManager,
     private val nostrMintBackupService: NostrMintBackupService,
     private val databasePathManager: WalletDatabasePathManager,
     private val gateway: CdkWalletGateway,
@@ -59,6 +60,7 @@ class WalletManager(
                 openWalletRepositoryWithRecovery(mnemonic)
                 deriveNostrKey(mnemonic)
                 loadCachedState(needsOnboarding = false)
+                nwcManager.startIfEnabled()
             } ?: update {
                 copy(
                     isInitialized = true,
@@ -132,6 +134,7 @@ class WalletManager(
 
     override suspend fun deleteWallet() {
         withLoading {
+            nwcManager.resetForWalletBoundary()
             gateway.closeWalletRepository()
             secureStorage.delete(StorageKeys.secureWalletMnemonic)
             secureStorage.delete(StorageKeys.secureNostrPrivateKey)
@@ -579,8 +582,12 @@ class WalletManager(
         val backups = databasePathManager.backupWalletDatabaseFiles()
         val walletSnapshot = walletStore.snapshotWalletScopedData()
         val settingsSnapshot = settingsManager.snapshotWalletScopedData()
+        val nwcSnapshot = nwcManager.snapshotWalletScopedData()
 
         runCatching {
+            // NwcService retains the native CDK wallet, so it must stop before
+            // the repository/database it is backed by is closed.
+            nwcManager.resetForWalletBoundary()
             gateway.closeWalletRepository()
             walletStore.removeAllWalletData()
             settingsManager.prepareForWalletReplacement()
@@ -597,6 +604,7 @@ class WalletManager(
             gateway.closeWalletRepository()
             walletStore.restoreWalletScopedData(walletSnapshot)
             settingsManager.restoreWalletScopedData(settingsSnapshot)
+            nwcManager.restoreWalletScopedData(nwcSnapshot)
             nostrMintBackupService.reloadStoredState()
             databasePathManager.removeWalletDatabaseFiles()
             databasePathManager.restoreWalletFileBackups(backups)
@@ -606,6 +614,7 @@ class WalletManager(
                     openWalletRepositoryWithRecovery(previousMnemonic)
                     deriveNostrKey(previousMnemonic)
                     loadCachedState(needsOnboarding = false)
+                    nwcManager.startIfEnabled()
                 }
             } else {
                 secureStorage.delete(StorageKeys.secureWalletMnemonic)

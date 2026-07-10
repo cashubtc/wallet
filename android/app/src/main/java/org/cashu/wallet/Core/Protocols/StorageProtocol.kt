@@ -11,6 +11,7 @@ interface SecureStorage {
     fun loadString(key: String): String?
     fun saveString(key: String, value: String)
     fun delete(key: String)
+    fun deletePrefix(prefix: String) = Unit
     fun contains(key: String): Boolean
 }
 
@@ -86,6 +87,11 @@ object StorageKeys {
     const val npcSelectedMint = "npc.selectedMint"
     const val npcLastCheck = "npc.lastCheck"
 
+    const val nwcDataPrefix = "nwc."
+    const val nwcEnabled = "nwc.enabled"
+    const val nwcSelectedMint = "nwc.selectedMint"
+    const val nwcBudgetSats = "nwc.budgetSats"
+
     const val priceEnabled = "price.enabled"
     const val priceCurrencyCode = "price.currencyCode"
     const val priceCachedBTC = "price.cachedBTC"
@@ -96,6 +102,13 @@ object StorageKeys {
 
     const val secureWalletMnemonic = "wallet_mnemonic"
     const val secureNostrPrivateKey = "nostr_private_key"
+    const val secureNwcConnectionUri = "nwc_connection_uri"
+
+    // Android's pre-CDK settings-only NWC prototype. Its random keys cannot be
+    // restored by CDK's deterministic service, so they are removed on upgrade.
+    const val legacySettingsEnableNwc = "settings.enableNWC"
+    const val legacySettingsNwcConnections = "settings.nwcConnections"
+    const val legacySecureNwcPrefix = "settings.nwc."
 
     val walletBoundaryKeys = setOf(
         walletMints,
@@ -117,5 +130,8 @@ object StorageKeys {
         npcAutomaticClaim,
         npcSelectedMint,
         npcLastCheck,
+        nwcEnabled,
+        nwcSelectedMint,
+        nwcBudgetSats,
     )
 }

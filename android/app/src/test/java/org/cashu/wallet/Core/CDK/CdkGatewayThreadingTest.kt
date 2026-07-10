@@ -21,7 +21,9 @@ class CdkGatewayThreadingTest {
             .map { it.groupValues[1] }
             .filter { method ->
                 val declarationStart = source.indexOf("override suspend fun $method")
-                val declarationEnd = source.indexOf('\n', declarationStart).takeIf { it >= 0 } ?: source.length
+                // Signatures may span multiple lines; the first opening brace
+                // closes the declaration because guarded methods use `= cdkCall {`.
+                val declarationEnd = source.indexOf('{', declarationStart).takeIf { it >= 0 } ?: source.length
                 !source.substring(declarationStart, declarationEnd).contains("= cdkCall")
             }
             .toList()

@@ -15,6 +15,16 @@ class AppLoggerTest {
     }
 
     @Test
+    fun privacySafeMessageRedactsWalletConnectConnectionUris() {
+        val message = AppLogger.privacySafeMessage(
+            "connection nostr+walletconnect://pubkey?relay=wss%3A%2F%2Frelay.example&secret=top-secret",
+        )
+
+        assertFalse(message.contains("top-secret"))
+        assertEquals("connection <redacted-nwc-uri>", message)
+    }
+
+    @Test
     fun privacySafeMessageRedactsLabeledSecrets() {
         val message = AppLogger.privacySafeMessage(
             "seed phrase: abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",

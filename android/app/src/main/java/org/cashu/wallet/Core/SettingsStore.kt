@@ -115,12 +115,38 @@ class SettingsStore(
             store.putLong(StorageKeys.walletNostrMintBackupLastBackupDate, value)
         }
 
+    var nwcEnabled: Boolean
+        get() = store.boolean(StorageKeys.nwcEnabled, false)
+        set(value) = store.putBoolean(StorageKeys.nwcEnabled, value)
+
+    var nwcSelectedMint: String?
+        get() = store.string(StorageKeys.nwcSelectedMint)
+        set(value) = store.putString(StorageKeys.nwcSelectedMint, value)
+
+    var nwcBudgetSats: Long?
+        get() = store.long(StorageKeys.nwcBudgetSats, Long.MIN_VALUE)
+            .takeIf { it != Long.MIN_VALUE }
+        set(value) = if (value == null) {
+            store.putLong(StorageKeys.nwcBudgetSats, Long.MIN_VALUE)
+        } else {
+            store.putLong(StorageKeys.nwcBudgetSats, value)
+        }
+
     var p2pkKeys: List<P2PKKeyInfo>
         get() = loadList(StorageKeys.settingsP2PKKeys, P2PKKeyInfo.serializer())
         set(value) = saveList(StorageKeys.settingsP2PKKeys, P2PKKeyInfo.serializer(), value)
 
     internal fun loadP2PKKeysWithLegacySecrets(): List<LegacyP2PKKeyRecord> =
         LegacySettingsSecretParser.p2pkKeys(store.string(StorageKeys.settingsP2PKKeys))
+
+    internal fun clearLegacyNwcPrototypeSettings() {
+        store.removeKeys(
+            listOf(
+                StorageKeys.legacySettingsEnableNwc,
+                StorageKeys.legacySettingsNwcConnections,
+            ),
+        )
+    }
 
     internal fun snapshotWalletScopedData(): PreferenceSnapshot {
         val prefixKeys = store.keys().filter { it.startsWith(StorageKeys.npcDataPrefix) }
@@ -133,7 +159,7 @@ class SettingsStore(
 
     fun clearWalletScopedData() {
         store.removeKeys(walletScopedKeys)
-        store.removePrefix(listOf(StorageKeys.npcDataPrefix))
+        store.removePrefix(listOf(StorageKeys.npcDataPrefix, StorageKeys.nwcDataPrefix))
     }
 
     fun resetNostrRelaysToDefault() {
@@ -192,6 +218,9 @@ class SettingsStore(
         StorageKeys.npcAutomaticClaim,
         StorageKeys.npcSelectedMint,
         StorageKeys.npcLastCheck,
+        StorageKeys.nwcEnabled,
+        StorageKeys.nwcSelectedMint,
+        StorageKeys.nwcBudgetSats,
     )
 }
 

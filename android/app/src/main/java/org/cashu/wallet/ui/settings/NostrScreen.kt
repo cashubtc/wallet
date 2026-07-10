@@ -17,6 +17,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
@@ -48,12 +49,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import org.cashu.wallet.Core.NostrService
 import org.cashu.wallet.Core.NostrSignerType
+import org.cashu.wallet.Core.NwcManager
 import org.cashu.wallet.Core.SettingsManager
 import org.cashu.wallet.ui.components.CanvasDivider
 import org.cashu.wallet.ui.components.CashuTextField
 import org.cashu.wallet.ui.components.GhostButton
 import org.cashu.wallet.ui.components.InlineNotice
 import org.cashu.wallet.ui.components.InspectorRow
+import org.cashu.wallet.ui.components.NavRow
 import org.cashu.wallet.ui.components.PrimaryButton
 import org.cashu.wallet.ui.components.SectionHeader
 import org.cashu.wallet.ui.theme.CashuTheme
@@ -63,10 +66,13 @@ import org.cashu.wallet.ui.theme.CashuTheme
 fun NostrScreen(
     nostrService: NostrService,
     settingsManager: SettingsManager,
+    nwcManager: NwcManager,
+    onOpenWalletConnect: () -> Unit,
     onClose: () -> Unit,
 ) {
     val nostrState by nostrService.state.collectAsState()
     val settings by settingsManager.state.collectAsState()
+    val nwcState by nwcManager.state.collectAsState()
     val clipboard = LocalClipboardManager.current
     var nsecRevealed by remember { mutableStateOf(false) }
     var showImport by remember { mutableStateOf(false) }
@@ -263,6 +269,15 @@ fun NostrScreen(
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
+
+            SectionHeader("Apps")
+            NavRow(
+                title = "Wallet Connect",
+                subtitle = "Let a Nostr app use this wallet",
+                leadingIcon = Icons.Outlined.Bolt,
+                trailingValue = if (nwcState.isEnabled) "On" else "Off",
+                onClick = onOpenWalletConnect,
+            )
             Spacer(Modifier.height(CashuTheme.spacing.section))
         }
     }

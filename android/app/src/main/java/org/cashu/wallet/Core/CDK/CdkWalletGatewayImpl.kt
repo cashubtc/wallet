@@ -37,6 +37,7 @@ import org.cashudevkit.MintInfo as CdkMintInfo
 import org.cashudevkit.MintQuote as CdkMintQuote
 import org.cashudevkit.MintUrl as CdkMintUrl
 import org.cashudevkit.NotificationPayload as CdkNotificationPayload
+import org.cashudevkit.NwcService as CdkNwcService
 import org.cashudevkit.P2pkLockedProofSendMode as CdkP2pkLockedProofSendMode
 import org.cashudevkit.PaymentMethod as CdkPaymentMethod
 import org.cashudevkit.QuoteState as CdkQuoteState
@@ -59,9 +60,10 @@ import org.cashudevkit.decodePaymentRequest
 import org.cashudevkit.generateMnemonic as cdkGenerateMnemonic
 import org.cashudevkit.initLogging
 import org.cashudevkit.mnemonicToEntropy
+import org.cashudevkit.nwcDeriveServiceSecretKeyFromSeed
 import org.cashudevkit.proofsTotalAmount
 
-class CdkWalletGatewayImpl : CdkWalletGateway {
+class CdkWalletGatewayImpl : CdkWalletGateway, NwcServiceGateway {
     private var database: CdkWalletSqliteDatabase? = null
     private var repository: CdkWalletRepository? = null
     private val operationMutex = Mutex()
@@ -91,6 +93,44 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
 
     override suspend fun hasWallets(): Boolean = cdkCall {
         requireRepository().getWallets().isNotEmpty()
+    }
+
+    /**
+     * Creates or restores CDK's NIP-47 wallet service against the same native
+     * sat wallet used by the rest of the app. CDK owns relay protocol handling,
+     * invoice creation/payment, balance responses, and payment-limit checks.
+     */
+    override suspend fun createOrRestoreNwcService(
+        mintUrl: String,
+        relays: List<String>,
+        seed: ByteArray,
+        clientSecretKey: String?,
+        maxPaymentMsat: ULong?,
+    ): NwcServiceHandle = cdkCall {
+        val normalizedMintUrl = normalizeMintUrl(mintUrl)
+        ensureWalletUnlocked(normalizedMintUrl)
+        val wallet = walletFor(normalizedMintUrl)
+        val serviceSecretKey = nwcDeriveServiceSecretKeyFromSeed(seed)
+        val nativeService = if (clientSecretKey.isNullOrBlank()) {
+            CdkNwcService.create(
+                wallet = wallet,
+                relays = relays,
+                serviceSecretKey = serviceSecretKey,
+                maxPaymentMsat = maxPaymentMsat,
+            )
+        } else {
+            CdkNwcService.restore(
+                wallet = wallet,
+                relays = relays,
+                serviceSecretKey = serviceSecretKey,
+                clientSecretKey = clientSecretKey,
+                maxPaymentMsat = maxPaymentMsat,
+            )
+        }
+        CdkNwcServiceHandle(
+            service = nativeService,
+            connectionUri = nativeService.connectionUri(),
+        )
     }
 
     override suspend fun backupMints(relays: List<String>, client: String) = cdkCall {
@@ -471,6 +511,19 @@ class CdkWalletGatewayImpl : CdkWalletGateway {
     private suspend fun firstWallet(): CdkWallet =
         requireRepository().getWallets().firstOrNull()
             ?: throw CdkGatewayUnavailable("No mint wallet is available.")
+
+    private inner class CdkNwcServiceHandle(
+        private val service: CdkNwcService,
+        override val connectionUri: String,
+    ) : NwcServiceHandle {
+        override suspend fun start() = cdkCall { service.start() }
+
+        override suspend fun stop() = cdkCall { service.stop() }
+
+        override suspend fun isRunning(): Boolean = cdkCall { service.isRunning() }
+
+        override suspend fun close() = cdkCall { service.close() }
+    }
 
     private fun cdkUnit(unit: String): CdkCurrencyUnit = when (unit.lowercase()) {
         "sat" -> CdkCurrencyUnit.Sat
