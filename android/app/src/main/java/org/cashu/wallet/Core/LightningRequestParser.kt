@@ -42,11 +42,10 @@ object LightningRequestParser {
         val lower = invoice.lowercase()
         val prefix = bolt11Prefixes.firstOrNull { lower.startsWith(it) } ?: return null
         val rest = lower.drop(prefix.length)
-        val amountPart = rest.takeWhile { it.isDigit() || it in setOf('m', 'u', 'n', 'p') }
-        if (amountPart.isEmpty()) return null
-        val unit = amountPart.last()
-        val numberPart = if (unit.isLetter()) amountPart.dropLast(1) else amountPart
+        val numberPart = rest.takeWhile { it.isDigit() }
+        if (numberPart.isEmpty()) return null
         val number = numberPart.toLongOrNull() ?: return null
+        val unit = rest.getOrNull(numberPart.length)
         val btc = when (unit) {
             'm' -> number / 1_000.0
             'u' -> number / 1_000_000.0

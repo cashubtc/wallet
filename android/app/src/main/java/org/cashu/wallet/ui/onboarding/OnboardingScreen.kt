@@ -48,6 +48,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -77,7 +78,10 @@ import coil.request.ImageRequest
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.cashu.wallet.Core.Bip39WordList
+import org.cashu.wallet.Core.MnemonicInput
 import org.cashu.wallet.Core.WalletManager
+import org.cashu.wallet.Core.mintUrlCandidates
+import org.cashu.wallet.Models.RestoreMintResult
 import org.cashu.wallet.ui.components.CanvasDivider
 import org.cashu.wallet.ui.components.CashuTextField
 import org.cashu.wallet.ui.components.GhostButton
@@ -109,7 +113,10 @@ private sealed interface OnboardingStep {
     data object Welcome : OnboardingStep
     data class ShowMnemonic(val mnemonic: String) : OnboardingStep
     data class FirstMint(val mnemonic: String) : OnboardingStep
+    data object RestoreMethod : OnboardingStep
     data object RestoreInput : OnboardingStep
+    data class RestoreMints(val mnemonic: String) : OnboardingStep
+    data class RestoreProgress(val mnemonic: String, val mintUrls: List<String>) : OnboardingStep
 }
 
 // iOS metrics: headers 28pt, CTA stacks 24pt, grid gutters 12/14pt.
@@ -235,7 +242,7 @@ fun OnboardingScreen(walletManager: WalletManager) {
                 },
                 onRestore = {
                     restoreError = null
-                    step = OnboardingStep.RestoreInput
+                    step = OnboardingStep.RestoreMethod
                 },
                 onInfo = { infoOpen = true },
             )
@@ -253,24 +260,40 @@ fun OnboardingScreen(walletManager: WalletManager) {
                 onSkip = { finishCreate(current.mnemonic, emptyList()) },
             )
 
+            OnboardingStep.RestoreMethod -> RestoreMethodFace(
+                onBack = { step = OnboardingStep.Welcome },
+                onSeedPhrase = {
+                    restoreError = null
+                    step = OnboardingStep.RestoreInput
+                },
+            )
+
             OnboardingStep.RestoreInput -> RestoreInputFace(
                 restoring = restoring,
                 errorText = restoreError,
                 onClearError = { restoreError = null },
-                onBack = { step = OnboardingStep.Welcome },
+                onBack = { step = OnboardingStep.RestoreMethod },
                 onRestore = { mnemonic ->
+                    restoreError = null
+                    step = OnboardingStep.RestoreMints(MnemonicInput.normalize(mnemonic))
+                },
+            )
+
+            is OnboardingStep.RestoreMints -> RestoreMintsFace(
+                onBack = { step = OnboardingStep.RestoreInput },
+                onRestore = { mintUrls ->
+                    step = OnboardingStep.RestoreProgress(current.mnemonic, mintUrls)
+                },
+            )
+
+            is OnboardingStep.RestoreProgress -> RestoreProgressFace(
+                walletManager = walletManager,
+                mnemonic = current.mnemonic,
+                mintUrls = current.mintUrls,
+                onBack = { step = OnboardingStep.RestoreMints(current.mnemonic) },
+                onOpenWallet = {
                     scope.launch {
-                        restoring = true
-                        restoreError = null
-                        try {
-                            walletManager.restoreWallet(mnemonic)
-                            walletManager.completeOnboarding()
-                        } catch (t: Throwable) {
-                            restoreError = t.message
-                                ?: "That seed phrase doesn't look right. Check the spelling and try again."
-                        } finally {
-                            restoring = false
-                        }
+                        runCatching { walletManager.completeOnboarding() }
                     }
                 },
             )
@@ -895,6 +918,55 @@ private fun MonogramFallback(name: String) {
 // ---------------------------------------------------------------------------
 
 @Composable
+private fun RestoreMethodFace(
+    onBack: () -> Unit,
+    onSeedPhrase: () -> Unit,
+) {
+    val appeared = rememberAppeared()
+    Column(modifier = Modifier.fillMaxSize()) {
+        Spacer(Modifier.weight(1f))
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = HeaderPadding)
+                .riseIn(appeared, 0),
+            verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
+        ) {
+            Text(
+                text = "Restore\nWallet.",
+                style = onboardingTitleStyle(),
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = "Use your seed phrase, then choose the mints you used before.",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Spacer(Modifier.weight(1f))
+        Column(
+            modifier = Modifier
+                .padding(horizontal = CtaPadding)
+                .padding(bottom = BottomPadding)
+                .riseIn(appeared, 1),
+            verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.tight),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            PrimaryButton(
+                text = "Seed Phrase",
+                onClick = onSeedPhrase,
+            )
+            SecondaryButton(
+                text = "Cloud Restore",
+                onClick = {},
+                enabled = false,
+            )
+            GhostButton(text = "Back", onClick = onBack)
+        }
+    }
+}
+
+@Composable
 private fun RestoreInputFace(
     restoring: Boolean,
     errorText: String?,
@@ -1018,6 +1090,358 @@ private fun RestoreInputFace(
                 loading = restoring,
             )
             GhostButton(text = "Back", onClick = onBack, enabled = !restoring)
+        }
+    }
+}
+
+@Composable
+private fun RestoreMintsFace(
+    onBack: () -> Unit,
+    onRestore: (List<String>) -> Unit,
+) {
+    val appeared = rememberAppeared()
+    var input by remember { mutableStateOf("") }
+    var staged by remember { mutableStateOf<List<String>>(emptyList()) }
+    var notice by remember { mutableStateOf<String?>(null) }
+    val clipboard = LocalClipboardManager.current
+
+    fun addInput() {
+        val candidates = mintUrlCandidates(input)
+        if (candidates.isEmpty()) {
+            notice = "Paste one or more HTTPS mint URLs."
+            return
+        }
+        val fresh = candidates.filterNot { candidate ->
+            staged.any { it.equals(candidate, ignoreCase = true) }
+        }
+        if (fresh.isEmpty()) {
+            notice = "Those mints are already staged."
+            input = ""
+            return
+        }
+        staged = staged + fresh
+        notice = when (fresh.size) {
+            1 -> "Added ${shortenMintUrl(fresh.single())}."
+            else -> "Added ${fresh.size} mints."
+        }
+        input = ""
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = HeaderPadding)
+                .padding(top = CashuTheme.spacing.snug)
+                .riseIn(appeared, 0),
+            verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
+        ) {
+            Text(
+                text = "Restore\nMints.",
+                style = onboardingTitleStyle(),
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = "Add the mints you used before. Each mint will be restored separately.",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = HeaderPadding)
+                .padding(top = CashuTheme.spacing.section),
+            verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
+        ) {
+            CashuTextField(
+                value = input,
+                onValueChange = {
+                    input = it
+                    notice = null
+                },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = "mint.one, mint.two/path",
+                textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+                minLines = 3,
+                maxLines = 5,
+                keyboardOptions = KeyboardOptions(
+                    capitalization = KeyboardCapitalization.None,
+                    keyboardType = KeyboardType.Uri,
+                ),
+                trailingIcon = {
+                    if (input.isBlank()) {
+                        IconButton(onClick = {
+                            clipboard.getText()?.text?.let { input = it.trim() }
+                        }) {
+                            Icon(Icons.Outlined.ContentPaste, contentDescription = "Paste")
+                        }
+                    } else {
+                        IconButton(onClick = ::addInput) {
+                            Icon(Icons.Outlined.ArrowCircleRight, contentDescription = "Add mints")
+                        }
+                    }
+                },
+            )
+            GhostButton(
+                text = "Add Mints",
+                onClick = ::addInput,
+                enabled = input.isNotBlank(),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (notice != null) {
+                InlineNotice(text = notice!!)
+            }
+            staged.forEach { url ->
+                StagedRestoreMintRow(
+                    url = url,
+                    onRemove = {
+                        staged = staged.filterNot { it == url }
+                    },
+                )
+            }
+        }
+        Column(
+            modifier = Modifier
+                .padding(horizontal = CtaPadding)
+                .padding(bottom = BottomPadding)
+                .riseIn(appeared, 1),
+            verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.tight),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            PrimaryButton(
+                text = if (staged.isEmpty()) {
+                    "Restore Without Mints"
+                } else {
+                    "Restore From ${staged.size} Mint${if (staged.size == 1) "" else "s"}"
+                },
+                onClick = { onRestore(staged) },
+            )
+            GhostButton(
+                text = "Skip mints for now",
+                onClick = { onRestore(emptyList()) },
+            )
+            GhostButton(text = "Back", onClick = onBack)
+        }
+    }
+}
+
+@Composable
+private fun StagedRestoreMintRow(
+    url: String,
+    onRemove: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = CashuTheme.spacing.snug),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
+    ) {
+        RecommendedMintAvatar(name = shortenMintUrl(url), iconUrl = null)
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = shortenMintUrl(url),
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.MiddleEllipsis,
+            )
+            Text(
+                text = "Ready to restore",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        IconButton(onClick = onRemove) {
+            Icon(Icons.Filled.Cancel, contentDescription = "Remove mint")
+        }
+    }
+}
+
+private sealed interface RestorePhase {
+    data object Pending : RestorePhase
+    data object Restoring : RestorePhase
+    data class Restored(val result: RestoreMintResult) : RestorePhase
+    data object Skipped : RestorePhase
+    data class Failed(val message: String) : RestorePhase
+}
+
+@Composable
+private fun RestoreProgressFace(
+    walletManager: WalletManager,
+    mnemonic: String,
+    mintUrls: List<String>,
+    onBack: () -> Unit,
+    onOpenWallet: () -> Unit,
+) {
+    val phases = remember(mintUrls) {
+        mutableStateMapOf<String, RestorePhase>().apply {
+            mintUrls.forEach { put(it, RestorePhase.Pending) }
+        }
+    }
+    val scope = rememberCoroutineScope()
+    var completed by remember { mutableStateOf(false) }
+    var topError by remember { mutableStateOf<String?>(null) }
+
+    suspend fun restoreMint(url: String) {
+        phases[url] = RestorePhase.Restoring
+        runCatching { walletManager.restoreFromMint(url) }
+            .onSuccess { phases[url] = RestorePhase.Restored(it) }
+            .onFailure { phases[url] = RestorePhase.Failed(it.message ?: "Could not restore from this mint.") }
+    }
+
+    LaunchedEffect(mnemonic, mintUrls) {
+        completed = false
+        topError = null
+        phases.keys.forEach { phases[it] = RestorePhase.Pending }
+        runCatching { walletManager.initializeRestoredWallet(mnemonic) }
+            .onFailure {
+                topError = it.message ?: "That seed phrase doesn't look right. Check the spelling and try again."
+                completed = true
+                return@LaunchedEffect
+            }
+        mintUrls.forEach { url -> restoreMint(url) }
+        completed = true
+    }
+
+    val isWorking = phases.values.any { it is RestorePhase.Pending || it is RestorePhase.Restoring }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = HeaderPadding)
+                .padding(top = CashuTheme.spacing.snug),
+            verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
+        ) {
+            Text(
+                text = if (completed) "Wallet\nRestored." else "Restoring\nWallet.",
+                style = onboardingTitleStyle(),
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = if (mintUrls.isEmpty()) {
+                    "Your seed phrase is restored. Add mints later to recover ecash."
+                } else {
+                    "Recovering ecash from ${mintUrls.size} mint${if (mintUrls.size == 1) "" else "s"}."
+                },
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = HeaderPadding)
+                .padding(top = CashuTheme.spacing.section),
+            verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
+        ) {
+            if (topError != null) {
+                InlineNotice(text = topError!!)
+            }
+            mintUrls.forEach { url ->
+                RestoreProgressRow(
+                    url = url,
+                    phase = phases[url] ?: RestorePhase.Pending,
+                    onRetry = {
+                        scope.launch { restoreMint(url) }
+                    },
+                    onSkip = {
+                        phases[url] = RestorePhase.Skipped
+                    },
+                )
+            }
+            if (mintUrls.isEmpty() && topError == null) {
+                Text(
+                    text = "No mints selected.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        Column(
+            modifier = Modifier
+                .padding(horizontal = CtaPadding)
+                .padding(bottom = BottomPadding),
+            verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.tight),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            PrimaryButton(
+                text = if (completed) "Open Wallet" else "Restoring…",
+                onClick = onOpenWallet,
+                enabled = completed && !isWorking && topError == null,
+                loading = !completed || isWorking,
+            )
+            GhostButton(
+                text = "Back",
+                onClick = onBack,
+                enabled = completed && !isWorking,
+            )
+        }
+    }
+}
+
+@Composable
+private fun RestoreProgressRow(
+    url: String,
+    phase: RestorePhase,
+    onRetry: () -> Unit,
+    onSkip: () -> Unit,
+) {
+    val (icon, tint, subtitle) = when (phase) {
+        RestorePhase.Pending -> Triple(Icons.Outlined.Circle, MaterialTheme.colorScheme.onSurfaceVariant, "Waiting")
+        RestorePhase.Restoring -> Triple(Icons.Outlined.Circle, MaterialTheme.colorScheme.onSurfaceVariant, "Restoring…")
+        is RestorePhase.Restored -> {
+            val recovered = phase.result.totalRecovered
+            Triple(
+                Icons.Filled.CheckCircle,
+                CashuTheme.colors.received,
+                if (recovered > 0) "Recovered $recovered sat" else "No spendable ecash found",
+            )
+        }
+        RestorePhase.Skipped -> Triple(Icons.Outlined.Circle, MaterialTheme.colorScheme.onSurfaceVariant, "Skipped")
+        is RestorePhase.Failed -> Triple(Icons.Filled.Warning, MaterialTheme.colorScheme.error, phase.message)
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = CashuTheme.spacing.snug),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = tint,
+            modifier = Modifier.size(SelectIconSize),
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = shortenMintUrl(url),
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.MiddleEllipsis,
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.labelSmall,
+                color = if (phase is RestorePhase.Failed) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            )
+            if (phase is RestorePhase.Failed) {
+                Row(horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug)) {
+                    GhostButton(text = "Retry", onClick = onRetry)
+                    GhostButton(text = "Skip", onClick = onSkip)
+                }
+            }
         }
     }
 }

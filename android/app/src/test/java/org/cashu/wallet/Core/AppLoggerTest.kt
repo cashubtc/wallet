@@ -23,4 +23,30 @@ class AppLoggerTest {
         assertFalse(message.contains("abandon"))
         assertEquals("seed phrase=<redacted>", message)
     }
+
+    @Test
+    fun privacySafeMessageRedactsCashuTokensUrlsAndLocalPaths() {
+        val message = AppLogger.privacySafeMessage(
+            "mint https://mint.example.com/private/path?x=1 token cashuAabcdefghijklmnopqrstuvwxyz0123456789 path /tmp/cashu/wallet.db",
+        )
+
+        assertFalse(message.contains("mint.example.com"))
+        assertFalse(message.contains("cashuAabcdefghijklmnopqrstuvwxyz"))
+        assertFalse(message.contains("/tmp/cashu"))
+        assertEquals(
+            "mint <redacted-url> token <redacted-cashu-token> path <redacted-path>",
+            message,
+        )
+    }
+
+    @Test
+    fun privacySafeThrowableRedactsMessageButKeepsStack() {
+        val error = IllegalStateException("failed token cashuAabcdefghijklmnopqrstuvwxyz0123456789")
+        error.stackTrace = arrayOf(StackTraceElement("Example", "method", "Example.kt", 12))
+
+        val safe = AppLogger.privacySafeThrowable(error)
+
+        assertFalse(safe.message.orEmpty().contains("cashuAabcdefghijklmnopqrstuvwxyz"))
+        assertEquals(error.stackTrace.toList(), safe.stackTrace.toList())
+    }
 }

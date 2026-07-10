@@ -247,6 +247,19 @@ class WalletManager(
         }
     }
 
+    suspend fun createMintQuoteForMint(
+        mintUrl: String,
+        amount: Long?,
+        method: PaymentMethodKind = PaymentMethodKind.Bolt11,
+        unit: String = "sat",
+    ): MintQuoteInfo =
+        withLoadingResult {
+            val trackedMintUrl = ensureMintTracked(mintUrl)
+            gateway.createMintQuote(amount, method, trackedMintUrl, unit).also {
+                mintQuoteSyncService.rememberMintQuoteTimestamp(it.id)
+            }
+        }
+
     suspend fun checkMintQuote(quoteId: String): MintQuoteInfo =
         withLoadingResult {
             gateway.checkMintQuote(quoteId).also {
@@ -485,9 +498,32 @@ class WalletManager(
 
     suspend fun payCashuPaymentRequest(encoded: String, customAmountSats: Long?, preferredMintURL: String?) {
         withLoading {
-            gateway.payCashuPaymentRequest(encoded, customAmountSats, preferredMintURL)
-            refreshBalance()
-            loadTransactions()
+            payCashuPaymentRequestAndRefresh(
+                encoded = encoded,
+                customAmountSats = customAmountSats,
+                preferredMintURL = preferredMintURL,
+                payCashuPaymentRequest = { request, amount, mintUrl ->
+                    gateway.payCashuPaymentRequest(request, amount, mintUrl)
+                },
+                refreshBalance = { refreshBalance() },
+                loadTransactions = { loadTransactions() },
+            )
+        }
+    }
+
+    suspend fun addMintAndPayCashuPaymentRequest(encoded: String, customAmountSats: Long?, mintUrl: String) {
+        withLoading {
+            addMintAndPayCashuPaymentRequestAndRefresh(
+                encoded = encoded,
+                customAmountSats = customAmountSats,
+                mintUrl = mintUrl,
+                ensureMintTracked = { ensureMintTracked(it) },
+                payCashuPaymentRequest = { request, amount, trackedMintUrl ->
+                    gateway.payCashuPaymentRequest(request, amount, trackedMintUrl)
+                },
+                refreshBalance = { refreshBalance() },
+                loadTransactions = { loadTransactions() },
+            )
         }
     }
 

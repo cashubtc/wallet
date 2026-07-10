@@ -42,11 +42,15 @@ import org.cashu.wallet.ui.onboarding.OnboardingScreen
 import org.cashu.wallet.ui.navigation.TopTab
 import org.cashu.wallet.ui.navigation.cashuRequestDetailRouteFor
 import org.cashu.wallet.ui.navigation.navigateToTab
+import org.cashu.wallet.ui.navigation.shellBackAction
 import org.cashu.wallet.ui.receive.ReceiveEcashDetailScreen
 import org.cashu.wallet.ui.receive.ReceiveEcashScreen
 import org.cashu.wallet.ui.receive.ReceiveLightningScreen
 import org.cashu.wallet.ui.send.SendEcashScreen
 import org.cashu.wallet.ui.send.UnifiedSendScreen
+import org.cashu.wallet.ui.security.AppLockGate
+import org.cashu.wallet.ui.security.PrivacyCover
+import org.cashu.wallet.ui.security.SecureWindowEffect
 import org.cashu.wallet.ui.theme.CashuTheme
 
 /**
@@ -65,20 +69,24 @@ import org.cashu.wallet.ui.theme.CashuTheme
 fun CashuApp(container: AppContainer) {
     CashuTheme {
         val walletState by container.walletManager.state.collectAsState()
+        val settings by container.settingsManager.state.collectAsState()
         val lifecycleOwner = LocalLifecycleOwner.current
         val isAuthenticated = walletState.isInitialized && !walletState.needsOnboarding
+        SecureWindowEffect(enabled = settings.appLockEnabled)
 
         LaunchedEffect(Unit) {
             container.walletManager.initialize()
         }
         LaunchedEffect(isAuthenticated) {
             if (isAuthenticated) {
+                container.appLockManager.startAuthenticatedSession()
                 container.cashuRequestListener.start()
                 val settings = container.settingsManager.state.value
                 if (settings.checkPendingOnStartup && settings.checkSentTokens) {
                     container.walletManager.checkAllPendingTokens()
                 }
             } else {
+                container.appLockManager.endAuthenticatedSession()
                 container.cashuRequestListener.stop()
             }
         }
@@ -87,8 +95,17 @@ fun CashuApp(container: AppContainer) {
                 if (!isAuthenticated) return@LifecycleEventObserver
                 when (event) {
                     Lifecycle.Event.ON_START,
-                    Lifecycle.Event.ON_RESUME -> container.cashuRequestListener.start()
-                    Lifecycle.Event.ON_STOP -> container.cashuRequestListener.stop()
+                    Lifecycle.Event.ON_RESUME -> {
+                        container.appLockManager.appBecameActive()
+                        container.cashuRequestListener.start()
+                    }
+                    Lifecycle.Event.ON_PAUSE,
+                    Lifecycle.Event.ON_STOP -> {
+                        container.appLockManager.appResignedActive()
+                        if (event == Lifecycle.Event.ON_STOP) {
+                            container.cashuRequestListener.stop()
+                        }
+                    }
                     else -> Unit
                 }
             }
@@ -150,6 +167,7 @@ private fun AuthenticatedShell(container: AppContainer) {
 
     val pendingDeepLink by container.navigationManager.pendingDeepLink.collectAsState()
     val connectivityState by container.connectivityObserver.state.collectAsState()
+    val appLockState by container.appLockManager.state.collectAsState()
 
     LaunchedEffect(pendingDeepLink) {
         val deepLink = pendingDeepLink ?: return@LaunchedEffect
@@ -277,15 +295,22 @@ private fun AuthenticatedShell(container: AppContainer) {
         // while an overlay is visible. Receive detail renders above the scanner,
         // which renders above Contactless — dismissal order matches. (Flow
         // sheets live in their own window and handle back themselves.)
-        BackHandler(enabled = receiveTokenDetail != null || activeScannerTarget != null || showContactless) {
-            when {
-                receiveTokenDetail != null -> {
+        BackHandler(enabled = !appLockState.isLocked && (receiveTokenDetail != null || activeScannerTarget != null || showContactless)) {
+            when (shellBackAction(receiveTokenDetail != null, activeScannerTarget != null, showContactless)) {
+                org.cashu.wallet.ui.navigation.ShellBackAction.CloseReceiveDetail -> {
                     // Never abandon a redeem in flight.
                     if (!receiveDetailDismissLocked) receiveTokenDetail = null
                 }
-                activeScannerTarget != null -> scannerTarget = null
-                else -> showContactless = false
+                org.cashu.wallet.ui.navigation.ShellBackAction.CloseScanner -> scannerTarget = null
+                org.cashu.wallet.ui.navigation.ShellBackAction.CloseContactless -> showContactless = false
+                null -> Unit
             }
+        }
+        if (appLockState.isObscured && !appLockState.isLocked) {
+            PrivacyCover()
+        }
+        if (appLockState.isLocked) {
+            AppLockGate(appLockManager = container.appLockManager)
         }
     }
 

@@ -56,6 +56,14 @@ fun PrivacyScreen(
                 .padding(padding)
                 .verticalScroll(rememberScrollState()),
         ) {
+            SectionHeader("Security")
+            ToggleRow(
+                title = "App Lock",
+                subtitle = "Require device authentication when returning to the wallet",
+                checked = settings.appLockEnabled,
+                onCheckedChange = settingsManager::setAppLockEnabled,
+            )
+
             SectionHeader("Background work")
             ToggleRow(
                 title = "Check pending tokens on startup",

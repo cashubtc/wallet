@@ -25,6 +25,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import org.cashu.wallet.Core.UnitAmountEntry
 
@@ -67,7 +69,7 @@ fun NumberPad(
                         "" -> Box(modifier = Modifier.weight(1f).height(KeyHeight))
                         "delete" -> NumberPadKey(
                             modifier = Modifier.weight(1f),
-                            contentDescription = "Delete",
+                            contentDescription = "Delete. Long press to clear.",
                             onClick = {
                                 if (amount.isNotEmpty()) {
                                     onAmountChange(UnitAmountEntry.backspace(amount, decimals))
@@ -123,6 +125,9 @@ private fun NumberPadKey(
         modifier = modifier
             .height(KeyHeight)
             .graphicsLayer { this.alpha = alpha }
+            .semantics {
+                this.contentDescription = contentDescription
+            }
             .combinedClickable(
                 interactionSource = interactionSource,
                 indication = null, // No ripple — opacity handles feedback

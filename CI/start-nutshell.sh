@@ -29,17 +29,34 @@ echo "🚀 Starting Nutshell mint on port ${PORT}..."
 WORKDIR="${SCRIPT_DIR}/.nutshell-workdir"
 mkdir -p "$WORKDIR"
 
+CONFIG_FILE="${WORKDIR}/.env"
+mkdir -p "${WORKDIR}/cashu"
+# Nutshell looks for ./.env first, then falls back to ~/.cashu/.env. Keep the
+# CI mint hermetic so local user configuration cannot change integration tests.
+: > "$CONFIG_FILE"
+
 # Nutshell (cashu) reads configuration from environment variables.
-export MINT_LISTEN_HOST=0.0.0.0
+export CASHU_DIR="${WORKDIR}/cashu"
+export MINT_URL="http://localhost:${PORT}"
+export MINT_HOST=localhost
+export MINT_PORT="$PORT"
+export MINT_LISTEN_HOST=127.0.0.1
 export MINT_LISTEN_PORT="$PORT"
 export MINT_DATABASE="$WORKDIR"
 export MINT_BACKEND_BOLT11_SAT=FakeWallet
 export MINT_PRIVATE_KEY="TEST_PRIVATE_KEY_DO_NOT_USE_IN_PRODUCTION"
 # Zero input fee so integration tests can assert exact amounts.
 export MINT_INPUT_FEE_PPK=0
+# Make FakeWallet integration tests deterministic and fast.
+export FAKEWALLET_DELAY_INCOMING_PAYMENT=0
+export FAKEWALLET_DELAY_OUTGOING_PAYMENT=0
+export MINT_QUOTE_BACKEND_CHECK_RATE_LIMIT=0
 
-nohup "$VENV_DIR/bin/mint" > "$LOG_FILE" 2>&1 &
+pushd "$WORKDIR" > /dev/null
+nohup "$VENV_DIR/bin/mint" > "$LOG_FILE" 2>&1 < /dev/null &
 MINT_PID=$!
+disown "$MINT_PID" 2>/dev/null || true
+popd > /dev/null
 echo "$MINT_PID" > "$PID_FILE"
 
 echo "✅ Nutshell started (PID: $MINT_PID)"

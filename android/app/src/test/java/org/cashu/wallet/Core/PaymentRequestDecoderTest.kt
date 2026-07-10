@@ -23,6 +23,17 @@ class PaymentRequestDecoderTest {
         val parsed = LightningRequestParser.parse("lnbc10u1ptest")
         assertEquals(PaymentMethodKind.Bolt11, parsed.method)
         assertEquals("lnbc10u1ptest", parsed.request)
+        assertEquals(1_000L, parsed.amountSats)
+    }
+
+    @Test
+    fun bolt11AmountParserStopsAtMultiplierUnit() {
+        val parsed = LightningRequestParser.parse(
+            "lnbc2500u1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpu9qrsgquk0rl77nj30yxdy8j9vdx85fkpmdla2087ne0xh8nhedh8w27kyke0lp53ut353s06fv3qfegext0eh0ymjpf39tuven09sam30g4vgpfna3rh",
+        )
+
+        assertEquals(PaymentMethodKind.Bolt11, parsed.method)
+        assertEquals(250_000L, parsed.amountSats)
     }
 
     @Test
@@ -58,6 +69,36 @@ class PaymentRequestDecoderTest {
         assertEquals("creqa-test", PaymentRequestDecoder.encodedCashuPaymentRequest("creqa-test"))
         assertEquals("creqb1-test", PaymentRequestDecoder.encodedCashuPaymentRequest("cashu:creqb1-test"))
         assertEquals("creqa-test", PaymentRequestDecoder.encodedCashuPaymentRequest("cashu://creqa-test"))
+    }
+
+    @Test
+    fun cdkCompatibleLegacyCashuRequestsNormalizePrefixAndPadding() {
+        assertEquals("creqAabc=", PaymentRequestDecoder.cdkCompatibleCashuPaymentRequest("CREQAabc"))
+        assertEquals("creqAabc=", PaymentRequestDecoder.cdkCompatibleCashuPaymentRequest("cashu:creqAabc"))
+        assertEquals("CREQB1abc", PaymentRequestDecoder.cdkCompatibleCashuPaymentRequest("CREQB1abc"))
+    }
+
+    @Test
+    fun locallyBuiltLegacyCashuRequestsDecodeWithoutCdkFallback() {
+        val encoded = PaymentRequestBuilder.build(
+            id = "local-request",
+            amount = 7,
+            unit = "sat",
+            mints = listOf("http://localhost:3339"),
+            description = "Local request",
+            nostrPubkeyHex = "1".repeat(64),
+            relays = emptyList(),
+        )
+
+        val decoded = PaymentRequestDecoder.decode(
+            encoded,
+            includeCashuPaymentRequests = true,
+        ) as? PaymentRequestDecodeResult.CashuPaymentRequest
+
+        assertEquals(7L, decoded?.summary?.amount)
+        assertEquals("sat", decoded?.summary?.unit)
+        assertEquals("Local request", decoded?.summary?.description)
+        assertEquals(listOf("http://localhost:3339"), decoded?.summary?.mints)
     }
 
     @Test

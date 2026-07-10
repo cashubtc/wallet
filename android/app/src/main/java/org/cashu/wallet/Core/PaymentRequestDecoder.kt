@@ -7,6 +7,7 @@ import org.cashudevkit.decodeInvoice
 import org.cashudevkit.decodePaymentRequest
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
+import java.util.Base64
 
 data class CashuPaymentRequestSummary(
     val encoded: String,
@@ -73,6 +74,8 @@ object PaymentRequestParser {
 }
 
 object PaymentRequestDecoder {
+    private const val CREQ_A_PREFIX = "creqA"
+
     fun decode(
         raw: String,
         includeCashuPaymentRequests: Boolean = false,
@@ -119,16 +122,30 @@ object PaymentRequestDecoder {
         return if (lower.startsWith("creqa") || lower.startsWith("creqb1")) withoutCashuScheme else null
     }
 
+    fun cdkCompatibleCashuPaymentRequest(raw: String): String? {
+        val encoded = encodedCashuPaymentRequest(raw) ?: return null
+        return if (encoded.startsWith(CREQ_A_PREFIX, ignoreCase = true)) {
+            val payload = encoded.drop(CREQ_A_PREFIX.length).trimEnd('=')
+            val padding = (4 - payload.length % 4) % 4
+            CREQ_A_PREFIX + payload + "=".repeat(padding)
+        } else {
+            encoded
+        }
+    }
+
     fun cashuPaymentRequestSummary(raw: String): CashuPaymentRequestSummary? {
         val encoded = encodedCashuPaymentRequest(raw) ?: return null
-        val request = runCatching { decodePaymentRequest(encoded) }.getOrNull() ?: return null
-        return CashuPaymentRequestSummary(
-            encoded = encoded,
-            amount = request.amount()?.value?.toLong(),
-            unit = request.unit()?.toDomainUnit(),
-            description = request.description(),
-            mints = request.mints(),
-        )
+        val cdkEncoded = cdkCompatibleCashuPaymentRequest(encoded) ?: encoded
+        runCatching { decodePaymentRequest(cdkEncoded) }.getOrNull()?.let { request ->
+            return CashuPaymentRequestSummary(
+                encoded = cdkEncoded,
+                amount = request.amount()?.value?.toLong(),
+                unit = request.unit()?.toDomainUnit(),
+                description = request.description(),
+                mints = request.mints(),
+            )
+        }
+        return legacyCreqASummary(cdkEncoded)
     }
 
     private fun decodedLightningRequest(raw: String): PaymentRequestDecodeResult? {
@@ -197,7 +214,80 @@ object PaymentRequestDecoder {
         return if (prefix == null) input else input.drop(prefix.length)
     }
 
+    private fun legacyCreqASummary(encoded: String): CashuPaymentRequestSummary? {
+        if (!encoded.startsWith(CREQ_A_PREFIX, ignoreCase = true)) return null
+        val payload = encoded.drop(CREQ_A_PREFIX.length)
+        val bytes = runCatching { Base64.getUrlDecoder().decode(payload) }.getOrNull() ?: return null
+        val fields = (runCatching { CborReader(bytes).readValue() }.getOrNull() as? CborValue.Map)
+            ?.entries
+            ?.mapNotNull { (key, value) -> (key as? CborValue.Text)?.value?.let { it to value } }
+            ?.toMap()
+            ?: return null
+        val mints = (fields["m"] as? CborValue.Array)
+            ?.values
+            ?.mapNotNull { (it as? CborValue.Text)?.value }
+            .orEmpty()
+        return CashuPaymentRequestSummary(
+            encoded = encoded,
+            amount = (fields["a"] as? CborValue.UInt)?.value,
+            unit = (fields["u"] as? CborValue.Text)?.value,
+            description = (fields["d"] as? CborValue.Text)?.value,
+            mints = mints,
+        )
+    }
+
     private data class BitcoinPaymentURI(val creq: String?, val lightning: String?)
+
+    private sealed interface CborValue {
+        data class UInt(val value: Long) : CborValue
+        data class Text(val value: String) : CborValue
+        data class Bool(val value: Boolean) : CborValue
+        data class Array(val values: List<CborValue>) : CborValue
+        data class Map(val entries: List<Pair<CborValue, CborValue>>) : CborValue
+        data object Null : CborValue
+    }
+
+    private class CborReader(private val bytes: ByteArray) {
+        private var position = 0
+
+        fun readValue(): CborValue {
+            val initial = readByte()
+            val major = initial shr 5
+            val additional = initial and 0x1F
+            return when (major) {
+                0 -> CborValue.UInt(readLength(additional))
+                3 -> CborValue.Text(readBytes(readLength(additional).toInt()).toString(Charsets.UTF_8))
+                4 -> CborValue.Array(List(readLength(additional).toInt()) { readValue() })
+                5 -> CborValue.Map(List(readLength(additional).toInt()) { readValue() to readValue() })
+                7 -> when (additional) {
+                    20 -> CborValue.Bool(false)
+                    21 -> CborValue.Bool(true)
+                    22 -> CborValue.Null
+                    else -> error("Unsupported CBOR simple value.")
+                }
+                else -> error("Unsupported CBOR major type.")
+            }
+        }
+
+        private fun readLength(additional: Int): Long = when {
+            additional < 24 -> additional.toLong()
+            additional == 24 -> readByte().toLong()
+            additional == 25 -> ((readByte() shl 8) or readByte()).toLong()
+            additional == 26 -> (0 until 4).fold(0L) { acc, _ -> (acc shl 8) or readByte().toLong() }
+            additional == 27 -> (0 until 8).fold(0L) { acc, _ -> (acc shl 8) or readByte().toLong() }
+            else -> error("Unsupported CBOR length.")
+        }
+
+        private fun readBytes(length: Int): ByteArray {
+            require(length >= 0 && position + length <= bytes.size) { "Truncated CBOR payload." }
+            return bytes.copyOfRange(position, position + length).also { position += length }
+        }
+
+        private fun readByte(): Int {
+            require(position < bytes.size) { "Truncated CBOR payload." }
+            return bytes[position++].toInt() and 0xFF
+        }
+    }
 
     private fun String.decodeQueryComponent(): String =
         runCatching { URLDecoder.decode(this, StandardCharsets.UTF_8.name()) }.getOrDefault(this)

@@ -17,7 +17,7 @@ import org.cashu.wallet.Models.WalletTransaction
 class WalletStore(
     context: Context,
     storeName: String = "wallet_store",
-) {
+) : CashuRequestPersistence {
     private val store = DataStorePreferenceStore(context.applicationContext, storeName)
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
@@ -66,12 +66,12 @@ class WalletStore(
     fun saveProcessedCashuRequests(requestIds: List<String>) =
         saveList(StorageKeys.walletProcessedCashuRequests, String.serializer(), requestIds)
 
-    fun loadCashuRequests(): List<CashuRequest> =
+    override fun loadCashuRequests(): List<CashuRequest> =
         loadList(StorageKeys.cashuRequests, CashuRequest.serializer()).map { it.withLegacyPaymentFallback() }
-    fun saveCashuRequests(requests: List<CashuRequest>) =
+    override fun saveCashuRequests(requests: List<CashuRequest>) =
         saveList(StorageKeys.cashuRequests, CashuRequest.serializer(), requests.map { it.withLegacyPaymentFallback() })
 
-    var currentCashuRequestId: String?
+    override var currentCashuRequestId: String?
         get() = store.string(StorageKeys.cashuRequestsCurrentId)
         set(value) = store.putString(StorageKeys.cashuRequestsCurrentId, value)
 
