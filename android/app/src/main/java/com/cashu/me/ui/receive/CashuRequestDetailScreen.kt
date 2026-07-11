@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -280,100 +281,109 @@ fun CashuRequestDetailScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = CashuTheme.spacing.comfortable),
-            verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.comfortable),
-            horizontalAlignment = Alignment.CenterHorizontally,
+                .padding(padding),
         ) {
-            Spacer(Modifier.height(CashuTheme.spacing.snug))
-            QrCard(
-                content = request.encoded,
-                shareSubject = "Cashu Request",
-                staticOnly = true,
-                snackbarHostState = snackbarHostState,
-            )
-
-            // Request amounts render in the request's own unit.
-            val isSatRequest = request.unit.equals("sat", ignoreCase = true)
-            val requestCurrency = CurrencyRegistry.currencyForMintUnit(request.unit)
-            fun formatRequestAmount(amount: Long): String = if (isSatRequest) {
-                formatter.formatWalletSats(amount, settings.useBitcoinSymbol)
-            } else {
-                CurrencyAmount(amount, requestCurrency).formatted()
-            }
-
-            if (request.amount != null && request.amount > 0L) {
-                AmountText(
-                    text = formatRequestAmount(request.amount),
-                    style = MaterialTheme.typography.headlineMedium
-                        .copy(fontWeight = FontWeight.SemiBold)
-                        .withMonoDigits(),
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = CashuTheme.spacing.comfortable),
+                verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.comfortable),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Spacer(Modifier.height(CashuTheme.spacing.snug))
+                QrCard(
+                    content = request.encoded,
+                    shareSubject = "Cashu Request",
+                    staticOnly = true,
+                    snackbarHostState = snackbarHostState,
                 )
-            }
 
-            if (offerNfcReceive) {
-                NfcReceiveIndicator(coordinator = nfcReceiveCoordinator)
-            }
+                // Request amounts render in the request's own unit.
+                val isSatRequest = request.unit.equals("sat", ignoreCase = true)
+                val requestCurrency = CurrencyRegistry.currencyForMintUnit(request.unit)
+                fun formatRequestAmount(amount: Long): String = if (isSatRequest) {
+                    formatter.formatWalletSats(amount, settings.useBitcoinSymbol)
+                } else {
+                    CurrencyAmount(amount, requestCurrency).formatted()
+                }
 
-            StatusBlock(
-                received = request.receivedPayments.isNotEmpty(),
-                paymentCount = paymentCount,
-                celebrate = celebrate,
-            )
-
-            SectionHeader("Details")
-            Column(modifier = Modifier.fillMaxWidth()) {
-                val activeMintUrl = request.mints.firstOrNull()
-                val mintLabel = activeMintUrl?.let { url ->
-                    walletState.mints.firstOrNull { it.url == url }?.name ?: url
-                } ?: "Any mint"
-                InspectorRow(
-                    label = "Mint",
-                    value = mintLabel,
-                    leadingIcon = Icons.Outlined.AccountBalance,
-                    editable = !nfcTransferActive,
-                    onClick = { mintPickerOpen = true },
-                )
-                CanvasDivider(leadingInset = 16.dp)
-                InspectorRow(
-                    label = "Amount",
-                    value = request.amount?.let {
-                        if (isSatRequest) "$it sat" else formatRequestAmount(it)
-                    } ?: "Any",
-                    leadingIcon = Icons.Outlined.AccountBalanceWallet,
-                    valueMonospaced = true,
-                    editable = !nfcTransferActive,
-                    onClick = { amountPickerOpen = true },
-                )
-                CanvasDivider(leadingInset = 16.dp)
-                InspectorRow(
-                    label = "Unit",
-                    value = request.unit.uppercase(),
-                    leadingIcon = Icons.Outlined.CurrencyExchange,
-                )
-                CanvasDivider(leadingInset = 16.dp)
-                InspectorRow(
-                    label = "Created",
-                    value = formatDate(request.createdAtEpochMillis),
-                    leadingIcon = Icons.Outlined.CalendarToday,
-                )
-                if (request.totalReceived > 0L) {
-                    CanvasDivider(leadingInset = 16.dp)
-                    InspectorRow(
-                        label = "Total received",
-                        value = formatRequestAmount(request.totalReceived),
-                        leadingIcon = Icons.Outlined.CheckCircle,
-                        valueMonospaced = true,
+                if (request.amount != null && request.amount > 0L) {
+                    AmountText(
+                        text = formatRequestAmount(request.amount),
+                        style = MaterialTheme.typography.headlineMedium
+                            .copy(fontWeight = FontWeight.SemiBold)
+                            .withMonoDigits(),
                     )
                 }
+
+                if (offerNfcReceive) {
+                    NfcReceiveIndicator(coordinator = nfcReceiveCoordinator)
+                }
+
+                StatusBlock(
+                    received = request.receivedPayments.isNotEmpty(),
+                    paymentCount = paymentCount,
+                    celebrate = celebrate,
+                )
+
+                SectionHeader("Details")
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    val activeMintUrl = request.mints.firstOrNull()
+                    val mintLabel = activeMintUrl?.let { url ->
+                        walletState.mints.firstOrNull { it.url == url }?.name ?: url
+                    } ?: "Any mint"
+                    InspectorRow(
+                        label = "Mint",
+                        value = mintLabel,
+                        leadingIcon = Icons.Outlined.AccountBalance,
+                        editable = !nfcTransferActive,
+                        onClick = { mintPickerOpen = true },
+                    )
+                    CanvasDivider(leadingInset = 16.dp)
+                    InspectorRow(
+                        label = "Amount",
+                        value = request.amount?.let {
+                            if (isSatRequest) "$it sat" else formatRequestAmount(it)
+                        } ?: "Any",
+                        leadingIcon = Icons.Outlined.AccountBalanceWallet,
+                        valueMonospaced = true,
+                        editable = !nfcTransferActive,
+                        onClick = { amountPickerOpen = true },
+                    )
+                    CanvasDivider(leadingInset = 16.dp)
+                    InspectorRow(
+                        label = "Unit",
+                        value = request.unit.uppercase(),
+                        leadingIcon = Icons.Outlined.CurrencyExchange,
+                    )
+                    CanvasDivider(leadingInset = 16.dp)
+                    InspectorRow(
+                        label = "Created",
+                        value = formatDate(request.createdAtEpochMillis),
+                        leadingIcon = Icons.Outlined.CalendarToday,
+                    )
+                    if (request.totalReceived > 0L) {
+                        CanvasDivider(leadingInset = 16.dp)
+                        InspectorRow(
+                            label = "Total received",
+                            value = formatRequestAmount(request.totalReceived),
+                            leadingIcon = Icons.Outlined.CheckCircle,
+                            valueMonospaced = true,
+                        )
+                    }
+                }
+
+                InlineNoticeHost(text = regenerateError, modifier = Modifier.fillMaxWidth())
+
+                Spacer(Modifier.height(CashuTheme.spacing.snug))
             }
 
-            InlineNoticeHost(text = regenerateError, modifier = Modifier.fillMaxWidth())
-
-            Spacer(Modifier.height(CashuTheme.spacing.snug))
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = CashuTheme.spacing.comfortable),
                 horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
             ) {
                 SecondaryButton(
@@ -391,7 +401,7 @@ fun CashuRequestDetailScreen(
                     enabled = !nfcTransferActive,
                 )
             }
-            Spacer(Modifier.height(CashuTheme.spacing.section))
+            Spacer(Modifier.navigationBarsPadding())
         }
     }
 

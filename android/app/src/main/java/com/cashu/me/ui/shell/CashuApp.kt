@@ -349,15 +349,29 @@ private fun AuthenticatedShell(container: AppContainer) {
                     navController.navigate(cashuRequestDetailRouteFor(id, fresh = true))
                 },
                 onClose = close,
+                // Universal scanner (Send parity): auto-routes whatever it reads.
                 // Camera overlays render in the activity window, underneath this
                 // sheet's dialog window — the sheet must yield before scanning.
                 onScan = {
                     close()
-                    scannerTarget = ScannerTarget.Receive
+                    scannerTarget = ScannerTarget.Auto
                 },
+                // A pasted/scanned token opens the full-screen claim page — same
+                // destination Send bounces a token to (iOS ReceiveTokenDetailView).
+                onOpenReceiveToken = { token ->
+                    close()
+                    receiveTokenDetail = token
+                },
+                // A payable pasted into Receive is really a Send — swap the sheet
+                // content to the Send flow, pre-filled (inverse of onOpenReceiveToken).
+                onSendPayable = { raw ->
+                    pendingSendScan = raw
+                    activeFlow = WalletFlow.Send
+                },
+                // Bitcoin opens the mint's Lightning / on-chain receive dialog.
+                onReceiveBitcoin = { activeFlow = WalletFlow.ReceiveLightning },
                 prefilledPayload = pendingReceiveScan,
                 onPrefilledConsumed = { pendingReceiveScan = null },
-                onDismissLockChanged = { flowDismissLocked = it },
             )
 
             WalletFlow.ReceiveLightning -> ReceiveLightningScreen(

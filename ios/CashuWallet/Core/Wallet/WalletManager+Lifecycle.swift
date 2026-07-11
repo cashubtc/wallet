@@ -151,6 +151,7 @@ extension WalletManager {
     func completeOnboarding() {
         transactionService.loadCachedState()
         needsOnboarding = false
+        guard !IntegrationTestConfig.shouldUseDeterministicUIRuntime else { return }
         CashuRequestListener.shared.attach(walletManager: self)
         Task { await CashuRequestListener.shared.start() }
     }
@@ -215,7 +216,9 @@ extension WalletManager {
             mnemonic = newMnemonic
             SettingsManager.shared.resetWalletScopedData(resetRuntimeServices: false)
             try removeWalletFileBackups(fileBackups)
-            performICloudBackup()
+            if !IntegrationTestConfig.shouldUseDeterministicUIRuntime {
+                performICloudBackup()
+            }
         } catch {
             SentryService.capture(error)
             resetRuntimeState()

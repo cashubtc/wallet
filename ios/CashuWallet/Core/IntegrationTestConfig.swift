@@ -35,6 +35,17 @@ struct IntegrationTestConfig {
         ProcessInfo.processInfo.environment["RESET_WALLET"] == "1"
     }
 
+    /// UI tests need a quiescent process. Production-only monitoring, relay
+    /// listeners, foreground reconciliation, and animations make XCTest wait
+    /// for unrelated work and introduce external-network flakiness.
+    static var shouldUseDeterministicUIRuntime: Bool {
+        isEnabled
+    }
+
+    static var shouldDisableAnimations: Bool {
+        ProcessInfo.processInfo.environment["UITEST_DISABLE_ANIMATIONS"] == "1"
+    }
+
     /// Whether UI tests should skip onboarding and start from a deterministic
     /// empty wallet. This keeps feature tests fast while the onboarding tests
     /// still exercise the real setup flow.

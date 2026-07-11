@@ -15,6 +15,9 @@ struct MainWalletView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var activeSheet: WalletSheet?
+    /// A payable destination pasted/scanned into the Receive sheet is really a
+    /// Send — stashed here so the Send sheet opens pre-filled with it.
+    @State private var sendPrefill: String?
     @State private var receivedDelta: ReceivedDelta?
     @State private var deltaDismissTask: Task<Void, Never>?
     @State private var receiveEcashDetent: PresentationDetent = .medium
@@ -461,7 +464,7 @@ struct MainWalletView: View {
                         "Receive",
                         identifier: "wallet-action-receive",
                         hint: "Opens options to receive ecash or lightning payments"
-                    ) { activeSheet = .chooser(.receive) }
+                    ) { activeSheet = .receive }
 
                     actionButton(
                         "Send",
@@ -472,7 +475,7 @@ struct MainWalletView: View {
             }
         } else {
             HStack(spacing: 12) {
-                Button { activeSheet = .chooser(.receive) } label: {
+                Button { activeSheet = .receive } label: {
                     Text("Receive")
                 }
                 .glassButton()
@@ -787,47 +790,28 @@ struct MainWalletView: View {
         settings.formatBalanceWithUnit(sats)
     }
 
-    /// Detent for the action chooser. The Send chooser grows into a taller
-    /// empty-state when there's nothing to send: no mints → the suggested-mints
-    /// picker; mints but zero balance → the "receive first" prompt. Reactive to
-    /// `mints`/`balance` so it shrinks once a mint is added (no mints → mints).
-    private func chooserHeight(for action: WalletActionSheet) -> CGFloat {
-        if action == .send, !walletManager.hasAnyBalance {
-            return walletManager.mints.isEmpty ? 470 : 260
-        }
-        return action.detentHeight
-    }
-
     @ViewBuilder
     private func sheetView(for sheet: WalletSheet) -> some View {
         switch sheet {
-        case .chooser(let action):
-            WalletActionSheetView(
-                action: action,
+        case .receive:
+            // UnifiedReceiveView mirrors UnifiedSendView: a content-fit input sheet
+            // with Scan · Ecash · Bitcoin. A pasted/scanned *payable* is really a
+            // Send, so it hands the destination back to the Send flow via `onSend`.
+            UnifiedReceiveView(
                 onClose: { activeSheet = nil },
-                onSelect: { flow in
-                    if case .contactlessPay = flow {
-                        activeSheet = nil
-                        contactlessCoordinator.start(
-                            walletManager: walletManager,
-                            navigationManager: navigationManager
-                        )
-                    } else {
-                        activeSheet = .flow(flow)
-                    }
-                },
-                onReceive: { activeSheet = .chooser(.receive) },
-                onAddCustomMint: { activeSheet = .discoverMints }
+                onSend: { destination in
+                    sendPrefill = destination
+                    activeSheet = .send
+                }
             )
             .environmentObject(walletManager)
-            .presentationDragIndicator(.visible)
-            .modifier(ChooserSheetPresentation(height: chooserHeight(for: action)))
         case .send:
             // UnifiedSendView owns its presentation detents: content-fit on the
             // input step, `.large` + canvas once amount/confirm/status take over.
             UnifiedSendView(
-                onClose: { activeSheet = nil },
-                onReceive: { activeSheet = .chooser(.receive) },
+                initialDestination: sendPrefill,
+                onClose: { activeSheet = nil; sendPrefill = nil },
+                onReceive: { activeSheet = .receive },
                 onAddCustomMint: { activeSheet = .discoverMints },
                 onContactless: {
                     activeSheet = nil
@@ -888,41 +872,6 @@ struct MainWalletView: View {
     }
 }
 
-private enum WalletActionSheet: String, Identifiable {
-    case receive
-    case send
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .receive: return "Receive"
-        case .send: return "Send"
-        }
-    }
-
-    var primaryOption: WalletFlow {
-        switch self {
-        case .receive: return .receiveEcash
-        case .send: return .sendEcash
-        }
-    }
-
-    var secondaryOption: WalletFlow {
-        switch self {
-        case .receive: return .receiveLightning
-        case .send: return .sendLightning
-        }
-    }
-
-    var detentHeight: CGFloat {
-        if self == .send, NFCNDEFReaderSession.readingAvailable {
-            return 245
-        }
-        return 195
-    }
-}
-
 private enum WalletFlow: Identifiable {
     case receiveEcash
     case receiveLightning
@@ -950,7 +899,7 @@ private enum WalletFlow: Identifiable {
 }
 
 private enum WalletSheet: Identifiable {
-    case chooser(WalletActionSheet)
+    case receive
     case send
     case scanner
     case flow(WalletFlow)
@@ -958,8 +907,8 @@ private enum WalletSheet: Identifiable {
 
     var id: String {
         switch self {
-        case .chooser(let action):
-            return "chooser-\(action.id)"
+        case .receive:
+            return "receive"
         case .send:
             return "send"
         case .scanner:
@@ -969,232 +918,6 @@ private enum WalletSheet: Identifiable {
         case .discoverMints:
             return "discoverMints"
         }
-    }
-}
-
-private struct WalletActionSheetView: View {
-    let action: WalletActionSheet
-    let onClose: () -> Void
-    let onSelect: (WalletFlow) -> Void
-    /// Open the Receive chooser (state B's CTA — the way out of an empty wallet).
-    let onReceive: () -> Void
-    /// Route to the custom-mint add surface (state A's "Add custom mint URL").
-    let onAddCustomMint: () -> Void
-
-    @EnvironmentObject private var walletManager: WalletManager
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var revealed = false
-    @State private var addingMintUrl: String?
-    @State private var addMintError: String?
-
-    /// Send is impossible with nothing to spend — intercept before the chooser.
-    /// Receive is never gated (it's the cure), so this only fires for `.send`.
-    private var isSendEmptyState: Bool {
-        action == .send && !walletManager.hasAnyBalance
-    }
-
-    /// The single piece of state the sheet body switches on, so phase changes
-    /// (e.g. connecting → "nothing to send yet") cross-fade rather than hard-cut.
-    private enum SendEmptyPhase: Equatable { case options, connecting, noMints, noBalance }
-
-    private var phase: SendEmptyPhase {
-        guard isSendEmptyState else { return .options }
-        if addingMintUrl != nil { return .connecting }
-        return walletManager.mints.isEmpty ? .noMints : .noBalance
-    }
-
-    private var secondaryOptionTitle: String {
-        // Lightning + on-chain are both "Bitcoin" from the user's mental model;
-        // the protocol choice happens inside the flow itself.
-        "Bitcoin"
-    }
-
-    private struct Option: Identifiable {
-        let id = UUID()
-        let title: String
-        let icon: String
-        let flow: WalletFlow
-    }
-
-    private var options: [Option] {
-        var result: [Option] = [
-            .init(title: "Ecash", icon: "banknote", flow: action.primaryOption),
-            .init(title: secondaryOptionTitle, icon: "bitcoinsign.circle.fill", flow: action.secondaryOption),
-        ]
-        if action == .send, NFCNDEFReaderSession.readingAvailable {
-            result.append(.init(title: "Contactless", icon: "wave.3.right.circle.fill", flow: .contactlessPay))
-        }
-        return result
-    }
-
-    var body: some View {
-        NavigationStack {
-            Group {
-                switch phase {
-                case .options:
-                    optionsList.transition(.opacity)
-                case .connecting:
-                    connectingState.transition(.opacity)
-                case .noMints:
-                    noMintsState.transition(.opacity)
-                case .noBalance:
-                    noBalanceState.transition(.opacity)
-                }
-            }
-            .animation(.smooth(duration: 0.35), value: phase)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            // Drop the "Send" title for the empty state — the headline carries it.
-            .navigationTitle(isSendEmptyState ? "" : action.title)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    SheetCloseButton(action: onClose)
-                        .accessibilityIdentifier("wallet-chooser-close")
-                }
-            }
-        }
-        .onAppear { revealed = true }
-    }
-
-    // MARK: - Normal chooser (Ecash / Bitcoin / …)
-
-    private var optionsList: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(options.enumerated()), id: \.element.id) { index, option in
-                optionButton(title: option.title, icon: option.icon, action: option.flow)
-                    .opacity(revealed ? 1 : 0)
-                    .offset(x: reduceMotion ? 0 : (revealed ? 0 : -12))
-                    .animation(
-                        reduceMotion
-                            ? .easeInOut(duration: 0.2)
-                            : .smooth(duration: 0.32).delay(Double(index) * 0.07),
-                        value: revealed
-                    )
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        .padding(.horizontal, 20)
-        .padding(.top, 12)
-        .padding(.bottom, 12)
-    }
-
-    // MARK: - Send empty states
-
-    /// Transient state while a tapped suggested mint is being added. Held in its
-    /// own phase so it cross-fades into state B once the mint connects.
-    private var connectingState: some View {
-        VStack(spacing: 14) {
-            ProgressView()
-            Text("Connecting to \(displayHost(addingMintUrl ?? ""))…")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    /// State A — no mints. Embeds the onboarding suggested-mints picker so the
-    /// prerequisite is resolved in place; adding a mint auto-advances to state B.
-    private var noMintsState: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Connect a mint first")
-                        .font(.title3.weight(.medium))
-                    Text("Mints issue the ecash you send and receive. Add one to get started.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 12)
-
-                SuggestedMintsSection(
-                    existingURLs: Set(walletManager.mints.map(\.url)),
-                    onAdd: { addMint($0) }
-                )
-
-                if let addMintError {
-                    InlineNotice(message: addMintError, severity: .error)
-                        .padding(.horizontal, 20)
-                        .padding(.top, 8)
-                }
-
-                Button(action: onAddCustomMint) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "plus")
-                        Text("Add custom mint URL")
-                    }
-                    .padding(.vertical, 12)
-                    .frame(maxWidth: .infinity)
-                }
-                .textLinkButton()
-                .padding(.top, 4)
-            }
-            .padding(.top, 8)
-            .padding(.bottom, 16)
-        }
-    }
-
-    /// State B — mints connected but zero balance. The way forward is funds.
-    private var noBalanceState: some View {
-        NativeEmptyState(
-            title: "Nothing to send yet",
-            systemImage: "arrow.down.circle",
-            description: "Receive some ecash before you can send.",
-            actionTitle: "Receive",
-            action: onReceive
-        )
-    }
-
-    private func addMint(_ url: String) {
-        addMintError = nil
-        addingMintUrl = url
-        Task {
-            do {
-                try await walletManager.addMint(url: url)
-            } catch {
-                addMintError = "Couldn't connect to that mint. Try another."
-            }
-            addingMintUrl = nil
-        }
-    }
-
-    private func displayHost(_ url: String) -> String {
-        var host = url
-            .replacingOccurrences(of: "https://", with: "")
-            .replacingOccurrences(of: "http://", with: "")
-        if host.hasSuffix("/") { host = String(host.dropLast()) }
-        return host
-    }
-
-    private func optionButton(title: String, icon: String, action flow: WalletFlow) -> some View {
-        Button {
-            HapticFeedback.selection()
-            onSelect(flow)
-        } label: {
-            optionLabel(title: title, icon: icon)
-        }
-        .buttonStyle(PressableButtonStyle())
-        .accessibilityIdentifier("wallet-flow-\(flow.id)")
-    }
-
-    private func optionLabel(title: String, icon: String) -> some View {
-        HStack(spacing: 14) {
-            Image(systemName: icon)
-                .font(.body.weight(.semibold))
-                .foregroundStyle(.primary)
-                .frame(width: 36, height: 36)
-                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
-
-            Text(title)
-                .font(.title3.weight(.medium))
-
-            Spacer()
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 14)
-        .foregroundStyle(.primary)
-        .contentShape(Rectangle())
     }
 }
 
@@ -1210,14 +933,6 @@ private struct TopInsetHeightKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = nextValue()
-    }
-}
-
-private struct ChooserSheetPresentation: ViewModifier {
-    let height: CGFloat
-
-    func body(content: Content) -> some View {
-        content.presentationDetents([.height(height)])
     }
 }
 

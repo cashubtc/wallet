@@ -87,6 +87,8 @@ import com.cashu.me.ui.components.NoticeSeverity
 import com.cashu.me.ui.components.NumberPadFooter
 import com.cashu.me.ui.components.PaymentStatusPhase
 import com.cashu.me.ui.components.PaymentStatusScreen
+import com.cashu.me.ui.components.CircularMethodButton
+import com.cashu.me.ui.components.MethodRowSpacing
 import com.cashu.me.ui.components.PrimaryButton
 import com.cashu.me.ui.components.QrCard
 import com.cashu.me.ui.components.SheetHeader
@@ -94,11 +96,6 @@ import com.cashu.me.ui.components.TwoFaceScreen
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.withMonoDigits
 
-// Generous circular method buttons (Surface, not FilledTonalIconButton —
-// the latter hardcodes 40dp and would ignore these sizes).
-private val MethodButtonSize = 72.dp
-private val MethodIconSize = 32.dp
-private val MethodRowSpacing = 40.dp
 private const val TYPE_DEBOUNCE_MS = 400L
 
 private enum class SendStep { Input, Amount, Confirm }
@@ -683,64 +680,29 @@ private fun InputFace(
             InlineNotice(text = inputHint, severity = NoticeSeverity.Warning)
         }
         Spacer(Modifier.height(CashuTheme.spacing.page + CashuTheme.spacing.micro))
-        // Ways to send: Scan · Ecash · Tap (NFC-gated), round 60dp buttons.
+        // Ways to send: Scan · Ecash · Tap (NFC-gated), round 72dp buttons.
         Row(
             horizontalArrangement = Arrangement.spacedBy(MethodRowSpacing),
             verticalAlignment = Alignment.Top,
         ) {
-            SendMethodButton(
+            CircularMethodButton(
                 icon = Icons.Outlined.QrCodeScanner,
                 label = "Scan",
                 onClick = onScan,
             )
-            SendMethodButton(
+            CircularMethodButton(
                 icon = Icons.Outlined.Payments,
                 label = "Ecash",
                 onClick = onSendEcash,
             )
             if (hasNfc) {
-                SendMethodButton(
+                CircularMethodButton(
                     icon = Icons.Outlined.Nfc,
                     label = "Tap",
                     onClick = onContactless,
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun SendMethodButton(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
-    onClick: () -> Unit,
-) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Surface(
-            onClick = onClick,
-            modifier = Modifier.size(MethodButtonSize),
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.secondaryContainer,
-            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-        ) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = label,
-                    modifier = Modifier.size(MethodIconSize),
-                )
-            }
-        }
-        Spacer(Modifier.height(CashuTheme.spacing.snug))
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodySmall,
-            fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }
 

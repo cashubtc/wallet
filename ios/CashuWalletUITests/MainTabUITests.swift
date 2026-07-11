@@ -6,70 +6,31 @@ final class MainTabUITests: UITestBase {
 
     // MARK: - Tests
 
-    func testAllTabsExist() throws {
+    func testPrimaryNavigationAndEmptyMintsState() throws {
         waitForMainTab()
 
-        XCTAssertTrue(tabButton("Wallet").exists)
+        let tabBar = mainTabBar()
+        XCTAssertEqual(tabBar.buttons.count, 3)
         XCTAssertTrue(tabButton("History").exists)
         XCTAssertTrue(tabButton("Mints").exists)
-        XCTAssertEqual(mainTabBar().buttons.count, 3)
-    }
-
-    func testNavigateToHistoryTab() throws {
-        waitForMainTab()
+        waitForSelectedTab("Wallet")
 
         tapTab("History")
-
         XCTAssertTrue(
-            app.navigationBars["History"].waitForExistence(timeout: 10),
+            screen("history-screen").waitForExistence(timeout: 10),
             "History view should appear"
         )
-    }
-
-    func testNavigateToMintsTab() throws {
-        waitForMainTab()
 
         tapTab("Mints")
-    }
-
-    /// With no mint configured, the Mints tab still offers Add Mint.
-    func testMintsTabShowsAddMintWithoutMint() throws {
-        waitForMainTab()
-
-        tapTab("Mints")
-
         XCTAssertTrue(
-            app.navigationBars["Mints"].waitForExistence(timeout: 10),
-            "Mints navigation bar should appear"
+            screen("mints-screen").waitForExistence(timeout: 10),
+            "Mints view should appear"
         )
         XCTAssertTrue(
             app.buttons["mints-add-button"].waitForExistence(timeout: 5),
             "Mints tab should show the Add Mint button when no mint is configured"
         )
-    }
-
-    func testOpenSettingsFromWallet() throws {
-        waitForMainTab()
-
-        let settings = app.buttons["wallet-settings-button"]
-        XCTAssertTrue(settings.waitForExistence(timeout: 5))
-        settings.tap()
-        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 10))
-    }
-
-    func testWalletTabIsDefaultSelected() throws {
-        waitForMainTab()
-
-        waitForSelectedTab("Wallet")
-    }
-
-    func testNavigateBetweenMultipleTabs() throws {
-        waitForMainTab()
-
-        tapTab("Mints")
 
         tapTab("Wallet")
-
-        tapTab("History")
     }
 }

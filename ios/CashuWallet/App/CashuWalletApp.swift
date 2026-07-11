@@ -39,6 +39,9 @@ struct CashuWalletApp: App {
         // stderr can't turn a Rust log write into a bogus "failed printing to stderr"
         // panic that masks the real error. See AppLogger for the full rationale.
         AppLogger.redirectStandardStreamsIfNeeded()
+        if IntegrationTestConfig.shouldDisableAnimations {
+            UIView.setAnimationsEnabled(false)
+        }
         _walletManager = StateObject(wrappedValue: WalletManager())
         _navigationManager = StateObject(wrappedValue: NavigationManager())
         _appLockManager = StateObject(wrappedValue: AppLockManager.shared)
@@ -52,8 +55,11 @@ struct CashuWalletApp: App {
                     .environmentObject(navigationManager)
                     .environmentObject(appLockManager)
                     .task {
-                        SentryService.initialize()
+                        if !IntegrationTestConfig.shouldUseDeterministicUIRuntime {
+                            SentryService.initialize()
+                        }
                         await walletManager.initialize()
+                        guard !IntegrationTestConfig.shouldUseDeterministicUIRuntime else { return }
                         CashuRequestListener.shared.attach(walletManager: walletManager)
                         await CashuRequestListener.shared.start()
                         if SettingsManager.shared.checkSentTokens {
@@ -78,7 +84,13 @@ struct CashuWalletApp: App {
                 }
             }
             .animation(.easeInOut(duration: 0.2), value: appLockManager.isLocked)
+            .transaction { transaction in
+                if IntegrationTestConfig.shouldDisableAnimations {
+                    transaction.disablesAnimations = true
+                }
+            }
             .onChange(of: scenePhase) { _, newPhase in
+                guard !IntegrationTestConfig.shouldUseDeterministicUIRuntime else { return }
                 switch newPhase {
                 case .active:
                     appLockManager.appBecameActive()

@@ -19,11 +19,11 @@ final class ReceiveUITests: UITestBase {
     }
 
     private func openReceiveChooser() {
-        XCTAssertTrue(
-            receiveButton.waitForExistence(timeout: 10),
-            "Receive button should be visible on wallet tab"
+        tapWhenReady(
+            receiveButton,
+            timeout: 10,
+            message: "Receive button should be visible on wallet tab"
         )
-        receiveButton.tap()
 
         XCTAssertTrue(
             receiveEcashOption.waitForExistence(timeout: 10),
@@ -33,25 +33,17 @@ final class ReceiveUITests: UITestBase {
 
     // MARK: - Tests
 
-    func testReceiveOptionsAppear() throws {
+    func testReceiveChooserCanBeDismissed() throws {
         waitForMainTab()
 
         openReceiveChooser()
-
         XCTAssertTrue(
             receiveBitcoinOption.waitForExistence(timeout: 5),
             "Receive chooser should show the Bitcoin option"
         )
-    }
-
-    func testReceiveSheetCanBeDismissed() throws {
-        waitForMainTab()
-
-        openReceiveChooser()
 
         let closeButton = app.buttons["wallet-chooser-close"]
-        XCTAssertTrue(closeButton.waitForExistence(timeout: 5), "Receive chooser should show a close button")
-        closeButton.tap()
+        tapWhenReady(closeButton, message: "Receive chooser should show a close button")
 
         XCTAssertTrue(tabButton("Wallet", timeout: 5).exists)
     }
@@ -65,9 +57,11 @@ final class ReceiveUITests: UITestBase {
             receiveBitcoinOption.waitForExistence(timeout: 10),
             "Receive chooser should show the Bitcoin option"
         )
-        receiveBitcoinOption.tap()
+        tapWhenReady(receiveBitcoinOption)
 
-        let createRequestButton = app.buttons["receive-lightning-create-request"]
-        XCTAssertTrue(createRequestButton.waitForExistence(timeout: 10), "Lightning receive view should open")
+        XCTAssertTrue(
+            screen("receive-lightning-screen").waitForExistence(timeout: 10),
+            "Lightning receive view should open"
+        )
     }
 }

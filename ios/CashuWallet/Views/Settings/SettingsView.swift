@@ -92,6 +92,7 @@ struct SettingsView: View {
             .padding(.horizontal)
         }
         .navigationTitle("Settings")
+        .accessibilityIdentifier("settings-screen")
         .navigationBarBackButtonHidden()
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
