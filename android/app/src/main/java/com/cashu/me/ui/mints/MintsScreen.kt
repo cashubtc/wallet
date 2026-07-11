@@ -9,13 +9,15 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
@@ -52,6 +54,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -65,9 +68,10 @@ import com.cashu.me.Core.WalletManager
 import com.cashu.me.Core.normalizeUserMintUrl
 import com.cashu.me.Core.shortenMintUrl
 import com.cashu.me.Models.MintInfo
-import com.cashu.me.ui.components.CanvasDivider
+import com.cashu.me.ui.components.GroupedCardDivider
 import com.cashu.me.ui.components.MintAvatar
 import com.cashu.me.ui.components.TabTopBar
+import com.cashu.me.ui.components.groupItemShape
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.withMonoDigits
 
@@ -131,12 +135,15 @@ fun MintsScreen(
             ),
         ) {
             if (walletState.mints.isNotEmpty()) {
-                items(walletState.mints, key = { it.url }) { mint ->
+                val mintCount = walletState.mints.size
+                itemsIndexed(walletState.mints, key = { _, mint -> mint.url }) { index, mint ->
                     val isActive = walletState.activeMint?.url == mint.url
+                    val shape = groupItemShape(index, mintCount, MaterialTheme.shapes.medium)
                     Column(modifier = Modifier.animateItem()) {
                         SwipeableMintRow(
                             mint = mint,
                             isActive = isActive,
+                            shape = shape,
                             onOpen = { onOpenMint(mint) },
                             onSetActive = {
                                 if (!isActive) {
@@ -145,13 +152,18 @@ fun MintsScreen(
                             },
                             onRequestRemove = { pendingRemoval = mint },
                         )
-                        if (mint != walletState.mints.last()) CanvasDivider(leadingInset = 64.dp)
+                        if (index < mintCount - 1) GroupedCardDivider(leadingInset = 64.dp)
                     }
+                }
+
+                item("cards-gap") {
+                    Spacer(Modifier.height(CashuTheme.spacing.section))
                 }
             }
 
             item("add-row") {
                 ListEntryRow(
+                    shape = groupItemShape(0, 2, MaterialTheme.shapes.medium),
                     leadingIcon = {
                         Icon(
                             imageVector = Icons.Outlined.Add,
@@ -161,7 +173,6 @@ fun MintsScreen(
                         )
                     },
                     title = "Add mint",
-                    subtitle = "Connect with a mint URL",
                     onClick = {
                         addMintInitialUrl = ""
                         addMintOpen = true
@@ -170,9 +181,14 @@ fun MintsScreen(
                 )
             }
 
+            item("add-discover-divider") {
+                GroupedCardDivider(leadingInset = 56.dp)
+            }
+
             item("discover-row") {
                 // Quiet nav-row weight: plain monochrome glyph, no filled circle.
                 ListEntryRow(
+                    shape = groupItemShape(1, 2, MaterialTheme.shapes.medium),
                     leadingIcon = {
                         Icon(
                             imageVector = Icons.Outlined.Search,
@@ -182,7 +198,6 @@ fun MintsScreen(
                         )
                     },
                     title = "Discover mints",
-                    subtitle = "Browse mints announced over Nostr",
                     onClick = { discoveryOpen = true },
                 )
             }
@@ -259,6 +274,7 @@ fun MintsScreen(
 private fun SwipeableMintRow(
     mint: MintInfo,
     isActive: Boolean,
+    shape: Shape,
     onOpen: () -> Unit,
     onSetActive: () -> Unit,
     onRequestRemove: () -> Unit,
@@ -314,6 +330,7 @@ private fun SwipeableMintRow(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
+                    .clip(shape)
                     .background(bg)
                     .padding(horizontal = CashuTheme.spacing.loose),
                 contentAlignment = align,
@@ -333,6 +350,7 @@ private fun SwipeableMintRow(
         MintRow(
             mint = mint,
             isActive = isActive,
+            shape = shape,
             onClick = onOpen,
             onSetActiveLongPress = onSetActive,
             onRemoveLongPress = onRequestRemove,
@@ -345,6 +363,7 @@ private fun SwipeableMintRow(
 private fun MintRow(
     mint: MintInfo,
     isActive: Boolean,
+    shape: Shape,
     onClick: () -> Unit,
     onSetActiveLongPress: () -> Unit = {},
     onRemoveLongPress: () -> Unit = {},
@@ -353,7 +372,8 @@ private fun MintRow(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.background)
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = { menuOpen = true },
@@ -451,6 +471,7 @@ private fun MintRow(
 
 @Composable
 internal fun ListEntryRow(
+    shape: Shape,
     leadingIcon: @Composable () -> Unit,
     title: String,
     subtitle: String? = null,
@@ -460,6 +481,8 @@ internal fun ListEntryRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .clickable(onClick = onClick)
             .padding(
                 horizontal = CashuTheme.spacing.comfortable,
