@@ -3,12 +3,9 @@ import SwiftUI
 struct MintsListView: View {
     @EnvironmentObject var walletManager: WalletManager
 
-    @State private var newMintUrl = ""
-    @State private var newMintNickname = ""
-    @State private var isAddingMint = false
-    @State private var errorMessage: String?
     @State private var mintToRemove: MintInfo?
     @State private var showRemoveConfirmation = false
+    @State private var showAddMintSheet = false
     @State private var showDiscoverySheet = false
 
     var body: some View {
@@ -24,57 +21,26 @@ struct MintsListView: View {
 
                 Section {
                     Button {
-                        errorMessage = nil
-                        showDiscoverySheet = true
+                        showAddMintSheet = true
                     } label: {
-                        HStack {
-                            Label("Discover Mints", systemImage: "magnifyingglass")
-                                .foregroundStyle(.primary)
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .font(.footnote.weight(.semibold))
-                                .foregroundStyle(.tertiary)
-                        }
+                        actionRow(title: "Add Mint", systemImage: "plus")
                     }
-                }
-
-                Section {
-                    TextField("Mint URL (https://...)", text: $newMintUrl)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .keyboardType(.URL)
-                    TextField("Nickname (optional)", text: $newMintNickname)
-                } header: {
-                    Text("Add Mint")
-                } footer: {
-                    Text("Enter the URL of a Cashu mint to connect to it. This wallet is not affiliated with any mint.")
-                }
-
-                if let error = errorMessage {
-                    Section {
-                        InlineNotice(message: error, severity: .error)
-                    }
-                }
-
-                Section {
-                    Button {
-                        addMint()
-                    } label: {
-                        HStack {
-                            Text("Add Mint")
-                            if isAddingMint {
-                                Spacer()
-                                ProgressView()
-                            }
-                        }
-                    }
-                    .disabled(newMintUrl.isEmpty || isAddingMint)
                     .accessibilityIdentifier("mints-add-button")
 
-                    Button("Paste URL from Clipboard", action: pasteMintUrlFromClipboard)
+                    Button {
+                        showDiscoverySheet = true
+                    } label: {
+                        actionRow(title: "Discover Mints", systemImage: "magnifyingglass")
+                    }
                 }
             }
             .navigationTitle("Mints")
+            .sheet(isPresented: $showAddMintSheet) {
+                AddMintSheet()
+                    .environmentObject(walletManager)
+                    .presentationDetents([.medium, .large])
+                    .presentationDragIndicator(.visible)
+            }
             .sheet(isPresented: $showDiscoverySheet) {
                 MintDiscoverySheet { url in addMint(url: url) }
                     .environmentObject(walletManager)
@@ -98,6 +64,17 @@ struct MintsListView: View {
                     Text("Remove \(mint.name)? Any unspent ecash on this mint will need to be restored from your seed phrase.")
                 }
             }
+        }
+    }
+
+    private func actionRow(title: String, systemImage: String) -> some View {
+        HStack {
+            Label(title, systemImage: systemImage)
+                .foregroundStyle(.primary)
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.tertiary)
         }
     }
 
@@ -199,49 +176,11 @@ struct MintsListView: View {
 
     // MARK: - Actions
 
-    private func addMint(url: String? = nil) {
-        let urlToAdd = url ?? newMintUrl
-        guard !urlToAdd.isEmpty else { return }
-        let clearForm = (url == nil)
-        isAddingMint = true
-        errorMessage = nil
+    private func addMint(url: String) {
+        guard !url.isEmpty else { return }
         Task { @MainActor in
-            do {
-                try await walletManager.addMint(url: urlToAdd)
-                if clearForm {
-                    newMintUrl = ""
-                    newMintNickname = ""
-                }
-            } catch {
-                errorMessage = error.userFacingWalletMessage
-            }
-            isAddingMint = false
+            try? await walletManager.addMint(url: url)
         }
-    }
-
-    private func pasteMintUrlFromClipboard() {
-        guard let clipboardContent = UIPasteboard.general.string,
-              !clipboardContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            errorMessage = "Clipboard is empty."
-            return
-        }
-        let separators = CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: ",;"))
-        let candidates = clipboardContent.components(separatedBy: separators).filter { !$0.isEmpty }
-        for rawCandidate in candidates {
-            var candidate = rawCandidate.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
-            if !candidate.hasPrefix("http://") && !candidate.hasPrefix("https://") {
-                candidate = "https://" + candidate
-            }
-            if candidate.hasSuffix("/") {
-                candidate = String(candidate.dropLast())
-            }
-            if let url = URL(string: candidate), url.host != nil {
-                newMintUrl = candidate
-                errorMessage = nil
-                return
-            }
-        }
-        errorMessage = "No valid mint URL found in clipboard."
     }
 
     private func setActive(_ mint: MintInfo) {

@@ -32,7 +32,7 @@ final class MainTabUITests: UITestBase {
         tapTab("Mints")
     }
 
-    /// With no mint configured, the Mints tab shows its add-mint form.
+    /// With no mint configured, the Mints tab still offers Add Mint.
     func testMintsTabShowsAddMintWithoutMint() throws {
         waitForMainTab()
 
