@@ -308,12 +308,14 @@ struct UnifiedReceiveView: View {
             CircularGlassIconButton(icon: "banknote", label: "Ecash",
                                     a11y: "Create a Cashu request",
                                     action: createNewRequest)
+                .accessibilityIdentifier("wallet-flow-receiveEcash")
 
             CircularGlassIconButton(icon: "bitcoinsign.circle", label: "Bitcoin",
                                     a11y: "Receive over Lightning or on-chain") {
                 HapticFeedback.selection()
                 route = .lightning
             }
+            .accessibilityIdentifier("wallet-flow-receiveLightning")
         }
 
         return Group {
