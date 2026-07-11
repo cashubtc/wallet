@@ -233,25 +233,30 @@ struct SettingsSectionFooter<Content: View>: View {
 /// tint keeps the surface visible even when sitting over an empty dark
 /// canvas (where untinted `.regular` glass would nearly disappear).
 ///
-/// `prominent` swaps to inverted ink — solid `Color.primary` fill with
-/// system-background label — for the single active primary CTA (Android
-/// `PrimaryButton` parity).
+/// `prominent` swaps to inverted ink — pure black fill / white label in light
+/// mode, pure white fill / black label in dark — matching Android
+/// `PrimaryButton`. Absolute colors (not `Color.primary` /
+/// `systemBackground`) so sheets don't resolve to elevated greys.
 struct FullWidthCapsuleButtonStyle: ButtonStyle {
     var prominent: Bool = false
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.colorScheme) private var colorScheme
 
     func makeBody(configuration: Configuration) -> some View {
+        let ink = colorScheme == .dark ? Color.white : Color.black
+        let onInk = colorScheme == .dark ? Color.black : Color.white
+
         let label = configuration.label
             .font(.body.weight(.semibold))
             .frame(maxWidth: .infinity)
             .padding(.vertical, 18)
-            .foregroundStyle(prominent ? Color(.systemBackground) : Color.primary)
+            .foregroundStyle(prominent ? onInk : Color.primary)
             .contentShape(Capsule())
 
         return Group {
             if prominent {
                 label
-                    .background(Color.primary, in: Capsule())
+                    .background(ink, in: Capsule())
                     .scaleEffect(isEnabled && configuration.isPressed ? 0.97 : 1)
             } else if #available(iOS 26, *) {
                 label.glassEffect(
