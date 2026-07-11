@@ -12,6 +12,7 @@ struct MintDiscoverySheet: View {
     @State private var searchText = ""
     @State private var addedURLsThisSession: Set<String> = []
     @State private var previews: [String: MintIdentityPreview] = [:]
+    @State private var loadingPreviewURLs: Set<String> = []
 
     var body: some View {
         NavigationStack {
@@ -27,6 +28,7 @@ struct MintDiscoverySheet: View {
         }
         .onDisappear {
             previews = [:]
+            loadingPreviewURLs = []
             discoveryManager.clearDiscoveredMints()
         }
     }
@@ -41,7 +43,7 @@ struct MintDiscoverySheet: View {
             )
         } else {
             List {
-                if discoveryManager.isDiscovering {
+                if discoveryManager.isDiscovering || !loadingPreviewURLs.isEmpty {
                     Section {
                         HStack(spacing: 12) {
                             ProgressView()
@@ -69,7 +71,9 @@ struct MintDiscoverySheet: View {
                     } header: {
                         Text("Discovered")
                     }
-                } else if addedMints.isEmpty && !discoveryManager.isDiscovering {
+                } else if addedMints.isEmpty
+                            && !discoveryManager.isDiscovering
+                            && loadingPreviewURLs.isEmpty {
                     Section {
                         if searchText.isEmpty {
                             NativeEmptyState(
@@ -90,7 +94,7 @@ struct MintDiscoverySheet: View {
                     .listRowBackground(Color.clear)
                 }
             }
-            .animation(.smooth(duration: 0.3), value: addedURLsThisSession)
+            .animation(reduceMotion ? nil : .smooth(duration: 0.3), value: addedURLsThisSession)
             .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search mints")
             .refreshable {
                 await discoveryManager.discoverMints()
@@ -110,8 +114,9 @@ struct MintDiscoverySheet: View {
 
     private var filteredMints: [DiscoveredMint] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return discoveryManager.discoveredMints }
-        return discoveryManager.discoveredMints.filter { mint in
+        let validatedMints = discoveryManager.discoveredMints.filter { previews[$0.url] != nil }
+        guard !query.isEmpty else { return validatedMints }
+        return validatedMints.filter { mint in
             displayName(for: mint).localizedCaseInsensitiveContains(query)
                 || mint.url.localizedCaseInsensitiveContains(query)
         }
@@ -141,8 +146,13 @@ struct MintDiscoverySheet: View {
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(displayName(for: mint))
-                    .font(.body)
+                HStack(spacing: 6) {
+                    Text(displayName(for: mint))
+                        .font(.body)
+                        .lineLimit(1)
+                    MintMethodIcons(methods: methods(for: mint))
+                        .layoutPriority(1)
+                }
                 Text(mint.url)
                     .font(.caption)
                     .lineLimit(1)
@@ -168,8 +178,13 @@ struct MintDiscoverySheet: View {
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(displayName(for: mint))
-                    .font(.body)
+                HStack(spacing: 6) {
+                    Text(displayName(for: mint))
+                        .font(.body)
+                        .lineLimit(1)
+                    MintMethodIcons(methods: methods(for: mint))
+                        .layoutPriority(1)
+                }
                 Text(mint.url)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -179,8 +194,8 @@ struct MintDiscoverySheet: View {
             Spacer(minLength: 8)
 
             Button {
-                withAnimation(.smooth(duration: 0.3)) {
-                    addedURLsThisSession.insert(mint.url)
+                withAnimation(reduceMotion ? nil : .smooth(duration: 0.3)) {
+                    _ = addedURLsThisSession.insert(mint.url)
                 }
                 addMint(mint.url)
                 HapticFeedback.selection()
@@ -206,10 +221,34 @@ struct MintDiscoverySheet: View {
         return mint.displayName
     }
 
+    private func methods(for mint: DiscoveredMint) -> [PaymentMethodKind] {
+        previews[mint.url]?.methods ?? []
+    }
+
     private func loadMissingPreviews() async {
-        for mint in discoveryManager.discoveredMints where previews[mint.url] == nil {
-            guard let info = await walletManager.fetchMintPreviewInfo(url: mint.url) else { continue }
-            previews[mint.url] = MintIdentityPreview(name: info.name, iconUrl: info.iconUrl)
+        let missingMints = discoveryManager.discoveredMints.filter {
+            previews[$0.url] == nil && !loadingPreviewURLs.contains($0.url)
+        }
+        loadingPreviewURLs.formUnion(missingMints.map(\.url))
+
+        for mint in missingMints {
+            let info = await walletManager.fetchMintPreviewInfo(url: mint.url)
+            guard !Task.isCancelled else {
+                withAnimation(reduceMotion ? nil : .smooth(duration: 0.3)) {
+                    _ = loadingPreviewURLs.remove(mint.url)
+                }
+                return
+            }
+            withAnimation(reduceMotion ? nil : .smooth(duration: 0.3)) {
+                if let info {
+                    previews[mint.url] = MintIdentityPreview(
+                        name: info.name,
+                        iconUrl: info.iconUrl,
+                        methods: info.methods
+                    )
+                }
+                _ = loadingPreviewURLs.remove(mint.url)
+            }
         }
     }
 }
@@ -217,6 +256,7 @@ struct MintDiscoverySheet: View {
 private struct MintIdentityPreview {
     let name: String?
     let iconUrl: String?
+    let methods: [PaymentMethodKind]
 }
 
 #Preview {

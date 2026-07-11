@@ -2,7 +2,10 @@ package com.cashu.me.Core
 
 import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -48,32 +51,46 @@ class MintDiscoveryManager(
     val state: StateFlow<MintDiscoveryState> = mutableState.asStateFlow()
     private val webSockets = CopyOnWriteArrayList<WebSocket>()
     private val metadataScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val discoveryGeneration = AtomicLong(0)
+    private val relayDiscoveryActive = AtomicBoolean(false)
+    private val pendingValidations = ConcurrentHashMap.newKeySet<ValidationKey>()
 
     suspend fun discoverMints(): List<MintInfo> {
         if (mutableState.value.isDiscovering) return mutableState.value.discoveredMints
         if (!settingsManager.state.value.useWebsockets) return emptyList()
 
+        val generation = discoveryGeneration.incrementAndGet()
+        pendingValidations.clear()
+        relayDiscoveryActive.set(true)
         closeAllConnections()
         mutableState.value = MintDiscoveryState(isDiscovering = true)
         return try {
             withContext(Dispatchers.IO) {
                 configuredRelays()
-                    .map { relay -> async { connectAndQuery(relay) } }
+                    .map { relay -> async { connectAndQuery(relay, generation) } }
                     .awaitAll()
             }
             mutableState.value.discoveredMints
         } finally {
             closeAllConnections()
-            mutableState.update { it.copy(isDiscovering = false) }
+            if (discoveryGeneration.get() == generation) {
+                relayDiscoveryActive.set(false)
+                mutableState.update {
+                    it.copy(isDiscovering = pendingValidations.any { pending -> pending.generation == generation })
+                }
+            }
         }
     }
 
     fun clearDiscoveredMints() {
+        discoveryGeneration.incrementAndGet()
+        relayDiscoveryActive.set(false)
+        pendingValidations.clear()
         closeAllConnections()
         mutableState.value = MintDiscoveryState()
     }
 
-    private suspend fun connectAndQuery(relay: String) {
+    private suspend fun connectAndQuery(relay: String, generation: Long) {
         val request = runCatching { Request.Builder().url(relay).build() }.getOrNull() ?: return
         val closed = CompletableDeferred<Unit>()
         val subscriptionId = UUID.randomUUID().toString()
@@ -83,11 +100,11 @@ class MintDiscoveryManager(
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
-                handleRelayMessage(text)
+                handleRelayMessage(text, generation)
             }
 
             override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
-                handleRelayMessage(bytes.utf8())
+                handleRelayMessage(bytes.utf8(), generation)
             }
 
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
@@ -113,33 +130,47 @@ class MintDiscoveryManager(
         webSockets.remove(webSocket)
     }
 
-    private fun handleRelayMessage(message: String) {
+    private fun handleRelayMessage(message: String, generation: Long) {
+        if (discoveryGeneration.get() != generation) return
         val discovered = NostrMintEventParser.parseRelayMessage(message) ?: return
+        val validation = ValidationKey(generation, discovered.url)
         if (mutableState.value.discoveredMints.any { it.url == discovered.url }) return
+        if (!pendingValidations.add(validation)) return
 
-        mutableState.update { current ->
-            if (current.discoveredMints.any { it.url == discovered.url }) {
-                current
-            } else {
-                current.copy(discoveredMints = current.discoveredMints + discovered)
-            }
-        }
-        fetchMintPreview(discovered.url)
+        mutableState.update { it.copy(isDiscovering = true) }
+        fetchMintPreview(discovered, validation)
     }
 
-    private fun fetchMintPreview(url: String) {
+    private fun fetchMintPreview(discovered: MintInfo, validation: ValidationKey) {
         metadataScope.launch {
-            runCatching { gateway.ensureWallet(url) }
-                .onFailure { AppLogger.wallet.error("CDK wallet preparation failed for discovered mint $url", it) }
-            val fetched = runCatching { gateway.fetchMintInfo(url) }.getOrNull() ?: return@launch
-            mutableState.update { current ->
-                val index = current.discoveredMints.indexOfFirst { it.url == url }
-                if (index < 0) {
-                    current
-                } else {
-                    val updated = current.discoveredMints.toMutableList()
-                    updated[index] = current.discoveredMints[index].mergedWithPreview(fetched)
-                    current.copy(discoveredMints = updated)
+            try {
+                val fetched = runCatching {
+                    gateway.ensureWallet(discovered.url)
+                    gateway.fetchMintInfo(discovered.url)
+                }.onFailure {
+                    AppLogger.wallet.error(
+                        "Mint info validation failed for discovered mint ${discovered.url}",
+                        it,
+                    )
+                }.getOrNull() ?: return@launch
+
+                if (discoveryGeneration.get() != validation.generation) return@launch
+                mutableState.update { current ->
+                    if (current.discoveredMints.any { it.url == discovered.url }) {
+                        current
+                    } else {
+                        current.copy(
+                            discoveredMints = current.discoveredMints + discovered.mergedWithPreview(fetched),
+                        )
+                    }
+                }
+            } finally {
+                pendingValidations.remove(validation)
+                if (discoveryGeneration.get() == validation.generation &&
+                    !relayDiscoveryActive.get() &&
+                    pendingValidations.none { it.generation == validation.generation }
+                ) {
+                    mutableState.update { it.copy(isDiscovering = false) }
                 }
             }
         }
@@ -168,6 +199,8 @@ class MintDiscoveryManager(
             "wss://relay.primal.net",
         )
     }
+
+    private data class ValidationKey(val generation: Long, val url: String)
 }
 
 object NostrMintEventParser {

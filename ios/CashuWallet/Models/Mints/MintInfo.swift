@@ -31,6 +31,14 @@ struct MintInfo: Identifiable, Equatable, Codable {
     var lastUpdated: Date = Date()
 }
 
+/// Lightweight identity + capability preview fetched for discovery / staging
+/// without adding the mint to the saved wallet list.
+struct MintPreviewInfo {
+    let name: String?
+    let iconUrl: String?
+    let methods: [PaymentMethodKind]
+}
+
 extension MintInfo {
     /// True when the mint advertises more than one unit, so a unit chooser is
     /// worth surfacing. Single-unit mints hide the selector entirely.

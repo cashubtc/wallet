@@ -24,6 +24,7 @@
 		11000000000000CC /* MintDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21000000000000CC /* MintDetailView.swift */; };
 		11000000000000CD /* MintDiscoverySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21000000000000CD /* MintDiscoverySheet.swift */; };
 		11000000000000CE /* AddMintSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21000000000000CE /* AddMintSheet.swift */; };
+		11000000000000CF /* MintMethodIcons.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21000000000000CF /* MintMethodIcons.swift */; };
 		13919761D160B56C1BD7FDB4 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 460F5508C2B82DAECD0FEDDB /* Foundation.framework */; };
 		264054F18D12335595328FBC /* LiquidGlassModifiers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DC08FE85DFC643906176894 /* LiquidGlassModifiers.swift */; };
 		349E3802577110813AC1A9E3 /* NutshellIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72DD529F60A8D9D1A81E3FBB /* NutshellIntegrationTests.swift */; };
@@ -173,6 +174,7 @@
 		21000000000000CC /* MintDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MintDetailView.swift; sourceTree = "<group>"; };
 		21000000000000CD /* MintDiscoverySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MintDiscoverySheet.swift; sourceTree = "<group>"; };
 		21000000000000CE /* AddMintSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddMintSheet.swift; sourceTree = "<group>"; };
+		21000000000000CF /* MintMethodIcons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MintMethodIcons.swift; sourceTree = "<group>"; };
 		24A09ED243324E11C828B365 /* CashuWalletTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CashuWalletTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		3DC08FE85DFC643906176894 /* LiquidGlassModifiers.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LiquidGlassModifiers.swift; sourceTree = "<group>"; };
 		460F5508C2B82DAECD0FEDDB /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
@@ -528,6 +530,7 @@
 				2100000000000010 /* QRCodeView.swift */,
 				DD00000000000014 /* ErrorBannerView.swift */,
 				3DC08FE85DFC643906176894 /* LiquidGlassModifiers.swift */,
+				21000000000000CF /* MintMethodIcons.swift */,
 				CC00000000000021 /* PressableButtonStyle.swift */,
 				AB00000000000052 /* TransactionAmountColumn.swift */,
 				AB00000000000053 /* CashuRequestAmountColumn.swift */,
@@ -917,6 +920,7 @@
 				110000000000000C /* MintsListView.swift in Sources */,
 				11000000000000CC /* MintDetailView.swift in Sources */,
 				11000000000000CE /* AddMintSheet.swift in Sources */,
+				11000000000000CF /* MintMethodIcons.swift in Sources */,
 				11000000000000CD /* MintDiscoverySheet.swift in Sources */,
 				110000000000000D /* HistoryView.swift in Sources */,
 				110000000000000E /* SettingsView.swift in Sources */,

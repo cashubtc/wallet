@@ -330,13 +330,20 @@ private fun HeaderBlock(mint: MintInfo, isActive: Boolean) {
                 }
             }
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = mint.name,
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.tight),
+                ) {
+                    Text(
+                        text = mint.name,
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    MintMethodChips(mint = mint)
+                }
                 Text(
                     text = shortenMintUrl(mint.url),
                     style = MaterialTheme.typography.bodySmall,
@@ -350,7 +357,6 @@ private fun HeaderBlock(mint: MintInfo, isActive: Boolean) {
                 )
             }
         }
-        MintMethodChips(mint = mint)
     }
 }
 

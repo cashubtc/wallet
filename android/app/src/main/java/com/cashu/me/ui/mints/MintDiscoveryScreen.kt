@@ -23,10 +23,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AddCircle
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.SignalCellularConnectedNoInternet0Bar
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -61,7 +61,7 @@ import com.cashu.me.ui.components.MintMethodChips
 import com.cashu.me.ui.components.rememberBounceScale
 import com.cashu.me.ui.theme.CashuTheme
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun MintDiscoveryContent(
     walletManager: WalletManager,
@@ -150,13 +150,13 @@ fun MintDiscoveryContent(
                 ) {
                     if (discoveryState.isDiscovering) {
                         item(key = "discovering") {
-                            DiscoveringRow()
+                            DiscoveringRow(modifier = Modifier.animateItem())
                         }
                     }
 
                     if (addedMints.isNotEmpty()) {
                         item(key = "added-header") {
-                            DiscoverySectionHeader("Added")
+                            DiscoverySectionHeader("Added", modifier = Modifier.animateItem())
                         }
                         items(addedMints, key = { "added-${it.url}" }) { mint ->
                             Column(modifier = Modifier.animateItem()) {
@@ -173,7 +173,7 @@ fun MintDiscoveryContent(
 
                     if (discoverableMints.isNotEmpty()) {
                         item(key = "discovered-header") {
-                            DiscoverySectionHeader("Discovered")
+                            DiscoverySectionHeader("Discovered", modifier = Modifier.animateItem())
                         }
                         items(discoverableMints, key = { "discovered-${it.url}" }) { mint ->
                             Column(modifier = Modifier.animateItem()) {
@@ -217,13 +217,22 @@ private fun DiscoveryRow(
     ) {
         MintAvatar(mint = displayMint, size = 40.dp)
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = displayName,
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.tight),
+            ) {
+                Text(
+                    text = displayName,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (mint.supportedMintMethods.isNotEmpty() || mint.supportedMeltMethods.isNotEmpty()) {
+                    MintMethodChips(mint = mint)
+                }
+            }
             Text(
                 text = shortenMintUrl(mint.url),
                 style = MaterialTheme.typography.bodySmall,
@@ -231,9 +240,6 @@ private fun DiscoveryRow(
                 maxLines = 1,
                 overflow = TextOverflow.MiddleEllipsis,
             )
-            if (mint.supportedMintMethods.isNotEmpty() || mint.supportedMeltMethods.isNotEmpty()) {
-                MintMethodChips(mint = mint)
-            }
         }
         // Add ↔ Added swaps with a gentle grow-in; the check bounces once on
         // arrival (iOS .symbolEffect(.bounce, value: added) parity).
@@ -268,7 +274,7 @@ private fun DiscoveryRow(
                             },
                     )
                 }
-                DiscoveryRowState.Discovered -> FilledTonalIconButton(
+                DiscoveryRowState.Discovered -> IconButton(
                     onClick = onAdd,
                     enabled = !isBusy,
                     modifier = Modifier.size(48.dp),
@@ -276,6 +282,8 @@ private fun DiscoveryRow(
                     Icon(
                         imageVector = Icons.Outlined.AddCircle,
                         contentDescription = "Add $displayName",
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(28.dp),
                     )
                 }
             }
@@ -284,9 +292,9 @@ private fun DiscoveryRow(
 }
 
 @Composable
-private fun DiscoveringRow() {
+private fun DiscoveringRow(modifier: Modifier = Modifier) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(
                 horizontal = CashuTheme.spacing.comfortable,
@@ -311,12 +319,12 @@ private fun DiscoveringRow() {
 }
 
 @Composable
-private fun DiscoverySectionHeader(title: String) {
+private fun DiscoverySectionHeader(title: String, modifier: Modifier = Modifier) {
     Text(
         text = title,
         style = MaterialTheme.typography.labelLarge,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(
+        modifier = modifier.padding(
             start = CashuTheme.spacing.comfortable,
             end = CashuTheme.spacing.comfortable,
             top = CashuTheme.spacing.default,
