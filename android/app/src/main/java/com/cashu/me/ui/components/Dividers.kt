@@ -13,17 +13,19 @@ private val HairlineThickness = 0.5.dp
 
 /**
  * Single hairline used to separate rows on canvas screens (History, Settings root, Mints).
- * 28dp leading inset (spacing.page) aligns with the icon column by default.
+ * 28dp leading inset (spacing.page) aligns with the icon column by default;
+ * trailing inset matches row content padding so the line doesn't kiss the screen edge.
  */
 @Composable
 fun CanvasDivider(
     modifier: Modifier = Modifier,
     leadingInset: Dp = 28.dp,
+    trailingInset: Dp = CashuTheme.spacing.comfortable,
 ) {
     HorizontalDivider(
         thickness = HairlineThickness,
         color = CashuTheme.colors.canvasDivider,
-        modifier = modifier.padding(start = leadingInset),
+        modifier = modifier.padding(start = leadingInset, end = trailingInset),
     )
 }
 

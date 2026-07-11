@@ -108,7 +108,7 @@ private fun CashuNavigationBar(
     // inverted ink) instead of sitting on a tonal surface band; a full-bleed
     // hairline is the only separation — nearly invisible in dark mode.
     Column {
-        CanvasDivider(leadingInset = 0.dp)
+        CanvasDivider(leadingInset = 0.dp, trailingInset = 0.dp)
         NavigationBar(containerColor = MaterialTheme.colorScheme.background) {
             Routes.TopTabs.forEach { tab ->
                 val isSelected = tab == selected

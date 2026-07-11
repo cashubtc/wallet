@@ -215,7 +215,7 @@ fun KeyCard(
         }
 
         if (actions.isNotEmpty()) {
-            CanvasDivider(leadingInset = 0.dp)
+            CanvasDivider(leadingInset = 0.dp, trailingInset = 0.dp)
             Row(modifier = Modifier.fillMaxWidth()) {
                 actions.forEach { action ->
                     Column(
