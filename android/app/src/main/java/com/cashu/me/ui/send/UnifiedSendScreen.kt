@@ -29,7 +29,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.AccountBalance
 import androidx.compose.material.icons.outlined.Cancel
-import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Nfc
 import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.QrCodeScanner
@@ -78,6 +77,7 @@ import com.cashu.me.ui.components.AmountText
 import com.cashu.me.ui.components.CanvasDivider
 import com.cashu.me.ui.components.CashuTextField
 import com.cashu.me.ui.components.EmptyState
+import com.cashu.me.ui.components.FlowSheetTitle
 import com.cashu.me.ui.components.GhostButton
 import com.cashu.me.ui.components.InlineNotice
 import com.cashu.me.ui.components.InspectorRow
@@ -449,16 +449,19 @@ fun UnifiedSendScreen(
                 )
             }
             null -> {
-                SheetHeader(
-                    title = if (creqFromScan) "Pay Cashu Request" else "Send",
-                    navigationIcon = if (step == SendStep.Input) {
-                        Icons.Outlined.Close
-                    } else {
-                        Icons.AutoMirrored.Outlined.ArrowBack
-                    },
-                    navigationContentDescription = if (step == SendStep.Input) "Close" else "Back",
-                    onNavigationClick = ::goBack,
-                )
+                if (step == SendStep.Input) {
+                    // Match Receive chooser chrome: left-aligned titleLarge, no X.
+                    FlowSheetTitle(
+                        title = if (creqFromScan) "Pay Cashu Request" else "Send",
+                    )
+                } else {
+                    SheetHeader(
+                        title = if (creqFromScan) "Pay Cashu Request" else "Send",
+                        navigationIcon = Icons.AutoMirrored.Outlined.ArrowBack,
+                        navigationContentDescription = "Back",
+                        onNavigationClick = ::goBack,
+                    )
+                }
                 TwoFaceScreen(
                     targetState = step,
                     modifier = if (step == SendStep.Input) {
@@ -643,7 +646,6 @@ private fun InputFace(
             .imePadding(),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Spacer(Modifier.height(CashuTheme.spacing.default))
         CashuTextField(
             value = destination,
             onValueChange = onDestinationChange,

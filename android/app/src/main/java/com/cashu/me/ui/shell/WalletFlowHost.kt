@@ -8,8 +8,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SheetValue
@@ -23,7 +21,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 
 /**
@@ -77,19 +74,7 @@ fun WalletFlowSheetHost(
     ModalBottomSheet(
         onDismissRequest = onDismissed,
         sheetState = sheetState,
-        // Minimal grabber padding so the title row hugs the sheet top.
-        dragHandle = {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 4.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                BottomSheetDefaults.DragHandle(
-                    modifier = Modifier.padding(vertical = 2.dp),
-                )
-            }
-        },
+        dragHandle = null,
     ) {
         Box(modifier = Modifier.fillMaxWidth()) {
             AnimatedContent(

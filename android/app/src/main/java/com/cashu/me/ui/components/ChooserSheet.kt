@@ -61,21 +61,15 @@ fun ChooserSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = CashuTheme.spacing.comfortable)
-                .padding(top = CashuTheme.spacing.default)
                 .navigationBarsPadding(),
         ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(
-                    horizontal = CashuTheme.spacing.snug,
-                    vertical = CashuTheme.spacing.default,
-                ),
-            )
-            options.forEach { option ->
-                ChooserRow(option = option, onClick = { onSelect(option) })
+            FlowSheetTitle(title = title)
+            Column(
+                modifier = Modifier.padding(horizontal = CashuTheme.spacing.comfortable),
+            ) {
+                options.forEach { option ->
+                    ChooserRow(option = option, onClick = { onSelect(option) })
+                }
             }
             Spacer(Modifier.height(CashuTheme.spacing.section))
         }

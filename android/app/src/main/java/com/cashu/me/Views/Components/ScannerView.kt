@@ -42,6 +42,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
@@ -180,6 +181,7 @@ private fun ScannerStatusOverlay(
                 text = "Scan Cashu token, payment request, invoice, or Bitcoin address",
                 color = Color.White,
                 style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center,
             )
         }
         error?.let {
