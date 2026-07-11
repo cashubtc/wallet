@@ -332,6 +332,7 @@ fun HomeScreen(
                                 text = "View all activity",
                                 onClick = onOpenHistory,
                                 trailingIcon = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                                textStyle = MaterialTheme.typography.bodyLarge,
                             )
                         }
                     }
