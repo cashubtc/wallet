@@ -9,12 +9,11 @@ import androidx.compose.ui.Modifier
 import com.cashu.me.ui.theme.CashuTheme
 
 /**
- * Left-aligned sheet title matching the Receive chooser chrome — bigger
+ * Left-aligned sheet title for the flow bottom sheets (Send / Receive) — bigger
  * [MaterialTheme.typography.titleLarge], no close button. Used under a
  * handle-less [androidx.compose.material3.ModalBottomSheet].
  *
- * Padding matches [ChooserSheet]: comfortable outer inset, then snug + default
- * around the label.
+ * Padding: comfortable outer inset, then snug + default around the label.
  */
 @Composable
 fun FlowSheetTitle(

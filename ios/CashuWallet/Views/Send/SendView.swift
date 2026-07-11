@@ -1023,6 +1023,10 @@ struct MintConfirmSelectorRow: View {
 /// (same `walletManager` calls) but is hosted in-place so the screen stays grounded.
 /// A pasted bearer *token* routes out to the Receive-this claim screen.
 struct UnifiedSendView: View {
+    /// Pre-fills the destination field on open — used when the Receive sheet
+    /// hands a pasted/scanned *payable* (invoice, address, Cashu Request) back to
+    /// Send. Consumed once, then decoded exactly like a paste.
+    var initialDestination: String? = nil
     let onClose: () -> Void
     /// CTA out of the zero-balance empty state — opens the Receive chooser.
     let onReceive: () -> Void
@@ -1071,6 +1075,8 @@ struct UnifiedSendView: View {
     /// the field text equals this value, so a still-valid recipient doesn't bounce
     /// straight back forward. Cleared the instant the text differs.
     @State private var suppressedValue: String?
+    /// Guards `initialDestination` so a pre-filled payable is consumed only once.
+    @State private var didConsumeInitialDestination = false
 
     private func presentError(_ message: String, severity: ErrorSeverity = .error) {
         errorMessage = message
@@ -1243,6 +1249,14 @@ struct UnifiedSendView: View {
             .onChange(of: entryUnit) { oldUnit, newUnit in
                 amountString = AmountFormatter.entryConverted(raw: amountString, from: oldUnit, to: newUnit)
             }
+            .onAppear {
+                guard !didConsumeInitialDestination,
+                      let initialDestination,
+                      !initialDestination.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+                didConsumeInitialDestination = true
+                destination = initialDestination
+                advanceNow(raw: initialDestination)
+            }
             .onDisappear {
                 autoAdvanceTask?.cancel()
                 feeTask?.cancel()
@@ -1335,40 +1349,13 @@ struct UnifiedSendView: View {
     }
 
     /// One round glass icon button with a one-word caption on the canvas below it.
-    /// iOS 26 uses Apple's native circular glass button style (which owns its own
-    /// interactive press); iOS 18–25 falls back to a `.quaternary` circle.
-    @ViewBuilder
+    /// Delegates to the shared `CircularGlassIconButton` so the Send and Receive
+    /// sheets stay pixel-identical.
     private func sendMethodButton(
         icon: String, label: String, a11y: String,
         action: @escaping () -> Void
     ) -> some View {
-        VStack(spacing: 8) {
-            if #available(iOS 26, *) {
-                Button(action: action) {
-                    Image(systemName: icon)
-                        .font(.title2)
-                        .frame(width: 60, height: 60)
-                }
-                .buttonStyle(.glass)
-                .buttonBorderShape(.circle)
-            } else {
-                Button(action: action) {
-                    Image(systemName: icon)
-                        .font(.title2)
-                        .foregroundStyle(.primary)
-                        .frame(width: 60, height: 60)
-                        .background(.quaternary, in: Circle())
-                }
-                .buttonStyle(PressableButtonStyle())
-            }
-
-            Text(label)
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.secondary)
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(a11y)
-        .accessibilityAddTraits(.isButton)
+        CircularGlassIconButton(icon: icon, label: label, a11y: a11y, action: action)
     }
 
     private var destinationField: some View {
