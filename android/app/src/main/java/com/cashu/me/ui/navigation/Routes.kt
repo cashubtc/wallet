@@ -15,7 +15,6 @@ object Routes {
     const val HOME = "home"
     const val HISTORY = "history"
     const val MINTS = "mints"
-    const val SETTINGS = "settings"
 
     // With arguments
     const val MINT_DETAIL = "mints/{mintUrl}"
@@ -24,7 +23,8 @@ object Routes {
     // vs. from history. Only the fresh context takes over full-screen on payment.
     const val CASHU_REQUEST_DETAIL = "request/{requestId}?fresh={fresh}"
 
-    // Settings sub-screens
+    // Wallet settings and sub-screens
+    const val SETTINGS = "settings"
     const val SETTINGS_BACKUP_RESTORE = "settings/backup-restore"
     const val SETTINGS_BACKUP = "settings/backup"
     const val SETTINGS_LIGHTNING = "settings/lightning"
@@ -40,7 +40,6 @@ object Routes {
         TopTab.Home,
         TopTab.History,
         TopTab.Mints,
-        TopTab.Settings,
     )
 }
 
@@ -48,5 +47,4 @@ enum class TopTab(val route: String, val label: String) {
     Home(Routes.HOME, "Wallet"),
     History(Routes.HISTORY, "History"),
     Mints(Routes.MINTS, "Mints"),
-    Settings(Routes.SETTINGS, "Settings"),
 }

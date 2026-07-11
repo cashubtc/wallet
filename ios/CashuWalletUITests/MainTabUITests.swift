@@ -12,7 +12,7 @@ final class MainTabUITests: UITestBase {
         XCTAssertTrue(tabButton("Wallet").exists)
         XCTAssertTrue(tabButton("History").exists)
         XCTAssertTrue(tabButton("Mints").exists)
-        XCTAssertTrue(tabButton("Settings").exists)
+        XCTAssertEqual(mainTabBar().buttons.count, 3)
     }
 
     func testNavigateToHistoryTab() throws {
@@ -48,10 +48,13 @@ final class MainTabUITests: UITestBase {
         )
     }
 
-    func testNavigateToSettingsTab() throws {
+    func testOpenSettingsFromWallet() throws {
         waitForMainTab()
 
-        tapTab("Settings")
+        let settings = app.buttons["wallet-settings-button"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        settings.tap()
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 10))
     }
 
     func testWalletTabIsDefaultSelected() throws {
@@ -65,8 +68,8 @@ final class MainTabUITests: UITestBase {
 
         tapTab("Mints")
 
-        tapTab("Settings")
-
         tapTab("Wallet")
+
+        tapTab("History")
     }
 }

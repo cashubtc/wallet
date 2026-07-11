@@ -143,7 +143,7 @@ class UITestBase: XCTestCase {
         file: StaticString = #filePath,
         line: UInt = #line
     ) -> XCUIElement {
-        let button = mainTabBar(timeout: timeout, file: file, line: line).buttons[title].firstMatch
+        let button = app.tabBars.firstMatch.buttons[title].firstMatch
         XCTAssertTrue(
             button.waitForExistence(timeout: timeout),
             "\(title) tab should appear",
@@ -160,6 +160,16 @@ class UITestBase: XCTestCase {
         line: UInt = #line
     ) {
         let button = tabButton(title, timeout: timeout, file: file, line: line)
+        waitForSelectedTab(button, title: title, timeout: timeout, file: file, line: line)
+    }
+
+    private func waitForSelectedTab(
+        _ button: XCUIElement,
+        title: String,
+        timeout: TimeInterval,
+        file: StaticString,
+        line: UInt
+    ) {
         let selected = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "isSelected == true"),
             object: button
@@ -182,7 +192,7 @@ class UITestBase: XCTestCase {
     ) {
         let button = tabButton(title, timeout: timeout, file: file, line: line)
         button.tap()
-        waitForSelectedTab(title, timeout: timeout, file: file, line: line)
+        waitForSelectedTab(button, title: title, timeout: timeout, file: file, line: line)
     }
 }
 

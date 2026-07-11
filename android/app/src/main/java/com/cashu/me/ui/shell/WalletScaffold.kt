@@ -14,11 +14,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.AccountBalance
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.History
-import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -59,7 +57,7 @@ fun WalletScaffold(
 ) {
     val backStack by navController.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.route
-    val selectedTab = TopTab.entries.firstOrNull { it.route == currentRoute }
+    val selectedTab = Routes.TopTabs.firstOrNull { it.route == currentRoute }
     Scaffold(
         bottomBar = {
             // Slide the bar away on pushed destinations instead of blinking it out.
@@ -115,7 +113,7 @@ private fun CashuNavigationBar(
     Column {
         CanvasDivider(leadingInset = 0.dp)
         NavigationBar(containerColor = MaterialTheme.colorScheme.background) {
-            TopTab.entries.forEach { tab ->
+            Routes.TopTabs.forEach { tab ->
                 val isSelected = tab == selected
                 NavigationBarItem(
                     selected = isSelected,
@@ -142,7 +140,6 @@ private val TopTab.iconOutlined: ImageVector
         TopTab.Home -> Icons.Outlined.AccountBalanceWallet
         TopTab.History -> Icons.Outlined.History
         TopTab.Mints -> Icons.Outlined.AccountBalance
-        TopTab.Settings -> Icons.Outlined.Settings
     }
 
 private val TopTab.iconSelected: ImageVector
@@ -150,7 +147,6 @@ private val TopTab.iconSelected: ImageVector
         TopTab.Home -> Icons.Filled.AccountBalanceWallet
         TopTab.History -> Icons.Filled.History
         TopTab.Mints -> Icons.Filled.AccountBalance
-        TopTab.Settings -> Icons.Filled.Settings
     }
 
 @Suppress("unused")

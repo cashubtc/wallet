@@ -30,6 +30,7 @@ import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.outlined.AccountBalance
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.QrCodeScanner
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -97,6 +98,7 @@ fun HomeScreen(
     onOpenCashuRequest: (CashuRequest) -> Unit,
     onReceive: (ReceiveAction) -> Unit,
     onSend: () -> Unit,
+    onOpenSettings: () -> Unit,
     onScan: () -> Unit,
     contentPadding: PaddingValues,
 ) {
@@ -214,6 +216,7 @@ fun HomeScreen(
                         sendEnabled = walletState.activeMint != null,
                     )
                 },
+                onOpenSettings = onOpenSettings,
                 onScan = onScan,
             )
         }.first().measure(constraints.copy(minHeight = 0))
@@ -368,6 +371,7 @@ private fun PinnedTop(
     mintChip: @Composable () -> Unit,
     balance: @Composable () -> Unit,
     triptych: @Composable () -> Unit,
+    onOpenSettings: () -> Unit,
     onScan: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -383,9 +387,19 @@ private fun PinnedTop(
         verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // Top-right scan affordance (iOS parity — minimal toolbar glyph, no tonal fill).
-        // 48dp touch target preserved via minimumInteractiveComponentSize.
-        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+        // Wallet-level navigation affordances: settings on the leading edge,
+        // scanner on the trailing edge. IconButton preserves a 48dp touch target.
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            IconButton(onClick = onOpenSettings) {
+                Icon(
+                    imageVector = Icons.Outlined.Settings,
+                    contentDescription = "Settings",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             IconButton(onClick = onScan) {
                 Icon(
                     imageVector = Icons.Outlined.QrCodeScanner,

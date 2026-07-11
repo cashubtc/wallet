@@ -48,7 +48,9 @@ class WalletMacrobenchmark {
                 device.wait(Until.hasObject(By.text("Wallet")), WaitMs)
             },
         ) {
-            openTab("Settings")
+            val settings = device.wait(Until.findObject(By.desc("Settings")), WaitMs)
+            settings?.click()
+            device.waitForIdle()
             device.wait(Until.hasObject(By.text("Settings")), WaitMs)
             scrollVertical()
             device.findObject(By.text("Privacy"))?.click()

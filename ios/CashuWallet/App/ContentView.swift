@@ -101,7 +101,6 @@ struct MainTabView: View {
         case wallet
         case history
         case mints
-        case settings
     }
     
     var body: some View {
@@ -128,13 +127,6 @@ struct MainTabView: View {
                 }
                 .tag(Tab.mints)
             
-            tabContent(for: .settings) {
-                SettingsView()
-            }
-                .tabItem {
-                    Label("Settings", systemImage: "gearshape.fill")
-                }
-                .tag(Tab.settings)
         }
     }
 

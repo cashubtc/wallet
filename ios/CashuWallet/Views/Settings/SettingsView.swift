@@ -2,6 +2,7 @@ import SwiftUI
 import LocalAuthentication
 
 struct SettingsView: View {
+    @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var walletManager: WalletManager
     @ObservedObject var settings = SettingsManager.shared
     @ObservedObject var npcService = NPCService.shared
@@ -20,98 +21,108 @@ struct SettingsView: View {
     @State private var walletActionError: String?
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    sectionGroup(title: "Display") {
-                        currencyRow
-                        toggleRow(
-                            "Use ₿ symbol",
-                            subtitle: "Use ₿ symbol instead of sats.",
-                            icon: "bitcoinsign",
-                            isOn: $settings.useBitcoinSymbol
-                        )
-                    }
-
-                    sectionGroup(title: "Backup & Security") {
-                        navRow("Backup & Restore", icon: "key.fill") {
-                            backupDetailView
-                        }
-                        navRow("App Lock", icon: "lock.shield") {
-                            securityDetailView
-                        }
-                    }
-
-                    sectionGroup(title: "Payments") {
-                        navRow("Lightning", icon: "bolt.fill") {
-                            lightningDetailView
-                        }
-                        navRow("Locked Ecash", icon: "lock.fill") {
-                            p2pkDetailView
-                        }
-                    }
-
-                    sectionGroup(title: "Integrations") {
-                        navRow("Nostr", icon: "person.circle") {
-                            nostrDetailView
-                        }
-                    }
-
-                    sectionGroup(title: "Privacy") {
-                        navRow("Privacy", icon: "eye.slash") {
-                            privacyDetailView
-                        }
-                    }
-
-                    sectionGroup(title: "About") {
-                        externalLinkRow("Learn about Cashu",
-                                        icon: "globe",
-                                        url: URL(string: "https://cashu.space")!)
-                        externalLinkRow("Protocol Specs (NUTs)",
-                                        icon: "doc.text",
-                                        url: URL(string: "https://github.com/cashubtc/nuts")!)
-                    }
-
-                    sectionGroup(title: "Danger") {
-                        Button(role: .destructive) {
-                            HapticFeedback.selection()
-                            showDeleteConfirm = true
-                        } label: {
-                            settingsRow("Delete Wallet", icon: "trash", isDestructive: true)
-                        }
-                        .buttonStyle(.plain)
-                    }
-
-                    Text("Cashu Wallet · 1.0.0")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, 24)
-                        .padding(.bottom, 32)
+        ScrollView {
+            LazyVStack(spacing: 0) {
+                sectionGroup(title: "Display") {
+                    currencyRow
+                    toggleRow(
+                        "Use ₿ symbol",
+                        subtitle: "Use ₿ symbol instead of sats.",
+                        icon: "bitcoinsign",
+                        isOn: $settings.useBitcoinSymbol
+                    )
                 }
-                .padding(.horizontal)
-            }
-            .navigationTitle("Settings")
-            .sheet(isPresented: $showBackup) {
-                BackupView()
-                    .environmentObject(walletManager)
-                    .presentationDetents([.medium, .large])
-            }
-            .sheet(isPresented: $showCurrencySheet) {
-                CurrencyPickerSheet()
-                    .presentationDetents([.medium, .large])
-                    .presentationDragIndicator(.visible)
-            }
-            .alert("Delete Wallet", isPresented: $showDeleteConfirm) {
-                Button("Cancel", role: .cancel) {}
-                Button("Delete", role: .destructive) {
-                    deleteWallet()
+
+                sectionGroup(title: "Backup & Security") {
+                    navRow("Backup & Restore", icon: "key.fill") {
+                        backupDetailView
+                    }
+                    navRow("App Lock", icon: "lock.shield") {
+                        securityDetailView
+                    }
                 }
-            } message: {
-                Text("Are you sure you want to delete your wallet? This action cannot be undone. Make sure you have backed up your seed phrase!")
+
+                sectionGroup(title: "Payments") {
+                    navRow("Lightning", icon: "bolt.fill") {
+                        lightningDetailView
+                    }
+                    navRow("Locked Ecash", icon: "lock.fill") {
+                        p2pkDetailView
+                    }
+                }
+
+                sectionGroup(title: "Integrations") {
+                    navRow("Nostr", icon: "person.circle") {
+                        nostrDetailView
+                    }
+                }
+
+                sectionGroup(title: "Privacy") {
+                    navRow("Privacy", icon: "eye.slash") {
+                        privacyDetailView
+                    }
+                }
+
+                sectionGroup(title: "About") {
+                    externalLinkRow("Learn about Cashu",
+                                    icon: "globe",
+                                    url: URL(string: "https://cashu.space")!)
+                    externalLinkRow("Protocol Specs (NUTs)",
+                                    icon: "doc.text",
+                                    url: URL(string: "https://github.com/cashubtc/nuts")!)
+                }
+
+                sectionGroup(title: "Danger") {
+                    Button(role: .destructive) {
+                        HapticFeedback.selection()
+                        showDeleteConfirm = true
+                    } label: {
+                        settingsRow("Delete Wallet", icon: "trash", isDestructive: true)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Text("Cashu Wallet · 1.0.0")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 24)
+                    .padding(.bottom, 32)
             }
-            .errorBanner($walletActionError)
+            .padding(.horizontal)
         }
+        .navigationTitle("Settings")
+        .navigationBarBackButtonHidden()
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    dismiss()
+                } label: {
+                    Label("Wallet", systemImage: "chevron.backward")
+                }
+                .accessibilityLabel("Back to Wallet")
+                .accessibilityIdentifier("settings-back-button")
+            }
+        }
+        .sheet(isPresented: $showBackup) {
+            BackupView()
+                .environmentObject(walletManager)
+                .presentationDetents([.medium, .large])
+        }
+        .sheet(isPresented: $showCurrencySheet) {
+            CurrencyPickerSheet()
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
+        .alert("Delete Wallet", isPresented: $showDeleteConfirm) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete", role: .destructive) {
+                deleteWallet()
+            }
+        } message: {
+            Text("Are you sure you want to delete your wallet? This action cannot be undone. Make sure you have backed up your seed phrase!")
+        }
+        .errorBanner($walletActionError)
     }
 
     // MARK: - Section + Row Helpers
@@ -1715,6 +1726,8 @@ struct ImportNsecSheet: View {
 }
 
 #Preview {
-    SettingsView()
-        .environmentObject(WalletManager())
+    NavigationStack {
+        SettingsView()
+            .environmentObject(WalletManager())
+    }
 }

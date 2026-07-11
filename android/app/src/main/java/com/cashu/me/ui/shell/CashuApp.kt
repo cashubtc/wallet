@@ -40,6 +40,7 @@ import com.cashu.me.Core.TokenParser
 import com.cashu.me.Views.Components.ScannerView
 import com.cashu.me.Views.Send.ContactlessPayView
 import com.cashu.me.ui.onboarding.OnboardingScreen
+import com.cashu.me.ui.navigation.Routes
 import com.cashu.me.ui.navigation.TopTab
 import com.cashu.me.ui.navigation.cashuRequestDetailRouteFor
 import com.cashu.me.ui.navigation.navigateToTab
@@ -60,7 +61,7 @@ import com.cashu.me.ui.theme.CashuTheme
  * Gating order matches iOS:
  *   - `!isInitialized`  → centered spinner
  *   - `needsOnboarding` → full-screen onboarding (no bottom nav)
- *   - otherwise         → 4-tab `WalletScaffold` over a `NavHost`
+ *   - otherwise         → 3-tab `WalletScaffold` over a `NavHost`
  *
  * Scanner and Contactless render as full-screen overlays driven by shell state;
  * the money flows (Send / Send Ecash / Receive Ecash / Receive Lightning) are
@@ -206,7 +207,7 @@ private fun AuthenticatedShell(container: AppContainer) {
             }
             CashuRoute.Main -> navController.navigateToTab(TopTab.Home)
             CashuRoute.History -> navController.navigateToTab(TopTab.History)
-            CashuRoute.Settings -> navController.navigateToTab(TopTab.Settings)
+            CashuRoute.Settings -> navController.navigate(Routes.SETTINGS)
             CashuRoute.Scanner -> scannerTarget = ScannerTarget.Auto
             CashuRoute.Contactless -> showContactless = true
         }
