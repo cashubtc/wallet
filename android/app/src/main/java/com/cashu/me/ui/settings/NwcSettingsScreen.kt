@@ -215,7 +215,9 @@ fun NwcSettingsScreen(
             activeMintUrl = nwcState.selectedMintUrl,
             onSelect = { mint ->
                 mintPickerOpen = false
-                walletManager.launch { nwcManager.setSelectedMintUrl(mint.url) }
+                mint?.let { selected ->
+                    walletManager.launch { nwcManager.setSelectedMintUrl(selected.url) }
+                }
             },
             onDismiss = { mintPickerOpen = false },
             title = "Mint for Wallet Connect",
