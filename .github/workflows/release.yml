@@ -1,0 +1,109 @@
+name: Android Release APK
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-release-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  android-apk:
+    name: Build and attach Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    defaults:
+      run:
+        working-directory: android
+
+    steps:
+    - name: Checkout release tag
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ github.event.release.tag_name }}
+        persist-credentials: false
+
+    - name: Setup JDK
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: '21'
+        cache: gradle
+        cache-dependency-path: |
+          android/*.gradle.kts
+          android/gradle/libs.versions.toml
+          android/gradle/wrapper/gradle-wrapper.properties
+
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+
+    - name: Prepare Android signing key
+      env:
+        ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      run: |
+        set -euo pipefail
+
+        : "${ANDROID_KEYSTORE_BASE64:?Configure the ANDROID_KEYSTORE_BASE64 repository secret}"
+        : "${ANDROID_KEYSTORE_PASSWORD:?Configure the ANDROID_KEYSTORE_PASSWORD repository secret}"
+        : "${ANDROID_KEY_ALIAS:?Configure the ANDROID_KEY_ALIAS repository secret}"
+        : "${ANDROID_KEY_PASSWORD:?Configure the ANDROID_KEY_PASSWORD repository secret}"
+
+        KEYSTORE_PATH="$RUNNER_TEMP/android-release.keystore"
+        printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+        echo "ANDROID_KEYSTORE_PATH=$KEYSTORE_PATH" >> "$GITHUB_ENV"
+
+    - name: Build Android release APK
+      run: ./gradlew --no-daemon :app:assembleRelease
+
+    - name: Sign and verify release APK
+      id: apk
+      env:
+        ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        RELEASE_TAG: ${{ github.event.release.tag_name }}
+      run: |
+        set -euo pipefail
+
+        SOURCE_APK="$(find app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' -print -quit)"
+        if [ -z "$SOURCE_APK" ]; then
+          echo "Android release APK was not produced"
+          exit 1
+        fi
+
+        SAFE_TAG="${RELEASE_TAG//\//-}"
+        ASSET_PATH="$RUNNER_TEMP/cashu-wallet-android-$SAFE_TAG.apk"
+        ALIGNED_APK="$RUNNER_TEMP/cashu-wallet-android-aligned.apk"
+        BUILD_TOOLS="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+
+        if [ -z "$BUILD_TOOLS" ]; then
+          echo "Android SDK build tools were not found"
+          exit 1
+        fi
+
+        "$BUILD_TOOLS/zipalign" -f -p 4 "$SOURCE_APK" "$ALIGNED_APK"
+        "$BUILD_TOOLS/apksigner" sign \
+          --ks "$ANDROID_KEYSTORE_PATH" \
+          --ks-key-alias "$ANDROID_KEY_ALIAS" \
+          --ks-pass env:ANDROID_KEYSTORE_PASSWORD \
+          --key-pass env:ANDROID_KEY_PASSWORD \
+          --out "$ASSET_PATH" \
+          "$ALIGNED_APK"
+        "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$ASSET_PATH"
+
+        echo "path=$ASSET_PATH" >> "$GITHUB_OUTPUT"
+
+    - name: Attach APK to GitHub Release
+      env:
+        GH_TOKEN: ${{ github.token }}
+        RELEASE_TAG: ${{ github.event.release.tag_name }}
+        APK_PATH: ${{ steps.apk.outputs.path }}
+      run: gh release upload "$RELEASE_TAG" "$APK_PATH" --clobber --repo "$GITHUB_REPOSITORY"
