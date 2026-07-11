@@ -24,12 +24,12 @@ class TransactionDisplayTest {
         assertEquals("lnbc1test", TransactionDisplay.qrContent(transaction))
 
         // Detail canon: monochrome Status row first, Date second, Fee when > 0.
-        // The lightning preimage row stays dropped (on-chain keeps Address/TxID).
+        // Payment proof is retained as a useful receipt detail.
         val fields = TransactionDisplay.detailFields(transaction)
         assertEquals("Status", fields.first().label)
         assertEquals("Date", fields[1].label)
         assertTrue(fields.any { it.label == "Fee" && it.value == "2 sat" })
-        assertTrue(fields.none { it.label == "Payment Proof" })
+        assertTrue(fields.any { it.label == "Payment Proof" && it.value == "proof" })
     }
 
     @Test
@@ -45,12 +45,30 @@ class TransactionDisplayTest {
         val pendingEcash = settledEcash.copy(status = TransactionStatus.Pending)
         assertTrue(TransactionDisplay.showsQr(pendingEcash))
 
+        val pendingIncomingEcash = pendingEcash.copy(type = TransactionType.Incoming)
+        assertTrue(!TransactionDisplay.showsQr(pendingIncomingEcash))
+        assertEquals(null, TransactionDisplay.copyableContent(pendingIncomingEcash))
+
         val reusableOffer = transaction(
             kind = TransactionKind.Lightning,
             type = TransactionType.Incoming,
             invoice = "lno1offer",
         )
         assertTrue(TransactionDisplay.showsQr(reusableOffer))
+    }
+
+    @Test
+    fun bitcoinAddressRemainsQrAndCopyableAfterReceiving() {
+        val received = transaction(
+            kind = TransactionKind.Onchain,
+            type = TransactionType.Incoming,
+            invoice = "bc1qreceived",
+            preimage = "txid",
+        )
+
+        assertTrue(TransactionDisplay.showsQr(received))
+        assertEquals("bc1qreceived", TransactionDisplay.copyableContent(received))
+        assertEquals("Bitcoin address", TransactionDisplay.qrLabel(received))
     }
 
     @Test

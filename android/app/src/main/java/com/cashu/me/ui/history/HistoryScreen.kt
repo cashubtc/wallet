@@ -495,7 +495,7 @@ internal fun unifiedFiltered(
                     tx.memo?.contains(query, ignoreCase = true) == true
             }
             is HistoryItem.Req -> {
-                "cashu request".contains(query, ignoreCase = true) ||
+                item.request.displayTitle.contains(query, ignoreCase = true) ||
                     (item.request.amount?.toString()?.contains(query) == true) ||
                     item.request.memo?.contains(query, ignoreCase = true) == true
             }
@@ -535,4 +535,3 @@ internal fun groupHistoryItems(
         list.takeIf { it.isNotEmpty() }?.let { HistorySection2(title, it) }
     }
 }
-

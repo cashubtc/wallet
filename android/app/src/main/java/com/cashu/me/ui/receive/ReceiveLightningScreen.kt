@@ -28,6 +28,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.outlined.AccountBalance
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.CurrencyBitcoin
 import androidx.compose.material.icons.outlined.IosShare
@@ -173,18 +174,18 @@ fun ReceiveLightningScreen(
                     PaymentMethodKind.Onchain -> "Bitcoin Address"
                 }
             },
-            // No close X — dismiss via drag handle / scrim (iOS parity). Back
-            // only appears once a request is on screen.
+            // Input: close X (same as Receive Ecash / Cashu Request). Display:
+            // back chevron returns to the amount pad.
             navigationIcon = when (face) {
-                ReceiveLnFace.Input -> null
+                ReceiveLnFace.Input -> Icons.Outlined.Close
                 is ReceiveLnFace.Display -> Icons.AutoMirrored.Outlined.ArrowBack
             },
             navigationContentDescription = when (face) {
-                ReceiveLnFace.Input -> null
+                ReceiveLnFace.Input -> "Close"
                 is ReceiveLnFace.Display -> "Back"
             },
             onNavigationClick = when (face) {
-                ReceiveLnFace.Input -> null
+                ReceiveLnFace.Input -> onClose
                 is ReceiveLnFace.Display -> { { face = ReceiveLnFace.Input } }
             },
             actions = {

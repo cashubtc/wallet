@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -36,6 +35,7 @@ import androidx.compose.material.icons.outlined.IosShare
 import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -43,7 +43,6 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -80,6 +79,7 @@ import com.cashu.me.Core.WalletManager
 import com.cashu.me.ui.components.AmountEntryHero
 import com.cashu.me.ui.components.AmountText
 import com.cashu.me.ui.components.CanvasDivider
+import com.cashu.me.ui.components.DetailActionFooter
 import com.cashu.me.ui.components.GhostButton
 import com.cashu.me.ui.components.InlineNoticeHost
 import com.cashu.me.ui.components.InspectorRow
@@ -89,9 +89,9 @@ import com.cashu.me.ui.components.PaymentStatusPhase
 import com.cashu.me.ui.components.PaymentStatusScreen
 import com.cashu.me.ui.components.QrCard
 import com.cashu.me.ui.components.SecondaryButton
-import com.cashu.me.ui.components.SectionHeader
 import com.cashu.me.ui.components.SheetHeader
 import com.cashu.me.ui.components.ToolbarIcon
+import com.cashu.me.ui.components.UnitPickerSheet
 import com.cashu.me.ui.components.shareText
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.rememberReducedMotion
@@ -128,6 +128,7 @@ fun CashuRequestDetailScreen(
     var copied by remember { mutableStateOf(false) }
     var mintPickerOpen by remember { mutableStateOf(false) }
     var amountPickerOpen by remember { mutableStateOf(false) }
+    var unitPickerOpen by remember { mutableStateOf(false) }
     var regenerateError by remember { mutableStateOf<String?>(null) }
     val offerNfcReceive = request?.shouldOfferNfcReceive() == true
     val nfcTransferActive = offerNfcReceive && nfcState.phase.isNfcTransferActive()
@@ -135,7 +136,11 @@ fun CashuRequestDetailScreen(
     // Re-signs the same NUT-18 request in place (same id/history entry) — used
     // by the Mint sheet, the Amount sheet's Done, and "New Request" (called
     // with no args, which just re-signs the current values).
-    fun regenerate(nextAmount: Long? = request?.amount, nextMints: List<String> = request?.mints.orEmpty()) {
+    fun regenerate(
+        nextAmount: Long? = request?.amount,
+        nextMints: List<String> = request?.mints.orEmpty(),
+        nextUnit: String? = null,
+    ) {
         if (nfcReceiveCoordinator.state.value.phase.isNfcTransferActive()) return
         val req = request ?: return
         val nostr = nostrService.state.value
@@ -144,13 +149,16 @@ fun CashuRequestDetailScreen(
             regenerateError = "Nostr isn't ready — check your relays in Settings."
             return
         }
-        val nextUnit = walletState.mints.firstOrNull { it.url == nextMints.firstOrNull() }
-            ?.resolvedMintUnit(req.unit) ?: req.unit
+        val resolvedUnit = walletState.mints.firstOrNull { it.url == nextMints.firstOrNull() }
+            ?.resolvedMintUnit(nextUnit ?: req.unit) ?: (nextUnit ?: req.unit)
+        // A stored integer means something different after a unit change; clear
+        // it instead of silently turning (for example) 500 sat into 500 cents.
+        val resolvedAmount = nextAmount.takeUnless { resolvedUnit != req.unit }
         runCatching {
             PaymentRequestBuilder.build(
                 id = req.id,
-                amount = nextAmount,
-                unit = nextUnit,
+                amount = resolvedAmount,
+                unit = resolvedUnit,
                 mints = nextMints,
                 description = req.memo,
                 nostrPubkeyHex = nostr.publicKeyHex,
@@ -159,8 +167,8 @@ fun CashuRequestDetailScreen(
         }.onSuccess { encoded ->
             cashuRequestStore.update(
                 id = req.id,
-                amount = nextAmount,
-                unit = nextUnit,
+                amount = resolvedAmount,
+                unit = resolvedUnit,
                 mints = nextMints,
                 memo = req.memo,
                 encoded = encoded,
@@ -183,6 +191,7 @@ fun CashuRequestDetailScreen(
         if (nfcTransferActive) {
             mintPickerOpen = false
             amountPickerOpen = false
+            unitPickerOpen = false
         }
     }
 
@@ -227,8 +236,13 @@ fun CashuRequestDetailScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Cashu Request", style = MaterialTheme.typography.titleMedium) },
+            CenterAlignedTopAppBar(
+                title = {
+                    Text(
+                        request?.displayTitle ?: "Cashu Request",
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onClose) {
                         ToolbarIcon(
@@ -240,7 +254,7 @@ fun CashuRequestDetailScreen(
                 actions = {
                     if (request != null) {
                         IconButton(onClick = {
-                            context.shareText(request.encoded, subject = "Cashu Request")
+                            context.shareText(request.encoded, subject = request.displayTitle)
                         }) {
                             ToolbarIcon(Icons.Outlined.IosShare, contentDescription = "Share")
                         }
@@ -295,7 +309,7 @@ fun CashuRequestDetailScreen(
                 Spacer(Modifier.height(CashuTheme.spacing.snug))
                 QrCard(
                     content = request.encoded,
-                    shareSubject = "Cashu Request",
+                    shareSubject = request.displayTitle,
                     staticOnly = true,
                     snackbarHostState = snackbarHostState,
                 )
@@ -313,8 +327,9 @@ fun CashuRequestDetailScreen(
                     AmountText(
                         text = formatRequestAmount(request.amount),
                         style = MaterialTheme.typography.headlineMedium
-                            .copy(fontWeight = FontWeight.SemiBold)
+                            .copy(fontWeight = FontWeight.Bold)
                             .withMonoDigits(),
+                        modifier = Modifier.padding(vertical = 5.dp),
                     )
                 }
 
@@ -328,17 +343,20 @@ fun CashuRequestDetailScreen(
                     celebrate = celebrate,
                 )
 
-                SectionHeader("Details")
                 Column(modifier = Modifier.fillMaxWidth()) {
                     val activeMintUrl = request.mints.firstOrNull()
+                    val requestMint = activeMintUrl?.let { url ->
+                        walletState.mints.firstOrNull { it.url == url }
+                    }
                     val mintLabel = activeMintUrl?.let { url ->
-                        walletState.mints.firstOrNull { it.url == url }?.name ?: url
+                        requestMint?.name ?: url
                     } ?: "Any mint"
+                    val requestEditable = request.isEcashRequest && !nfcTransferActive
                     InspectorRow(
                         label = "Mint",
                         value = mintLabel,
                         leadingIcon = Icons.Outlined.AccountBalance,
-                        editable = !nfcTransferActive,
+                        editable = requestEditable,
                         onClick = { mintPickerOpen = true },
                     )
                     CanvasDivider(leadingInset = 16.dp)
@@ -349,7 +367,7 @@ fun CashuRequestDetailScreen(
                         } ?: "Any",
                         leadingIcon = Icons.Outlined.AccountBalanceWallet,
                         valueMonospaced = true,
-                        editable = !nfcTransferActive,
+                        editable = requestEditable,
                         onClick = { amountPickerOpen = true },
                     )
                     CanvasDivider(leadingInset = 16.dp)
@@ -357,6 +375,8 @@ fun CashuRequestDetailScreen(
                         label = "Unit",
                         value = request.unit.uppercase(),
                         leadingIcon = Icons.Outlined.CurrencyExchange,
+                        editable = requestEditable && requestMint?.supportsMultipleMintUnits == true,
+                        onClick = { unitPickerOpen = true },
                     )
                     CanvasDivider(leadingInset = 16.dp)
                     InspectorRow(
@@ -380,32 +400,35 @@ fun CashuRequestDetailScreen(
                 Spacer(Modifier.height(CashuTheme.spacing.snug))
             }
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = CashuTheme.spacing.comfortable),
-                horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
-            ) {
-                SecondaryButton(
-                    text = if (copied) "Copied" else "Copy",
-                    onClick = {
-                        clipboard.setText(AnnotatedString(request.encoded))
-                        copied = true
-                    },
-                    modifier = Modifier.weight(1f),
-                )
-                SecondaryButton(
-                    text = "New Request",
-                    onClick = { regenerate() },
-                    modifier = Modifier.weight(1f),
-                    enabled = !nfcTransferActive,
-                )
+            DetailActionFooter {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
+                ) {
+                    SecondaryButton(
+                        text = if (copied) "Copied" else "Copy",
+                        onClick = {
+                            clipboard.setText(AnnotatedString(request.encoded))
+                            copied = true
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                    // Quote-backed invoices/addresses cannot be regenerated in
+                    // place; only a NUT-18 ecash request owns this action.
+                    if (request.isEcashRequest) {
+                        SecondaryButton(
+                            text = "New Request",
+                            onClick = { regenerate() },
+                            modifier = Modifier.weight(1f),
+                            enabled = !nfcTransferActive,
+                        )
+                    }
+                }
             }
-            Spacer(Modifier.navigationBarsPadding())
         }
     }
 
-    if (mintPickerOpen && request != null) {
+    if (mintPickerOpen && request?.isEcashRequest == true) {
         val activeMintUrl = request.mints.firstOrNull()
         MintPickerSheet(
             mints = walletState.mints,
@@ -419,7 +442,7 @@ fun CashuRequestDetailScreen(
         )
     }
 
-    if (amountPickerOpen && request != null) {
+    if (amountPickerOpen && request?.isEcashRequest == true) {
         val isSatRequest = request.unit.equals("sat", ignoreCase = true)
         val requestCurrency = CurrencyRegistry.currencyForMintUnit(request.unit)
         CashuRequestAmountEditSheet(
@@ -435,6 +458,26 @@ fun CashuRequestDetailScreen(
             },
             onDismiss = { amountPickerOpen = false },
         )
+    }
+
+    if (unitPickerOpen && request?.isEcashRequest == true) {
+        val requestMint = request.mints.firstOrNull()?.let { url ->
+            walletState.mints.firstOrNull { it.url == url }
+        }
+        if (requestMint != null && requestMint.supportsMultipleMintUnits) {
+            UnitPickerSheet(
+                units = requestMint.effectiveMintUnits,
+                selectedUnit = request.unit,
+                title = "Choose request unit",
+                onSelect = { unit ->
+                    regenerate(nextUnit = unit)
+                    unitPickerOpen = false
+                },
+                onDismiss = { unitPickerOpen = false },
+            )
+        } else {
+            LaunchedEffect(Unit) { unitPickerOpen = false }
+        }
     }
 
     if (offerNfcReceive) {
