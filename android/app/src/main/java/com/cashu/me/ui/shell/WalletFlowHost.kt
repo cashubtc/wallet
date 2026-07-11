@@ -74,7 +74,6 @@ fun WalletFlowSheetHost(
     ModalBottomSheet(
         onDismissRequest = onDismissed,
         sheetState = sheetState,
-        dragHandle = null,
     ) {
         Box(modifier = Modifier.fillMaxWidth()) {
             AnimatedContent(

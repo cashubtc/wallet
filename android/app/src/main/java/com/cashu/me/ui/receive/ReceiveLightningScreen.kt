@@ -29,7 +29,6 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.outlined.AccountBalance
 import androidx.compose.material.icons.outlined.Bolt
-import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.CurrencyBitcoin
 import androidx.compose.material.icons.outlined.IosShare
 import androidx.compose.material.icons.outlined.Payments
@@ -174,19 +173,19 @@ fun ReceiveLightningScreen(
                     PaymentMethodKind.Onchain -> "Bitcoin Address"
                 }
             },
+            // No close X — dismiss via drag handle / scrim (iOS parity). Back
+            // only appears once a request is on screen.
             navigationIcon = when (face) {
-                ReceiveLnFace.Input -> Icons.Outlined.Close
+                ReceiveLnFace.Input -> null
                 is ReceiveLnFace.Display -> Icons.AutoMirrored.Outlined.ArrowBack
             },
             navigationContentDescription = when (face) {
-                ReceiveLnFace.Input -> "Close"
+                ReceiveLnFace.Input -> null
                 is ReceiveLnFace.Display -> "Back"
             },
-            onNavigationClick = {
-                when (face) {
-                    ReceiveLnFace.Input -> onClose()
-                    is ReceiveLnFace.Display -> face = ReceiveLnFace.Input
-                }
+            onNavigationClick = when (face) {
+                ReceiveLnFace.Input -> null
+                is ReceiveLnFace.Display -> { { face = ReceiveLnFace.Input } }
             },
             actions = {
                 val current = face

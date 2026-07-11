@@ -209,11 +209,12 @@ struct UnifiedReceiveView: View {
         NavigationStack {
             inputForm
                 .frame(maxWidth: .infinity, alignment: .top)
-                .navigationTitle("Receive")
+                .navigationTitle("")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        SheetCloseButton(action: onClose)
+                    ToolbarItem(placement: .principal) {
+                        Text("Receive")
+                            .font(.sheetTitle)
                     }
                 }
                 .sheet(isPresented: $showingScanner) {
@@ -575,11 +576,12 @@ struct ReceiveEcashView: View {
                 .padding(.bottom, 16)
             }
             .animation(.easeInOut(duration: 0.2), value: errorMessage)
-            .navigationTitle("Receive Ecash")
+            .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    SheetCloseButton()
+                ToolbarItem(placement: .principal) {
+                    Text("Receive Ecash")
+                        .font(.sheetTitle)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {

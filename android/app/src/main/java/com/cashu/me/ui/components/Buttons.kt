@@ -37,6 +37,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.TextStyle
@@ -195,6 +196,7 @@ fun GhostButton(
     enabled: Boolean = true,
     trailingIcon: ImageVector? = null,
     textStyle: TextStyle = MaterialTheme.typography.labelLarge,
+    contentColor: Color = Color.Unspecified,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val alpha = rememberPressAlpha(interactionSource)
@@ -203,6 +205,11 @@ fun GhostButton(
         modifier = modifier.graphicsLayer { this.alpha = alpha },
         enabled = enabled,
         interactionSource = interactionSource,
+        colors = if (contentColor != Color.Unspecified) {
+            ButtonDefaults.textButtonColors(contentColor = contentColor)
+        } else {
+            ButtonDefaults.textButtonColors()
+        },
     ) {
         Text(text = text, style = textStyle)
         if (trailingIcon != null) {

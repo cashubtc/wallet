@@ -31,8 +31,9 @@ private val SheetHeaderTitleSideInset = 48.dp
 
 /**
  * Header row for flow bottom sheets — replaces `TopAppBar` for content hosted
- * in a `ModalBottomSheet` (iOS `.sheet` parity: centered inline title, leading
- * close/back, trailing actions), sitting under the system drag handle.
+ * in a `ModalBottomSheet` (iOS `.sheet` parity: centered inline title, optional
+ * leading back, trailing actions), sitting under the system drag handle.
+ * Dismiss is via the drag handle / scrim — no close X.
  */
 @Composable
 fun SheetHeader(
@@ -65,7 +66,9 @@ fun SheetHeader(
         ) { current ->
             Text(
                 text = current,
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.titleMedium.let { base ->
+                    base.copy(fontSize = base.fontSize * 1.2f)
+                },
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
