@@ -15,7 +15,6 @@ enum SentryService {
             options.attachViewHierarchy = false
             options.enableAutoSessionTracking = true
             options.tracesSampleRate = 0.1
-            options.profilesSampleRate = 0.0
         }
     }
 
