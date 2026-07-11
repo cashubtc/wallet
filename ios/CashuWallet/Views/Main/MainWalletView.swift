@@ -774,6 +774,8 @@ struct MainWalletView: View {
             .presentationDragIndicator(.visible)
             .modifier(ChooserSheetPresentation(height: chooserHeight(for: action)))
         case .send:
+            // UnifiedSendView owns its presentation detents: content-fit on the
+            // input step, `.large` + canvas once amount/confirm/status take over.
             UnifiedSendView(
                 onClose: { activeSheet = nil },
                 onReceive: { activeSheet = .chooser(.receive) },
@@ -787,8 +789,6 @@ struct MainWalletView: View {
                 }
             )
             .environmentObject(walletManager)
-            .presentationDetents([.large])
-            .canvasSheetBackground()
         case .scanner:
             ScannerWrapperView()
                 .environmentObject(walletManager)

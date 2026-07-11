@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -33,12 +34,12 @@ import androidx.compose.material.icons.outlined.Nfc
 import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material.icons.outlined.Receipt
-import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -93,9 +94,11 @@ import com.cashu.me.ui.components.TwoFaceScreen
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.withMonoDigits
 
-// iOS UnifiedSendView metrics: 60pt round method buttons spaced 28pt.
-private val MethodButtonSize = 60.dp
-private val MethodRowSpacing = 28.dp
+// Generous circular method buttons (Surface, not FilledTonalIconButton —
+// the latter hardcodes 40dp and would ignore these sizes).
+private val MethodButtonSize = 72.dp
+private val MethodIconSize = 32.dp
+private val MethodRowSpacing = 40.dp
 private const val TYPE_DEBOUNCE_MS = 400L
 
 private enum class SendStep { Input, Amount, Confirm }
@@ -130,7 +133,10 @@ private sealed interface SendStatus {
  * The Send surface (iOS UnifiedSendView): one destination field that infers the
  * rail, a Scan · Ecash · Tap ways-to-send row, then amount → confirm → status.
  * Home's Send button lands here directly — there is no send chooser.
- * Hosted in the shell's flow bottom sheet at full height (iOS `.large`).
+ *
+ * Input (and empty states) wrap content so the sheet hugs the field + method
+ * buttons — thumb-reachable, matching iOS's content-fit detent. Amount /
+ * confirm / status expand to fill the sheet (iOS `.large`).
  */
 @Composable
 fun UnifiedSendScreen(
@@ -376,7 +382,16 @@ fun UnifiedSendScreen(
         if (status == null) goBack()
     }
 
-    Column(modifier = Modifier.fillMaxHeight()) {
+    // Compact while the input face is up so Scan/Ecash/Tap sit near the thumb;
+    // amount/confirm/status need the full sheet for the keypad and pay scaffold.
+    val prefersCompactSheet = status == null && step == SendStep.Input
+    Column(
+        modifier = if (prefersCompactSheet) {
+            Modifier.fillMaxWidth()
+        } else {
+            Modifier.fillMaxHeight()
+        },
+    ) {
         // Status terminal replaces the whole body (iOS PaymentStatusView slot).
         when (val current = status) {
             SendStatus.Sending -> Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -446,9 +461,13 @@ fun UnifiedSendScreen(
                 )
                 TwoFaceScreen(
                     targetState = step,
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth(),
+                    modifier = if (step == SendStep.Input) {
+                        Modifier.fillMaxWidth()
+                    } else {
+                        Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                    },
                     forward = { initial, target -> target.ordinal >= initial.ordinal },
                     label = "unified-send-step",
                 ) { current ->
@@ -598,20 +617,29 @@ private fun InputFace(
             return
         }
         !hasBalance -> {
+            // Compact (no fillMaxHeight) so the sheet hugs this empty state.
             EmptyState(
                 icon = Icons.Outlined.Payments,
                 title = "Nothing to send yet",
                 supporting = "Receive some ecash before you can send.",
                 actionLabel = "Receive",
                 onAction = onReceive,
+                fillHeight = false,
+                modifier = Modifier
+                    .padding(vertical = CashuTheme.spacing.section)
+                    .navigationBarsPadding(),
             )
             return
         }
     }
+    // Wrap-content — no fillMaxSize / weight spacer — so the sheet settles just
+    // below Scan · Ecash · Tap instead of stretching full-screen.
     Column(
         modifier = Modifier
-            .fillMaxSize()
+            .fillMaxWidth()
             .padding(horizontal = CashuTheme.spacing.comfortable)
+            .padding(bottom = CashuTheme.spacing.section)
+            .navigationBarsPadding()
             .imePadding(),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -676,7 +704,6 @@ private fun InputFace(
                 )
             }
         }
-        Spacer(Modifier.weight(1f))
     }
 }
 
@@ -687,13 +714,25 @@ private fun SendMethodButton(
     onClick: () -> Unit,
 ) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        FilledTonalIconButton(
+        Surface(
             onClick = onClick,
             modifier = Modifier.size(MethodButtonSize),
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
         ) {
-            Icon(imageVector = icon, contentDescription = label)
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = label,
+                    modifier = Modifier.size(MethodIconSize),
+                )
+            }
         }
-        Spacer(Modifier.height(CashuTheme.spacing.tight))
+        Spacer(Modifier.height(CashuTheme.spacing.snug))
         Text(
             text = label,
             style = MaterialTheme.typography.bodySmall,
@@ -707,10 +746,11 @@ private fun SendMethodButton(
 private fun NoMintsFace(onOpenMints: () -> Unit) {
     Column(
         modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = CashuTheme.spacing.section),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
+            .fillMaxWidth()
+            .padding(horizontal = CashuTheme.spacing.section)
+            .padding(top = CashuTheme.spacing.default, bottom = CashuTheme.spacing.section)
+            .navigationBarsPadding(),
+        horizontalAlignment = Alignment.Start,
     ) {
         Text(
             text = "Connect a mint first",

@@ -44,6 +44,10 @@ private const val EntranceDamping = 0.82f
  * bounces once. Reduce-motion keeps the fade only. The centering layout lives
  * outside the animated layer, so the entrance can't drag content in from the
  * top-left (see the 2026-07 fly-in bug history).
+ *
+ * @param fillHeight when true (default), expands to fill the parent and
+ *   centers its content — home/history empty trays. Set false for wrap-content
+ *   hosts like a content-fit Send bottom sheet.
  */
 @Composable
 fun EmptyState(
@@ -53,6 +57,7 @@ fun EmptyState(
     supporting: String? = null,
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null,
+    fillHeight: Boolean = true,
 ) {
     val reduceMotion = rememberReducedMotion()
     var appeared by remember { mutableStateOf(false) }
@@ -74,7 +79,7 @@ fun EmptyState(
     val iconBounce = rememberBounceScale(trigger = Unit, bounceOnEntry = true)
     Column(
         modifier = modifier
-            .fillMaxSize()
+            .then(if (fillHeight) Modifier.fillMaxSize() else Modifier.fillMaxWidth())
             .padding(horizontal = CashuTheme.spacing.comfortable)
             .graphicsLayer {
                 this.alpha = alpha
@@ -86,7 +91,7 @@ fun EmptyState(
                 }
             },
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
+        verticalArrangement = if (fillHeight) Arrangement.Center else Arrangement.Top,
     ) {
         Icon(
             imageVector = icon,

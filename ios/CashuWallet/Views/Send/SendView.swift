@@ -1134,6 +1134,17 @@ struct UnifiedSendView: View {
     @State private var showingMintPicker = false
     @State private var addMintError: String?
 
+    /// Measured height of the compact input-step body (field + methods / empty
+    /// states). Drives a content-fit detent so Scan/Ecash/Tap stay thumb-reachable
+    /// instead of sitting at the bottom of a `.large` sheet.
+    @State private var compactContentHeight: CGFloat = 0
+
+    /// Fixed sheet chrome around measured content: drag indicator + inline nav
+    /// bar + a little extra so the sheet sits just above the elements.
+    private static let compactSheetChrome: CGFloat = 108
+    /// First-frame estimate before geometry lands so the sheet doesn't open tiny.
+    private static let compactBodyEstimate: CGFloat = 220
+
     enum Step: Equatable { case input, amount, confirm, sending, sent, failed }
 
     enum LockedDestination: Equatable {
@@ -1158,6 +1169,17 @@ struct UnifiedSendView: View {
     }
 
     // MARK: Body
+
+    /// Input step (with balance, or empty states) hugs content. Amount / confirm /
+    /// status expand to `.large` so the keypad and pay scaffold have room.
+    private var prefersCompactSheet: Bool {
+        statusPhase == nil && step == .input
+    }
+
+    private var compactDetentHeight: CGFloat {
+        let body = compactContentHeight > 0 ? compactContentHeight : Self.compactBodyEstimate
+        return body + Self.compactSheetChrome
+    }
 
     var body: some View {
         NavigationStack {
@@ -1186,9 +1208,13 @@ struct UnifiedSendView: View {
                         }
                     }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .frame(maxWidth: .infinity, alignment: .top)
+                // Compact input sizes intrinsically so the detent can hug it; later
+                // steps fill the large sheet.
+                .frame(maxHeight: prefersCompactSheet ? nil : .infinity, alignment: .top)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .frame(maxWidth: .infinity, alignment: .top)
+            .frame(maxHeight: prefersCompactSheet ? nil : .infinity, alignment: .top)
             .animation(.smooth(duration: 0.3), value: step)
             .animation(.smooth(duration: 0.3), value: locked != nil)
             .navigationTitle("Send")
@@ -1222,6 +1248,11 @@ struct UnifiedSendView: View {
                 feeTask?.cancel()
             }
         }
+        // Own the sheet chrome so the detent can follow the step: compact for
+        // input, `.large` + flat canvas for amount/confirm/status.
+        .presentationDetents(prefersCompactSheet ? [.height(compactDetentHeight)] : [.large])
+        .presentationDragIndicator(.visible)
+        .modifier(UnifiedSendSheetBackground(compact: prefersCompactSheet))
     }
 
     // MARK: Input step
@@ -1257,7 +1288,13 @@ struct UnifiedSendView: View {
                     .padding(.top, 32)
             }
             .padding(.bottom, 24)
+            .onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.size.height
+            } action: { newHeight in
+                compactContentHeight = newHeight
+            }
         }
+        .scrollBounceBehavior(.basedOnSize)
         .scrollDismissesKeyboard(.interactively)
     }
 
@@ -2599,17 +2636,31 @@ struct UnifiedSendView: View {
             }
             .padding(.top, 8)
             .padding(.bottom, 16)
+            .onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.size.height
+            } action: { newHeight in
+                compactContentHeight = newHeight
+            }
         }
+        .scrollBounceBehavior(.basedOnSize)
     }
 
     private var noBalanceState: some View {
+        // `.section` keeps intrinsic height so the sheet can hug this empty state;
+        // fullScreen would expand to infinity and defeat the content-fit detent.
         NativeEmptyState(
             title: "Nothing to send yet",
             systemImage: "arrow.down.circle",
             description: "Receive some ecash before you can send.",
+            style: .section,
             actionTitle: "Receive",
             action: onReceive
         )
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.height
+        } action: { newHeight in
+            compactContentHeight = newHeight
+        }
     }
 
     private func addMint(_ url: String) {
@@ -2620,6 +2671,21 @@ struct UnifiedSendView: View {
             } catch {
                 addMintError = "Couldn't connect to that mint. Try another."
             }
+        }
+    }
+}
+
+/// Compact input keeps the system translucent sheet; amount/confirm/status pin
+/// the flat canvas so they read seamless once the detent expands to `.large`.
+private struct UnifiedSendSheetBackground: ViewModifier {
+    let compact: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if compact {
+            content
+        } else {
+            content.canvasSheetBackground()
         }
     }
 }
