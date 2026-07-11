@@ -124,6 +124,8 @@ fun CashuNavHost(
                 walletManager = container.walletManager,
                 settingsManager = container.settingsManager,
                 cashuRequestStore = container.cashuRequestStore,
+                nfcReceiveCoordinator = container.nfcReceiveCoordinator,
+                nostrService = container.nostrService,
                 requestId = requestId,
                 onClose = { navController.popBackStack() },
             )

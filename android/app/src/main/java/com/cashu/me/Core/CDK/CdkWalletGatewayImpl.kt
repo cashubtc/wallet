@@ -55,6 +55,7 @@ import org.cashudevkit.TransactionDirection as CdkTransactionDirection
 import org.cashudevkit.Wallet as CdkWallet
 import org.cashudevkit.WalletRepository as CdkWalletRepository
 import org.cashudevkit.WalletSqliteDatabase as CdkWalletSqliteDatabase
+import com.cashu.me.Core.NfcReceive.settleForeignNfcTokenWithCdk
 import org.cashudevkit.customWalletStore
 import org.cashudevkit.decodePaymentRequest
 import org.cashudevkit.generateMnemonic as cdkGenerateMnemonic
@@ -411,6 +412,13 @@ class CdkWalletGatewayImpl : CdkWalletGateway, NwcServiceGateway {
             ),
         )
         amount.value.toLong()
+    }
+
+    override suspend fun settleForeignNfcToken(
+        tokenString: String,
+        settlementMintUrl: String,
+    ): ForeignNfcSettlement = cdkCall {
+        settleForeignNfcTokenWithCdk(requireRepository(), database, tokenString, settlementMintUrl)
     }
 
     override suspend fun calculateReceiveFee(tokenString: String): Long = cdkCall {

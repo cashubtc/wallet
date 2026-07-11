@@ -3,6 +3,27 @@ package com.cashu.me.Core
 import java.util.Base64
 
 object PaymentRequestBuilder {
+    /** Android HCE/Numo variant: NFC is the return transport, so no transport array is advertised. */
+    fun buildNfc(
+        id: String,
+        amount: Long?,
+        unit: String?,
+        singleUse: Boolean? = null,
+        mints: List<String>,
+        description: String?,
+    ): String {
+        val request = buildList {
+            add(Nut18Key.Text("i") to Nut18Value.Text(id))
+            add(Nut18Key.Text("a") to amount?.takeIf { it > 0 }?.let { Nut18Value.UInt(it) }.orNull())
+            add(Nut18Key.Text("u") to unit?.takeIf { it.isNotBlank() }?.let { Nut18Value.Text(it) }.orNull())
+            add(Nut18Key.Text("s") to singleUse?.let { Nut18Value.Bool(it) }.orNull())
+            if (mints.isNotEmpty()) add(Nut18Key.Text("m") to Nut18Value.Array(mints.map { Nut18Value.Text(it) }))
+            add(Nut18Key.Text("d") to description?.takeIf { it.isNotBlank() }?.let { Nut18Value.Text(it) }.orNull())
+        }
+        val cbor = Nut18Cbor.encode(Nut18Value.Map(request))
+        return "creqA" + Base64.getUrlEncoder().encodeToString(cbor)
+    }
+
     fun build(
         id: String,
         amount: Long?,

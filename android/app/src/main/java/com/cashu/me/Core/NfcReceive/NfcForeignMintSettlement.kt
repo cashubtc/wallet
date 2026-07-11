@@ -1,0 +1,97 @@
+package com.cashu.me.Core.NfcReceive
+
+import kotlinx.coroutines.delay
+import com.cashu.me.Core.CDK.CdkGatewayUnavailable
+import com.cashu.me.Core.CDK.ForeignNfcSettlement
+import org.cashudevkit.Amount
+import org.cashudevkit.CurrencyUnit
+import org.cashudevkit.MeltConfirmOptions
+import org.cashudevkit.PaymentMethod
+import org.cashudevkit.QuoteState
+import org.cashudevkit.SplitTarget
+import org.cashudevkit.Token
+import org.cashudevkit.Wallet
+import org.cashudevkit.WalletConfig
+import org.cashudevkit.WalletRepository
+import org.cashudevkit.WalletSqliteDatabase
+import org.cashudevkit.WalletStore
+import org.cashudevkit.generateMnemonic
+import org.cashudevkit.proofsTotalAmount
+
+/** CDK implementation of Numo-style foreign-mint settlement. */
+internal suspend fun settleForeignNfcTokenWithCdk(
+    repository: WalletRepository,
+    database: WalletSqliteDatabase?,
+    tokenString: String,
+    settlementMintUrl: String,
+): ForeignNfcSettlement {
+    val token = Token.decode(tokenString)
+    val sourceMint = normalizeMint(token.mintUrl().url)
+    val targetMint = normalizeMint(settlementMintUrl)
+    require(sourceMint != targetMint) { "Source and settlement mint are the same." }
+    require(token.unit() == CurrencyUnit.Sat) { "Foreign-mint conversion supports sat tokens only." }
+    val gross = token.value().value.toLong()
+    require(gross > 1L) { "Payment is too small to convert." }
+
+    val tempDatabase = WalletSqliteDatabase.newInMemory()
+    val tempWallet = Wallet(
+        sourceMint,
+        CurrencyUnit.Sat,
+        generateMnemonic(),
+        WalletStore.Custom(tempDatabase),
+        WalletConfig(targetProofCount = 10u),
+    )
+    try {
+        val keysets = tempWallet.refreshKeysets()
+        val proofs = token.proofs(keysets)
+        require(proofs.isNotEmpty()) { "The foreign-mint token contains no proofs." }
+
+        val targetWallet = repository.getWallet(org.cashudevkit.MintUrl(targetMint), CurrencyUnit.Sat)
+        val maximumFee = kotlin.math.ceil(gross * 0.05).toLong().coerceAtLeast(1L)
+        val estimateAmount = gross - maximumFee
+        require(estimateAmount > 0) { "Payment is too small after the conversion fee limit." }
+
+        val estimateQuote = targetWallet.mintQuote(PaymentMethod.Bolt11, Amount(estimateAmount.toULong()), null, null)
+        val estimateMelt = tempWallet.meltQuote(PaymentMethod.Bolt11, estimateQuote.request, null, null)
+        val reserve = estimateMelt.feeReserve.value.toLong()
+        runCatching { database?.removeMintQuote(estimateQuote.id) }
+        require(reserve <= maximumFee) { "Foreign mint fee exceeds the 5% safety limit." }
+
+        val minimumOverhead = kotlin.math.ceil(gross * 0.005).toLong().coerceAtLeast(1L)
+        val targetAmount = gross - reserve - minimumOverhead
+        require(targetAmount > 0) { "Payment is too small after conversion fees." }
+        val targetQuote = targetWallet.mintQuote(PaymentMethod.Bolt11, Amount(targetAmount.toULong()), null, null)
+        val meltQuote = tempWallet.meltQuote(PaymentMethod.Bolt11, targetQuote.request, null, null)
+        require(meltQuote.amount.value.toLong() + meltQuote.feeReserve.value.toLong() <= gross) {
+            "Foreign mint requires more ecash than was received."
+        }
+        val finalized = tempWallet.prepareMeltProofs(meltQuote.id, proofs)
+            .confirmWithOptions(MeltConfirmOptions(skipSwap = true))
+        require(finalized.state == QuoteState.PAID) { "Foreign mint did not settle the payment." }
+
+        var checked = targetWallet.checkMintQuote(targetQuote.id)
+        for (attempt in 0 until 20) {
+            if (checked.state == QuoteState.PAID || checked.state == QuoteState.ISSUED) break
+            delay(500)
+            checked = targetWallet.checkMintQuote(targetQuote.id)
+        }
+        val credited = when (checked.state) {
+            QuoteState.PAID -> proofsTotalAmount(
+                targetWallet.mintUnified(targetQuote.id, SplitTarget.None, null),
+            ).value.toLong()
+            QuoteState.ISSUED -> targetAmount
+            else -> throw CdkGatewayUnavailable("Settlement mint has not credited the paid quote yet.")
+        }
+        return ForeignNfcSettlement(
+            amountReceived = credited,
+            feePaid = gross - credited,
+            sourceMintUrl = sourceMint,
+            settlementMintUrl = targetMint,
+        )
+    } finally {
+        runCatching { tempWallet.close() }
+        runCatching { tempDatabase.close() }
+    }
+}
+
+private fun normalizeMint(url: String): String = url.trim().trimEnd('/')

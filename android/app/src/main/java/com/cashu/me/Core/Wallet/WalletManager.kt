@@ -429,6 +429,16 @@ class WalletManager(
         return amount
     }
 
+    suspend fun settleForeignNfcToken(
+        tokenString: String,
+        settlementMintUrl: String,
+    ): com.cashu.me.Core.CDK.ForeignNfcSettlement = withLoadingResult {
+        gateway.settleForeignNfcToken(tokenString, settlementMintUrl).also {
+            refreshBalance()
+            loadTransactions()
+        }
+    }
+
     fun savePendingReceiveToken(token: PendingReceiveToken) {
         val current = walletStore.loadPendingReceiveTokens()
         val updated = current.filterNot { it.tokenId == token.tokenId } + token

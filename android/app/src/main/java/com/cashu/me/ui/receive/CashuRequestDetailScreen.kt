@@ -31,6 +31,7 @@ import androidx.compose.material.icons.outlined.CalendarToday
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.CurrencyExchange
 import androidx.compose.material.icons.outlined.IosShare
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -65,6 +66,10 @@ import com.cashu.me.Core.Protocols.CurrencyAmount
 import com.cashu.me.Core.Protocols.CurrencyRegistry
 import com.cashu.me.Core.SettingsManager
 import com.cashu.me.Core.WalletManager
+import com.cashu.me.Core.NfcReceive.NfcReceiveCoordinator
+import com.cashu.me.Core.NfcReceive.NfcReceivePhase
+import com.cashu.me.Core.NostrService
+import com.cashu.me.Core.PaymentRequestBuilder
 import com.cashu.me.ui.components.AmountText
 import com.cashu.me.ui.components.CanvasDivider
 import com.cashu.me.ui.components.DestructiveTextButton
@@ -77,6 +82,10 @@ import com.cashu.me.ui.components.shareText
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.rememberReducedMotion
 import com.cashu.me.ui.theme.withMonoDigits
+import com.cashu.me.ui.receive.nfc.NfcReceiveIndicator
+import com.cashu.me.ui.receive.nfc.NfcReceiveLifecycle
+import com.cashu.me.ui.receive.nfc.NfcReceiveOverlay
+import com.cashu.me.ui.receive.nfc.NfcRequestEditorSheet
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -84,12 +93,15 @@ fun CashuRequestDetailScreen(
     walletManager: WalletManager,
     settingsManager: SettingsManager,
     cashuRequestStore: CashuRequestStore,
+    nfcReceiveCoordinator: NfcReceiveCoordinator,
+    nostrService: NostrService,
     requestId: String,
     onClose: () -> Unit,
 ) {
     val storeState by cashuRequestStore.state.collectAsState()
     val walletState by walletManager.state.collectAsState()
     val settings by settingsManager.state.collectAsState()
+    val nfcState by nfcReceiveCoordinator.state.collectAsState()
     val formatter = remember { AmountFormatter() }
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
@@ -97,6 +109,7 @@ fun CashuRequestDetailScreen(
     val request = storeState.requests.firstOrNull { it.id == requestId }
     var copied by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf(false) }
 
     LaunchedEffect(copied) {
         if (copied) {
@@ -132,6 +145,16 @@ fun CashuRequestDetailScreen(
                 },
                 actions = {
                     if (request != null) {
+                        val canEdit = nfcState.phase !in setOf(
+                            NfcReceivePhase.Connected,
+                            NfcReceivePhase.Receiving,
+                            NfcReceivePhase.Validating,
+                            NfcReceivePhase.Redeeming,
+                            NfcReceivePhase.Converting,
+                        )
+                        IconButton(onClick = { editing = true }, enabled = canEdit) {
+                            Icon(Icons.Outlined.Edit, contentDescription = "Edit request")
+                        }
                         IconButton(onClick = {
                             context.shareText(request.encoded, subject = "Cashu Request")
                         }) {
@@ -163,6 +186,12 @@ fun CashuRequestDetailScreen(
             return@Scaffold
         }
 
+        NfcReceiveLifecycle(
+            coordinator = nfcReceiveCoordinator,
+            request = request,
+            settlementMintUrl = walletState.activeMint?.url,
+        )
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -190,6 +219,8 @@ fun CashuRequestDetailScreen(
                     style = MaterialTheme.typography.headlineSmall.withMonoDigits(),
                 )
             }
+
+            NfcReceiveIndicator(coordinator = nfcReceiveCoordinator)
 
             StatusBlock(
                 received = request.receivedPayments.isNotEmpty(),
@@ -286,6 +317,43 @@ fun CashuRequestDetailScreen(
             },
         )
     }
+
+    if (editing && request != null) {
+        val activeMint = walletState.activeMint
+        NfcRequestEditorSheet(
+            request = request,
+            availableMints = walletState.mints,
+            activeMintUrl = activeMint?.url,
+            onDismiss = { editing = false },
+            onSave = { amount, memo, acceptAnyMint, selectedMintUrl ->
+                val nostr = nostrService.state.value
+                val mints = if (acceptAnyMint) emptyList() else listOfNotNull(selectedMintUrl)
+                runCatching {
+                    PaymentRequestBuilder.build(
+                        id = request.id,
+                        amount = amount,
+                        unit = request.unit,
+                        mints = mints,
+                        description = memo,
+                        nostrPubkeyHex = nostr.publicKeyHex,
+                        relays = settings.nostrRelays,
+                    )
+                }.onSuccess { encoded ->
+                    cashuRequestStore.update(
+                        id = request.id,
+                        amount = amount,
+                        unit = request.unit,
+                        mints = mints,
+                        memo = memo,
+                        encoded = encoded,
+                    )
+                    editing = false
+                }
+            },
+        )
+    }
+
+    NfcReceiveOverlay(coordinator = nfcReceiveCoordinator)
 }
 
 @Composable
