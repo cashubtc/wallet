@@ -10,7 +10,7 @@ import com.cashu.me.Core.Protocols.StorageKeys
 import com.cashu.me.Models.P2PKKeyInfo
 
 data class SettingsState(
-    val useBitcoinSymbol: Boolean = false,
+    val useBitcoinSymbol: Boolean = true,
     val showFiatBalance: Boolean = false,
     val bitcoinPriceCurrency: String = "USD",
     val checkPendingOnStartup: Boolean = true,

@@ -31,7 +31,7 @@ class SettingsStore(
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
     var useBitcoinSymbol: Boolean
-        get() = store.boolean(StorageKeys.settingsUseBitcoinSymbol, false)
+        get() = store.boolean(StorageKeys.settingsUseBitcoinSymbol, true)
         set(value) = store.putBoolean(StorageKeys.settingsUseBitcoinSymbol, value)
 
     var showFiatBalance: Boolean
