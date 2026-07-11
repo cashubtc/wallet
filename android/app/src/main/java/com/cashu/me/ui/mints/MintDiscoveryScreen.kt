@@ -20,13 +20,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.AddCircle
-import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.SignalCellularConnectedNoInternet0Bar
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -42,7 +42,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -58,10 +58,11 @@ import com.cashu.me.ui.components.CashuSearchBar
 import com.cashu.me.ui.components.EmptyState
 import com.cashu.me.ui.components.MintAvatar
 import com.cashu.me.ui.components.MintMethodChips
-import com.cashu.me.ui.components.rememberBounceScale
 import com.cashu.me.ui.theme.CashuTheme
 
-@OptIn(ExperimentalMaterial3Api::class)
+private val DiscoveryActionGlyphSize = 28.dp
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun MintDiscoveryContent(
     walletManager: WalletManager,
@@ -146,19 +147,19 @@ fun MintDiscoveryContent(
             else -> {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = CashuTheme.spacing.comfortable),
+                    contentPadding = PaddingValues(bottom = CashuTheme.spacing.section),
                 ) {
                     if (discoveryState.isDiscovering) {
                         item(key = "discovering") {
-                            DiscoveringRow()
+                            DiscoveringRow(modifier = Modifier.animateItem())
                         }
                     }
 
                     if (addedMints.isNotEmpty()) {
                         item(key = "added-header") {
-                            DiscoverySectionHeader("Added")
+                            DiscoverySectionHeader("Added", modifier = Modifier.animateItem())
                         }
-                        items(addedMints, key = { "added-${it.url}" }) { mint ->
+                        items(addedMints, key = { "mint-${it.url}" }) { mint ->
                             Column(modifier = Modifier.animateItem()) {
                                 DiscoveryRow(
                                     mint = mint,
@@ -173,9 +174,9 @@ fun MintDiscoveryContent(
 
                     if (discoverableMints.isNotEmpty()) {
                         item(key = "discovered-header") {
-                            DiscoverySectionHeader("Discovered")
+                            DiscoverySectionHeader("Discovered", modifier = Modifier.animateItem())
                         }
-                        items(discoverableMints, key = { "discovered-${it.url}" }) { mint ->
+                        items(discoverableMints, key = { "mint-${it.url}" }) { mint ->
                             Column(modifier = Modifier.animateItem()) {
                                 DiscoveryRow(
                                     mint = mint,
@@ -208,22 +209,32 @@ private fun DiscoveryRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .alpha(if (state == DiscoveryRowState.Added) 0.7f else 1f)
             .padding(
                 horizontal = CashuTheme.spacing.comfortable,
-                vertical = CashuTheme.spacing.default,
+                vertical = CashuTheme.spacing.comfortable,
             ),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
     ) {
         MintAvatar(mint = displayMint, size = 40.dp)
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = displayName,
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.tight),
+            ) {
+                Text(
+                    text = displayName,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (mint.supportedMintMethods.isNotEmpty() || mint.supportedMeltMethods.isNotEmpty()) {
+                    MintMethodChips(mint = mint)
+                }
+            }
             Text(
                 text = shortenMintUrl(mint.url),
                 style = MaterialTheme.typography.bodySmall,
@@ -231,14 +242,13 @@ private fun DiscoveryRow(
                 maxLines = 1,
                 overflow = TextOverflow.MiddleEllipsis,
             )
-            if (mint.supportedMintMethods.isNotEmpty() || mint.supportedMeltMethods.isNotEmpty()) {
-                MintMethodChips(mint = mint)
-            }
         }
-        // Add ↔ Added swaps with a gentle grow-in; the check bounces once on
-        // arrival (iOS .symbolEffect(.bounce, value: added) parity).
+        // Add ↔ Added swaps within one fixed slot so both glyphs stay aligned
+        // and render at exactly the same size.
         AnimatedContent(
             targetState = state,
+            modifier = Modifier.size(48.dp),
+            contentAlignment = Alignment.Center,
             transitionSpec = {
                 (
                     fadeIn(spring(stiffness = Spring.StiffnessMedium)) +
@@ -253,40 +263,31 @@ private fun DiscoveryRow(
             },
             label = "discovery-trailing",
         ) { rowState ->
-            when (rowState) {
-                DiscoveryRowState.Added -> {
-                    val bounce = rememberBounceScale(trigger = rowState, bounceOnEntry = true)
-                    Icon(
-                        imageVector = Icons.Outlined.CheckCircle,
-                        contentDescription = "Added",
-                        tint = CashuTheme.colors.received,
-                        modifier = Modifier
-                            .size(28.dp)
-                            .graphicsLayer {
-                                scaleX = bounce
-                                scaleY = bounce
-                            },
-                    )
-                }
-                DiscoveryRowState.Discovered -> FilledTonalIconButton(
-                    onClick = onAdd,
-                    enabled = !isBusy,
-                    modifier = Modifier.size(48.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.AddCircle,
-                        contentDescription = "Add $displayName",
-                    )
-                }
+            val isAdded = rowState == DiscoveryRowState.Added
+            IconButton(
+                onClick = { if (!isAdded) onAdd() },
+                enabled = !isAdded && !isBusy,
+                modifier = Modifier.size(48.dp),
+            ) {
+                Icon(
+                    imageVector = if (isAdded) Icons.Filled.CheckCircle else Icons.Outlined.AddCircle,
+                    contentDescription = if (isAdded) "Added" else "Add $displayName",
+                    tint = if (isAdded) {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
+                    modifier = Modifier.size(DiscoveryActionGlyphSize),
+                )
             }
         }
     }
 }
 
 @Composable
-private fun DiscoveringRow() {
+private fun DiscoveringRow(modifier: Modifier = Modifier) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(
                 horizontal = CashuTheme.spacing.comfortable,
@@ -311,12 +312,12 @@ private fun DiscoveringRow() {
 }
 
 @Composable
-private fun DiscoverySectionHeader(title: String) {
+private fun DiscoverySectionHeader(title: String, modifier: Modifier = Modifier) {
     Text(
         text = title,
         style = MaterialTheme.typography.labelLarge,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(
+        modifier = modifier.padding(
             start = CashuTheme.spacing.comfortable,
             end = CashuTheme.spacing.comfortable,
             top = CashuTheme.spacing.default,

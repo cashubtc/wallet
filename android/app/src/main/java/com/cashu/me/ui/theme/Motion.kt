@@ -30,6 +30,24 @@ object CashuMotion {
 
     /** One full rotation of the processing spinner ring (iOS SpinnerRing). */
     const val SpinnerPeriodMs = 900
+
+    /**
+     * Soft fade-through between sibling tabs (Wallet / History / Mints).
+     * Outgoing empties in [TabFadeOutMs]; incoming settles over [TabFadeInMs]
+     * after that delay, scaling from [TabFadeInitialScale].
+     */
+    const val TabFadeOutMs = 80
+    const val TabFadeInMs = 500
+    const val TabFadeInitialScale = 0.992f
+
+    /**
+     * Material Shared Axis X — push/pop between related destinations.
+     * Outgoing fades in [SharedAxisOutMs]; incoming fades over
+     * [SharedAxisInMs] after that delay. Total travel ≈ [SharedAxisDurationMs].
+     */
+    const val SharedAxisOutMs = 90
+    const val SharedAxisInMs = 210
+    const val SharedAxisDurationMs = 300
 }
 
 /**

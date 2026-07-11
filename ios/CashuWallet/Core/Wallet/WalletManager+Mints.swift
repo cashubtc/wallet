@@ -45,11 +45,11 @@ extension WalletManager {
         return try await wallet.fetchMintInfo()
     }
 
-    /// Best-effort preview of a mint's identity (name + icon), fetched through
-    /// CashuDevKit. CDK requires a wallet entry before `fetchMintInfo()`, so this
-    /// may prepare the mint in the CDK repository, but it does not add the mint
-    /// to the app's saved mint list.
-    func fetchMintPreviewInfo(url: String) async -> (name: String?, iconUrl: String?)? {
+    /// Best-effort preview of a mint's identity (name, icon, payment methods),
+    /// fetched through CashuDevKit. CDK requires a wallet entry before
+    /// `fetchMintInfo()`, so this may prepare the mint in the CDK repository,
+    /// but it does not add the mint to the app's saved mint list.
+    func fetchMintPreviewInfo(url: String) async -> MintPreviewInfo? {
         guard let walletRepository else {
             return nil
         }
@@ -61,8 +61,15 @@ extension WalletManager {
                 try await walletRepository.createWallet(mintUrl: mintUrl, unit: .sat, targetProofCount: nil)
             }
             let wallet = try await walletRepository.getWallet(mintUrl: mintUrl, unit: .sat)
-            let info = try await wallet.fetchMintInfo()
-            return (name: info?.name, iconUrl: info?.iconUrl)
+            guard let info = try await wallet.fetchMintInfo() else {
+                return nil
+            }
+            let mintMethods = info.nuts.nut04.methods.compactMap { PaymentMethodKind.from($0.method) }
+            let meltMethods = info.nuts.nut05.methods.compactMap { PaymentMethodKind.from($0.method) }
+            let methods = PaymentMethodKind.allCases.filter {
+                mintMethods.contains($0) || meltMethods.contains($0)
+            }
+            return MintPreviewInfo(name: info.name, iconUrl: info.iconUrl, methods: methods)
         } catch {
             AppLogger.wallet.error("Failed to fetch CDK mint preview for \(normalized): \(error)")
             return nil

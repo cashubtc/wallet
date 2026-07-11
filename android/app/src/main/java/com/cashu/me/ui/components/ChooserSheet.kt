@@ -1,10 +1,5 @@
 package com.cashu.me.ui.components
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.slideInHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -26,31 +21,20 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.delay
 import com.cashu.me.ui.theme.CashuTheme
 
 // iOS-parity: 36dp icon container on rounded-10 fill.
 private val ChooserIconContainerSize = 36.dp
 private val ChooserIconSize = 20.dp
 private val ChooserLabelGap = 2.dp
-// Fixed 12dp slide-in offset (iOS uses 12pt); stagger 70ms per row.
-private val SlideOffsetDp = 12.dp
-private const val StaggerMs = 70
-private const val ArmDelayMs = 40
 
 data class ChooserOption(
     val id: String,
@@ -59,10 +43,7 @@ data class ChooserOption(
     val supporting: String? = null,
 )
 
-/**
- * Bottom-sheet action chooser with the iOS cascade-in animation.
- * Each option fades + slides in from the leading edge with a 70ms stagger.
- */
+/** Bottom-sheet action chooser. Options appear with the sheet — no per-row cascade. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChooserSheet(
@@ -72,13 +53,6 @@ fun ChooserSheet(
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var revealed by remember { mutableStateOf(false) }
-    val density = LocalDensity.current
-    val slideOffsetPx = with(density) { SlideOffsetDp.roundToPx() }
-    LaunchedEffect(Unit) {
-        delay(ArmDelayMs.toLong())
-        revealed = true
-    }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -100,20 +74,8 @@ fun ChooserSheet(
                     vertical = CashuTheme.spacing.default,
                 ),
             )
-            options.forEachIndexed { index, option ->
-                AnimatedVisibility(
-                    visible = revealed,
-                    enter = fadeIn(tween(durationMillis = 220, delayMillis = index * StaggerMs)) +
-                            slideInHorizontally(
-                                animationSpec = tween(
-                                    durationMillis = 320,
-                                    delayMillis = index * StaggerMs,
-                                    easing = FastOutSlowInEasing,
-                                ),
-                            ) { -slideOffsetPx },
-                ) {
-                    ChooserRow(option = option, onClick = { onSelect(option) })
-                }
+            options.forEach { option ->
+                ChooserRow(option = option, onClick = { onSelect(option) })
             }
             Spacer(Modifier.height(CashuTheme.spacing.section))
         }
