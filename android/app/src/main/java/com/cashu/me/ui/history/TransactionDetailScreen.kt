@@ -20,13 +20,13 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.IosShare
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -40,6 +40,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import com.cashu.me.Core.AmountFormatter
@@ -58,7 +59,6 @@ import com.cashu.me.ui.components.EmptyState
 import com.cashu.me.ui.components.InspectorRow
 import com.cashu.me.ui.components.PrimaryButton
 import com.cashu.me.ui.components.QrCard
-import com.cashu.me.ui.components.SectionHeader
 import com.cashu.me.ui.components.ToolbarIcon
 import com.cashu.me.ui.components.shareText
 import com.cashu.me.ui.theme.CashuTheme
@@ -96,7 +96,7 @@ fun TransactionDetailScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
+            CenterAlignedTopAppBar(
                 title = { Text(title, style = MaterialTheme.typography.titleMedium) },
                 navigationIcon = {
                     IconButton(onClick = onClose) {
@@ -166,13 +166,15 @@ fun TransactionDetailScreen(
                         imageVector = Icons.Filled.CheckCircle,
                         contentDescription = "Completed",
                         tint = CashuTheme.colors.received,
-                        modifier = Modifier.size(HERO_GLYPH_SIZE),
+                        modifier = Modifier
+                            .padding(top = CashuTheme.spacing.comfortable)
+                            .size(COMPLETED_HERO_GLYPH_SIZE),
                     )
                     transaction.status == TransactionStatus.Failed -> Icon(
                         imageVector = Icons.Filled.Cancel,
                         contentDescription = "Failed",
                         tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(HERO_GLYPH_SIZE),
+                        modifier = Modifier.size(FAILED_HERO_GLYPH_SIZE),
                     )
                     else -> Unit
                 }
@@ -182,7 +184,6 @@ fun TransactionDetailScreen(
                     useBitcoinSymbol = settings.useBitcoinSymbol,
                     compact = showsQr,
                 )
-                SectionHeader("Details")
                 Column(modifier = Modifier.fillMaxWidth()) {
                     val fields = remember(transaction) { TransactionDisplay.detailFields(transaction) }
                     fields.forEachIndexed { index, field ->
@@ -227,8 +228,9 @@ fun TransactionDetailScreen(
 // Inline link glyph next to the "View in block explorer" label.
 private val EXPLORER_GLYPH_SIZE = 18.dp
 
-// 64dp terminal hero glyph, matching PaymentStatusScreen.
-private val HERO_GLYPH_SIZE = 64.dp
+// Historical success gets a more generous 96dp hero; failure stays restrained.
+private val COMPLETED_HERO_GLYPH_SIZE = 96.dp
+private val FAILED_HERO_GLYPH_SIZE = 64.dp
 
 private val MonospacedLabels = setOf("Request", "Address", "Payment Proof", "Transaction ID", "Quote ID", "Mint")
 
@@ -245,8 +247,10 @@ private fun HeroAmount(
     AmountText(
         text = formatted,
         style = (if (compact) MaterialTheme.typography.headlineLarge else MaterialTheme.typography.displayMedium)
+            .copy(fontWeight = FontWeight.Bold)
             .withMonoDigits(),
         color = MaterialTheme.colorScheme.onSurface,
+        modifier = Modifier.padding(vertical = 5.dp),
     )
 }
 

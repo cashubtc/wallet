@@ -35,6 +35,7 @@ import androidx.compose.material.icons.outlined.IosShare
 import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -42,7 +43,6 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -89,7 +89,6 @@ import com.cashu.me.ui.components.PaymentStatusPhase
 import com.cashu.me.ui.components.PaymentStatusScreen
 import com.cashu.me.ui.components.QrCard
 import com.cashu.me.ui.components.SecondaryButton
-import com.cashu.me.ui.components.SectionHeader
 import com.cashu.me.ui.components.SheetHeader
 import com.cashu.me.ui.components.ToolbarIcon
 import com.cashu.me.ui.components.UnitPickerSheet
@@ -237,7 +236,7 @@ fun CashuRequestDetailScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
+            CenterAlignedTopAppBar(
                 title = {
                     Text(
                         request?.displayTitle ?: "Cashu Request",
@@ -328,8 +327,9 @@ fun CashuRequestDetailScreen(
                     AmountText(
                         text = formatRequestAmount(request.amount),
                         style = MaterialTheme.typography.headlineMedium
-                            .copy(fontWeight = FontWeight.SemiBold)
+                            .copy(fontWeight = FontWeight.Bold)
                             .withMonoDigits(),
+                        modifier = Modifier.padding(vertical = 5.dp),
                     )
                 }
 
@@ -343,7 +343,6 @@ fun CashuRequestDetailScreen(
                     celebrate = celebrate,
                 )
 
-                SectionHeader("Details")
                 Column(modifier = Modifier.fillMaxWidth()) {
                     val activeMintUrl = request.mints.firstOrNull()
                     val requestMint = activeMintUrl?.let { url ->
