@@ -45,6 +45,26 @@ class PaymentRequestBuilderTest {
     }
 
     @Test
+    fun nfcBuilderOmitsRemoteTransportsAndPreservesTerms() {
+        val encoded = PaymentRequestBuilder.buildNfc(
+            id = "tap-1",
+            amount = 42,
+            unit = "sat",
+            mints = listOf("https://mint.example"),
+            description = "coffee",
+        )
+
+        val request = PaymentRequestDecoder.cashuPaymentRequestSummary(encoded)!!
+        assertEquals(42L, request.amount)
+        assertEquals("sat", request.unit)
+        assertEquals(listOf("https://mint.example"), request.mints)
+        // Six top-level CBOR fields: i, a, u, s, m, d. A transport-bearing
+        // request has a seventh `t` field and starts with A7 instead.
+        val cbor = Base64.getUrlDecoder().decode(encoded.removePrefix("creqA"))
+        assertEquals(0xA6.toByte(), cbor.first())
+    }
+
+    @Test
     fun cashuRequestLegacyPaymentIdsArePreservedAsZeroAmountPayments() {
         val request = CashuRequest(
             id = "abc",

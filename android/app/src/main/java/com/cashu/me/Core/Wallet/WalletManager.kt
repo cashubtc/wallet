@@ -429,6 +429,43 @@ class WalletManager(
         return amount
     }
 
+    suspend fun receiveNfcCashuRequestPayment(
+        tokenString: String,
+        processedId: String,
+    ): com.cashu.me.Core.CDK.NfcReceiveReceipt = withLoadingResult {
+        require(processedId !in walletStore.loadProcessedCashuRequests()) { "This payment was already received." }
+        val p2pkPubkeys = TokenParser.p2pkPubkeys(tokenString)
+        val signingKeys = settingsManager.p2pkSigningKeysFor(p2pkPubkeys)
+        gateway.receiveNfcEcashToken(tokenString, signingKeys).also {
+            p2pkPubkeys.forEach(settingsManager::markP2PKKeyUsed)
+            trackMintForReceivedToken(
+                tokenString = tokenString,
+                onTrackingFailed = { AppLogger.wallet.error("Failed to track mint for received NFC token", it) },
+                ensureMintTracked = { ensureMintTracked(it) },
+            )
+            walletStore.saveProcessedCashuRequests(
+                (walletStore.loadProcessedCashuRequests() + processedId).distinct().sorted(),
+            )
+            refreshBalance()
+            loadTransactions()
+        }
+    }
+
+    suspend fun settleForeignNfcToken(
+        tokenString: String,
+        settlementMintUrl: String,
+        processedId: String,
+    ): com.cashu.me.Core.CDK.ForeignNfcSettlement = withLoadingResult {
+        require(processedId !in walletStore.loadProcessedCashuRequests()) { "This payment was already received." }
+        gateway.settleForeignNfcToken(tokenString, settlementMintUrl).also {
+            walletStore.saveProcessedCashuRequests(
+                (walletStore.loadProcessedCashuRequests() + processedId).distinct().sorted(),
+            )
+            refreshBalance()
+            loadTransactions()
+        }
+    }
+
     fun savePendingReceiveToken(token: PendingReceiveToken) {
         val current = walletStore.loadPendingReceiveTokens()
         val updated = current.filterNot { it.tokenId == token.tokenId } + token

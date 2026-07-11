@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="nfc_receive_service_description">Receive Cashu payments by NFC</string>
+    <string name="nfc_receive_aid_description">Cashu NFC payment request</string>
     <string name="app_name">Cashu</string>
 </resources>

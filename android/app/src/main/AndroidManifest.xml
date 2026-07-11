@@ -13,6 +13,9 @@
     <uses-feature
         android:name="android.hardware.nfc"
         android:required="false" />
+    <uses-feature
+        android:name="android.hardware.nfc.hce"
+        android:required="false" />
 
     <application
         android:name=".App.CashuWalletApplication"
@@ -47,6 +50,19 @@
                 <data android:scheme="cashu" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name=".Core.NfcReceive.CashuNfcHostApduService"
+            android:exported="true"
+            android:permission="android.permission.BIND_NFC_SERVICE">
+            <intent-filter>
+                <action android:name="android.nfc.cardemulation.action.HOST_APDU_SERVICE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <meta-data
+                android:name="android.nfc.cardemulation.host_apdu_service"
+                android:resource="@xml/nfc_receive_aid_list" />
+        </service>
     </application>
 
 </manifest>

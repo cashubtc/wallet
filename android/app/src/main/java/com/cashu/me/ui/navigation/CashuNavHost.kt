@@ -129,6 +129,7 @@ fun CashuNavHost(
                 settingsManager = container.settingsManager,
                 nostrService = container.nostrService,
                 cashuRequestStore = container.cashuRequestStore,
+                nfcReceiveCoordinator = container.nfcReceiveCoordinator,
                 requestId = requestId,
                 isReceiveFlow = entry.arguments?.getBoolean("fresh") == true,
                 onClose = { navController.popBackStack() },

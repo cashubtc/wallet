@@ -66,6 +66,8 @@ import kotlinx.coroutines.delay
 import com.cashu.me.Core.AmountFormatter
 import com.cashu.me.Core.CashuRequestStore
 import com.cashu.me.Core.NostrService
+import com.cashu.me.Core.NfcReceive.NfcReceiveCoordinator
+import com.cashu.me.Core.NfcReceive.NfcReceivePhase
 import com.cashu.me.Core.PaymentRequestBuilder
 import com.cashu.me.Core.Protocols.CurrencyAmount
 import com.cashu.me.Core.Protocols.CurrencyRegistry
@@ -91,6 +93,9 @@ import com.cashu.me.ui.components.shareText
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.rememberReducedMotion
 import com.cashu.me.ui.theme.withMonoDigits
+import com.cashu.me.ui.receive.nfc.NfcReceiveIndicator
+import com.cashu.me.ui.receive.nfc.NfcReceiveLifecycle
+import com.cashu.me.ui.receive.nfc.NfcReceiveOverlay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -99,6 +104,7 @@ fun CashuRequestDetailScreen(
     settingsManager: SettingsManager,
     nostrService: NostrService,
     cashuRequestStore: CashuRequestStore,
+    nfcReceiveCoordinator: NfcReceiveCoordinator,
     requestId: String,
     onClose: () -> Unit,
     // True when opened straight after creating the request (actively waiting).
@@ -110,6 +116,7 @@ fun CashuRequestDetailScreen(
     val storeState by cashuRequestStore.state.collectAsState()
     val walletState by walletManager.state.collectAsState()
     val settings by settingsManager.state.collectAsState()
+    val nfcState by nfcReceiveCoordinator.state.collectAsState()
     val formatter = remember { AmountFormatter() }
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
@@ -119,11 +126,13 @@ fun CashuRequestDetailScreen(
     var mintPickerOpen by remember { mutableStateOf(false) }
     var amountPickerOpen by remember { mutableStateOf(false) }
     var regenerateError by remember { mutableStateOf<String?>(null) }
+    val nfcTransferActive = nfcState.phase.isNfcTransferActive()
 
     // Re-signs the same NUT-18 request in place (same id/history entry) — used
     // by the Mint sheet, the Amount sheet's Done, and "New Request" (called
     // with no args, which just re-signs the current values).
     fun regenerate(nextAmount: Long? = request?.amount, nextMints: List<String> = request?.mints.orEmpty()) {
+        if (nfcReceiveCoordinator.state.value.phase.isNfcTransferActive()) return
         val req = request ?: return
         val nostr = nostrService.state.value
         val relays = settings.nostrRelays
@@ -160,6 +169,16 @@ fun CashuRequestDetailScreen(
         if (copied) {
             delay(2000)
             copied = false
+        }
+    }
+
+    // A tap may begin while an editor sheet is open. Once the peer connects,
+    // settle the sheet away so the full-screen keep-together state is visible
+    // and the signed request cannot change during the exchange.
+    LaunchedEffect(nfcTransferActive) {
+        if (nfcTransferActive) {
+            mintPickerOpen = false
+            amountPickerOpen = false
         }
     }
 
@@ -247,6 +266,12 @@ fun CashuRequestDetailScreen(
             return@Scaffold
         }
 
+        NfcReceiveLifecycle(
+            coordinator = nfcReceiveCoordinator,
+            request = request,
+            settlementMintUrl = walletState.activeMint?.url,
+        )
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -282,6 +307,8 @@ fun CashuRequestDetailScreen(
                 )
             }
 
+            NfcReceiveIndicator(coordinator = nfcReceiveCoordinator)
+
             StatusBlock(
                 received = request.receivedPayments.isNotEmpty(),
                 paymentCount = paymentCount,
@@ -298,7 +325,7 @@ fun CashuRequestDetailScreen(
                     label = "Mint",
                     value = mintLabel,
                     leadingIcon = Icons.Outlined.AccountBalance,
-                    editable = true,
+                    editable = !nfcTransferActive,
                     onClick = { mintPickerOpen = true },
                 )
                 CanvasDivider(leadingInset = 16.dp)
@@ -309,7 +336,7 @@ fun CashuRequestDetailScreen(
                     } ?: "Any",
                     leadingIcon = Icons.Outlined.AccountBalanceWallet,
                     valueMonospaced = true,
-                    editable = true,
+                    editable = !nfcTransferActive,
                     onClick = { amountPickerOpen = true },
                 )
                 CanvasDivider(leadingInset = 16.dp)
@@ -354,6 +381,7 @@ fun CashuRequestDetailScreen(
                     text = "New Request",
                     onClick = { regenerate() },
                     modifier = Modifier.weight(1f),
+                    enabled = !nfcTransferActive,
                 )
             }
             Spacer(Modifier.height(CashuTheme.spacing.section))
@@ -391,7 +419,17 @@ fun CashuRequestDetailScreen(
             onDismiss = { amountPickerOpen = false },
         )
     }
+
+    NfcReceiveOverlay(coordinator = nfcReceiveCoordinator)
 }
+
+private fun NfcReceivePhase.isNfcTransferActive(): Boolean = this in setOf(
+    NfcReceivePhase.Connected,
+    NfcReceivePhase.Receiving,
+    NfcReceivePhase.Validating,
+    NfcReceivePhase.Redeeming,
+    NfcReceivePhase.Converting,
+)
 
 @Composable
 private fun StatusBlock(received: Boolean, paymentCount: Int, celebrate: Boolean) {

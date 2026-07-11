@@ -13,6 +13,7 @@ import com.cashu.me.Core.Navigation.NavigationManager
 import com.cashu.me.Core.NostrMintBackupService
 import com.cashu.me.Core.NostrService
 import com.cashu.me.Core.NwcManager
+import com.cashu.me.Core.NfcReceive.NfcReceiveCoordinator
 import com.cashu.me.Core.Platform.AndroidConnectivityObserver
 import com.cashu.me.Core.Platform.AndroidSecureStorage
 import com.cashu.me.Core.Platform.WalletDatabasePathManager
@@ -72,6 +73,11 @@ class AppContainer(context: Context) {
         settingsManager = settingsManager,
         walletManager = walletManager,
         cashuRequestStore = cashuRequestStore,
+    )
+    val nfcReceiveCoordinator = NfcReceiveCoordinator(
+        context = appContext,
+        walletManager = walletManager,
+        requestStore = cashuRequestStore,
     )
 
     init {

@@ -53,10 +53,28 @@ interface CdkWalletGateway {
     suspend fun meltTokens(quoteId: String, mintUrl: String? = null): MeltPaymentResult
     suspend fun sendEcashToken(amount: Long, memo: String?, p2pkPubkey: String?, mintUrl: String, unit: String = "sat", p2pkSigningKeys: List<String> = emptyList()): SendTokenResult
     suspend fun receiveEcashToken(tokenString: String, p2pkSigningKeys: List<String> = emptyList()): Long
+    suspend fun receiveNfcEcashToken(
+        tokenString: String,
+        p2pkSigningKeys: List<String> = emptyList(),
+    ): NfcReceiveReceipt
+    suspend fun settleForeignNfcToken(tokenString: String, settlementMintUrl: String): ForeignNfcSettlement
     suspend fun calculateReceiveFee(tokenString: String): Long
     suspend fun checkTokenSpendable(token: String, mintUrl: String): Boolean
     suspend fun listTransactions(mintUrls: List<String>): List<WalletTransaction>
     suspend fun payCashuPaymentRequest(encoded: String, customAmountSats: Long?, preferredMintURL: String?)
 }
+
+data class ForeignNfcSettlement(
+    val amountReceived: Long,
+    val transactionId: String,
+    val feePaid: Long,
+    val sourceMintUrl: String,
+    val settlementMintUrl: String,
+)
+
+data class NfcReceiveReceipt(
+    val amountReceived: Long,
+    val transactionId: String,
+)
 
 class CdkGatewayUnavailable(message: String) : IllegalStateException(message)
