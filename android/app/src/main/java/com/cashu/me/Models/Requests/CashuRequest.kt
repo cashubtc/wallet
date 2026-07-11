@@ -26,6 +26,16 @@ data class CashuRequest(
 ) {
     val totalReceived: Long get() = receivedPayments.sumOf { it.amount }
 
+    val isEcashRequest: Boolean get() = quoteKind == null
+
+    val displayTitle: String
+        get() = when (quoteKind?.lowercase()) {
+            "bolt12" -> "Reusable Invoice"
+            "bolt11" -> if (receivedPayments.isEmpty()) "Lightning Invoice" else "Lightning received"
+            "onchain" -> if (receivedPayments.isEmpty()) "Bitcoin Address" else "Bitcoin received"
+            else -> "Cashu Request"
+        }
+
     fun withLegacyPaymentFallback(): CashuRequest {
         if (receivedPayments.isNotEmpty() || receivedPaymentIds.isEmpty()) return this
         return copy(

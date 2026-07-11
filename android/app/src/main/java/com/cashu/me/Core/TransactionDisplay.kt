@@ -47,15 +47,22 @@ object TransactionDisplay {
         transaction.token ?: transaction.invoice
 
     /**
-     * The QR hero appears only for an actionable request: a pending
-     * transaction (unclaimed outgoing token, unpaid invoice, pending on-chain
-     * address) or a reusable BOLT12 offer. Settled artifacts never re-present
-     * as scannable payment codes.
+     * The QR hero appears only while the artifact remains useful. Ecash is
+     * shareable only for an unclaimed outgoing send; an incoming pending token
+     * is money to claim, not a payment code. One-shot Lightning invoices retire
+     * after settlement, reusable BOLT12 offers stay live, and on-chain addresses
+     * remain fundable after a payment and therefore always keep their QR.
      */
-    fun showsQr(transaction: WalletTransaction): Boolean {
-        if (qrContent(transaction) == null) return false
-        if (transaction.status == TransactionStatus.Pending) return true
-        return transaction.invoice?.startsWith("lno", ignoreCase = true) == true
+    fun showsQr(transaction: WalletTransaction): Boolean = when (transaction.kind) {
+        TransactionKind.Ecash ->
+            transaction.token != null &&
+                transaction.type == TransactionType.Outgoing &&
+                transaction.status == TransactionStatus.Pending
+        TransactionKind.Lightning ->
+            transaction.invoice != null &&
+                (transaction.status == TransactionStatus.Pending ||
+                    transaction.invoice.startsWith("lno", ignoreCase = true))
+        TransactionKind.Onchain -> transaction.invoice != null
     }
 
     /**
@@ -72,12 +79,12 @@ object TransactionDisplay {
     fun qrLabel(transaction: WalletTransaction): String = when (transaction.kind) {
         TransactionKind.Ecash -> "Ecash token"
         TransactionKind.Lightning -> "Payment request"
-        TransactionKind.Onchain -> if (transaction.preimage == null) "Bitcoin address" else "On-chain request"
+        TransactionKind.Onchain -> "Bitcoin address"
     }
 
     // Detail rows follow the iOS canon: Status first (monochrome), Date, then
-    // conditional essentials — Fee when > 0, Mint always, Memo when present,
-    // on-chain Address/Transaction ID. Type/Direction/Unit rows stay dropped
+    // conditional essentials — Fee when > 0, Mint, Lightning payment proof,
+    // or on-chain Address/Transaction ID. Type/Direction/Unit rows stay dropped
     // (the title names kind + direction; the unit is always sat here).
     fun detailFields(transaction: WalletTransaction): List<TransactionDetailField> =
         buildList {
@@ -85,10 +92,11 @@ object TransactionDisplay {
             add(TransactionDetailField("Date", formatDetailDate(transaction.dateEpochMillis)))
             if (transaction.fee > 0) add(TransactionDetailField("Fee", "${transaction.fee} sat"))
             transaction.mintUrl?.let { add(TransactionDetailField("Mint", mintHost(it))) }
-            transaction.memo?.takeIf { it.isNotBlank() }?.let { add(TransactionDetailField("Memo", it)) }
             if (transaction.kind == TransactionKind.Onchain) {
                 transaction.invoice?.let { add(TransactionDetailField("Address", it)) }
                 transaction.preimage?.let { add(TransactionDetailField("Transaction ID", it)) }
+            } else {
+                transaction.preimage?.let { add(TransactionDetailField("Payment Proof", it)) }
             }
         }
 

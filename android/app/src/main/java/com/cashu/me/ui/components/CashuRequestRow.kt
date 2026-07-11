@@ -76,7 +76,7 @@ fun CashuRequestRow(
         DirectionIcon(incoming = true)
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = "Cashu Request",
+                text = request.displayTitle,
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurface,

@@ -5,7 +5,6 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -54,6 +53,7 @@ import com.cashu.me.Models.TransactionType
 import com.cashu.me.Models.WalletTransaction
 import com.cashu.me.ui.components.AmountText
 import com.cashu.me.ui.components.CanvasDivider
+import com.cashu.me.ui.components.DetailActionFooter
 import com.cashu.me.ui.components.EmptyState
 import com.cashu.me.ui.components.InspectorRow
 import com.cashu.me.ui.components.PrimaryButton
@@ -128,103 +128,98 @@ fun TransactionDetailScreen(
             return@Scaffold
         }
 
+        val explorerUrl = remember(transaction) { transaction.explorerUrl() }
+        val pendingReceiveToken = transaction.token?.takeIf {
+            transaction.isPendingToken &&
+                transaction.type == TransactionType.Incoming &&
+                transaction.status == TransactionStatus.Pending
+        }
+        val hasPrimaryAction =
+            (pendingReceiveToken != null && onClaimReceiveToken != null) || copyableContent != null
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState()),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.comfortable),
+                .padding(padding),
         ) {
-            Spacer(Modifier.height(CashuTheme.spacing.snug))
-            // Hero state slot: live request → QR; completed → 64dp green check;
-            // failed → 64dp red X; pending with no QR → no glyph. State detail
-            // lives in the monochrome Status row below.
-            when {
-                showsQr && qrContent != null -> QrCard(
-                    content = qrContent,
-                    staticOnly = transaction.kind != TransactionKind.Ecash,
-                    shareSubject = title,
-                    snackbarHostState = snackbarHostState,
-                )
-                transaction.status == TransactionStatus.Completed -> Icon(
-                    imageVector = Icons.Filled.CheckCircle,
-                    contentDescription = "Completed",
-                    tint = CashuTheme.colors.received,
-                    modifier = Modifier.size(HERO_GLYPH_SIZE),
-                )
-                transaction.status == TransactionStatus.Failed -> Icon(
-                    imageVector = Icons.Filled.Cancel,
-                    contentDescription = "Failed",
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(HERO_GLYPH_SIZE),
-                )
-                else -> Unit
-            }
-            HeroAmount(
-                transaction = transaction,
-                formatter = formatter,
-                useBitcoinSymbol = settings.useBitcoinSymbol,
-            )
-            SectionHeader("Details")
-            Column(modifier = Modifier.fillMaxWidth()) {
-                val fields = remember(transaction) { TransactionDisplay.detailFields(transaction) }
-                fields.forEachIndexed { index, field ->
-                    InspectorRow(
-                        label = field.label,
-                        value = field.value,
-                        valueMonospaced = field.value.length > 24 ||
-                            field.label in MonospacedLabels,
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = CashuTheme.spacing.comfortable),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.comfortable),
+            ) {
+                Spacer(Modifier.height(CashuTheme.spacing.snug))
+                // Hero state slot: live request → QR; completed → 64dp green check;
+                // failed → 64dp red X; pending with no QR → no glyph. State detail
+                // lives in the monochrome Status row below.
+                when {
+                    showsQr && qrContent != null -> QrCard(
+                        content = qrContent,
+                        staticOnly = transaction.kind != TransactionKind.Ecash,
+                        shareSubject = title,
+                        snackbarHostState = snackbarHostState,
                     )
-                    if (index != fields.lastIndex) CanvasDivider(leadingInset = 16.dp)
+                    transaction.status == TransactionStatus.Completed -> Icon(
+                        imageVector = Icons.Filled.CheckCircle,
+                        contentDescription = "Completed",
+                        tint = CashuTheme.colors.received,
+                        modifier = Modifier.size(HERO_GLYPH_SIZE),
+                    )
+                    transaction.status == TransactionStatus.Failed -> Icon(
+                        imageVector = Icons.Filled.Cancel,
+                        contentDescription = "Failed",
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(HERO_GLYPH_SIZE),
+                    )
+                    else -> Unit
                 }
+                HeroAmount(
+                    transaction = transaction,
+                    formatter = formatter,
+                    useBitcoinSymbol = settings.useBitcoinSymbol,
+                    compact = showsQr,
+                )
+                SectionHeader("Details")
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    val fields = remember(transaction) { TransactionDisplay.detailFields(transaction) }
+                    fields.forEachIndexed { index, field ->
+                        InspectorRow(
+                            label = field.label,
+                            value = field.value,
+                            valueMonospaced = field.value.length > 24 ||
+                                field.label in MonospacedLabels,
+                        )
+                        if (index != fields.lastIndex) CanvasDivider(leadingInset = 16.dp)
+                    }
+                }
+                Spacer(Modifier.height(CashuTheme.spacing.snug))
             }
 
-            val explorerUrl = remember(transaction) { transaction.explorerUrl() }
-            if (explorerUrl != null) {
-                Spacer(Modifier.height(CashuTheme.spacing.snug))
-                ExplorerLinkRow(url = explorerUrl, onOpen = { context.openInBrowser(it) })
-            }
-
-            // A saved "Receive later" token is still claimable: surface the
-            // Receive CTA that opens the full-screen claim page (iOS: Home/
-            // History pending rows present ReceiveTokenDetailView).
-            val pendingReceiveToken = transaction.token?.takeIf {
-                transaction.isPendingToken &&
-                    transaction.type == TransactionType.Incoming &&
-                    transaction.status == TransactionStatus.Pending
-            }
-            if (pendingReceiveToken != null && onClaimReceiveToken != null) {
-                Spacer(Modifier.height(CashuTheme.spacing.snug))
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = CashuTheme.spacing.comfortable),
-                ) {
-                    PrimaryButton(
-                        text = "Receive",
-                        onClick = { onClaimReceiveToken(pendingReceiveToken) },
-                    )
+            if (explorerUrl != null || hasPrimaryAction) {
+                DetailActionFooter {
+                    if (explorerUrl != null) {
+                        ExplorerLinkRow(url = explorerUrl, onOpen = { context.openInBrowser(it) })
+                        if (hasPrimaryAction) Spacer(Modifier.height(CashuTheme.spacing.snug))
+                    }
+                    if (pendingReceiveToken != null && onClaimReceiveToken != null) {
+                        PrimaryButton(
+                            text = "Receive",
+                            onClick = { onClaimReceiveToken(pendingReceiveToken) },
+                        )
+                    } else if (copyableContent != null) {
+                        PrimaryButton(
+                            text = if (copied) "Copied" else "Copy",
+                            onClick = {
+                                clipboard.setText(AnnotatedString(copyableContent))
+                                copied = true
+                            },
+                        )
+                    }
                 }
             }
-
-            if (copyableContent != null) {
-                Spacer(Modifier.height(CashuTheme.spacing.snug))
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = CashuTheme.spacing.comfortable),
-                ) {
-                    PrimaryButton(
-                        text = if (copied) "Copied" else "Copy ${TransactionDisplay.qrLabel(transaction).lowercase()}",
-                        onClick = {
-                            clipboard.setText(AnnotatedString(copyableContent))
-                            copied = true
-                        },
-                    )
-                }
-            }
-            Spacer(Modifier.height(CashuTheme.spacing.section))
         }
     }
 }
@@ -237,23 +232,20 @@ private val HERO_GLYPH_SIZE = 64.dp
 
 private val MonospacedLabels = setOf("Request", "Address", "Payment Proof", "Transaction ID", "Quote ID", "Mint")
 
-// Crisp primary amount hero — the hero glyph above carries state colour; the
-// +/− sign stays a settled-ledger signal (pending renders bare).
+// Crisp primary amount hero — direction already lives in the screen title, so
+// the historical detail keeps the amount itself quiet and unsigned like iOS.
 @Composable
 private fun HeroAmount(
     transaction: WalletTransaction,
     formatter: AmountFormatter,
     useBitcoinSymbol: Boolean,
+    compact: Boolean,
 ) {
     val formatted = formatter.formatWalletSats(transaction.amount, useBitcoinSymbol)
-    val text = if (transaction.status == TransactionStatus.Pending) {
-        formatted
-    } else {
-        "${if (transaction.type == TransactionType.Incoming) "+" else "−"}$formatted"
-    }
     AmountText(
-        text = text,
-        style = MaterialTheme.typography.displayMedium.withMonoDigits(),
+        text = formatted,
+        style = (if (compact) MaterialTheme.typography.headlineLarge else MaterialTheme.typography.displayMedium)
+            .withMonoDigits(),
         color = MaterialTheme.colorScheme.onSurface,
     )
 }

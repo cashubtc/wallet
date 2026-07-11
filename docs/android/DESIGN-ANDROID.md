@@ -127,7 +127,8 @@ contactless, onboarding. See git history for the parity passes.
 1. **App Lock** — BiometricPrompt gate + `FLAG_SECURE` privacy scrim + Settings
    toggle. Also unlocks auth-gating for the nsec reveal sheets.
 2. **Cloud seed backup** — Auto Backup / Blockstore / Drive decision pending.
-3. **Cashu Request editing UI** — inspector sub-sheets for Mint/Amount/Unit.
+3. **Cashu Request editing UI** — ✅ Mint / Amount / Unit inspector sub-sheets
+   shipped; quote-backed receive artifacts remain correctly read-only.
 4. **NFC tap-to-pay parity check** — verify `ContactlessPayView` against iOS
    coordinator flow and restyle to the new charter.
 5. **Restore-over-units hardening** — loop restore across `mint.units` (do with
