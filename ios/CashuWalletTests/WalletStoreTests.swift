@@ -219,6 +219,15 @@ final class WalletStoreTests: XCTestCase {
         XCTAssertTrue(WalletStartupPolicy.shouldRefreshKeysets(lastRefresh: now + 1, now: now))
     }
 
+    func testWalletStartupPolicyKeepsPublishedCacheVisibleOnRuntimeFailure() {
+        XCTAssertFalse(WalletStartupPolicy.needsOnboardingAfterRuntimeFailure(
+            cachedWalletPublished: true
+        ))
+        XCTAssertTrue(WalletStartupPolicy.needsOnboardingAfterRuntimeFailure(
+            cachedWalletPublished: false
+        ))
+    }
+
     // MARK: - removeAllWalletData
 
     func testRemoveAllWalletDataClearsMints() {

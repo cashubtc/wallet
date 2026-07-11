@@ -1,5 +1,15 @@
 import Foundation
 import Cdk
+import os
+
+private struct WalletLaunchRuntime: @unchecked Sendable {
+    let db: WalletSqliteDatabase
+    let repository: WalletRepository
+}
+
+private enum WalletStartupInstrumentation {
+    static let signposter = OSSignposter(subsystem: "com.cashu.me", category: "wallet.startup")
+}
 
 enum WalletStartupPolicy {
     /// Keysets are persisted by CDK. Refresh them periodically in the
@@ -13,6 +23,13 @@ enum WalletStartupPolicy {
         guard let lastRefresh else { return true }
         guard lastRefresh <= now else { return true }
         return now - lastRefresh >= keysetRefreshInterval
+    }
+
+    /// A CDK/database failure must not hide a wallet whose complete cached home
+    /// model was already published. Without a cache, onboarding is the only
+    /// recoverable presentation.
+    static func needsOnboardingAfterRuntimeFailure(cachedWalletPublished: Bool) -> Bool {
+        !cachedWalletPublished
     }
 }
 
@@ -41,31 +58,102 @@ extension WalletManager {
             }
         }
 
-        loadWalletState()
+        await loadWalletState()
     }
 
-    private func loadWalletState() {
-        do {
-            NSUbiquitousKeyValueStore.default.synchronize()
-            Cdk.initLogging(level: "info")
+    private func loadWalletState() async {
+        let signpostID = WalletStartupInstrumentation.signposter.makeSignpostID()
+        let interval = WalletStartupInstrumentation.signposter.beginInterval(
+            "WalletInitialize",
+            id: signpostID
+        )
+        defer {
+            WalletStartupInstrumentation.signposter.endInterval(
+                "WalletInitialize",
+                interval
+            )
+        }
 
-            if let storedMnemonic = try keychainService.loadMnemonic() {
+        var publishedCachedWallet = false
+        do {
+            // Keychain I/O is synchronous. Read it away from the main actor so
+            // the first SwiftUI frame is never held behind Security.framework.
+            let storedMnemonic = try await Task.detached(priority: .userInitiated) {
+                try KeychainService().loadMnemonic()
+            }.value
+
+            if let storedMnemonic {
                 mnemonic = storedMnemonic
-                try initializeWalletForLaunch(mnemonic: storedMnemonic)
+                loadCachedWalletState()
                 needsOnboarding = false
                 isInitialized = true
+                publishedCachedWallet = true
+                WalletStartupInstrumentation.signposter.emitEvent(
+                    "CachedHomeReady",
+                    id: signpostID
+                )
+
+                // Opening WalletRepository is synchronous inside the CDK FFI
+                // and may load wallets/fetch mint metadata. Keep the main actor
+                // free while SwiftUI renders the cached balance and history.
+                let directoryName = walletDatabaseDirectoryName
+                let databaseFilename = walletDatabaseFilename
+                let runtime = try await Task.detached(priority: .userInitiated) {
+                    NSUbiquitousKeyValueStore.default.synchronize()
+                    Cdk.initLogging(level: "info")
+                    return try Self.prepareLaunchRuntime(
+                        mnemonic: storedMnemonic,
+                        directoryName: directoryName,
+                        databaseFilename: databaseFilename
+                    )
+                }.value
+
+                installLaunchRuntime(runtime, mnemonic: storedMnemonic)
                 startDeferredStartupMaintenance()
                 SentryService.breadcrumb("Wallet loaded", category: "wallet.lifecycle")
             } else {
                 needsOnboarding = true
+                isRuntimeReady = true
                 isInitialized = true
+                // Neither cloud synchronization nor logging setup is required
+                // to render or interact with onboarding.
+                Task.detached(priority: .utility) {
+                    NSUbiquitousKeyValueStore.default.synchronize()
+                    Cdk.initLogging(level: "info")
+                }
             }
         } catch {
             AppLogger.wallet.error("Wallet initialization error: \(error)")
             SentryService.capture(error)
             isInitialized = true
-            needsOnboarding = true
+            isRuntimeReady = false
+            errorMessage = error.localizedDescription
+            // A runtime-open failure must not hide already-published balances
+            // and history or incorrectly send an existing wallet to onboarding.
+            needsOnboarding = WalletStartupPolicy.needsOnboardingAfterRuntimeFailure(
+                cachedWalletPublished: publishedCachedWallet
+            )
         }
+    }
+
+    private func loadCachedWalletState() {
+        mintService.loadCachedMints()
+        let cachedSatBalance = mints.reduce(UInt64(0)) { $0 + $1.balance }
+        balance = cachedSatBalance
+        var cachedUnitBalances = walletStore.loadBalancesByUnit()
+        cachedUnitBalances["sat"] = cachedSatBalance
+        balancesByUnit = cachedUnitBalances
+        transactionService.loadCachedState()
+    }
+
+    private func installLaunchRuntime(_ runtime: WalletLaunchRuntime, mnemonic: String) {
+        db = runtime.db
+        walletRepository = runtime.repository
+        NostrMintBackupService.shared.walletRepository = runtime.repository
+        processedQuotes = Set(walletStore.loadProcessedNPCQuotes())
+        initializeNostrKeypairLocally(mnemonic: mnemonic)
+        setupNPCQuoteListener()
+        isRuntimeReady = true
     }
 
     // MARK: - Wallet Setup
@@ -181,6 +269,7 @@ extension WalletManager {
         // Restore Wallet → Restore from iCloud.
         needsOnboarding = true
         isInitialized = true
+        isRuntimeReady = true
         SentryService.breadcrumb("Wallet deleted", category: "wallet.lifecycle")
     }
 
@@ -245,15 +334,7 @@ extension WalletManager {
     /// reconciliation is deliberately scheduled after `isInitialized` flips.
     private func initializeWalletForLaunch(mnemonic: String) throws {
         try initializeWalletRepository(mnemonic: mnemonic)
-
-        mintService.loadCachedMints()
-        let cachedSatBalance = mints.reduce(UInt64(0)) { $0 + $1.balance }
-        balance = cachedSatBalance
-        var cachedUnitBalances = walletStore.loadBalancesByUnit()
-        cachedUnitBalances["sat"] = cachedSatBalance
-        balancesByUnit = cachedUnitBalances
-        transactionService.loadCachedState()
-
+        loadCachedWalletState()
         initializeNostrKeypairLocally(mnemonic: mnemonic)
         setupNPCQuoteListener()
     }
@@ -315,6 +396,7 @@ extension WalletManager {
         walletRepository = repository.repository
         NostrMintBackupService.shared.walletRepository = repository.repository
         processedQuotes = Set(walletStore.loadProcessedNPCQuotes())
+        isRuntimeReady = true
     }
 
     private func proveWalletCanInitialize(mnemonic: String) throws {
@@ -343,6 +425,7 @@ extension WalletManager {
         walletRepository = nil
         NostrMintBackupService.shared.walletRepository = nil
         db = nil
+        isRuntimeReady = false
         mnemonic = nil
         balance = 0
         balancesByUnit = [:]
@@ -550,6 +633,130 @@ extension WalletManager {
             store: customWalletStore(db: database)
         )
         return (database, repository)
+    }
+
+    nonisolated private static func prepareLaunchRuntime(
+        mnemonic: String,
+        directoryName: String,
+        databaseFilename: String
+    ) throws -> WalletLaunchRuntime {
+        let fileManager = FileManager.default
+        let applicationSupportURL = try fileManager.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        )
+        let walletDirectoryURL = applicationSupportURL.appendingPathComponent(
+            directoryName,
+            isDirectory: true
+        )
+        if !fileManager.fileExists(atPath: walletDirectoryURL.path) {
+            try fileManager.createDirectory(
+                at: walletDirectoryURL,
+                withIntermediateDirectories: true
+            )
+        }
+
+        let databaseURL = walletDirectoryURL.appendingPathComponent(databaseFilename)
+        let legacyURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("cashu_wallet.db")
+        try migrateLegacyWalletDatabaseIfNeeded(
+            from: legacyURL,
+            to: databaseURL,
+            fileManager: fileManager
+        )
+
+        do {
+            return try createLaunchRuntime(mnemonic: mnemonic, databaseURL: databaseURL)
+        } catch {
+            guard shouldRecoverLaunchDatabase(
+                after: error,
+                databaseURL: databaseURL,
+                fileManager: fileManager
+            ) else {
+                throw error
+            }
+
+            _ = try backupLaunchDatabase(
+                at: databaseURL,
+                databaseFilename: databaseFilename,
+                fileManager: fileManager
+            )
+            AppLogger.wallet.info("Wallet DB recovery: moved corrupted launch database")
+            return try createLaunchRuntime(mnemonic: mnemonic, databaseURL: databaseURL)
+        }
+    }
+
+    nonisolated private static func createLaunchRuntime(
+        mnemonic: String,
+        databaseURL: URL
+    ) throws -> WalletLaunchRuntime {
+        let database = try WalletSqliteDatabase(filePath: databaseURL.path)
+        let repository = try WalletRepository(
+            mnemonic: mnemonic,
+            store: customWalletStore(db: database)
+        )
+        return WalletLaunchRuntime(db: database, repository: repository)
+    }
+
+    nonisolated private static func migrateLegacyWalletDatabaseIfNeeded(
+        from legacyURL: URL,
+        to databaseURL: URL,
+        fileManager: FileManager
+    ) throws {
+        guard fileManager.fileExists(atPath: legacyURL.path) else { return }
+        guard !fileManager.fileExists(atPath: databaseURL.path) else { return }
+        try fileManager.moveItem(at: legacyURL, to: databaseURL)
+
+        for suffix in ["-wal", "-shm", "-journal"] {
+            let legacySidecarURL = URL(fileURLWithPath: legacyURL.path + suffix)
+            guard fileManager.fileExists(atPath: legacySidecarURL.path) else { continue }
+            let currentSidecarURL = URL(fileURLWithPath: databaseURL.path + suffix)
+            if fileManager.fileExists(atPath: currentSidecarURL.path) {
+                try fileManager.removeItem(at: currentSidecarURL)
+            }
+            try fileManager.moveItem(at: legacySidecarURL, to: currentSidecarURL)
+        }
+    }
+
+    nonisolated private static func shouldRecoverLaunchDatabase(
+        after error: Error,
+        databaseURL: URL,
+        fileManager: FileManager
+    ) -> Bool {
+        guard fileManager.fileExists(atPath: databaseURL.path) else { return false }
+        let description = String(describing: error).lowercased()
+        return description.contains("sqlite")
+            || description.contains("database")
+            || description.contains("corrupt")
+            || description.contains("malformed")
+            || description.contains("walletdb")
+    }
+
+    nonisolated private static func backupLaunchDatabase(
+        at databaseURL: URL,
+        databaseFilename: String,
+        fileManager: FileManager
+    ) throws -> URL {
+        let timestamp = Int(Date().timeIntervalSince1970)
+        let backupURL = databaseURL.deletingLastPathComponent()
+            .appendingPathComponent("\(databaseFilename).corrupt.\(timestamp)")
+        if fileManager.fileExists(atPath: backupURL.path) {
+            try fileManager.removeItem(at: backupURL)
+        }
+        try fileManager.moveItem(at: databaseURL, to: backupURL)
+
+        for suffix in ["-wal", "-shm", "-journal"] {
+            let sidecarURL = URL(fileURLWithPath: databaseURL.path + suffix)
+            guard fileManager.fileExists(atPath: sidecarURL.path) else { continue }
+            let backupSidecarURL = URL(fileURLWithPath: backupURL.path + suffix)
+            if fileManager.fileExists(atPath: backupSidecarURL.path) {
+                try fileManager.removeItem(at: backupSidecarURL)
+            }
+            try fileManager.moveItem(at: sidecarURL, to: backupSidecarURL)
+        }
+        return backupURL
     }
 
     private func shouldAttemptDatabaseRecovery(after error: Error, databaseURL: URL) -> Bool {

@@ -329,6 +329,11 @@ struct MainWalletView: View {
             if let delta = receivedDelta {
                 receivedDeltaBeat(delta)
                     .transition(reduceMotion ? .opacity : .asymmetric(insertion: .scale(scale: 0.9).combined(with: .opacity), removal: .opacity))
+            } else if !walletManager.isRuntimeReady {
+                Text("Preparing wallet…")
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .transition(.opacity)
             } else if settings.showFiatBalance && priceService.btcPriceUSD > 0 {
                 Text(priceService.formatSatsAsFiat(walletManager.balance))
                     .font(.body)
@@ -473,6 +478,7 @@ struct MainWalletView: View {
                     ) { activeSheet = .send }
                 }
             }
+            .disabled(!walletManager.isRuntimeReady)
         } else {
             HStack(spacing: 12) {
                 Button { activeSheet = .receive } label: {
@@ -489,6 +495,7 @@ struct MainWalletView: View {
                 .accessibilityIdentifier("wallet-action-send")
                 .accessibilityHint("Opens options to send ecash or pay lightning invoices")
             }
+            .disabled(!walletManager.isRuntimeReady)
         }
     }
 

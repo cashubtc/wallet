@@ -31,6 +31,10 @@ class WalletManager: ObservableObject {
     
     /// Whether the wallet is initialized
     @Published var isInitialized = false
+
+    /// Cached wallet state may be visible before CDK finishes opening its
+    /// repository. Money-moving actions stay disabled until this becomes true.
+    @Published var isRuntimeReady = false
     
     /// Whether the user needs to go through onboarding
     @Published var needsOnboarding = false
