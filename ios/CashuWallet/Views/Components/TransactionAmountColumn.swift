@@ -23,20 +23,16 @@ struct TransactionAmountColumn: View {
                 // No `.minimumScaleFactor` here: it collides with `.numericText`
                 // (the numeric renderer reports a tiny intermediate width and the
                 // scale factor then shrinks short amounts toward 50%). Row amounts
-                // are abbreviated by `formatAmountShort`, so they never truncate.
+                // use compact grouped wallet formatting, so they remain readable.
                 .contentTransition(.numericText(value: Double(transaction.amount)))
 
-            if showFiat {
-                Text(priceService.formatSatsAsFiat(transaction.amount))
+            if let secondaryAmount {
+                Text(secondaryAmount)
                     .font(.caption)
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
             }
         }
-    }
-
-    private var showFiat: Bool {
-        isSatUnit && settings.showFiatBalance && priceService.btcPriceUSD > 0
     }
 
     // Two-state ledger: pending reads muted, everything settled reads
@@ -64,11 +60,26 @@ struct TransactionAmountColumn: View {
 
     private var nativeAmount: String {
         if isSatUnit {
-            return settings.formatAmountShort(transaction.amount)
+            return satDisplay.primary
         }
         return CurrencyAmount(
             value: transaction.amount,
             currency: CurrencyRegistry.currency(forMintUnit: transaction.unit)
         ).formatted()
+    }
+
+    private var secondaryAmount: String? {
+        isSatUnit ? satDisplay.secondary : nil
+    }
+
+    private var satDisplay: AmountDisplayText {
+        AmountFormatter.displayText(
+            amountSats: transaction.amount,
+            preferredPrimary: settings.amountDisplayPrimary,
+            showFiat: settings.showFiatBalance,
+            btcPrice: priceService.btcPriceUSD,
+            currencyCode: settings.bitcoinPriceCurrency,
+            useBitcoinSymbol: settings.useBitcoinSymbol
+        )
     }
 }

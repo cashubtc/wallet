@@ -17,36 +17,35 @@ struct CashuRequestAmountColumn: View {
     @ViewBuilder
     var body: some View {
         if received {
+            let display = amountDisplay(receivedAmount)
             VStack(alignment: .trailing, spacing: 2) {
-                Text("+\(settings.formatAmountShort(receivedAmount))")
+                Text("+\(display.primary)")
                     .font(.system(.body, design: .rounded).weight(.semibold))
                     .monospacedDigit()
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                     // No `.minimumScaleFactor` — it collides with `.numericText`
-                    // (short amounts collapse toward 50%). Amounts are abbreviated,
-                    // so the trailing column never truncates them.
+                    // (short amounts collapse toward 50%).
                     .contentTransition(.numericText(value: Double(receivedAmount)))
 
-                if showFiat {
-                    Text(priceService.formatSatsAsFiat(receivedAmount))
+                if let secondary = display.secondary {
+                    Text(secondary)
                         .font(.caption)
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
                 }
             }
         } else if let amount = request.amount, amount > 0 {
+            let display = amountDisplay(amount)
             VStack(alignment: .trailing, spacing: 2) {
-                Text(expectedAmountText(amount))
+                Text(display.primary)
                     .font(.system(.body, design: .rounded).weight(.semibold))
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
 
-                // Fiat sub-line only makes sense for a sat request; a non-sat
-                // unit is already shown in its own currency above.
-                if isSatRequest && showFiat {
-                    Text(priceService.formatSatsAsFiat(amount))
+                if let secondary = display.secondary {
+                    Text(secondary)
                         .font(.caption)
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
@@ -58,15 +57,24 @@ struct CashuRequestAmountColumn: View {
 
     private var isSatRequest: Bool { request.unit.lowercased() == "sat" }
 
-    /// The waiting request's fixed amount, in its own unit: sats keep the
-    /// abbreviated style; other units render via their `Currency` (e.g. "$5.00").
-    private func expectedAmountText(_ amount: UInt64) -> String {
-        isSatRequest
-            ? settings.formatAmountShort(amount)
-            : CurrencyAmount(value: amount, currency: CurrencyRegistry.currency(forMintUnit: request.unit)).formatted()
-    }
-
-    private var showFiat: Bool {
-        settings.showFiatBalance && priceService.btcPriceUSD > 0
+    private func amountDisplay(_ amount: UInt64) -> AmountDisplayText {
+        guard isSatRequest else {
+            return AmountDisplayText(
+                primary: CurrencyAmount(
+                    value: amount,
+                    currency: CurrencyRegistry.currency(forMintUnit: request.unit)
+                ).formatted(),
+                secondary: nil,
+                effectivePrimary: .sats
+            )
+        }
+        return AmountFormatter.displayText(
+            amountSats: amount,
+            preferredPrimary: settings.amountDisplayPrimary,
+            showFiat: settings.showFiatBalance,
+            btcPrice: priceService.btcPriceUSD,
+            currencyCode: settings.bitcoinPriceCurrency,
+            useBitcoinSymbol: settings.useBitcoinSymbol
+        )
     }
 }

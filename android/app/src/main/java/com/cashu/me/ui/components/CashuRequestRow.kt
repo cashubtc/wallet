@@ -13,7 +13,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import com.cashu.me.Core.AmountDisplayPrimary
+import com.cashu.me.Core.AmountDisplayText
 import com.cashu.me.Core.AmountFormatter
+import com.cashu.me.Core.displayText
 import com.cashu.me.Core.Protocols.CurrencyAmount
 import com.cashu.me.Core.Protocols.CurrencyRegistry
 import com.cashu.me.Models.CashuRequest
@@ -40,6 +43,37 @@ fun requestRowAmount(
     } else {
         CurrencyAmount(amount, CurrencyRegistry.currencyForMintUnit(request.unit)).formatted()
     }
+}
+
+fun requestRowDisplay(
+    request: CashuRequest,
+    formatter: AmountFormatter,
+    preferredPrimary: String,
+    showFiat: Boolean,
+    btcPrice: Double?,
+    currencyCode: String,
+    useBitcoinSymbol: Boolean,
+): AmountDisplayText? {
+    val amount = when {
+        request.totalReceived > 0L -> request.totalReceived
+        request.amount != null && request.amount > 0L -> request.amount
+        else -> return null
+    }
+    if (!request.unit.equals("sat", ignoreCase = true)) {
+        return AmountDisplayText(
+            primary = CurrencyAmount(amount, CurrencyRegistry.currencyForMintUnit(request.unit)).formatted(),
+            secondary = null,
+            effectivePrimary = AmountDisplayPrimary.Sats,
+        )
+    }
+    return formatter.displayText(
+        amountSats = amount,
+        preferredPrimary = preferredPrimary,
+        showFiat = showFiat,
+        btcPrice = btcPrice,
+        currencyCode = currencyCode,
+        useBitcoinSymbol = useBitcoinSymbol,
+    )
 }
 
 /**

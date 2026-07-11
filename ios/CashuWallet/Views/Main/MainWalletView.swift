@@ -35,8 +35,8 @@ struct MainWalletView: View {
     private let recentRowCap = 5
     private let scrollFadeBand: CGFloat = 24
     /// Fixed hero height (primary + status). Same whether single-unit or pager.
-    /// Sized for the ~53pt balance type + status slot.
-    private let heroPagerHeight: CGFloat = 78
+    /// Sized 20% taller for the ~53pt balance type + converted status slot.
+    private let heroPagerHeight: CGFloat = 94
     /// Reserved status-line slot under the primary amount.
     private let statusLineHeight: CGFloat = 18
     private let pageDotSize: CGFloat = 6
@@ -245,8 +245,8 @@ struct MainWalletView: View {
         }
     }
 
-    /// One unit's balance hero. Sat keeps the ₿/sat tap-toggle + fiat/received
-    /// sub-line; other units render their amount directly in that currency
+    /// One unit's balance hero. Sat uses the configured fiat/sats ordering plus
+    /// its converted/received sub-line; other units render directly in that currency
     /// (no fiat conversion — eur is already fiat). Status-line slot is always
     /// reserved so pages and single-unit mode share one height.
     @ViewBuilder
@@ -254,31 +254,21 @@ struct MainWalletView: View {
         VStack(spacing: 4) {
             if unit.lowercased() == "sat" {
                 let sats = walletManager.balancesByUnit["sat"] ?? walletManager.balance
-                Button(action: {
-                    HapticFeedback.selection()
-                    settings.useBitcoinSymbol.toggle()
-                }) {
-                    Text(formatBalanceWithUnit(sats))
-                        .font(.system(size: balanceFontSize, weight: .bold))
-                        .monospacedDigit()
-                        .minimumScaleFactor(0.5)
-                        .lineLimit(1)
-                        .contentTransition(.numericText(value: Double(sats)))
-                        // Roll the total on any balance change (receive up, send
-                        // down) and cross-fade the ₿/sat unit swap — mirrors the
-                        // Send/Receive amount display (CurrencyAmountDisplay).
-                        .animation(.snappy, value: sats)
-                        .animation(.snappy, value: settings.useBitcoinSymbol)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Balance: \(formatBalanceWithUnit(sats))")
-                .accessibilityHint("Tap to toggle between Bitcoin and Satoshi")
+                let display = balanceDisplay(sats)
+                Text(display.primary)
+                    .font(.system(size: balanceFontSize, weight: .bold))
+                    .monospacedDigit()
+                    .minimumScaleFactor(0.5)
+                    .lineLimit(1)
+                    .contentTransition(.numericText(value: Double(sats)))
+                    .animation(.snappy, value: sats)
+                    .accessibilityLabel("Balance: \(display.primary)")
 
                 // Status line under the balance: a transient monochrome
                 // received-delta beat takes over the fiat slot for 2.5s on receipt,
                 // then fiat fades back. Same slot, so the swap doesn't reflow the
                 // balance. (De-greened 2026-07-05 — the balance roll carries the moment.)
-                balanceStatusLine
+                balanceStatusLine(display)
             } else {
                 let amount = walletManager.balancesByUnit[unit] ?? 0
                 let formatted = CurrencyAmount(
@@ -324,13 +314,13 @@ struct MainWalletView: View {
     /// while a payment just landed, otherwise the fiat sub-amount. Always keeps
     /// [statusLineHeight] so hiding fiat never collapses the hero.
     @ViewBuilder
-    private var balanceStatusLine: some View {
+    private func balanceStatusLine(_ display: AmountDisplayText) -> some View {
         ZStack {
             if let delta = receivedDelta {
                 receivedDeltaBeat(delta)
                     .transition(reduceMotion ? .opacity : .asymmetric(insertion: .scale(scale: 0.9).combined(with: .opacity), removal: .opacity))
-            } else if settings.showFiatBalance && priceService.btcPriceUSD > 0 {
-                Text(priceService.formatSatsAsFiat(walletManager.balance))
+            } else if let secondary = display.secondary {
+                Text(secondary)
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .transition(.opacity)
@@ -684,7 +674,7 @@ struct MainWalletView: View {
     private func formatAmount(_ transaction: WalletTransaction) -> String {
         let value: String
         if transaction.unit.lowercased() == "sat" {
-            value = AmountFormatter.sats(transaction.amount, useBitcoinSymbol: settings.useBitcoinSymbol)
+            value = balanceDisplay(transaction.amount).primary
         } else {
             value = CurrencyAmount(
                 value: transaction.amount,
@@ -786,8 +776,15 @@ struct MainWalletView: View {
 
     // MARK: - Helpers
 
-    private func formatBalanceWithUnit(_ sats: UInt64) -> String {
-        settings.formatBalanceWithUnit(sats)
+    private func balanceDisplay(_ sats: UInt64) -> AmountDisplayText {
+        AmountFormatter.displayText(
+            amountSats: sats,
+            preferredPrimary: settings.amountDisplayPrimary,
+            showFiat: settings.showFiatBalance,
+            btcPrice: priceService.btcPriceUSD,
+            currencyCode: settings.bitcoinPriceCurrency,
+            useBitcoinSymbol: settings.useBitcoinSymbol
+        )
     }
 
     @ViewBuilder

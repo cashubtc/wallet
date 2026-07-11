@@ -76,7 +76,6 @@ struct BalanceCardView: View {
     let balance: UInt64
     let mintName: String?
     let pendingBalance: UInt64
-    var onUnitToggle: (() -> Void)?
     var onHideToggle: (() -> Void)?
     
     @ObservedObject var settings = SettingsManager.shared
@@ -84,23 +83,6 @@ struct BalanceCardView: View {
     
     var body: some View {
         VStack(spacing: 16) {
-            // Unit toggle badge at top
-            // UnitToggleBadge(onTap: onUnitToggle) // Removed because UnitToggleBadge is undefined
-            Button(action: { onUnitToggle?() }) {
-                HStack(spacing: 4) {
-                    Image(systemName: "arrow.left.arrow.right")
-                        .font(.caption2)
-                        .accessibilityHidden(true)
-                    Text(settings.unitLabel)
-                        .font(.caption)
-                        .fontWeight(.bold)
-                }
-            }
-            .glassButton()
-            .accessibilityLabel("Unit: \(settings.unitLabel)")
-            .accessibilityHint("Toggles the display unit")
-            .padding(.top, 20)
-            
             // Main balance display
             VStack(spacing: 8) {
                 Button {

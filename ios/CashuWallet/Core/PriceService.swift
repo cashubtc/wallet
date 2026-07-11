@@ -133,12 +133,8 @@ class PriceService: ObservableObject {
     }
     
     /// Format satoshis as selected fiat currency string.
-    /// `.presentation(.narrow)` forces the bare symbol ("$", not "US$") for every
-    /// supported currency, regardless of the device locale.
     func formatSatsAsFiat(_ sats: UInt64) -> String {
-        satsToFiat(sats).formatted(
-            .currency(code: currencyCode).presentation(.narrow).precision(.fractionLength(2))
-        )
+        AmountFormatter.fiat(satsToFiat(sats), currencyCode: currencyCode)
     }
 
     /// Backward-compatible wrapper used by existing views
