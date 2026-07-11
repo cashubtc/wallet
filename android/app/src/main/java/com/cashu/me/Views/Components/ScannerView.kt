@@ -1,7 +1,13 @@
 package com.cashu.me.Views.Components
 
 import android.Manifest
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
@@ -27,7 +33,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -45,17 +50,36 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import com.google.mlkit.vision.barcode.BarcodeScanning
-import com.google.mlkit.vision.common.InputImage
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
 import com.cashu.me.Core.AnimatedUrDecoder
 import com.cashu.me.Core.WalletHaptic
 import com.cashu.me.Core.rememberWalletHaptics
 import com.cashu.me.ui.components.GhostButton
 import com.cashu.me.ui.components.PrimaryButton
+import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.common.InputImage
+import java.util.concurrent.Executors
+
+internal enum class CameraPermissionState {
+    Checking,
+    Requesting,
+    Granted,
+    CanRequest,
+    NeedsSettings,
+}
+
+internal fun cameraPermissionResultState(
+    granted: Boolean,
+    canShowRationale: Boolean,
+): CameraPermissionState = when {
+    granted -> CameraPermissionState.Granted
+    canShowRationale -> CameraPermissionState.CanRequest
+    else -> CameraPermissionState.NeedsSettings
+}
 
 @Composable
 fun ScannerView(
@@ -63,9 +87,14 @@ fun ScannerView(
     onScanned: (String) -> Unit,
 ) {
     val context = LocalContext.current
+    val activity = remember(context) { context.findActivity() }
+    val lifecycleOwner = LocalLifecycleOwner.current
     val haptics = rememberWalletHaptics()
-    var hasCameraPermission by remember {
-        mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
+    var cameraPermissionState by remember {
+        mutableStateOf(
+            if (context.hasCameraPermission()) CameraPermissionState.Granted
+            else CameraPermissionState.Checking,
+        )
     }
     var cameraError by remember { mutableStateOf<String?>(null) }
     var completedScan by remember { mutableStateOf(false) }
@@ -73,20 +102,70 @@ fun ScannerView(
     var animatedError by remember { mutableStateOf<String?>(null) }
     val animatedUrDecoder = remember { AnimatedUrDecoder() }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        hasCameraPermission = granted
+        cameraPermissionState = cameraPermissionResultState(
+            granted = granted,
+            canShowRationale = activity?.let {
+                ActivityCompat.shouldShowRequestPermissionRationale(it, Manifest.permission.CAMERA)
+            } ?: true,
+        )
     }
 
     LaunchedEffect(Unit) {
-        if (!hasCameraPermission) permissionLauncher.launch(Manifest.permission.CAMERA)
+        if (cameraPermissionState != CameraPermissionState.Granted) {
+            cameraPermissionState = CameraPermissionState.Requesting
+            permissionLauncher.launch(Manifest.permission.CAMERA)
+        }
     }
 
-    if (!hasCameraPermission) {
-        CameraPermissionView(
-            onRequestPermission = { permissionLauncher.launch(Manifest.permission.CAMERA) },
+    DisposableEffect(lifecycleOwner, context) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                if (context.hasCameraPermission()) {
+                    cameraPermissionState = CameraPermissionState.Granted
+                } else if (cameraPermissionState == CameraPermissionState.Granted) {
+                    cameraPermissionState = CameraPermissionState.CanRequest
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    fun requestCameraPermission() {
+        cameraPermissionState = CameraPermissionState.Requesting
+        permissionLauncher.launch(Manifest.permission.CAMERA)
+    }
+
+    when (cameraPermissionState) {
+        CameraPermissionState.Granted -> Unit
+        CameraPermissionState.Checking,
+        CameraPermissionState.Requesting -> CameraPermissionView(
+            title = "Camera access",
+            message = "Waiting for permission to use the camera.",
             onClose = onClose,
         )
-        return
+        CameraPermissionState.CanRequest -> CameraPermissionView(
+            title = "Camera access needed",
+            message = "Allow camera access to scan QR codes.",
+            actionText = "Allow camera",
+            onAction = { requestCameraPermission() },
+            onClose = onClose,
+        )
+        CameraPermissionState.NeedsSettings -> CameraPermissionView(
+            title = "Camera access needed",
+            message = "Camera access is turned off. Enable it in Settings to scan QR codes.",
+            actionText = "Open settings",
+            onAction = {
+                context.startActivity(
+                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                        data = Uri.fromParts("package", context.packageName, null)
+                    },
+                )
+            },
+            onClose = onClose,
+        )
     }
+    if (cameraPermissionState != CameraPermissionState.Granted) return
 
     cameraError?.let { message ->
         CameraFailureView(
@@ -196,7 +275,10 @@ private fun ScannerStatusOverlay(
 
 @Composable
 private fun CameraPermissionView(
-    onRequestPermission: () -> Unit,
+    title: String,
+    message: String,
+    actionText: String? = null,
+    onAction: (() -> Unit)? = null,
     onClose: () -> Unit,
 ) {
     Column(
@@ -206,9 +288,16 @@ private fun CameraPermissionView(
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text("Camera permission is required to scan QR codes.", style = MaterialTheme.typography.bodyLarge)
+        Text(title, style = MaterialTheme.typography.titleMedium)
+        Text(
+            text = message,
+            color = MaterialTheme.colorScheme.secondary,
+            style = MaterialTheme.typography.bodyLarge,
+        )
         Spacer(Modifier.height(24.dp))
-        PrimaryButton("Allow camera", onClick = onRequestPermission)
+        if (actionText != null && onAction != null) {
+            PrimaryButton(actionText, onClick = onAction)
+        }
         GhostButton("Close", onClick = onClose)
     }
 }
@@ -312,4 +401,13 @@ private class BarcodeAnalyzer(
                 imageProxy.close()
             }
     }
+}
+
+private fun Context.hasCameraPermission(): Boolean =
+    ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }

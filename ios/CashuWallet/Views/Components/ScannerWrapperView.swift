@@ -69,8 +69,57 @@ class ScannerViewModel: ObservableObject {
     #endif
 }
 
+private enum CameraAuthorizationState: Equatable {
+    case checking
+    case requesting
+    case authorized
+    case denied
+    case restricted
+}
+
+private struct ScannerCameraStatusView: View {
+    let title: String
+    let message: String
+    var actionTitle: String?
+    var showsProgress = false
+    var action: (() -> Void)?
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "camera.fill")
+                .font(.system(size: 42))
+                .accessibilityHidden(true)
+
+            Text(title)
+                .font(.title2.weight(.semibold))
+
+            Text(message)
+                .font(.body)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.white.opacity(0.75))
+
+            if showsProgress {
+                ProgressView()
+                    .tint(.white)
+                    .accessibilityLabel("Requesting camera access")
+            }
+
+            if let actionTitle, let action {
+                Button(actionTitle, action: action)
+                    .buttonStyle(.borderedProminent)
+            }
+        }
+        .foregroundStyle(.white)
+        .padding(32)
+        .frame(maxWidth: 440)
+        .accessibilityElement(children: .contain)
+    }
+}
+
 struct ScannerWrapperView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject var walletManager: WalletManager
 
     /// Optional callback. When provided, the scanner short-circuits its default
@@ -116,72 +165,111 @@ struct ScannerWrapperView: View {
     @State private var navigateToDetail = false
     @State private var navigateToMelt = false
     @State private var navigateToCashuPaymentRequest = false
+    @State private var cameraAuthorizationState: CameraAuthorizationState = .checking
+    @State private var cameraFailureMessage: String?
     
     var body: some View {
         NavigationStack {
             ZStack {
                 Color.black.ignoresSafeArea()
-                
-                LegacyQRScannerView { code in
-                    handleScan(code: code)
-                }
-                .ignoresSafeArea()
-                
-                // Overlay
-                VStack {
-                    Spacer()
-                    
-                    if scannerModel.scanProgress > 0 && scannerModel.scanProgress < 1.0 {
-                        // Progress UI for animated QR
-                        VStack(spacing: 8) {
-                            Text("Scanning Animated QR...")
-                                .font(.headline)
-                                .foregroundStyle(.primary)
-                            
-                            ProgressView(value: scannerModel.scanProgress, total: 1.0)
-                                .progressViewStyle(LinearProgressViewStyle(tint: .accentColor))
-                                .frame(height: 8)
-                                .padding(.horizontal)
-                            
-                            Text("\(Int(scannerModel.scanProgress * 100))%")
-                                .font(.caption)
-                                .foregroundStyle(.white.opacity(0.8))
-                        }
-                        .padding()
-                        .background(Color.black.opacity(0.8))
-                        .clipShape(.rect(cornerRadius: 16))
-                        .padding(.bottom, 50)
-                        .padding(.horizontal, 40)
-                    } else {
-                        VStack(spacing: 12) {
-                            ForEach(resolvedQuickFills) { fill in
-                                Button {
-                                    HapticFeedback.selection()
-                                    processCompleteContent(fill.value)
-                                } label: {
-                                    HStack(spacing: 8) {
-                                        Image(systemName: fill.systemImage)
-                                        Text(fill.title)
-                                    }
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(.primary)
-                                    .padding(.horizontal, 18)
-                                    .padding(.vertical, 11)
-                                    .background(.ultraThinMaterial, in: Capsule())
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityHint("Use this instead of scanning")
-                            }
 
-                            Text(promptText ?? "Scan Cashu Token, Payment Request, or Bitcoin Address")
-                                .foregroundStyle(.primary)
-                                .font(.caption)
-                                .padding()
-                                .background(Color.black.opacity(0.6))
-                                .clipShape(.rect(cornerRadius: 20))
+                switch cameraAuthorizationState {
+                case .checking, .requesting:
+                    ScannerCameraStatusView(
+                        title: "Camera Access",
+                        message: "Waiting for permission to use the camera.",
+                        showsProgress: true
+                    )
+                case .authorized:
+                    if let cameraFailureMessage {
+                        ScannerCameraStatusView(
+                            title: "Camera Unavailable",
+                            message: cameraFailureMessage,
+                            actionTitle: "Try Again",
+                            action: retryCamera
+                        )
+                    } else {
+                        LegacyQRScannerView(
+                            onResult: { code in
+                                handleScan(code: code)
+                            },
+                            onFailure: { error in
+                                cameraFailureMessage = error
+                            }
+                        )
+                        .ignoresSafeArea()
+                    }
+                case .denied:
+                    ScannerCameraStatusView(
+                        title: "Camera Access Needed",
+                        message: "Camera access is turned off. Enable it in Settings to scan QR codes.",
+                        actionTitle: "Open Settings",
+                        action: openCameraSettings
+                    )
+                case .restricted:
+                    ScannerCameraStatusView(
+                        title: "Camera Unavailable",
+                        message: "Camera access is restricted on this device. Check Screen Time or device-management settings."
+                    )
+                }
+
+                // Overlay
+                if cameraAuthorizationState == .authorized && cameraFailureMessage == nil {
+                    VStack {
+                        Spacer()
+
+                        if scannerModel.scanProgress > 0 && scannerModel.scanProgress < 1.0 {
+                            // Progress UI for animated QR
+                            VStack(spacing: 8) {
+                                Text("Scanning Animated QR...")
+                                    .font(.headline)
+                                    .foregroundStyle(.primary)
+
+                                ProgressView(value: scannerModel.scanProgress, total: 1.0)
+                                    .progressViewStyle(LinearProgressViewStyle(tint: .accentColor))
+                                    .frame(height: 8)
+                                    .padding(.horizontal)
+
+                                Text("\(Int(scannerModel.scanProgress * 100))%")
+                                    .font(.caption)
+                                    .foregroundStyle(.white.opacity(0.8))
+                            }
+                            .padding()
+                            .background(Color.black.opacity(0.8))
+                            .clipShape(.rect(cornerRadius: 16))
+                            .padding(.bottom, 50)
+                            .padding(.horizontal, 40)
+                        } else {
+                            VStack(spacing: 12) {
+                                ForEach(resolvedQuickFills) { fill in
+                                    Button {
+                                        HapticFeedback.selection()
+                                        processCompleteContent(fill.value)
+                                    } label: {
+                                        HStack(spacing: 8) {
+                                            Image(systemName: fill.systemImage)
+                                            Text(fill.title)
+                                        }
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(.primary)
+                                        .padding(.horizontal, 18)
+                                        .padding(.vertical, 11)
+                                        .background(.ultraThinMaterial, in: Capsule())
+                                    }
+                                    .buttonStyle(.plain)
+                                    .accessibilityHint("Use this instead of scanning")
+                                }
+
+                                Text(promptText ?? "Scan Cashu Token, Payment Request, or Bitcoin Address")
+                                    .foregroundStyle(.primary)
+                                    .font(.caption)
+                                    .padding()
+                                    .background(Color.black.opacity(0.6))
+                                    .clipShape(.rect(cornerRadius: 20))
+                            }
+                            .padding(.horizontal, 24)
+                            .padding(.bottom, 50)
                         }
-                        .padding(.horizontal, 24)
-                        .padding(.bottom, 50)
                     }
                 }
                 
@@ -211,6 +299,12 @@ struct ScannerWrapperView: View {
             }
             .onAppear {
                 resolvedQuickFills = quickFills?() ?? []
+                refreshCameraAuthorization()
+            }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active {
+                    refreshCameraAuthorization()
+                }
             }
             .fullScreenCover(isPresented: $navigateToDetail, onDismiss: {
                 // Closed without completing the receive: re-arm the scanner
@@ -261,6 +355,41 @@ struct ScannerWrapperView: View {
                 }
             }
         }
+    }
+
+    private func refreshCameraAuthorization() {
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized:
+            cameraAuthorizationState = .authorized
+        case .notDetermined:
+            requestCameraAuthorization()
+        case .denied:
+            cameraAuthorizationState = .denied
+        case .restricted:
+            cameraAuthorizationState = .restricted
+        @unknown default:
+            cameraAuthorizationState = .restricted
+        }
+    }
+
+    private func requestCameraAuthorization() {
+        guard cameraAuthorizationState != .requesting else { return }
+        cameraAuthorizationState = .requesting
+        AVCaptureDevice.requestAccess(for: .video) { granted in
+            DispatchQueue.main.async {
+                cameraAuthorizationState = granted ? .authorized : .denied
+            }
+        }
+    }
+
+    private func openCameraSettings() {
+        guard let settingsURL = URL(string: UIApplication.openSettingsURLString) else { return }
+        openURL(settingsURL)
+    }
+
+    private func retryCamera() {
+        cameraFailureMessage = nil
+        refreshCameraAuthorization()
     }
 
     private static func isHumanReadableAddress(_ content: String) -> Bool {
@@ -1189,6 +1318,7 @@ struct CashuPaymentRequestPayView: View {
 
 struct LegacyQRScannerView: UIViewControllerRepresentable {
     var onResult: (String) -> Void
+    var onFailure: (String) -> Void
     
     func makeUIViewController(context: Context) -> QRScannerViewController {
         let controller = QRScannerViewController()
@@ -1196,17 +1326,22 @@ struct LegacyQRScannerView: UIViewControllerRepresentable {
         return controller
     }
     
-    func updateUIViewController(_ uiViewController: QRScannerViewController, context: Context) {}
+    func updateUIViewController(_ uiViewController: QRScannerViewController, context: Context) {
+        context.coordinator.onResult = onResult
+        context.coordinator.onFailure = onFailure
+    }
     
     func makeCoordinator() -> Coordinator {
-        Coordinator(onResult: onResult)
+        Coordinator(onResult: onResult, onFailure: onFailure)
     }
     
     class Coordinator: NSObject, QRScannerViewControllerDelegate {
         var onResult: (String) -> Void
+        var onFailure: (String) -> Void
         
-        init(onResult: @escaping (String) -> Void) {
+        init(onResult: @escaping (String) -> Void, onFailure: @escaping (String) -> Void) {
             self.onResult = onResult
+            self.onFailure = onFailure
         }
         
         func didFound(code: String) {
@@ -1214,7 +1349,7 @@ struct LegacyQRScannerView: UIViewControllerRepresentable {
         }
         
         func didFail(error: String) {
-            print("Scanner failed: \(error)")
+            onFailure(error)
         }
     }
 }
@@ -1229,6 +1364,8 @@ class QRScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsD
     var captureSession: AVCaptureSession!
     var previewLayer: AVCaptureVideoPreviewLayer!
     var qrCodeFrameView: UIView?
+    private let sessionQueue = DispatchQueue(label: "com.cashu.me.qr-scanner-session", qos: .userInitiated)
+    private var isSessionConfigured = false
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -1264,6 +1401,7 @@ class QRScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsD
             
             metadataOutput.setMetadataObjectsDelegate(self, queue: DispatchQueue.main)
             metadataOutput.metadataObjectTypes = [.qr]
+            isSessionConfigured = true
         } else {
             delegate?.didFail(error: "Could not add metadata output.")
             return
@@ -1283,9 +1421,6 @@ class QRScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsD
             view.bringSubviewToFront(qrCodeFrameView)
         }
         
-        DispatchQueue.global(qos: .userInitiated).async {
-            self.captureSession.startRunning()
-        }
     }
     
     override func viewDidLayoutSubviews() {
@@ -1306,18 +1441,24 @@ class QRScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsD
         // A cancelled interactive sheet dismissal fires viewWillDisappear (which
         // stops the session) and then viewWillAppear without reloading the view,
         // so the session must be restarted here or the preview stays frozen.
-        if (captureSession?.isRunning == false) {
-            DispatchQueue.global(qos: .userInitiated).async {
-                self.captureSession.startRunning()
-            }
-        }
+        setCaptureSessionRunning(true)
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
 
-        if (captureSession?.isRunning == true) {
-            captureSession.stopRunning()
+        setCaptureSessionRunning(false)
+    }
+
+    private func setCaptureSessionRunning(_ shouldRun: Bool) {
+        guard isSessionConfigured else { return }
+        sessionQueue.async { [weak self] in
+            guard let self else { return }
+            if shouldRun, !captureSession.isRunning {
+                captureSession.startRunning()
+            } else if !shouldRun, captureSession.isRunning {
+                captureSession.stopRunning()
+            }
         }
     }
     
