@@ -9,24 +9,38 @@ struct AddMintSheet: View {
     @State private var nickname = ""
     @State private var isAdding = false
     @State private var errorMessage: String?
+    @State private var showingScanner = false
     @FocusState private var urlFieldFocused: Bool
 
     var body: some View {
         NavigationStack {
             List {
                 Section {
-                    TextField("Mint URL (https://…)", text: $mintUrl)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .keyboardType(.URL)
-                        .textContentType(.URL)
-                        .focused($urlFieldFocused)
-                        .submitLabel(.go)
-                        .onSubmit(addMint)
-                        .onChange(of: mintUrl) {
-                            if errorMessage != nil { errorMessage = nil }
+                    HStack(spacing: 10) {
+                        TextField("Mint URL (https://…)", text: $mintUrl)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .keyboardType(.URL)
+                            .textContentType(.URL)
+                            .focused($urlFieldFocused)
+                            .submitLabel(.go)
+                            .onSubmit(addMint)
+                            .onChange(of: mintUrl) {
+                                if errorMessage != nil { errorMessage = nil }
+                            }
+                            .accessibilityIdentifier("mints-add-url-field")
+
+                        Button(action: openScanner) {
+                            Image(systemName: "viewfinder")
+                                .font(.body.weight(.semibold))
+                                .foregroundStyle(.secondary)
                         }
-                        .accessibilityIdentifier("mints-add-url-field")
+                        .buttonStyle(.borderless)
+                        .disabled(isAdding)
+                        .accessibilityLabel("Scan QR Code")
+                        .accessibilityHint("Opens the camera to scan a mint URL")
+                        .accessibilityIdentifier("mints-add-scan-button")
+                    }
 
                     TextField("Nickname (optional)", text: $nickname)
                         .textInputAutocapitalization(.words)
@@ -70,11 +84,34 @@ struct AddMintSheet: View {
             .onAppear {
                 urlFieldFocused = true
             }
+            .fullScreenCover(isPresented: $showingScanner) {
+                ScannerWrapperView(
+                    onScanned: handleScannedMintUrl,
+                    promptText: "Scan a mint URL"
+                )
+                .environmentObject(walletManager)
+                .canvasSheetBackground()
+            }
         }
     }
 
     private var canSubmit: Bool {
         !mintUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isAdding
+    }
+
+    private func openScanner() {
+        urlFieldFocused = false
+        HapticFeedback.selection()
+        showingScanner = true
+    }
+
+    private func handleScannedMintUrl(_ raw: String) {
+        if let normalized = Self.normalizedMintUrl(from: raw) {
+            mintUrl = normalized
+            errorMessage = nil
+        } else {
+            errorMessage = "No valid mint URL found in QR code."
+        }
     }
 
     private func addMint() {
@@ -103,8 +140,18 @@ struct AddMintSheet: View {
             errorMessage = "Clipboard is empty."
             return
         }
+        if let normalized = Self.normalizedMintUrl(from: clipboardContent) {
+            mintUrl = normalized
+            errorMessage = nil
+        } else {
+            errorMessage = "No valid mint URL found in clipboard."
+        }
+    }
+
+    /// Pulls the first plausible mint URL from free-form paste/scan text.
+    private static func normalizedMintUrl(from raw: String) -> String? {
         let separators = CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: ",;"))
-        let candidates = clipboardContent.components(separatedBy: separators).filter { !$0.isEmpty }
+        let candidates = raw.components(separatedBy: separators).filter { !$0.isEmpty }
         for rawCandidate in candidates {
             var candidate = rawCandidate.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
             if !candidate.hasPrefix("http://") && !candidate.hasPrefix("https://") {
@@ -114,12 +161,10 @@ struct AddMintSheet: View {
                 candidate = String(candidate.dropLast())
             }
             if let url = URL(string: candidate), url.host != nil {
-                mintUrl = candidate
-                errorMessage = nil
-                return
+                return candidate
             }
         }
-        errorMessage = "No valid mint URL found in clipboard."
+        return nil
     }
 }
 
