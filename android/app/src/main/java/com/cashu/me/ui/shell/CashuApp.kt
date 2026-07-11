@@ -1,6 +1,7 @@
 package com.cashu.me.ui.shell
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.ReportDrawnWhen
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
@@ -34,6 +35,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.navigation.compose.rememberNavController
+import kotlinx.coroutines.flow.StateFlow
 import com.cashu.me.App.AppContainer
 import com.cashu.me.Core.Navigation.CashuRoute
 import com.cashu.me.Core.PaymentRequestDecodeResult
@@ -70,89 +72,109 @@ import com.cashu.me.ui.theme.CashuTheme
  * native modal bottom sheets hosted by [WalletFlowSheetHost] (iOS sheet parity).
  */
 @Composable
-fun CashuApp(container: AppContainer) {
+fun CashuApp(containerFlow: StateFlow<AppContainer?>) {
     CashuTheme {
-        val walletState by container.walletManager.state.collectAsState()
-        val settings by container.settingsManager.state.collectAsState()
-        val lifecycleOwner = LocalLifecycleOwner.current
-        val isAuthenticated = walletState.isInitialized && !walletState.needsOnboarding
-        SecureWindowEffect(enabled = settings.appLockEnabled)
+        val container by containerFlow.collectAsState()
+        if (container == null) {
+            LoadingScreen()
+        } else {
+            CashuAppContent(container = checkNotNull(container))
+        }
+    }
+}
 
-        LaunchedEffect(Unit) {
-            container.walletManager.initialize()
-        }
-        LaunchedEffect(isAuthenticated) {
-            if (isAuthenticated) {
-                container.appLockManager.startAuthenticatedSession()
-                container.cashuRequestListener.start()
-                val settings = container.settingsManager.state.value
-                if (settings.checkPendingOnStartup && settings.checkSentTokens) {
-                    container.walletManager.checkAllPendingTokens()
-                }
-            } else {
-                container.appLockManager.endAuthenticatedSession()
-                container.cashuRequestListener.stop()
-            }
-        }
-        DisposableEffect(lifecycleOwner, isAuthenticated) {
-            val observer = LifecycleEventObserver { _, event ->
-                if (!isAuthenticated) return@LifecycleEventObserver
-                when (event) {
-                    Lifecycle.Event.ON_START,
-                    Lifecycle.Event.ON_RESUME -> {
-                        container.appLockManager.appBecameActive()
-                        container.cashuRequestListener.start()
-                    }
-                    Lifecycle.Event.ON_PAUSE,
-                    Lifecycle.Event.ON_STOP -> {
-                        container.appLockManager.appResignedActive()
-                        if (event == Lifecycle.Event.ON_STOP) {
-                            container.cashuRequestListener.stop()
-                        }
-                    }
-                    else -> Unit
-                }
-            }
-            lifecycleOwner.lifecycle.addObserver(observer)
-            onDispose {
-                lifecycleOwner.lifecycle.removeObserver(observer)
-                container.cashuRequestListener.stop()
-            }
-        }
+@Composable
+private fun CashuAppContent(container: AppContainer) {
+    val walletState by container.walletManager.state.collectAsState()
+    val settings by container.settingsManager.state.collectAsState()
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val isAuthenticated = walletState.isInitialized && !walletState.needsOnboarding
+    val isRuntimeReady = isAuthenticated && walletState.isRuntimeReady
+    // StartupTimingMetric's full-display boundary: cached balance and
+    // transaction history have both been decoded into WalletState.
+    ReportDrawnWhen { walletState.isInitialized }
+    SecureWindowEffect(enabled = settings.appLockEnabled)
 
-        // Root gating cross-fades (fade-through) instead of hard-cutting.
-        val gate = when {
-            !walletState.isInitialized -> AppGate.Loading
-            walletState.needsOnboarding -> AppGate.Onboarding
-            else -> AppGate.Shell
+    LaunchedEffect(Unit) {
+        container.walletManager.initialize()
+    }
+    LaunchedEffect(isAuthenticated) {
+        if (isAuthenticated) {
+            container.appLockManager.startAuthenticatedSession()
+        } else {
+            container.appLockManager.endAuthenticatedSession()
         }
-        Box(modifier = Modifier.fillMaxSize()) {
-            AnimatedContent(
-                targetState = gate,
-                transitionSpec = {
-                    (fadeIn(spring(stiffness = Spring.StiffnessMedium)) +
-                        scaleIn(initialScale = 0.98f, animationSpec = spring(stiffness = Spring.StiffnessMedium)))
-                        .togetherWith(fadeOut(spring(stiffness = Spring.StiffnessMedium)))
-                },
-                label = "app-gate",
-            ) { target ->
-                when (target) {
-                    AppGate.Loading -> LoadingScreen()
-                    AppGate.Onboarding -> OnboardingScreen(
-                        walletManager = container.walletManager,
-                        nostrMintBackupService = container.nostrMintBackupService,
-                    )
-                    AppGate.Shell -> AuthenticatedShell(container = container)
-                }
+    }
+
+    LaunchedEffect(isRuntimeReady) {
+        if (isRuntimeReady) {
+            container.cashuRequestListener.start()
+            val settings = container.settingsManager.state.value
+            if (settings.checkPendingOnStartup && settings.checkSentTokens) {
+                container.walletManager.checkAllPendingTokens()
             }
-            // Covers pushed nav destinations and the base shell; money-flow
-            // sheets mount their own host below since ModalBottomSheet renders
-            // in a separate Android Window this one can't reach.
-            SnackbarHost(
-                hostState = container.snackbarHostState,
-                modifier = Modifier.align(Alignment.BottomCenter),
-            )
+        } else {
+            container.cashuRequestListener.stop()
         }
+    }
+    DisposableEffect(lifecycleOwner, isRuntimeReady) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (!isRuntimeReady) return@LifecycleEventObserver
+            when (event) {
+                Lifecycle.Event.ON_START,
+                Lifecycle.Event.ON_RESUME -> {
+                    container.appLockManager.appBecameActive()
+                    container.cashuRequestListener.start()
+                }
+                Lifecycle.Event.ON_PAUSE,
+                Lifecycle.Event.ON_STOP -> {
+                    container.appLockManager.appResignedActive()
+                    if (event == Lifecycle.Event.ON_STOP) {
+                        container.cashuRequestListener.stop()
+                    }
+                }
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            container.cashuRequestListener.stop()
+        }
+    }
+
+    // Root gating cross-fades (fade-through) instead of hard-cutting.
+    val gate = when {
+        !walletState.isInitialized -> AppGate.Loading
+        walletState.needsOnboarding -> AppGate.Onboarding
+        else -> AppGate.Shell
+    }
+    Box(modifier = Modifier.fillMaxSize()) {
+        AnimatedContent(
+            targetState = gate,
+            transitionSpec = {
+                (fadeIn(spring(stiffness = Spring.StiffnessMedium)) +
+                    scaleIn(initialScale = 0.98f, animationSpec = spring(stiffness = Spring.StiffnessMedium)))
+                    .togetherWith(fadeOut(spring(stiffness = Spring.StiffnessMedium)))
+            },
+            label = "app-gate",
+        ) { target ->
+            when (target) {
+                AppGate.Loading -> LoadingScreen()
+                AppGate.Onboarding -> OnboardingScreen(
+                    walletManager = container.walletManager,
+                    nostrMintBackupService = container.nostrMintBackupService,
+                )
+                AppGate.Shell -> AuthenticatedShell(container = container)
+            }
+        }
+        // Covers pushed nav destinations and the base shell; money-flow sheets
+        // mount their own host below since ModalBottomSheet renders in a
+        // separate Android Window this one can't reach.
+        SnackbarHost(
+            hostState = container.snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter),
+        )
     }
 }
 

@@ -10,17 +10,21 @@ class CashuNfcHostApduService : HostApduService() {
     private val timeoutHandler = Handler(Looper.getMainLooper())
     private var isWriting = false
     private val timeout = Runnable {
-        coordinator.onTransportTimeout(isWriting)
+        coordinator?.onTransportTimeout(isWriting)
         isWriting = false
     }
-    private val coordinator: NfcReceiveCoordinator
-        get() = (application as CashuWalletApplication).container.nfcReceiveCoordinator
+    private val coordinator: NfcReceiveCoordinator?
+        get() = (application as CashuWalletApplication).container.value?.nfcReceiveCoordinator
 
     override fun processCommandApdu(commandApdu: ByteArray?, extras: Bundle?): ByteArray {
         val command = commandApdu ?: return byteArrayOf(0x67, 0x00)
         if (isSelectAid(command)) isWriting = false
         if (command.size >= 2 && command[0] == 0.toByte() && command[1] == 0xD6.toByte()) {
             isWriting = true
+        }
+        val coordinator = coordinator ?: run {
+            isWriting = false
+            return byteArrayOf(0x69, 0x85.toByte())
         }
         val response = coordinator.type4Tag.process(command)
         timeoutHandler.removeCallbacks(timeout)

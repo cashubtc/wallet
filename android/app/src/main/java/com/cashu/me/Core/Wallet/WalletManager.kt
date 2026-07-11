@@ -11,6 +11,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import com.cashu.me.Core.CDK.CdkWalletGateway
 import com.cashu.me.Core.Platform.WalletDatabasePathManager
@@ -45,6 +47,7 @@ class WalletManager(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate + exceptionHandler)
     private val mutableState = MutableStateFlow(WalletState())
     val state: StateFlow<WalletState> = mutableState.asStateFlow()
+    private val initializationMutex = Mutex()
     private val mintMetadataFetcher = WalletMintMetadataFetcher()
     private val mintQuoteSyncService = WalletMintQuoteSyncService(gateway, walletStore)
     private val transactionLoader = WalletTransactionLoader(walletStore, gateway)
@@ -52,35 +55,66 @@ class WalletManager(
     private var processedNPCQuotes = walletStore.loadProcessedNPCQuotes().toMutableSet()
 
     override suspend fun initialize() {
-        if (mutableState.value.isInitialized) return
-        update { copy(isLoading = true, errorMessage = null) }
-        runCatching {
-            gateway.initializeLogging()
-            secureStorage.loadString(StorageKeys.secureWalletMnemonic)?.let { mnemonic ->
-                openWalletRepositoryWithRecovery(mnemonic)
-                deriveNostrKey(mnemonic)
-                loadCachedState(needsOnboarding = false)
-                nwcManager.startIfEnabled()
-            } ?: update {
-                copy(
-                    isInitialized = true,
-                    isLoading = false,
-                    needsOnboarding = true,
-                    canExitOnboarding = false,
-                    mints = walletStore.loadMints(),
-                )
+        initializationMutex.withLock {
+            if (mutableState.value.isRuntimeReady) return@withLock
+
+            withContext(Dispatchers.IO) {
+                val hasStoredWallet = secureStorage.contains(StorageKeys.secureWalletMnemonic)
+
+                // Publish the complete cached home model before opening SQLite,
+                // decrypting the seed, deriving keys, or starting background services.
+                // This is the same cache-first boundary used by iOS.
+                if (hasStoredWallet) {
+                    loadCachedState(needsOnboarding = false)
+                } else {
+                    update {
+                        copy(
+                            isInitialized = true,
+                            isLoading = false,
+                            needsOnboarding = true,
+                            canExitOnboarding = false,
+                            mints = walletStore.loadMints(),
+                        )
+                    }
+                }
+
+                runCatching {
+                    gateway.initializeLogging()
+                    if (hasStoredWallet) {
+                        val mnemonic = checkNotNull(secureStorage.loadString(StorageKeys.secureWalletMnemonic)) {
+                            "Stored wallet seed could not be decrypted."
+                        }
+                        openWalletRepositoryWithRecovery(mnemonic)
+                        deriveNostrKey(mnemonic)
+                    }
+                    update { copy(isRuntimeReady = true, errorMessage = null) }
+                    startDeferredStartupMaintenance(hasStoredWallet)
+                }.onFailure { error ->
+                    AppLogger.wallet.error("Wallet runtime initialization failed", error)
+                    update {
+                        copy(
+                            isInitialized = true,
+                            isRuntimeReady = false,
+                            isLoading = false,
+                            errorMessage = error.message,
+                        )
+                    }
+                }
             }
-        }.onFailure { error ->
-            AppLogger.wallet.error("Wallet initialization failed", error)
-            update {
-                copy(
-                    isInitialized = true,
-                    isLoading = false,
-                    needsOnboarding = true,
-                    canExitOnboarding = false,
-                    errorMessage = error.message,
-                )
+        }
+    }
+
+    private fun startDeferredStartupMaintenance(hasStoredWallet: Boolean) {
+        scope.launch(Dispatchers.IO) {
+            // Give Compose a scheduling opportunity to render cached state before
+            // background maintenance contends for CDK's operation mutex.
+            kotlinx.coroutines.yield()
+            if (hasStoredWallet) {
+                runCatching { refreshBalance() }
+                    .onFailure { AppLogger.wallet.error("Deferred balance refresh failed", it) }
             }
+            runCatching { nwcManager.startIfEnabled() }
+                .onFailure { AppLogger.wallet.error("Deferred NWC startup failed", it) }
         }
     }
 
@@ -147,6 +181,7 @@ class WalletManager(
             update {
                 WalletState(
                     isInitialized = true,
+                    isRuntimeReady = true,
                     needsOnboarding = true,
                     canExitOnboarding = false,
                 )
@@ -721,6 +756,7 @@ class WalletManager(
                 update {
                     WalletState(
                         isInitialized = true,
+                        isRuntimeReady = true,
                         needsOnboarding = true,
                         canExitOnboarding = false,
                     )

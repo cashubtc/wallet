@@ -15,10 +15,9 @@ class MainActivity : FragmentActivity() {
         installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        val container = (application as CashuWalletApplication).container
         handleIntent(intent)
         setContent {
-            CashuApp(container = container)
+            CashuApp(containerFlow = (application as CashuWalletApplication).container)
         }
     }
 
@@ -30,7 +29,7 @@ class MainActivity : FragmentActivity() {
 
     private fun handleIntent(intent: Intent?) {
         if (intent?.action == Intent.ACTION_VIEW) {
-            (application as CashuWalletApplication).container.navigationManager.handleDeepLink(intent.dataString)
+            (application as CashuWalletApplication).handleDeepLink(intent.dataString)
         }
     }
 }
