@@ -3,30 +3,26 @@ package com.cashu.me.ui.navigation
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.VisibilityThreshold
-import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.IntOffset
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.navArgument
 import com.cashu.me.App.AppContainer
 import com.cashu.me.Core.Platform.ConnectivityState
-import java.net.URLDecoder
-import java.net.URLEncoder
-import java.nio.charset.StandardCharsets
-import androidx.navigation.NavType
-import androidx.navigation.navArgument
 import com.cashu.me.ui.history.HistoryScreen
 import com.cashu.me.ui.history.TransactionDetailScreen
 import com.cashu.me.ui.home.HomeScreen
@@ -44,6 +40,10 @@ import com.cashu.me.ui.settings.NwcSettingsScreen
 import com.cashu.me.ui.settings.P2PKScreen
 import com.cashu.me.ui.settings.PrivacyScreen
 import com.cashu.me.ui.settings.SettingsScreen
+import com.cashu.me.ui.theme.CashuMotion
+import java.net.URLDecoder
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 
 /**
  * The NavHost. Tabs + pushed detail destinations only — the money flows
@@ -348,32 +348,51 @@ fun NavHostController.navigateToTab(tab: TopTab) {
 }
 
 // ---------------------------------------------------------------------------
-// Motion: shared-axis X (push/pop) + fade-through (tab switches), all springs.
+// Motion: Material Shared Axis X (push/pop) + quiet fade (tab switches).
 // ---------------------------------------------------------------------------
 
-private val slideSpring = spring(
-    stiffness = Spring.StiffnessMediumLow,
-    visibilityThreshold = IntOffset.VisibilityThreshold,
-)
-private val fadeSpring = spring<Float>(stiffness = Spring.StiffnessMedium)
-
+/** Incoming content travels ~25% of width while fading in after the outgoing fade. */
 private val pushEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
-    slideInHorizontally(slideSpring) { it / 4 } + fadeIn(fadeSpring)
+    slideInHorizontally(
+        animationSpec = tween(CashuMotion.SharedAxisDurationMs, easing = FastOutSlowInEasing),
+    ) { it / 4 } + fadeIn(
+        tween(
+            durationMillis = CashuMotion.SharedAxisInMs,
+            delayMillis = CashuMotion.SharedAxisOutMs,
+            easing = LinearOutSlowInEasing,
+        ),
+    )
 }
 private val pushExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
-    slideOutHorizontally(slideSpring) { -it / 4 } + fadeOut(fadeSpring)
+    slideOutHorizontally(
+        animationSpec = tween(CashuMotion.SharedAxisDurationMs, easing = FastOutSlowInEasing),
+    ) { -it / 4 } + fadeOut(
+        tween(durationMillis = CashuMotion.SharedAxisOutMs, easing = FastOutLinearInEasing),
+    )
 }
 private val popEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
-    slideInHorizontally(slideSpring) { -it / 4 } + fadeIn(fadeSpring)
+    slideInHorizontally(
+        animationSpec = tween(CashuMotion.SharedAxisDurationMs, easing = FastOutSlowInEasing),
+    ) { -it / 4 } + fadeIn(
+        tween(
+            durationMillis = CashuMotion.SharedAxisInMs,
+            delayMillis = CashuMotion.SharedAxisOutMs,
+            easing = LinearOutSlowInEasing,
+        ),
+    )
 }
 private val popExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
-    slideOutHorizontally(slideSpring) { it / 4 } + fadeOut(fadeSpring)
+    slideOutHorizontally(
+        animationSpec = tween(CashuMotion.SharedAxisDurationMs, easing = FastOutSlowInEasing),
+    ) { it / 4 } + fadeOut(
+        tween(durationMillis = CashuMotion.SharedAxisOutMs, easing = FastOutLinearInEasing),
+    )
 }
 
-/** M3 fade-through between sibling tabs (fade + 98% scale settle, no slide). */
+/** Subtle opacity crossfade between sibling tabs — no slide, no scale. */
 internal val tabEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
-    fadeIn(fadeSpring) + scaleIn(initialScale = 0.98f, animationSpec = fadeSpring)
+    fadeIn(tween(CashuMotion.TabFadeMs, easing = FastOutSlowInEasing))
 }
 internal val tabExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
-    fadeOut(fadeSpring)
+    fadeOut(tween(CashuMotion.TabFadeMs, easing = FastOutLinearInEasing))
 }

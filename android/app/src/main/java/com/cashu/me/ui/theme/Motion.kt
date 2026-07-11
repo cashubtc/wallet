@@ -30,6 +30,18 @@ object CashuMotion {
 
     /** One full rotation of the processing spinner ring (iOS SpinnerRing). */
     const val SpinnerPeriodMs = 900
+
+    /** Quiet opacity crossfade between sibling tabs (Wallet / History / Mints). */
+    const val TabFadeMs = 250
+
+    /**
+     * Material Shared Axis X — push/pop between related destinations.
+     * Outgoing fades in [SharedAxisOutMs]; incoming fades over
+     * [SharedAxisInMs] after that delay. Total travel ≈ [SharedAxisDurationMs].
+     */
+    const val SharedAxisOutMs = 90
+    const val SharedAxisInMs = 210
+    const val SharedAxisDurationMs = 300
 }
 
 /**

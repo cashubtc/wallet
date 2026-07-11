@@ -212,7 +212,7 @@ private fun DiscoveryRow(
             .alpha(if (state == DiscoveryRowState.Added) 0.7f else 1f)
             .padding(
                 horizontal = CashuTheme.spacing.comfortable,
-                vertical = CashuTheme.spacing.default,
+                vertical = CashuTheme.spacing.comfortable,
             ),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
