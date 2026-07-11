@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 import com.cashu.me.Core.AmountDisplayPrimary
 import com.cashu.me.Core.AmountDisplayText
 import com.cashu.me.ui.theme.CashuTheme
@@ -82,7 +83,10 @@ fun BalanceDisplay(
     ) {
         AmountText(
             text = amount.primary,
-            style = MaterialTheme.typography.displayMedium.copy(fontWeight = FontWeight.Bold),
+            style = MaterialTheme.typography.displayMedium.copy(
+                fontWeight = FontWeight.Bold,
+                fontSize = 50.sp,
+            ),
             color = LocalContentColor.current,
         )
         val statusLine: BalanceStatusLine = when {

@@ -29,9 +29,10 @@ import com.cashu.me.Models.WalletTransaction
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.withMonoDigits
 
-// 36dp leading circle per the iOS TransactionIcon spec; 16dp arrow inside.
-private val DirectionIconCircle = 36.dp
-private val DirectionIconSize = 16.dp
+// Leading muted directional arrow on a soft circle. Glyph slightly larger
+// than half the 40dp circle for clearer direction without growing the pad.
+private val DirectionIconCircle = 40.dp
+private val DirectionIconSize = 24.dp
 
 data class TransactionRowModel(
     val transaction: WalletTransaction,
@@ -82,8 +83,9 @@ fun TransactionRow(
                 contentDescription = semanticParts.joinToString(", ")
             }
             .clickable(onClick = onClick)
-            // iOS HistoryView uses 16pt vertical padding; match for parity.
-            .padding(horizontal = CashuTheme.spacing.comfortable, vertical = CashuTheme.spacing.comfortable),
+            // Slightly looser than the original 16pt so home Recent + History
+            // breathe between rows without going sparse.
+            .padding(horizontal = CashuTheme.spacing.comfortable, vertical = 18.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
     ) {
