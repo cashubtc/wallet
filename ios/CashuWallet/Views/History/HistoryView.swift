@@ -21,6 +21,13 @@ struct HistoryView: View {
 
     @State private var filter: FilterMode = .all
     @State private var searchText: String = ""
+    /// System search is mounted only while active so the inactive drawer never
+    /// sits under the large title. Mount with `isSearchPresented == true` so
+    /// search takes over the top chrome; unmount as soon as it dismisses so
+    /// we never flash the idle under-title bar (that flicker).
+    @State private var isSearchMounted = false
+    @State private var isSearchPresented = false
+    @FocusState private var isSearchFocused: Bool
     @State private var selectedTransaction: WalletTransaction?
     @State private var selectedRequest: CashuRequest?
     @State private var requestPendingDeletion: CashuRequest?
@@ -83,7 +90,16 @@ struct HistoryView: View {
             }
             .navigationTitle("History")
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                // Search left of Filter — same trailing action order as Android.
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button {
+                        toggleSearch()
+                    } label: {
+                        Image(systemName: "magnifyingglass")
+                            .font(.body.weight(.medium))
+                    }
+                    .accessibilityLabel(isSearchPresented ? "Hide search" : "Search history")
+
                     Menu {
                         Picker("Filter", selection: $filter) {
                             ForEach(FilterMode.allCases) { mode in
@@ -100,7 +116,13 @@ struct HistoryView: View {
                     .accessibilityValue(filter.label)
                 }
             }
-            .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search history")
+            // Mount `.searchable` only while searching (see `isSearchMounted`).
+            .modifier(HistorySearchMount(
+                isMounted: isSearchMounted,
+                text: $searchText,
+                isPresented: $isSearchPresented,
+                isFocused: $isSearchFocused
+            ))
             .onChange(of: filter) { _, _ in
                 visibleCount = pageStep
                 scrollResetToken &+= 1
@@ -108,6 +130,18 @@ struct HistoryView: View {
             }
             .onChange(of: searchText) { _, _ in
                 visibleCount = pageStep
+            }
+            .onChange(of: isSearchPresented) { _, presented in
+                if presented {
+                    isSearchFocused = true
+                } else {
+                    searchText = ""
+                    visibleCount = pageStep
+                    // Unmount immediately so we never land on the inactive
+                    // drawer-under-title state (that flash is what made the
+                    // large title flicker on dismiss).
+                    isSearchMounted = false
+                }
             }
             .sheet(item: $selectedTransaction) { transaction in
                 TransactionDetailView(transaction: transaction)
@@ -189,14 +223,26 @@ struct HistoryView: View {
 
     // MARK: - History List
 
+    private func toggleSearch() {
+        if isSearchPresented || isSearchMounted {
+            isSearchFocused = false
+            isSearchPresented = false
+        } else {
+            // Present before mount so searchable appears already active —
+            // search takes over the top; no inactive bar under the title.
+            isSearchPresented = true
+            isSearchMounted = true
+        }
+    }
+
     private var historyList: some View {
         ScrollViewReader { proxy in
             // A `List` (not a hand-built ScrollView) is what `.searchable` and
             // `.refreshable` are designed to coordinate with — it owns the
-            // UISearchController/refresh-control plumbing, so the search bar no
-            // longer jumps during pull-to-refresh. Section headers stay as plain
-            // rows (not `Section` headers) to keep them non-pinned, and native
-            // separators are hidden in favor of our CanvasDivider.
+            // UISearchController/refresh-control plumbing so pull-to-refresh
+            // stays stable while search is presented. Section headers stay as
+            // plain rows (not `Section` headers) to keep them non-pinned, and
+            // native separators are hidden in favor of our CanvasDivider.
             List {
                 ForEach(sectionsWithOffsets, id: \.group.title) { entry in
                     sectionHeader(entry.group.title)
@@ -606,6 +652,28 @@ struct HistoryView: View {
         return (sameYear ? Self.sameYearDateFormatter : Self.otherYearDateFormatter).string(from: date)
     }
 
+}
+
+/// Mounts system `.searchable` only while History search is active. Keeping it
+/// permanently attached parks an inactive drawer under the large title; mounting
+/// with `isPresented == true` already set lets search take over the top chrome
+/// without that idle bar.
+private struct HistorySearchMount: ViewModifier {
+    let isMounted: Bool
+    @Binding var text: String
+    @Binding var isPresented: Bool
+    var isFocused: FocusState<Bool>.Binding
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if isMounted {
+            content
+                .searchable(text: $text, isPresented: $isPresented, prompt: "Search history")
+                .searchFocused(isFocused)
+        } else {
+            content
+        }
+    }
 }
 
 #Preview {
