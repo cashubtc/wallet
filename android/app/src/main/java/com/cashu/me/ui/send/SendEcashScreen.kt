@@ -88,6 +88,7 @@ import com.cashu.me.ui.components.SheetHeader
 import com.cashu.me.ui.components.TwoFaceScreen
 import com.cashu.me.ui.components.UnitPickerSheet
 import com.cashu.me.ui.components.shareText
+import com.cashu.me.ui.components.ToolbarIcon
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.rememberReducedMotion
 import com.cashu.me.ui.theme.withMonoDigits
@@ -227,7 +228,7 @@ fun SendEcashScreen(
                     IconButton(onClick = {
                         context.shareText(current.result.token, subject = "Cashu token")
                     }) {
-                        Icon(Icons.Outlined.IosShare, contentDescription = "Share")
+                        ToolbarIcon(Icons.Outlined.IosShare, contentDescription = "Share")
                     }
                 } else if (current is SendFace.Input) {
                     if (activeMint?.supportsMultipleUnits == true) {
@@ -240,7 +241,7 @@ fun SendEcashScreen(
                         }
                     }
                     IconButton(onClick = { p2pkOn = !p2pkOn }) {
-                        Icon(
+                        ToolbarIcon(
                             imageVector = if (p2pkOn) Icons.Filled.Lock
                             else Icons.Outlined.LockOpen,
                             contentDescription = if (p2pkOn) "P2PK locked" else "P2PK off",

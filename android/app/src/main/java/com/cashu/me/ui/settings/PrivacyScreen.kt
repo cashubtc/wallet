@@ -26,6 +26,7 @@ import com.cashu.me.Core.SettingsManager
 import com.cashu.me.ui.components.CanvasDivider
 import com.cashu.me.ui.components.SectionHeader
 import com.cashu.me.ui.components.ToggleRow
+import com.cashu.me.ui.components.ToolbarIcon
 import com.cashu.me.ui.theme.CashuTheme
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -41,7 +42,7 @@ fun PrivacyScreen(
                 title = { Text("Privacy", style = MaterialTheme.typography.titleMedium) },
                 navigationIcon = {
                     IconButton(onClick = onClose) {
-                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
+                        ToolbarIcon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(

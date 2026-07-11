@@ -95,6 +95,7 @@ import com.cashu.me.ui.components.SheetHeader
 import com.cashu.me.ui.components.TwoFaceScreen
 import com.cashu.me.ui.components.UnitPickerSheet
 import com.cashu.me.ui.components.shareText
+import com.cashu.me.ui.components.ToolbarIcon
 import com.cashu.me.ui.theme.CapsuleShape
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.rememberReducedMotion
@@ -193,7 +194,7 @@ fun ReceiveLightningScreen(
                     IconButton(onClick = {
                         context.shareText(current.quote.request, subject = "Payment request")
                     }) {
-                        Icon(Icons.Outlined.IosShare, contentDescription = "Share")
+                        ToolbarIcon(Icons.Outlined.IosShare, contentDescription = "Share")
                     }
                 } else if (current is ReceiveLnFace.Input) {
                     // Method picker rides the header (iOS parity): an icon
@@ -206,6 +207,7 @@ fun ReceiveLightningScreen(
                             IconSwap(
                                 icon = method.menuIcon,
                                 contentDescription = "Payment method",
+                                iconSize = CashuTheme.iconSizes.toolbar,
                             )
                         }
                         DropdownMenu(

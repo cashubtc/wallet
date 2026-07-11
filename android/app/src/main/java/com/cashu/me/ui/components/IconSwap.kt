@@ -7,14 +7,18 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 
 private const val SwapInitialScale = 0.8f
+private val DefaultIconSize = 24.dp
 
 /**
  * Animated glyph replacement — the Compose equivalent of iOS
@@ -24,6 +28,9 @@ private const val SwapInitialScale = 0.8f
  *
  * Identity is the [icon] itself: pass a stable [ImageVector] per state so the
  * swap only animates on a real state change (never mid-display).
+ *
+ * Pass [iconSize] = [com.cashu.me.ui.theme.CashuTheme.iconSizes.toolbar] for
+ * top-bar chrome (filter, etc.) so it matches [ToolbarIcon].
  */
 @Composable
 fun IconSwap(
@@ -31,6 +38,7 @@ fun IconSwap(
     contentDescription: String?,
     modifier: Modifier = Modifier,
     tint: Color = Color.Unspecified,
+    iconSize: Dp = DefaultIconSize,
 ) {
     AnimatedContent(
         targetState = icon,
@@ -49,6 +57,7 @@ fun IconSwap(
         Icon(
             imageVector = current,
             contentDescription = contentDescription,
+            modifier = Modifier.size(iconSize),
             tint = if (tint == Color.Unspecified) LocalContentColor.current else tint,
         )
     }

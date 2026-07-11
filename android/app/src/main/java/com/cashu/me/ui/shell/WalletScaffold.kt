@@ -14,9 +14,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.outlined.AccountBalance
-import androidx.compose.material.icons.outlined.AccountBalanceWallet
-import androidx.compose.material.icons.outlined.History
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -41,7 +38,7 @@ import com.cashu.me.ui.navigation.CashuNavHost
 import com.cashu.me.ui.navigation.Routes
 import com.cashu.me.ui.navigation.TopTab
 import com.cashu.me.ui.navigation.navigateToTab
-
+import com.cashu.me.ui.theme.CashuTheme
 @Composable
 fun WalletScaffold(
     container: AppContainer,
@@ -123,9 +120,11 @@ private fun CashuNavigationBar(
                     },
                     icon = {
                         Icon(
-                            imageVector = if (isSelected) tab.iconSelected else tab.iconOutlined,
+                            // Always filled — selected state is conveyed by the
+                            // NavigationBarItem indicator, not outlined↔filled.
+                            imageVector = tab.iconFilled,
                             contentDescription = tab.label,
-                            modifier = Modifier.size(26.dp),
+                            modifier = Modifier.size(CashuTheme.iconSizes.navigation),
                         )
                     },
                     label = { Text(tab.label, style = MaterialTheme.typography.labelLarge) },
@@ -135,14 +134,7 @@ private fun CashuNavigationBar(
     }
 }
 
-private val TopTab.iconOutlined: ImageVector
-    get() = when (this) {
-        TopTab.Home -> Icons.Outlined.AccountBalanceWallet
-        TopTab.History -> Icons.Outlined.History
-        TopTab.Mints -> Icons.Outlined.AccountBalance
-    }
-
-private val TopTab.iconSelected: ImageVector
+private val TopTab.iconFilled: ImageVector
     get() = when (this) {
         TopTab.Home -> Icons.Filled.AccountBalanceWallet
         TopTab.History -> Icons.Filled.History

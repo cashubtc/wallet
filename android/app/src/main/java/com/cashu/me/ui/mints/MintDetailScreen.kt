@@ -63,6 +63,7 @@ import com.cashu.me.ui.components.MintAvatar
 import com.cashu.me.ui.components.MintMethodChips
 import com.cashu.me.ui.components.PrimaryButton
 import com.cashu.me.ui.components.SectionHeader
+import com.cashu.me.ui.components.ToolbarIcon
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.withMonoDigits
 
@@ -85,7 +86,7 @@ fun MintDetailScreen(
                 title = { Text(mint?.name ?: "Mint", style = MaterialTheme.typography.titleMedium) },
                 navigationIcon = {
                     IconButton(onClick = onClose) {
-                        Icon(
+                        ToolbarIcon(
                             imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
                             contentDescription = "Back",
                         )

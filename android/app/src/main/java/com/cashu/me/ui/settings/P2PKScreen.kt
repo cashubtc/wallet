@@ -35,6 +35,7 @@ import com.cashu.me.Core.SettingsManager
 import com.cashu.me.ui.components.NavRow
 import com.cashu.me.ui.components.SectionHeader
 import com.cashu.me.ui.components.ToggleRow
+import com.cashu.me.ui.components.ToolbarIcon
 import com.cashu.me.ui.theme.CashuTheme
 
 /** A QR payload the hub is currently presenting. */
@@ -68,12 +69,12 @@ fun P2PKScreen(
                 title = { Text("Locked Ecash", style = MaterialTheme.typography.titleMedium) },
                 navigationIcon = {
                     IconButton(onClick = onClose) {
-                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
+                        ToolbarIcon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
                     }
                 },
                 actions = {
                     IconButton(onClick = { showExplainer = true }) {
-                        Icon(Icons.Outlined.Info, contentDescription = "How locking works")
+                        ToolbarIcon(Icons.Outlined.Info, contentDescription = "How locking works")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(

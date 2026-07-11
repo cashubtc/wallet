@@ -17,6 +17,8 @@ object CashuTheme {
         @Composable get() = LocalCashuColors.current
     val spacing: CashuSpacing
         @Composable get() = LocalCashuSpacing.current
+    val iconSizes: CashuIconSizes
+        @Composable get() = LocalCashuIconSizes.current
 }
 
 /**
@@ -55,6 +57,7 @@ fun CashuTheme(
     CompositionLocalProvider(
         LocalCashuColors provides cashuColors,
         LocalCashuSpacing provides CashuSpacing(),
+        LocalCashuIconSizes provides CashuIconSizes(),
     ) {
         MaterialExpressiveTheme(
             colorScheme = colorScheme,

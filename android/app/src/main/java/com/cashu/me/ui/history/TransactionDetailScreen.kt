@@ -59,6 +59,7 @@ import com.cashu.me.ui.components.InspectorRow
 import com.cashu.me.ui.components.PrimaryButton
 import com.cashu.me.ui.components.QrCard
 import com.cashu.me.ui.components.SectionHeader
+import com.cashu.me.ui.components.ToolbarIcon
 import com.cashu.me.ui.components.shareText
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.withMonoDigits
@@ -99,7 +100,7 @@ fun TransactionDetailScreen(
                 title = { Text(title, style = MaterialTheme.typography.titleMedium) },
                 navigationIcon = {
                     IconButton(onClick = onClose) {
-                        Icon(Icons.Outlined.Close, contentDescription = "Close")
+                        ToolbarIcon(Icons.Outlined.Close, contentDescription = "Close")
                     }
                 },
                 actions = {
@@ -108,7 +109,7 @@ fun TransactionDetailScreen(
                         IconButton(onClick = {
                             context.shareText(qrContent, subject = title)
                         }) {
-                            Icon(Icons.Outlined.IosShare, contentDescription = "Share")
+                            ToolbarIcon(Icons.Outlined.IosShare, contentDescription = "Share")
                         }
                     }
                 },

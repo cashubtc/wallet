@@ -43,6 +43,7 @@ import com.cashu.me.ui.components.GhostButton
 import com.cashu.me.ui.components.PaymentStatusPhase
 import com.cashu.me.ui.components.PaymentStatusScreen
 import com.cashu.me.ui.components.PrimaryButton
+import com.cashu.me.ui.components.ToolbarIcon
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.withMonoDigits
 
@@ -181,7 +182,7 @@ private fun ConfirmContent(
             title = { Text("Receive Ecash", style = MaterialTheme.typography.titleMedium) },
             navigationIcon = {
                 IconButton(onClick = onClose) {
-                    Icon(Icons.Outlined.Close, contentDescription = "Close")
+                    ToolbarIcon(Icons.Outlined.Close, contentDescription = "Close")
                 }
             },
             colors = TopAppBarDefaults.centerAlignedTopAppBarColors(

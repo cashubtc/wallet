@@ -89,6 +89,7 @@ import com.cashu.me.ui.components.QrCard
 import com.cashu.me.ui.components.SecondaryButton
 import com.cashu.me.ui.components.SectionHeader
 import com.cashu.me.ui.components.SheetHeader
+import com.cashu.me.ui.components.ToolbarIcon
 import com.cashu.me.ui.components.shareText
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.rememberReducedMotion
@@ -227,7 +228,7 @@ fun CashuRequestDetailScreen(
                 title = { Text("Cashu Request", style = MaterialTheme.typography.titleMedium) },
                 navigationIcon = {
                     IconButton(onClick = onClose) {
-                        Icon(
+                        ToolbarIcon(
                             imageVector = Icons.Outlined.Close,
                             contentDescription = "Close",
                         )
@@ -238,7 +239,7 @@ fun CashuRequestDetailScreen(
                         IconButton(onClick = {
                             context.shareText(request.encoded, subject = "Cashu Request")
                         }) {
-                            Icon(Icons.Outlined.IosShare, contentDescription = "Share")
+                            ToolbarIcon(Icons.Outlined.IosShare, contentDescription = "Share")
                         }
                     }
                 },

@@ -88,6 +88,7 @@ import com.cashu.me.ui.components.EmptyState
 import com.cashu.me.ui.components.IconSwap
 import com.cashu.me.ui.components.SectionHeader
 import com.cashu.me.ui.components.TabTopBar
+import com.cashu.me.ui.components.ToolbarIcon
 import com.cashu.me.ui.components.TransactionRow
 import com.cashu.me.ui.components.TransactionRowModel
 import com.cashu.me.ui.components.formatRelativeTimestamp
@@ -168,8 +169,8 @@ fun HistoryScreen(
                             }
                         },
                     ) {
-                        Icon(
-                            Icons.Outlined.Search,
+                        ToolbarIcon(
+                            imageVector = Icons.Outlined.Search,
                             contentDescription = if (searching) "Hide search" else "Search history",
                         )
                     }
@@ -180,6 +181,7 @@ fun HistoryScreen(
                                 icon = if (filter == HistoryFilter.All)
                                     Icons.Outlined.FilterList else Icons.Filled.FilterList,
                                 contentDescription = "Filter",
+                                iconSize = CashuTheme.iconSizes.toolbar,
                             )
                         }
                         DropdownMenu(
