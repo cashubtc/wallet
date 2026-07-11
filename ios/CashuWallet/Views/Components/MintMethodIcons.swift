@@ -24,9 +24,9 @@ private struct MethodGlyph: View {
     var body: some View {
         if let symbol = method.rowSymbol {
             Image(systemName: symbol)
-                .font(.caption2.weight(.semibold))
+                .font(.system(size: 8, weight: .semibold))
                 .foregroundStyle(.secondary)
-                .frame(width: 20, height: 20)
+                .frame(width: 15, height: 15)
                 .overlay {
                     Circle()
                         .strokeBorder(.tertiary, lineWidth: 1)
@@ -34,9 +34,9 @@ private struct MethodGlyph: View {
                 .accessibilityHidden(true)
         } else {
             Text(method.displayName)
-                .font(.caption2.weight(.semibold))
+                .font(.system(size: 8, weight: .semibold))
                 .foregroundStyle(.secondary)
-                .padding(.horizontal, 6)
+                .padding(.horizontal, 5)
                 .padding(.vertical, 2)
                 .overlay(
                     Capsule()

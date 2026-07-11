@@ -43,19 +43,6 @@ struct MintDiscoverySheet: View {
             )
         } else {
             List {
-                if discoveryManager.isDiscovering || !loadingPreviewURLs.isEmpty {
-                    HStack(spacing: 8) {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text("Discovering mints…")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                    .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
-                    .listRowSeparator(.hidden)
-                    .accessibilityElement(children: .combine)
-                }
-
                 if !addedMints.isEmpty {
                     Section {
                         ForEach(addedMints) { mint in
@@ -95,6 +82,23 @@ struct MintDiscoverySheet: View {
                         }
                     }
                     .listRowBackground(Color.clear)
+                }
+            }
+            .listSectionSpacing(8)
+            .contentMargins(.top, 0, for: .scrollContent)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if discoveryManager.isDiscovering || !loadingPreviewURLs.isEmpty {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Discovering mints…")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .accessibilityElement(children: .combine)
                 }
             }
             .animation(reduceMotion ? nil : .smooth(duration: 0.3), value: addedURLsThisSession)

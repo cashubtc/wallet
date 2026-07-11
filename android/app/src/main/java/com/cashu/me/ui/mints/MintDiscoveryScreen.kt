@@ -20,8 +20,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.AddCircle
-import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.SignalCellularConnectedNoInternet0Bar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -43,7 +43,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -59,8 +58,9 @@ import com.cashu.me.ui.components.CashuSearchBar
 import com.cashu.me.ui.components.EmptyState
 import com.cashu.me.ui.components.MintAvatar
 import com.cashu.me.ui.components.MintMethodChips
-import com.cashu.me.ui.components.rememberBounceScale
 import com.cashu.me.ui.theme.CashuTheme
+
+private val DiscoveryActionGlyphSize = 28.dp
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -147,7 +147,7 @@ fun MintDiscoveryContent(
             else -> {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = CashuTheme.spacing.comfortable),
+                    contentPadding = PaddingValues(bottom = CashuTheme.spacing.section),
                 ) {
                     if (discoveryState.isDiscovering) {
                         item(key = "discovering") {
@@ -212,7 +212,7 @@ private fun DiscoveryRow(
             .alpha(if (state == DiscoveryRowState.Added) 0.7f else 1f)
             .padding(
                 horizontal = CashuTheme.spacing.comfortable,
-                vertical = CashuTheme.spacing.comfortable,
+                vertical = CashuTheme.spacing.default,
             ),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
@@ -243,8 +243,8 @@ private fun DiscoveryRow(
                 overflow = TextOverflow.MiddleEllipsis,
             )
         }
-        // Add ↔ Added swaps with a gentle grow-in; the check bounces once on
-        // arrival (iOS .symbolEffect(.bounce, value: added) parity).
+        // Add ↔ Added swaps within one fixed slot so both glyphs stay aligned
+        // and render at exactly the same size.
         AnimatedContent(
             targetState = state,
             modifier = Modifier.size(48.dp),
@@ -263,33 +263,22 @@ private fun DiscoveryRow(
             },
             label = "discovery-trailing",
         ) { rowState ->
-            when (rowState) {
-                DiscoveryRowState.Added -> {
-                    val bounce = rememberBounceScale(trigger = rowState, bounceOnEntry = true)
-                    Icon(
-                        imageVector = Icons.Outlined.CheckCircle,
-                        contentDescription = "Added",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier
-                            .size(28.dp)
-                            .graphicsLayer {
-                                scaleX = bounce
-                                scaleY = bounce
-                            },
-                    )
-                }
-                DiscoveryRowState.Discovered -> IconButton(
-                    onClick = onAdd,
-                    enabled = !isBusy,
-                    modifier = Modifier.size(48.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.AddCircle,
-                        contentDescription = "Add $displayName",
-                        tint = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.size(28.dp),
-                    )
-                }
+            val isAdded = rowState == DiscoveryRowState.Added
+            IconButton(
+                onClick = { if (!isAdded) onAdd() },
+                enabled = !isAdded && !isBusy,
+                modifier = Modifier.size(48.dp),
+            ) {
+                Icon(
+                    imageVector = if (isAdded) Icons.Filled.CheckCircle else Icons.Outlined.AddCircle,
+                    contentDescription = if (isAdded) "Added" else "Add $displayName",
+                    tint = if (isAdded) {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
+                    modifier = Modifier.size(DiscoveryActionGlyphSize),
+                )
             }
         }
     }
