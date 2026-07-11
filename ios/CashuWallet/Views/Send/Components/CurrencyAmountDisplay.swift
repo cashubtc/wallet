@@ -14,6 +14,8 @@ struct CurrencyAmountDisplay: View {
     /// from `sats`; the secondary line still shows `sats` converted. Display-only
     /// call sites omit this and are unchanged.
     var entryRaw: String? = nil
+    /// Dims the primary amount (e.g. while the typed value exceeds spendable balance).
+    var isDimmed: Bool = false
 
     @ObservedObject private var priceService = PriceService.shared
     @ObservedObject private var settings = SettingsManager.shared
@@ -55,11 +57,13 @@ struct CurrencyAmountDisplay: View {
             Text(primaryText)
                 .font(.system(size: primarySize, weight: .semibold, design: .rounded))
                 .monospacedDigit()
+                .foregroundStyle(isDimmed ? .secondary : .primary)
                 .minimumScaleFactor(0.4)
                 .lineLimit(1)
                 .contentTransition(.numericText(value: Double(sats)))
                 .animation(.snappy, value: sats)
                 .animation(.snappy, value: effectivePrimary)
+                .animation(.snappy, value: isDimmed)
 
             // The secondary pill is only meaningful when fiat is available —
             // otherwise there's no second unit to flip into, and we'd render

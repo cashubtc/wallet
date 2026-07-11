@@ -17,7 +17,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.windowInsetsBottomHeight
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Backspace
+import androidx.compose.material.icons.automirrored.outlined.Backspace
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -36,9 +36,9 @@ import com.cashu.me.Core.UnitAmountEntry
 import com.cashu.me.ui.theme.CashuTheme
 
 // Minimal keypad: no background boxes, just numbers with subtle press feedback.
-// Tighter vertical spacing for a cleaner iOS-style appearance.
-private val KeyGap = 4.dp
-private val KeyHeight = 52.dp
+// Matches iOS NumberPadAmountInput (10pt gaps, 64pt keys).
+private val KeyGap = 10.dp
+private val KeyHeight = 64.dp
 
 /**
  * Minimal numeric keypad for amount entry — no background boxes, just numbers
@@ -85,7 +85,7 @@ fun NumberPad(
                             },
                         ) {
                             Icon(
-                                imageVector = Icons.AutoMirrored.Filled.Backspace,
+                                imageVector = Icons.AutoMirrored.Outlined.Backspace,
                                 contentDescription = null,
                             )
                         }

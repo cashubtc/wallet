@@ -53,6 +53,7 @@ import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import com.cashu.me.Core.AmountDisplayPrimary
+import com.cashu.me.Core.AmountDisplayText
 import com.cashu.me.Core.AmountFormatter
 import com.cashu.me.Core.CashuRequestStore
 import com.cashu.me.Core.HomeBalance
@@ -65,8 +66,8 @@ import com.cashu.me.Core.WalletManager
 import com.cashu.me.Core.displayText
 import com.cashu.me.Models.CashuRequest
 import com.cashu.me.Models.WalletTransaction
-import com.cashu.me.ui.components.AmountText
 import com.cashu.me.ui.components.BalanceDisplay
+import com.cashu.me.ui.components.BalanceHeroHeight
 import com.cashu.me.ui.components.CanvasDivider
 import com.cashu.me.ui.components.CashuRequestRow
 import com.cashu.me.ui.components.requestRowAmount
@@ -176,32 +177,20 @@ fun HomeScreen(
                     )
                 },
                 balance = {
-                    val satHero: @Composable () -> Unit = {
-                        BalanceDisplay(
-                            amount = balanceDisplay,
-                            // iOS: tapping the hero toggles the ₿ symbol vs "sat".
-                            onTogglePrimary = {
-                                settingsManager.setUseBitcoinSymbol(!settings.useBitcoinSymbol)
-                            },
-                            receivedDelta = receivedDelta,
-                        )
-                    }
-                    // Multi-unit pager carve-out: one hero number at a time, only
-                    // when the active mint is multi-unit AND non-sat balance is held.
-                    val showsPager = HomeBalance.showsUnitPager(
-                        activeMintSupportsMultipleUnits = walletState.activeMint?.supportsMultipleUnits == true,
-                        balancesByUnit = walletState.balancesByUnit,
-                    )
-                    if (showsPager) {
-                        UnitBalancePager(
+                    HomeBalanceHero(
+                        showsPager = HomeBalance.showsUnitPager(
+                            activeMintSupportsMultipleUnits = walletState.activeMint?.supportsMultipleUnits == true,
                             balancesByUnit = walletState.balancesByUnit,
-                            persistedUnit = settings.homeBalanceUnit,
-                            onUnitSelected = settingsManager::setHomeBalanceUnit,
-                            satHero = satHero,
-                        )
-                    } else {
-                        satHero()
-                    }
+                        ),
+                        balancesByUnit = walletState.balancesByUnit,
+                        satAmount = balanceDisplay,
+                        persistedUnit = settings.homeBalanceUnit,
+                        onUnitSelected = settingsManager::setHomeBalanceUnit,
+                        onToggleSatSymbol = {
+                            settingsManager.setUseBitcoinSymbol(!settings.useBitcoinSymbol)
+                        },
+                        receivedDelta = receivedDelta,
+                    )
                 },
                 triptych = {
                     ActionDuet(
@@ -416,76 +405,124 @@ private fun PinnedTop(
 }
 
 /**
- * Home balance unit pager (iOS MainWalletView.unitBalanceHero). Page order is
- * sat first then held non-sat units sorted; the sat page keeps the ₿/fiat
- * toggle; non-sat pages render in their own currency with no fiat conversion
- * (eur is already fiat). Selection persists and clamps back to sat when the
- * unit no longer holds balance.
+ * Home balance hero with a fixed footprint: balance column + page-dot slot are
+ * always the same height whether the mint is single-unit or multi-unit, so
+ * switching mints never shoves Receive/Send / Recent up or down.
+ *
+ * Multi-unit (iOS MainWalletView.unitBalanceHero): swipeable pager, sat first
+ * then held non-sat units. Sat keeps the ₿/fiat toggle + secondary/delta line;
+ * non-sat pages show their own currency with no fiat conversion.
  */
 @Composable
-private fun UnitBalancePager(
+private fun HomeBalanceHero(
+    showsPager: Boolean,
     balancesByUnit: Map<String, Long>,
+    satAmount: AmountDisplayText,
     persistedUnit: String,
     onUnitSelected: (String) -> Unit,
-    satHero: @Composable () -> Unit,
+    onToggleSatSymbol: () -> Unit,
+    receivedDelta: String?,
 ) {
     val units = HomeBalance.homeBalanceUnits(balancesByUnit)
     val resolvedUnit = HomeBalance.resolvedUnit(persistedUnit, units)
     val pagerState = rememberPagerState(
         initialPage = units.indexOf(resolvedUnit).coerceAtLeast(0),
-        pageCount = { units.size },
+        pageCount = { units.size.coerceAtLeast(1) },
     )
-    // Persist swipes; clamp when the held-unit list changes under the pager.
-    LaunchedEffect(pagerState.currentPage, units) {
+    LaunchedEffect(pagerState.currentPage, units, showsPager) {
+        if (!showsPager) return@LaunchedEffect
         units.getOrNull(pagerState.currentPage)?.let { current ->
             if (current != persistedUnit) onUnitSelected(current)
         }
     }
+    // Keep the pager on the resolved unit when the held-unit list changes.
+    LaunchedEffect(resolvedUnit, units, showsPager) {
+        if (!showsPager) return@LaunchedEffect
+        val target = units.indexOf(resolvedUnit).coerceAtLeast(0)
+        if (pagerState.currentPage != target) {
+            pagerState.scrollToPage(target)
+        }
+    }
+
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier.fillMaxWidth(),
-            key = { units[it] },
-        ) { page ->
-            val unit = units[page]
-            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                if (unit.equals("sat", ignoreCase = true)) {
-                    satHero()
-                } else {
-                    AmountText(
-                        text = CurrencyAmount(
-                            balancesByUnit[unit] ?: 0L,
-                            CurrencyRegistry.currencyForMintUnit(unit),
-                        ).formatted(),
-                        style = MaterialTheme.typography.displayMedium,
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(BalanceHeroHeight),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (showsPager) {
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.fillMaxWidth(),
+                    beyondViewportPageCount = (units.size - 1).coerceAtLeast(0),
+                    key = { units.getOrElse(it) { "sat" } },
+                ) { page ->
+                    val unit = units.getOrElse(page) { "sat" }
+                    val isSat = unit.equals("sat", ignoreCase = true)
+                    BalanceDisplay(
+                        amount = if (isSat) {
+                            satAmount
+                        } else {
+                            AmountDisplayText(
+                                primary = CurrencyAmount(
+                                    balancesByUnit[unit] ?: 0L,
+                                    CurrencyRegistry.currencyForMintUnit(unit),
+                                ).formatted(),
+                                secondary = null,
+                                effectivePrimary = AmountDisplayPrimary.Sats,
+                            )
+                        },
+                        onTogglePrimary = if (isSat) {
+                            { onToggleSatSymbol() }
+                        } else {
+                            null
+                        },
+                        receivedDelta = if (isSat) receivedDelta else null,
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
+            } else {
+                BalanceDisplay(
+                    amount = satAmount,
+                    onTogglePrimary = { onToggleSatSymbol() },
+                    receivedDelta = receivedDelta,
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
         }
+        // Dot slot is always reserved (gap + dot height) so appearing/disappearing
+        // indicators never reflow the actions below.
         Spacer(Modifier.height(CashuTheme.spacing.snug))
-        Row(horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.tight)) {
-            units.forEachIndexed { index, unit ->
-                val selected = index == pagerState.currentPage
-                // Animated M3 page indicator: the active dot stretches into a pill.
-                val dotWidth by animateDpAsState(
-                    targetValue = if (selected) PAGE_DOT_SIZE * 2.5f else PAGE_DOT_SIZE,
-                    animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-                    label = "dot-width",
-                )
-                val dotColor by animateColorAsState(
-                    targetValue = if (selected) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.outlineVariant
-                    },
-                    label = "dot-color",
-                )
-                Box(
-                    modifier = Modifier
-                        .height(PAGE_DOT_SIZE)
-                        .width(dotWidth)
-                        .background(color = dotColor, shape = CircleShape),
-                )
+        Box(
+            modifier = Modifier.height(PAGE_DOT_SIZE),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (showsPager) {
+                Row(horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.tight)) {
+                    units.forEachIndexed { index, _ ->
+                        val selected = index == pagerState.currentPage
+                        val dotWidth by animateDpAsState(
+                            targetValue = if (selected) PAGE_DOT_SIZE * 2.5f else PAGE_DOT_SIZE,
+                            animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+                            label = "dot-width",
+                        )
+                        val dotColor by animateColorAsState(
+                            targetValue = if (selected) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.outlineVariant
+                            },
+                            label = "dot-color",
+                        )
+                        Box(
+                            modifier = Modifier
+                                .height(PAGE_DOT_SIZE)
+                                .width(dotWidth)
+                                .background(color = dotColor, shape = CircleShape),
+                        )
+                    }
+                }
             }
         }
     }
