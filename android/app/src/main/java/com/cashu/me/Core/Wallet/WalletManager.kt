@@ -143,6 +143,7 @@ class WalletManager(
             settingsManager.resetWalletScopedData()
             npcService.resetForWalletBoundary()
             nostrMintBackupService.resetForWalletBoundary()
+            MintLogoBitmapCache.clear()
             update {
                 WalletState(
                     isInitialized = true,
@@ -227,6 +228,54 @@ class WalletManager(
             copy(
                 balance = total,
                 balancesByUnit = unitTotals.toMap(),
+                mints = updated,
+                activeMint = activeMintFrom(updated),
+            )
+        }
+    }
+
+    /**
+     * Refresh NUT-06 mint metadata for every tracked mint. Does not toggle
+     * [WalletState.isLoading] — call from the Mints screen so the list stays
+     * interactive while names/icons update in place (iOS `refreshMintInfo`).
+     */
+    suspend fun refreshMintInfo() {
+        val current = mutableState.value.mints
+        if (current.isEmpty()) return
+
+        var changed = false
+        val updated = current.map { mint ->
+            val fetched = runCatching {
+                gateway.ensureWallet(mint.url)
+                gateway.fetchMintInfo(mint.url)
+            }.onFailure {
+                AppLogger.wallet.error("Failed to refresh mint info for ${mint.url}", it)
+            }.getOrNull() ?: return@map mint
+
+            val merged = mint.copy(
+                name = fetched.name.takeUnless { it == "Unknown Mint" } ?: mint.name,
+                description = fetched.description ?: mint.description,
+                iconUrl = fetched.iconUrl ?: mint.iconUrl,
+                units = fetched.units.ifEmpty { mint.units },
+                mintUnits = fetched.mintUnits.ifEmpty { mint.mintUnits },
+                supportedMintMethods = fetched.supportedMintMethods.ifEmpty { mint.supportedMintMethods },
+                supportedMeltMethods = fetched.supportedMeltMethods.ifEmpty { mint.supportedMeltMethods },
+                lastUpdatedEpochMillis = System.currentTimeMillis(),
+                balance = mint.balance,
+                isActive = mint.isActive,
+            )
+            if (merged != mint) {
+                changed = true
+                merged
+            } else {
+                mint
+            }
+        }
+
+        if (!changed) return
+        walletStore.saveMints(updated)
+        update {
+            copy(
                 mints = updated,
                 activeMint = activeMintFrom(updated),
             )

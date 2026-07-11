@@ -26,7 +26,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -56,11 +55,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
@@ -73,8 +69,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.SubcomposeAsyncImage
-import coil.request.ImageRequest
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import com.cashu.me.Core.Bip39WordList
@@ -83,11 +77,13 @@ import com.cashu.me.Core.NostrMintBackupService
 import com.cashu.me.Core.WalletManager
 import com.cashu.me.Core.mintUrlCandidates
 import com.cashu.me.Models.RestoreMintResult
+import com.cashu.me.Models.MintInfo
 import com.cashu.me.ui.components.CanvasDivider
 import com.cashu.me.ui.components.CashuTextField
 import com.cashu.me.ui.components.GhostButton
 import com.cashu.me.ui.components.IconSwap
 import com.cashu.me.ui.components.InlineNotice
+import com.cashu.me.ui.components.MintAvatar
 import com.cashu.me.ui.components.PrimaryButton
 import com.cashu.me.ui.components.SecondaryButton
 import com.cashu.me.ui.theme.CashuTheme
@@ -849,7 +845,7 @@ private fun MintSelectRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
     ) {
-        RecommendedMintAvatar(name = name, iconUrl = iconUrl)
+        RecommendedMintAvatar(name = name, url = url, iconUrl = iconUrl)
         Column(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -885,49 +881,11 @@ private fun MintSelectRow(
 
 /** 36dp circular avatar with curated icon; monogram fallback (iOS MintAvatarView). */
 @Composable
-private fun RecommendedMintAvatar(name: String, iconUrl: String?, size: Dp = MintAvatarSize) {
-    val context = LocalContext.current
-    Box(
-        modifier = Modifier
-            .size(size)
-            .clip(CircleShape),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (iconUrl != null) {
-            val request = remember(iconUrl) {
-                ImageRequest.Builder(context)
-                    .data(iconUrl)
-                    .crossfade(true)
-                    .build()
-            }
-            SubcomposeAsyncImage(
-                model = request,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-                loading = { MonogramFallback(name = name) },
-                error = { MonogramFallback(name = name) },
-            )
-        } else {
-            MonogramFallback(name = name)
-        }
-    }
-}
-
-@Composable
-private fun MonogramFallback(name: String) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = name.firstOrNull()?.uppercase() ?: "•",
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
+private fun RecommendedMintAvatar(name: String, url: String, iconUrl: String?, size: Dp = MintAvatarSize) {
+    MintAvatar(
+        mint = MintInfo(url = url, name = name, iconUrl = iconUrl),
+        size = size,
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -1287,7 +1245,7 @@ private fun StagedRestoreMintRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
     ) {
-        RecommendedMintAvatar(name = shortenMintUrl(url), iconUrl = null)
+        RecommendedMintAvatar(name = shortenMintUrl(url), url = url, iconUrl = null)
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = shortenMintUrl(url),

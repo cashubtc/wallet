@@ -1,5 +1,9 @@
 package com.cashu.me.ui.components
 
+import android.graphics.Bitmap
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -11,23 +15,36 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import coil.compose.SubcomposeAsyncImage
+import androidx.core.graphics.drawable.toBitmap
+import coil.decode.DataSource
+import coil.imageLoader
 import coil.request.ImageRequest
+import coil.request.SuccessResult
+import com.cashu.me.Core.MintLogoBitmapCache
 import com.cashu.me.Models.MintInfo
 
+private const val MintAvatarFadeMs = 250
+
 /**
- * Round avatar for a mint. Loads [MintInfo.iconUrl] via Coil with crossfade; falls
- * back to a deterministic HSL color circle with the mint's first letter (or a
- * bank glyph if the name is empty).
+ * Round avatar for a mint. Loads [MintInfo.iconUrl] through Coil into
+ * [MintLogoBitmapCache], keeps the last decoded bitmap across recompositions, and
+ * crossfades when the visible image appears or changes. Falls back to a
+ * deterministic HSL monogram (or bank glyph if the name is empty).
  *
  * The active-mint dot overlay is added by the caller via [Box] sibling, since the
  * dot color depends on theme tokens and the avatar should remain composition-shape-stable.
@@ -43,35 +60,63 @@ fun MintAvatar(
     val shape = if (size <= 48.dp) CircleShape else MaterialTheme.shapes.medium
     val context = LocalContext.current
     val iconUrl = mint.iconUrl?.takeIf { it.isNotBlank() }
-    if (iconUrl != null) {
-        Box(
-            modifier = modifier
-                .size(size)
-                .clip(shape),
-            contentAlignment = Alignment.Center,
-        ) {
-            val request = remember(iconUrl) {
+
+    Box(
+        modifier = modifier
+            .size(size)
+            .clip(shape),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (iconUrl == null) {
+            GeneratedFallback(mint = mint, size = size)
+            return@Box
+        }
+
+        val sizePx = with(LocalDensity.current) { size.roundToPx().coerceAtLeast(1) }
+        // Sync process-wide hit — first frame after tab remount shows the logo,
+        // matching iOS `CachedAsyncImage`'s memory seed.
+        var bitmap by remember(iconUrl) {
+            mutableStateOf(MintLogoBitmapCache.get(iconUrl))
+        }
+
+        LaunchedEffect(iconUrl, sizePx) {
+            val hadCachedFrame = bitmap != null
+            val result = context.imageLoader.execute(
                 ImageRequest.Builder(context)
                     .data(iconUrl)
-                    .crossfade(true)
-                    .build()
-            }
-            SubcomposeAsyncImage(
-                model = request,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-                loading = { GeneratedFallback(mint = mint, size = size) },
-                error = { GeneratedFallback(mint = mint, size = size) },
+                    .size(sizePx)
+                    .memoryCacheKey(iconUrl)
+                    .diskCacheKey(iconUrl)
+                    .build(),
             )
+            if (result is SuccessResult) {
+                val decoded = result.drawable.toBitmap()
+                // Keep the seeded frame on remount (disk or memory). Only swap when
+                // the network returns a fresher image so icon updates still fade in.
+                if (hadCachedFrame && result.dataSource != DataSource.NETWORK) {
+                    bitmap?.let { MintLogoBitmapCache.put(iconUrl, it) }
+                    return@LaunchedEffect
+                }
+                MintLogoBitmapCache.put(iconUrl, decoded)
+                bitmap = decoded
+            }
         }
-    } else {
-        Box(
-            modifier = modifier
-                .size(size)
-                .clip(shape),
-        ) {
-            GeneratedFallback(mint = mint, size = size)
+
+        Crossfade(
+            targetState = bitmap,
+            animationSpec = tween(MintAvatarFadeMs),
+            label = "mintAvatar",
+        ) { current: Bitmap? ->
+            if (current != null) {
+                Image(
+                    bitmap = current.asImageBitmap(),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                GeneratedFallback(mint = mint, size = size)
+            }
         }
     }
 }
@@ -119,4 +164,3 @@ private fun hslToColor(h: Float, saturation: Float, lightness: Float): Color {
     }
     return Color(r1 + m, g1 + m, b1 + m)
 }
-

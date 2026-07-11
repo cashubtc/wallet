@@ -113,6 +113,12 @@ fun MintsScreen(
         }
     }
 
+    // Non-blocking NUT-06 refresh — same as iOS MintsListView `.task`.
+    // Does not flip isLoading, so the list stays interactive.
+    LaunchedEffect(Unit) {
+        walletManager.refreshMintInfo()
+    }
+
     fun pasteFromClipboard() {
         val candidate = clipboard.getText()?.text?.let { mintUrlCandidates(it).firstOrNull() }
         if (candidate == null) {
