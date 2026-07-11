@@ -384,38 +384,28 @@ struct MintDetailView: View {
 
     @ViewBuilder
     private var paymentMethodsSection: some View {
-        if !receiveMethodSummaries.isEmpty || !sendMethodSummaries.isEmpty {
+        if !receiveMethods.isEmpty || !sendMethods.isEmpty {
             section("Payment methods") {
                 VStack(spacing: 0) {
-                    if !receiveMethodSummaries.isEmpty {
-                        paymentDirectionRow(icon: "arrow.down", label: "Receive", methods: receiveMethodSummaries)
+                    if !receiveMethods.isEmpty {
+                        paymentDirectionRow(icon: "arrow.down", label: "Receive", methods: receiveMethods)
                     }
-                    if !sendMethodSummaries.isEmpty {
-                        if !receiveMethodSummaries.isEmpty { CanvasDivider() }
-                        paymentDirectionRow(icon: "arrow.up", label: "Send", methods: sendMethodSummaries)
+                    if !sendMethods.isEmpty {
+                        if !receiveMethods.isEmpty { CanvasDivider() }
+                        paymentDirectionRow(icon: "arrow.up", label: "Send", methods: sendMethods)
                     }
                 }
             }
         }
     }
 
-    private func paymentDirectionRow(icon: String, label: String, methods: [PaymentMethodSummary]) -> some View {
+    private func paymentDirectionRow(icon: String, label: String, methods: [PaymentMethodKind]) -> some View {
         HStack(alignment: .firstTextBaseline) {
             Label(label, systemImage: icon)
                 .foregroundStyle(.secondary)
-            Spacer()
-            VStack(alignment: .trailing, spacing: 8) {
-                ForEach(methods) { summary in
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text(summary.method.displayName)
-                        if let detail = summary.detail {
-                            Text(detail)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-            }
+            Spacer(minLength: 12)
+            Text(methods.map(\.displayName).joined(separator: " · "))
+                .multilineTextAlignment(.trailing)
         }
         .font(.body)
         .padding(.horizontal, 4)
@@ -607,17 +597,8 @@ struct MintDetailView: View {
     private func capabilityLines(_ nuts: Cdk.Nuts) -> [Capability] {
         var lines: [Capability] = []
 
-        let allMethods = receiveMethodSummaries.map(\.method) + sendMethodSummaries.map(\.method)
-        let hasLightning = allMethods.contains { $0 == .bolt11 || $0 == .bolt12 }
-        let hasOnchain = allMethods.contains(.onchain)
-
-        if hasLightning {
-            lines.append(Capability(icon: "bolt.fill", text: "Send & receive over Lightning"))
-        }
-        if hasOnchain {
-            lines.append(Capability(icon: "bitcoinsign", text: "On-chain Bitcoin deposits & withdrawals"))
-        }
-
+        // Rails (Lightning / On-chain) live once, in the Payment methods section;
+        // this section carries only the locking capability + Technical details.
         var locks: [String] = []
         if nuts.nut11Supported { locks.append("P2PK") }
         if nuts.nut14Supported { locks.append("HTLC") }
@@ -670,111 +651,20 @@ struct MintDetailView: View {
             .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
-    private var receiveMethodSummaries: [PaymentMethodSummary] {
-        if let cdkInfo {
-            return cdkInfo.nuts.nut04.methods
-                .compactMap { method in
-                    guard let paymentMethod = PaymentMethodKind.from(method.method) else {
-                        return nil
-                    }
-
-                    return PaymentMethodSummary(
-                        method: paymentMethod,
-                        minAmount: method.minAmount?.value,
-                        maxAmount: method.maxAmount?.value,
-                        detail: paymentMethodDetail(
-                            method: paymentMethod,
-                            minAmount: method.minAmount?.value,
-                            maxAmount: method.maxAmount?.value,
-                            confirmations: paymentMethod == .onchain ? mint.onchainMintConfirmations : nil
-                        )
-                    )
-                }
-                .sorted { $0.method.sortOrder < $1.method.sortOrder }
-        }
-
-        return mint.supportedMintMethods
-            .sorted { $0.sortOrder < $1.sortOrder }
-            .map { method in
-                PaymentMethodSummary(
-                    method: method,
-                    minAmount: nil,
-                    maxAmount: nil,
-                    detail: paymentMethodDetail(
-                        method: method,
-                        minAmount: nil,
-                        maxAmount: nil,
-                        confirmations: method == .onchain ? mint.onchainMintConfirmations : nil
-                    )
-                )
-            }
+    /// Deduped receive rails. The live CDK info advertises one entry per
+    /// (method, unit) pair, so collapse by method — the same canonical dedup
+    /// used by `MintService.supportedMintPaymentMethods`.
+    private var receiveMethods: [PaymentMethodKind] {
+        let kinds = cdkInfo?.nuts.nut04.methods.compactMap { PaymentMethodKind.from($0.method) }
+            ?? mint.supportedMintMethods
+        return PaymentMethodKind.allCases.filter { kinds.contains($0) }
     }
 
-    private var sendMethodSummaries: [PaymentMethodSummary] {
-        if let cdkInfo {
-            return cdkInfo.nuts.nut05.methods
-                .compactMap { method in
-                    guard let paymentMethod = PaymentMethodKind.from(method.method) else {
-                        return nil
-                    }
-
-                    return PaymentMethodSummary(
-                        method: paymentMethod,
-                        minAmount: method.minAmount?.value,
-                        maxAmount: method.maxAmount?.value,
-                        detail: paymentMethodDetail(
-                            method: paymentMethod,
-                            minAmount: method.minAmount?.value,
-                            maxAmount: method.maxAmount?.value
-                        )
-                    )
-                }
-                .sorted { $0.method.sortOrder < $1.method.sortOrder }
-        }
-
-        return mint.supportedMeltMethods
-            .sorted { $0.sortOrder < $1.sortOrder }
-            .map { method in
-                PaymentMethodSummary(
-                    method: method,
-                    minAmount: nil,
-                    maxAmount: nil,
-                    detail: paymentMethodDetail(method: method, minAmount: nil, maxAmount: nil)
-                )
-            }
-    }
-
-    private func paymentMethodDetail(
-        method: PaymentMethodKind,
-        minAmount: UInt64?,
-        maxAmount: UInt64?,
-        confirmations: Int? = nil
-    ) -> String? {
-        var parts: [String] = []
-
-        if let range = amountRange(minAmount: minAmount, maxAmount: maxAmount) {
-            parts.append(range)
-        }
-
-        if method == .onchain, let confirmations {
-            let suffix = confirmations == 1 ? "" : "s"
-            parts.append("\(confirmations) confirmation\(suffix)")
-        }
-
-        return parts.isEmpty ? nil : parts.joined(separator: " • ")
-    }
-
-    private func amountRange(minAmount: UInt64?, maxAmount: UInt64?) -> String? {
-        switch (minAmount, maxAmount) {
-        case let (.some(minimum), .some(maximum)):
-            return "\(minimum)-\(maximum) sat"
-        case let (.some(minimum), nil):
-            return "Min \(minimum) sat"
-        case let (nil, .some(maximum)):
-            return "Max \(maximum) sat"
-        case (nil, nil):
-            return nil
-        }
+    /// Deduped send rails (see `receiveMethods`).
+    private var sendMethods: [PaymentMethodKind] {
+        let kinds = cdkInfo?.nuts.nut05.methods.compactMap { PaymentMethodKind.from($0.method) }
+            ?? mint.supportedMeltMethods
+        return PaymentMethodKind.allCases.filter { kinds.contains($0) }
     }
 
     // MARK: - Actions
@@ -814,15 +704,6 @@ struct MintDetailView: View {
             }
         }
     }
-}
-
-private struct PaymentMethodSummary: Identifiable {
-    let method: PaymentMethodKind
-    let minAmount: UInt64?
-    let maxAmount: UInt64?
-    let detail: String?
-
-    var id: PaymentMethodKind { method }
 }
 
 #Preview {

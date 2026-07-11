@@ -21,8 +21,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.ArrowDownward
+import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.CurrencyBitcoin
+import androidx.compose.material.icons.outlined.Payments
+import androidx.compose.material.icons.outlined.Public
+import androidx.compose.material.icons.outlined.Straighten
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -45,6 +51,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
@@ -53,19 +60,16 @@ import com.cashu.me.Core.Protocols.CurrencyRegistry
 import com.cashu.me.Core.WalletManager
 import com.cashu.me.Core.shortenMintUrl
 import com.cashu.me.Models.MintInfo
-import com.cashu.me.ui.components.AmountText
 import com.cashu.me.ui.components.CanvasDivider
 import com.cashu.me.ui.components.DestructiveTextButton
 import com.cashu.me.ui.components.GhostButton
 import com.cashu.me.ui.components.IconSwap
 import com.cashu.me.ui.components.InspectorRow
 import com.cashu.me.ui.components.MintAvatar
-import com.cashu.me.ui.components.MintMethodChips
 import com.cashu.me.ui.components.PrimaryButton
 import com.cashu.me.ui.components.SectionHeader
 import com.cashu.me.ui.components.ToolbarIcon
 import com.cashu.me.ui.theme.CashuTheme
-import com.cashu.me.ui.theme.withMonoDigits
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -77,7 +81,6 @@ fun MintDetailScreen(
     val walletState by walletManager.state.collectAsState()
     val mint = walletState.mints.firstOrNull { it.url == mintUrl }
     val isActive = walletState.activeMint?.url == mintUrl
-    val clipboard = LocalClipboardManager.current
     var confirmingRemove by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -111,6 +114,60 @@ fun MintDetailScreen(
         ) {
             HeaderBlock(mint = mint, isActive = isActive)
 
+            // Stats block (unlabeled), matching iOS's identity rows under the
+            // header: Balance [+ per-unit balances] then Connection.
+            val nonSatUnits = remember(mint.units) {
+                mint.units.filter { !it.equals("sat", ignoreCase = true) }.sorted()
+            }
+            var unitBalances by remember(mint.url) { mutableStateOf<Map<String, Long>>(emptyMap()) }
+            LaunchedEffect(mint.url, nonSatUnits) {
+                nonSatUnits.forEach { unit ->
+                    walletManager.unitBalance(mint.url, unit)?.let { balance ->
+                        unitBalances = unitBalances + (unit to balance)
+                    }
+                }
+            }
+            // Connection = did the mint answer a live info fetch (iOS parity),
+            // not device network state.
+            var connection by remember(mint.url) { mutableStateOf(MintConnectionState.Checking) }
+            LaunchedEffect(mint.url) {
+                connection = runCatching { walletManager.fetchLiveMintInfo(mint.url) }
+                    .fold(
+                        { if (it != null) MintConnectionState.Online else MintConnectionState.Offline },
+                        { MintConnectionState.Offline },
+                    )
+            }
+            Column(modifier = Modifier.fillMaxWidth()) {
+                InspectorRow(
+                    label = "Balance",
+                    value = "${mint.balance} sat",
+                    leadingIcon = Icons.Outlined.CurrencyBitcoin,
+                    valueMonospaced = true,
+                )
+                nonSatUnits.forEach { unit ->
+                    CanvasDivider(leadingInset = 16.dp)
+                    InspectorRow(
+                        label = "Balance (${unit.uppercase()})",
+                        value = unitBalances[unit]?.let {
+                            CurrencyAmount(it, CurrencyRegistry.currencyForMintUnit(unit)).formatted()
+                        } ?: "…",
+                        leadingIcon = Icons.Outlined.Payments,
+                        valueMonospaced = true,
+                    )
+                }
+                CanvasDivider(leadingInset = 16.dp)
+                InspectorRow(
+                    label = "Connection",
+                    value = connection.label,
+                    leadingIcon = Icons.Outlined.Public,
+                    valueColor = when (connection) {
+                        MintConnectionState.Offline -> MaterialTheme.colorScheme.error
+                        MintConnectionState.Checking -> MaterialTheme.colorScheme.onSurfaceVariant
+                        MintConnectionState.Online -> null
+                    },
+                )
+            }
+
             if (!mint.description.isNullOrBlank()) {
                 SectionHeader("About")
                 // iOS MintDetailView "Read more": long descriptions clamp to
@@ -143,105 +200,26 @@ fun MintDetailScreen(
                 }
             }
 
-            SectionHeader("Identity")
-            Column(modifier = Modifier.fillMaxWidth()) {
-                InspectorRow(
-                    label = "URL",
-                    value = shortenMintUrl(mint.url),
-                    valueMonospaced = true,
-                )
-                CanvasDivider(leadingInset = 16.dp)
-                // Copy-confirm morph (iOS: doc.on.doc ↔ checkmark via
-                // .contentTransition(.symbolEffect(.replace)) + snappy 0.18).
-                var copiedUrl by remember(mint.url) { mutableStateOf(false) }
-                LaunchedEffect(copiedUrl) {
-                    if (copiedUrl) {
-                        delay(COPY_CONFIRM_RESET_MS)
-                        copiedUrl = false
-                    }
-                }
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            clipboard.setText(AnnotatedString(mint.url))
-                            copiedUrl = true
-                        }
-                        .padding(
-                            horizontal = CashuTheme.spacing.comfortable,
-                            vertical = CashuTheme.spacing.default,
-                        ),
-                ) {
-                    IconSwap(
-                        icon = if (copiedUrl) Icons.Outlined.Check else Icons.Outlined.ContentCopy,
-                        contentDescription = null,
-                        tint = if (copiedUrl) CashuTheme.colors.received
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(COPY_ROW_ICON_SIZE),
-                    )
-                    Text(
-                        text = if (copiedUrl) "Copied" else "Copy full URL",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                }
-            }
-
             SectionHeader("Payment methods")
             Column(modifier = Modifier.fillMaxWidth()) {
                 InspectorRow(
                     label = "Receive",
-                    value = mint.supportedMintMethods.joinToString { it.displayName }.ifBlank { "None" },
+                    value = mint.supportedMintMethods.distinct().joinToString(" · ") { it.displayName }.ifBlank { "None" },
+                    leadingIcon = Icons.Outlined.ArrowDownward,
                 )
                 CanvasDivider(leadingInset = 16.dp)
                 InspectorRow(
                     label = "Send",
-                    value = mint.supportedMeltMethods.joinToString { it.displayName }.ifBlank { "None" },
+                    value = mint.supportedMeltMethods.distinct().joinToString(" · ") { it.displayName }.ifBlank { "None" },
+                    leadingIcon = Icons.Outlined.ArrowUpward,
                 )
-                mint.onchainMintConfirmations?.let {
-                    CanvasDivider(leadingInset = 16.dp)
-                    InspectorRow(
-                        label = "On-chain confirmations",
-                        value = it.toString(),
-                        valueMonospaced = true,
-                    )
-                }
             }
 
-            SectionHeader("Wallet")
-            InspectorRow(
-                label = "Balance on this mint",
-                value = "${mint.balance} sat",
-                valueMonospaced = true,
-            )
-            // Per-unit balances for non-sat units, loaded on demand.
-            val nonSatUnits = remember(mint.units) {
-                mint.units.filter { !it.equals("sat", ignoreCase = true) }.sorted()
-            }
-            var unitBalances by remember(mint.url) { mutableStateOf<Map<String, Long>>(emptyMap()) }
-            LaunchedEffect(mint.url, nonSatUnits) {
-                nonSatUnits.forEach { unit ->
-                    walletManager.unitBalance(mint.url, unit)?.let { balance ->
-                        unitBalances = unitBalances + (unit to balance)
-                    }
-                }
-            }
-            nonSatUnits.forEach { unit ->
-                CanvasDivider(leadingInset = 16.dp)
-                InspectorRow(
-                    label = "Balance (${unit.uppercase()})",
-                    value = unitBalances[unit]?.let {
-                        CurrencyAmount(it, CurrencyRegistry.currencyForMintUnit(unit)).formatted()
-                    } ?: "…",
-                    valueMonospaced = true,
-                )
-            }
-            CanvasDivider(leadingInset = 16.dp)
+            SectionHeader("Details")
             InspectorRow(
                 label = "Units",
                 value = mint.units.joinToString(", ").ifBlank { "sat" },
+                leadingIcon = Icons.Outlined.Straighten,
             )
 
             Spacer(Modifier.height(CashuTheme.spacing.comfortable))
@@ -296,6 +274,9 @@ fun MintDetailScreen(
 
 @Composable
 private fun HeaderBlock(mint: MintInfo, isActive: Boolean) {
+    // Centered hero header, matching iOS `MintDetailView.header`: icon → name →
+    // tappable URL-copy chip. No method-icon chips, no balance (balance lives in
+    // the Wallet section).
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -303,60 +284,83 @@ private fun HeaderBlock(mint: MintInfo, isActive: Boolean) {
                 horizontal = CashuTheme.spacing.comfortable,
                 vertical = CashuTheme.spacing.comfortable,
             ),
+        horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.comfortable),
-        ) {
-            Box {
-                MintAvatar(mint = mint, size = 72.dp)
-                if (isActive) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .size(CashuTheme.spacing.comfortable)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.surface),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Check,
-                            contentDescription = "Active",
-                            tint = CashuTheme.colors.received,
-                            modifier = Modifier.size(CashuTheme.spacing.default),
-                        )
-                    }
-                }
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.tight),
+        Box {
+            MintAvatar(mint = mint, size = 72.dp)
+            if (isActive) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .size(CashuTheme.spacing.comfortable)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surface),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    Text(
-                        text = mint.name,
-                        style = MaterialTheme.typography.headlineSmall,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false),
+                    Icon(
+                        imageVector = Icons.Outlined.Check,
+                        contentDescription = "Active",
+                        tint = CashuTheme.colors.received,
+                        modifier = Modifier.size(CashuTheme.spacing.default),
                     )
-                    MintMethodChips(mint = mint)
                 }
-                Text(
-                    text = shortenMintUrl(mint.url),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.MiddleEllipsis,
-                )
-                AmountText(
-                    text = "${mint.balance} sat",
-                    style = MaterialTheme.typography.bodyMedium.withMonoDigits(),
-                )
             }
         }
+        Text(
+            text = mint.name,
+            style = MaterialTheme.typography.headlineSmall,
+            color = MaterialTheme.colorScheme.onSurface,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        CopyUrlChip(url = mint.url)
+    }
+}
+
+/// Tappable URL chip, matching iOS `copyUrlChip`: the shortened URL beside a
+/// copy glyph that morphs to a check for [COPY_CONFIRM_RESET_MS] after a tap
+/// (which copies the full URL to the clipboard).
+@Composable
+private fun CopyUrlChip(url: String) {
+    val clipboard = LocalClipboardManager.current
+    var copied by remember(url) { mutableStateOf(false) }
+    LaunchedEffect(copied) {
+        if (copied) {
+            delay(COPY_CONFIRM_RESET_MS)
+            copied = false
+        }
+    }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.tight),
+        modifier = Modifier
+            .clip(CircleShape)
+            .clickable {
+                clipboard.setText(AnnotatedString(url))
+                copied = true
+            }
+            .padding(
+                horizontal = CashuTheme.spacing.snug,
+                vertical = CashuTheme.spacing.tight,
+            ),
+    ) {
+        Text(
+            text = shortenMintUrl(url),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.MiddleEllipsis,
+            modifier = Modifier.weight(1f, fill = false),
+        )
+        IconSwap(
+            icon = if (copied) Icons.Outlined.Check else Icons.Outlined.ContentCopy,
+            contentDescription = if (copied) "Copied URL" else "Copy URL",
+            tint = if (copied) CashuTheme.colors.received
+            else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(COPY_ROW_ICON_SIZE),
+        )
     }
 }
 
@@ -377,6 +381,13 @@ private fun EmptyMintFallback(padding: PaddingValues, onClose: () -> Unit) {
         Spacer(Modifier.height(CashuTheme.spacing.comfortable))
         GhostButton(text = "Back to mints", onClick = onClose)
     }
+}
+
+// Three-state mint reachability, derived from a live info fetch (iOS parity).
+private enum class MintConnectionState(val label: String) {
+    Checking("Checking…"),
+    Online("Online"),
+    Offline("Offline"),
 }
 
 // Inline copy-row glyph (smaller than the body 20dp).

@@ -16,6 +16,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -46,6 +47,7 @@ fun InspectorRow(
     editable: Boolean = false,
     onClick: (() -> Unit)? = null,
     valueMonospaced: Boolean = false,
+    valueColor: Color? = null,
     loading: Boolean = false,
 ) {
     val rowMod = if (onClick != null && editable) {
@@ -83,7 +85,7 @@ fun InspectorRow(
                     style = if (valueMonospaced) {
                         MaterialTheme.typography.bodyMedium.withMonoDigits()
                     } else MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = valueColor ?: MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.MiddleEllipsis,
                     textAlign = TextAlign.End,
