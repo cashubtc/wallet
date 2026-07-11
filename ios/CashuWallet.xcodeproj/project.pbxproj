@@ -1155,10 +1155,11 @@
 				CODE_SIGN_ENTITLEMENTS = CashuWallet/CashuWallet.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = D7AHD3GLH6;
+				DEVELOPMENT_TEAM = JQ4WB222T4;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = CashuWallet/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Cashu;
 				INFOPLIST_KEY_NFCReaderUsageDescription = "Hold your iPhone near a payment terminal or NFC tag to send Cashu ecash.";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Camera is used to scan QR codes for receiving ecash tokens and Lightning invoices.";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Cashu Wallet uses Face ID to unlock the app and protect your funds.";
@@ -1177,7 +1178,7 @@
 					"-framework",
 					SystemConfiguration,
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.cashu.me;
+				PRODUCT_BUNDLE_IDENTIFIER = com.cashu.xyz;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -1193,10 +1194,11 @@
 				CODE_SIGN_ENTITLEMENTS = CashuWallet/CashuWallet.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = D7AHD3GLH6;
+				DEVELOPMENT_TEAM = JQ4WB222T4;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = CashuWallet/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Cashu;
 				INFOPLIST_KEY_NFCReaderUsageDescription = "Hold your iPhone near a payment terminal or NFC tag to send Cashu ecash.";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Camera is used to scan QR codes for receiving ecash tokens and Lightning invoices.";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Cashu Wallet uses Face ID to unlock the app and protect your funds.";
@@ -1215,7 +1217,7 @@
 					"-framework",
 					SystemConfiguration,
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.cashu.me;
+				PRODUCT_BUNDLE_IDENTIFIER = com.cashu.xyz;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;

@@ -10,12 +10,16 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonColors
 import androidx.compose.material3.ButtonDefaults
@@ -25,6 +29,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -39,6 +44,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.cashu.me.ui.theme.CashuTheme
+
+// Generous circular "method" buttons shared by the Send and Receive sheets
+// (Scan · Ecash · Tap / Scan · Ecash · Bitcoin). Surface, not
+// FilledTonalIconButton — the latter hardcodes 40dp and would ignore these
+// sizes. MethodRowSpacing is public so callers space the row identically.
+private val MethodButtonSize = 72.dp
+private val MethodIconSize = 32.dp
+val MethodRowSpacing = 40.dp
 
 // Full-width CTAs (incl. home Receive/Send). +10% over the original 58/16
 // iOS-large glass capsule sizing for a taller Android press target.
@@ -200,6 +213,49 @@ fun GhostButton(
                 modifier = Modifier.size(GhostButtonIconSize),
             )
         }
+    }
+}
+
+/**
+ * One round tonal icon button with a one-word caption below — the shared "way to
+ * send / receive" button. iOS parity: `CircularGlassIconButton`.
+ */
+@Composable
+fun CircularMethodButton(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Surface(
+            onClick = onClick,
+            modifier = Modifier.size(MethodButtonSize),
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        ) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = label,
+                    modifier = Modifier.size(MethodIconSize),
+                )
+            }
+        }
+        Spacer(Modifier.height(CashuTheme.spacing.snug))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

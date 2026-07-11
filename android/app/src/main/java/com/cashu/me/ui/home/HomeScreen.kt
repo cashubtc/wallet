@@ -96,7 +96,7 @@ fun HomeScreen(
     onOpenHistory: () -> Unit,
     onOpenTransaction: (WalletTransaction) -> Unit,
     onOpenCashuRequest: (CashuRequest) -> Unit,
-    onReceive: (ReceiveAction) -> Unit,
+    onReceive: () -> Unit,
     onSend: () -> Unit,
     onOpenSettings: () -> Unit,
     onScan: () -> Unit,
@@ -107,8 +107,6 @@ fun HomeScreen(
     val priceState by priceService.state.collectAsState()
     val requestState by cashuRequestStore.state.collectAsState()
     val formatter = remember { AmountFormatter() }
-
-    var receiveChooserOpen by remember { mutableStateOf(false) }
 
     val balanceDisplay = remember(walletState.balance, settings, priceState) {
         formatter.displayText(
@@ -207,7 +205,8 @@ fun HomeScreen(
                 },
                 triptych = {
                     ActionDuet(
-                        onReceive = { receiveChooserOpen = true },
+                        // Receive opens the unified surface directly — no chooser.
+                        onReceive = onReceive,
                         // Send opens the unified surface directly — no chooser.
                         onSend = onSend,
                         receiveEnabled = walletState.activeMint != null,
@@ -346,15 +345,6 @@ fun HomeScreen(
         }
     }
 
-    if (receiveChooserOpen) {
-        ReceiveChooserSheet(
-            onSelect = { action ->
-                receiveChooserOpen = false
-                onReceive(action)
-            },
-            onDismiss = { receiveChooserOpen = false },
-        )
-    }
 }
 
 // iOS scrollFadeBand: rows dissolve over a 24pt band beneath the measured

@@ -30,7 +30,6 @@ import androidx.navigation.navArgument
 import com.cashu.me.ui.history.HistoryScreen
 import com.cashu.me.ui.history.TransactionDetailScreen
 import com.cashu.me.ui.home.HomeScreen
-import com.cashu.me.ui.home.ReceiveAction
 import com.cashu.me.ui.mints.MintDetailScreen
 import com.cashu.me.ui.mints.MintsScreen
 import com.cashu.me.ui.receive.CashuRequestDetailScreen
@@ -282,12 +281,9 @@ private fun NavGraphBuilder.tabDestinations(
             onOpenCashuRequest = { req ->
                 navController.navigate(cashuRequestDetailRouteFor(req.id))
             },
-            onReceive = { action ->
-                when (action) {
-                    ReceiveAction.Ecash -> onReceiveEcash()
-                    ReceiveAction.Bitcoin -> onReceiveLightning()
-                }
-            },
+            // Receive goes straight to the unified surface — no chooser (iOS
+            // parity). Bitcoin is now a button inside that sheet, not a chooser row.
+            onReceive = onReceiveEcash,
             // Send goes straight to the unified surface — no chooser (iOS parity).
             onSend = onSend,
             onOpenSettings = { navController.navigate(Routes.SETTINGS) },
