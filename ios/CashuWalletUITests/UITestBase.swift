@@ -25,6 +25,10 @@ class UITestBase: XCTestCase {
         continueAfterFailure = false
         app = XCUIApplication()
         app.launchEnvironment = launchEnvironment(for: launchMode)
+        app.launchArguments = [
+            "-AppleLanguages", "(en)",
+            "-AppleLocale", "en_US",
+        ]
         app.launch()
     }
 
@@ -37,6 +41,7 @@ class UITestBase: XCTestCase {
         var environment = [
             "CI_INTEGRATION_TEST": "1",
             "RESET_WALLET": "1",
+            "UITEST_DISABLE_ANIMATIONS": "1",
             "NUTSHELL_MINT_URL": mintURL,
             "CDK_MINT_URL": cdkMintURL,
         ]
@@ -61,16 +66,13 @@ class UITestBase: XCTestCase {
     /// Leaves the app on the "Pick your first mint" screen.
     func createWalletThroughSeed() {
         let create = app.buttons["onboarding-create-wallet"]
-        XCTAssertTrue(create.waitForExistence(timeout: 30))
-        create.tap()
+        tapWhenReady(create, timeout: 30)
 
         let ack = app.buttons["onboarding-ack-seed"]
-        XCTAssertTrue(ack.waitForExistence(timeout: 15))
-        ack.tap()
+        tapWhenReady(ack, timeout: 15)
 
         let saved = app.buttons["onboarding-saved-seed"]
-        XCTAssertTrue(saved.waitForExistence(timeout: 5))
-        saved.tap()
+        tapWhenReady(saved)
     }
 
     /// Full onboarding: create wallet, skip mint setup, wait for main tab bar.
@@ -78,8 +80,7 @@ class UITestBase: XCTestCase {
         createWalletThroughSeed()
 
         let skip = app.buttons["onboarding-skip-mint"]
-        XCTAssertTrue(skip.waitForExistence(timeout: 10))
-        skip.tap()
+        tapWhenReady(skip, timeout: 10)
 
         waitForMainTab()
     }
@@ -90,16 +91,13 @@ class UITestBase: XCTestCase {
         createWalletThroughSeed()
 
         let addCustom = app.buttons["onboarding-add-custom-mint"]
-        XCTAssertTrue(addCustom.waitForExistence(timeout: 10))
-        addCustom.tap()
+        tapWhenReady(addCustom, timeout: 10)
 
         let field = app.textFields["onboarding-custom-mint-field"]
-        XCTAssertTrue(field.waitForExistence(timeout: 5))
-        field.tap()
+        tapWhenReady(field)
         field.typeText(mintURL)
         let done = app.keyboards.buttons["Done"]
-        XCTAssertTrue(done.waitForExistence(timeout: 5), "URL keyboard should expose a Done button")
-        done.tap()
+        tapWhenReady(done, message: "URL keyboard should expose a Done button")
 
         let cont = app.buttons["onboarding-continue"]
         XCTAssertTrue(cont.waitForExistence(timeout: 5))
@@ -108,7 +106,7 @@ class UITestBase: XCTestCase {
             cont.waitUntilEnabledAndHittable(timeout: 10),
             "Continue should become tappable after adding a custom mint"
         )
-        cont.tap()
+        tapWhenReady(cont)
 
         waitForMainTab(timeout: 60)
     }
@@ -191,12 +189,32 @@ class UITestBase: XCTestCase {
         line: UInt = #line
     ) {
         let button = tabButton(title, timeout: timeout, file: file, line: line)
-        button.tap()
+        tapWhenReady(button, timeout: timeout, file: file, line: line)
         waitForSelectedTab(button, title: title, timeout: timeout, file: file, line: line)
+    }
+
+    func screen(_ identifier: String) -> XCUIElement {
+        app.descendants(matching: .any).matching(identifier: identifier).firstMatch
+    }
+
+    func tapWhenReady(
+        _ element: XCUIElement,
+        timeout: TimeInterval = 5,
+        message: String = "Element should be enabled and tappable",
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertTrue(
+            element.waitUntilEnabledAndHittable(timeout: timeout),
+            message,
+            file: file,
+            line: line
+        )
+        element.tap()
     }
 }
 
-private extension XCUIElement {
+extension XCUIElement {
     func waitUntilEnabledAndHittable(timeout: TimeInterval) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
 

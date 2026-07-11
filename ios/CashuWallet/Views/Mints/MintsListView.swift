@@ -65,6 +65,7 @@ struct MintsListView: View {
                 }
             }
         }
+        .accessibilityIdentifier("mints-screen")
     }
 
     private func actionRow(title: String, systemImage: String) -> some View {

@@ -179,6 +179,7 @@ struct ReceiveLightningView: View {
                 monitoredQuoteId = nil
             }
         }
+        .accessibilityIdentifier("receive-lightning-screen")
     }
 
     // MARK: - Computed Properties

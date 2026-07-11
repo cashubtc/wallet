@@ -219,6 +219,7 @@ struct HistoryView: View {
                 visibleCount = min(visibleCount, max(pageStep, filteredItems.count))
             }
         }
+        .accessibilityIdentifier("history-screen")
     }
 
     // MARK: - History List

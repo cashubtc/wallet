@@ -6,7 +6,8 @@ import XCTest
 /// wipe any persisted wallet on startup so onboarding always begins from a
 /// known-empty state (see `IntegrationTestConfig` / `WalletManager.initialize`).
 ///
-/// The mint-add tests connect to the live Nutshell and CDK mints started by CI.
+/// The mint-add smoke test connects to the live Nutshell mint started by CI.
+/// Nutshell/CDK backend parity is covered by the faster mint integration suite.
 final class WalletIntegrationTests: UITestBase {
 
     // MARK: - Tests
@@ -16,8 +17,7 @@ final class WalletIntegrationTests: UITestBase {
         createWalletThroughSeed()
 
         let skip = app.buttons["onboarding-skip-mint"]
-        XCTAssertTrue(skip.waitForExistence(timeout: 10), "First-mint step should appear")
-        skip.tap()
+        tapWhenReady(skip, timeout: 10, message: "First-mint step should appear")
 
         waitForMainTab()
     }
@@ -25,11 +25,6 @@ final class WalletIntegrationTests: UITestBase {
     /// Create a wallet and connect the live Nutshell mint via a custom URL.
     func testOnboardingAddNutshellMint() throws {
         assertCanAddMint(at: mintURL)
-    }
-
-    /// Create a wallet and connect the live CDK mint via a custom URL.
-    func testOnboardingAddCDKMint() throws {
-        assertCanAddMint(at: cdkMintURL)
     }
 
     private func assertCanAddMint(at url: String) {
