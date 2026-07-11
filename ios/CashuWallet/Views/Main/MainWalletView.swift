@@ -32,12 +32,14 @@ struct MainWalletView: View {
     private let recentRowCap = 5
     private let scrollFadeBand: CGFloat = 24
     /// Fixed hero height (primary + status). Same whether single-unit or pager.
-    private let heroPagerHeight: CGFloat = 80
+    /// Sized for the ~53pt balance type + status slot.
+    private let heroPagerHeight: CGFloat = 78
     /// Reserved status-line slot under the primary amount.
-    private let statusLineHeight: CGFloat = 22
+    private let statusLineHeight: CGFloat = 18
     private let pageDotSize: CGFloat = 6
     /// Gap between hero and dots — always reserved with the dots slot.
-    private let pageDotGap: CGFloat = 2
+    private let pageDotGap: CGFloat = 0
+    private let balanceFontSize: CGFloat = 53
 
     /// Units the home hero can page through: sat, then each held non-sat unit.
     private var homeUnits: [String] {
@@ -173,7 +175,7 @@ struct MainWalletView: View {
                 .padding(.top, 8)
 
             actionButtons
-                .padding(.top, 28)
+                .padding(.top, 16)
                 .padding(.horizontal, 16)
                 .padding(.bottom, 16)
         }
@@ -220,14 +222,14 @@ struct MainWalletView: View {
                         TabView(selection: selectedHomeUnit) {
                             ForEach(units, id: \.self) { unit in
                                 unitBalanceHero(unit)
-                                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                                     .tag(unit)
                             }
                         }
                         .tabViewStyle(.page(indexDisplayMode: .never))
                     }
                 }
-                .frame(height: heroPagerHeight)
+                .frame(height: heroPagerHeight, alignment: .top)
 
                 ZStack {
                     if showsUnitPager {
@@ -246,7 +248,7 @@ struct MainWalletView: View {
     /// reserved so pages and single-unit mode share one height.
     @ViewBuilder
     private func unitBalanceHero(_ unit: String) -> some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 4) {
             if unit.lowercased() == "sat" {
                 let sats = walletManager.balancesByUnit["sat"] ?? walletManager.balance
                 Button(action: {
@@ -254,7 +256,7 @@ struct MainWalletView: View {
                     settings.useBitcoinSymbol.toggle()
                 }) {
                     Text(formatBalanceWithUnit(sats))
-                        .font(.system(size: 44, weight: .bold))
+                        .font(.system(size: balanceFontSize, weight: .bold))
                         .monospacedDigit()
                         .minimumScaleFactor(0.5)
                         .lineLimit(1)
@@ -281,7 +283,7 @@ struct MainWalletView: View {
                     currency: CurrencyRegistry.currency(forMintUnit: unit)
                 ).formatted()
                 Text(formatted)
-                    .font(.system(size: 44, weight: .bold))
+                    .font(.system(size: balanceFontSize, weight: .bold))
                     .monospacedDigit()
                     .minimumScaleFactor(0.5)
                     .lineLimit(1)
