@@ -159,7 +159,10 @@ struct MintDetailView: View {
 
     @ViewBuilder
     private var mintIcon: some View {
-        if let iconUrl = cdkInfo?.iconUrl, let url = URL(string: iconUrl) {
+        // Prefer live CDK info, but fall back to the persisted mint icon so the
+        // header doesn't blank while `loadMintInfo()` is in flight.
+        let iconURLString = cdkInfo?.iconUrl ?? mint.iconUrl
+        if let iconURLString, let url = URL(string: iconURLString) {
             CachedAsyncImage(url: url) { image in
                 image
                     .resizable()

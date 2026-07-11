@@ -568,12 +568,19 @@ final class MintLogoCache: @unchecked Sendable {
 /// mirrors `AsyncImage`'s two-closure form: `content` receives the loaded image
 /// (success), `placeholder` covers loading and failure. Call sites keep their
 /// own `.frame`, `.clipShape`, and fallback styling unchanged.
+///
+/// Appearance and icon updates crossfade (250ms). The previous image is kept
+/// visible while a replacement loads so remounts and URL refreshes don't flash
+/// the placeholder.
 struct CachedAsyncImage<Content: View, Placeholder: View>: View {
     private let url: URL?
     private let content: (Image) -> Content
     private let placeholder: () -> Placeholder
 
     @State private var image: UIImage?
+    @State private var displayedURL: URL?
+
+    private static let fadeDuration: TimeInterval = 0.25
 
     init(
         url: URL?,
@@ -585,28 +592,51 @@ struct CachedAsyncImage<Content: View, Placeholder: View>: View {
         self.placeholder = placeholder
         // Seed from the memory cache so a previously-loaded logo shows on the
         // first frame, with no placeholder flash.
-        _image = State(initialValue: url.flatMap { MintLogoCache.shared.cachedImage(for: $0) })
+        let seeded = url.flatMap { MintLogoCache.shared.cachedImage(for: $0) }
+        _image = State(initialValue: seeded)
+        _displayedURL = State(initialValue: seeded != nil ? url : nil)
     }
 
     var body: some View {
-        Group {
+        ZStack {
+            placeholder()
+                .opacity(image == nil ? 1 : 0)
             if let image {
                 content(Image(uiImage: image))
-            } else {
-                placeholder()
+                    .id(displayedURL?.absoluteString ?? "mint-logo")
+                    .transition(.opacity)
             }
         }
+        .animation(.easeInOut(duration: Self.fadeDuration), value: image == nil)
+        .animation(.easeInOut(duration: Self.fadeDuration), value: displayedURL?.absoluteString)
         .task(id: url) {
             guard let url else {
-                image = nil
+                withAnimation(.easeInOut(duration: Self.fadeDuration)) {
+                    image = nil
+                    displayedURL = nil
+                }
                 return
             }
             if let cached = MintLogoCache.shared.cachedImage(for: url) {
-                image = cached
+                guard displayedURL != url || image !== cached else { return }
+                withAnimation(.easeInOut(duration: Self.fadeDuration)) {
+                    image = cached
+                    displayedURL = url
+                }
                 return
             }
-            image = nil
-            image = await MintLogoCache.shared.image(for: url)
+            // Keep the previous frame while loading so URL refreshes and disk
+            // hits don't blank to the placeholder mid-flight.
+            let loaded = await MintLogoCache.shared.image(for: url)
+            withAnimation(.easeInOut(duration: Self.fadeDuration)) {
+                if let loaded {
+                    image = loaded
+                    displayedURL = url
+                } else if displayedURL != url {
+                    image = nil
+                    displayedURL = nil
+                }
+            }
         }
     }
 }
