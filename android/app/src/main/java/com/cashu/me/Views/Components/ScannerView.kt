@@ -1,7 +1,13 @@
 package com.cashu.me.Views.Components
 
 import android.Manifest
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
@@ -15,19 +21,21 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -45,17 +53,35 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import com.google.mlkit.vision.barcode.BarcodeScanning
-import com.google.mlkit.vision.common.InputImage
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
 import com.cashu.me.Core.AnimatedUrDecoder
 import com.cashu.me.Core.WalletHaptic
 import com.cashu.me.Core.rememberWalletHaptics
-import com.cashu.me.ui.components.GhostButton
 import com.cashu.me.ui.components.PrimaryButton
+import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.common.InputImage
+import java.util.concurrent.Executors
+
+internal enum class CameraPermissionState {
+    Checking,
+    Requesting,
+    Granted,
+    CanRequest,
+    NeedsSettings,
+}
+
+internal fun cameraPermissionResultState(
+    granted: Boolean,
+    canShowRationale: Boolean,
+): CameraPermissionState = when {
+    granted -> CameraPermissionState.Granted
+    canShowRationale -> CameraPermissionState.CanRequest
+    else -> CameraPermissionState.NeedsSettings
+}
 
 @Composable
 fun ScannerView(
@@ -63,9 +89,14 @@ fun ScannerView(
     onScanned: (String) -> Unit,
 ) {
     val context = LocalContext.current
+    val activity = remember(context) { context.findActivity() }
+    val lifecycleOwner = LocalLifecycleOwner.current
     val haptics = rememberWalletHaptics()
-    var hasCameraPermission by remember {
-        mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
+    var cameraPermissionState by remember {
+        mutableStateOf(
+            if (context.hasCameraPermission()) CameraPermissionState.Granted
+            else CameraPermissionState.Checking,
+        )
     }
     var cameraError by remember { mutableStateOf<String?>(null) }
     var completedScan by remember { mutableStateOf(false) }
@@ -73,25 +104,78 @@ fun ScannerView(
     var animatedError by remember { mutableStateOf<String?>(null) }
     val animatedUrDecoder = remember { AnimatedUrDecoder() }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        hasCameraPermission = granted
+        cameraPermissionState = cameraPermissionResultState(
+            granted = granted,
+            canShowRationale = activity?.let {
+                ActivityCompat.shouldShowRequestPermissionRationale(it, Manifest.permission.CAMERA)
+            } ?: true,
+        )
     }
 
     LaunchedEffect(Unit) {
-        if (!hasCameraPermission) permissionLauncher.launch(Manifest.permission.CAMERA)
+        if (cameraPermissionState != CameraPermissionState.Granted) {
+            cameraPermissionState = CameraPermissionState.Requesting
+            permissionLauncher.launch(Manifest.permission.CAMERA)
+        }
     }
 
-    if (!hasCameraPermission) {
-        CameraPermissionView(
-            onRequestPermission = { permissionLauncher.launch(Manifest.permission.CAMERA) },
+    DisposableEffect(lifecycleOwner, context) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                if (context.hasCameraPermission()) {
+                    cameraPermissionState = CameraPermissionState.Granted
+                } else if (cameraPermissionState == CameraPermissionState.Granted) {
+                    cameraPermissionState = CameraPermissionState.CanRequest
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    fun requestCameraPermission() {
+        cameraPermissionState = CameraPermissionState.Requesting
+        permissionLauncher.launch(Manifest.permission.CAMERA)
+    }
+
+    when (cameraPermissionState) {
+        CameraPermissionState.Granted -> Unit
+        CameraPermissionState.Checking,
+        CameraPermissionState.Requesting -> CameraPermissionView(
+            title = "Camera access",
+            message = "Waiting for permission to use the camera.",
+            showsProgress = true,
             onClose = onClose,
         )
-        return
+        CameraPermissionState.CanRequest -> CameraPermissionView(
+            title = "Camera access needed",
+            message = "Allow camera access to scan QR codes.",
+            actionText = "Allow camera",
+            onAction = { requestCameraPermission() },
+            onClose = onClose,
+        )
+        CameraPermissionState.NeedsSettings -> CameraPermissionView(
+            title = "Camera access needed",
+            message = "Camera access is turned off. Enable it in Settings to scan QR codes.",
+            actionText = "Open settings",
+            onAction = {
+                context.startActivity(
+                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                        data = Uri.fromParts("package", context.packageName, null)
+                    },
+                )
+            },
+            onClose = onClose,
+        )
     }
+    if (cameraPermissionState != CameraPermissionState.Granted) return
 
     cameraError?.let { message ->
-        CameraFailureView(
+        CameraPermissionView(
+            title = "Camera unavailable",
             message = message,
-            onRetry = { cameraError = null },
+            actionText = "Try again",
+            onAction = { cameraError = null },
             onClose = onClose,
         )
         return
@@ -196,41 +280,80 @@ private fun ScannerStatusOverlay(
 
 @Composable
 private fun CameraPermissionView(
-    onRequestPermission: () -> Unit,
-    onClose: () -> Unit,
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text("Camera permission is required to scan QR codes.", style = MaterialTheme.typography.bodyLarge)
-        Spacer(Modifier.height(24.dp))
-        PrimaryButton("Allow camera", onClick = onRequestPermission)
-        GhostButton("Close", onClick = onClose)
-    }
-}
-
-@Composable
-private fun CameraFailureView(
+    title: String,
     message: String,
-    onRetry: () -> Unit,
+    actionText: String? = null,
+    onAction: (() -> Unit)? = null,
+    showsProgress: Boolean = false,
     onClose: () -> Unit,
 ) {
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
+            .background(Color.Black),
     ) {
-        Text("Camera scanner is unavailable.", style = MaterialTheme.typography.titleMedium)
-        Text(message, color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall)
-        Spacer(Modifier.height(24.dp))
-        PrimaryButton("Try again", onClick = onRetry)
-        GhostButton("Close", onClick = onClose)
+        IconButton(
+            onClick = onClose,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .statusBarsPadding()
+                .padding(12.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "Close scanner",
+                tint = Color.White,
+            )
+        }
+
+        Column(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .widthIn(max = 440.dp)
+                .fillMaxWidth()
+                .padding(horizontal = 32.dp)
+                .navigationBarsPadding(),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Icon(
+                imageVector = Icons.Default.CameraAlt,
+                contentDescription = null,
+                modifier = Modifier.size(48.dp),
+                tint = Color.White,
+            )
+            Text(
+                text = title,
+                color = Color.White,
+                style = MaterialTheme.typography.headlineSmall,
+                textAlign = TextAlign.Center,
+            )
+            Text(
+                text = message,
+                color = Color.White.copy(alpha = 0.75f),
+                style = MaterialTheme.typography.bodyLarge,
+                textAlign = TextAlign.Center,
+            )
+            if (showsProgress) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(28.dp),
+                    color = Color.White,
+                    strokeWidth = 2.dp,
+                )
+            }
+            if (actionText != null && onAction != null) {
+                PrimaryButton(
+                    text = actionText,
+                    onClick = onAction,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.White,
+                        contentColor = Color.Black,
+                        disabledContainerColor = Color.White.copy(alpha = 0.5f),
+                        disabledContentColor = Color.Black.copy(alpha = 0.5f),
+                    ),
+                )
+            }
+        }
     }
 }
 
@@ -312,4 +435,13 @@ private class BarcodeAnalyzer(
                 imageProxy.close()
             }
     }
+}
+
+private fun Context.hasCameraPermission(): Boolean =
+    ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }
