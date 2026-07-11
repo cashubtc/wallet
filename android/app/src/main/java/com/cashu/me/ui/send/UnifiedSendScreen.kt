@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -33,12 +34,12 @@ import androidx.compose.material.icons.outlined.Nfc
 import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material.icons.outlined.Receipt
-import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -93,9 +94,11 @@ import com.cashu.me.ui.components.TwoFaceScreen
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.withMonoDigits
 
-// iOS UnifiedSendView metrics: 60pt round method buttons spaced 28pt.
-private val MethodButtonSize = 60.dp
-private val MethodRowSpacing = 28.dp
+// Generous circular method buttons (Surface, not FilledTonalIconButton —
+// the latter hardcodes 40dp and would ignore these sizes).
+private val MethodButtonSize = 72.dp
+private val MethodIconSize = 32.dp
+private val MethodRowSpacing = 40.dp
 private const val TYPE_DEBOUNCE_MS = 400L
 
 private enum class SendStep { Input, Amount, Confirm }
@@ -711,13 +714,25 @@ private fun SendMethodButton(
     onClick: () -> Unit,
 ) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        FilledTonalIconButton(
+        Surface(
             onClick = onClick,
             modifier = Modifier.size(MethodButtonSize),
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
         ) {
-            Icon(imageVector = icon, contentDescription = label)
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = label,
+                    modifier = Modifier.size(MethodIconSize),
+                )
+            }
         }
-        Spacer(Modifier.height(CashuTheme.spacing.tight))
+        Spacer(Modifier.height(CashuTheme.spacing.snug))
         Text(
             text = label,
             style = MaterialTheme.typography.bodySmall,

@@ -51,7 +51,16 @@ fun CashuTextField(
         readOnly = readOnly,
         textStyle = textStyle,
         label = label?.let { { Text(it) } },
-        placeholder = placeholder?.let { { Text(it) } },
+        // Soft placeholder (iOS secondary-ish field hint) — lighter than the
+        // default onSurfaceVariant so it recedes behind typed content.
+        placeholder = placeholder?.let {
+            {
+                Text(
+                    text = it,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+                )
+            }
+        },
         leadingIcon = leadingIcon,
         trailingIcon = trailingIcon,
         supportingText = supportingText?.let { { Text(it) } },
@@ -77,6 +86,8 @@ fun CashuTextField(
             cursorColor = MaterialTheme.colorScheme.primary,
             focusedLabelColor = MaterialTheme.colorScheme.primary,
             unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            focusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+            unfocusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
         ),
     )
 }
