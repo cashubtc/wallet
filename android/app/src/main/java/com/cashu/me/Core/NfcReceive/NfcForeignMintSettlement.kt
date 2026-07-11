@@ -47,6 +47,9 @@ internal suspend fun settleForeignNfcTokenWithCdk(
         require(proofs.isNotEmpty()) { "The foreign-mint token contains no proofs." }
 
         val targetWallet = repository.getWallet(org.cashudevkit.MintUrl(targetMint), CurrencyUnit.Sat)
+        val existingTransactionIds = targetWallet.listTransactions(org.cashudevkit.TransactionDirection.INCOMING)
+            .map { it.id.hex }
+            .toSet()
         val maximumFee = kotlin.math.ceil(gross * 0.05).toLong().coerceAtLeast(1L)
         val estimateAmount = gross - maximumFee
         require(estimateAmount > 0) { "Payment is too small after the conversion fee limit." }
@@ -82,8 +85,13 @@ internal suspend fun settleForeignNfcTokenWithCdk(
             QuoteState.ISSUED -> targetAmount
             else -> throw CdkGatewayUnavailable("Settlement mint has not credited the paid quote yet.")
         }
+        val transactionId = targetWallet.listTransactions(org.cashudevkit.TransactionDirection.INCOMING)
+            .firstOrNull { it.id.hex !in existingTransactionIds && it.quoteId == targetQuote.id }
+            ?.id?.hex
+            ?: throw CdkGatewayUnavailable("CDK did not record the NFC settlement transaction.")
         return ForeignNfcSettlement(
             amountReceived = credited,
+            transactionId = transactionId,
             feePaid = gross - credited,
             sourceMintUrl = sourceMint,
             settlementMintUrl = targetMint,

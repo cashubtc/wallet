@@ -8,6 +8,10 @@ import android.nfc.NfcAdapter
 import android.nfc.cardemulation.CardEmulation
 import android.os.Build
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.Spring
@@ -65,7 +69,7 @@ fun NfcReceiveLifecycle(
         val component = ComponentName(context, CashuNfcHostApduService::class.java)
         fun resume() {
             coordinator.activate(request, settlementMintUrl)
-            if (activity != null && adapter?.isEnabled == true) {
+            if (coordinator.isAdvertising && activity != null && adapter?.isEnabled == true) {
                 runCatching { CardEmulation.getInstance(adapter).setPreferredService(activity, component) }
                 if (Build.VERSION.SDK_INT >= 35) {
                     runCatching {
@@ -108,10 +112,17 @@ fun NfcReceiveIndicator(coordinator: NfcReceiveCoordinator, modifier: Modifier =
         NfcReceivePhase.Redeeming,
         NfcReceivePhase.Converting,
     )
+    val indicatorColor by animateColorAsState(
+        targetValue = if (active) CashuTheme.colors.pendingContainer else MaterialTheme.colorScheme.surfaceContainer,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "nfc-indicator-color",
+    )
     Surface(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .animateContentSize(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)),
         shape = MaterialTheme.shapes.large,
-        color = if (active) CashuTheme.colors.pendingContainer else MaterialTheme.colorScheme.surfaceContainer,
+        color = indicatorColor,
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
@@ -123,24 +134,35 @@ fun NfcReceiveIndicator(coordinator: NfcReceiveCoordinator, modifier: Modifier =
                 contentDescription = null,
                 tint = if (active) CashuTheme.colors.pending else MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = when (state.phase) {
-                        NfcReceivePhase.Waiting -> "Tap to pay ready"
-                        NfcReceivePhase.Unavailable -> "NFC receive unavailable"
-                        NfcReceivePhase.Disabled -> "NFC is off"
-                        NfcReceivePhase.Inactive -> "NFC receive inactive"
-                        NfcReceivePhase.Success -> "Payment received"
-                        NfcReceivePhase.Failure -> "NFC payment failed"
-                        else -> "Receiving by NFC"
-                    },
-                    style = MaterialTheme.typography.titleSmall,
-                )
-                Text(
-                    text = state.message ?: if (active) "Another wallet can use Send → Tap" else "Open this request with NFC enabled",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            AnimatedContent(
+                targetState = state.phase to state.message,
+                transitionSpec = {
+                    fadeIn(spring(stiffness = Spring.StiffnessMedium)) togetherWith
+                        fadeOut(spring(stiffness = Spring.StiffnessMedium))
+                },
+                label = "nfc-indicator-content",
+                modifier = Modifier.weight(1f),
+            ) { (phase, message) ->
+                Column {
+                    Text(
+                        text = when (phase) {
+                            NfcReceivePhase.Waiting -> "Tap to pay ready"
+                            NfcReceivePhase.NeedsAmount -> "Add an amount for Tap to receive"
+                            NfcReceivePhase.Unavailable -> "NFC receive unavailable"
+                            NfcReceivePhase.Disabled -> "NFC is off"
+                            NfcReceivePhase.Inactive -> "NFC receive inactive"
+                            NfcReceivePhase.Success -> "Payment received"
+                            NfcReceivePhase.Failure -> "NFC payment failed"
+                            else -> "Receiving by NFC"
+                        },
+                        style = MaterialTheme.typography.titleSmall,
+                    )
+                    Text(
+                        text = message ?: if (active) "Another wallet can use Send → Tap" else "Open this request with NFC enabled",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }

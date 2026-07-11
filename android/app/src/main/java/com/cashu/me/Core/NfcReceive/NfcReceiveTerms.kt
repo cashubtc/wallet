@@ -4,6 +4,8 @@ import com.cashu.me.Models.CashuRequest
 
 internal enum class NfcSettlementRoute { Direct, Foreign }
 
+internal fun CashuRequest.canReceiveByNfc(): Boolean = amount?.let { it > 0 } == true
+
 internal fun validateNfcReceiveTerms(
     request: CashuRequest,
     sourceMint: String,

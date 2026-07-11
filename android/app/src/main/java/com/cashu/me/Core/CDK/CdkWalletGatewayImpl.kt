@@ -414,6 +414,34 @@ class CdkWalletGatewayImpl : CdkWalletGateway, NwcServiceGateway {
         amount.value.toLong()
     }
 
+    override suspend fun receiveNfcEcashToken(
+        tokenString: String,
+        p2pkSigningKeys: List<String>,
+    ): NfcReceiveReceipt = cdkCall {
+        val token = CdkToken.decode(tokenString)
+        val mintUrl = token.mintUrl().url
+        val tokenUnit = token.unit() ?: CdkCurrencyUnit.Sat
+        ensureWalletUnlocked(mintUrl, tokenUnit)
+        val wallet = walletFor(mintUrl, tokenUnit)
+        val existingIds = wallet.listTransactions(CdkTransactionDirection.INCOMING)
+            .map { it.id.hex }
+            .toSet()
+        val amount = wallet.receive(
+            token = token,
+            options = CdkReceiveOptions(
+                amountSplitTarget = CdkSplitTarget.None,
+                p2pkSigningKeys = p2pkSigningKeys.map(::CdkSecretKey),
+                preimages = emptyList(),
+                metadata = emptyMap(),
+            ),
+        ).value.toLong()
+        val transactionId = wallet.listTransactions(CdkTransactionDirection.INCOMING)
+            .firstOrNull { it.id.hex !in existingIds }
+            ?.id?.hex
+            ?: throw CdkGatewayUnavailable("CDK did not record the received NFC transaction.")
+        NfcReceiveReceipt(amountReceived = amount, transactionId = transactionId)
+    }
+
     override suspend fun settleForeignNfcToken(
         tokenString: String,
         settlementMintUrl: String,

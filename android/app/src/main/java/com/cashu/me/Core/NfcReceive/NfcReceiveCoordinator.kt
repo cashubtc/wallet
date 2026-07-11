@@ -21,6 +21,7 @@ import org.cashudevkit.Token as CdkToken
 enum class NfcReceivePhase {
     Unavailable,
     Disabled,
+    NeedsAmount,
     Inactive,
     Waiting,
     Connected,
@@ -58,10 +59,13 @@ class NfcReceiveCoordinator(
     private val inFlight = ConcurrentHashMap.newKeySet<String>()
     @Volatile private var session: Session? = null
     @Volatile private var processing = false
+    @Volatile private var armed = false
+
+    val isAdvertising: Boolean get() = armed && session != null
 
     internal val type4Tag = NfcType4Tag(
         requestFile = {
-            session?.request?.let { request ->
+            session?.request?.takeIf { armed }?.let { request ->
                 NfcNdefCodec.textFile(
                     PaymentRequestBuilder.buildNfc(
                         id = request.id,
@@ -80,27 +84,56 @@ class NfcReceiveCoordinator(
         val availability = initialState()
         if (availability.phase == NfcReceivePhase.Unavailable || availability.phase == NfcReceivePhase.Disabled) {
             session = null
+            armed = false
             mutableState.value = availability
+            return
+        }
+        if (!request.canReceiveByNfc()) {
+            session = null
+            armed = false
+            mutableState.value = NfcReceiveState(
+                NfcReceivePhase.NeedsAmount,
+                "Add an amount to enable Tap to receive.",
+            )
             return
         }
         val target = settlementMint?.trim()?.trimEnd('/')?.takeIf { it.isNotEmpty() }
         if (target == null) {
             session = null
+            armed = false
             mutableState.value = NfcReceiveState(NfcReceivePhase.Unavailable, "Choose an active mint to receive by NFC.")
             return
         }
         session = Session(request, target)
+        armed = true
         if (!processing) mutableState.value = NfcReceiveState(NfcReceivePhase.Waiting)
     }
 
     fun deactivate() {
         session = null
+        armed = false
         type4Tag.deactivate()
         if (!processing) mutableState.value = NfcReceiveState(NfcReceivePhase.Inactive)
     }
 
     fun clearResult() {
-        if (session != null && !processing) mutableState.value = NfcReceiveState(NfcReceivePhase.Waiting)
+        if (session != null && !processing) {
+            armed = true
+            mutableState.value = NfcReceiveState(NfcReceivePhase.Waiting)
+        }
+    }
+
+    internal fun onTransportTimeout(wasWriting: Boolean) {
+        if (session == null || processing) return
+        if (wasWriting) {
+            armed = false
+            mutableState.value = NfcReceiveState(
+                NfcReceivePhase.Failure,
+                "Connection lost while receiving. Keep the phones together and try again.",
+            )
+        } else {
+            mutableState.value = NfcReceiveState(NfcReceivePhase.Waiting)
+        }
     }
 
     private fun initialState(): NfcReceiveState {
@@ -115,7 +148,7 @@ class NfcReceiveCoordinator(
     }
 
     private fun onTransportEvent(event: NfcType4Event) {
-        if (session == null) return
+        if (session == null || !armed) return
         when (event) {
             NfcType4Event.Connected -> if (!processing) {
                 mutableState.value = NfcReceiveState(NfcReceivePhase.Connected, "Phone detected")
@@ -129,7 +162,8 @@ class NfcReceiveCoordinator(
 
     private fun submit(payload: NfcNdefPayload) {
         val snapshot = session ?: return
-        if (processing) return
+        if (processing || !armed) return
+        armed = false
         processing = true
         scope.launch {
             var fingerprint: String? = null
@@ -140,9 +174,6 @@ class NfcReceiveCoordinator(
                 } ?: error("No valid Cashu token was received.")
                 fingerprint = tokenFingerprint(token)
                 require(inFlight.add(fingerprint)) { "This payment is already being received." }
-                require(snapshot.request.receivedPayments.none { it.transactionId == fingerprint }) {
-                    "This payment was already received."
-                }
                 process(snapshot, token, fingerprint)
             } catch (error: Throwable) {
                 mutableState.value = NfcReceiveState(
@@ -169,13 +200,12 @@ class NfcReceiveCoordinator(
             grossAmount = grossAmount,
             settlementMint = session.settlementMint,
         )
-        val amount = if (route == NfcSettlementRoute.Direct) {
+        val (amountReceived, transactionId) = if (route == NfcSettlementRoute.Direct) {
             mutableState.value = NfcReceiveState(NfcReceivePhase.Redeeming, "Securing ecash", sourceMint = sourceMint)
-            walletManager.receiveCashuRequestPayment(
+            walletManager.receiveNfcCashuRequestPayment(
                 tokenString = tokenString,
-                requestId = session.request.id,
                 processedId = fingerprint,
-            )
+            ).let { it.amountReceived to it.transactionId }
         } else {
             mutableState.value = NfcReceiveState(
                 NfcReceivePhase.Converting,
@@ -183,14 +213,15 @@ class NfcReceiveCoordinator(
                 sourceMint = sourceMint,
                 settlementMint = session.settlementMint,
             )
-            walletManager.settleForeignNfcToken(tokenString, session.settlementMint).amountReceived
+            walletManager.settleForeignNfcToken(tokenString, session.settlementMint, fingerprint)
+                .let { it.amountReceived to it.transactionId }
         }
-        require(amount > 0) { "The payment was not credited." }
-        requestStore.attachPayment(session.request.id, fingerprint, amount)
+        require(amountReceived > 0) { "The payment was not credited." }
+        requestStore.attachPayment(session.request.id, transactionId, amountReceived)
         mutableState.value = NfcReceiveState(
             phase = NfcReceivePhase.Success,
             message = "Payment received",
-            amount = amount,
+            amount = amountReceived,
             sourceMint = sourceMint,
             settlementMint = session.settlementMint,
         )

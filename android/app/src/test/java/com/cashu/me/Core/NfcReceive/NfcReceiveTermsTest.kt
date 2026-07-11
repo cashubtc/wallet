@@ -7,6 +7,13 @@ import org.junit.Test
 
 class NfcReceiveTermsTest {
     @Test
+    fun `nfc receive requires a positive request amount`() {
+        assertTrue(!request(amount = null).canReceiveByNfc())
+        assertTrue(!request(amount = 0).canReceiveByNfc())
+        assertTrue(request(amount = 1).canReceiveByNfc())
+    }
+
+    @Test
     fun `selected mint is received directly`() {
         val request = request(mints = listOf("https://mint.example/"))
         assertEquals(
