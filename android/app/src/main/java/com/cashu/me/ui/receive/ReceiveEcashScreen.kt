@@ -34,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import com.cashu.me.Core.CashuRequestStore
 import com.cashu.me.Core.NostrService
@@ -162,8 +163,6 @@ fun ReceiveEcashScreen(
     }
 
     Column(modifier = Modifier.fillMaxWidth()) {
-        // Handle-less sheet chrome matching the updated Send input step: a big
-        // left-aligned title, no drag-handle (from WalletFlowSheetHost) and no X.
         FlowSheetTitle(title = "Receive")
         // Wrap-content — the sheet settles just below Scan · Ecash · Bitcoin
         // (thumb-reachable), matching iOS's content-fit detent and the Send face.
@@ -171,7 +170,7 @@ fun ReceiveEcashScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = CashuTheme.spacing.comfortable)
-                .padding(bottom = CashuTheme.spacing.section)
+                .padding(bottom = 52.dp)
                 .navigationBarsPadding()
                 .imePadding(),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -183,7 +182,9 @@ fun ReceiveEcashScreen(
                     inputHint = null
                     routed = false
                 },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = CashuTheme.spacing.default),
                 placeholder = "Paste a Cashu token",
                 singleLine = false,
                 maxLines = 4,

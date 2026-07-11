@@ -321,6 +321,7 @@ fun HomeScreen(
                                 onClick = onOpenHistory,
                                 trailingIcon = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
                                 textStyle = MaterialTheme.typography.bodyLarge,
+                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }

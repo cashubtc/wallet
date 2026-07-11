@@ -85,6 +85,12 @@ struct SheetCloseButton: View {
     }
 }
 
+extension Font {
+    /// Flow bottom-sheet title — `.headline` (~17pt) × 1.2, matching Android
+    /// `SheetHeader` (`titleMedium` × 1.2).
+    static let sheetTitle = Font.system(size: 20.4, weight: .semibold)
+}
+
 extension View {
     /// Expands an icon-only toolbar button's label to the HIG-minimum 44×44pt
     /// tap target. Apply inside the label, on the `Image`.

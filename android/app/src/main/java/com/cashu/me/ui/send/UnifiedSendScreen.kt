@@ -447,7 +447,6 @@ fun UnifiedSendScreen(
             }
             null -> {
                 if (step == SendStep.Input) {
-                    // Match Receive chooser chrome: left-aligned titleLarge, no X.
                     FlowSheetTitle(
                         title = if (creqFromScan) "Pay Cashu Request" else "Send",
                     )
@@ -638,7 +637,7 @@ private fun InputFace(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = CashuTheme.spacing.comfortable)
-            .padding(bottom = CashuTheme.spacing.section)
+            .padding(bottom = 52.dp)
             .navigationBarsPadding()
             .imePadding(),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -646,7 +645,9 @@ private fun InputFace(
         CashuTextField(
             value = destination,
             onValueChange = onDestinationChange,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = CashuTheme.spacing.default),
             placeholder = "Address, invoice, or Cashu Request",
             singleLine = false,
             maxLines = 4,

@@ -74,16 +74,13 @@ struct SendView: View {
             .animation(.smooth(duration: 0.3), value: tokenClaimed)
             .navigationBarTitleDisplayMode(.inline)
             // Match the Lightning Invoice screen: float the title + chrome
-            // over the black canvas, no secondary gray strip.
+            // over the black canvas, no secondary gray strip. Dismiss via the
+            // sheet drag indicator (no close X).
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    SheetCloseButton()
-                }
-
                 ToolbarItem(placement: .principal) {
                     Text(generatedToken != nil ? "Pending Ecash" : "Send Ecash")
-                        .font(.headline)
+                        .font(.sheetTitle)
                 }
 
                 if generatedToken == nil {
@@ -1279,11 +1276,12 @@ struct UnifiedSendView: View {
             .frame(maxHeight: prefersCompactSheet ? nil : .infinity, alignment: .top)
             .animation(.smooth(duration: 0.3), value: step)
             .animation(.smooth(duration: 0.3), value: locked != nil)
-            .navigationTitle("Send")
+            .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    SheetCloseButton(action: onClose)
+                ToolbarItem(placement: .principal) {
+                    Text("Send")
+                        .font(.sheetTitle)
                 }
             }
             .sheet(isPresented: $showingScanner) {
@@ -2879,16 +2877,9 @@ struct MeltView: View {
             .animation(.smooth(duration: 0.3), value: meltViewStateKey)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    // No dismissing mid-authorization (payment is in flight).
-                    if paymentPhase != .processing {
-                        SheetCloseButton(action: close)
-                    }
-                }
-
                 ToolbarItem(placement: .principal) {
                     Text(screenTitle)
-                        .font(.headline)
+                        .font(.sheetTitle)
                 }
             }
             .sheet(isPresented: $showingScanner) {
