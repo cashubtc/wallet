@@ -21,16 +21,19 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearWavyProgressIndicator
@@ -58,7 +61,6 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.cashu.me.Core.AnimatedUrDecoder
 import com.cashu.me.Core.WalletHaptic
 import com.cashu.me.Core.rememberWalletHaptics
-import com.cashu.me.ui.components.GhostButton
 import com.cashu.me.ui.components.PrimaryButton
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.common.InputImage
@@ -142,6 +144,7 @@ fun ScannerView(
         CameraPermissionState.Requesting -> CameraPermissionView(
             title = "Camera access",
             message = "Waiting for permission to use the camera.",
+            showsProgress = true,
             onClose = onClose,
         )
         CameraPermissionState.CanRequest -> CameraPermissionView(
@@ -168,9 +171,11 @@ fun ScannerView(
     if (cameraPermissionState != CameraPermissionState.Granted) return
 
     cameraError?.let { message ->
-        CameraFailureView(
+        CameraPermissionView(
+            title = "Camera unavailable",
             message = message,
-            onRetry = { cameraError = null },
+            actionText = "Try again",
+            onAction = { cameraError = null },
             onClose = onClose,
         )
         return
@@ -279,47 +284,76 @@ private fun CameraPermissionView(
     message: String,
     actionText: String? = null,
     onAction: (() -> Unit)? = null,
+    showsProgress: Boolean = false,
     onClose: () -> Unit,
 ) {
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
+            .background(Color.Black),
     ) {
-        Text(title, style = MaterialTheme.typography.titleMedium)
-        Text(
-            text = message,
-            color = MaterialTheme.colorScheme.secondary,
-            style = MaterialTheme.typography.bodyLarge,
-        )
-        Spacer(Modifier.height(24.dp))
-        if (actionText != null && onAction != null) {
-            PrimaryButton(actionText, onClick = onAction)
+        IconButton(
+            onClick = onClose,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .statusBarsPadding()
+                .padding(12.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "Close scanner",
+                tint = Color.White,
+            )
         }
-        GhostButton("Close", onClick = onClose)
-    }
-}
 
-@Composable
-private fun CameraFailureView(
-    message: String,
-    onRetry: () -> Unit,
-    onClose: () -> Unit,
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text("Camera scanner is unavailable.", style = MaterialTheme.typography.titleMedium)
-        Text(message, color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall)
-        Spacer(Modifier.height(24.dp))
-        PrimaryButton("Try again", onClick = onRetry)
-        GhostButton("Close", onClick = onClose)
+        Column(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .widthIn(max = 440.dp)
+                .fillMaxWidth()
+                .padding(horizontal = 32.dp)
+                .navigationBarsPadding(),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Icon(
+                imageVector = Icons.Default.CameraAlt,
+                contentDescription = null,
+                modifier = Modifier.size(48.dp),
+                tint = Color.White,
+            )
+            Text(
+                text = title,
+                color = Color.White,
+                style = MaterialTheme.typography.headlineSmall,
+                textAlign = TextAlign.Center,
+            )
+            Text(
+                text = message,
+                color = Color.White.copy(alpha = 0.75f),
+                style = MaterialTheme.typography.bodyLarge,
+                textAlign = TextAlign.Center,
+            )
+            if (showsProgress) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(28.dp),
+                    color = Color.White,
+                    strokeWidth = 2.dp,
+                )
+            }
+            if (actionText != null && onAction != null) {
+                PrimaryButton(
+                    text = actionText,
+                    onClick = onAction,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.White,
+                        contentColor = Color.Black,
+                        disabledContainerColor = Color.White.copy(alpha = 0.5f),
+                        disabledContentColor = Color.Black.copy(alpha = 0.5f),
+                    ),
+                )
+            }
+        }
     }
 }
 

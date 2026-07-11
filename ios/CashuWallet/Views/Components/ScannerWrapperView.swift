@@ -85,34 +85,47 @@ private struct ScannerCameraStatusView: View {
     var action: (() -> Void)?
 
     var body: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "camera.fill")
-                .font(.system(size: 42))
-                .accessibilityHidden(true)
+        ZStack {
+            Color.black.ignoresSafeArea()
 
-            Text(title)
-                .font(.title2.weight(.semibold))
+            VStack(spacing: 16) {
+                Image(systemName: "camera.fill")
+                    .font(.system(size: 42))
+                    .accessibilityHidden(true)
 
-            Text(message)
-                .font(.body)
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.white.opacity(0.75))
+                Text(title)
+                    .font(.title2.weight(.semibold))
 
-            if showsProgress {
-                ProgressView()
-                    .tint(.white)
-                    .accessibilityLabel("Requesting camera access")
+                Text(message)
+                    .font(.body)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.white.opacity(0.75))
+
+                if showsProgress {
+                    ProgressView()
+                        .tint(.white)
+                        .accessibilityLabel("Requesting camera access")
+                }
+
+                if let actionTitle, let action {
+                    Button(action: action) {
+                        Text(actionTitle)
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(.black)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                            .background(.white, in: Capsule())
+                    }
+                    .buttonStyle(PressableButtonStyle())
+                    .frame(maxWidth: 320)
+                }
             }
-
-            if let actionTitle, let action {
-                Button(actionTitle, action: action)
-                    .buttonStyle(.borderedProminent)
-            }
+            .foregroundStyle(.white)
+            .padding(32)
+            .frame(maxWidth: 440)
+            .accessibilityElement(children: .contain)
         }
-        .foregroundStyle(.white)
-        .padding(32)
-        .frame(maxWidth: 440)
-        .accessibilityElement(children: .contain)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
@@ -291,10 +304,11 @@ struct ScannerWrapperView: View {
             }
             .navigationTitle("Scan QR Code")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     SheetCloseButton()
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(.white)
                 }
             }
             .onAppear {
