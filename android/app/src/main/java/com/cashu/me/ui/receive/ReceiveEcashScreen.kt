@@ -38,6 +38,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
@@ -331,10 +335,36 @@ private fun PasteFace(
         verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
     ) {
         Box(modifier = Modifier.fillMaxWidth()) {
+            // iOS ReceiveEcashView fades token text into the field bottom so the
+            // clear/paste control stays readable over monospace content. Draw the
+            // fade on the field itself (container-color overlay, iOS stop curve)
+            // so touches still reach the TextField; the IconButton sits above.
+            val fieldContainer = if (errorText != null) {
+                MaterialTheme.colorScheme.error.copy(alpha = 0.12f)
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerHighest
+            }
             CashuTextField(
                 value = input,
                 onValueChange = onInputChange,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(MaterialTheme.shapes.large)
+                    .drawWithCache {
+                        val brush = Brush.verticalGradient(
+                            colorStops = arrayOf(
+                                0.00f to Color.Transparent,
+                                0.35f to Color.Transparent,
+                                0.55f to fieldContainer.copy(alpha = 0.35f),
+                                0.75f to fieldContainer.copy(alpha = 0.85f),
+                                1.00f to fieldContainer,
+                            ),
+                        )
+                        onDrawWithContent {
+                            drawContent()
+                            drawRect(brush)
+                        }
+                    },
                 placeholder = "cashuB…",
                 textStyle = MaterialTheme.typography.bodyMedium.copy(
                     fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
@@ -344,7 +374,8 @@ private fun PasteFace(
                 minLines = TokenFieldMinLines,
                 maxLines = TokenFieldMaxLines,
             )
-            // Corner affordance (iOS bottomTrailing): paste when empty, clear when full.
+            // Corner affordance (iOS bottomTrailing): paste when empty, clear when
+            // full. Drawn above the fade so it stays fully opaque.
             IconButton(
                 onClick = if (input.isBlank()) onPaste else onClear,
                 modifier = Modifier
