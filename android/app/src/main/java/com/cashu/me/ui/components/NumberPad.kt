@@ -17,7 +17,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.windowInsetsBottomHeight
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Backspace
+import androidx.compose.material.icons.automirrored.outlined.Backspace
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -85,7 +85,7 @@ fun NumberPad(
                             },
                         ) {
                             Icon(
-                                imageVector = Icons.AutoMirrored.Filled.Backspace,
+                                imageVector = Icons.AutoMirrored.Outlined.Backspace,
                                 contentDescription = null,
                             )
                         }

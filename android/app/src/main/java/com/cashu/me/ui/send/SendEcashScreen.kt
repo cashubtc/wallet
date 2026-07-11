@@ -459,9 +459,9 @@ private fun InputFace(
         }
 
         // iOS SendView: mint row on top, amount vertically centered between
-        // Spacers, keypad pinned below. Amount dims primary → secondary while
-        // the requested amount exceeds the spendable balance. Notices live
-        // *below* the second spacer so they never reflow the hero.
+        // Spacers, keypad pinned below. Amount dims while over-balance.
+        // Notices are *overlaid* inside the bottom spacer — they must not
+        // consume layout height or the hero shifts up.
         Spacer(Modifier.weight(1f, fill = true))
         val insufficient = !balanceLoading && amountValue > 0 && amountValue > mintBalance
         val amountColor by animateColorAsState(
@@ -493,36 +493,49 @@ private fun InputFace(
             )
         }
 
-        Spacer(Modifier.weight(1f, fill = true))
-
-        // Fade+scale warning (iOS .transition(.opacity.combined(with: .scale))),
-        // reduce-motion collapses to a plain fade. Anchored above the keypad so
-        // the centered amount never shifts when this appears.
         val reduceMotion = rememberReducedMotion()
-        AnimatedVisibility(
-            visible = insufficient,
-            enter = if (reduceMotion) {
-                fadeIn(spring(stiffness = Spring.StiffnessMedium))
-            } else {
-                fadeIn(spring(stiffness = Spring.StiffnessMedium)) + scaleIn(
-                    animationSpec = spring(stiffness = Spring.StiffnessMedium),
-                    initialScale = 0.95f,
-                )
-            },
-            exit = fadeOut(spring(stiffness = Spring.StiffnessMedium)),
-        ) {
-            InlineNotice(
-                text = "Insufficient balance",
-                severity = NoticeSeverity.Warning,
-                modifier = Modifier.padding(bottom = CashuTheme.spacing.snug),
-            )
-        }
-
-        if (errorText != null) {
-            InlineNotice(
-                text = errorText,
-                modifier = Modifier.padding(bottom = CashuTheme.spacing.snug),
-            )
+        Box(modifier = Modifier.weight(1f, fill = true).fillMaxWidth()) {
+            // Fade+scale warning (iOS .transition(.opacity.combined(with: .scale))),
+            // reduce-motion collapses to a plain fade. Drawn at the bottom of the
+            // flexible gap so the amount above stays pinned.
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                AnimatedVisibility(
+                    visible = insufficient,
+                    enter = if (reduceMotion) {
+                        fadeIn(spring(stiffness = Spring.StiffnessMedium))
+                    } else {
+                        fadeIn(spring(stiffness = Spring.StiffnessMedium)) + scaleIn(
+                            animationSpec = spring(stiffness = Spring.StiffnessMedium),
+                            initialScale = 0.95f,
+                        )
+                    },
+                    exit = fadeOut(spring(stiffness = Spring.StiffnessMedium)),
+                ) {
+                    // iOS SendView: tinted caution InlineNotice with balance detail.
+                    val mintName = activeMint?.name
+                    InlineNotice(
+                        text = "Insufficient balance",
+                        severity = NoticeSeverity.Warning,
+                        detail = if (mintName != null) {
+                            "You have $balanceText in $mintName."
+                        } else {
+                            null
+                        },
+                        modifier = Modifier.padding(bottom = CashuTheme.spacing.snug),
+                    )
+                }
+                if (errorText != null) {
+                    InlineNotice(
+                        text = errorText,
+                        modifier = Modifier.padding(bottom = CashuTheme.spacing.snug),
+                    )
+                }
+            }
         }
 
         NumberPadFooter(
