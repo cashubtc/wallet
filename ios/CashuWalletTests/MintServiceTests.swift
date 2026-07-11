@@ -407,6 +407,10 @@ final class MultiUnitSupportTests: XCTestCase {
 
     func testUSDDisplayUsesLeadingBareDollarSymbol() {
         XCTAssertEqual(AmountFormatter.fiat(60, currencyCode: "USD"), "$60.00")
+        XCTAssertEqual(
+            AmountFormatter.fiat(sats: 122_300, btcPrice: 10_000, currencyCode: "USD"),
+            "$12.23"
+        )
     }
 
     func testFiatPrimaryDisplayOrdersFiatBeforeSats() {

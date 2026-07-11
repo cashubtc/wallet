@@ -39,6 +39,10 @@ struct MainWalletView: View {
     private let heroPagerHeight: CGFloat = 94
     /// Reserved status-line slot under the primary amount.
     private let statusLineHeight: CGFloat = 18
+    /// Move the converted line upward without changing the hero footprint:
+    /// remove 2pt above it and reserve the same 2pt below it.
+    private let balanceLineSpacing: CGFloat = 2
+    private let convertedAmountBottomPadding: CGFloat = 2
     private let pageDotSize: CGFloat = 6
     /// Gap between hero and dots — always reserved with the dots slot.
     private let pageDotGap: CGFloat = 0
@@ -251,7 +255,7 @@ struct MainWalletView: View {
     /// reserved so pages and single-unit mode share one height.
     @ViewBuilder
     private func unitBalanceHero(_ unit: String) -> some View {
-        VStack(spacing: 4) {
+        VStack(spacing: balanceLineSpacing) {
             if unit.lowercased() == "sat" {
                 let sats = walletManager.balancesByUnit["sat"] ?? walletManager.balance
                 let display = balanceDisplay(sats)
@@ -287,6 +291,7 @@ struct MainWalletView: View {
                 Color.clear.frame(height: statusLineHeight)
             }
         }
+        .padding(.bottom, convertedAmountBottomPadding)
     }
 
     /// Compact page dots under the unit pager (6pt dots, 6pt gap, active pill

@@ -282,6 +282,17 @@ enum AmountFormatter {
         formatter.currencyCode = currencyCode.uppercased()
         formatter.minimumFractionDigits = 2
         formatter.maximumFractionDigits = 2
+        // NumberFormatter can inject a regular or non-breaking space between a
+        // currency symbol and the number. Wallet-native currency amounts use a
+        // compact affix ("$12.23"), so converted BTC amounts must match it.
+        formatter.positivePrefix = formatter.positivePrefix?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        formatter.positiveSuffix = formatter.positiveSuffix?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        formatter.negativePrefix = formatter.negativePrefix?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        formatter.negativeSuffix = formatter.negativeSuffix?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         return formatter
     }
 }
