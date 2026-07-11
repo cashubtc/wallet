@@ -36,9 +36,9 @@ import com.cashu.me.Core.UnitAmountEntry
 import com.cashu.me.ui.theme.CashuTheme
 
 // Minimal keypad: no background boxes, just numbers with subtle press feedback.
-// Tighter vertical spacing for a cleaner iOS-style appearance.
-private val KeyGap = 4.dp
-private val KeyHeight = 52.dp
+// Matches iOS NumberPadAmountInput (10pt gaps, 64pt keys).
+private val KeyGap = 10.dp
+private val KeyHeight = 64.dp
 
 /**
  * Minimal numeric keypad for amount entry — no background boxes, just numbers

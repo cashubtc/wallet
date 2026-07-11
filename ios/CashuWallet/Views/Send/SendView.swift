@@ -195,34 +195,51 @@ struct SendView: View {
 
             // Amount display — sats keep the fiat-primary tap-to-flip ↕ pill; a
             // non-sat mint unit is shown directly in that unit (no price flip).
+            // Dims while the typed amount exceeds spendable balance (AmountEntryView parity).
             if isSatSend {
                 CurrencyAmountDisplay(
                     sats: amountSats,
                     primary: $settings.amountDisplayPrimary,
-                    entryRaw: amountString
+                    entryRaw: amountString,
+                    isDimmed: isInsufficientBalance
                 )
             } else {
                 Text(sendUnitEntryDisplay)
                     .font(.system(size: 64, weight: .semibold, design: .rounded))
                     .monospacedDigit()
+                    .foregroundStyle(isInsufficientBalance ? .secondary : .primary)
                     .minimumScaleFactor(0.4)
                     .lineLimit(1)
                     .contentTransition(.numericText(value: Double(amountBaseUnits)))
                     .animation(.snappy, value: amountBaseUnits)
+                    .animation(.snappy, value: isInsufficientBalance)
             }
 
-            if let error = errorMessage {
+            Spacer()
+
+            // Live insufficient-balance + async errors sit *above the keypad* so
+            // the centered amount never reflows when a notice appears (Android
+            // SendEcash parity). Prefer the live notice while over-balance.
+            if isInsufficientBalance {
+                InlineNotice(
+                    message: "Insufficient balance",
+                    severity: .caution,
+                    detail: insufficientBalanceDetail,
+                    tinted: true
+                )
+                .padding(.horizontal)
+                .padding(.bottom, 8)
+                .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale))
+            } else if let error = errorMessage {
                 InlineNotice(
                     message: error,
                     severity: errorSeverity,
                     detail: errorShowsMintAction ? insufficientBalanceDetail : nil
                 )
                 .padding(.horizontal)
-                .padding(.top, 8)
+                .padding(.bottom, 8)
                 .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale))
             }
-
-            Spacer()
 
             // Number pad — sats/fiat display entry, or direct entry in the
             // active mint unit's own precision (0 decimals for sat, 2 for eur/usd).
@@ -252,6 +269,8 @@ struct SendView: View {
             .padding(.bottom, 16)
         }
         .animation(.snappy(duration: 0.3), value: lockWithP2PK)
+        .animation(.snappy(duration: 0.3), value: isInsufficientBalance)
+        .animation(reduceMotion ? .easeInOut(duration: 0.2) : .snappy(duration: 0.3), value: errorMessage)
     }
 
     // MARK: - Mint Selector
@@ -389,6 +408,15 @@ struct SendView: View {
         guard displaySendMint != nil else { return false }
         if lockWithP2PK && normalizedP2PKPubkeyInput == nil { return false }
         return amount <= effectiveSendBalance
+    }
+
+    /// Live over-balance while typing — drives amount dimming + the caution notice
+    /// above the keypad (mirrors Android Send Ecash / AmountEntryView).
+    private var isInsufficientBalance: Bool {
+        // Non-sat balances load async; don't flash "insufficient" at 0 while pending.
+        if !isSatSend && selectedUnitBalance == nil { return false }
+        let amount = amountBaseUnits
+        return amount > 0 && amount > effectiveSendBalance
     }
 
     private var availableSendMints: [MintInfo] {
@@ -716,7 +744,7 @@ struct SendView: View {
     /// Secondary line under an insufficient-balance notice: what's actually here.
     private var insufficientBalanceDetail: String? {
         guard let mint = displaySendMint else { return nil }
-        return "You have \(formatBalance(mint.balance)) in \(mint.name)."
+        return "You have \(sendBalanceText) in \(mint.name)."
     }
 
     private func presentError(_ message: String, severity: ErrorSeverity = .error, showsMintAction: Bool = false) {
@@ -916,7 +944,7 @@ struct SendView: View {
 
 /// The shared amount-entry mint row used by every keypad screen (Create ecash and
 /// the unified Send amount step). A tappable mint identity (avatar + balance) on the
-/// left, then a "Use Max" pill, then the mint-picker chevron at the far right — so
+/// left, then a "Send Max" pill, then the mint-picker chevron at the far right — so
 /// the dropdown affordance reads clearly without crowding the balance.
 struct MintAmountSelectorRow: View {
     let mint: MintInfo
@@ -946,7 +974,7 @@ struct MintAmountSelectorRow: View {
             Spacer(minLength: 8)
 
             Button(action: onUseMax) {
-                Text("Use Max")
+                Text("Send Max")
                     .font(.caption.weight(.semibold))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)

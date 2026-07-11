@@ -26,14 +26,14 @@ import com.cashu.me.Models.MintInfo
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.withMonoDigits
 
-// iOS MintAmountSelectorRow metrics: 40pt avatar, 12pt padding, capsule Use Max pill.
+// iOS MintAmountSelectorRow metrics: 40pt avatar, 12pt padding, capsule Send Max pill.
 private val AvatarSize = 40.dp
 private val ChevronSize = 20.dp
 private val UseMaxPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
 
 /**
  * Card-style mint selector matching iOS `MintAmountSelectorRow`: one rounded
- * surface holding the mint avatar, name + balance, an optional "Use Max" pill,
+ * surface holding the mint avatar, name + balance, an optional "Send Max" pill,
  * and a trailing chevron. Tapping anywhere (except the pill) opens the picker.
  */
 @Composable
@@ -79,7 +79,7 @@ fun MintSelectorRow(
         if (onUseMax != null) {
             // iOS: caption semibold in a thin-material capsule.
             Text(
-                text = "Use Max",
+                text = "Send Max",
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface,

@@ -79,6 +79,7 @@ import com.cashu.me.Models.SendTokenResult
 import com.cashu.me.ui.components.AmountEntryHero
 import com.cashu.me.ui.components.CashuTextField
 import com.cashu.me.ui.components.InlineNotice
+import com.cashu.me.ui.components.NoticeSeverity
 import com.cashu.me.ui.components.MintPickerSheet
 import com.cashu.me.ui.components.MintSelectorRow
 import com.cashu.me.ui.components.NumberPadFooter
@@ -231,15 +232,7 @@ fun SendEcashScreen(
                         ToolbarIcon(Icons.Outlined.IosShare, contentDescription = "Share")
                     }
                 } else if (current is SendFace.Input) {
-                    if (activeMint?.supportsMultipleUnits == true) {
-                        androidx.compose.material3.TextButton(onClick = { unitPickerOpen = true }) {
-                            Text(
-                                text = effectiveUnit.uppercase(),
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
-                        }
-                    }
+                    // iOS toolbar order: lock, then unit (unit sits to the lock's right).
                     IconButton(onClick = { p2pkOn = !p2pkOn }) {
                         ToolbarIcon(
                             imageVector = if (p2pkOn) Icons.Filled.Lock
@@ -248,6 +241,15 @@ fun SendEcashScreen(
                             tint = if (p2pkOn) MaterialTheme.colorScheme.onSurface
                             else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                    }
+                    if (activeMint?.supportsMultipleUnits == true) {
+                        androidx.compose.material3.TextButton(onClick = { unitPickerOpen = true }) {
+                            Text(
+                                text = effectiveUnit.uppercase(),
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
                     }
                 }
             },
@@ -445,7 +447,7 @@ private fun InputFace(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Spacer(Modifier.height(CashuTheme.spacing.micro))
-        // One card: avatar + name + balance + Use Max pill + chevron
+        // One card: avatar + name + balance + Send Max pill + chevron
         // (iOS MintAmountSelectorRow parity).
         if (activeMint != null) {
             MintSelectorRow(
@@ -456,9 +458,11 @@ private fun InputFace(
             )
         }
 
-        Spacer(Modifier.height(CashuTheme.spacing.snug))
-        // iOS AmountEntryView: the amount dims primary → secondary while the
-        // requested amount exceeds the spendable balance.
+        // iOS SendView: mint row on top, amount vertically centered between
+        // Spacers, keypad pinned below. Amount dims primary → secondary while
+        // the requested amount exceeds the spendable balance. Notices live
+        // *below* the second spacer so they never reflow the hero.
+        Spacer(Modifier.weight(1f, fill = true))
         val insufficient = !balanceLoading && amountValue > 0 && amountValue > mintBalance
         val amountColor by animateColorAsState(
             targetValue = if (insufficient) {
@@ -478,8 +482,22 @@ private fun InputFace(
             formatter = formatter,
             color = amountColor,
         )
+
+        AnimatedVisibility(visible = p2pkOn) {
+            P2pkLockSection(
+                input = p2pkInput,
+                onInputChange = onP2pkInputChange,
+                inputError = p2pkInputError,
+                myKeyHex = p2pkMyKeyHex,
+                onUseMyKey = onUseMyP2pkKey,
+            )
+        }
+
+        Spacer(Modifier.weight(1f, fill = true))
+
         // Fade+scale warning (iOS .transition(.opacity.combined(with: .scale))),
-        // reduce-motion collapses to a plain fade.
+        // reduce-motion collapses to a plain fade. Anchored above the keypad so
+        // the centered amount never shifts when this appears.
         val reduceMotion = rememberReducedMotion()
         AnimatedVisibility(
             visible = insufficient,
@@ -493,28 +511,19 @@ private fun InputFace(
             },
             exit = fadeOut(spring(stiffness = Spring.StiffnessMedium)),
         ) {
-            Text(
+            InlineNotice(
                 text = "Insufficient balance",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-            )
-        }
-
-        AnimatedVisibility(visible = p2pkOn) {
-            P2pkLockSection(
-                input = p2pkInput,
-                onInputChange = onP2pkInputChange,
-                inputError = p2pkInputError,
-                myKeyHex = p2pkMyKeyHex,
-                onUseMyKey = onUseMyP2pkKey,
+                severity = NoticeSeverity.Warning,
+                modifier = Modifier.padding(bottom = CashuTheme.spacing.snug),
             )
         }
 
         if (errorText != null) {
-            InlineNotice(text = errorText)
+            InlineNotice(
+                text = errorText,
+                modifier = Modifier.padding(bottom = CashuTheme.spacing.snug),
+            )
         }
-
-        Spacer(modifier = Modifier.weight(1f, fill = true))
 
         NumberPadFooter(
             amount = amount,
