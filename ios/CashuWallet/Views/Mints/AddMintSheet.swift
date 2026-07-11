@@ -48,42 +48,38 @@ struct AddMintSheet: View {
                 } footer: {
                     Text("Enter the URL of a Cashu mint to connect to it. This wallet is not affiliated with any mint.")
                 }
-
-                if let errorMessage {
-                    Section {
+            }
+            .scrollDismissesKeyboard(.interactively)
+            .safeAreaInset(edge: .bottom) {
+                VStack(spacing: 12) {
+                    if let errorMessage {
                         InlineNotice(message: errorMessage, severity: .error)
                     }
-                }
 
-                Section {
                     Button(action: addMint) {
-                        HStack {
-                            Text("Add Mint")
+                        Group {
                             if isAdding {
-                                Spacer()
-                                ProgressView()
+                                ProgressView().tint(.primary)
+                            } else {
+                                Text("Add Mint")
                             }
                         }
                     }
+                    .glassButton()
                     .disabled(!canSubmit)
                     .accessibilityIdentifier("mints-add-submit-button")
 
                     Button("Paste URL from Clipboard", action: pasteFromClipboard)
+                        .textLinkButton()
+                        .frame(maxWidth: .infinity)
                         .disabled(isAdding)
                 }
+                .padding(.horizontal)
+                .padding(.top, 8)
+                .padding(.bottom, 8)
             }
-            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Add Mint")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
-                        .fontWeight(.semibold)
-                }
-            }
-            .onAppear {
-                urlFieldFocused = true
-            }
             .fullScreenCover(isPresented: $showingScanner) {
                 ScannerWrapperView(
                     onScanned: handleScannedMintUrl,
