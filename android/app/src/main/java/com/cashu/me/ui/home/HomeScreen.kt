@@ -252,7 +252,7 @@ fun HomeScreen(
                         }
                     },
                 contentPadding = PaddingValues(
-                    top = pinnedTopDp,
+                    top = pinnedTopDp + CashuTheme.spacing.snug,
                     bottom = CashuTheme.spacing.section,
                 ),
             ) {

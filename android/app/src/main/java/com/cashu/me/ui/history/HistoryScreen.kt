@@ -280,7 +280,14 @@ fun HistoryScreen(
                             listState.animateScrollToItem(0)
                         }
                     }
-                    LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(
+                            top = CashuTheme.spacing.snug,
+                            bottom = CashuTheme.spacing.section,
+                        ),
+                    ) {
                         sections.forEach { section ->
                             item(key = "header-${section.title}") {
                                 SectionHeader(section.title.uppercase())

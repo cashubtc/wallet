@@ -182,7 +182,11 @@ fun MintsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
-            contentPadding = PaddingValues(bottom = CashuTheme.spacing.section),
+            contentPadding = PaddingValues(
+                start = CashuTheme.spacing.comfortable,
+                end = CashuTheme.spacing.comfortable,
+                bottom = CashuTheme.spacing.section,
+            ),
         ) {
             if (walletState.mints.isNotEmpty()) {
                 items(walletState.mints, key = { it.url }) { mint ->
@@ -225,46 +229,52 @@ fun MintsScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = CashuTheme.spacing.comfortable)
                         .padding(bottom = CashuTheme.spacing.comfortable),
                     verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
                 ) {
                     SectionHeader("Add mint")
-                    CashuTextField(
-                        value = url,
-                        onValueChange = { url = it; error = null },
-                        label = "Mint URL",
-                        placeholder = "https://…",
-                        singleLine = true,
-                        isError = error != null,
-                        modifier = Modifier.fillMaxWidth(),
-                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                            capitalization = KeyboardCapitalization.None,
-                        ),
-                        trailingIcon = {
-                            IconButton(onClick = onScan) {
-                                Icon(
-                                    imageVector = Icons.Outlined.QrCodeScanner,
-                                    contentDescription = "Scan",
-                                )
-                            }
-                        },
-                    )
-                    CashuTextField(
-                        value = nickname,
-                        onValueChange = { nickname = it },
-                        label = "Nickname (optional)",
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Text(
-                        text = "Enter the URL of a Cashu mint to connect to it. " +
-                            "This wallet is not affiliated with any mint.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    if (error != null) {
-                        InlineNotice(text = error!!)
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = CashuTheme.spacing.comfortable),
+                        verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
+                    ) {
+                        CashuTextField(
+                            value = url,
+                            onValueChange = { url = it; error = null },
+                            label = "Mint URL",
+                            placeholder = "https://…",
+                            singleLine = true,
+                            isError = error != null,
+                            modifier = Modifier.fillMaxWidth(),
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                                capitalization = KeyboardCapitalization.None,
+                            ),
+                            trailingIcon = {
+                                IconButton(onClick = onScan) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.QrCodeScanner,
+                                        contentDescription = "Scan",
+                                    )
+                                }
+                            },
+                        )
+                        CashuTextField(
+                            value = nickname,
+                            onValueChange = { nickname = it },
+                            label = "Nickname (optional)",
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Text(
+                            text = "Enter the URL of a Cashu mint to connect to it. " +
+                                "This wallet is not affiliated with any mint.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        if (error != null) {
+                            InlineNotice(text = error!!)
+                        }
                     }
                 }
             }
