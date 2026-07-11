@@ -1,6 +1,7 @@
 package com.cashu.me.Core.NfcReceive
 
 import com.cashu.me.Models.CashuRequest
+import com.cashu.me.Models.CashuRequestPayment
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -11,6 +12,13 @@ class NfcReceiveTermsTest {
         assertTrue(!request(amount = null).canReceiveByNfc())
         assertTrue(!request(amount = 0).canReceiveByNfc())
         assertTrue(request(amount = 1).canReceiveByNfc())
+    }
+
+    @Test
+    fun `nfc receive is only offered for unpaid requests`() {
+        assertTrue(request(amount = 1).shouldOfferNfcReceive())
+        assertTrue(!paidRequest().shouldOfferNfcReceive())
+        assertTrue(!paidRequest().canReceiveByNfc())
     }
 
     @Test
@@ -58,5 +66,15 @@ class NfcReceiveTermsTest {
         amount = amount,
         unit = "sat",
         mints = mints,
+    )
+
+    private fun paidRequest() = request(amount = 1).copy(
+        receivedPayments = listOf(
+            CashuRequestPayment(
+                transactionId = "transaction",
+                amount = 1,
+                receivedAtEpochMillis = 1,
+            ),
+        ),
     )
 }

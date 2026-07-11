@@ -68,6 +68,7 @@ import com.cashu.me.Core.CashuRequestStore
 import com.cashu.me.Core.NostrService
 import com.cashu.me.Core.NfcReceive.NfcReceiveCoordinator
 import com.cashu.me.Core.NfcReceive.NfcReceivePhase
+import com.cashu.me.Core.NfcReceive.shouldOfferNfcReceive
 import com.cashu.me.Core.PaymentRequestBuilder
 import com.cashu.me.Core.Protocols.CurrencyAmount
 import com.cashu.me.Core.Protocols.CurrencyRegistry
@@ -127,7 +128,8 @@ fun CashuRequestDetailScreen(
     var mintPickerOpen by remember { mutableStateOf(false) }
     var amountPickerOpen by remember { mutableStateOf(false) }
     var regenerateError by remember { mutableStateOf<String?>(null) }
-    val nfcTransferActive = nfcState.phase.isNfcTransferActive()
+    val offerNfcReceive = request?.shouldOfferNfcReceive() == true
+    val nfcTransferActive = offerNfcReceive && nfcState.phase.isNfcTransferActive()
 
     // Re-signs the same NUT-18 request in place (same id/history entry) — used
     // by the Mint sheet, the Amount sheet's Done, and "New Request" (called
@@ -267,11 +269,13 @@ fun CashuRequestDetailScreen(
             return@Scaffold
         }
 
-        NfcReceiveLifecycle(
-            coordinator = nfcReceiveCoordinator,
-            request = request,
-            settlementMintUrl = walletState.activeMint?.url,
-        )
+        if (offerNfcReceive) {
+            NfcReceiveLifecycle(
+                coordinator = nfcReceiveCoordinator,
+                request = request,
+                settlementMintUrl = walletState.activeMint?.url,
+            )
+        }
 
         Column(
             modifier = Modifier
@@ -308,7 +312,9 @@ fun CashuRequestDetailScreen(
                 )
             }
 
-            NfcReceiveIndicator(coordinator = nfcReceiveCoordinator)
+            if (offerNfcReceive) {
+                NfcReceiveIndicator(coordinator = nfcReceiveCoordinator)
+            }
 
             StatusBlock(
                 received = request.receivedPayments.isNotEmpty(),
@@ -421,7 +427,9 @@ fun CashuRequestDetailScreen(
         )
     }
 
-    NfcReceiveOverlay(coordinator = nfcReceiveCoordinator)
+    if (offerNfcReceive) {
+        NfcReceiveOverlay(coordinator = nfcReceiveCoordinator)
+    }
 }
 
 private fun NfcReceivePhase.isNfcTransferActive(): Boolean = this in setOf(

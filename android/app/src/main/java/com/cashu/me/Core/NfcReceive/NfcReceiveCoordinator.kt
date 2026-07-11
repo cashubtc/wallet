@@ -88,6 +88,12 @@ class NfcReceiveCoordinator(
             mutableState.value = availability
             return
         }
+        if (!request.shouldOfferNfcReceive()) {
+            session = null
+            armed = false
+            mutableState.value = NfcReceiveState(NfcReceivePhase.Inactive)
+            return
+        }
         if (!request.canReceiveByNfc()) {
             session = null
             armed = false
