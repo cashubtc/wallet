@@ -382,7 +382,12 @@ because every layout uses `.frame(maxWidth: .infinity)` rather than fixed widths
 - **Title** (`.title.weight(.heavy)` / `.weight(.semibold)`): onboarding hero
   headings only. `OnboardingView.swift:128, 258`.
 - **Title3** (`.title3.weight(.medium)`): in-flow section heads such as the
-  send/receive transaction-type label, modal titles. `MainWalletView.swift:165`.
+  send/receive transaction-type label, and in-body modal headings.
+  `MainWalletView.swift:165`. Note: navigation-bar titles — including the
+  sheet/flow screens (Send, Pending Ecash, Pay, Receive, Lightning Invoice) —
+  use the **native inline title** (`.navigationTitle` + `.navigationBarTitleDisplayMode(.inline)`,
+  ~17pt), so they center to the screen and scale via the system. Do not use
+  Title3 (or an ad-hoc `.principal` font) for a nav-bar title.
 - **Body Emphasis** (`.body.weight(.semibold)`): primary button labels (inside
   `glassButton()` / `FullWidthCapsuleButtonStyle`), history row title.
 - **Body** (`.body`): default for prose, settings rows, detail values.

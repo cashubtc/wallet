@@ -73,14 +73,16 @@ struct SendView: View {
             .animation(.smooth(duration: 0.3), value: generatedToken != nil)
             .animation(.smooth(duration: 0.3), value: tokenClaimed)
             .navigationBarTitleDisplayMode(.inline)
+            .navigationTitle(generatedToken != nil ? "Pending Ecash" : "Send Ecash")
             // Match the Lightning Invoice screen: float the title + chrome
-            // over the black canvas, no secondary gray strip. Dismiss via the
-            // sheet drag indicator (no close X).
+            // over the black canvas, no secondary gray strip.
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Text(generatedToken != nil ? "Pending Ecash" : "Send Ecash")
-                        .font(.sheetTitle)
+                // Explicit close in every state — the sheet drag indicator is
+                // unreliable and the fullScreenCover send path has no swipe
+                // dismiss at all, which stranded users on "Pending Ecash".
+                ToolbarItem(placement: .topBarLeading) {
+                    SheetCloseButton()
                 }
 
                 if generatedToken == nil {
@@ -1276,14 +1278,8 @@ struct UnifiedSendView: View {
             .frame(maxHeight: prefersCompactSheet ? nil : .infinity, alignment: .top)
             .animation(.smooth(duration: 0.3), value: step)
             .animation(.smooth(duration: 0.3), value: locked != nil)
-            .navigationTitle("")
+            .navigationTitle("Send")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Text("Send")
-                        .font(.sheetTitle)
-                }
-            }
             .sheet(isPresented: $showingScanner) {
                 ScannerWrapperView(onScanned: handleScannedDestination)
                     .environmentObject(walletManager)
@@ -2876,12 +2872,7 @@ struct MeltView: View {
             }
             .animation(.smooth(duration: 0.3), value: meltViewStateKey)
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Text(screenTitle)
-                        .font(.sheetTitle)
-                }
-            }
+            .navigationTitle(screenTitle)
             .sheet(isPresented: $showingScanner) {
                 ScannerWrapperView(onScanned: handleScannedRequest)
                     .environmentObject(walletManager)

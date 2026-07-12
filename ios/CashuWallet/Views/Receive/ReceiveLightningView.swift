@@ -66,6 +66,7 @@ struct ReceiveLightningView: View {
             .animation(.smooth(duration: 0.3), value: mintQuote != nil)
             .animation(.smooth(duration: 0.3), value: isPaid)
             .navigationBarTitleDisplayMode(.inline)
+            .navigationTitle(screenTitle)
             // No nav bar chrome — the title floats over the black canvas. This
             // kills the secondary gray bar. Content has enough top padding to
             // clear the safe-area inset so nothing overlaps.
@@ -73,11 +74,6 @@ struct ReceiveLightningView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     SheetCloseButton()
-                }
-
-                ToolbarItem(placement: .principal) {
-                    Text(screenTitle)
-                        .font(.sheetTitle)
                 }
 
                 if let quote = mintQuote, !isPaid {

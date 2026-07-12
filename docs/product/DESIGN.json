@@ -82,7 +82,7 @@
       },
       "title3": {
         "displayName": "Title 3",
-        "purpose": "In-flow section heads, sheet/modal titles, transaction-type label."
+        "purpose": "In-flow section heads, in-body modal headings, transaction-type label. Navigation-bar titles (incl. sheet/flow screens) use the native inline title (.navigationTitle, ~17pt), not Title3."
       },
       "body": {
         "displayName": "Body",

@@ -209,14 +209,8 @@ struct UnifiedReceiveView: View {
         NavigationStack {
             inputForm
                 .frame(maxWidth: .infinity, alignment: .top)
-                .navigationTitle("")
+                .navigationTitle("Receive")
                 .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .principal) {
-                        Text("Receive")
-                            .font(.sheetTitle)
-                    }
-                }
                 .sheet(isPresented: $showingScanner) {
                     ScannerWrapperView(onScanned: handleScanned)
                         .environmentObject(walletManager)
@@ -576,13 +570,9 @@ struct ReceiveEcashView: View {
                 .padding(.bottom, 16)
             }
             .animation(.easeInOut(duration: 0.2), value: errorMessage)
-            .navigationTitle("")
+            .navigationTitle("Receive Ecash")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Text("Receive Ecash")
-                        .font(.sheetTitle)
-                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         HapticFeedback.selection()
