@@ -1377,7 +1377,6 @@ struct ImportP2PKSheet: View {
 // MARK: - Backup View
 
 struct BackupView: View {
-    @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var walletManager: WalletManager
 
     @State private var showWords = false
@@ -1437,25 +1436,15 @@ struct BackupView: View {
                     .padding(12)
                     .liquidGlass(in: RoundedRectangle(cornerRadius: 10))
                     .padding(.horizontal)
-
-                    Spacer(minLength: 50)
-
-                    Button(action: { dismiss() }) {
-                        Text("Done")
-                    }
-                    .glassButton()
-                    .padding(.horizontal)
-                    .padding(.bottom, 30)
+                    .padding(.bottom, 24)
                 }
             }
+            // No Cancel / Done buttons — this is a modal; swipe down or tap
+            // outside to dismiss. Dropping them also removes the tall spacer
+            // that pushed "Done" below the medium detent (the drag-to-see jank).
             .navigationTitle("Backup")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.hidden, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-            }
         }
     }
 
