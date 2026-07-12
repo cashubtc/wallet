@@ -1,5 +1,6 @@
 package com.cashu.me.ui.settings
 
+import android.content.ClipData
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -27,31 +28,40 @@ import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import com.cashu.me.Core.Bech32
 import com.cashu.me.ui.components.CanvasDivider
 import com.cashu.me.ui.components.IconSwap
 import com.cashu.me.ui.components.PrimaryButton
 import com.cashu.me.ui.components.QrCard
+import com.cashu.me.ui.components.shareText
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.asOverline
 
@@ -244,7 +254,7 @@ fun KeyCard(
     }
 }
 
-/** Bottom sheet showing a QR for a key or a locked receive request (iOS QRCodeDetailSheet). */
+/** Shared expanded QR sheet with visible copy/share actions (iOS QRCodeDetailSheet parity). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun QrDetailSheet(
@@ -252,12 +262,32 @@ fun QrDetailSheet(
     content: String,
     onDismiss: () -> Unit,
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    val sheetState = rememberBottomSheetState(
+        initialValue = SheetValue.Hidden,
+        enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
+    )
+    val clipboard = LocalClipboard.current
+    val clipboardScope = rememberCoroutineScope()
+    val context = LocalContext.current
+    var copied by remember { mutableStateOf(false) }
+
+    LaunchedEffect(copied) {
+        if (copied) {
+            delay(CopiedFeedbackMillis)
+            copied = false
+        }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = CashuTheme.spacing.comfortable)
-                .navigationBarsPadding(),
+                .navigationBarsPadding()
+                .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
@@ -267,7 +297,44 @@ fun QrDetailSheet(
             )
             Spacer(Modifier.height(CashuTheme.spacing.loose))
             QrCard(content = content, staticOnly = true, shareSubject = title)
-            Spacer(Modifier.height(CashuTheme.spacing.section))
+            Spacer(Modifier.height(CashuTheme.spacing.default))
+            Text(
+                text = content,
+                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(CashuTheme.spacing.default))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
+            ) {
+                FilledTonalButton(
+                    onClick = {
+                        clipboardScope.launch {
+                            clipboard.setClipEntry(
+                                ClipEntry(ClipData.newPlainText(title, content)),
+                            )
+                            copied = true
+                        }
+                    },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Icon(Icons.Outlined.ContentCopy, contentDescription = null)
+                    Spacer(Modifier.size(CashuTheme.spacing.micro))
+                    Text(if (copied) "Copied" else "Copy")
+                }
+                FilledTonalButton(
+                    onClick = { context.shareText(content, title) },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Icon(Icons.AutoMirrored.Outlined.Send, contentDescription = null)
+                    Spacer(Modifier.size(CashuTheme.spacing.micro))
+                    Text("Share")
+                }
+            }
+            Spacer(Modifier.height(CashuTheme.spacing.comfortable))
         }
     }
 }
