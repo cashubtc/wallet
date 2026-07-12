@@ -37,6 +37,7 @@ import androidx.compose.material.icons.outlined.ArrowCircleRight
 import androidx.compose.material.icons.outlined.Circle
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -371,6 +372,7 @@ private fun WelcomeFace(
                 text = "Create Wallet",
                 onClick = onCreate,
                 loading = creating,
+                colors = ButtonDefaults.filledTonalButtonColors(),
             )
             SecondaryButton(
                 text = "Restore Wallet",
@@ -908,7 +910,7 @@ private fun RestoreMethodFace(
             verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
         ) {
             Text(
-                text = "Restore\nWallet.",
+                text = "Restore Wallet.",
                 style = onboardingTitleStyle(),
                 color = MaterialTheme.colorScheme.onSurface,
             )
@@ -927,14 +929,9 @@ private fun RestoreMethodFace(
             verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.tight),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            PrimaryButton(
+            SecondaryButton(
                 text = "Seed Phrase",
                 onClick = onSeedPhrase,
-            )
-            SecondaryButton(
-                text = "Cloud Restore",
-                onClick = {},
-                enabled = false,
             )
             GhostButton(text = "Back", onClick = onBack)
         }
@@ -968,7 +965,7 @@ private fun RestoreInputFace(
             verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
         ) {
             Text(
-                text = "Restore\nWallet.",
+                text = "Restore Wallet.",
                 style = onboardingTitleStyle(),
                 color = MaterialTheme.colorScheme.onSurface,
             )
