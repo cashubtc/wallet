@@ -6,11 +6,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.role
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.test.assertHasClickAction
+import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.longClick
@@ -42,7 +39,6 @@ class AccessibilitySemanticsComposeTest {
 
     @Test
     fun criticalWalletControlsExposeTalkBackLabelsAndActions() {
-        var balanceToggles = 0
         var rowClicks = 0
         var privacyEnabled = true
 
@@ -58,13 +54,7 @@ class AccessibilitySemanticsComposeTest {
                         secondary = "\$0.01",
                         effectivePrimary = AmountDisplayPrimary.Sats,
                     ),
-                    modifier = Modifier.semantics {
-                        role = Role.Button
-                        contentDescription = "Balance 42 sat, \$0.01. Double tap to toggle primary display."
-                    },
-                    onTogglePrimary = {
-                        balanceToggles += 1
-                    },
+                    modifier = Modifier.testTag("balanceDisplay"),
                 )
                 QrCard(
                     content = "cashuA-test-token",
@@ -104,9 +94,9 @@ class AccessibilitySemanticsComposeTest {
             }
         }
 
-        compose.onNodeWithContentDescription("Balance 42 sat, \$0.01. Double tap to toggle primary display.")
-            .assertHasClickAction()
-            .performClick()
+        compose.onNodeWithTag("balanceDisplay")
+            .assertIsDisplayed()
+            .assertHasNoClickAction()
         compose.onNodeWithContentDescription("QR code. Long press for copy and share options.")
             .performScrollTo()
             .assertIsDisplayed()
@@ -129,7 +119,6 @@ class AccessibilitySemanticsComposeTest {
             .performClick()
 
         compose.runOnIdle {
-            assertEquals(1, balanceToggles)
             assertEquals(1, rowClicks)
             assertFalse(privacyEnabled)
         }
