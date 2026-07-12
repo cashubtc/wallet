@@ -107,7 +107,7 @@ class NfcReceiveCoordinator(
         if (target == null) {
             session = null
             armed = false
-            mutableState.value = NfcReceiveState(NfcReceivePhase.Unavailable, "Choose an active mint to receive by NFC.")
+            mutableState.value = NfcReceiveState(NfcReceivePhase.Unavailable, "Choose a default mint to receive by NFC.")
             return
         }
         session = Session(request, target)
@@ -215,7 +215,7 @@ class NfcReceiveCoordinator(
         } else {
             mutableState.value = NfcReceiveState(
                 NfcReceivePhase.Converting,
-                "Moving payment to your active mint",
+                "Moving payment to your default mint",
                 sourceMint = sourceMint,
                 settlementMint = session.settlementMint,
             )

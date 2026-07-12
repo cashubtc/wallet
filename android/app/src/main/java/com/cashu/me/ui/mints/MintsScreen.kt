@@ -309,7 +309,7 @@ private fun SwipeableMintRow(
                     bg = CashuTheme.colors.received
                     fg = Color.White
                     icon = Icons.Outlined.Check
-                    label = "Set Active"
+                    label = "Set as Default"
                     align = Alignment.CenterStart
                 }
                 SwipeToDismissBoxValue.EndToStart -> {
@@ -449,7 +449,7 @@ private fun MintRow(
             shape = MaterialTheme.shapes.large,
         ) {
             DropdownMenuItem(
-                text = { Text("Set as Active") },
+                text = { Text("Set as Default") },
                 onClick = {
                     menuOpen = false
                     onSetActiveLongPress()

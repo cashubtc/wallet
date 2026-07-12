@@ -195,7 +195,7 @@ fun NfcReceiveOverlay(coordinator: NfcReceiveCoordinator) {
                     title = when (state.phase) {
                         NfcReceivePhase.Validating -> "Checking payment"
                         NfcReceivePhase.Redeeming -> "Securing ecash"
-                        else -> "Moving to your active mint"
+                        else -> "Moving to your default mint"
                     },
                     detail = "Transfer complete — you can move the phones apart.",
                 )

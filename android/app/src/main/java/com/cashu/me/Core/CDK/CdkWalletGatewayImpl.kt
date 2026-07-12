@@ -20,6 +20,7 @@ import com.cashu.me.Models.MeltQuoteInfo
 import com.cashu.me.Models.MeltQuoteState
 import com.cashu.me.Models.MintInfo
 import com.cashu.me.Models.MintQuoteInfo
+import com.cashu.me.Models.NutSupport
 import com.cashu.me.Models.MintQuoteState
 import com.cashu.me.Models.PaymentMethodKind
 import com.cashu.me.Models.RestoreMintResult
@@ -636,6 +637,18 @@ class CdkWalletGatewayImpl : CdkWalletGateway, NwcServiceGateway {
             mintUnits = mintUnits,
             supportedMintMethods = mintMethods,
             supportedMeltMethods = meltMethods,
+            descriptionLong = descriptionLong,
+            motd = motd,
+            nutSupport = NutSupport(
+                tokenStateCheck = nuts.nut07Supported,
+                lightningFeeReturn = nuts.nut08Supported,
+                restoreFromSeed = nuts.nut09Supported,
+                spendingConditions = nuts.nut10Supported,
+                p2pk = nuts.nut11Supported,
+                dleq = nuts.nut12Supported,
+                htlc = nuts.nut14Supported,
+                webSocket = nuts.nut20Supported,
+            ),
             lastUpdatedEpochMillis = System.currentTimeMillis(),
         )
     }

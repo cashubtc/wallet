@@ -17,6 +17,9 @@ data class MintInfo(
     val supportedMintMethods: List<PaymentMethodKind> = listOf(PaymentMethodKind.Bolt11),
     val supportedMeltMethods: List<PaymentMethodKind> = listOf(PaymentMethodKind.Bolt11),
     val onchainMintConfirmations: Int? = null,
+    val descriptionLong: String? = null,
+    val motd: String? = null,
+    val nutSupport: NutSupport = NutSupport(),
     val lastUpdatedEpochMillis: Long = System.currentTimeMillis(),
 ) {
     val id: String get() = url
@@ -40,3 +43,20 @@ data class MintInfo(
         else -> candidates.sorted().firstOrNull() ?: "sat"
     }
 }
+
+/**
+ * Per-NUT capability flags reported by the mint (NUT-06 info). All default false so
+ * records persisted before this landed deserialize cleanly; only the live fetch
+ * populates them.
+ */
+@Serializable
+data class NutSupport(
+    val tokenStateCheck: Boolean = false,    // NUT-07
+    val lightningFeeReturn: Boolean = false, // NUT-08
+    val restoreFromSeed: Boolean = false,    // NUT-09
+    val spendingConditions: Boolean = false, // NUT-10
+    val p2pk: Boolean = false,               // NUT-11
+    val dleq: Boolean = false,               // NUT-12
+    val htlc: Boolean = false,               // NUT-14
+    val webSocket: Boolean = false,          // NUT-20
+)

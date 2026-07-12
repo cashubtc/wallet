@@ -1,6 +1,7 @@
 package com.cashu.me.ui.mints
 
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
@@ -26,8 +28,11 @@ import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.CurrencyBitcoin
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.Public
+import androidx.compose.material.icons.outlined.Remove
 import androidx.compose.material.icons.outlined.Straighten
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -49,8 +54,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -60,6 +67,7 @@ import com.cashu.me.Core.Protocols.CurrencyRegistry
 import com.cashu.me.Core.WalletManager
 import com.cashu.me.Core.shortenMintUrl
 import com.cashu.me.Models.MintInfo
+import com.cashu.me.Models.NutSupport
 import com.cashu.me.ui.components.CanvasDivider
 import com.cashu.me.ui.components.DestructiveTextButton
 import com.cashu.me.ui.components.GhostButton
@@ -69,6 +77,7 @@ import com.cashu.me.ui.components.MintAvatar
 import com.cashu.me.ui.components.PrimaryButton
 import com.cashu.me.ui.components.SectionHeader
 import com.cashu.me.ui.components.ToolbarIcon
+import com.cashu.me.ui.theme.CapsuleShape
 import com.cashu.me.ui.theme.CashuTheme
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -127,16 +136,25 @@ fun MintDetailScreen(
                     }
                 }
             }
-            // Connection = did the mint answer a live info fetch (iOS parity),
-            // not device network state.
+            // One live fetch drives both Connection (reachability) and the rich
+            // metadata (long description, MOTD, capabilities) — mirroring iOS's
+            // `cdkInfo`. `info` prefers the fetched record, falling back to the
+            // persisted mint until it lands (persisted supplies balance/icon/name).
+            var liveInfo by remember(mint.url) { mutableStateOf<MintInfo?>(null) }
             var connection by remember(mint.url) { mutableStateOf(MintConnectionState.Checking) }
             LaunchedEffect(mint.url) {
-                connection = runCatching { walletManager.fetchLiveMintInfo(mint.url) }
+                runCatching { walletManager.fetchLiveMintInfo(mint.url) }
                     .fold(
-                        { if (it != null) MintConnectionState.Online else MintConnectionState.Offline },
-                        { MintConnectionState.Offline },
+                        { fetched ->
+                            liveInfo = fetched
+                            connection = if (fetched != null) MintConnectionState.Online
+                            else MintConnectionState.Offline
+                        },
+                        { connection = MintConnectionState.Offline },
                     )
             }
+            val info = liveInfo ?: mint
+
             Column(modifier = Modifier.fillMaxWidth()) {
                 InspectorRow(
                     label = "Balance",
@@ -168,36 +186,94 @@ fun MintDetailScreen(
                 )
             }
 
-            if (!mint.description.isNullOrBlank()) {
+            // About: short description reads primary/white; the long description
+            // (iOS `descriptionLong`) reads muted and clamps to three lines with a
+            // Read-more toggle — matching iOS's two-tier About.
+            val shortDesc = info.description
+            val longDesc = info.descriptionLong
+            if (!shortDesc.isNullOrBlank() || !longDesc.isNullOrBlank()) {
                 SectionHeader("About")
-                // iOS MintDetailView "Read more": long descriptions clamp to
-                // three lines and the reflow animates (easeInOut 0.2 → spring).
                 var aboutExpanded by remember(mint.url) { mutableStateOf(false) }
-                // Sticky: once the collapsed layout reports overflow, keep the
-                // toggle even while expanded (no overflow in that state).
                 var aboutOverflows by remember(mint.url) { mutableStateOf(false) }
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .animateContentSize(spring(stiffness = Spring.StiffnessMediumLow)),
+                    verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
                 ) {
-                    Text(
-                        text = mint.description,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = if (aboutExpanded) Int.MAX_VALUE else ABOUT_COLLAPSED_LINES,
-                        overflow = TextOverflow.Ellipsis,
-                        onTextLayout = { aboutOverflows = aboutOverflows || it.hasVisualOverflow },
-                        modifier = Modifier.padding(horizontal = CashuTheme.spacing.comfortable),
-                    )
-                    if (aboutOverflows) {
-                        GhostButton(
-                            text = if (aboutExpanded) "Show less" else "Read more",
-                            onClick = { aboutExpanded = !aboutExpanded },
-                            modifier = Modifier.padding(horizontal = CashuTheme.spacing.default),
+                    if (!shortDesc.isNullOrBlank()) {
+                        Text(
+                            text = shortDesc,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.padding(horizontal = CashuTheme.spacing.comfortable),
+                        )
+                    }
+                    if (!longDesc.isNullOrBlank()) {
+                        Text(
+                            text = longDesc,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = if (aboutExpanded) Int.MAX_VALUE else ABOUT_COLLAPSED_LINES,
+                            overflow = TextOverflow.Ellipsis,
+                            onTextLayout = { aboutOverflows = aboutOverflows || it.hasVisualOverflow },
+                            modifier = Modifier.padding(horizontal = CashuTheme.spacing.comfortable),
+                        )
+                        if (aboutOverflows) {
+                            GhostButton(
+                                text = if (aboutExpanded) "Show less" else "Read more",
+                                onClick = { aboutExpanded = !aboutExpanded },
+                                modifier = Modifier.padding(horizontal = CashuTheme.spacing.default),
+                            )
+                        }
+                    }
+                }
+            }
+
+            val motd = info.motd
+            if (!motd.isNullOrBlank()) {
+                SectionHeader("Message from the mint")
+                Text(
+                    text = motd,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = CashuTheme.spacing.comfortable),
+                )
+            }
+
+            // Capabilities + Technical details come only from the live fetch, so
+            // gate on it (iOS gates on `cdkInfo.nuts`).
+            liveInfo?.let { live ->
+                SectionHeader("Capabilities")
+                val locks = buildList {
+                    if (live.nutSupport.p2pk) add("P2PK")
+                    if (live.nutSupport.htlc) add("HTLC")
+                }
+                if (locks.isNotEmpty()) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(
+                                horizontal = CashuTheme.spacing.comfortable,
+                                vertical = CashuTheme.spacing.default,
+                            ),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Lock,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        Text(
+                            text = "Locked ecash (${locks.joinToString(" · ")})",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
                         )
                     }
                 }
+                TechnicalDetails(nut = live.nutSupport)
             }
 
             SectionHeader("Payment methods")
@@ -229,13 +305,14 @@ fun MintDetailScreen(
                     .padding(horizontal = CashuTheme.spacing.comfortable),
                 verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
             ) {
-                PrimaryButton(
-                    text = if (isActive) "Active mint" else "Set as active mint",
-                    onClick = {
-                        if (!isActive) walletManager.launch { walletManager.setActiveMint(mint) }
-                    },
-                    enabled = !isActive,
-                )
+                // When it's the default, the button disappears and the header
+                // shows a "Default mint" pill instead (iOS parity).
+                if (!isActive) {
+                    PrimaryButton(
+                        text = "Set as Default",
+                        onClick = { walletManager.launch { walletManager.setActiveMint(mint) } },
+                    )
+                }
                 DestructiveTextButton(
                     text = "Remove mint",
                     onClick = { confirmingRemove = true },
@@ -316,6 +393,20 @@ private fun HeaderBlock(mint: MintInfo, isActive: Boolean) {
             overflow = TextOverflow.Ellipsis,
         )
         CopyUrlChip(url = mint.url)
+        if (isActive) {
+            Text(
+                text = "Default mint",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier
+                    .clip(CapsuleShape)
+                    .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                    .padding(
+                        horizontal = CashuTheme.spacing.default,
+                        vertical = CashuTheme.spacing.tight,
+                    ),
+            )
+        }
     }
 }
 
@@ -380,6 +471,98 @@ private fun EmptyMintFallback(padding: PaddingValues, onClose: () -> Unit) {
         )
         Spacer(Modifier.height(CashuTheme.spacing.comfortable))
         GhostButton(text = "Back to mints", onClick = onClose)
+    }
+}
+
+/**
+ * Expandable NUT-support list, matching iOS's "Technical details" DisclosureGroup:
+ * a clickable header with a rotating chevron that reveals the per-NUT rows.
+ */
+@Composable
+private fun TechnicalDetails(nut: NutSupport) {
+    var expanded by remember { mutableStateOf(false) }
+    val chevronRotation by animateFloatAsState(
+        targetValue = if (expanded) 180f else 0f,
+        label = "techChevron",
+    )
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .animateContentSize(spring(stiffness = Spring.StiffnessMediumLow)),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = !expanded }
+                .padding(
+                    horizontal = CashuTheme.spacing.comfortable,
+                    vertical = CashuTheme.spacing.default,
+                ),
+        ) {
+            Text(
+                text = "Technical details",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.weight(1f))
+            Icon(
+                imageVector = Icons.Outlined.KeyboardArrowDown,
+                contentDescription = if (expanded) "Collapse" else "Expand",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .size(20.dp)
+                    .graphicsLayer { rotationZ = chevronRotation },
+            )
+        }
+        if (expanded) {
+            Column(modifier = Modifier.padding(bottom = CashuTheme.spacing.snug)) {
+                NutRow("NUT-04", "Mint", true)
+                NutRow("NUT-05", "Melt", true)
+                NutRow("NUT-07", "Token state check", nut.tokenStateCheck)
+                NutRow("NUT-08", "Lightning fee return", nut.lightningFeeReturn)
+                NutRow("NUT-09", "Restore from seed", nut.restoreFromSeed)
+                NutRow("NUT-10", "Spending conditions", nut.spendingConditions)
+                NutRow("NUT-11", "P2PK locking", nut.p2pk)
+                NutRow("NUT-12", "DLEQ proofs", nut.dleq)
+                NutRow("NUT-14", "HTLCs", nut.htlc)
+                NutRow("NUT-20", "WebSocket updates", nut.webSocket)
+            }
+        }
+    }
+}
+
+@Composable
+private fun NutRow(code: String, label: String, supported: Boolean) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(
+                horizontal = CashuTheme.spacing.comfortable,
+                vertical = CashuTheme.spacing.tight,
+            ),
+    ) {
+        Text(
+            text = code,
+            style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.width(56.dp),
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = if (supported) MaterialTheme.colorScheme.onSurface
+            else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.weight(1f))
+        Icon(
+            imageVector = if (supported) Icons.Outlined.Check else Icons.Outlined.Remove,
+            contentDescription = if (supported) "Supported" else "Not supported",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(16.dp),
+        )
     }
 }
 

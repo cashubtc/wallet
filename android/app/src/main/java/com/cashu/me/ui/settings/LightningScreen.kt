@@ -148,7 +148,7 @@ fun LightningScreen(
                 enabled = npcState.isEnabled,
             )
 
-            SectionHeader("Active mint")
+            SectionHeader("Default mint")
             val mintLabel = walletState.mints.firstOrNull { it.url == npcState.selectedMintUrl }?.name
                 ?: walletState.activeMint?.name
                 ?: "No mint"
