@@ -97,6 +97,14 @@ The integration tests verify **CDK-Swift ↔ real mint** compatibility:
 | **Melt quote** | App quotes melting via `/v1/melt/quote/bolt11` |
 | **Token round-trip** | Mint 50s → create token → redeem token → balance restored |
 | **Multi-mint** | Add both mints → switch between them → query keys for both |
+| **BOLT12 mint** (CDK only) | Quote via `/v1/mint/quote/bolt12` → offer auto-paid → mint → balance updates |
+| **BOLT12 melt** (CDK only) | Amountless offer melt via `/v1/melt/quote/bolt12` → auto-settled → balance reduces |
+| **On-chain mint** (CDK only) | Quote via `/v1/mint/quote/onchain` → regtest deposit auto-confirmed → mint |
+| **On-chain melt** (CDK only) | Fee options via `/v1/melt/quote/onchain` → select → auto-settled withdrawal |
+
+BOLT12 and on-chain flows run against the CDK mint only — Nutshell's FakeWallet
+backend is bolt11-only. The CDK FakeWallet registers bolt11, bolt12, and onchain
+payment methods automatically; no extra mint configuration is required.
 
 ## File Structure
 

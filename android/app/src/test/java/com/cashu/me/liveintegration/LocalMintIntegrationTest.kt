@@ -127,6 +127,48 @@ class LocalMintIntegrationTest {
     }
 
     @Test
+    fun cdkMeltQuoteEndpointsCoverBolt12AndOnchain() {
+        assumeLiveMintTask()
+        val pubkey = "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+        // A bolt12 mint quote hands back a reusable offer we can melt against.
+        val offer = postJson(
+            mintUrl = cdkMintUrl,
+            path = "/v1/mint/quote/bolt12",
+            body = """{"unit":"sat","pubkey":"$pubkey"}""",
+        ).requiredString("request")
+        assertEquals(PaymentMethodKind.Bolt12, LightningRequestParser.parse(offer).method)
+
+        // The offer is amountless, so the melt amount rides in the options.
+        val bolt12Melt = postJson(
+            mintUrl = cdkMintUrl,
+            path = "/v1/melt/quote/bolt12",
+            body = """{"request":"$offer","unit":"sat","options":{"amountless":{"amount_msat":21000}}}""",
+        )
+        assertNotNull(bolt12Melt.quoteId())
+        assertEquals(21L, bolt12Melt["amount"]?.jsonPrimitive?.longOrNull)
+        assertTrue(bolt12Melt.requiredString("state").equals("UNPAID", ignoreCase = true))
+
+        // An onchain mint quote hands back a regtest address to melt to.
+        val address = postJson(
+            mintUrl = cdkMintUrl,
+            path = "/v1/mint/quote/onchain",
+            body = """{"amount":75,"unit":"sat","pubkey":"$pubkey"}""",
+        ).requiredString("request")
+        assertTrue(address.startsWith("bcrt", ignoreCase = true))
+
+        val onchainMelt = postJson(
+            mintUrl = cdkMintUrl,
+            path = "/v1/melt/quote/onchain",
+            body = """{"request":"$address","unit":"sat","amount":50}""",
+        )
+        assertNotNull(onchainMelt.quoteId())
+        assertEquals(50L, onchainMelt["amount"]?.jsonPrimitive?.longOrNull)
+        assertTrue(onchainMelt.requiredString("state").equals("UNPAID", ignoreCase = true))
+        assertFalse(onchainMelt["fee_options"]?.jsonArray.orEmpty().isEmpty())
+    }
+
+    @Test
     fun androidParsersHandleLocalCashuRequestsAndTokenPrefixes() {
         assumeLiveMintTask()
 

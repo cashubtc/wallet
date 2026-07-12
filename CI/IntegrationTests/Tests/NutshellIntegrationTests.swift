@@ -328,6 +328,153 @@ class MintIntegrationTestSuite: IntegrationTestBase {
         XCTAssertEqual(balance.value, 0, "Balance must remain 0 before payment")
     }
 
+    // MARK: - BOLT12 & On-chain (CDK mint only; Nutshell's FakeWallet is bolt11-only)
+
+    /// Polls a non-bolt11 mint quote until the FakeWallet backend registers a
+    /// payment (`amount_paid` grows past `amount_issued`).
+    func waitForQuotePayment(
+        quoteId: String,
+        method: PaymentMethod,
+        timeout: TimeInterval = 15.0
+    ) async throws -> MintQuote {
+        let start = Date()
+        var updated = try await wallet.fetchMintQuote(quoteId: quoteId, paymentMethod: method)
+        while updated.amountPaid.value <= updated.amountIssued.value,
+              Date().timeIntervalSince(start) < timeout {
+            try await Task.sleep(nanoseconds: 200_000_000)  // 200 ms
+            updated = try await wallet.fetchMintQuote(quoteId: quoteId, paymentMethod: method)
+        }
+        XCTAssertGreaterThan(
+            updated.amountPaid.value, updated.amountIssued.value,
+            "\(method) quote was not auto-paid by the FakeWallet within \(timeout)s"
+        )
+        return updated
+    }
+
+    func runBolt12MintFlow() async throws {
+        // The CDK fake backend does not advertise NUT-04 description support
+        // for bolt12, so the description must stay nil.
+        let quote = try await wallet.mintQuote(
+            paymentMethod: .bolt12,
+            amount: nil,
+            description: nil,
+            extra: nil
+        )
+        XCTAssertEqual(quote.paymentMethod, .bolt12)
+        XCTAssertTrue(
+            quote.request.lowercased().hasPrefix("lno1"),
+            "BOLT12 mint quote should return an offer, got: \(quote.request)"
+        )
+
+        let paid = try await waitForQuotePayment(quoteId: quote.id, method: .bolt12)
+
+        let proofs = try await wallet.mintUnified(
+            quoteId: quote.id,
+            amountSplitTarget: .none,
+            spendingConditions: nil
+        )
+        let minted = proofs.reduce(UInt64(0)) { $0 + $1.amount.value }
+        XCTAssertEqual(minted, paid.amountPaid.value, "Minted proofs should equal the paid amount")
+
+        let balance = try await wallet.totalBalance()
+        XCTAssertEqual(balance.value, paid.amountPaid.value, "Balance should equal the BOLT12 paid amount")
+    }
+
+    func runBolt12MeltFlow() async throws {
+        _ = try await mintSats(100)
+
+        // Any offer works as the payee for the FakeWallet; reuse one handed out
+        // by the mint's own fake node via a throwaway bolt12 mint quote.
+        let offerQuote = try await wallet.mintQuote(
+            paymentMethod: .bolt12,
+            amount: nil,
+            description: nil,
+            extra: nil
+        )
+        let offer = offerQuote.request
+
+        // The offer is amountless, so the melt amount comes from MeltOptions.
+        let meltQuote = try await wallet.meltQuote(
+            method: .bolt12,
+            request: offer,
+            options: .amountless(amountMsat: Amount(value: 21_000)),
+            extra: nil
+        )
+        XCTAssertEqual(meltQuote.amount.value, 21, "Melt quote should be for 21 sats")
+
+        let prepared = try await wallet.prepareMelt(quoteId: meltQuote.id)
+        let finalized = try await prepared.confirm()
+        XCTAssertEqual(finalized.state, .paid, "BOLT12 melt should settle against the FakeWallet")
+
+        let balance = try await wallet.totalBalance()
+        XCTAssertEqual(
+            balance.value, 100 - 21 - finalized.feePaid.value,
+            "Balance should drop by melt amount plus fee"
+        )
+    }
+
+    func runOnchainMintFlow() async throws {
+        let quote = try await wallet.mintQuote(
+            paymentMethod: .onchain,
+            amount: Amount(value: 150),
+            description: nil,
+            extra: nil
+        )
+        XCTAssertEqual(quote.paymentMethod, .onchain)
+        XCTAssertTrue(
+            quote.request.lowercased().hasPrefix("bcrt1"),
+            "FakeWallet should hand out a regtest address, got: \(quote.request)"
+        )
+
+        // The fake backend credits its own deposit amount, so assert against
+        // amount_paid rather than the requested 150.
+        let paid = try await waitForQuotePayment(quoteId: quote.id, method: .onchain)
+
+        let proofs = try await wallet.mintUnified(
+            quoteId: quote.id,
+            amountSplitTarget: .none,
+            spendingConditions: nil
+        )
+        let minted = proofs.reduce(UInt64(0)) { $0 + $1.amount.value }
+        XCTAssertEqual(minted, paid.amountPaid.value, "Minted proofs should equal the on-chain deposit")
+
+        let balance = try await wallet.totalBalance()
+        XCTAssertEqual(balance.value, paid.amountPaid.value, "Balance should equal the on-chain deposit")
+    }
+
+    func runOnchainMeltFlow() async throws {
+        _ = try await mintSats(1000)
+
+        // Get a regtest address to withdraw to from the fake backend itself.
+        let addressQuote = try await wallet.mintQuote(
+            paymentMethod: .onchain,
+            amount: Amount(value: 100),
+            description: nil,
+            extra: nil
+        )
+        let address = addressQuote.request
+
+        let feeOptions = try await wallet.quoteOnchainMeltOptions(
+            address: address,
+            amount: Amount(value: 300),
+            maxFeeAmount: nil
+        )
+        XCTAssertFalse(feeOptions.isEmpty, "Mint should return at least one on-chain fee option")
+
+        let selected = try await wallet.selectOnchainMeltQuote(quote: feeOptions[0])
+        XCTAssertEqual(selected.amount.value, 300, "Selected quote should be for 300 sats")
+
+        let prepared = try await wallet.prepareMelt(quoteId: selected.id)
+        let finalized = try await prepared.confirm()
+        XCTAssertEqual(finalized.state, .paid, "On-chain melt should settle against the FakeWallet")
+
+        let balance = try await wallet.totalBalance()
+        XCTAssertEqual(
+            balance.value, 1000 - 300 - finalized.feePaid.value,
+            "Balance should drop by withdrawal amount plus fee"
+        )
+    }
+
     // MARK: - Quote State
 
     func runMintQuoteStateTransitions() async throws {
@@ -381,6 +528,12 @@ final class CDKIntegrationTests: MintIntegrationTestSuite {
 
     override var dbNamePrefix: String { "cdk_test" }
     override var mintName: String { "CDK" }
+
+    // BOLT12 & on-chain run only against CDK — Nutshell's FakeWallet is bolt11-only.
+    func testBolt12MintFlow() async throws { try await runBolt12MintFlow() }
+    func testBolt12MeltFlow() async throws { try await runBolt12MeltFlow() }
+    func testOnchainMintFlow() async throws { try await runOnchainMintFlow() }
+    func testOnchainMeltFlow() async throws { try await runOnchainMeltFlow() }
 
     func testFetchMintInfo() async throws { try await runFetchMintInfo() }
     func testGetMintKeysets() async throws { try await runGetMintKeysets() }
