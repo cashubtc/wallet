@@ -22,6 +22,10 @@ import androidx.compose.ui.text.font.FontWeight
  * collapsed states while preserving each state's size. The native
  * collapse-on-scroll behavior is kept — a scrolled History still shrinks its
  * title, exactly as iOS does. See DESIGN-ANDROID.md §1.
+ *
+ * [navigationIcon] defaults to empty (History/Mints are bottom-nav tabs with no
+ * back affordance); Settings — a pushed wallet-origin destination — supplies a
+ * top-left back arrow while keeping this same large brand title.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -29,12 +33,14 @@ fun TabTopBar(
     title: String,
     scrollBehavior: TopAppBarScrollBehavior,
     modifier: Modifier = Modifier,
+    navigationIcon: @Composable () -> Unit = {},
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     LargeFlexibleTopAppBar(
         title = { Text(title, fontWeight = FontWeight.Bold) },
         modifier = modifier,
         scrollBehavior = scrollBehavior,
+        navigationIcon = navigationIcon,
         colors = TopAppBarDefaults.topAppBarColors(
             containerColor = MaterialTheme.colorScheme.background,
             scrolledContainerColor = MaterialTheme.colorScheme.background,

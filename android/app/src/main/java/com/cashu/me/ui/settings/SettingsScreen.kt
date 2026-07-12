@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material.icons.outlined.ArrowOutward
 import androidx.compose.material.icons.outlined.Bolt
@@ -26,6 +27,7 @@ import androidx.compose.material.icons.outlined.VpnKey
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -50,6 +52,7 @@ import com.cashu.me.ui.components.NavRow
 import com.cashu.me.ui.components.SectionHeader
 import com.cashu.me.ui.components.TabTopBar
 import com.cashu.me.ui.components.ToggleRow
+import com.cashu.me.ui.components.ToolbarIcon
 import com.cashu.me.ui.theme.CashuTheme
 
 /**
@@ -64,6 +67,7 @@ fun SettingsScreen(
     walletManager: WalletManager,
     settingsManager: SettingsManager,
     priceService: PriceService,
+    onClose: () -> Unit,
     onOpenBackupRestore: () -> Unit,
     onOpenLightning: () -> Unit,
     onOpenLockedEcash: () -> Unit,
@@ -87,7 +91,15 @@ fun SettingsScreen(
             .consumeWindowInsets(contentPadding)
             .nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TabTopBar(title = "Settings", scrollBehavior = scrollBehavior)
+            TabTopBar(
+                title = "Settings",
+                scrollBehavior = scrollBehavior,
+                navigationIcon = {
+                    IconButton(onClick = onClose) {
+                        ToolbarIcon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
+                    }
+                },
+            )
         },
     ) { padding ->
         LazyColumn(

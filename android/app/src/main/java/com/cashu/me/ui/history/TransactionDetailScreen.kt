@@ -60,6 +60,7 @@ import com.cashu.me.ui.components.InspectorRow
 import com.cashu.me.ui.components.PrimaryButton
 import com.cashu.me.ui.components.QrCard
 import com.cashu.me.ui.components.ToolbarIcon
+import com.cashu.me.ui.components.neutralActionButtonColors
 import com.cashu.me.ui.components.shareText
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.withMonoDigits
@@ -211,12 +212,16 @@ fun TransactionDetailScreen(
                             onClick = { onClaimReceiveToken(pendingReceiveToken) },
                         )
                     } else if (copyableContent != null) {
+                        // Copy is a secondary convenience, not a primary action —
+                        // quiet neutral tonal fill (matches Home's Send/Receive)
+                        // rather than the loud inverted-ink primary.
                         PrimaryButton(
                             text = if (copied) "Copied" else "Copy",
                             onClick = {
                                 clipboard.setText(AnnotatedString(copyableContent))
                                 copied = true
                             },
+                            colors = neutralActionButtonColors(),
                         )
                     }
                 }

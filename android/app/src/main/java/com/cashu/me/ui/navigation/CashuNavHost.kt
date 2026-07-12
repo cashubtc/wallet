@@ -143,6 +143,7 @@ fun CashuNavHost(
                 walletManager = container.walletManager,
                 settingsManager = container.settingsManager,
                 priceService = container.priceService,
+                onClose = { navController.popBackStack() },
                 onOpenBackupRestore = { navController.navigate(Routes.SETTINGS_BACKUP_RESTORE) },
                 onOpenLightning = { navController.navigate(Routes.SETTINGS_LIGHTNING) },
                 onOpenLockedEcash = { navController.navigate(Routes.SETTINGS_P2PK) },

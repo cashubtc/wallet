@@ -31,7 +31,6 @@ import androidx.compose.material.icons.outlined.AccountBalance
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -79,6 +78,7 @@ import com.cashu.me.ui.components.SectionHeader
 import com.cashu.me.ui.components.TransactionRow
 import com.cashu.me.ui.components.TransactionRowModel
 import com.cashu.me.ui.components.ToolbarIcon
+import com.cashu.me.ui.components.neutralActionButtonColors
 import com.cashu.me.ui.components.formatRelativeTimestamp
 import com.cashu.me.ui.theme.CashuTheme
 
@@ -543,12 +543,7 @@ private fun ActionDuet(
     // tonal pills (same fill/content colors as the history row's arrow
     // chips) rather than the inverted-ink PrimaryButton default, which reads
     // as too strong for a pair of equally-weighted actions.
-    val actionColors = ButtonDefaults.buttonColors(
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
-    )
+    val actionColors = neutralActionButtonColors()
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),

@@ -92,13 +92,29 @@ private fun rememberPressAlpha(interactionSource: MutableInteractionSource): Flo
 }
 
 /**
+ * Quiet neutral tonal fill for equally-weighted or secondary CTAs — the home
+ * screen's Receive/Send pair and the transaction detail's Copy action. Matches
+ * the history row's arrow chips instead of the loud inverted-ink primary, and
+ * adapts to light/dark via the theme's surface roles. Pass to [PrimaryButton]'s
+ * `colors`.
+ */
+@Composable
+fun neutralActionButtonColors(): ButtonColors = ButtonDefaults.buttonColors(
+    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+    contentColor = MaterialTheme.colorScheme.onSurface,
+    disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+    disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+)
+
+/**
  * The primary full-width CTA: filled M3 button on the theme's primary color
  * (inverted ink: black in light mode, white in dark), spring press-scale,
  * expressive loading indicator.
  *
  * Pass [colors] to override the default filled treatment (e.g. the home
- * screen's tonal Receive/Send pair, which matches the history row's arrow
- * chips instead of using the inverted-ink primary color).
+ * screen's tonal Receive/Send pair via [neutralActionButtonColors], which
+ * matches the history row's arrow chips instead of using the inverted-ink
+ * primary color).
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
