@@ -31,14 +31,17 @@ import androidx.compose.material.icons.outlined.AccountBalance
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,7 +53,9 @@ import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import com.cashu.me.Core.AmountDisplayPrimary
 import com.cashu.me.Core.AmountDisplayText
 import com.cashu.me.Core.AmountFormatter
@@ -87,6 +92,7 @@ private const val RECENT_LIMIT = 5
 // iOS MainWalletView: the received-delta beat auto-dismisses after 2.5s.
 private const val RECEIVED_DELTA_DISMISS_MS = 2_500L
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     walletManager: WalletManager,
@@ -108,6 +114,8 @@ fun HomeScreen(
     val priceState by priceService.state.collectAsState()
     val requestState by cashuRequestStore.state.collectAsState()
     val formatter = remember { AmountFormatter() }
+    val scope = rememberCoroutineScope()
+    var refreshing by remember { mutableStateOf(false) }
 
     val balanceDisplay = remember(walletState.balance, settings, priceState) {
         formatter.displayText(
@@ -157,14 +165,36 @@ fun HomeScreen(
     // height. SubcomposeLayout measures the pinned header *before* the list is
     // composed, so the very first frame lays out with the correct inset — this
     // replaces the old onSizeChanged + hide-first-frame alpha hack.
-    SubcomposeLayout(
+    PullToRefreshBox(
+        isRefreshing = refreshing,
+        onRefresh = {
+            if (!refreshing) {
+                refreshing = true
+                scope.launch {
+                    try {
+                        // Match iOS MainWalletView: pulling the wallet timeline
+                        // re-checks pending receives and sent ecash, which also
+                        // reloads the transactions shown in Recent.
+                        walletManager.syncPendingMintQuotes()
+                        walletManager.checkAllPendingTokens()
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (_: Throwable) {
+                        // WalletManager already publishes the operation error.
+                    } finally {
+                        refreshing = false
+                    }
+                }
+            }
+        },
         modifier = Modifier
             .fillMaxSize()
             .padding(contentPadding)
             // The scaffold's contentPadding already carries the status-bar inset;
             // consume it so PinnedTop's statusBarsPadding() can't double-apply.
             .consumeWindowInsets(contentPadding),
-    ) { constraints ->
+    ) {
+        SubcomposeLayout(modifier = Modifier.fillMaxSize()) { constraints ->
         // Pinned top section (mint chip + balance + triptych), measured first.
         val pinned = subcompose(HomeSlot.Pinned) {
             PinnedTop(
@@ -337,12 +367,12 @@ fun HomeScreen(
             }
         }.first().measure(constraints)
 
-        layout(constraints.maxWidth, constraints.maxHeight) {
-            body.place(0, 0)
-            pinned.place(0, 0)
+            layout(constraints.maxWidth, constraints.maxHeight) {
+                body.place(0, 0)
+                pinned.place(0, 0)
+            }
         }
     }
-
 }
 
 // iOS scrollFadeBand: rows dissolve over a 24pt band beneath the measured
