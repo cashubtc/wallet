@@ -109,7 +109,8 @@ struct NWCSettingsView: View {
         }
         .sheet(isPresented: $showConnectionQR) {
             QRCodeDetailSheet(title: "Wallet Connect", content: nwc.connectionUri ?? "")
-                .presentationDetents([.medium, .large])
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
         }
         .alert("Reset Connection", isPresented: $showRegenerateConfirm) {
             Button("Cancel", role: .cancel) {}
