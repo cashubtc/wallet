@@ -2873,6 +2873,11 @@ struct MeltView: View {
             .animation(.smooth(duration: 0.3), value: meltViewStateKey)
             .navigationBarTitleDisplayMode(.inline)
             .navigationTitle(screenTitle)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    SheetCloseButton()
+                }
+            }
             .sheet(isPresented: $showingScanner) {
                 ScannerWrapperView(onScanned: handleScannedRequest)
                     .environmentObject(walletManager)
