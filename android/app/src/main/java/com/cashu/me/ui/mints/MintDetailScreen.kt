@@ -77,6 +77,7 @@ import com.cashu.me.ui.components.MintAvatar
 import com.cashu.me.ui.components.PrimaryButton
 import com.cashu.me.ui.components.SectionHeader
 import com.cashu.me.ui.components.ToolbarIcon
+import com.cashu.me.ui.components.neutralActionButtonColors
 import com.cashu.me.ui.theme.CapsuleShape
 import com.cashu.me.ui.theme.CashuTheme
 
@@ -311,6 +312,7 @@ fun MintDetailScreen(
                     PrimaryButton(
                         text = "Set as Default",
                         onClick = { walletManager.launch { walletManager.setActiveMint(mint) } },
+                        colors = neutralActionButtonColors(),
                     )
                 }
                 DestructiveTextButton(

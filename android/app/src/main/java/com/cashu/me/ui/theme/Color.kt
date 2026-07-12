@@ -83,7 +83,11 @@ internal val DarkInkColorScheme = darkColorScheme(
     surfaceTint = Color(0xFFFFFFFF),
     inverseSurface = Color(0xFFECECEC),
     inverseOnSurface = Color(0xFF1A1A1A),
-    error = Color(0xFFEF9A9A),
+    // Solid red (Material Red 400), not the desaturated Red 200 that read as
+    // pink on the black canvas. Matches the 300/400 tonal weight of the dark
+    // received-green / pending-orange, and stays clearly red for destructive
+    // affordances (Remove mint, swipe-to-delete) while keeping AA contrast.
+    error = Color(0xFFEF5350),
     onError = Color(0xFF4E0002),
     errorContainer = Color(0xFF8C1D18),
     onErrorContainer = Color(0xFFFFDAD6),
