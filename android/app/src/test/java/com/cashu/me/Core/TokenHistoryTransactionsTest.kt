@@ -3,8 +3,10 @@ package com.cashu.me.Core
 import com.cashu.me.Models.ClaimedToken
 import com.cashu.me.Models.PendingReceiveToken
 import com.cashu.me.Models.PendingToken
+import com.cashu.me.Models.TransactionKind
 import com.cashu.me.Models.TransactionStatus
 import com.cashu.me.Models.TransactionType
+import com.cashu.me.Models.WalletTransaction
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -89,6 +91,41 @@ class TokenHistoryTransactionsTest {
         assertEquals(2L, row.fee)
         assertEquals("claimed memo", row.memo)
         assertEquals("points", row.unit)
+    }
+
+    @Test
+    fun mergesPendingUsdTokenIntoCdkRowWithoutCreatingSatDuplicate() {
+        val pending = PendingToken(
+            tokenId = "pending-usd",
+            token = "cashu-usd",
+            amount = 10,
+            fee = 1,
+            dateEpochMillis = 100,
+            mintUrl = MintUrl,
+            unit = "usd",
+        )
+        val cdkRow = WalletTransaction(
+            id = "cdk-usd",
+            amount = 10,
+            type = TransactionType.Outgoing,
+            kind = TransactionKind.Ecash,
+            dateEpochMillis = 100,
+            status = TransactionStatus.Completed,
+            mintUrl = MintUrl,
+            unit = "usd",
+        )
+
+        val rows = mergeSentTokenTransactions(
+            transactions = listOf(cdkRow),
+            pendingTokens = listOf(pending),
+            claimedTokens = emptyList(),
+        )
+
+        val row = rows.single()
+        assertEquals("usd", row.unit)
+        assertEquals(TransactionStatus.Pending, row.status)
+        assertEquals("cashu-usd", row.token)
+        assertTrue(row.isPendingToken)
     }
 
     private companion object {

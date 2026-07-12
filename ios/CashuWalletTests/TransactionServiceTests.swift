@@ -122,6 +122,78 @@ final class TransactionServiceTests: XCTestCase {
         XCTAssertTrue(service.pendingTokens.isEmpty, "Pending list should be empty after claim")
     }
 
+    func testMergePendingUSDTokenIntoMatchingRowDoesNotCreateSatDuplicate() {
+        let date = Date()
+        let pending = PendingToken(
+            tokenId: "usd-pending",
+            token: "not-needed-for-unit-matching",
+            amount: 10,
+            fee: 1,
+            date: date,
+            mintUrl: "https://mint.example.com",
+            memo: nil,
+            unit: "usd"
+        )
+        service.savePendingToken(pending)
+
+        var transaction = WalletTransaction(
+            id: "cdk-usd-send",
+            amount: 10,
+            type: .outgoing,
+            kind: .ecash,
+            date: date,
+            memo: nil,
+            status: .completed,
+            mintUrl: "https://mint.example.com"
+        )
+        transaction.unit = "usd"
+        var transactions = [transaction]
+
+        service.mergeSentTokens(into: &transactions)
+
+        XCTAssertEqual(transactions.count, 1)
+        XCTAssertEqual(transactions[0].unit, "usd")
+        XCTAssertEqual(transactions[0].status, .pending)
+        XCTAssertTrue(transactions[0].isPendingToken)
+        XCTAssertEqual(transactions[0].token, pending.token)
+    }
+
+    func testClaimedUSDTokenKeepsUnitWhenMerged() {
+        let date = Date()
+        let pending = PendingToken(
+            tokenId: "usd-claimed",
+            token: "claimed-usd-token",
+            amount: 25,
+            fee: 2,
+            date: date,
+            mintUrl: "https://mint.example.com",
+            memo: nil,
+            unit: "usd"
+        )
+        service.savePendingToken(pending)
+        service.markTokenAsClaimed(token: pending.token)
+
+        var transaction = WalletTransaction(
+            id: "cdk-usd-claimed",
+            amount: 25,
+            type: .outgoing,
+            kind: .ecash,
+            date: date,
+            memo: nil,
+            status: .completed,
+            mintUrl: "https://mint.example.com"
+        )
+        transaction.unit = "usd"
+        var transactions = [transaction]
+
+        service.mergeSentTokens(into: &transactions)
+
+        XCTAssertEqual(transactions.count, 1)
+        XCTAssertEqual(transactions[0].unit, "usd")
+        XCTAssertEqual(transactions[0].status, .completed)
+        XCTAssertEqual(transactions[0].token, pending.token)
+    }
+
     func testMarkTokenAsClaimedNonexistentIsNoop() {
         service.savePendingToken(pendingToken(id: "d1", amount: 5))
         service.markTokenAsClaimed(token: "cashuAsome-other-token")
@@ -199,7 +271,8 @@ final class TransactionServiceTests: XCTestCase {
             fee: 0,
             date: Date(),
             mintUrl: "https://mint.example.com",
-            memo: nil
+            memo: nil,
+            unit: "sat"
         )
     }
 

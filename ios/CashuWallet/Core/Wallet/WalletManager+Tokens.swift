@@ -29,7 +29,8 @@ extension WalletManager {
             fee: result.fee,
             date: Date(),
             mintUrl: tokenMintURL,
-            memo: memo
+            memo: memo,
+            unit: unit
         )
         transactionService.savePendingToken(pendingToken)
         

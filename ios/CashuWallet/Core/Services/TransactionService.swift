@@ -209,7 +209,7 @@ class TransactionService: ObservableObject {
     /// string; a claimed match just attaches the token. Any token with no CDK
     /// counterpart (older data, or a send CDK didn't record) is appended as
     /// its own row so nothing is lost.
-    private func mergeSentTokens(into transactions: inout [WalletTransaction]) {
+    func mergeSentTokens(into transactions: inout [WalletTransaction]) {
         func normalizedMint(_ url: String?) -> String {
             var s = (url ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             while s.hasSuffix("/") { s.removeLast() }
@@ -240,10 +240,9 @@ class TransactionService: ObservableObject {
         var leftovers: [WalletTransaction] = []
 
         for pendingToken in pendingTokens {
-            let unit = TokenInfo.parse(pendingToken.token)?.unit ?? "sat"
             if let idx = claimMatch(
                 mintUrl: pendingToken.mintUrl,
-                unit: unit,
+                unit: pendingToken.unit,
                 amount: pendingToken.amount,
                 date: pendingToken.date
             ) {
@@ -265,16 +264,15 @@ class TransactionService: ObservableObject {
                     isPendingToken: true
                 )
                 pendingTx.fee = pendingToken.fee
-                pendingTx.unit = unit
+                pendingTx.unit = pendingToken.unit
                 leftovers.append(pendingTx)
             }
         }
 
         for claimedToken in claimedTokens {
-            let unit = TokenInfo.parse(claimedToken.token)?.unit ?? "sat"
             if let idx = claimMatch(
                 mintUrl: claimedToken.mintUrl,
-                unit: unit,
+                unit: claimedToken.unit,
                 amount: claimedToken.amount,
                 date: claimedToken.date
             ) {
@@ -293,7 +291,7 @@ class TransactionService: ObservableObject {
                     token: claimedToken.token
                 )
                 claimedTx.fee = claimedToken.fee
-                claimedTx.unit = unit
+                claimedTx.unit = claimedToken.unit
                 leftovers.append(claimedTx)
             }
         }
@@ -397,7 +395,8 @@ class TransactionService: ObservableObject {
                 date: pendingToken.date,
                 mintUrl: pendingToken.mintUrl,
                 memo: pendingToken.memo,
-                claimedDate: Date()
+                claimedDate: Date(),
+                unit: pendingToken.unit
             )
             
             // Add to claimed tokens
