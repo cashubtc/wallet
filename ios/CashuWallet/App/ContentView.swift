@@ -26,10 +26,21 @@ struct ContentView: View {
                 LoadingView()
                     .transition(.opacity)
             }
+
+            if walletManager.isInitialized,
+               !walletManager.needsOnboarding,
+               !walletManager.isRuntimeReady {
+                WalletRuntimeGateView(
+                    errorMessage: walletManager.errorMessage,
+                    retry: retryWalletInitialization
+                )
+                .transition(.opacity)
+            }
         }
         .animation(.easeInOut(duration: 0.35), value: walletManager.needsOnboarding)
         .fullScreenCover(isPresented: $navigationManager.showReceiveTokenSheet) {
-            if let token = navigationManager.pendingDeepLinkToken {
+            if walletManager.isRuntimeReady,
+               let token = navigationManager.pendingDeepLinkToken {
                 ReceiveTokenDetailView(
                     tokenString: token,
                     onComplete: {
@@ -38,6 +49,14 @@ struct ContentView: View {
                     }
                 )
                 .environmentObject(walletManager)
+            } else {
+                // Cold-launch deep links may arrive while cached state is
+                // already visible but before the CDK repository is installed.
+                // Keep the token queued and do not compose its claim screen yet.
+                WalletRuntimeGateView(
+                    errorMessage: walletManager.errorMessage,
+                    retry: retryWalletInitialization
+                )
             }
         }
         // Incoming NUT-18 payment that needs an explicit user decision (mint
@@ -76,8 +95,54 @@ struct ContentView: View {
     private func presentHeldPaymentIfIdle(_ held: PendingReceiveToken?) {
         guard claimApproval == nil,
               !walletManager.needsOnboarding,
+              walletManager.isRuntimeReady,
               let held else { return }
         claimApproval = held
+    }
+
+    private func retryWalletInitialization() {
+        Task { await walletManager.initialize() }
+    }
+}
+
+private struct WalletRuntimeGateView: View {
+    let errorMessage: String?
+    let retry: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color(.systemBackground)
+                .opacity(0.92)
+                .ignoresSafeArea()
+
+            VStack(spacing: 16) {
+                if let errorMessage {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.title2)
+                        .foregroundStyle(.red)
+                        .accessibilityHidden(true)
+
+                    Text("Wallet unavailable")
+                        .font(.headline)
+
+                    Text(errorMessage)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Button("Retry", action: retry)
+                        .buttonStyle(.borderedProminent)
+                } else {
+                    ProgressView()
+                    Text("Preparing wallet…")
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(24)
+            .frame(maxWidth: 420)
+        }
     }
 }
 

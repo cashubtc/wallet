@@ -59,6 +59,9 @@ struct CashuWalletApp: App {
                             SentryService.initialize()
                         }
                         await walletManager.initialize()
+                    }
+                    .task(id: walletManager.isRuntimeReady) {
+                        guard walletManager.isRuntimeReady else { return }
                         guard !IntegrationTestConfig.shouldUseDeterministicUIRuntime else { return }
                         CashuRequestListener.shared.attach(walletManager: walletManager)
                         await CashuRequestListener.shared.start()

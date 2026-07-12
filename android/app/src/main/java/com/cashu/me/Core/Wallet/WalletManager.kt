@@ -57,6 +57,7 @@ class WalletManager(
     override suspend fun initialize() {
         initializationMutex.withLock {
             if (mutableState.value.isRuntimeReady) return@withLock
+            update { copy(errorMessage = null) }
 
             withContext(Dispatchers.IO) {
                 val hasStoredWallet = secureStorage.contains(StorageKeys.secureWalletMnemonic)

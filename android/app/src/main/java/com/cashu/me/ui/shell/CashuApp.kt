@@ -14,12 +14,19 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -43,12 +50,14 @@ import com.cashu.me.Core.PaymentRequestDecoder
 import com.cashu.me.Core.TokenParser
 import com.cashu.me.Views.Components.ScannerView
 import com.cashu.me.Views.Send.ContactlessPayView
-import com.cashu.me.ui.onboarding.OnboardingScreen
+import com.cashu.me.ui.components.InlineNotice
+import com.cashu.me.ui.components.PrimaryButton
 import com.cashu.me.ui.navigation.Routes
 import com.cashu.me.ui.navigation.TopTab
 import com.cashu.me.ui.navigation.cashuRequestDetailRouteFor
 import com.cashu.me.ui.navigation.navigateToTab
 import com.cashu.me.ui.navigation.shellBackAction
+import com.cashu.me.ui.onboarding.OnboardingScreen
 import com.cashu.me.ui.receive.ReceiveEcashDetailScreen
 import com.cashu.me.ui.receive.ReceiveEcashScreen
 import com.cashu.me.ui.receive.ReceiveLightningScreen
@@ -165,7 +174,11 @@ private fun CashuAppContent(container: AppContainer) {
                     walletManager = container.walletManager,
                     nostrMintBackupService = container.nostrMintBackupService,
                 )
-                AppGate.Shell -> AuthenticatedShell(container = container)
+                AppGate.Shell -> AuthenticatedShell(
+                    container = container,
+                    isRuntimeReady = walletState.isRuntimeReady,
+                    runtimeError = walletState.errorMessage,
+                )
             }
         }
         // Covers pushed nav destinations and the base shell; money-flow sheets
@@ -181,7 +194,11 @@ private fun CashuAppContent(container: AppContainer) {
 private enum class AppGate { Loading, Onboarding, Shell }
 
 @Composable
-private fun AuthenticatedShell(container: AppContainer) {
+private fun AuthenticatedShell(
+    container: AppContainer,
+    isRuntimeReady: Boolean,
+    runtimeError: String?,
+) {
     val navController = rememberNavController()
     var showContactless by remember { mutableStateOf(false) }
     var scannerTarget by remember { mutableStateOf<ScannerTarget?>(null) }
@@ -207,7 +224,11 @@ private fun AuthenticatedShell(container: AppContainer) {
     val connectivityState by container.connectivityObserver.state.collectAsState()
     val appLockState by container.appLockManager.state.collectAsState()
 
-    LaunchedEffect(pendingDeepLink) {
+    LaunchedEffect(pendingDeepLink, isRuntimeReady) {
+        // Keep external actions queued until the CDK repository is installed.
+        // Consuming the link earlier would compose a payment screen that can
+        // only fail with "Wallet repository is not initialized."
+        if (!isRuntimeReady) return@LaunchedEffect
         val deepLink = pendingDeepLink ?: return@LaunchedEffect
         when (deepLink.route) {
             CashuRoute.Receive -> {
@@ -344,6 +365,18 @@ private fun AuthenticatedShell(container: AppContainer) {
                 null -> Unit
             }
         }
+        if (!isRuntimeReady) {
+            WalletRuntimeGate(
+                errorMessage = runtimeError,
+                onRetry = {
+                    container.walletManager.launch {
+                        container.walletManager.initialize()
+                    }
+                },
+            )
+        }
+        // Security surfaces always remain above the runtime gate so cached
+        // wallet content is never exposed while App Lock is active.
         if (appLockState.isObscured && !appLockState.isLocked) {
             PrivacyCover()
         }
@@ -440,6 +473,54 @@ private fun AuthenticatedShell(container: AppContainer) {
                 onClose = close,
                 onDismissLockChanged = { flowDismissLocked = it },
             )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun WalletRuntimeGate(
+    errorMessage: String?,
+    onRetry: () -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background.copy(alpha = 0.92f))
+            // This full-screen surface deliberately consumes taps so cached
+            // wallet content remains visible but cannot start CDK operations.
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = {},
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = CashuTheme.spacing.section),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
+        ) {
+            if (errorMessage == null) {
+                LoadingIndicator()
+                Text(
+                    text = "Preparing wallet…",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                InlineNotice(
+                    text = "Wallet couldn't finish preparing.",
+                    detail = errorMessage,
+                )
+                PrimaryButton(
+                    text = "Retry",
+                    onClick = onRetry,
+                )
+            }
         }
     }
 }

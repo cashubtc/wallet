@@ -40,6 +40,15 @@ extension WalletManager {
     func initialize() async {
         guard !hasInitialized else { return }
         hasInitialized = true
+        errorMessage = nil
+        // A failed runtime open is retryable in-process. Keep the guard set
+        // while this attempt is suspended, then release it only if the CDK
+        // repository still was not installed.
+        defer {
+            if !isRuntimeReady {
+                hasInitialized = false
+            }
+        }
         // UI-test support: wipe any persisted wallet so onboarding always shows
         // from a known-empty state. Driven by RESET_WALLET=1 in the test launch
         // environment; no effect in normal runs.
