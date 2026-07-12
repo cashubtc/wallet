@@ -1252,7 +1252,10 @@ struct QRCodeDetailSheet: View {
 
                 Spacer()
             }
-            .padding(.top, 24)
+            // Extra top clearance so the wide, centered QR card doesn't tuck
+            // under the floating close-X (its column overlaps the card's
+            // top-left corner at this width).
+            .padding(.top, 44)
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.hidden, for: .navigationBar)
