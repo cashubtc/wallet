@@ -495,12 +495,17 @@ class CdkWalletGatewayImpl : CdkWalletGateway, NwcServiceGateway {
         states.any { it }
     }
 
-    override suspend fun listTransactions(mintUrls: List<String>): List<WalletTransaction> = cdkCall {
-        mintUrls.flatMap { mintUrl ->
-            val wallet = runCatching { walletFor(mintUrl) }.getOrNull() ?: return@flatMap emptyList()
-            val incoming = runCatching { wallet.listTransactions(CdkTransactionDirection.INCOMING) }.getOrDefault(emptyList())
-            val outgoing = runCatching { wallet.listTransactions(CdkTransactionDirection.OUTGOING) }.getOrDefault(emptyList())
-            (incoming + outgoing).map { it.toDomain() }
+    override suspend fun listTransactions(unitsByMint: Map<String, List<String>>): List<WalletTransaction> = cdkCall {
+        unitsByMint.flatMap { (mintUrl, units) ->
+            units.flatMap units@{ unit ->
+                val wallet = runCatching { walletFor(mintUrl, cdkUnit(unit)) }
+                    .getOrNull() ?: return@units emptyList()
+                val incoming = runCatching { wallet.listTransactions(CdkTransactionDirection.INCOMING) }
+                    .getOrDefault(emptyList())
+                val outgoing = runCatching { wallet.listTransactions(CdkTransactionDirection.OUTGOING) }
+                    .getOrDefault(emptyList())
+                (incoming + outgoing).map { it.toDomain(unit) }
+            }
         }
     }
 
@@ -767,7 +772,7 @@ class CdkWalletGatewayImpl : CdkWalletGateway, NwcServiceGateway {
         paymentProof = paymentProof,
     )
 
-    private fun CdkTransaction.toDomain(): WalletTransaction {
+    private fun CdkTransaction.toDomain(unit: String): WalletTransaction {
         val direction = if (direction == CdkTransactionDirection.INCOMING) TransactionType.Incoming else TransactionType.Outgoing
         val method = paymentMethod?.toDomain()
         return WalletTransaction(
@@ -786,6 +791,7 @@ class CdkWalletGatewayImpl : CdkWalletGateway, NwcServiceGateway {
             preimage = paymentProof,
             invoice = paymentRequest,
             fee = fee.value.toLong(),
+            unit = unit,
             quoteId = quoteId,
         )
     }

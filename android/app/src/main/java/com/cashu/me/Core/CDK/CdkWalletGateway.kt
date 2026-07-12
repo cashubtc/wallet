@@ -60,7 +60,7 @@ interface CdkWalletGateway {
     suspend fun settleForeignNfcToken(tokenString: String, settlementMintUrl: String): ForeignNfcSettlement
     suspend fun calculateReceiveFee(tokenString: String): Long
     suspend fun checkTokenSpendable(token: String, mintUrl: String): Boolean
-    suspend fun listTransactions(mintUrls: List<String>): List<WalletTransaction>
+    suspend fun listTransactions(unitsByMint: Map<String, List<String>>): List<WalletTransaction>
     suspend fun payCashuPaymentRequest(encoded: String, customAmountSats: Long?, preferredMintURL: String?)
 }
 

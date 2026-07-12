@@ -22,6 +22,7 @@ class TokenHistoryTransactionsTest {
                     dateEpochMillis = 100,
                     mintUrl = MintUrl,
                     memo = "memo",
+                    unit = "usd",
                 ),
             ),
         )
@@ -33,6 +34,7 @@ class TokenHistoryTransactionsTest {
         assertEquals("cashu-sent", row.token)
         assertEquals(1L, row.fee)
         assertEquals("memo", row.memo)
+        assertEquals("usd", row.unit)
         assertTrue(row.isPendingToken)
     }
 
@@ -46,6 +48,7 @@ class TokenHistoryTransactionsTest {
                     amount = 21,
                     dateEpochMillis = 200,
                     mintUrl = MintUrl,
+                    unit = "eur",
                 ),
             ),
         )
@@ -56,6 +59,7 @@ class TokenHistoryTransactionsTest {
         assertEquals(TransactionStatus.Pending, row.status)
         assertEquals("cashu-receive", row.token)
         assertEquals(0L, row.fee)
+        assertEquals("eur", row.unit)
         assertTrue(row.isPendingToken)
     }
 
@@ -72,6 +76,7 @@ class TokenHistoryTransactionsTest {
                     mintUrl = MintUrl,
                     memo = "claimed memo",
                     claimedDateEpochMillis = 400,
+                    unit = "points",
                 ),
             ),
         )
@@ -83,10 +88,10 @@ class TokenHistoryTransactionsTest {
         assertEquals("cashu-claimed", row.token)
         assertEquals(2L, row.fee)
         assertEquals("claimed memo", row.memo)
+        assertEquals("points", row.unit)
     }
 
     private companion object {
         const val MintUrl = "https://mint.example.com"
     }
 }
-

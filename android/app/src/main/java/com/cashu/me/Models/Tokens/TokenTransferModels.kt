@@ -30,6 +30,7 @@ data class PendingReceiveToken(
     val amount: Long,
     val dateEpochMillis: Long,
     val mintUrl: String,
+    val unit: String = "sat",
 ) {
     val id: String get() = tokenId
 }
@@ -44,6 +45,7 @@ data class ClaimedToken(
     val mintUrl: String,
     val memo: String? = null,
     val claimedDateEpochMillis: Long,
+    val unit: String = "sat",
 ) {
     val id: String get() = tokenId
 }

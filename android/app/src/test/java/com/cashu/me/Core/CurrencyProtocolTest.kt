@@ -44,4 +44,20 @@ class CurrencyProtocolTest {
         assertEquals(0, generic.decimals)
         assertEquals("100 CHF", CurrencyAmount(100, generic).formatted())
     }
+
+    @Test
+    fun transactionAmountsUseTheirNativeMintUnit() {
+        val display = AmountFormatter().displayMintUnitAmount(
+            amount = 500,
+            unit = "usd",
+            preferredPrimary = "sats",
+            showFiat = true,
+            btcPrice = 100_000.0,
+            currencyCode = "USD",
+            useBitcoinSymbol = false,
+        )
+
+        assertEquals("\$5.00", display.primary)
+        assertNull(display.secondary)
+    }
 }

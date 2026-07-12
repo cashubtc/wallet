@@ -25,6 +25,7 @@ class TransactionService: ObservableObject {
     private let walletRepository: () -> WalletRepository?
     private let walletDatabase: () -> WalletSqliteDatabase?
     private let getTrackedMintUrls: () -> [String]
+    private let getUnitsForMint: (String) -> [String]
     private let walletStore: WalletStore
     
     // MARK: - Initialization
@@ -33,11 +34,13 @@ class TransactionService: ObservableObject {
         walletRepository: @escaping () -> WalletRepository?,
         walletDatabase: @escaping () -> WalletSqliteDatabase?,
         getTrackedMintUrls: @escaping () -> [String],
+        getUnitsForMint: @escaping (String) -> [String] = { _ in ["sat"] },
         walletStore: WalletStore = WalletStore()
     ) {
         self.walletRepository = walletRepository
         self.walletDatabase = walletDatabase
         self.getTrackedMintUrls = getTrackedMintUrls
+        self.getUnitsForMint = getUnitsForMint
         self.walletStore = walletStore
     }
     
@@ -57,52 +60,61 @@ class TransactionService: ObservableObject {
         let trackedMintUrls = Set(getTrackedMintUrls().filter { !$0.isEmpty })
         
         for mintUrlString in trackedMintUrls {
-            do {
-                let mintUrl = MintUrl(url: mintUrlString)
-                let wallet = try await repo.getWallet(mintUrl: mintUrl, unit: .sat)
-                let txs = try await wallet.listTransactions(direction: nil)
-                let walletTxs: [WalletTransaction] = txs.map { tx in
-                    if let quoteId = tx.quoteId {
-                        completedQuoteIds.insert(quoteId)
+            for unitString in Self.walletUnits(advertisedUnits: getUnitsForMint(mintUrlString)) {
+                do {
+                    let mintUrl = MintUrl(url: mintUrlString)
+                    let currencyUnit = PaymentRequestDecoder.currencyUnit(from: unitString)
+                    let wallet = try await repo.getWallet(mintUrl: mintUrl, unit: currencyUnit)
+                    let txs = try await wallet.listTransactions(direction: nil)
+                    let walletTxs: [WalletTransaction] = txs.map { tx in
+                        if let quoteId = tx.quoteId {
+                            completedQuoteIds.insert(quoteId)
+                        }
+
+                        let paymentMethod = tx.paymentMethod.flatMap(PaymentMethodKind.from)
+                        let kind: WalletTransaction.TransactionKind
+
+                        switch paymentMethod {
+                        case .onchain:
+                            kind = .onchain
+                        case .bolt11, .bolt12:
+                            kind = .lightning
+                        case nil:
+                            kind = tx.paymentRequest != nil ? .lightning : .ecash
+                        }
+
+                        let storedToken = kind == .ecash ? self.getToken(txId: tx.id.hex) : nil
+                        let storedPaymentProof = tx.paymentProof
+                            ?? tx.quoteId.flatMap { self.getPreimage(quoteId: $0) }
+
+                        var walletTransaction = WalletTransaction(
+                            id: tx.id.hex,
+                            amount: tx.amount.value,
+                            type: tx.direction == .incoming ? .incoming : .outgoing,
+                            kind: kind,
+                            date: Date(timeIntervalSince1970: TimeInterval(tx.timestamp)),
+                            memo: tx.memo,
+                            status: .completed,
+                            mintUrl: tx.mintUrl.url,
+                            preimage: storedPaymentProof,
+                            token: storedToken,
+                            invoice: tx.paymentRequest
+                        )
+
+                        walletTransaction.fee = tx.fee.value
+                        walletTransaction.quoteId = tx.quoteId
+                        walletTransaction.unit = PaymentRequestDecoder.unitDescription(currencyUnit)
+                        return walletTransaction
                     }
-
-                    let paymentMethod = tx.paymentMethod.flatMap(PaymentMethodKind.from)
-                    let kind: WalletTransaction.TransactionKind
-
-                    switch paymentMethod {
-                    case .onchain:
-                        kind = .onchain
-                    case .bolt11, .bolt12:
-                        kind = .lightning
-                    case nil:
-                        kind = tx.paymentRequest != nil ? .lightning : .ecash
-                    }
-
-                    let storedToken = kind == .ecash ? self.getToken(txId: tx.id.hex) : nil
-                    let storedPaymentProof = tx.paymentProof
-                        ?? tx.quoteId.flatMap { self.getPreimage(quoteId: $0) }
-
-                    var walletTransaction = WalletTransaction(
-                        id: tx.id.hex,
-                        amount: tx.amount.value,
-                        type: tx.direction == .incoming ? .incoming : .outgoing,
-                        kind: kind,
-                        date: Date(timeIntervalSince1970: TimeInterval(tx.timestamp)),
-                        memo: tx.memo,
-                        status: .completed,
-                        mintUrl: tx.mintUrl.url,
-                        preimage: storedPaymentProof,
-                        token: storedToken,
-                        invoice: tx.paymentRequest
+                    allTransactions.append(contentsOf: walletTxs)
+                } catch {
+                    // A mint may advertise a unit whose wallet has never been
+                    // used locally. That account legitimately does not exist;
+                    // continue loading the remaining mint/unit accounts.
+                    AppLogger.wallet.error(
+                        "Failed to load transactions for mint \(mintUrlString), unit \(unitString): \(error)"
                     )
-
-                    walletTransaction.fee = tx.fee.value
-                    walletTransaction.quoteId = tx.quoteId
-                    return walletTransaction
                 }
-                allTransactions.append(contentsOf: walletTxs)
-            } catch {
-                AppLogger.wallet.error("Failed to load transactions for mint \(mintUrlString): \(error)")
             }
         }
 
@@ -168,6 +180,22 @@ class TransactionService: ObservableObject {
         NotificationCenter.default.post(name: .cashuTransactionsUpdated, object: nil)
     }
 
+    /// Every tracked mint keeps a separate CDK wallet per unit. History must
+    /// enumerate all of them; querying only the implicit sat wallet silently
+    /// omits USD/EUR/custom-unit transactions.
+    static func walletUnits(advertisedUnits: [String]) -> [String] {
+        var units = ["sat"]
+        for rawUnit in advertisedUnits {
+            let unit = rawUnit.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !unit.isEmpty,
+                  !units.contains(where: { $0.caseInsensitiveCompare(unit) == .orderedSame }) else {
+                continue
+            }
+            units.append(unit)
+        }
+        return units
+    }
+
     /// Fold locally-tracked sent ecash tokens into the CDK transaction rows.
     ///
     /// CDK already records every send as its own outgoing-ecash transaction.
@@ -193,11 +221,12 @@ class TransactionService: ObservableObject {
             transactions[$0].kind == .ecash && transactions[$0].type == .outgoing
         })
 
-        func claimMatch(mintUrl: String, amount: UInt64, date: Date) -> Int? {
+        func claimMatch(mintUrl: String, unit: String, amount: UInt64, date: Date) -> Int? {
             let target = normalizedMint(mintUrl)
             let best = available
                 .filter {
                     transactions[$0].amount == amount &&
+                    transactions[$0].unit.caseInsensitiveCompare(unit) == .orderedSame &&
                     normalizedMint(transactions[$0].mintUrl) == target
                 }
                 .min {
@@ -211,7 +240,13 @@ class TransactionService: ObservableObject {
         var leftovers: [WalletTransaction] = []
 
         for pendingToken in pendingTokens {
-            if let idx = claimMatch(mintUrl: pendingToken.mintUrl, amount: pendingToken.amount, date: pendingToken.date) {
+            let unit = TokenInfo.parse(pendingToken.token)?.unit ?? "sat"
+            if let idx = claimMatch(
+                mintUrl: pendingToken.mintUrl,
+                unit: unit,
+                amount: pendingToken.amount,
+                date: pendingToken.date
+            ) {
                 transactions[idx].status = .pending
                 transactions[idx].isPendingToken = true
                 if transactions[idx].token == nil { transactions[idx].token = pendingToken.token }
@@ -230,12 +265,19 @@ class TransactionService: ObservableObject {
                     isPendingToken: true
                 )
                 pendingTx.fee = pendingToken.fee
+                pendingTx.unit = unit
                 leftovers.append(pendingTx)
             }
         }
 
         for claimedToken in claimedTokens {
-            if let idx = claimMatch(mintUrl: claimedToken.mintUrl, amount: claimedToken.amount, date: claimedToken.date) {
+            let unit = TokenInfo.parse(claimedToken.token)?.unit ?? "sat"
+            if let idx = claimMatch(
+                mintUrl: claimedToken.mintUrl,
+                unit: unit,
+                amount: claimedToken.amount,
+                date: claimedToken.date
+            ) {
                 if transactions[idx].token == nil { transactions[idx].token = claimedToken.token }
                 if transactions[idx].fee == 0 { transactions[idx].fee = claimedToken.fee }
             } else {
@@ -251,6 +293,7 @@ class TransactionService: ObservableObject {
                     token: claimedToken.token
                 )
                 claimedTx.fee = claimedToken.fee
+                claimedTx.unit = unit
                 leftovers.append(claimedTx)
             }
         }
@@ -508,7 +551,7 @@ class TransactionService: ObservableObject {
                 statusNote = "Payment detected on-chain"
             }
 
-            transactions.append(WalletTransaction(
+            var transaction = WalletTransaction(
                 id: quote.id,
                 amount: amount,
                 type: .incoming,
@@ -522,7 +565,9 @@ class TransactionService: ObservableObject {
                 token: nil,
                 invoice: quote.request,
                 quoteId: quote.id
-            ))
+            )
+            transaction.unit = PaymentRequestDecoder.unitDescription(quote.unit)
+            transactions.append(transaction)
         }
 
         return transactions

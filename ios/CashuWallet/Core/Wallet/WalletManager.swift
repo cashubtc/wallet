@@ -88,6 +88,9 @@ class WalletManager: ObservableObject {
             guard let self else { return [] }
             return self.trackedMintUrlsForWalletAccess()
         },
+        getUnitsForMint: { [weak self] mintURL in
+            self?.mintService.mints.first(where: { $0.url == mintURL })?.units ?? ["sat"]
+        },
         walletStore: walletStore
     )
     

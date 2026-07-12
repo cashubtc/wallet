@@ -670,8 +670,7 @@ class WalletManager(
     }
 
     suspend fun loadTransactions() {
-        val mintUrls = mutableState.value.mints.map { it.url }
-        val result = transactionLoader.load(mintUrls)
+        val result = transactionLoader.load(mutableState.value.mints)
         update {
             copy(
                 transactions = result.transactions,

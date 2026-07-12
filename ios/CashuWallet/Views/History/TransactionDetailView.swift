@@ -86,7 +86,14 @@ struct TransactionDetailView: View {
                         // Amount hero — always crisp `.primary`; the glyph above
                         // carries the state colour.
                         Group {
-                            if transaction.kind == .onchain {
+                            if !isSatUnit {
+                                Text(formattedNativeAmount)
+                                    .font(.system(size: showsQR ? 32 : 48, weight: .semibold, design: .rounded))
+                                    .monospacedDigit()
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.5)
+                                    .accessibilityLabel("Amount: \(formattedNativeAmount)")
+                            } else if transaction.kind == .onchain {
                                 Text(AmountFormatter.sats(transaction.amount, useBitcoinSymbol: settings.useBitcoinSymbol))
                                     .font(.system(size: showsQR ? 32 : 48, weight: .semibold, design: .rounded))
                                     .monospacedDigit()
@@ -255,7 +262,7 @@ struct TransactionDetailView: View {
             ("calendar", "Date", transaction.date.formatted(date: .abbreviated, time: .shortened)),
         ]
         if transaction.fee > 0 {
-            rows.append(("arrow.up.arrow.down", "Fee", "\(transaction.fee) sat"))
+            rows.append(("arrow.up.arrow.down", "Fee", formattedNativeFee))
         }
         if transaction.kind == .onchain {
             if let mintUrl = transaction.mintUrl {
@@ -276,6 +283,25 @@ struct TransactionDetailView: View {
             }
         }
         return rows
+    }
+
+    private var isSatUnit: Bool {
+        transaction.unit.caseInsensitiveCompare("sat") == .orderedSame
+    }
+
+    private var formattedNativeAmount: String {
+        CurrencyAmount(
+            value: transaction.amount,
+            currency: CurrencyRegistry.currency(forMintUnit: transaction.unit)
+        ).formatted()
+    }
+
+    private var formattedNativeFee: String {
+        if isSatUnit { return "\(transaction.fee) sat" }
+        return CurrencyAmount(
+            value: transaction.fee,
+            currency: CurrencyRegistry.currency(forMintUnit: transaction.unit)
+        ).formatted()
     }
 
     private func detailRow(icon: String, label: String, value: String) -> some View {

@@ -343,7 +343,7 @@ Storage keys to port:
 
 ### History
 
-- [ ] Load CDK wallet transactions per tracked mint.
+- [x] Load CDK wallet transactions per tracked mint and advertised unit.
 - [x] Merge pending sent tokens, pending receive tokens, claimed tokens, mint quotes, melt quotes, preimages, and fee metadata.
 - [x] Preserve BOLT12 duplicate suppression when CDK returns reusable offers as unissued quotes and the completed transaction already exists.
 - [x] Preserve transaction direction/type/status labels.

@@ -3,6 +3,7 @@ package com.cashu.me.Core
 import com.cashu.me.Core.CDK.CdkWalletGateway
 import com.cashu.me.Models.ClaimedToken
 import com.cashu.me.Models.MeltPaymentResult
+import com.cashu.me.Models.MintInfo
 import com.cashu.me.Models.PaymentMethodKind
 import com.cashu.me.Models.PendingReceiveToken
 import com.cashu.me.Models.PendingToken
@@ -27,14 +28,15 @@ internal class WalletTransactionLoader(
     private val walletStore: WalletStore,
     private val gateway: CdkWalletGateway,
 ) {
-    suspend fun load(mintUrls: List<String>): WalletTransactionLoadResult {
+    suspend fun load(mints: List<MintInfo>): WalletTransactionLoadResult {
+        val mintUrls = mints.map { it.url }
         val trackedMintUrls = mintUrls.toSet()
         val preimages = walletStore.loadPaymentPreimages()
         val meltFees = walletStore.loadMeltQuoteFees()
         val pendingTokens = walletStore.loadPendingTokens()
         val pendingReceiveTokens = walletStore.loadPendingReceiveTokens()
         val claimedTokens = walletStore.loadClaimedTokens()
-        val remote = runCatching { gateway.listTransactions(mintUrls) }.getOrDefault(emptyList())
+        val remote = runCatching { gateway.listTransactions(transactionUnitsByMint(mints)) }.getOrDefault(emptyList())
             .map { it.withStoredMeltMetadata(preimages, meltFees) }
         val completedQuoteIds = remote.mapNotNull { it.quoteId }.toSet()
         val mintQuoteTimestamps = walletStore.loadMintQuoteTimestamps().toMutableMap()
@@ -99,6 +101,7 @@ internal class WalletTransactionLoader(
             mintUrl = pendingToken.mintUrl,
             memo = pendingToken.memo,
             claimedDateEpochMillis = System.currentTimeMillis(),
+            unit = pendingToken.unit,
         )
         val claimed = walletStore.loadClaimedTokens()
             .filterNot { it.tokenId == pendingToken.tokenId } + claimedToken
@@ -130,6 +133,7 @@ internal class WalletTransactionLoader(
             preimage = result.preimage ?: existing?.preimage,
             invoice = result.request ?: existing?.invoice,
             fee = result.feePaid,
+            unit = existing?.unit ?: "sat",
             quoteId = quoteId,
         )
         walletStore.saveTransactions(
@@ -173,6 +177,18 @@ internal class WalletTransactionLoader(
             }
         }
 }
+
+/** CDK stores an independent wallet per (mint, unit), including transaction history. */
+internal fun transactionUnitsByMint(mints: List<MintInfo>): Map<String, List<String>> =
+    mints.associate { mint ->
+        val units = buildList {
+            add("sat")
+            addAll(mint.units)
+        }.map(String::trim)
+            .filter(String::isNotEmpty)
+            .distinctBy(String::lowercase)
+        mint.url to units
+    }
 
 internal fun WalletTransaction.withStoredMeltMetadata(
     preimages: Map<String, String>,

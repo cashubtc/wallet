@@ -138,8 +138,8 @@ contactless, onboarding. See git history for the parity passes.
    open: the success haptic for background receives, which needs a real
    receive-event signal from WalletManager to avoid double-buzzing in-flow
    receives.
-7. **Non-sat History** — needs a `unit` field on `WalletTransaction` (shared
-   deferral with iOS).
+7. **Non-sat History** — ✅ transaction loading now enumerates every tracked
+   mint/unit wallet and preserves native-unit formatting in rows and details.
 8. **Shared-element transitions** — transaction row → detail, QR card flows
    (`SharedTransitionLayout`), once nav-level motion has settled.
 9. **Expressive `ButtonGroup` / shape-morph press states** — evaluate for the

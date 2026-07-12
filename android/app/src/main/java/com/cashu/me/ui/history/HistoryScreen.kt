@@ -71,6 +71,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import com.cashu.me.Core.AmountFormatter
+import com.cashu.me.Core.displayMintUnitAmount
 import com.cashu.me.Core.CashuRequestStore
 import com.cashu.me.Core.HistoryFilter
 import com.cashu.me.Core.PriceService
@@ -299,8 +300,9 @@ fun HistoryScreen(
                                 when (item) {
                                     is HistoryItem.Tx -> {
                                         val tx = item.transaction
-                                        val amountDisplay = formatter.displayText(
-                                            amountSats = tx.amount,
+                                        val amountDisplay = formatter.displayMintUnitAmount(
+                                            amount = tx.amount,
+                                            unit = tx.unit,
                                             preferredPrimary = settings.amountDisplayPrimary,
                                             showFiat = settings.showFiatBalance,
                                             btcPrice = priceState.btcPrice,

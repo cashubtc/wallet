@@ -3,6 +3,8 @@ package com.cashu.me.Core
 import java.text.NumberFormat
 import java.util.Locale
 import com.cashu.me.Core.Protocols.CurrencyDisplay
+import com.cashu.me.Core.Protocols.CurrencyAmount
+import com.cashu.me.Core.Protocols.CurrencyRegistry
 
 class AmountFormatter(
     private val locale: Locale = Locale.getDefault(),
@@ -127,4 +129,31 @@ fun AmountFormatter.displayText(
             effectivePrimary = effective,
         )
     }
+}
+
+/** Format an amount in its native mint unit; BTC-price conversion only applies to sats. */
+fun AmountFormatter.displayMintUnitAmount(
+    amount: Long,
+    unit: String,
+    preferredPrimary: String,
+    showFiat: Boolean,
+    btcPrice: Double?,
+    currencyCode: String,
+    useBitcoinSymbol: Boolean,
+): AmountDisplayText {
+    if (unit.equals("sat", ignoreCase = true)) {
+        return displayText(
+            amountSats = amount,
+            preferredPrimary = preferredPrimary,
+            showFiat = showFiat,
+            btcPrice = btcPrice,
+            currencyCode = currencyCode,
+            useBitcoinSymbol = useBitcoinSymbol,
+        )
+    }
+    return AmountDisplayText(
+        primary = CurrencyAmount(amount, CurrencyRegistry.currencyForMintUnit(unit)).formatted(),
+        secondary = null,
+        effectivePrimary = AmountDisplayPrimary.Sats,
+    )
 }

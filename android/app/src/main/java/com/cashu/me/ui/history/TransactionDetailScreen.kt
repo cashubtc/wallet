@@ -44,6 +44,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import com.cashu.me.Core.AmountFormatter
+import com.cashu.me.Core.Protocols.CurrencyAmount
+import com.cashu.me.Core.Protocols.CurrencyRegistry
 import com.cashu.me.Core.OnchainExplorer
 import com.cashu.me.Core.SettingsManager
 import com.cashu.me.Core.TransactionDisplay
@@ -248,7 +250,14 @@ private fun HeroAmount(
     useBitcoinSymbol: Boolean,
     compact: Boolean,
 ) {
-    val formatted = formatter.formatWalletSats(transaction.amount, useBitcoinSymbol)
+    val formatted = if (transaction.unit.equals("sat", ignoreCase = true)) {
+        formatter.formatWalletSats(transaction.amount, useBitcoinSymbol)
+    } else {
+        CurrencyAmount(
+            transaction.amount,
+            CurrencyRegistry.currencyForMintUnit(transaction.unit),
+        ).formatted()
+    }
     AmountText(
         text = formatted,
         style = (if (compact) MaterialTheme.typography.headlineLarge else MaterialTheme.typography.displayMedium)

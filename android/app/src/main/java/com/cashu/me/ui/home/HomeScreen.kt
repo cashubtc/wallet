@@ -54,6 +54,7 @@ import kotlinx.coroutines.delay
 import com.cashu.me.Core.AmountDisplayPrimary
 import com.cashu.me.Core.AmountDisplayText
 import com.cashu.me.Core.AmountFormatter
+import com.cashu.me.Core.displayMintUnitAmount
 import com.cashu.me.Core.CashuRequestStore
 import com.cashu.me.Core.HomeBalance
 import com.cashu.me.Core.Protocols.CurrencyAmount
@@ -272,8 +273,9 @@ fun HomeScreen(
                             when (item) {
                                 is HomeRecentItem.Tx -> {
                                     val tx = item.transaction
-                                    val amountDisplay = formatter.displayText(
-                                        amountSats = tx.amount,
+                                    val amountDisplay = formatter.displayMintUnitAmount(
+                                        amount = tx.amount,
+                                        unit = tx.unit,
                                         preferredPrimary = settings.amountDisplayPrimary,
                                         showFiat = settings.showFiatBalance,
                                         btcPrice = priceState.btcPrice,

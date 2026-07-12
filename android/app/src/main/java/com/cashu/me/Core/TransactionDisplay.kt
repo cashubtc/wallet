@@ -5,6 +5,8 @@ import com.cashu.me.Models.TransactionKind
 import com.cashu.me.Models.TransactionStatus
 import com.cashu.me.Models.TransactionType
 import com.cashu.me.Models.WalletTransaction
+import com.cashu.me.Core.Protocols.CurrencyAmount
+import com.cashu.me.Core.Protocols.CurrencyRegistry
 
 data class TransactionDetailField(
     val label: String,
@@ -84,13 +86,13 @@ object TransactionDisplay {
 
     // Detail rows follow the iOS canon: Status first (monochrome), Date, then
     // conditional essentials — Fee when > 0, Mint, Lightning payment proof,
-    // or on-chain Address/Transaction ID. Type/Direction/Unit rows stay dropped
-    // (the title names kind + direction; the unit is always sat here).
+    // or on-chain Address/Transaction ID. Type/Direction/Unit rows stay dropped;
+    // amounts and fees already carry their native unit.
     fun detailFields(transaction: WalletTransaction): List<TransactionDetailField> =
         buildList {
             add(TransactionDetailField("Status", statusText(transaction)))
             add(TransactionDetailField("Date", formatDetailDate(transaction.dateEpochMillis)))
-            if (transaction.fee > 0) add(TransactionDetailField("Fee", "${transaction.fee} sat"))
+            if (transaction.fee > 0) add(TransactionDetailField("Fee", formatNativeAmount(transaction.fee, transaction.unit)))
             transaction.mintUrl?.let { add(TransactionDetailField("Mint", mintHost(it))) }
             if (transaction.kind == TransactionKind.Onchain) {
                 transaction.invoice?.let { add(TransactionDetailField("Address", it)) }
@@ -98,6 +100,13 @@ object TransactionDisplay {
             } else {
                 transaction.preimage?.let { add(TransactionDetailField("Payment Proof", it)) }
             }
+        }
+
+    private fun formatNativeAmount(amount: Long, unit: String): String =
+        if (unit.equals("sat", ignoreCase = true)) {
+            "$amount sat"
+        } else {
+            CurrencyAmount(amount, CurrencyRegistry.currencyForMintUnit(unit)).formatted()
         }
 
     private fun formatDetailDate(epochMillis: Long): String =

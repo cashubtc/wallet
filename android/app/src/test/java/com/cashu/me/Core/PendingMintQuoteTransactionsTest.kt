@@ -18,7 +18,7 @@ class PendingMintQuoteTransactionsTest {
         val timestamps = mutableMapOf<String, Long>()
 
         val rows = pendingMintQuoteTransactions(
-            quotes = listOf(quote(id = "quote-1", amount = 21)),
+            quotes = listOf(quote(id = "quote-1", amount = 21, unit = "usd")),
             trackedMintUrls = setOf(MintUrl),
             completedQuoteIds = emptySet(),
             timestamps = timestamps,
@@ -33,11 +33,12 @@ class PendingMintQuoteTransactionsTest {
         assertEquals(TransactionKind.Lightning, row.kind)
         assertEquals(TransactionStatus.Pending, row.status)
         assertEquals("lnbc1quote", row.invoice)
+        assertEquals("usd", row.unit)
         assertEquals(1_700_000_000_000L, row.dateEpochMillis)
         assertEquals(1_700_000_000_000L, timestamps["quote-1"])
 
         val secondRows = pendingMintQuoteTransactions(
-            quotes = listOf(quote(id = "quote-1", amount = 21)),
+            quotes = listOf(quote(id = "quote-1", amount = 21, unit = "usd")),
             trackedMintUrls = setOf(MintUrl),
             completedQuoteIds = emptySet(),
             timestamps = timestamps,
@@ -127,6 +128,7 @@ class PendingMintQuoteTransactionsTest {
         state: MintQuoteState = MintQuoteState.Unpaid,
         amountPaid: Long = 0,
         amountIssued: Long = 0,
+        unit: String = "sat",
     ) = MintQuoteInfo(
         id = id,
         request = "lnbc1quote",
@@ -137,6 +139,7 @@ class PendingMintQuoteTransactionsTest {
         mintUrl = MintUrl,
         amountPaid = amountPaid,
         amountIssued = amountIssued,
+        unit = unit,
     )
 
     private fun transaction(
