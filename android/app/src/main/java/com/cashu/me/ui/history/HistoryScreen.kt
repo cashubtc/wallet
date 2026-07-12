@@ -77,12 +77,13 @@ import com.cashu.me.Core.PriceService
 import com.cashu.me.Core.SettingsManager
 import com.cashu.me.Core.TransactionDisplay
 import com.cashu.me.Core.WalletManager
+import com.cashu.me.Core.displayText
 import com.cashu.me.Models.CashuRequest
 import com.cashu.me.Models.TransactionStatus
 import com.cashu.me.Models.WalletTransaction
 import com.cashu.me.ui.components.CanvasDivider
 import com.cashu.me.ui.components.CashuRequestRow
-import com.cashu.me.ui.components.requestRowAmount
+import com.cashu.me.ui.components.requestRowDisplay
 import com.cashu.me.ui.components.CashuSearchBar
 import com.cashu.me.ui.components.EmptyState
 import com.cashu.me.ui.components.IconSwap
@@ -298,33 +299,40 @@ fun HistoryScreen(
                                 when (item) {
                                     is HistoryItem.Tx -> {
                                         val tx = item.transaction
+                                        val amountDisplay = formatter.displayText(
+                                            amountSats = tx.amount,
+                                            preferredPrimary = settings.amountDisplayPrimary,
+                                            showFiat = settings.showFiatBalance,
+                                            btcPrice = priceState.btcPrice,
+                                            currencyCode = settings.bitcoinPriceCurrency,
+                                            useBitcoinSymbol = settings.useBitcoinSymbol,
+                                        )
                                         TransactionRow(
                                             model = TransactionRowModel(
                                                 transaction = tx,
                                                 title = TransactionDisplay.title(tx),
                                                 timestamp = formatRelativeTimestamp(tx.dateEpochMillis),
-                                                primaryAmount = formatter.formatWalletSats(
-                                                    tx.amount, settings.useBitcoinSymbol,
-                                                ),
-                                                secondaryAmount = if (settings.showFiatBalance && priceState.btcPrice > 0)
-                                                    formatter.formatFiat(
-                                                        tx.amount,
-                                                        priceState.btcPrice,
-                                                        settings.bitcoinPriceCurrency,
-                                                    )
-                                                else null,
+                                                primaryAmount = amountDisplay.primary,
+                                                secondaryAmount = amountDisplay.secondary,
                                             ),
                                             onClick = { onOpenTransaction(tx) },
                                         )
                                     }
                                     is HistoryItem.Req -> {
+                                        val amountDisplay = requestRowDisplay(
+                                            request = item.request,
+                                            formatter = formatter,
+                                            preferredPrimary = settings.amountDisplayPrimary,
+                                            showFiat = settings.showFiatBalance,
+                                            btcPrice = priceState.btcPrice,
+                                            currencyCode = settings.bitcoinPriceCurrency,
+                                            useBitcoinSymbol = settings.useBitcoinSymbol,
+                                        )
                                         CashuRequestRow(
                                             request = item.request,
                                             timestamp = formatRelativeTimestamp(item.request.createdAtEpochMillis),
-                                            primaryAmountText = requestRowAmount(
-                                                item.request, formatter, settings.useBitcoinSymbol,
-                                            ),
-                                            secondaryAmountText = null,
+                                            primaryAmountText = amountDisplay?.primary,
+                                            secondaryAmountText = amountDisplay?.secondary,
                                             onClick = { onOpenCashuRequest(item.request) },
                                             onLongClick = { requestPendingDelete = item.request },
                                         )

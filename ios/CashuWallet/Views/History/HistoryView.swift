@@ -3,6 +3,7 @@ import SwiftUI
 struct HistoryView: View {
     @EnvironmentObject var walletManager: WalletManager
     @ObservedObject var settings = SettingsManager.shared
+    @ObservedObject private var priceService = PriceService.shared
     @ObservedObject private var requestStore = CashuRequestStore.shared
 
     enum FilterMode: String, CaseIterable, Identifiable {
@@ -600,7 +601,14 @@ struct HistoryView: View {
     private func formatAmount(_ transaction: WalletTransaction) -> String {
         let value: String
         if transaction.unit.lowercased() == "sat" {
-            value = AmountFormatter.sats(transaction.amount, useBitcoinSymbol: settings.useBitcoinSymbol)
+            value = AmountFormatter.displayText(
+                amountSats: transaction.amount,
+                preferredPrimary: settings.amountDisplayPrimary,
+                showFiat: settings.showFiatBalance,
+                btcPrice: priceService.btcPriceUSD,
+                currencyCode: settings.bitcoinPriceCurrency,
+                useBitcoinSymbol: settings.useBitcoinSymbol
+            ).primary
         } else {
             value = CurrencyAmount(
                 value: transaction.amount,

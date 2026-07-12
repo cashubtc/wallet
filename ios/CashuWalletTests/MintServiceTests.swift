@@ -404,4 +404,27 @@ final class MultiUnitSupportTests: XCTestCase {
         XCTAssertEqual(AmountFormatter.entryString(baseUnits: 500, decimals: 0), "500")
         XCTAssertEqual(AmountFormatter.entryString(baseUnits: 0, decimals: 2), "")
     }
+
+    func testUSDDisplayUsesLeadingBareDollarSymbol() {
+        XCTAssertEqual(AmountFormatter.fiat(60, currencyCode: "USD"), "$60.00")
+        XCTAssertEqual(
+            AmountFormatter.fiat(sats: 122_300, btcPrice: 10_000, currencyCode: "USD"),
+            "$12.23"
+        )
+    }
+
+    func testFiatPrimaryDisplayOrdersFiatBeforeSats() {
+        let display = AmountFormatter.displayText(
+            amountSats: 300_000,
+            preferredPrimary: .fiat,
+            showFiat: true,
+            btcPrice: 20_000,
+            currencyCode: "USD",
+            useBitcoinSymbol: false
+        )
+
+        XCTAssertEqual(display.primary, "$60.00")
+        XCTAssertEqual(display.secondary, "300,000 sat")
+        XCTAssertEqual(display.effectivePrimary, .fiat)
+    }
 }

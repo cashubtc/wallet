@@ -77,4 +77,18 @@ class AmountFormatterTest {
         assertEquals("$20,000.00", display.secondary)
         assertEquals(AmountDisplayPrimary.Sats, display.effectivePrimary)
     }
+
+    @Test
+    fun usdUsesBareLeadingDollarSymbolRegardlessOfDeviceLocale() {
+        val germanFormatter = AmountFormatter(Locale.GERMANY)
+
+        assertEquals(
+            "$60.00",
+            germanFormatter.formatFiat(
+                amountSats = 300_000,
+                btcPrice = 20_000.0,
+                currencyCode = "USD",
+            ),
+        )
+    }
 }

@@ -7,8 +7,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,17 +18,13 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.cashu.me.Core.AmountDisplayPrimary
 import com.cashu.me.Core.AmountDisplayText
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.rememberReducedMotion
@@ -59,7 +53,7 @@ private sealed interface BalanceStatusLine {
 }
 
 /**
- * Large hero balance with optional secondary line. Tap to toggle the primary unit.
+ * Large hero balance with optional secondary line.
  * Numbers cross-fade on change via [AmountText].
  *
  * Primary and status lines use fixed heights so unit swaps / fiat show-hide never
@@ -74,28 +68,12 @@ private sealed interface BalanceStatusLine {
 fun BalanceDisplay(
     amount: AmountDisplayText,
     modifier: Modifier = Modifier,
-    onTogglePrimary: ((AmountDisplayPrimary) -> Unit)? = null,
     padding: PaddingValues = PaddingValues(),
     receivedDelta: String? = null,
 ) {
-    val haptics = LocalHapticFeedback.current
-    val interactionSource = remember { MutableInteractionSource() }
     val reduceMotion = rememberReducedMotion()
-    val clickModifier = if (onTogglePrimary != null) {
-        Modifier.clickable(
-            interactionSource = interactionSource,
-            indication = null,
-        ) {
-            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-            onTogglePrimary(
-                if (amount.effectivePrimary == AmountDisplayPrimary.Fiat) AmountDisplayPrimary.Sats
-                else AmountDisplayPrimary.Fiat
-            )
-        }
-    } else Modifier
     Column(
         modifier = modifier
-            .then(clickModifier)
             .padding(padding),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.micro),
