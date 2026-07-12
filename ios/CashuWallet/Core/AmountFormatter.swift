@@ -1,5 +1,11 @@
 import Foundation
 
+struct AmountDisplayText {
+    let primary: String
+    let secondary: String?
+    let effectivePrimary: AmountDisplayPrimary
+}
+
 enum AmountFormatter {
     private static let decimalFormatter: NumberFormatter = {
         let formatter = NumberFormatter()
@@ -14,6 +20,47 @@ enum AmountFormatter {
             return "₿\(formatted)"
         }
         return includeUnit ? "\(formatted) sat" : formatted
+    }
+
+    /// Canonical fiat presentation for wallet amounts. A fixed POSIX/US
+    /// presentation keeps the ISO currency's symbol and placement stable across
+    /// device locales (USD is always "$60.00", never "US$60.00" or "60.00 $").
+    static func fiat(_ amount: Double, currencyCode: String) -> String {
+        let formatter = currencyFormatter(currencyCode: currencyCode)
+        return formatter.string(from: NSNumber(value: amount)) ?? String(format: "%.2f", amount)
+    }
+
+    /// Converts sats at the supplied BTC price and formats the selected fiat
+    /// currency. A missing/non-positive price produces no conversion.
+    static func fiat(sats: UInt64, btcPrice: Double?, currencyCode: String) -> String? {
+        guard let btcPrice, btcPrice > 0 else { return nil }
+        let value = Double(sats) / 100_000_000.0 * btcPrice
+        return fiat(value, currencyCode: currencyCode)
+    }
+
+    /// The single source of truth for primary/secondary wallet amount ordering.
+    /// Fiat preference falls back to sats until a live/cached price is available.
+    static func displayText(
+        amountSats: UInt64,
+        preferredPrimary: AmountDisplayPrimary,
+        showFiat: Bool,
+        btcPrice: Double?,
+        currencyCode: String,
+        useBitcoinSymbol: Bool
+    ) -> AmountDisplayText {
+        let fiatText = showFiat
+            ? fiat(sats: amountSats, btcPrice: btcPrice, currencyCode: currencyCode)
+            : nil
+        let satsText = sats(amountSats, useBitcoinSymbol: useBitcoinSymbol)
+        let effectivePrimary: AmountDisplayPrimary =
+            preferredPrimary == .fiat && fiatText == nil ? .sats : preferredPrimary
+
+        switch effectivePrimary {
+        case .fiat:
+            return AmountDisplayText(primary: fiatText ?? satsText, secondary: satsText, effectivePrimary: effectivePrimary)
+        case .sats:
+            return AmountDisplayText(primary: satsText, secondary: fiatText, effectivePrimary: effectivePrimary)
+        }
     }
 
     // MARK: - Live amount entry (sats or fiat)
@@ -221,17 +268,31 @@ enum AmountFormatter {
         return centsToFiatString(UInt64(cents))
     }
 
-    /// Wrap a numeric string with the selected currency's symbol in the locale's
-    /// position, by extracting the prefix/suffix from a narrow-currency template.
+    /// Wrap a partial numeric entry with the canonical currency prefix/suffix.
     @MainActor
     private static func wrapWithCurrencySymbol(_ number: String) -> String {
-        let code = PriceService.shared.currencyCode
-        let template = Decimal(0).formatted(
-            .currency(code: code).presentation(.narrow).precision(.fractionLength(0))
-        )
-        guard let zero = template.range(of: "0") else { return number }
-        let prefix = String(template[..<zero.lowerBound])
-        let suffix = String(template[zero.upperBound...])
-        return prefix + number + suffix
+        let formatter = currencyFormatter(currencyCode: PriceService.shared.currencyCode)
+        return (formatter.positivePrefix ?? "") + number + (formatter.positiveSuffix ?? "")
+    }
+
+    private static func currencyFormatter(currencyCode: String) -> NumberFormatter {
+        let formatter = NumberFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.numberStyle = .currency
+        formatter.currencyCode = currencyCode.uppercased()
+        formatter.minimumFractionDigits = 2
+        formatter.maximumFractionDigits = 2
+        // NumberFormatter can inject a regular or non-breaking space between a
+        // currency symbol and the number. Wallet-native currency amounts use a
+        // compact affix ("$12.23"), so converted BTC amounts must match it.
+        formatter.positivePrefix = formatter.positivePrefix?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        formatter.positiveSuffix = formatter.positiveSuffix?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        formatter.negativePrefix = formatter.negativePrefix?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        formatter.negativeSuffix = formatter.negativeSuffix?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return formatter
     }
 }

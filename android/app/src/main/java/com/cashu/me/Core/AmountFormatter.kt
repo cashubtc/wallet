@@ -63,8 +63,14 @@ class AmountFormatter(
     override fun formatFiat(amountSats: Long, btcPrice: Double?, currencyCode: String): String? {
         val price = btcPrice ?: return null
         val fiat = amountSats.toDouble() / 100_000_000.0 * price
-        val format = NumberFormat.getCurrencyInstance(locale)
-        runCatching { format.currency = java.util.Currency.getInstance(currencyCode) }
+        // Wallet amounts use one stable currency presentation regardless of the
+        // device locale. In particular, USD must be "$60.00", not "US$60.00"
+        // or "60.00 $" on devices whose locale is outside the US.
+        val format = NumberFormat.getCurrencyInstance(Locale.US).apply {
+            minimumFractionDigits = 2
+            maximumFractionDigits = 2
+        }
+        runCatching { format.currency = java.util.Currency.getInstance(currencyCode.uppercase()) }
         return format.format(fiat)
     }
 

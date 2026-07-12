@@ -69,7 +69,7 @@ import com.cashu.me.ui.components.BalanceDisplay
 import com.cashu.me.ui.components.BalanceHeroHeight
 import com.cashu.me.ui.components.CanvasDivider
 import com.cashu.me.ui.components.CashuRequestRow
-import com.cashu.me.ui.components.requestRowAmount
+import com.cashu.me.ui.components.requestRowDisplay
 import com.cashu.me.ui.components.EmptyState
 import com.cashu.me.ui.components.GhostButton
 import com.cashu.me.ui.components.MintChip
@@ -186,9 +186,6 @@ fun HomeScreen(
                         satAmount = balanceDisplay,
                         persistedUnit = settings.homeBalanceUnit,
                         onUnitSelected = settingsManager::setHomeBalanceUnit,
-                        onToggleSatSymbol = {
-                            settingsManager.setUseBitcoinSymbol(!settings.useBitcoinSymbol)
-                        },
                         receivedDelta = receivedDelta,
                     )
                 },
@@ -275,30 +272,41 @@ fun HomeScreen(
                             when (item) {
                                 is HomeRecentItem.Tx -> {
                                     val tx = item.transaction
+                                    val amountDisplay = formatter.displayText(
+                                        amountSats = tx.amount,
+                                        preferredPrimary = settings.amountDisplayPrimary,
+                                        showFiat = settings.showFiatBalance,
+                                        btcPrice = priceState.btcPrice,
+                                        currencyCode = settings.bitcoinPriceCurrency,
+                                        useBitcoinSymbol = settings.useBitcoinSymbol,
+                                    )
                                     TransactionRow(
                                         model = TransactionRowModel(
                                             transaction = tx,
                                             title = TransactionDisplay.title(tx),
                                             timestamp = formatRelativeTimestamp(tx.dateEpochMillis),
-                                            primaryAmount = formatter.formatWalletSats(
-                                                tx.amount, settings.useBitcoinSymbol,
-                                            ),
-                                            secondaryAmount = if (settings.showFiatBalance && priceState.btcPrice > 0)
-                                                formatter.formatFiat(tx.amount, priceState.btcPrice, settings.bitcoinPriceCurrency)
-                                            else null,
+                                            primaryAmount = amountDisplay.primary,
+                                            secondaryAmount = amountDisplay.secondary,
                                         ),
                                         onClick = { onOpenTransaction(tx) },
                                     )
                                 }
                                 is HomeRecentItem.Req -> {
                                     val req = item.request
+                                    val amountDisplay = requestRowDisplay(
+                                        request = req,
+                                        formatter = formatter,
+                                        preferredPrimary = settings.amountDisplayPrimary,
+                                        showFiat = settings.showFiatBalance,
+                                        btcPrice = priceState.btcPrice,
+                                        currencyCode = settings.bitcoinPriceCurrency,
+                                        useBitcoinSymbol = settings.useBitcoinSymbol,
+                                    )
                                     CashuRequestRow(
                                         request = req,
                                         timestamp = formatRelativeTimestamp(req.createdAtEpochMillis),
-                                        primaryAmountText = requestRowAmount(
-                                            req, formatter, settings.useBitcoinSymbol,
-                                        ),
-                                        secondaryAmountText = null,
+                                        primaryAmountText = amountDisplay?.primary,
+                                        secondaryAmountText = amountDisplay?.secondary,
                                         onClick = { onOpenCashuRequest(req) },
                                     )
                                 }
@@ -421,7 +429,6 @@ private fun HomeBalanceHero(
     satAmount: AmountDisplayText,
     persistedUnit: String,
     onUnitSelected: (String) -> Unit,
-    onToggleSatSymbol: () -> Unit,
     receivedDelta: String?,
 ) {
     val units = HomeBalance.homeBalanceUnits(balancesByUnit)
@@ -474,11 +481,6 @@ private fun HomeBalanceHero(
                                 effectivePrimary = AmountDisplayPrimary.Sats,
                             )
                         },
-                        onTogglePrimary = if (isSat) {
-                            { onToggleSatSymbol() }
-                        } else {
-                            null
-                        },
                         receivedDelta = if (isSat) receivedDelta else null,
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -486,7 +488,6 @@ private fun HomeBalanceHero(
             } else {
                 BalanceDisplay(
                     amount = satAmount,
-                    onTogglePrimary = { onToggleSatSymbol() },
                     receivedDelta = receivedDelta,
                     modifier = Modifier.fillMaxWidth(),
                 )
