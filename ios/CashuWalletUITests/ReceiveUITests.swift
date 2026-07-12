@@ -1,6 +1,6 @@
 import XCTest
 
-/// UI tests for the Receive flow options sheet.
+/// UI tests for the unified Receive sheet.
 final class ReceiveUITests: UITestBase {
     override var launchMode: LaunchMode { .seededWalletWithMint }
 
@@ -11,14 +11,18 @@ final class ReceiveUITests: UITestBase {
     }
 
     private var receiveEcashOption: XCUIElement {
-        app.buttons["wallet-flow-receiveEcash"]
+        app.buttons["Create a Cashu request"]
     }
 
     private var receiveBitcoinOption: XCUIElement {
-        app.buttons["wallet-flow-receiveLightning"]
+        app.buttons["Receive over Lightning or on-chain"]
     }
 
-    private func openReceiveChooser() {
+    private var receiveDestinationField: XCUIElement {
+        app.textFields["Paste a Cashu token"]
+    }
+
+    private func openReceiveSheet() {
         tapWhenReady(
             receiveButton,
             timeout: 10,
@@ -27,35 +31,39 @@ final class ReceiveUITests: UITestBase {
 
         XCTAssertTrue(
             receiveEcashOption.waitForExistence(timeout: 10),
-            "Receive chooser should show the Ecash option"
+            "Receive sheet should show the Ecash option"
         )
     }
 
     // MARK: - Tests
 
-    func testReceiveChooserCanBeDismissed() throws {
+    func testReceiveSheetCanBeDismissed() throws {
         waitForMainTab()
 
-        openReceiveChooser()
+        openReceiveSheet()
         XCTAssertTrue(
             receiveBitcoinOption.waitForExistence(timeout: 5),
-            "Receive chooser should show the Bitcoin option"
+            "Receive sheet should show the Bitcoin option"
         )
 
-        let closeButton = app.buttons["wallet-chooser-close"]
-        tapWhenReady(closeButton, message: "Receive chooser should show a close button")
+        let dismissTarget = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.98))
+        receiveEcashOption.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            .press(forDuration: 0.1, thenDragTo: dismissTarget)
 
-        XCTAssertTrue(tabButton("Wallet", timeout: 5).exists)
+        XCTAssertTrue(
+            receiveDestinationField.waitForNonExistence(timeout: 5),
+            "Receive sheet should dismiss after dragging down"
+        )
     }
 
     func testBitcoinOptionOpensLightningFlow() throws {
         waitForMainTab()
 
-        openReceiveChooser()
+        openReceiveSheet()
 
         XCTAssertTrue(
             receiveBitcoinOption.waitForExistence(timeout: 10),
-            "Receive chooser should show the Bitcoin option"
+            "Receive sheet should show the Bitcoin option"
         )
         tapWhenReady(receiveBitcoinOption)
 
