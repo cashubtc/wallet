@@ -289,7 +289,7 @@ struct UnifiedReceiveView: View {
             }
         }
         .padding()
-        .liquidGlass(in: RoundedRectangle(cornerRadius: 12))
+        .liquidGlassInput(in: RoundedRectangle(cornerRadius: 12))
     }
 
     // MARK: Receive-method buttons
