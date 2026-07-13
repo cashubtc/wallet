@@ -310,7 +310,7 @@ struct UnifiedReceiveView: View {
                                     action: createNewRequest)
                 .accessibilityIdentifier("wallet-flow-receiveEcash")
 
-            CircularGlassIconButton(icon: "bitcoinsign.circle", label: "Bitcoin",
+            CircularGlassIconButton(icon: "bitcoinsign", label: "Bitcoin",
                                     a11y: "Receive over Lightning or on-chain") {
                 HapticFeedback.selection()
                 route = .lightning
