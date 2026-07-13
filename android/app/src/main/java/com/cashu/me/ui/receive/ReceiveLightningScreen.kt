@@ -136,11 +136,6 @@ fun ReceiveLightningScreen(
     val supportedMethods = activeMint?.supportedMintMethods?.ifEmpty { listOf(PaymentMethodKind.Bolt11) }
         ?: listOf(PaymentMethodKind.Bolt11)
 
-    LaunchedEffect(activeMint) {
-        if (method !in supportedMethods) method = supportedMethods.first()
-        selectedReceiveUnit = null
-    }
-
     // Mint unit: NUT-04 mintable units only; on-chain always mints sat.
     val effectiveUnit = if (method == PaymentMethodKind.Onchain) {
         "sat"
@@ -151,6 +146,65 @@ fun ReceiveLightningScreen(
     val isSatUnit = effectiveUnit.equals("sat", ignoreCase = true)
     val showsUnitSelector = activeMint?.supportsMultipleMintUnits == true &&
         method != PaymentMethodKind.Onchain
+
+    fun createMintRequest(
+        requestMethod: PaymentMethodKind,
+        amountless: Boolean,
+    ) {
+        val explicit = UnitAmountEntry.baseUnits(amount, currency.decimals)
+            .takeIf { it > 0 }
+        if (!amountless && requestMethod.requiresMintAmount && explicit == null) {
+            errorText = "Enter an amount."
+            return
+        }
+        if (activeMint == null) {
+            errorText = "Add a mint first."
+            return
+        }
+        // After validation, amountless rails mint with a null amount; everything
+        // else uses the typed base units.
+        val requestAmount = if (amountless) null else explicit
+        creating = true
+        errorText = null
+        scope.launch {
+            try {
+                val quote = walletManager.createMintQuote(
+                    amount = requestAmount,
+                    method = requestMethod,
+                    unit = if (requestMethod == PaymentMethodKind.Onchain) "sat" else effectiveUnit,
+                )
+                face = ReceiveLnFace.Display(quote)
+            } catch (t: Throwable) {
+                errorText = t.userFacingWalletMessage
+            } finally {
+                creating = false
+            }
+        }
+    }
+
+    /**
+     * Translate a picked method into state + side effects. Amountless rails
+     * (reusable BOLT12, on-chain) skip the keypad and create immediately —
+     * iOS applyMethodOption / loadOrCreateAmountlessOffer parity.
+     */
+    fun applyMethodOption(kind: PaymentMethodKind) {
+        method = kind
+        amount = ""
+        errorText = null
+        if (!kind.requiresMintAmount) {
+            createMintRequest(requestMethod = kind, amountless = true)
+        }
+    }
+
+    LaunchedEffect(activeMint) {
+        selectedReceiveUnit = null
+        if (method !in supportedMethods) {
+            val fallback = supportedMethods.first()
+            // BOLT12-only (or on-chain-only) mints must land on the amountless
+            // path, not a keypad that can't create without an amount.
+            applyMethodOption(fallback)
+        }
+    }
 
     // System back unwinds Display → Input; from Input the sheet handles it.
     // Suppressed once the success terminal is showing (it auto-dismisses).
@@ -206,7 +260,7 @@ fun ReceiveLightningScreen(
                             // (iOS .contentTransition(.symbolEffect(.replace))).
                             IconSwap(
                                 icon = method.menuIcon,
-                                contentDescription = "Payment method",
+                                contentDescription = "Receive method: ${method.friendlyTitle}, ${method.friendlyDescriptor}",
                                 iconSize = CashuTheme.iconSizes.toolbar,
                             )
                         }
@@ -217,16 +271,30 @@ fun ReceiveLightningScreen(
                         ) {
                             supportedMethods.forEach { kind ->
                                 DropdownMenuItem(
-                                    text = { Text(kind.displayName) },
+                                    text = {
+                                        // Title + one-line descriptor (iOS friendlyTitle /
+                                        // friendlyDescriptor parity). Material3 MenuItem
+                                        // only takes a single text composable, so both
+                                        // lines live here.
+                                        Column {
+                                            Text(
+                                                text = kind.friendlyTitle,
+                                                style = MaterialTheme.typography.bodyLarge,
+                                            )
+                                            Text(
+                                                text = kind.friendlyDescriptor,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                    },
                                     leadingIcon = { Icon(kind.menuIcon, contentDescription = null) },
                                     trailingIcon = if (kind == method) {
                                         { Icon(Icons.Filled.Check, contentDescription = "Selected") }
                                     } else null,
                                     onClick = {
                                         methodMenuOpen = false
-                                        method = kind
-                                        amount = ""
-                                        errorText = null
+                                        applyMethodOption(kind)
                                     },
                                 )
                             }
@@ -255,51 +323,39 @@ fun ReceiveLightningScreen(
             label = "receive-lightning-face",
         ) { current ->
             when (current) {
-                ReceiveLnFace.Input -> InputFace(
-                    amount = amount,
-                    onAmountChange = { amount = it; errorText = null },
-                    selectedMethod = method,
-                    creating = creating,
-                    mint = activeMint,
-                    mintBalanceText = activeMint?.let {
-                        formatter.formatWalletSats(it.balance, settings.useBitcoinSymbol)
-                    },
-                    onPickMint = { mintPickerOpen = true },
-                    isSat = isSatUnit,
-                    unit = effectiveUnit,
-                    useBitcoinSymbol = settings.useBitcoinSymbol,
-                    formatter = formatter,
-                    decimals = currency.decimals,
-                    errorText = errorText,
-                    onCreate = {
-                        val explicit = UnitAmountEntry.baseUnits(amount, currency.decimals)
-                            .takeIf { it > 0 }
-                        val needsAmount = method != PaymentMethodKind.Bolt12
-                        if (needsAmount && explicit == null) {
-                            errorText = "Enter an amount."
-                            return@InputFace
-                        }
-                        if (activeMint == null) {
-                            errorText = "Add a mint first."
-                            return@InputFace
-                        }
-                        creating = true
-                        scope.launch {
-                            try {
-                                val quote = walletManager.createMintQuote(
-                                    amount = explicit,
-                                    method = method,
-                                    unit = effectiveUnit,
+                ReceiveLnFace.Input -> {
+                    // Amountless rails auto-create (BOLT12 reusable / on-chain).
+                    // iOS shows a dedicated "Creating…" overlay instead of the
+                    // keypad while that request is in flight.
+                    if (creating && !method.requiresMintAmount) {
+                        CreatingOverlay(method = method)
+                    } else {
+                        InputFace(
+                            amount = amount,
+                            onAmountChange = { amount = it; errorText = null },
+                            selectedMethod = method,
+                            creating = creating,
+                            mint = activeMint,
+                            mintBalanceText = activeMint?.let {
+                                formatter.formatWalletSats(it.balance, settings.useBitcoinSymbol)
+                            },
+                            onPickMint = { mintPickerOpen = true },
+                            isSat = isSatUnit,
+                            unit = effectiveUnit,
+                            useBitcoinSymbol = settings.useBitcoinSymbol,
+                            formatter = formatter,
+                            decimals = currency.decimals,
+                            errorText = errorText,
+                            onCreate = {
+                                createMintRequest(
+                                    requestMethod = method,
+                                    amountless = !method.requiresMintAmount &&
+                                        UnitAmountEntry.baseUnits(amount, currency.decimals) <= 0,
                                 )
-                                face = ReceiveLnFace.Display(quote)
-                            } catch (t: Throwable) {
-                                errorText = t.userFacingWalletMessage
-                            } finally {
-                                creating = false
-                            }
-                        }
-                    },
-                )
+                            },
+                        )
+                    }
+                }
 
                 is ReceiveLnFace.Display -> {
                     var liveQuote by remember(current.quote.id) { mutableStateOf(current.quote) }
@@ -378,6 +434,29 @@ fun ReceiveLightningScreen(
                 unitPickerOpen = false
             },
             onDismiss = { unitPickerOpen = false },
+        )
+    }
+}
+
+/** iOS creatingOverlay parity for amountless BOLT12 / on-chain auto-create. */
+@Composable
+private fun CreatingOverlay(method: PaymentMethodKind) {
+    val label = if (method == PaymentMethodKind.Onchain) {
+        "Generating address"
+    } else {
+        "Creating reusable invoice"
+    }
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        androidx.compose.material3.CircularProgressIndicator()
+        Spacer(Modifier.height(CashuTheme.spacing.comfortable))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
@@ -511,17 +590,10 @@ private val PaymentMethodKind.menuIcon
         PaymentMethodKind.Onchain -> Icons.Outlined.CurrencyBitcoin
     }
 
-private val PaymentMethodKind.createActionTitle: String
-    get() = when (this) {
-        PaymentMethodKind.Bolt11 -> "Create Invoice"
-        PaymentMethodKind.Bolt12 -> "Create Offer"
-        PaymentMethodKind.Onchain -> "Get Address"
-    }
-
 private val PaymentMethodKind.copyActionTitle: String
     get() = when (this) {
         PaymentMethodKind.Bolt11 -> "Copy invoice"
-        PaymentMethodKind.Bolt12 -> "Copy offer"
+        PaymentMethodKind.Bolt12 -> "Copy invoice"
         PaymentMethodKind.Onchain -> "Copy address"
     }
 
