@@ -39,17 +39,16 @@ struct CircularGlassIconButton: View {
                     Image(systemName: icon)
                         .font(.title2)
                         .foregroundStyle(.primary)
-                        .frame(width: 60, height: 60)
+                        .frame(width: 64, height: 64)
                 }
                 .buttonStyle(.glass(.regular.tint(Color.primary.opacity(0.15))))
-                .controlSize(.large)
                 .buttonBorderShape(.circle)
             } else {
                 Button(action: action) {
                     Image(systemName: icon)
                         .font(.title2)
                         .foregroundStyle(.primary)
-                        .frame(width: 60, height: 60)
+                        .frame(width: 64, height: 64)
                         .background(.quaternary, in: Circle())
                 }
                 .buttonStyle(PressableButtonStyle())
