@@ -73,6 +73,14 @@ class MintService: ObservableObject {
         // Get wallet and fetch mint info
         let wallet = try await repo.getWallet(mintUrl: mintUrlObj, unit: .sat)
         let info = try await wallet.fetchMintInfo()
+
+        // NUT-09 before committing the mint to the local list: seed restore
+        // alone does not recover balance. Users often restore a seed then
+        // add the mint from Mints instead of the restore-mints wizard.
+        // Failure must throw so the mint is not left tracked with zero
+        // balance. Empty restore on a brand-new wallet is a fast no-op.
+        _ = try await wallet.restore()
+
         let mintInfo = await makeMintInfo(
             url: normalizedUrl,
             existing: nil,

@@ -196,22 +196,24 @@ class WalletManager(
             if (mutableState.value.mints.any { it.url == normalized }) {
                 throw IllegalArgumentException("Mint already exists.")
             }
-            runCatching { gateway.ensureWallet(normalized) }
-                .onFailure { AppLogger.wallet.error("CDK wallet preparation is not available yet for $normalized", it) }
+            // ensureWallet + NUT-09 restore must succeed before the mint is
+            // committed to the local list. Swallowing restore failures left
+            // restored seeds with a tracked mint and permanent zero balance
+            // (the cashu.me → APK report). Brand-new wallets get an empty
+            // restore (fast no-op at the mint).
+            gateway.ensureWallet(normalized)
             val fetched = gateway.fetchMintInfo(normalized)
                 ?: throw IllegalStateException("Mint did not return info via CDK.")
-            restoreProofsAfterAddingMint(
+            restoreProofsForAddedMint(
                 mintUrl = normalized,
                 restoreMint = { withContext(Dispatchers.IO) { gateway.restoreMint(it) } },
-                onRestoreFailed = {
-                    AppLogger.wallet.error("NUT-09 restore after addMint failed for $normalized", it)
-                },
             )
             val updated = mutableState.value.mints + fetched
             walletStore.saveMints(updated)
             if (mutableState.value.activeMint == null) walletStore.activeMintURL = fetched.url
             loadCachedState(needsOnboarding = false)
             refreshBalance()
+            loadTransactions()
         }
         scope.launch { nostrMintBackupService.backupCurrentMintsIfEnabled() }
     }
