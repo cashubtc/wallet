@@ -93,11 +93,22 @@ final class WalletStoreTests: XCTestCase {
     }
 
     func testSaveAndLoadPendingToken() {
-        store.savePendingTokens([pendingToken(id: "id1", amount: 21)])
+        let token = PendingToken(
+            tokenId: "id1",
+            token: "cashuAtoken",
+            amount: 21,
+            fee: 1,
+            date: Date(),
+            mintUrl: "https://mint.example.com",
+            memo: nil,
+            unit: "usd"
+        )
+        store.savePendingTokens([token])
         let loaded = store.loadPendingTokens()
         XCTAssertEqual(loaded.count, 1)
         XCTAssertEqual(loaded[0].tokenId, "id1")
         XCTAssertEqual(loaded[0].amount, 21)
+        XCTAssertEqual(loaded[0].unit, "usd")
     }
 
     func testSavePendingTokensPreservesMultiple() {
@@ -143,13 +154,52 @@ final class WalletStoreTests: XCTestCase {
             date: Date(),
             mintUrl: "https://mint.example.com",
             memo: "test",
-            claimedDate: Date()
+            claimedDate: Date(),
+            unit: "eur"
         )
         store.saveClaimedTokens([claimed])
         let loaded = store.loadClaimedTokens()
         XCTAssertEqual(loaded.count, 1)
         XCTAssertEqual(loaded[0].tokenId, "claimed1")
         XCTAssertEqual(loaded[0].amount, 30)
+        XCTAssertEqual(loaded[0].unit, "eur")
+    }
+
+    func testLegacyPendingTokenWithoutUnitDefaultsToSatWhenTokenIsUndecodable() throws {
+        let json = """
+        {
+          "tokenId": "legacy",
+          "token": "legacy-token",
+          "amount": 10,
+          "fee": 0,
+          "date": 0,
+          "mintUrl": "https://mint.example.com"
+        }
+        """
+
+        let decoded = try JSONDecoder().decode(PendingToken.self, from: Data(json.utf8))
+
+        XCTAssertEqual(decoded.unit, "sat")
+    }
+
+    func testLegacyPendingTokenWithoutUnitRecoversUnitFromToken() throws {
+        // NUT-00 V3 token for {"token":[],"unit":"usd"}. It has no proofs on
+        // purpose: unit migration must not depend on proof expansion.
+        let token = "cashuAeyJ0b2tlbiI6W10sInVuaXQiOiJ1c2QifQ=="
+        let json = """
+        {
+          "tokenId": "legacy-usd",
+          "token": "\(token)",
+          "amount": 10,
+          "fee": 0,
+          "date": 0,
+          "mintUrl": "https://mint.example.com"
+        }
+        """
+
+        let decoded = try JSONDecoder().decode(PendingToken.self, from: Data(json.utf8))
+
+        XCTAssertEqual(decoded.unit, "usd")
     }
 
     // MARK: - Saved Tokens (txId → encoded token)
@@ -317,7 +367,8 @@ final class WalletStoreTests: XCTestCase {
             fee: 0,
             date: Date(),
             mintUrl: "https://mint.example.com",
-            memo: nil
+            memo: nil,
+            unit: "sat"
         )
     }
 }

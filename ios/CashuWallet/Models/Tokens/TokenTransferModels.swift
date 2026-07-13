@@ -15,6 +15,49 @@ struct PendingToken: Codable, Identifiable {
     let date: Date
     let mintUrl: String
     let memo: String?
+    /// Mint account unit for `amount` and `fee` ("sat", "usd", "eur", or custom).
+    let unit: String
+
+    init(
+        tokenId: String,
+        token: String,
+        amount: UInt64,
+        fee: UInt64,
+        date: Date,
+        mintUrl: String,
+        memo: String?,
+        unit: String = "sat"
+    ) {
+        self.tokenId = tokenId
+        self.token = token
+        self.amount = amount
+        self.fee = fee
+        self.date = date
+        self.mintUrl = mintUrl
+        self.memo = memo
+        self.unit = unit
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case tokenId, token, amount, fee, date, mintUrl, memo, unit
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        tokenId = try container.decode(String.self, forKey: .tokenId)
+        token = try container.decode(String.self, forKey: .token)
+        amount = try container.decode(UInt64.self, forKey: .amount)
+        fee = try container.decode(UInt64.self, forKey: .fee)
+        date = try container.decode(Date.self, forKey: .date)
+        mintUrl = try container.decode(String.self, forKey: .mintUrl)
+        memo = try container.decodeIfPresent(String.self, forKey: .memo)
+        // Existing installs have no stored unit. Recover it without expanding
+        // proofs so IDv2 tokens migrate correctly; truly undecodable legacy
+        // records retain the historical sat default.
+        unit = try container.decodeIfPresent(String.self, forKey: .unit)
+            ?? TokenParser.unit(from: token)
+            ?? "sat"
+    }
 }
 
 /// Pending receive token entry — stored when the user chooses "Receive Later",
@@ -102,6 +145,49 @@ struct ClaimedToken: Codable, Identifiable {
     let mintUrl: String
     let memo: String?
     let claimedDate: Date
+    /// Mint account unit for `amount` and `fee` ("sat", "usd", "eur", or custom).
+    let unit: String
+
+    init(
+        tokenId: String,
+        token: String,
+        amount: UInt64,
+        fee: UInt64,
+        date: Date,
+        mintUrl: String,
+        memo: String?,
+        claimedDate: Date,
+        unit: String = "sat"
+    ) {
+        self.tokenId = tokenId
+        self.token = token
+        self.amount = amount
+        self.fee = fee
+        self.date = date
+        self.mintUrl = mintUrl
+        self.memo = memo
+        self.claimedDate = claimedDate
+        self.unit = unit
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case tokenId, token, amount, fee, date, mintUrl, memo, claimedDate, unit
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        tokenId = try container.decode(String.self, forKey: .tokenId)
+        token = try container.decode(String.self, forKey: .token)
+        amount = try container.decode(UInt64.self, forKey: .amount)
+        fee = try container.decode(UInt64.self, forKey: .fee)
+        date = try container.decode(Date.self, forKey: .date)
+        mintUrl = try container.decode(String.self, forKey: .mintUrl)
+        memo = try container.decodeIfPresent(String.self, forKey: .memo)
+        claimedDate = try container.decode(Date.self, forKey: .claimedDate)
+        unit = try container.decodeIfPresent(String.self, forKey: .unit)
+            ?? TokenParser.unit(from: token)
+            ?? "sat"
+    }
 }
 
 /// Result of restoring proofs from a single mint via NUT-09

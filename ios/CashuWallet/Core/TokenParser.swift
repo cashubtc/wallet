@@ -20,12 +20,16 @@ enum TokenParser {
     static func tokenInfo(from tokenString: String) -> TokenInfo? {
         guard let normalized = normalizedToken(from: tokenString),
               let token = try? Token.decode(encodedToken: normalized),
-              let mint = try? token.mintUrl().url,
-              let proofs = try? token.proofsSimple() else {
+              let mint = try? token.mintUrl().url else {
             return nil
         }
 
-        let amount = proofs.reduce(UInt64(0)) { $0 + $1.amount.value }
+        // IDv2 keysets may not be resolvable through `proofsSimple()` without
+        // a keyset list. The token's aggregate value and unit remain available,
+        // so keep returning useful metadata when proof expansion fails.
+        let proofs = (try? token.proofsSimple()) ?? []
+        let amount = (try? token.value().value)
+            ?? proofs.reduce(UInt64(0)) { $0 + $1.amount.value }
         return TokenInfo(
             amount: amount,
             mint: mint,
@@ -33,6 +37,17 @@ enum TokenParser {
             memo: token.memo(),
             proofCount: proofs.count
         )
+    }
+
+    /// Decode only the token's mint account unit. Unlike `tokenInfo(from:)`,
+    /// this deliberately does not expand proofs: `proofsSimple()` can fail for
+    /// IDv2 keysets even though the token itself and its unit are valid.
+    static func unit(from tokenString: String) -> String? {
+        guard let normalized = normalizedToken(from: tokenString),
+              let token = try? Token.decode(encodedToken: normalized) else {
+            return nil
+        }
+        return PaymentRequestDecoder.unitDescription(token.unit() ?? .sat)
     }
 
     private static func stripCashuScheme(from token: String) -> String {
