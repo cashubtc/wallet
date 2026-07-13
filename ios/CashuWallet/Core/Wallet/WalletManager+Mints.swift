@@ -6,10 +6,37 @@ extension WalletManager {
 
     func addMint(url: String) async throws {
         try await mintService.addMint(url: url)
+        // NUT-09: re-derive seed proofs and ask the mint for their state.
+        // Seed restore alone does not recover balance — proofs live at the mint
+        // and only reappear after wallet.restore(). Users often restore a seed
+        // (e.g. from cashu.me) then add the mint from Mints instead of the
+        // restore-mints wizard; without this step balance stays 0 forever.
+        // Best-effort: keep the mint tracked even if restore is temporarily
+        // unreachable (empty for a brand-new wallet is a fast no-op).
+        await restoreProofsAfterAddingMint(url: url)
         await refreshBalance()
         performICloudBackup()
         Task { await NostrMintBackupService.shared.backupCurrentMintsIfEnabled() }
         SentryService.breadcrumb("Mint added", category: "wallet.mint")
+    }
+
+    /// Best-effort NUT-09 recovery for a mint that was just added outside the
+    /// dedicated restore-mints wizard. Does not throw — addMint already committed
+    /// the mint to the local list.
+    private func restoreProofsAfterAddingMint(url: String) async {
+        guard let walletRepository else { return }
+
+        let normalizedUrl = url.trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let mintUrl = MintUrl(url: normalizedUrl)
+
+        do {
+            let wallet = try await walletRepository.getWallet(mintUrl: mintUrl, unit: .sat)
+            _ = try await wallet.restore()
+            SentryService.breadcrumb("NUT-09 restore after addMint", category: "wallet.mint")
+        } catch {
+            AppLogger.wallet.error("NUT-09 restore after addMint failed for \(normalizedUrl): \(error)")
+        }
     }
 
     func removeMint(at offsets: IndexSet) async {

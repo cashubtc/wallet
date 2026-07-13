@@ -200,6 +200,13 @@ class WalletManager(
                 .onFailure { AppLogger.wallet.error("CDK wallet preparation is not available yet for $normalized", it) }
             val fetched = gateway.fetchMintInfo(normalized)
                 ?: throw IllegalStateException("Mint did not return info via CDK.")
+            restoreProofsAfterAddingMint(
+                mintUrl = normalized,
+                restoreMint = { withContext(Dispatchers.IO) { gateway.restoreMint(it) } },
+                onRestoreFailed = {
+                    AppLogger.wallet.error("NUT-09 restore after addMint failed for $normalized", it)
+                },
+            )
             val updated = mutableState.value.mints + fetched
             walletStore.saveMints(updated)
             if (mutableState.value.activeMint == null) walletStore.activeMintURL = fetched.url
