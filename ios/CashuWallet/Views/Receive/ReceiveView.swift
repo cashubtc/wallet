@@ -289,7 +289,7 @@ struct UnifiedReceiveView: View {
             }
         }
         .padding()
-        .liquidGlass(in: RoundedRectangle(cornerRadius: 12))
+        .liquidGlassInput(in: RoundedRectangle(cornerRadius: 12))
     }
 
     // MARK: Receive-method buttons
@@ -310,7 +310,7 @@ struct UnifiedReceiveView: View {
                                     action: createNewRequest)
                 .accessibilityIdentifier("wallet-flow-receiveEcash")
 
-            CircularGlassIconButton(icon: "bitcoinsign.circle", label: "Bitcoin",
+            CircularGlassIconButton(icon: "bitcoinsign", label: "Bitcoin",
                                     a11y: "Receive over Lightning or on-chain") {
                 HapticFeedback.selection()
                 route = .lightning

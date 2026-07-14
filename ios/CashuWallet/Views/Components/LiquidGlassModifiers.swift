@@ -15,6 +15,19 @@ extension View {
         }
     }
 
+    /// Liquid Glass treatment for text-entry containers. The semantic separator
+    /// adds a hairline edge that adapts with the system appearance and increased
+    /// contrast settings without changing the field's layout or hit testing.
+    func liquidGlassInput<S: InsettableShape>(in shape: S) -> some View {
+        self
+            .liquidGlass(in: shape)
+            .overlay {
+                shape
+                    .stroke(Color(uiColor: .separator), lineWidth: 0.5)
+                    .allowsHitTesting(false)
+            }
+    }
+
     /// Applies Liquid Glass on iOS 26+; falls back to the given material.
     @ViewBuilder
     func liquidGlassMaterial<S: InsettableShape>(in shape: S, material: Material = .ultraThinMaterial) -> some View {
