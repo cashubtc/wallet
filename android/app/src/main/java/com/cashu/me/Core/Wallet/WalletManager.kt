@@ -147,13 +147,23 @@ class WalletManager(
         withLoading { installCleanWallet(normalized, needsOnboarding = true) }
     }
 
+    /**
+     * Phase 1 of seed restore (iOS `initializeRestoredWallet`): install the
+     * repository for this mnemonic. Does **not** force first-launch onboarding
+     * — [needsOnboarding] is preserved so:
+     *   - first-launch onboarding stays on its restore faces, and
+     *   - Settings → Restore keeps the in-app shell (mint staging) instead of
+     *     cross-fading to the welcome splash.
+     * Phase 3 [completeRestore] clears onboarding when finishing first launch.
+     */
     suspend fun initializeRestoredWallet(mnemonic: String) {
         val normalized = MnemonicInput.normalize(mnemonic)
         require(MnemonicInput.hasSupportedWordCount(normalized)) {
             "Seed phrase must be ${MnemonicInput.supportedWordCountLabel} words."
         }
         require(gateway.validateMnemonic(normalized)) { "Invalid seed phrase." }
-        withLoading { installCleanWallet(normalized, needsOnboarding = true) }
+        val keepOnboarding = mutableState.value.needsOnboarding
+        withLoading { installCleanWallet(normalized, needsOnboarding = keepOnboarding) }
     }
 
     override suspend fun restoreWallet(mnemonic: String) {

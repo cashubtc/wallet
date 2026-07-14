@@ -10,14 +10,11 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.outlined.Restore
 import androidx.compose.material.icons.outlined.VpnKey
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -54,13 +51,13 @@ fun BackupRestoreScreen(
     nostrMintBackupService: NostrMintBackupService,
     appLockManager: AppLockManager,
     onClose: () -> Unit,
+    onOpenRestore: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val settings by settingsManager.state.collectAsState()
     val walletState by walletManager.state.collectAsState()
     val backupState by nostrMintBackupService.state.collectAsState()
 
-    var confirmRestore by remember { mutableStateOf(false) }
     var showBackupSheet by remember { mutableStateOf(false) }
     var backupError by remember { mutableStateOf<String?>(null) }
 
@@ -95,7 +92,7 @@ fun BackupRestoreScreen(
                 title = "Restore",
                 subtitle = "Restore a wallet and recover ecash from mints.",
                 leadingIcon = Icons.Outlined.Restore,
-                onClick = { confirmRestore = true },
+                onClick = onOpenRestore,
             )
 
             SectionHeader("Mint backup")
@@ -146,28 +143,6 @@ fun BackupRestoreScreen(
             walletManager = walletManager,
             appLockManager = appLockManager,
             onDismiss = { showBackupSheet = false },
-        )
-    }
-
-    if (confirmRestore) {
-        AlertDialog(
-            onDismissRequest = { confirmRestore = false },
-            title = { Text("Open Restore Wizard") },
-            text = {
-                Text(
-                    "This will open the restore flow used during onboarding.",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    confirmRestore = false
-                    walletManager.reopenOnboarding()
-                }) { Text("Open") }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmRestore = false }) { Text("Cancel") }
-            },
         )
     }
 }
