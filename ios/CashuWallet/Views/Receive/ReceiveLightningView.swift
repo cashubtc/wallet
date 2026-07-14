@@ -78,11 +78,35 @@ struct ReceiveLightningView: View {
 
                 if let quote = mintQuote, !isPaid {
                     ToolbarItem(placement: .topBarTrailing) {
-                        ShareLink(item: quote.request) {
-                            Image(systemName: "square.and.arrow.up")
-                                .toolbarIconTapTarget()
+                        if quote.paymentMethod == .bolt12 {
+                            // Overflow menu keeps Share + New quieter than a
+                            // dedicated share glyph + second bottom CTA
+                            // (Android ⋮ parity).
+                            Menu {
+                                ShareLink(item: quote.request) {
+                                    Label("Share", systemImage: "square.and.arrow.up")
+                                }
+                                Button {
+                                    createNewAmountlessOffer(unit: quote.unit)
+                                } label: {
+                                    Label(
+                                        isCreatingRequest ? "Creating…" : "New reusable invoice",
+                                        systemImage: "arrow.2.squarepath"
+                                    )
+                                }
+                                .disabled(isCreatingRequest)
+                            } label: {
+                                Image(systemName: "ellipsis")
+                                    .toolbarIconTapTarget()
+                            }
+                            .accessibilityLabel("More options")
+                        } else {
+                            ShareLink(item: quote.request) {
+                                Image(systemName: "square.and.arrow.up")
+                                    .toolbarIconTapTarget()
+                            }
+                            .accessibilityLabel("Share request")
                         }
-                        .accessibilityLabel("Share request")
                     }
                 } else if shouldShowMethodPicker && !isCreatingRequest {
                     // Liquid Glass method switcher. On iOS 26 the toolbar renders
@@ -462,6 +486,7 @@ struct ReceiveLightningView: View {
 
     /// Cashu-Request-style screen for a reusable BOLT12 offer: QR → (amount hero,
     /// if fixed) → status → read-only Mint / editable Amount / Created rows → Copy.
+    /// Share + New live in the toolbar overflow menu so primary chrome stays calm.
     /// Editing the Amount row mints a fresh fixed-amount offer (or reverts to the
     /// amountless one) — that's how a fixed-amount reusable invoice is made.
     /// No expiry countdown, no rotate affordance.
@@ -481,6 +506,12 @@ struct ReceiveLightningView: View {
                             ShareLink(item: quote.request) {
                                 Label("Share", systemImage: "square.and.arrow.up")
                             }
+                            Button {
+                                createNewAmountlessOffer(unit: quote.unit)
+                            } label: {
+                                Label("New reusable invoice", systemImage: "arrow.2.squarepath")
+                            }
+                            .disabled(isCreatingRequest)
                         }
 
                     if let amount = quote.amount, amount > 0 {
@@ -500,6 +531,10 @@ struct ReceiveLightningView: View {
                     }
 
                     statusBadge
+
+                    if let errorMessage {
+                        InlineNotice(message: errorMessage, severity: .error)
+                    }
 
                     VStack(spacing: 0) {
                         detailRow(
@@ -1027,9 +1062,12 @@ struct ReceiveLightningView: View {
         }
     }
 
-    private func loadOrCreateAmountlessOffer() {
+    /// Reopen the mint's existing amountless offer by default. The explicit new
+    /// action deliberately bypasses that lookup and leaves the prior offer valid.
+    private func loadOrCreateAmountlessOffer(forceNew: Bool = false, unit: String? = nil) {
         isCreatingRequest = true
         errorMessage = nil
+        isAmountless = true
         isPaid = false
         isExpired = false
         copiedRequest = false
@@ -1043,10 +1081,14 @@ struct ReceiveLightningView: View {
         Task { @MainActor in
             do {
                 let quote: MintQuoteInfo
-                if let existing = try await walletManager.existingAmountlessOffer() {
+                if !forceNew, let existing = try await walletManager.existingAmountlessOffer() {
                     quote = existing
                 } else {
-                    quote = try await walletManager.createMintQuote(amount: nil, method: .bolt12)
+                    quote = try await walletManager.createMintQuote(
+                        amount: nil,
+                        method: .bolt12,
+                        unit: unit ?? effectiveUnit
+                    )
                 }
                 quoteCreatedAt = Date()
                 mintQuote = quote
@@ -1055,6 +1097,11 @@ struct ReceiveLightningView: View {
             }
             isCreatingRequest = false
         }
+    }
+
+    private func createNewAmountlessOffer(unit: String) {
+        amountString = ""
+        loadOrCreateAmountlessOffer(forceNew: true, unit: unit)
     }
 
     private func createRequest(method requestMethod: PaymentMethodKind, amountless: Bool, forceNew: Bool = false) {
