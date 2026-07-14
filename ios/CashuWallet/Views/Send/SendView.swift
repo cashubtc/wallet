@@ -2754,12 +2754,9 @@ struct MeltView: View {
     @State private var amountString: String
     @State private var meltMode: MeltMode
     @State private var meltQuote: MeltQuoteInfo?
-    /// True while an auto-quote for an amount-carrying invoice is in flight (from mount, or
-    /// from a paste/scan into this field) until it resolves (success, failure, or a guard
-    /// that prevents fetching). Keeps the screen on the confirm layout (in a loading state)
-    /// instead of flashing / lingering on the input screen. Seeded in `init` for the
-    /// scanned/deep-link mount case and set in `applyDecodedSuggestion` for paste/scan; see
-    /// `meltViewStateKey`.
+    /// True while an explicitly auto-quoted, prefilled invoice is in flight until it resolves
+    /// (success, failure, or a guard that prevents fetching). Clipboard and inline-scanner
+    /// input deliberately stay on the request screen until the user taps Get Quote.
     @State private var isPreparingInitialQuote: Bool
     @State private var isGettingQuote = false
     @State private var isPaying = false
@@ -3492,15 +3489,10 @@ struct MeltView: View {
         dismissedClipboardSuggestion = true
         errorMessage = nil
 
-        // Auto-quote when amount is locked. Flip to the loading-confirm layout first so the
-        // paste/scan slides into the confirm (amount hero + skeleton fees) instead of
-        // lingering on the input screen with a spinner in the Get Quote button — matches the
-        // scanned-invoice mount path. `requestInput` is already set above, so the confirm's
-        // amount hero reads the invoice amount immediately.
-        if PaymentRequestDecoder.amountLocked(result) {
-            isPreparingInitialQuote = true
-            getQuote()
-        }
+        // Pasting or scanning only fills the request. Even though creating a quote does not
+        // spend funds, it contacts a mint and can look like an attempted payment when the
+        // selected mint rejects the preflight (for example, due to insufficient balance).
+        // Keep that network action behind the explicit Get Quote button.
     }
 
     private func getQuote() {
