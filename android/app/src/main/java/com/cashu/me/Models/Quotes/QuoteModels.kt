@@ -64,6 +64,12 @@ data class MeltQuoteInfo(
 }
 
 @Serializable
+enum class MeltSettlement {
+    Settled,
+    Pending,
+}
+
+@Serializable
 data class MeltPaymentResult(
     val preimage: String?,
     val amount: Long,
@@ -71,4 +77,5 @@ data class MeltPaymentResult(
     val mintUrl: String,
     val paymentMethod: PaymentMethodKind? = null,
     val request: String? = null,
+    val settlement: MeltSettlement = MeltSettlement.Settled,
 )

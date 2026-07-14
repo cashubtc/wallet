@@ -57,6 +57,11 @@ class WalletStore(
     fun saveMeltQuoteFees(fees: Map<String, Long>) =
         saveMap(StorageKeys.walletMeltQuoteFees, Long.serializer(), fees)
 
+    fun loadPendingMeltQuotes(): Map<String, String> =
+        loadMap(StorageKeys.walletPendingMeltQuotes, String.serializer())
+    fun savePendingMeltQuotes(quotes: Map<String, String>) =
+        saveMap(StorageKeys.walletPendingMeltQuotes, String.serializer(), quotes)
+
     fun loadMintQuoteTimestamps(): Map<String, Long> =
         loadMap(StorageKeys.walletMintQuoteTimestamps, Long.serializer())
     fun saveMintQuoteTimestamps(timestamps: Map<String, Long>) =
