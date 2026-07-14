@@ -10,7 +10,7 @@ import org.junit.Test
  * Regression: restoring a cashu.me seed in the APK then adding the mint from
  * Mints (instead of the restore-mints wizard) used to leave balance at 0,
  * because NUT-09 only ran inside restoreFromMint. addMint must trigger restore
- * and must surface restore failures so the mint is not left half-recovered.
+ * after committing the mint; the app-lifetime caller reports any failure.
  */
 class AddMintProofRestoreTest {
     @Test

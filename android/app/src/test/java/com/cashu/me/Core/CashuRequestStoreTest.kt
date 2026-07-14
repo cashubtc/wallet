@@ -1,6 +1,10 @@
 package com.cashu.me.Core
 
 import com.cashu.me.Models.CashuRequest
+import com.cashu.me.Models.TransactionKind
+import com.cashu.me.Models.TransactionStatus
+import com.cashu.me.Models.TransactionType
+import com.cashu.me.Models.WalletTransaction
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -33,6 +37,122 @@ class CashuRequestStoreTest {
         assertEquals("tx-a", request.receivedPayments.single().transactionId)
         assertEquals(21L, request.totalReceived)
         assertEquals(request, persistence.requests.single())
+    }
+
+    @Test
+    fun reopeningReusableQuotePreservesItsHistoryRowAndPayments() {
+        val persistence = MemoryCashuRequestPersistence()
+        val store = CashuRequestStore(persistence)
+
+        val original = store.upsertQuoteIntent(
+            id = "request-a",
+            quoteId = "quote-a",
+            quoteKind = "bolt12",
+            amount = null,
+            unit = "sat",
+            mints = listOf("https://mint.example"),
+            encoded = "lno-original",
+        )
+        store.attachPaymentByQuoteId("quote-a", transactionId = "tx-a", amount = 21)
+
+        val reopened = store.upsertQuoteIntent(
+            id = "request-b",
+            quoteId = "quote-a",
+            quoteKind = "bolt12",
+            amount = null,
+            unit = "sat",
+            mints = listOf("https://mint.example"),
+            encoded = "lno-current",
+        )
+
+        assertEquals(original.id, reopened.id)
+        assertEquals(original.createdAtEpochMillis, reopened.createdAtEpochMillis)
+        assertEquals("lno-current", reopened.encoded)
+        assertEquals(1, store.state.value.requests.size)
+        assertEquals(21L, reopened.totalReceived)
+    }
+
+    @Test
+    fun reconciliationAggregatesIncomingTransactionsForQuoteIntent() {
+        val persistence = MemoryCashuRequestPersistence()
+        val store = CashuRequestStore(persistence)
+        store.upsertQuoteIntent(
+            id = "request-a",
+            quoteId = "quote-a",
+            quoteKind = "bolt12",
+            amount = null,
+            encoded = "lno-a",
+        )
+
+        store.reconcileIncomingQuotePayments(
+            listOf(
+                quoteTransaction(id = "tx-a", amount = 21, date = 100, quoteId = "quote-a"),
+                quoteTransaction(id = "tx-b", amount = 34, date = 200, quoteId = "quote-a"),
+                quoteTransaction(id = "tx-b", amount = 34, date = 200, quoteId = "quote-a"),
+                quoteTransaction(id = "tx-c", amount = 55, date = 300, quoteId = "other-quote"),
+            ),
+        )
+
+        val request = store.request("request-a")!!
+        assertEquals(listOf("tx-a", "tx-b"), request.receivedPayments.map { it.transactionId })
+        assertEquals(listOf(100L, 200L), request.receivedPayments.map { it.receivedAtEpochMillis })
+        assertEquals(55L, request.totalReceived)
+    }
+
+    @Test
+    fun reconciliationRefreshesTheSyntheticQuotePaymentInsteadOfDoubleCounting() {
+        val persistence = MemoryCashuRequestPersistence()
+        val store = CashuRequestStore(persistence)
+        store.upsertQuoteIntent(
+            id = "request-a",
+            quoteId = "quote-a",
+            quoteKind = "bolt12",
+            amount = null,
+            encoded = "lno-a",
+        )
+
+        store.reconcileIncomingQuotePayments(
+            listOf(quoteTransaction(id = "quote-a", amount = 21, date = 100, quoteId = "quote-a")),
+        )
+        store.reconcileIncomingQuotePayments(
+            listOf(quoteTransaction(id = "quote-a", amount = 55, date = 200, quoteId = "quote-a")),
+        )
+
+        val request = store.request("request-a")!!
+        assertEquals(1, request.receivedPayments.size)
+        assertEquals(55L, request.totalReceived)
+        assertEquals(200L, request.receivedPayments.single().receivedAtEpochMillis)
+    }
+
+    @Test
+    fun reusableBolt12TransactionsKeepEachPaymentDuringHistoryMerge() {
+        val transactions = listOf(
+            quoteTransaction(id = "tx-a", amount = 21, date = 100, quoteId = "quote-a"),
+            quoteTransaction(id = "tx-b", amount = 34, date = 200, quoteId = "quote-a"),
+            quoteTransaction(id = "tx-a", amount = 21, date = 100, quoteId = "quote-a"),
+        )
+
+        val merged = deduplicateWalletTransactions(
+            transactions = transactions,
+            reusableBolt12QuoteIds = setOf("quote-a"),
+        )
+
+        assertEquals(listOf("tx-a", "tx-b"), merged.map { it.id })
+    }
+
+    @Test
+    fun oneShotQuoteTransactionsRemainDeduplicatedByQuoteId() {
+        val transactions = listOf(
+            quoteTransaction(id = "tx-a", amount = 21, date = 100, quoteId = "quote-a"),
+            quoteTransaction(id = "tx-b", amount = 34, date = 200, quoteId = "quote-a"),
+        )
+
+        val merged = deduplicateWalletTransactions(
+            transactions = transactions,
+            reusableBolt12QuoteIds = emptySet(),
+        )
+
+        assertEquals(listOf("tx-a"), merged.map { it.id })
     }
 
     @Test
@@ -106,6 +226,21 @@ class CashuRequestStoreTest {
         assertEquals(42L, stored.receivedPayments.single().receivedAtEpochMillis)
     }
 }
+
+private fun quoteTransaction(
+    id: String,
+    amount: Long,
+    date: Long,
+    quoteId: String,
+): WalletTransaction = WalletTransaction(
+    id = id,
+    amount = amount,
+    type = TransactionType.Incoming,
+    kind = TransactionKind.Lightning,
+    dateEpochMillis = date,
+    status = TransactionStatus.Completed,
+    quoteId = quoteId,
+)
 
 private class MemoryCashuRequestPersistence : CashuRequestPersistence {
     var requests: List<CashuRequest> = emptyList()

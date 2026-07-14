@@ -9,9 +9,9 @@ package com.cashu.me.Core
  * wizard; without this step the home balance stays 0 forever even though the
  * seed is correct.
  *
- * Unlike receive-side mint tracking, restore failures MUST propagate. A
- * tracked mint with unrecovered proofs is worse than a failed addMint the
- * user can retry. Brand-new wallets get an empty restore (fast no-op).
+ * The caller runs this after persisting the mint so adding stays responsive;
+ * failures still propagate to that background task for reporting. Brand-new
+ * wallets get an empty restore (fast no-op).
  */
 internal suspend fun restoreProofsForAddedMint(
     mintUrl: String,

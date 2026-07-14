@@ -398,6 +398,7 @@ private fun AuthenticatedShell(container: AppContainer) {
 
             WalletFlow.ReceiveLightning -> ReceiveLightningScreen(
                 walletManager = container.walletManager,
+                cashuRequestStore = container.cashuRequestStore,
                 settingsManager = container.settingsManager,
                 onClose = close,
             )

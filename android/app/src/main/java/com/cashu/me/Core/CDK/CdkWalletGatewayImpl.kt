@@ -248,7 +248,13 @@ class CdkWalletGatewayImpl : CdkWalletGateway, NwcServiceGateway {
                 if (!payload.referencesMintQuote(quoteId)) continue
                 val refreshed = checkMintQuote(quoteId)
                 emit(refreshed)
-                if (refreshed.state == MintQuoteState.Paid || refreshed.state == MintQuoteState.Issued) return@flow
+                // An amountless BOLT12 offer remains open after each mint. Keep
+                // the subscription alive so its display can show later payments.
+                if (refreshed.paymentMethod != PaymentMethodKind.Bolt12 &&
+                    (refreshed.state == MintQuoteState.Paid || refreshed.state == MintQuoteState.Issued)
+                ) {
+                    return@flow
+                }
             }
         } finally {
             withContext(Dispatchers.IO) { subscription.close() }
@@ -678,6 +684,7 @@ class CdkWalletGatewayImpl : CdkWalletGateway, NwcServiceGateway {
             id = id,
             request = request,
             amount = mintQuoteAmountForDomain(amount?.value?.toLong(), fallbackAmount, paid, issued),
+            isAmountless = amount == null,
             paymentMethod = method,
             state = mintQuoteStateForDomain(method, state.toMintState(), paid, issued),
             expiryEpochSeconds = mintQuoteDisplayExpiry(expiry.toLong()),

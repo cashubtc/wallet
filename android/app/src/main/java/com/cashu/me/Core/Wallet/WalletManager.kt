@@ -32,6 +32,7 @@ import com.cashu.me.Models.SendTokenResult
 class WalletManager(
     private val secureStorage: SecureStorage,
     private val walletStore: WalletStore,
+    private val cashuRequestStore: CashuRequestStore,
     private val settingsManager: SettingsManager,
     private val nostrService: NostrService,
     private val npcService: NPCService,
@@ -190,30 +191,44 @@ class WalletManager(
     }
 
     override suspend fun addMint(url: String) {
+        var addedMintUrl: String? = null
         withLoading {
             val normalized = mintMetadataFetcher.normalizeMintUrl(url)
             mintMetadataFetcher.validateMintUrl(normalized)?.let { throw IllegalArgumentException(it) }
             if (mutableState.value.mints.any { it.url == normalized }) {
                 throw IllegalArgumentException("Mint already exists.")
             }
-            // ensureWallet + NUT-09 restore must succeed before the mint is
-            // committed to the local list. Swallowing restore failures left
-            // restored seeds with a tracked mint and permanent zero balance
-            // (the cashu.me → APK report). Brand-new wallets get an empty
-            // restore (fast no-op at the mint).
+            // Connect and commit first so the Mints view responds promptly.
+            // NUT-09 recovery starts below on the app-lifetime scope and
+            // refreshes balances/history after it completes.
             gateway.ensureWallet(normalized)
             val fetched = gateway.fetchMintInfo(normalized)
                 ?: throw IllegalStateException("Mint did not return info via CDK.")
-            restoreProofsForAddedMint(
-                mintUrl = normalized,
-                restoreMint = { withContext(Dispatchers.IO) { gateway.restoreMint(it) } },
-            )
             val updated = mutableState.value.mints + fetched
             walletStore.saveMints(updated)
             if (mutableState.value.activeMint == null) walletStore.activeMintURL = fetched.url
             loadCachedState(needsOnboarding = false)
-            refreshBalance()
-            loadTransactions()
+            addedMintUrl = fetched.url
+        }
+
+        addedMintUrl?.let { mintUrl ->
+            scope.launch {
+                if (mutableState.value.mints.none { it.url == mintUrl }) return@launch
+
+                runCatching {
+                    restoreProofsForAddedMint(
+                        mintUrl = mintUrl,
+                        restoreMint = { withContext(Dispatchers.IO) { gateway.restoreMint(it) } },
+                    )
+                    if (mutableState.value.mints.none { it.url == mintUrl }) return@runCatching
+                    refreshBalance()
+                    loadTransactions()
+                }.onSuccess {
+                    AppLogger.wallet.info("Background restore completed for added mint $mintUrl")
+                }.onFailure { error ->
+                    AppLogger.wallet.error("Background restore failed for added mint $mintUrl", error)
+                }
+            }
         }
         scope.launch { nostrMintBackupService.backupCurrentMintsIfEnabled() }
     }
@@ -353,6 +368,16 @@ class WalletManager(
                 mintQuoteSyncService.rememberMintQuoteTimestamp(it.id)
             }
         }
+    }
+
+    /** Returns the active mint's reusable amountless BOLT12 offer, if present. */
+    suspend fun existingAmountlessBolt12Offer(unit: String): MintQuoteInfo? {
+        val activeMint = mutableState.value.activeMint ?: return null
+        return findExistingAmountlessBolt12Offer(
+            quotes = gateway.listUnissuedMintQuotes(),
+            mintUrl = activeMint.url,
+            unit = unit,
+        )
     }
 
     suspend fun createMintQuoteForMint(
@@ -680,6 +705,10 @@ class WalletManager(
 
     suspend fun loadTransactions() {
         val result = transactionLoader.load(mutableState.value.mints)
+        // Quote-backed requests (notably the long-lived BOLT12 offer) own their
+        // received payments in history. Reconcile before publishing so the UI
+        // shows the one reusable-invoice row rather than duplicate payments.
+        cashuRequestStore.reconcileIncomingQuotePayments(result.transactions)
         update {
             copy(
                 transactions = result.transactions,

@@ -43,7 +43,7 @@ class MintService: ObservableObject {
     /// Add a new mint to the wallet
     /// - Parameter url: The mint URL to add
     /// - Throws: WalletError if already exists or if initialization fails
-    func addMint(url: String) async throws {
+    func addMint(url: String) async throws -> MintInfo {
         isLoading = true
         defer { isLoading = false }
         
@@ -74,13 +74,6 @@ class MintService: ObservableObject {
         let wallet = try await repo.getWallet(mintUrl: mintUrlObj, unit: .sat)
         let info = try await wallet.fetchMintInfo()
 
-        // NUT-09 before committing the mint to the local list: seed restore
-        // alone does not recover balance. Users often restore a seed then
-        // add the mint from Mints instead of the restore-mints wizard.
-        // Failure must throw so the mint is not left tracked with zero
-        // balance. Empty restore on a brand-new wallet is a fast no-op.
-        _ = try await wallet.restore()
-
         let mintInfo = await makeMintInfo(
             url: normalizedUrl,
             existing: nil,
@@ -94,6 +87,8 @@ class MintService: ObservableObject {
         if activeMint == nil {
             activeMint = mintInfo
         }
+
+        return mintInfo
     }
     
     /// Remove mints at the specified offsets

@@ -17,6 +17,9 @@ data class MintQuoteInfo(
     val id: String,
     val request: String,
     val amount: Long?,
+    // BOLT12 amountless offers may later display the amount received. Preserve
+    // their original shape so they can still be reused after a payment.
+    val isAmountless: Boolean = amount == null,
     val paymentMethod: PaymentMethodKind,
     val state: MintQuoteState,
     val expiryEpochSeconds: Long?,

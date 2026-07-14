@@ -5,14 +5,41 @@ extension WalletManager {
     // MARK: - Mint Operations (Delegate to MintService)
 
     func addMint(url: String) async throws {
-        // MintService.addMint runs NUT-09 restore before committing the mint
-        // to the local list (see MintService.addMint).
-        try await mintService.addMint(url: url)
-        await refreshBalance()
-        await loadTransactions()
+        let mint = try await mintService.addMint(url: url)
         performICloudBackup()
         Task { await NostrMintBackupService.shared.backupCurrentMintsIfEnabled() }
+        restoreAddedMintInBackground(url: mint.url)
         SentryService.breadcrumb("Mint added", category: "wallet.mint")
+    }
+
+    /// NUT-09 can take noticeably longer than connecting to a mint. Keep that
+    /// recovery alive after the add sheet closes, then publish the recovered
+    /// balance and history together. The second tracked-mint check prevents a
+    /// completed restore from updating a mint the user removed meanwhile.
+    private func restoreAddedMintInBackground(url: String) {
+        Task { [weak self] in
+            guard let self,
+                  self.mintService.isMintTracked(url: url),
+                  let walletRepository = self.walletRepository else {
+                return
+            }
+
+            do {
+                let wallet = try await walletRepository.getWallet(
+                    mintUrl: MintUrl(url: url),
+                    unit: .sat
+                )
+                _ = try await wallet.restore()
+
+                guard self.mintService.isMintTracked(url: url) else { return }
+
+                await self.refreshBalance()
+                await self.loadTransactions()
+                SentryService.breadcrumb("Mint restore completed", category: "wallet.mint")
+            } catch {
+                AppLogger.wallet.error("Background restore failed for mint \(url): \(error)")
+            }
+        }
     }
 
     func removeMint(at offsets: IndexSet) async {

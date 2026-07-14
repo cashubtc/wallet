@@ -40,19 +40,20 @@ internal class WalletTransactionLoader(
             .map { it.withStoredMeltMetadata(preimages, meltFees) }
         val completedQuoteIds = remote.mapNotNull { it.quoteId }.toSet()
         val mintQuoteTimestamps = walletStore.loadMintQuoteTimestamps().toMutableMap()
+        val unissuedMintQuotes = runCatching { gateway.listUnissuedMintQuotes() }
+            .getOrDefault(emptyList())
+        val reusableBolt12QuoteIds = unissuedMintQuotes
+            .asSequence()
+            .filter { it.paymentMethod == PaymentMethodKind.Bolt12 }
+            .mapTo(mutableSetOf()) { it.id }
         val pendingQuoteTransactions = observePendingOnchainMintQuotes(
-            runCatching { gateway.listUnissuedMintQuotes() }
-                .getOrDefault(emptyList())
-                .let { quotes ->
-                    pendingMintQuoteTransactions(
-                        quotes = quotes,
-                        trackedMintUrls = trackedMintUrls,
-                        completedQuoteIds = completedQuoteIds,
-                        timestamps = mintQuoteTimestamps,
-                        nowEpochMillis = System.currentTimeMillis(),
-                    )
-                }
-                .map { it.withStoredMeltMetadata(preimages, meltFees) },
+            pendingMintQuoteTransactions(
+                quotes = unissuedMintQuotes,
+                trackedMintUrls = trackedMintUrls,
+                completedQuoteIds = completedQuoteIds,
+                timestamps = mintQuoteTimestamps,
+                nowEpochMillis = System.currentTimeMillis(),
+            ).map { it.withStoredMeltMetadata(preimages, meltFees) },
         )
         val storedMeltTransactions = runCatching { gateway.listMeltQuotes() }
             .getOrDefault(emptyList())
@@ -70,13 +71,23 @@ internal class WalletTransactionLoader(
         val receiveTokenTransactions = pendingReceiveTokenTransactions(pendingReceiveTokens)
         val cached = walletStore.loadTransactions()
             .filterNot { it.isPendingToken }
+            // Once CDK reports individual BOLT12 payments, discard the old
+            // synthetic quote row. Otherwise it would be counted alongside the
+            // real payments when the reusable request aggregates its history.
+            .filterNot { transaction ->
+                transaction.quoteId in reusableBolt12QuoteIds &&
+                    transaction.id == transaction.quoteId &&
+                    transaction.quoteId in completedQuoteIds
+            }
             .map { it.withStoredMeltMetadata(preimages, meltFees) }
         // Dedupe remote/cached first so sent tokens fold into the surviving CDK
         // row, then merge — otherwise each send lists twice (CDK row + local
         // pending-token row).
         val merged = mergeSentTokenTransactions(
-            transactions = (remote + pendingQuoteTransactions + storedMeltTransactions + receiveTokenTransactions + cached)
-                .distinctBy { "${it.mintUrl.orEmpty()}|${it.quoteId ?: it.id}" },
+            transactions = deduplicateWalletTransactions(
+                transactions = remote + pendingQuoteTransactions + storedMeltTransactions + receiveTokenTransactions + cached,
+                reusableBolt12QuoteIds = reusableBolt12QuoteIds,
+            ),
             pendingTokens = pendingTokens,
             claimedTokens = claimedTokens,
         ).sortedByDescending { it.dateEpochMillis }
@@ -176,6 +187,22 @@ internal class WalletTransactionLoader(
                 transaction
             }
         }
+}
+
+/**
+ * A normal mint quote represents one history entry, so quote id is its stable
+ * merge key. An amountless BOLT12 quote represents an open offer and can have
+ * many incoming payments; retain each of those by transaction id instead.
+ */
+internal fun deduplicateWalletTransactions(
+    transactions: List<WalletTransaction>,
+    reusableBolt12QuoteIds: Set<String>,
+): List<WalletTransaction> = transactions.distinctBy { transaction ->
+    val keepsIndividualPayment = transaction.type == TransactionType.Incoming &&
+        transaction.kind == TransactionKind.Lightning &&
+        transaction.quoteId in reusableBolt12QuoteIds
+    val identity = if (keepsIndividualPayment) transaction.id else transaction.quoteId ?: transaction.id
+    "${transaction.mintUrl.orEmpty()}|$identity"
 }
 
 /** CDK stores an independent wallet per (mint, unit), including transaction history. */

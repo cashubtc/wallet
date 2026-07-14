@@ -5,6 +5,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import com.cashu.me.Models.CashuRequest
 import com.cashu.me.Models.CashuRequestPayment
+import com.cashu.me.Models.TransactionType
+import com.cashu.me.Models.WalletTransaction
 
 data class CashuRequestStoreState(
     val requests: List<CashuRequest> = emptyList(),
@@ -82,19 +84,27 @@ class CashuRequestStore(
         mints: List<String> = emptyList(),
         memo: String? = null,
         encoded: String,
-    ): CashuRequest =
-        upsert(
+    ): CashuRequest {
+        // Re-opening an amountless BOLT12 offer must keep its request identity
+        // and its accumulated payments. Otherwise every visit creates another
+        // history row for the same reusable invoice.
+        val existing = mutableState.value.requests.firstOrNull { it.quoteId == quoteId }
+        return upsert(
             CashuRequest(
-                id = id,
+                id = existing?.id ?: id,
                 encoded = encoded,
                 amount = amount,
                 unit = unit,
                 mints = mints,
                 memo = memo?.takeIf { it.isNotBlank() },
+                createdAtEpochMillis = existing?.createdAtEpochMillis ?: System.currentTimeMillis(),
                 quoteId = quoteId,
                 quoteKind = quoteKind,
+                receivedPayments = existing?.receivedPayments.orEmpty(),
+                receivedPaymentIds = existing?.receivedPaymentIds.orEmpty(),
             ),
         )
+    }
 
     fun attachPayment(requestId: String, transactionId: String, amount: Long) {
         val current = mutableState.value
@@ -117,6 +127,55 @@ class CashuRequestStore(
     fun attachPaymentByQuoteId(quoteId: String, transactionId: String, amount: Long) {
         val request = mutableState.value.requests.firstOrNull { it.quoteId == quoteId } ?: return
         attachPayment(request.id, transactionId, amount)
+    }
+
+    /**
+     * Reconcile received wallet transactions with persistent quote-backed
+     * requests. A reusable BOLT12 offer stays as one history item while each
+     * incoming payment is attached to it by its stable transaction id.
+     */
+    fun reconcileIncomingQuotePayments(transactions: List<WalletTransaction>) {
+        val current = mutableState.value
+        val incomingByQuoteId = transactions
+            .asSequence()
+            .filter { it.type == TransactionType.Incoming }
+            .mapNotNull { transaction ->
+                transaction.quoteId?.let { quoteId -> quoteId to transaction }
+            }
+            .groupBy({ it.first }, { it.second })
+        if (incomingByQuoteId.isEmpty()) return
+
+        var changed = false
+        val updated = current.requests.map { request ->
+            val quoteId = request.quoteId ?: return@map request
+            val payments = request.receivedPayments.toMutableList()
+            incomingByQuoteId[quoteId].orEmpty().forEach { transaction ->
+                val existingIndex = payments.indexOfFirst { it.transactionId == transaction.id }
+                if (existingIndex == -1) {
+                    payments += CashuRequestPayment(
+                        transactionId = transaction.id,
+                        amount = transaction.amount,
+                        receivedAtEpochMillis = transaction.dateEpochMillis,
+                    )
+                    changed = true
+                } else if (
+                    // When offline, the pending-quote fallback is keyed by the
+                    // quote itself and reports its latest aggregate amount.
+                    // Refresh that synthetic entry instead of double-counting.
+                    transaction.id == quoteId &&
+                    transaction.amount > payments[existingIndex].amount
+                ) {
+                    payments[existingIndex] = payments[existingIndex].copy(
+                        amount = transaction.amount,
+                        receivedAtEpochMillis = transaction.dateEpochMillis,
+                    )
+                    changed = true
+                }
+            }
+            request.takeIf { payments == request.receivedPayments }
+                ?: request.copy(receivedPayments = payments)
+        }
+        if (changed) persist(updated, current.currentRequestId)
     }
 
     fun delete(id: String) {

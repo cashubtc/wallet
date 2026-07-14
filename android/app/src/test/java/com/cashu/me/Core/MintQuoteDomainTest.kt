@@ -1,5 +1,6 @@
 package com.cashu.me.Core
 
+import com.cashu.me.Models.MintQuoteInfo
 import com.cashu.me.Models.MintQuoteState
 import com.cashu.me.Models.PaymentMethodKind
 import org.junit.Assert.assertEquals
@@ -7,6 +8,33 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class MintQuoteDomainTest {
+    @Test
+    fun findsReusableBolt12OfferOnlyForItsMintAndUnit() {
+        val offer = MintQuoteInfo(
+            id = "reusable-usd",
+            request = "lno1offer",
+            amount = null,
+            paymentMethod = PaymentMethodKind.Bolt12,
+            state = MintQuoteState.Issued,
+            expiryEpochSeconds = null,
+            mintUrl = "https://mint.example",
+            unit = "usd",
+        )
+
+        val paidOffer = offer.copy(amount = 21)
+        val selected = findExistingAmountlessBolt12Offer(
+            quotes = listOf(
+                offer.copy(id = "other-mint", mintUrl = "https://other.example"),
+                offer.copy(id = "other-unit", unit = "sat"),
+                paidOffer,
+            ),
+            mintUrl = "https://mint.example",
+            unit = "USD",
+        )
+
+        assertEquals(paidOffer, selected)
+    }
+
     @Test
     fun bolt12ZeroExpiryUsesLocalNeverExpiresSentinelForStorageAndIsHiddenForDisplay() {
         val stored = mintQuoteLocalStorageExpiry(0, PaymentMethodKind.Bolt12)

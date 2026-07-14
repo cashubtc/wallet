@@ -57,6 +57,7 @@ class AppContainer(context: Context) {
     val walletManager = WalletManager(
         secureStorage = secureStorage,
         walletStore = walletStore,
+        cashuRequestStore = cashuRequestStore,
         settingsManager = settingsManager,
         nostrService = nostrService,
         npcService = npcService,

@@ -1,5 +1,6 @@
 package com.cashu.me.Core
 
+import com.cashu.me.Models.MintQuoteInfo
 import com.cashu.me.Models.MintQuoteState
 import com.cashu.me.Models.PaymentMethodKind
 
@@ -39,4 +40,20 @@ internal fun mintQuoteStateForDomain(
     if (amountPaid > amountIssued) return MintQuoteState.Paid
     if (paymentMethod != PaymentMethodKind.Bolt11) return MintQuoteState.Pending
     return storedState
+}
+
+/**
+ * Finds the long-lived, amountless BOLT12 offer for one mint wallet. BOLT12
+ * quotes remain in CDK's unissued list even after payments, so deliberately do
+ * not filter by quote state here.
+ */
+internal fun findExistingAmountlessBolt12Offer(
+    quotes: List<MintQuoteInfo>,
+    mintUrl: String,
+    unit: String,
+): MintQuoteInfo? = quotes.firstOrNull { quote ->
+    quote.paymentMethod == PaymentMethodKind.Bolt12 &&
+        quote.isAmountless &&
+        quote.mintUrl == mintUrl &&
+        quote.unit.equals(unit, ignoreCase = true)
 }
