@@ -5,8 +5,11 @@ extension WalletManager {
     // MARK: - Mint Operations (Delegate to MintService)
 
     func addMint(url: String) async throws {
+        // MintService.addMint runs NUT-09 restore before committing the mint
+        // to the local list (see MintService.addMint).
         try await mintService.addMint(url: url)
         await refreshBalance()
+        await loadTransactions()
         performICloudBackup()
         Task { await NostrMintBackupService.shared.backupCurrentMintsIfEnabled() }
         SentryService.breadcrumb("Mint added", category: "wallet.mint")

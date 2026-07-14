@@ -69,8 +69,4 @@ val PaymentMethodKind.iconName: String
     }
 
 val PaymentMethodKind.capabilityLabel: String
-    get() = when (this) {
-        PaymentMethodKind.Bolt11 -> "Lightning invoice"
-        PaymentMethodKind.Bolt12 -> "Reusable offer"
-        PaymentMethodKind.Onchain -> "Bitcoin address"
-    }
+    get() = friendlyTitle

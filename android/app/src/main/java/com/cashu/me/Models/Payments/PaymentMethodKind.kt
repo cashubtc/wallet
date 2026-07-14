@@ -21,11 +21,47 @@ enum class PaymentMethodKind {
             Onchain -> "onchain"
         }
 
+    /** Protocol jargon (BOLT11 / BOLT12 / On-chain). Prefer [friendlyTitle] in receive UI. */
     val displayName: String
         get() = when (this) {
             Bolt11 -> "BOLT11"
             Bolt12 -> "BOLT12"
             Onchain -> "On-chain"
+        }
+
+    /**
+     * Plain-language title for the receive method picker, in place of protocol
+     * jargon ([displayName]). iOS parity with PaymentMethodKind.friendlyTitle.
+     */
+    val friendlyTitle: String
+        get() = when (this) {
+            Bolt11 -> "Lightning invoice"
+            Bolt12 -> "Reusable invoice"
+            Onchain -> "On-chain address"
+        }
+
+    /**
+     * One-line descriptor shown beneath [friendlyTitle] in the receive method
+     * picker. iOS parity with PaymentMethodKind.friendlyDescriptor.
+     */
+    val friendlyDescriptor: String
+        get() = when (this) {
+            // Match iOS ReceiveMethodOption picker rows (what the sheet actually
+            // shows), not the dormant fixed-amount reusable copy.
+            Bolt11 -> "One-time, instant"
+            Bolt12 -> "Any amount, paid many times"
+            Onchain -> "Slower, for larger amounts"
+        }
+
+    /**
+     * Verb-phrase for the create CTA on the receive amount screen.
+     * iOS parity with PaymentMethodKind.createActionTitle.
+     */
+    val createActionTitle: String
+        get() = when (this) {
+            Bolt11 -> "Create invoice"
+            Bolt12 -> "Create invoice"
+            Onchain -> "Create address"
         }
 
     val symbol: String
@@ -38,7 +74,7 @@ enum class PaymentMethodKind {
     val requestDisplayName: String
         get() = when (this) {
             Bolt11 -> "Invoice"
-            Bolt12 -> "Offer"
+            Bolt12 -> "Invoice"
             Onchain -> "Address"
         }
 
@@ -49,8 +85,9 @@ enum class PaymentMethodKind {
             Onchain -> 2
         }
 
+    /** True when a mint quote for this rail requires a positive amount up front. */
     val requiresMintAmount: Boolean
-        get() = this != Bolt12
+        get() = this != Bolt12 && this != Onchain
 
     val supportsOptionalMintAmount: Boolean
         get() = this == Bolt12
