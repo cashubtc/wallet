@@ -62,6 +62,17 @@ class CdkGatewayThreadingTest {
         assertTrue(source.contains(".checkMeltQuoteStatus(quoteId)"))
     }
 
+    @Test
+    fun startupMaintenanceUsesCdkSagaRecoveryAndKeysetRefresh() {
+        val source = sourceFile(
+            "src/main/java/com/cashu/me/Core/CDK/CdkWalletGatewayImpl.kt",
+            "app/src/main/java/com/cashu/me/Core/CDK/CdkWalletGatewayImpl.kt",
+        ).readText()
+
+        assertTrue(source.contains(".recoverIncompleteSagas()"))
+        assertTrue(source.contains(".refreshKeysets()"))
+    }
+
     private fun sourceFile(vararg candidates: String): File {
         val roots = generateSequence(File("").absoluteFile) { it.parentFile }
         return roots

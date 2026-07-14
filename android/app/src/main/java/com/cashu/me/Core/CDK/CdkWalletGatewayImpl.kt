@@ -197,6 +197,20 @@ class CdkWalletGatewayImpl : CdkWalletGateway, NwcServiceGateway {
         )
     }
 
+    override suspend fun recoverIncompleteSagas(mintUrl: String, unit: String): WalletSagaRecoveryResult = cdkCall {
+        val report = walletFor(mintUrl, cdkUnit(unit)).recoverIncompleteSagas()
+        WalletSagaRecoveryResult(
+            recovered = report.recovered.toLong(),
+            compensated = report.compensated.toLong(),
+            skipped = report.skipped.toLong(),
+            failed = report.failed.toLong(),
+        )
+    }
+
+    override suspend fun refreshKeysets(mintUrl: String, unit: String): Int = cdkCall {
+        walletFor(mintUrl, cdkUnit(unit)).refreshKeysets().size
+    }
+
     override suspend fun totalBalance(mintUrl: String): Long = cdkCall {
         walletFor(mintUrl).totalBalance().value.toLong()
     }

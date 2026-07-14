@@ -31,6 +31,8 @@ interface CdkWalletGateway {
     suspend fun removeWallet(mintUrl: String, unit: String = "sat")
     suspend fun fetchMintInfo(mintUrl: String): MintInfo?
     suspend fun restoreMint(mintUrl: String): RestoreMintResult
+    suspend fun recoverIncompleteSagas(mintUrl: String, unit: String = "sat"): WalletSagaRecoveryResult
+    suspend fun refreshKeysets(mintUrl: String, unit: String = "sat"): Int
     suspend fun totalBalance(mintUrl: String): Long
 
     /** Balance of the (mint, unit) wallet, registering the unit wallet if needed. */
@@ -64,6 +66,19 @@ interface CdkWalletGateway {
     suspend fun checkTokenSpendable(token: String, mintUrl: String): Boolean
     suspend fun listTransactions(unitsByMint: Map<String, List<String>>): List<WalletTransaction>
     suspend fun payCashuPaymentRequest(encoded: String, customAmountSats: Long?, preferredMintURL: String?)
+}
+
+data class WalletSagaRecoveryResult(
+    val recovered: Long,
+    val compensated: Long,
+    val skipped: Long,
+    val failed: Long,
+) {
+    val changedWalletState: Boolean
+        get() = recovered > 0 || compensated > 0
+
+    val hasActivity: Boolean
+        get() = changedWalletState || skipped > 0 || failed > 0
 }
 
 data class ForeignNfcSettlement(

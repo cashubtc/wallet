@@ -54,6 +54,7 @@ class WalletManager(
     val state: StateFlow<WalletState> = mutableState.asStateFlow()
     private val initializationMutex = Mutex()
     private val pendingMeltSyncMutex = Mutex()
+    private val pendingMeltStoreMutex = Mutex()
     private val pendingMeltWatchers = ConcurrentHashMap.newKeySet<String>()
     private val mintMetadataFetcher = WalletMintMetadataFetcher()
     private val mintQuoteSyncService = WalletMintQuoteSyncService(gateway, walletStore)
@@ -119,10 +120,101 @@ class WalletManager(
             if (hasStoredWallet) {
                 runCatching { refreshBalance() }
                     .onFailure { AppLogger.wallet.error("Deferred balance refresh failed", it) }
+
+                val recoveredWalletState = runCatching { performBestEffortWalletStartupMaintenance() }
+                    .onFailure { AppLogger.wallet.error("Deferred wallet maintenance failed", it) }
+                    .getOrDefault(false)
+                if (recoveredWalletState) {
+                    runCatching {
+                        refreshBalance()
+                        loadTransactions()
+                    }.onFailure { AppLogger.wallet.error("Failed to refresh recovered wallet state", it) }
+                }
             }
             runCatching { nwcManager.startIfEnabled() }
                 .onFailure { AppLogger.wallet.error("Deferred NWC startup failed", it) }
         }
+    }
+
+    /**
+     * Mirrors iOS startup maintenance: recover CDK's persisted sagas for every
+     * tracked sat wallet, refresh keysets at most hourly, then re-arm melts that
+     * remain pending after CDK's single recovery poll.
+     */
+    private suspend fun performBestEffortWalletStartupMaintenance(): Boolean {
+        val mintUrls = trackedMintUrlsForWalletAccess()
+        if (mintUrls.isEmpty()) return false
+
+        val now = System.currentTimeMillis()
+        val storedTimestamps = walletStore.loadMintKeysetRefreshTimestamps()
+        val keysetRefreshTimestamps = storedTimestamps
+            .filterKeys { it in mintUrls }
+            .toMutableMap()
+        var timestampsChanged = keysetRefreshTimestamps != storedTimestamps
+        var recoveredWalletState = false
+
+        mintUrls.forEach { mintUrl ->
+            if (recoverIncompleteSagasIfNeeded(mintUrl)) {
+                recoveredWalletState = true
+            }
+            if (
+                refreshKeysetsIfNeeded(
+                    mintUrl = mintUrl,
+                    lastRefreshEpochMillis = keysetRefreshTimestamps[mintUrl],
+                    nowEpochMillis = now,
+                )
+            ) {
+                keysetRefreshTimestamps[mintUrl] = now
+                timestampsChanged = true
+            }
+        }
+
+        if (timestampsChanged) {
+            walletStore.saveMintKeysetRefreshTimestamps(keysetRefreshTimestamps)
+        }
+
+        runCatching { syncPendingMeltQuotes() }
+            .onFailure { AppLogger.wallet.error("Failed to resume pending melts during startup", it) }
+        return recoveredWalletState
+    }
+
+    private suspend fun recoverIncompleteSagasIfNeeded(mintUrl: String): Boolean {
+        return runCatching { gateway.recoverIncompleteSagas(mintUrl) }
+            .onSuccess { report ->
+                if (report.hasActivity) {
+                    AppLogger.wallet.info(
+                        "Recovered wallet sagas for mint $mintUrl: " +
+                            "recovered=${report.recovered} compensated=${report.compensated} " +
+                            "skipped=${report.skipped} failed=${report.failed}",
+                    )
+                }
+            }
+            .onFailure { AppLogger.wallet.error("Failed to recover wallet sagas for mint $mintUrl", it) }
+            .getOrNull()
+            ?.changedWalletState == true
+    }
+
+    private suspend fun refreshKeysetsIfNeeded(
+        mintUrl: String,
+        lastRefreshEpochMillis: Long?,
+        nowEpochMillis: Long,
+    ): Boolean {
+        if (!WalletStartupPolicy.shouldRefreshKeysets(lastRefreshEpochMillis, nowEpochMillis)) return false
+
+        return runCatching { gateway.refreshKeysets(mintUrl) }
+            .onSuccess { count -> AppLogger.wallet.info("Refreshed $count keysets for mint $mintUrl") }
+            .onFailure { AppLogger.wallet.error("Failed to refresh keysets for mint $mintUrl", it) }
+            .isSuccess
+    }
+
+    private fun trackedMintUrlsForWalletAccess(): List<String> {
+        val urls = linkedSetOf<String>()
+        mutableState.value.activeMint?.url?.takeIf(String::isNotBlank)?.let(urls::add)
+        mutableState.value.mints
+            .map(MintInfo::url)
+            .filter(String::isNotBlank)
+            .forEach(urls::add)
+        return urls.toList()
     }
 
     override suspend fun createNewWallet() {
@@ -527,7 +619,7 @@ class WalletManager(
      */
     suspend fun syncPendingMeltQuotes() {
         pendingMeltSyncMutex.withLock {
-            val tracked = walletStore.loadPendingMeltQuotes()
+            val tracked = pendingMeltStoreMutex.withLock { walletStore.loadPendingMeltQuotes() }
             if (tracked.isEmpty()) return@withLock
 
             var changed = false
@@ -592,12 +684,16 @@ class WalletManager(
         }
     }
 
-    private fun rememberPendingMeltQuote(quoteId: String, mintUrl: String) {
-        walletStore.savePendingMeltQuotes(walletStore.loadPendingMeltQuotes() + (quoteId to mintUrl))
+    private suspend fun rememberPendingMeltQuote(quoteId: String, mintUrl: String) {
+        pendingMeltStoreMutex.withLock {
+            walletStore.savePendingMeltQuotes(walletStore.loadPendingMeltQuotes() + (quoteId to mintUrl))
+        }
     }
 
-    private fun forgetPendingMeltQuote(quoteId: String) {
-        walletStore.savePendingMeltQuotes(walletStore.loadPendingMeltQuotes() - quoteId)
+    private suspend fun forgetPendingMeltQuote(quoteId: String) {
+        pendingMeltStoreMutex.withLock {
+            walletStore.savePendingMeltQuotes(walletStore.loadPendingMeltQuotes() - quoteId)
+        }
     }
 
     override suspend fun sendTokens(amount: Long, memo: String?, p2pkPubkey: String?, mintUrl: String?, unit: String): SendTokenResult {
