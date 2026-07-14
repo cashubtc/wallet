@@ -31,6 +31,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -74,6 +75,7 @@ fun MintDiscoveryContent(
     val settings by settingsManager.state.collectAsState()
     val discoveryState by mintDiscoveryManager.state.collectAsState()
     val scope = rememberCoroutineScope()
+    var refreshing by remember { mutableStateOf(false) }
 
     var query by remember { mutableStateOf("") }
 
@@ -99,14 +101,25 @@ fun MintDiscoveryContent(
         derivedStateOf { filtered.filterNot { it.url in addedUrls } }
     }
 
+    fun refreshDiscovery() {
+        if (refreshing || discoveryState.isDiscovering) return
+        refreshing = true
+        scope.launch {
+            try {
+                runCatching { mintDiscoveryManager.discoverMints() }
+            } finally {
+                refreshing = false
+            }
+        }
+    }
+
     LaunchedEffect(settings.useWebsockets) {
         if (settings.useWebsockets &&
             discoveryState.discoveredMints.isEmpty() &&
             !discoveryState.isDiscovering
         ) {
-            scope.launch {
-                runCatching { mintDiscoveryManager.discoverMints() }
-            }
+            // iOS MintDiscoverySheet .task — first open runs discovery once.
+            runCatching { mintDiscoveryManager.discoverMints() }
         }
     }
     DisposableEffect(Unit) {
@@ -135,23 +148,34 @@ fun MintDiscoveryContent(
             return@Column
         }
 
-        when {
-            filtered.isEmpty() && !discoveryState.isDiscovering -> {
-                EmptyState(
-                    icon = Icons.Outlined.Search,
-                    title = if (query.isBlank()) "No Mints Found" else "No Results",
-                    supporting = if (query.isBlank()) {
-                        "Pull down to retry."
-                    } else {
-                        "No mint matches \"$query\"."
-                    },
-                )
-            }
-            else -> {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = CashuTheme.spacing.section),
-                ) {
+        // iOS MintDiscoverySheet `.refreshable` — empty state copy says "Pull down
+        // to retry", so the list (and empty placeholder) must scroll under PTR.
+        PullToRefreshBox(
+            isRefreshing = refreshing || discoveryState.isDiscovering,
+            onRefresh = { refreshDiscovery() },
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth(),
+        ) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = CashuTheme.spacing.section),
+            ) {
+                if (filtered.isEmpty() && !discoveryState.isDiscovering) {
+                    item(key = "empty") {
+                        Box(modifier = Modifier.fillParentMaxSize()) {
+                            EmptyState(
+                                icon = Icons.Outlined.Search,
+                                title = if (query.isBlank()) "No Mints Found" else "No Results",
+                                supporting = if (query.isBlank()) {
+                                    "Pull down to retry."
+                                } else {
+                                    "No mint matches \"$query\"."
+                                },
+                            )
+                        }
+                    }
+                } else {
                     if (discoveryState.isDiscovering) {
                         item(key = "discovering") {
                             DiscoveringRow(modifier = Modifier.animateItem())

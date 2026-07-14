@@ -28,12 +28,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.fragment.app.FragmentActivity
 import kotlinx.coroutines.launch
 import com.cashu.me.Core.AppLockManager
 import com.cashu.me.Core.SettingsManager
 import com.cashu.me.ui.components.ToggleRow
 import com.cashu.me.ui.components.ToolbarIcon
+import com.cashu.me.ui.security.findFragmentActivity
 import com.cashu.me.ui.theme.CashuTheme
 
 /**
@@ -143,13 +143,4 @@ private fun biometryLabel(context: android.content.Context): String {
         BiometricManager.BIOMETRIC_SUCCESS -> "biometrics"
         else -> "your screen lock"
     }
-}
-
-private fun android.content.Context.findFragmentActivity(): FragmentActivity? {
-    var current: android.content.Context? = this
-    while (current is android.content.ContextWrapper) {
-        if (current is FragmentActivity) return current
-        current = current.baseContext
-    }
-    return null
 }

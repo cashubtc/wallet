@@ -46,7 +46,7 @@ internal data class TokenReview(
      * "Unknown key" (iOS ReceiveTokenDetailView lock row).
      */
     val lockedToLabel: String?,
-    /** True when the mint host is not already in the wallet. */
+    /** True when the mint is already configured in the wallet. */
     val mintIsKnown: Boolean,
     /** Blocks Receive when locked to a key this wallet cannot satisfy. */
     val locked: Boolean,
