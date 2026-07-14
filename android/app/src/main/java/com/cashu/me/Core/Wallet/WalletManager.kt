@@ -365,11 +365,15 @@ class WalletManager(
     }
 
     /**
-     * Fetch a mint's live info to check reachability (iOS `fetchFullMintInfo`
-     * analog). Suspends on the network call and THROWS on failure/unreachable, so
-     * callers derive a Checking -> Online/Offline state from success vs. throw.
+     * Best-effort mint identity for staging / discovery (iOS `fetchMintPreviewInfo`
+     * / detail reachability). Creates a CDK wallet entry if needed so logos and
+     * names can load, but does not add the mint to the app's saved list.
+     * Throws when the mint is unreachable so callers can map Checking → Offline.
      */
-    suspend fun fetchLiveMintInfo(mintUrl: String): MintInfo? = gateway.fetchMintInfo(mintUrl)
+    suspend fun fetchLiveMintInfo(mintUrl: String): MintInfo? {
+        val normalized = mintMetadataFetcher.normalizeMintUrl(mintUrl)
+        return gateway.fetchMintInfo(normalized)
+    }
 
     override suspend fun createMintQuote(amount: Long?, method: PaymentMethodKind, unit: String): MintQuoteInfo {
         val active = mutableState.value.activeMint ?: throw IllegalStateException("No active mint.")

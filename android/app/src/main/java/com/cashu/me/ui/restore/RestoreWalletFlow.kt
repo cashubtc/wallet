@@ -849,7 +849,9 @@ private fun RestoreProgressRow(
         ?.takeIf { it.isNotBlank() && it != "Unknown Mint" }
         ?: preview?.name?.takeIf { it.isNotBlank() && it != "Unknown Mint" }
         ?: shortenMintUrl(url)
-    val iconUrl = preview?.iconUrl
+    // iOS: recovered.iconUrl ?? stagedMintIconUrls[url]
+    val iconUrl = recovered?.iconUrl?.takeIf { it.isNotBlank() }
+        ?: preview?.iconUrl?.takeIf { it.isNotBlank() }
 
     Row(
         modifier = Modifier

@@ -162,8 +162,11 @@ class CdkWalletGatewayImpl : CdkWalletGateway, NwcServiceGateway {
     }
 
     override suspend fun fetchMintInfo(mintUrl: String): MintInfo? = cdkCall {
-        val wallet = walletFor(mintUrl)
-        wallet.fetchMintInfo()?.toDomain(mintUrl)
+        // iOS `fetchMintPreviewInfo`: CDK requires a wallet entry before
+        // fetchMintInfo() — create one if needed. Does not add the mint to the
+        // app's saved list (callers own that).
+        ensureWalletUnlocked(mintUrl)
+        walletFor(mintUrl).fetchMintInfo()?.toDomain(mintUrl)
     }
 
     override suspend fun restoreMint(mintUrl: String): RestoreMintResult = cdkCall {
@@ -174,6 +177,7 @@ class CdkWalletGatewayImpl : CdkWalletGateway, NwcServiceGateway {
         RestoreMintResult(
             mintUrl = mintUrl,
             mintName = info?.name ?: "Unknown Mint",
+            iconUrl = info?.iconUrl,
             spent = restored.spent.value.toLong(),
             unspent = restored.unspent.value.toLong(),
             pending = restored.pending.value.toLong(),
