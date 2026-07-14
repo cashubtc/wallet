@@ -49,10 +49,11 @@ fun onboardingBackAction(
         OnboardingBackState.ShowMnemonic -> OnboardingBackAction.Welcome
         OnboardingBackState.FirstMint -> OnboardingBackAction.ShowMnemonic
         OnboardingBackState.RestoreMethod -> OnboardingBackAction.Welcome
-        OnboardingBackState.RestoreInput -> OnboardingBackAction.RestoreMethod
+        // iOS retreats from seed input straight to welcome.
+        OnboardingBackState.RestoreInput -> OnboardingBackAction.Welcome
         OnboardingBackState.RestoreMints -> OnboardingBackAction.RestoreInput
-        OnboardingBackState.RestoreProgress ->
-            if (restoreInProgress) OnboardingBackAction.Stay else OnboardingBackAction.RestoreMints
+        // Forward-only on results (iOS hides back once restore starts).
+        OnboardingBackState.RestoreProgress -> OnboardingBackAction.Stay
     }
 
 enum class UnifiedSendBackAction {

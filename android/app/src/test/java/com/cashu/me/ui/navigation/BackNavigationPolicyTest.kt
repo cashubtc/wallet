@@ -29,14 +29,14 @@ class BackNavigationPolicyTest {
         assertEquals(OnboardingBackAction.Welcome, onboardingBackAction(OnboardingBackState.ShowMnemonic, canExitOnboarding = false))
         assertEquals(OnboardingBackAction.ShowMnemonic, onboardingBackAction(OnboardingBackState.FirstMint, canExitOnboarding = false))
         assertEquals(OnboardingBackAction.Welcome, onboardingBackAction(OnboardingBackState.RestoreMethod, canExitOnboarding = false))
-        assertEquals(OnboardingBackAction.RestoreMethod, onboardingBackAction(OnboardingBackState.RestoreInput, canExitOnboarding = false))
+        assertEquals(OnboardingBackAction.Welcome, onboardingBackAction(OnboardingBackState.RestoreInput, canExitOnboarding = false))
         assertEquals(OnboardingBackAction.RestoreInput, onboardingBackAction(OnboardingBackState.RestoreMints, canExitOnboarding = false))
         assertEquals(
             OnboardingBackAction.Stay,
             onboardingBackAction(OnboardingBackState.RestoreProgress, canExitOnboarding = false, restoreInProgress = true),
         )
         assertEquals(
-            OnboardingBackAction.RestoreMints,
+            OnboardingBackAction.Stay,
             onboardingBackAction(OnboardingBackState.RestoreProgress, canExitOnboarding = false, restoreInProgress = false),
         )
     }
