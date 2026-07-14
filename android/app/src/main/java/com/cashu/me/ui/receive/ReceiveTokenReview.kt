@@ -41,6 +41,14 @@ internal data class TokenReview(
     val token: String,
     val info: TokenInfo,
     val fee: Long,
+    /**
+     * When non-null, the token is P2PK-locked. Value is "Your key" or
+     * "Unknown key" (iOS ReceiveTokenDetailView lock row).
+     */
+    val lockedToLabel: String?,
+    /** True when the mint host is not already in the wallet. */
+    val mintIsKnown: Boolean,
+    /** Blocks Receive when locked to a key this wallet cannot satisfy. */
     val locked: Boolean,
 )
 
@@ -73,12 +81,29 @@ internal suspend fun tokenReviewDetails(
 ): TokenReview {
     val fee = runCatching { walletManager.calculateReceiveFee(token) }.getOrDefault(0L)
     val locks = TokenParser.p2pkPubkeys(token)
-    val unlocked = if (locks.isEmpty()) {
-        true
-    } else {
-        settingsManager.p2pkSigningKeysFor(locks).isNotEmpty()
+    val unlocked = locks.isEmpty() || settingsManager.p2pkSigningKeysFor(locks).isNotEmpty()
+    val lockedToLabel = when {
+        locks.isEmpty() -> null
+        unlocked -> "Your key"
+        else -> "Unknown key"
     }
-    return TokenReview(token = token, info = info, fee = fee, locked = !unlocked)
+    val mintIsKnown = walletManager.state.value.mints.any { mint ->
+        mintUrlsMatch(mint.url, info.mint)
+    }
+    return TokenReview(
+        token = token,
+        info = info,
+        fee = fee,
+        lockedToLabel = lockedToLabel,
+        mintIsKnown = mintIsKnown,
+        locked = !unlocked,
+    )
+}
+
+private fun mintUrlsMatch(a: String, b: String): Boolean {
+    fun normalize(url: String): String =
+        url.trim().trimEnd('/').lowercase().removePrefix("https://").removePrefix("http://")
+    return normalize(a) == normalize(b)
 }
 
 /**
@@ -147,15 +172,15 @@ internal fun pendingReceiveTokenFrom(review: TokenReview): PendingReceiveToken =
     )
 
 /**
- * Fee / Mint / P2PK / Memo inspector rows shared by the sheet Review face and
- * the full-screen detail page. A null [fee] renders the skeleton fill-in
+ * Fee / Mint / Locked to / Memo inspector rows shared by the sheet Review face
+ * and the full-screen detail page. A null [fee] renders the skeleton fill-in
  * (iOS: fee row spinner while the preview loads).
  */
 @Composable
 internal fun TokenInspectorRows(
     info: TokenInfo,
     fee: Long?,
-    locked: Boolean,
+    lockedToLabel: String?,
     modifier: Modifier = Modifier,
 ) {
     val isSatToken = info.unit.equals("sat", ignoreCase = true)
@@ -178,11 +203,11 @@ internal fun TokenInspectorRows(
             value = info.mint,
             leadingIcon = Icons.Outlined.AccountBalance,
         )
-        if (locked) {
+        if (lockedToLabel != null) {
             CanvasDivider(leadingInset = 16.dp)
             InspectorRow(
-                label = "P2PK",
-                value = "Requires your key",
+                label = "Locked to",
+                value = lockedToLabel,
                 leadingIcon = Icons.Outlined.Lock,
             )
         }
@@ -221,14 +246,14 @@ internal fun TokenClaimTerminal(
         phase = phase,
         title = when (status) {
             TokenClaimStatus.Claiming -> "Claiming…"
-            is TokenClaimStatus.Claimed -> "Payment received"
-            is TokenClaimStatus.Failed -> "Couldn't receive"
+            is TokenClaimStatus.Claimed -> "Payment Received!"
+            is TokenClaimStatus.Failed -> "Couldn't Receive"
         },
         detail = (status as? TokenClaimStatus.Failed)?.message?.text,
         // Terminal outcomes (already redeemed) can't be retried — offer Done;
         // anything else returns to Review for another attempt.
         doneLabel = if (status is TokenClaimStatus.Failed && !status.message.isTerminal) {
-            "Try again"
+            "Try Again"
         } else {
             "Done"
         },

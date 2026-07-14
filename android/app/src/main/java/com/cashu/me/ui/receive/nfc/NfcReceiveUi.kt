@@ -179,15 +179,15 @@ fun NfcReceiveOverlay(coordinator: NfcReceiveCoordinator) {
             when (state.phase) {
                 NfcReceivePhase.Success -> PaymentStatusScreen(
                     phase = PaymentStatusPhase.Success,
-                    title = "Payment received",
+                    title = "Payment Received!",
                     detail = state.amount?.let { "$it sat added to your wallet" } ?: "Ecash added to your wallet",
                     onDone = coordinator::clearResult,
                 )
                 NfcReceivePhase.Failure -> PaymentStatusScreen(
                     phase = PaymentStatusPhase.Failure,
-                    title = "Payment failed",
+                    title = "Payment Failed",
                     detail = state.message ?: "The payment could not be received.",
-                    doneLabel = "Try again",
+                    doneLabel = "Try Again",
                     onDone = coordinator::clearResult,
                 )
                 NfcReceivePhase.Validating, NfcReceivePhase.Redeeming, NfcReceivePhase.Converting -> PaymentStatusScreen(

@@ -10,9 +10,9 @@ import com.cashu.me.Models.TransactionStatus
 import com.cashu.me.Models.WalletTransaction
 
 enum class HistoryFilter(val label: String) {
-    All("All"),
-    Pending("Pending"),
-    Completed("Completed"),
+    All("All transactions"),
+    Pending("Pending only"),
+    Completed("Completed only"),
 }
 
 const val HistoryPageSize = 10

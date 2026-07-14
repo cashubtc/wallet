@@ -133,9 +133,7 @@ fun TransactionDetailScreen(
 
         val explorerUrl = remember(transaction) { transaction.explorerUrl() }
         val pendingReceiveToken = transaction.token?.takeIf {
-            transaction.isPendingToken &&
-                transaction.type == TransactionType.Incoming &&
-                transaction.status == TransactionStatus.Pending
+            transaction.isPendingReceiveToken
         }
         val hasPrimaryAction =
             (pendingReceiveToken != null && onClaimReceiveToken != null) || copyableContent != null

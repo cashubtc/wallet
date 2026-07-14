@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.AddCircle
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.SignalCellularConnectedNoInternet0Bar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -128,8 +129,8 @@ fun MintDiscoveryContent(
         if (!settings.useWebsockets) {
             EmptyState(
                 icon = Icons.Outlined.SignalCellularConnectedNoInternet0Bar,
-                title = "Discovery disabled",
-                supporting = "Discovery uses Nostr relays over WebSockets. Enable it in Settings → Privacy.",
+                title = "WebSockets Required",
+                supporting = "Enable WebSocket connections in Settings to discover mints over Nostr.",
             )
             return@Column
         }
@@ -137,11 +138,13 @@ fun MintDiscoveryContent(
         when {
             filtered.isEmpty() && !discoveryState.isDiscovering -> {
                 EmptyState(
-                    icon = Icons.Outlined.SignalCellularConnectedNoInternet0Bar,
-                    title = if (query.isBlank()) "Listening on Nostr…" else "No matches",
-                    supporting = if (query.isBlank())
-                        "Mints announced on Nostr show up here as they arrive."
-                    else null,
+                    icon = Icons.Outlined.Search,
+                    title = if (query.isBlank()) "No Mints Found" else "No Results",
+                    supporting = if (query.isBlank()) {
+                        "Pull down to retry."
+                    } else {
+                        "No mint matches \"$query\"."
+                    },
                 )
             }
             else -> {

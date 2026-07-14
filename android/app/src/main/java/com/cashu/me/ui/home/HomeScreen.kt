@@ -290,7 +290,7 @@ fun HomeScreen(
                             title = if (hasMints) "No Activity Yet" else "Add a mint to get started",
                             supporting = if (hasMints) "Your recent payments will show up here."
                             else "Mints custody your ecash. Add one to begin.",
-                            actionLabel = if (!hasMints) "Add mint" else null,
+                            actionLabel = if (!hasMints) "Add Mint" else null,
                             onAction = if (!hasMints) onOpenMints else null,
                             modifier = Modifier.height(emptyHeight),
                         )
@@ -424,7 +424,7 @@ private fun PinnedTop(
             IconButton(onClick = onScan) {
                 ToolbarIcon(
                     imageVector = Icons.Outlined.QrCodeScanner,
-                    contentDescription = "Scan QR",
+                    contentDescription = "Scan QR Code",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }

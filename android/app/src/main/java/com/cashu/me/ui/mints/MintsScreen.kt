@@ -172,12 +172,12 @@ fun MintsScreen(
                             modifier = Modifier.size(CashuTheme.spacing.loose),
                         )
                     },
-                    title = "Add mint",
+                    title = "Add Mint",
                     onClick = {
                         addMintInitialUrl = ""
                         addMintOpen = true
                     },
-                    modifier = Modifier.semantics { contentDescription = "Add mint" },
+                    modifier = Modifier.semantics { contentDescription = "Add Mint" },
                 )
             }
 
@@ -197,7 +197,7 @@ fun MintsScreen(
                             modifier = Modifier.size(CashuTheme.spacing.loose),
                         )
                     },
-                    title = "Discover mints",
+                    title = "Discover Mints",
                     onClick = { discoveryOpen = true },
                 )
             }

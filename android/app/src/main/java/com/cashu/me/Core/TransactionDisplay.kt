@@ -16,21 +16,24 @@ data class TransactionDetailField(
 object TransactionDisplay {
     // Kind-first, capitalized kind, lowercase verb — single source of truth for
     // rows AND the detail title, so a row and the sheet it opens read identically.
-    fun title(transaction: WalletTransaction): String = when (transaction.kind) {
-        TransactionKind.Lightning -> if (transaction.type == TransactionType.Incoming) {
-            "Lightning received"
-        } else {
-            "Lightning paid"
-        }
-        TransactionKind.Onchain -> if (transaction.type == TransactionType.Incoming) {
-            "Bitcoin received"
-        } else {
-            "Bitcoin sent"
-        }
-        TransactionKind.Ecash -> if (transaction.type == TransactionType.Incoming) {
-            "Ecash received"
-        } else {
-            "Ecash sent"
+    fun title(transaction: WalletTransaction): String {
+        if (transaction.isPendingReceiveToken) return "Ecash to claim"
+        return when (transaction.kind) {
+            TransactionKind.Lightning -> if (transaction.type == TransactionType.Incoming) {
+                "Lightning received"
+            } else {
+                "Lightning paid"
+            }
+            TransactionKind.Onchain -> if (transaction.type == TransactionType.Incoming) {
+                "Bitcoin received"
+            } else {
+                "Bitcoin sent"
+            }
+            TransactionKind.Ecash -> if (transaction.type == TransactionType.Incoming) {
+                "Ecash received"
+            } else {
+                "Ecash sent"
+            }
         }
     }
 

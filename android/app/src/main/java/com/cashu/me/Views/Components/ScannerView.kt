@@ -174,7 +174,7 @@ fun ScannerView(
         CameraPermissionView(
             title = "Camera unavailable",
             message = message,
-            actionText = "Try again",
+            actionText = "Try Again",
             onAction = { cameraError = null },
             onClose = onClose,
         )
@@ -250,7 +250,7 @@ private fun ScannerStatusOverlay(
     ) {
         if (progress > 0f && progress < 1f) {
             Text(
-                text = "Scanning animated QR...",
+                text = "Scanning Animated QR...",
                 color = Color.White,
                 style = MaterialTheme.typography.bodyMedium,
             )
@@ -262,7 +262,7 @@ private fun ScannerStatusOverlay(
             )
         } else {
             Text(
-                text = "Scan Cashu token, payment request, invoice, or Bitcoin address",
+                text = "Scan Cashu Token, Payment Request, or Bitcoin Address",
                 color = Color.White,
                 style = MaterialTheme.typography.bodyMedium,
                 textAlign = TextAlign.Center,

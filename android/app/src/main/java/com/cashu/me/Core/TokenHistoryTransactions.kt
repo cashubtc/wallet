@@ -39,6 +39,7 @@ internal fun pendingReceiveTokenTransactions(tokens: List<PendingReceiveToken>):
             token = token.token,
             unit = token.unit,
             isPendingToken = true,
+            isPendingReceiveToken = true,
         )
     }
 
