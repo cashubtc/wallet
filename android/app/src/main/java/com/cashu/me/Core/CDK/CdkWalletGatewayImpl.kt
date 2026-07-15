@@ -695,7 +695,13 @@ class CdkWalletGatewayImpl : CdkWalletGateway, NwcServiceGateway {
         mintUrl = mintUrl,
         paymentMethod = quote?.paymentMethod?.toDomain() ?: fallbackQuote?.paymentMethod,
         request = quote?.request ?: fallbackQuote?.request,
-        settlement = MeltSettlement.Settled,
+        // wait()/confirm can finish paid or failed (compensated). Only paid is settled.
+        settlement = when (state) {
+            CdkQuoteState.PAID,
+            CdkQuoteState.ISSUED -> MeltSettlement.Settled
+            CdkQuoteState.UNPAID,
+            CdkQuoteState.PENDING -> MeltSettlement.Failed
+        },
     )
 
     private fun CdkNotificationPayload.referencesMintQuote(quoteId: String): Boolean = when (this) {

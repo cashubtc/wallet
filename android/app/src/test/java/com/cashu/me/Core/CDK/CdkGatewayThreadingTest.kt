@@ -60,6 +60,10 @@ class CdkGatewayThreadingTest {
         assertFalse(waitBlock.contains("prepareMelt("))
         assertFalse(waitBlock.contains("= cdkCall"))
         assertTrue(source.contains(".checkMeltQuoteStatus(quoteId)"))
+        // wait()/confirm must map FinalizedMelt.state — unpaid is Failed, not Settled.
+        assertTrue(source.contains("when (state)"))
+        assertTrue(source.contains("MeltSettlement.Failed"))
+        assertTrue(source.contains("CdkQuoteState.UNPAID"))
     }
 
     @Test
@@ -71,6 +75,25 @@ class CdkGatewayThreadingTest {
 
         assertTrue(source.contains(".recoverIncompleteSagas()"))
         assertTrue(source.contains(".refreshKeysets()"))
+    }
+
+    @Test
+    fun pendingMeltResyncTreatsUnpaidAsTerminalFailure() {
+        val source = sourceFile(
+            "src/main/java/com/cashu/me/Core/Wallet/WalletManager.kt",
+            "app/src/main/java/com/cashu/me/Core/Wallet/WalletManager.kt",
+        ).readText()
+
+        val syncStart = source.indexOf("suspend fun syncPendingMeltQuotes")
+        val syncEnd = source.indexOf("private fun watchPendingMelt", syncStart)
+        assertTrue("Missing pending melt resync", syncStart >= 0 && syncEnd > syncStart)
+        val syncBlock = source.substring(syncStart, syncEnd)
+        assertTrue(syncBlock.contains("MeltQuoteState.Failed"))
+        assertTrue(syncBlock.contains("MeltQuoteState.Unpaid"))
+        assertTrue(syncBlock.contains("MeltSettlement.Failed"))
+        // Still in-flight only:
+        assertTrue(syncBlock.contains("MeltQuoteState.Pending"))
+        assertTrue(syncBlock.contains("MeltQuoteState.Unknown"))
     }
 
     private fun sourceFile(vararg candidates: String): File {

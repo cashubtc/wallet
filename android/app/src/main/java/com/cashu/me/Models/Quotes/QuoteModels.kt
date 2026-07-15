@@ -67,6 +67,8 @@ data class MeltQuoteInfo(
 enum class MeltSettlement {
     Settled,
     Pending,
+    /** Async-accepted melt that the mint later reported as unpaid/compensated. */
+    Failed,
 }
 
 @Serializable

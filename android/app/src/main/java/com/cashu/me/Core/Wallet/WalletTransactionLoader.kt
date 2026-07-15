@@ -146,10 +146,10 @@ internal class WalletTransactionLoader(
             },
             dateEpochMillis = existing?.dateEpochMillis ?: System.currentTimeMillis(),
             memo = existing?.memo,
-            status = if (result.settlement == MeltSettlement.Pending) {
-                TransactionStatus.Pending
-            } else {
-                TransactionStatus.Completed
+            status = when (result.settlement) {
+                MeltSettlement.Pending -> TransactionStatus.Pending
+                MeltSettlement.Settled -> TransactionStatus.Completed
+                MeltSettlement.Failed -> TransactionStatus.Failed
             },
             mintUrl = result.mintUrl,
             preimage = result.preimage ?: existing?.preimage,

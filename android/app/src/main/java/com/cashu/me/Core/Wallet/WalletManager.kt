@@ -647,12 +647,28 @@ class WalletManager(
                                 forgetPendingMeltQuote(quoteId)
                                 changed = true
                             }
-                            MeltQuoteState.Failed -> {
+                            // After async accept, Unpaid is terminal: the mint failed the
+                            // payment and the CDK saga compensated (proofs returned). Same
+                            // as iOS. Failed is kept for domain completeness.
+                            MeltQuoteState.Failed,
+                            MeltQuoteState.Unpaid -> {
+                                transactionLoader.saveMeltPaymentMetadata(
+                                    quoteId = quoteId,
+                                    result = MeltPaymentResult(
+                                        preimage = null,
+                                        amount = quote.amount,
+                                        feePaid = quote.feeReserve,
+                                        mintUrl = quote.mintUrl.ifBlank { mintUrl },
+                                        paymentMethod = quote.paymentMethod,
+                                        request = quote.request,
+                                        settlement = MeltSettlement.Failed,
+                                    ),
+                                    persistFee = false,
+                                )
                                 forgetPendingMeltQuote(quoteId)
                                 changed = true
                             }
                             MeltQuoteState.Pending,
-                            MeltQuoteState.Unpaid,
                             MeltQuoteState.Unknown -> Unit
                         }
                     }
@@ -671,7 +687,13 @@ class WalletManager(
         scope.launch(Dispatchers.IO) {
             try {
                 val finalized = gateway.awaitPendingMelt(quoteId).firstOrNull() ?: return@launch
-                transactionLoader.saveMeltPaymentMetadata(quoteId, finalized)
+                // Settled or Failed only — wait() never leaves a mid-flight pending.
+                // Non-paid states must not be written as Completed.
+                transactionLoader.saveMeltPaymentMetadata(
+                    quoteId = quoteId,
+                    result = finalized,
+                    persistFee = finalized.settlement == MeltSettlement.Settled,
+                )
                 forgetPendingMeltQuote(quoteId)
                 refreshBalance()
                 loadTransactions()
