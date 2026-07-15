@@ -2,6 +2,7 @@ package com.cashu.me.Core
 
 import java.net.URL
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -10,6 +11,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -21,6 +23,8 @@ import com.cashu.me.Core.Protocols.StorageKeys
 import com.cashu.me.Core.Protocols.WalletServiceProtocol
 import com.cashu.me.Models.MeltPaymentResult
 import com.cashu.me.Models.MeltQuoteInfo
+import com.cashu.me.Models.MeltQuoteState
+import com.cashu.me.Models.MeltSettlement
 import com.cashu.me.Models.MintInfo
 import com.cashu.me.Models.MintQuoteInfo
 import com.cashu.me.Models.PaymentMethodKind
@@ -49,6 +53,9 @@ class WalletManager(
     private val mutableState = MutableStateFlow(WalletState())
     val state: StateFlow<WalletState> = mutableState.asStateFlow()
     private val initializationMutex = Mutex()
+    private val pendingMeltSyncMutex = Mutex()
+    private val pendingMeltStoreMutex = Mutex()
+    private val pendingMeltWatchers = ConcurrentHashMap.newKeySet<String>()
     private val mintMetadataFetcher = WalletMintMetadataFetcher()
     private val mintQuoteSyncService = WalletMintQuoteSyncService(gateway, walletStore)
     private val transactionLoader = WalletTransactionLoader(walletStore, gateway)
@@ -113,10 +120,101 @@ class WalletManager(
             if (hasStoredWallet) {
                 runCatching { refreshBalance() }
                     .onFailure { AppLogger.wallet.error("Deferred balance refresh failed", it) }
+
+                val recoveredWalletState = runCatching { performBestEffortWalletStartupMaintenance() }
+                    .onFailure { AppLogger.wallet.error("Deferred wallet maintenance failed", it) }
+                    .getOrDefault(false)
+                if (recoveredWalletState) {
+                    runCatching {
+                        refreshBalance()
+                        loadTransactions()
+                    }.onFailure { AppLogger.wallet.error("Failed to refresh recovered wallet state", it) }
+                }
             }
             runCatching { nwcManager.startIfEnabled() }
                 .onFailure { AppLogger.wallet.error("Deferred NWC startup failed", it) }
         }
+    }
+
+    /**
+     * Mirrors iOS startup maintenance: recover CDK's persisted sagas for every
+     * tracked sat wallet, refresh keysets at most hourly, then re-arm melts that
+     * remain pending after CDK's single recovery poll.
+     */
+    private suspend fun performBestEffortWalletStartupMaintenance(): Boolean {
+        val mintUrls = trackedMintUrlsForWalletAccess()
+        if (mintUrls.isEmpty()) return false
+
+        val now = System.currentTimeMillis()
+        val storedTimestamps = walletStore.loadMintKeysetRefreshTimestamps()
+        val keysetRefreshTimestamps = storedTimestamps
+            .filterKeys { it in mintUrls }
+            .toMutableMap()
+        var timestampsChanged = keysetRefreshTimestamps != storedTimestamps
+        var recoveredWalletState = false
+
+        mintUrls.forEach { mintUrl ->
+            if (recoverIncompleteSagasIfNeeded(mintUrl)) {
+                recoveredWalletState = true
+            }
+            if (
+                refreshKeysetsIfNeeded(
+                    mintUrl = mintUrl,
+                    lastRefreshEpochMillis = keysetRefreshTimestamps[mintUrl],
+                    nowEpochMillis = now,
+                )
+            ) {
+                keysetRefreshTimestamps[mintUrl] = now
+                timestampsChanged = true
+            }
+        }
+
+        if (timestampsChanged) {
+            walletStore.saveMintKeysetRefreshTimestamps(keysetRefreshTimestamps)
+        }
+
+        runCatching { syncPendingMeltQuotes() }
+            .onFailure { AppLogger.wallet.error("Failed to resume pending melts during startup", it) }
+        return recoveredWalletState
+    }
+
+    private suspend fun recoverIncompleteSagasIfNeeded(mintUrl: String): Boolean {
+        return runCatching { gateway.recoverIncompleteSagas(mintUrl) }
+            .onSuccess { report ->
+                if (report.hasActivity) {
+                    AppLogger.wallet.info(
+                        "Recovered wallet sagas for mint $mintUrl: " +
+                            "recovered=${report.recovered} compensated=${report.compensated} " +
+                            "skipped=${report.skipped} failed=${report.failed}",
+                    )
+                }
+            }
+            .onFailure { AppLogger.wallet.error("Failed to recover wallet sagas for mint $mintUrl", it) }
+            .getOrNull()
+            ?.changedWalletState == true
+    }
+
+    private suspend fun refreshKeysetsIfNeeded(
+        mintUrl: String,
+        lastRefreshEpochMillis: Long?,
+        nowEpochMillis: Long,
+    ): Boolean {
+        if (!WalletStartupPolicy.shouldRefreshKeysets(lastRefreshEpochMillis, nowEpochMillis)) return false
+
+        return runCatching { gateway.refreshKeysets(mintUrl) }
+            .onSuccess { count -> AppLogger.wallet.info("Refreshed $count keysets for mint $mintUrl") }
+            .onFailure { AppLogger.wallet.error("Failed to refresh keysets for mint $mintUrl", it) }
+            .isSuccess
+    }
+
+    private fun trackedMintUrlsForWalletAccess(): List<String> {
+        val urls = linkedSetOf<String>()
+        mutableState.value.activeMint?.url?.takeIf(String::isNotBlank)?.let(urls::add)
+        mutableState.value.mints
+            .map(MintInfo::url)
+            .filter(String::isNotBlank)
+            .forEach(urls::add)
+        return urls.toList()
     }
 
     override suspend fun createNewWallet() {
@@ -495,11 +593,130 @@ class WalletManager(
     override suspend fun meltTokens(quoteId: String, mintUrl: String?): MeltPaymentResult =
         withLoadingResult {
             val result = gateway.meltTokens(quoteId, mintUrl)
-            transactionLoader.saveMeltPaymentMetadata(quoteId, result)
-            refreshBalance()
-            loadTransactions()
+            if (result.settlement == MeltSettlement.Pending) {
+                rememberPendingMeltQuote(quoteId, result.mintUrl)
+            }
+            // Once CDK accepts the melt, local bookkeeping must not turn that
+            // outcome into a user-visible payment failure and encourage a retry.
+            runCatching { transactionLoader.saveMeltPaymentMetadata(quoteId, result) }
+                .onFailure { AppLogger.wallet.error("Failed to save melt metadata for $quoteId", it) }
+            runCatching {
+                refreshBalance()
+                loadTransactions()
+            }.onFailure { AppLogger.wallet.error("Failed to refresh after melt $quoteId", it) }
+            if (result.settlement == MeltSettlement.Pending) {
+                // Start waiting only after the pending row is stored, otherwise a
+                // fast settlement could be overwritten by the pending metadata.
+                watchPendingMelt(quoteId)
+            }
             result
         }
+
+    /**
+     * Reconcile async-accepted NUT-05 melts after launch/foreground. A pending
+     * quote is never paid again; CDK only checks the existing quote and completes
+     * its persisted saga when the mint reports a terminal state.
+     */
+    suspend fun syncPendingMeltQuotes() {
+        pendingMeltSyncMutex.withLock {
+            val tracked = pendingMeltStoreMutex.withLock { walletStore.loadPendingMeltQuotes() }
+            if (tracked.isEmpty()) return@withLock
+
+            var changed = false
+            tracked.forEach { (quoteId, mintUrl) ->
+                if (quoteId in pendingMeltWatchers) return@forEach
+                runCatching { gateway.checkMeltQuoteStatus(quoteId, mintUrl) }
+                    .onSuccess { quote ->
+                        when (quote.state) {
+                            MeltQuoteState.Paid -> {
+                                transactionLoader.saveMeltPaymentMetadata(
+                                    quoteId = quoteId,
+                                    result = MeltPaymentResult(
+                                        preimage = quote.paymentProof,
+                                        amount = quote.amount,
+                                        feePaid = quote.feeReserve,
+                                        mintUrl = quote.mintUrl,
+                                        paymentMethod = quote.paymentMethod,
+                                        request = quote.request,
+                                        settlement = MeltSettlement.Settled,
+                                    ),
+                                    // A status response exposes the reserve, not the final fee.
+                                    // Let CDK's transaction row supply the exact fee when available.
+                                    persistFee = false,
+                                )
+                                forgetPendingMeltQuote(quoteId)
+                                changed = true
+                            }
+                            // After async accept, Unpaid is terminal: the mint failed the
+                            // payment and the CDK saga compensated (proofs returned). Same
+                            // as iOS. Failed is kept for domain completeness.
+                            MeltQuoteState.Failed,
+                            MeltQuoteState.Unpaid -> {
+                                transactionLoader.saveMeltPaymentMetadata(
+                                    quoteId = quoteId,
+                                    result = MeltPaymentResult(
+                                        preimage = null,
+                                        amount = quote.amount,
+                                        feePaid = quote.feeReserve,
+                                        mintUrl = quote.mintUrl.ifBlank { mintUrl },
+                                        paymentMethod = quote.paymentMethod,
+                                        request = quote.request,
+                                        settlement = MeltSettlement.Failed,
+                                    ),
+                                    persistFee = false,
+                                )
+                                forgetPendingMeltQuote(quoteId)
+                                changed = true
+                            }
+                            MeltQuoteState.Pending,
+                            MeltQuoteState.Unknown -> Unit
+                        }
+                    }
+                    .onFailure { error ->
+                        AppLogger.wallet.error("Pending melt status check failed for $quoteId", error)
+                    }
+            }
+
+            if (changed) refreshBalance()
+            loadTransactions()
+        }
+    }
+
+    private fun watchPendingMelt(quoteId: String) {
+        if (!pendingMeltWatchers.add(quoteId)) return
+        scope.launch(Dispatchers.IO) {
+            try {
+                val finalized = gateway.awaitPendingMelt(quoteId).firstOrNull() ?: return@launch
+                // Settled or Failed only — wait() never leaves a mid-flight pending.
+                // Non-paid states must not be written as Completed.
+                transactionLoader.saveMeltPaymentMetadata(
+                    quoteId = quoteId,
+                    result = finalized,
+                    persistFee = finalized.settlement == MeltSettlement.Settled,
+                )
+                forgetPendingMeltQuote(quoteId)
+                refreshBalance()
+                loadTransactions()
+            } catch (error: Throwable) {
+                // Keep the durable quote record. Foreground/startup reconciliation retries it.
+                AppLogger.wallet.error("Pending melt wait failed for $quoteId", error)
+            } finally {
+                pendingMeltWatchers.remove(quoteId)
+            }
+        }
+    }
+
+    private suspend fun rememberPendingMeltQuote(quoteId: String, mintUrl: String) {
+        pendingMeltStoreMutex.withLock {
+            walletStore.savePendingMeltQuotes(walletStore.loadPendingMeltQuotes() + (quoteId to mintUrl))
+        }
+    }
+
+    private suspend fun forgetPendingMeltQuote(quoteId: String) {
+        pendingMeltStoreMutex.withLock {
+            walletStore.savePendingMeltQuotes(walletStore.loadPendingMeltQuotes() - quoteId)
+        }
+    }
 
     override suspend fun sendTokens(amount: Long, memo: String?, p2pkPubkey: String?, mintUrl: String?, unit: String): SendTokenResult {
         val selectedMint = mintUrl ?: mutableState.value.activeMint?.url ?: throw IllegalStateException("No active mint.")

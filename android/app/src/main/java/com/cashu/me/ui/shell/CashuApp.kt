@@ -113,6 +113,7 @@ private fun CashuAppContent(container: AppContainer) {
             if (settings.checkPendingOnStartup && settings.checkSentTokens) {
                 container.walletManager.checkAllPendingTokens()
             }
+            container.walletManager.syncPendingMeltQuotes()
         } else {
             container.cashuRequestListener.stop()
         }
@@ -125,6 +126,11 @@ private fun CashuAppContent(container: AppContainer) {
                 Lifecycle.Event.ON_RESUME -> {
                     container.appLockManager.appBecameActive()
                     container.cashuRequestListener.start()
+                    if (event == Lifecycle.Event.ON_START) {
+                        container.walletManager.launch {
+                            container.walletManager.syncPendingMeltQuotes()
+                        }
+                    }
                 }
                 Lifecycle.Event.ON_PAUSE,
                 Lifecycle.Event.ON_STOP -> {

@@ -1,5 +1,6 @@
 package com.cashu.me.Core.CDK
 
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -18,6 +19,7 @@ import com.cashu.me.Core.PaymentRequestParser
 import com.cashu.me.Models.MeltPaymentResult
 import com.cashu.me.Models.MeltQuoteInfo
 import com.cashu.me.Models.MeltQuoteState
+import com.cashu.me.Models.MeltSettlement
 import com.cashu.me.Models.MintInfo
 import com.cashu.me.Models.MintQuoteInfo
 import com.cashu.me.Models.NutSupport
@@ -33,7 +35,9 @@ import org.cashudevkit.Amount as CdkAmount
 import org.cashudevkit.BackupOptions as CdkBackupOptions
 import org.cashudevkit.BitcoinNetwork as CdkBitcoinNetwork
 import org.cashudevkit.CurrencyUnit as CdkCurrencyUnit
+import org.cashudevkit.FinalizedMelt as CdkFinalizedMelt
 import org.cashudevkit.MeltQuote as CdkMeltQuote
+import org.cashudevkit.MeltConfirmOutcome as CdkMeltConfirmOutcome
 import org.cashudevkit.MintInfo as CdkMintInfo
 import org.cashudevkit.MintQuote as CdkMintQuote
 import org.cashudevkit.MintUrl as CdkMintUrl
@@ -41,6 +45,7 @@ import org.cashudevkit.NotificationPayload as CdkNotificationPayload
 import org.cashudevkit.NwcService as CdkNwcService
 import org.cashudevkit.P2pkLockedProofSendMode as CdkP2pkLockedProofSendMode
 import org.cashudevkit.PaymentMethod as CdkPaymentMethod
+import org.cashudevkit.PendingMelt as CdkPendingMelt
 import org.cashudevkit.QuoteState as CdkQuoteState
 import org.cashudevkit.ReceiveOptions as CdkReceiveOptions
 import org.cashudevkit.RestoreOptions as CdkRestoreOptions
@@ -66,9 +71,15 @@ import org.cashudevkit.nwcDeriveServiceSecretKeyFromSeed
 import org.cashudevkit.proofsTotalAmount
 
 class CdkWalletGatewayImpl : CdkWalletGateway, NwcServiceGateway {
+    private data class PendingMeltEntry(
+        val pending: CdkPendingMelt,
+        val quote: MeltQuoteInfo,
+    )
+
     private var database: CdkWalletSqliteDatabase? = null
     private var repository: CdkWalletRepository? = null
     private val operationMutex = Mutex()
+    private val pendingMeltEntries = ConcurrentHashMap<String, PendingMeltEntry>()
 
     override suspend fun initializeLogging(level: String) = cdkCall {
         initLogging(level)
@@ -147,6 +158,8 @@ class CdkWalletGatewayImpl : CdkWalletGateway, NwcServiceGateway {
     }
 
     private fun closeWalletRepositoryUnlocked() {
+        pendingMeltEntries.values.forEach { entry -> runCatching { entry.pending.close() } }
+        pendingMeltEntries.clear()
         runCatching { repository?.close() }
         runCatching { database?.close() }
         repository = null
@@ -182,6 +195,20 @@ class CdkWalletGatewayImpl : CdkWalletGateway, NwcServiceGateway {
             unspent = restored.unspent.value.toLong(),
             pending = restored.pending.value.toLong(),
         )
+    }
+
+    override suspend fun recoverIncompleteSagas(mintUrl: String, unit: String): WalletSagaRecoveryResult = cdkCall {
+        val report = walletFor(mintUrl, cdkUnit(unit)).recoverIncompleteSagas()
+        WalletSagaRecoveryResult(
+            recovered = report.recovered.toLong(),
+            compensated = report.compensated.toLong(),
+            skipped = report.skipped.toLong(),
+            failed = report.failed.toLong(),
+        )
+    }
+
+    override suspend fun refreshKeysets(mintUrl: String, unit: String): Int = cdkCall {
+        walletFor(mintUrl, cdkUnit(unit)).refreshKeysets().size
     }
 
     override suspend fun totalBalance(mintUrl: String): Long = cdkCall {
@@ -366,15 +393,59 @@ class CdkWalletGatewayImpl : CdkWalletGateway, NwcServiceGateway {
         val quote = database?.getMeltQuote(quoteId)
         val wallet = walletFor(mintUrl ?: quote?.mintUrl?.url ?: firstWallet().mintUrl().url)
         val prepared = wallet.prepareMelt(quoteId)
-        val finalized = prepared.confirm()
-        MeltPaymentResult(
-            preimage = finalized.preimage,
-            amount = finalized.amount.value.toLong(),
-            feePaid = finalized.feePaid.value.toLong(),
-            mintUrl = wallet.mintUrl().url,
-            paymentMethod = quote?.paymentMethod?.toDomain(),
-            request = quote?.request,
-        )
+        when (val outcome = prepared.confirmPreferAsync()) {
+            is CdkMeltConfirmOutcome.Paid -> outcome.finalized.toDomainMeltPayment(
+                mintUrl = wallet.mintUrl().url,
+                quote = quote,
+            )
+            is CdkMeltConfirmOutcome.Pending -> {
+                val pendingQuote = quote?.toDomain(fallbackMethod = quote.paymentMethod.toDomain())
+                    ?: run {
+                        outcome.pending.close()
+                        throw CdkGatewayUnavailable("No stored melt quote for $quoteId.")
+                    }
+                pendingMeltEntries.put(quoteId, PendingMeltEntry(outcome.pending, pendingQuote))
+                    ?.pending
+                    ?.close()
+                MeltPaymentResult(
+                    preimage = null,
+                    amount = pendingQuote.amount,
+                    feePaid = pendingQuote.feeReserve,
+                    mintUrl = wallet.mintUrl().url,
+                    paymentMethod = pendingQuote.paymentMethod,
+                    request = pendingQuote.request,
+                    settlement = MeltSettlement.Pending,
+                )
+            }
+        }
+    }
+
+    /**
+     * Wait outside [operationMutex]: this can remain suspended for a long time while
+     * CDK listens for NUT-17 updates. The saga is already durable, so cancellation or
+     * process death is recovered later through [checkMeltQuoteStatus].
+     */
+    override fun awaitPendingMelt(quoteId: String): Flow<MeltPaymentResult> = flow {
+        val entry = pendingMeltEntries.remove(quoteId) ?: return@flow
+        try {
+            emit(
+                entry.pending.wait().toDomainMeltPayment(
+                    mintUrl = entry.quote.mintUrl,
+                    quote = null,
+                    fallbackQuote = entry.quote,
+                ),
+            )
+        } finally {
+            entry.pending.close()
+        }
+    }.flowOn(Dispatchers.IO)
+
+    override suspend fun checkMeltQuoteStatus(quoteId: String, mintUrl: String): MeltQuoteInfo = cdkCall {
+        val stored = database?.getMeltQuote(quoteId)
+            ?: throw CdkGatewayUnavailable("No stored melt quote for $quoteId.")
+        walletFor(mintUrl, stored.unit)
+            .checkMeltQuoteStatus(quoteId)
+            .toDomain(fallbackMethod = stored.paymentMethod.toDomain())
     }
 
     override suspend fun sendEcashToken(amount: Long, memo: String?, p2pkPubkey: String?, mintUrl: String, unit: String, p2pkSigningKeys: List<String>): SendTokenResult = cdkCall {
@@ -612,6 +683,26 @@ class CdkWalletGatewayImpl : CdkWalletGateway, NwcServiceGateway {
         CdkQuoteState.PENDING -> MeltQuoteState.Pending
         CdkQuoteState.ISSUED -> MeltQuoteState.Paid
     }
+
+    private fun CdkFinalizedMelt.toDomainMeltPayment(
+        mintUrl: String,
+        quote: CdkMeltQuote?,
+        fallbackQuote: MeltQuoteInfo? = null,
+    ) = MeltPaymentResult(
+        preimage = preimage,
+        amount = amount.value.toLong(),
+        feePaid = feePaid.value.toLong(),
+        mintUrl = mintUrl,
+        paymentMethod = quote?.paymentMethod?.toDomain() ?: fallbackQuote?.paymentMethod,
+        request = quote?.request ?: fallbackQuote?.request,
+        // wait()/confirm can finish paid or failed (compensated). Only paid is settled.
+        settlement = when (state) {
+            CdkQuoteState.PAID,
+            CdkQuoteState.ISSUED -> MeltSettlement.Settled
+            CdkQuoteState.UNPAID,
+            CdkQuoteState.PENDING -> MeltSettlement.Failed
+        },
+    )
 
     private fun CdkNotificationPayload.referencesMintQuote(quoteId: String): Boolean = when (this) {
         is CdkNotificationPayload.MintQuoteUpdate -> quote.quote == quoteId

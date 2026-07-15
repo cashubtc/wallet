@@ -31,6 +31,8 @@ interface CdkWalletGateway {
     suspend fun removeWallet(mintUrl: String, unit: String = "sat")
     suspend fun fetchMintInfo(mintUrl: String): MintInfo?
     suspend fun restoreMint(mintUrl: String): RestoreMintResult
+    suspend fun recoverIncompleteSagas(mintUrl: String, unit: String = "sat"): WalletSagaRecoveryResult
+    suspend fun refreshKeysets(mintUrl: String, unit: String = "sat"): Int
     suspend fun totalBalance(mintUrl: String): Long
 
     /** Balance of the (mint, unit) wallet, registering the unit wallet if needed. */
@@ -51,6 +53,8 @@ interface CdkWalletGateway {
     suspend fun createMeltQuote(request: String, amountSats: Long? = null, preferredMintURL: String? = null): MeltQuoteInfo
     suspend fun listMeltQuotes(): List<MeltQuoteInfo>
     suspend fun meltTokens(quoteId: String, mintUrl: String? = null): MeltPaymentResult
+    fun awaitPendingMelt(quoteId: String): Flow<MeltPaymentResult>
+    suspend fun checkMeltQuoteStatus(quoteId: String, mintUrl: String): MeltQuoteInfo
     suspend fun sendEcashToken(amount: Long, memo: String?, p2pkPubkey: String?, mintUrl: String, unit: String = "sat", p2pkSigningKeys: List<String> = emptyList()): SendTokenResult
     suspend fun receiveEcashToken(tokenString: String, p2pkSigningKeys: List<String> = emptyList()): Long
     suspend fun receiveNfcEcashToken(
@@ -62,6 +66,19 @@ interface CdkWalletGateway {
     suspend fun checkTokenSpendable(token: String, mintUrl: String): Boolean
     suspend fun listTransactions(unitsByMint: Map<String, List<String>>): List<WalletTransaction>
     suspend fun payCashuPaymentRequest(encoded: String, customAmountSats: Long?, preferredMintURL: String?)
+}
+
+data class WalletSagaRecoveryResult(
+    val recovered: Long,
+    val compensated: Long,
+    val skipped: Long,
+    val failed: Long,
+) {
+    val changedWalletState: Boolean
+        get() = recovered > 0 || compensated > 0
+
+    val hasActivity: Boolean
+        get() = changedWalletState || skipped > 0 || failed > 0
 }
 
 data class ForeignNfcSettlement(

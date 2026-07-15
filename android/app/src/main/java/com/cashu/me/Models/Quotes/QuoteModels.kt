@@ -64,6 +64,14 @@ data class MeltQuoteInfo(
 }
 
 @Serializable
+enum class MeltSettlement {
+    Settled,
+    Pending,
+    /** Async-accepted melt that the mint later reported as unpaid/compensated. */
+    Failed,
+}
+
+@Serializable
 data class MeltPaymentResult(
     val preimage: String?,
     val amount: Long,
@@ -71,4 +79,5 @@ data class MeltPaymentResult(
     val mintUrl: String,
     val paymentMethod: PaymentMethodKind? = null,
     val request: String? = null,
+    val settlement: MeltSettlement = MeltSettlement.Settled,
 )

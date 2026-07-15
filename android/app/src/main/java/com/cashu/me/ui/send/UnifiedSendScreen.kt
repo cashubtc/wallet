@@ -69,6 +69,7 @@ import com.cashu.me.Core.Wallet.walletMessage
 import com.cashu.me.Core.WalletManager
 import com.cashu.me.Core.routeForCashuPaymentRequest
 import com.cashu.me.Models.MeltPaymentResult
+import com.cashu.me.Models.MeltSettlement
 import com.cashu.me.Models.MeltQuoteInfo
 import com.cashu.me.Models.MintInfo
 import com.cashu.me.Models.MintQuoteInfo
@@ -401,9 +402,10 @@ fun UnifiedSendScreen(
                 val sentAmount = current.result?.amount ?: confirmAmount
                 val sentFee = current.result?.feePaid ?: 0L
                 val sentMint = current.result?.mintUrl ?: activeMintUrl
+                val settlementPending = current.result?.settlement == MeltSettlement.Pending
                 PaymentStatusScreen(
                     phase = PaymentStatusPhase.Success,
-                    title = "Payment sent",
+                    title = if (settlementPending) "Payment processing" else "Payment sent",
                     onDone = onClose,
                     rows = {
                         if (sentAmount > 0L) {

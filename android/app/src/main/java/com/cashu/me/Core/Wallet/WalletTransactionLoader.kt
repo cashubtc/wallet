@@ -3,6 +3,7 @@ package com.cashu.me.Core
 import com.cashu.me.Core.CDK.CdkWalletGateway
 import com.cashu.me.Models.ClaimedToken
 import com.cashu.me.Models.MeltPaymentResult
+import com.cashu.me.Models.MeltSettlement
 import com.cashu.me.Models.MintInfo
 import com.cashu.me.Models.PaymentMethodKind
 import com.cashu.me.Models.PendingReceiveToken
@@ -121,11 +122,17 @@ internal class WalletTransactionLoader(
         return TokenHistoryMutation(pendingTokens = pending, claimedTokens = claimed)
     }
 
-    fun saveMeltPaymentMetadata(quoteId: String, result: MeltPaymentResult) {
+    fun saveMeltPaymentMetadata(
+        quoteId: String,
+        result: MeltPaymentResult,
+        persistFee: Boolean = result.settlement == MeltSettlement.Settled,
+    ) {
         result.preimage?.let { preimage ->
             walletStore.savePaymentPreimages(walletStore.loadPaymentPreimages() + (quoteId to preimage))
         }
-        walletStore.saveMeltQuoteFees(walletStore.loadMeltQuoteFees() + (quoteId to result.feePaid))
+        if (persistFee) {
+            walletStore.saveMeltQuoteFees(walletStore.loadMeltQuoteFees() + (quoteId to result.feePaid))
+        }
 
         val current = walletStore.loadTransactions()
         val existing = current.firstOrNull { it.quoteId == quoteId || it.id == quoteId }
@@ -139,11 +146,15 @@ internal class WalletTransactionLoader(
             },
             dateEpochMillis = existing?.dateEpochMillis ?: System.currentTimeMillis(),
             memo = existing?.memo,
-            status = TransactionStatus.Completed,
+            status = when (result.settlement) {
+                MeltSettlement.Pending -> TransactionStatus.Pending
+                MeltSettlement.Settled -> TransactionStatus.Completed
+                MeltSettlement.Failed -> TransactionStatus.Failed
+            },
             mintUrl = result.mintUrl,
             preimage = result.preimage ?: existing?.preimage,
             invoice = result.request ?: existing?.invoice,
-            fee = result.feePaid,
+            fee = if (persistFee) result.feePaid else existing?.fee ?: result.feePaid,
             unit = existing?.unit ?: "sat",
             quoteId = quoteId,
         )
