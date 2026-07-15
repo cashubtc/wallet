@@ -1711,9 +1711,9 @@ struct UnifiedSendView: View {
         // One scaffold for both the in-flight and resolved states so the amount hero shows
         // the instant paste → confirm lands and the fee rows fill in place (see
         // `meltConfirmRows`) — no bare-spinner screen, no view swap, matching the Cashu-
-        // request confirm. A quote-fetch *failure* still routes to the shared full-screen
-        // status (see `statusPhase`), so this loading state only shows while genuinely in
-        // flight. The Pay CTA stays in the footer below (kept for the dead-end / retry states).
+        // request confirm. Quote failures stay on this confirmation screen with an inline
+        // error and retry action; only an actual `meltTokens` attempt may enter the shared
+        // payment-failure screen.
         return VStack(spacing: 0) {
             PayFlowScaffold {
                 CurrencyAmountDisplay(sats: displayAmount, primary: $settings.amountDisplayPrimary)
@@ -1743,15 +1743,23 @@ struct UnifiedSendView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            Button(action: payMelt) {
+            Button(action: {
                 if meltQuote == nil {
+                    fetchMeltQuote()
+                } else {
+                    payMelt()
+                }
+            }) {
+                if isWorking {
                     ProgressView()
+                } else if meltQuote == nil {
+                    Text("Retry Quote")
                 } else {
                     Text("Pay \(displayAmount) sat")
                 }
             }
             .glassButton()
-            .disabled(meltQuote == nil || isWorking || !canPay)
+            .disabled(isWorking || (meltQuote != nil && !canPay))
             .padding(.horizontal)
             .padding(.bottom, 16)
         }
@@ -1852,18 +1860,7 @@ struct UnifiedSendView: View {
                 isCaution: errorSeverity == .caution,
                 isTerminal: terminal
             )
-        case .confirm:
-            // A melt quote that couldn't be built (already paid / expired / not enough
-            // balance / …) surfaces on the shared full-screen failure — same icon slot,
-            // position, and morph as processing/success — instead of a bespoke dead-end.
-            if case .melt = locked, meltQuote == nil, let errorMessage {
-                return .failure(
-                    message: errorMessage,
-                    isCaution: errorSeverity == .caution,
-                    isTerminal: meltFailureIsTerminal
-                )
-            }
-            return nil
+        case .confirm: return nil
         default:
             return nil
         }
@@ -1935,13 +1932,9 @@ struct UnifiedSendView: View {
             failureCTA: meltSwitchMintCTA,
             onDone: onClose,
             onRetry: {
-                // A quote-fetch failure stays on `.confirm` — re-run the quote. A pay
-                // failure (`.failed`) drops back to the confirm screen with its quote.
-                if step == .confirm {
-                    fetchMeltQuote()
-                } else {
-                    withAnimation(.smooth(duration: 0.3)) { step = .confirm }
-                }
+                // Only a failed payment reaches this status screen. Return to its
+                // already-created quote so retry still requires an explicit Pay tap.
+                withAnimation(.smooth(duration: 0.3)) { step = .confirm }
             }
         )
     }
@@ -1984,8 +1977,8 @@ struct UnifiedSendView: View {
                 meltQuote = quote
                 if let resolved = mintInfo(for: quote) { selectedMint = resolved }
             } catch {
-                // Animate the confirm → full-screen failure swap (statusPhase flips
-                // without a `step` change, so the implicit step animation won't fire).
+                // Quote creation is a preflight, not a payment. Keep its failure inline
+                // on confirm so it can never be presented as a failed melt.
                 withAnimation(.smooth(duration: 0.3)) { presentError(from: error) }
             }
         }
@@ -2754,9 +2747,12 @@ struct MeltView: View {
     @State private var amountString: String
     @State private var meltMode: MeltMode
     @State private var meltQuote: MeltQuoteInfo?
-    /// True while an explicitly auto-quoted, prefilled invoice is in flight until it resolves
-    /// (success, failure, or a guard that prevents fetching). Clipboard and inline-scanner
-    /// input deliberately stay on the request screen until the user taps Get Quote.
+    /// True while an auto-quote for an amount-carrying invoice is in flight (from mount, or
+    /// from a paste/scan into this field) until it resolves (success, failure, or a guard
+    /// that prevents fetching). Keeps the screen on the confirm layout (in a loading state)
+    /// instead of flashing / lingering on the input screen. Seeded in `init` for the
+    /// scanned/deep-link mount case and set in `applyDecodedSuggestion` for paste/scan; see
+    /// `meltViewStateKey`.
     @State private var isPreparingInitialQuote: Bool
     @State private var isGettingQuote = false
     @State private var isPaying = false
@@ -3489,10 +3485,15 @@ struct MeltView: View {
         dismissedClipboardSuggestion = true
         errorMessage = nil
 
-        // Pasting or scanning only fills the request. Even though creating a quote does not
-        // spend funds, it contacts a mint and can look like an attempted payment when the
-        // selected mint rejects the preflight (for example, due to insufficient balance).
-        // Keep that network action behind the explicit Get Quote button.
+        // Auto-quote when amount is locked. Flip to the loading-confirm layout first so the
+        // paste/scan slides into the confirm (amount hero + skeleton fees) instead of
+        // lingering on the input screen with a spinner in the Get Quote button — matches the
+        // scanned-invoice mount path. `requestInput` is already set above, so the confirm's
+        // amount hero reads the invoice amount immediately.
+        if PaymentRequestDecoder.amountLocked(result) {
+            isPreparingInitialQuote = true
+            getQuote()
+        }
     }
 
     private func getQuote() {
