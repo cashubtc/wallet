@@ -3,70 +3,71 @@ package com.cashu.me.Core
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.cashudevkit.NpubCashQuote
 
 class NPCServiceTest {
     @Test
-    fun parsesQuotesFromDataArray() {
-        val quotes = NPCService.parseQuotesJson(
-            """
-            {
-              "data": [
-                {
-                  "id": "quote-1",
-                  "amount": 21,
-                  "mint": "https://mint.example",
-                  "state": "PAID",
-                  "locked": true,
-                  "created_at": "2026-05-20T10:00:00Z",
-                  "paid_at": 1779271800
-                }
-              ]
-            }
-            """.trimIndent(),
+    fun mapsCdkQuoteWithoutReimplementingTheWireFormat() {
+        val quote = NPCService.fromCdkQuote(
+            NpubCashQuote(
+                id = "quote-1",
+                amount = 21uL,
+                unit = "sat",
+                createdAt = 1_779_271_200uL,
+                paidAt = 1_779_271_800uL,
+                expiresAt = 1_779_273_000uL,
+                mintUrl = "https://mint.example",
+                request = "lnbc1invoice",
+                state = "PAID",
+                locked = true,
+            ),
         )
 
-        assertEquals(1, quotes.size)
-        assertEquals("quote-1", quotes.first().id)
-        assertEquals(21, quotes.first().amount)
-        assertEquals("https://mint.example", quotes.first().mintUrl)
-        assertEquals(null, quotes.first().request)
-        assertTrue(quotes.first().isPaid)
-        assertTrue(quotes.first().locked)
-        assertEquals(1779271200L, quotes.first().createdAtEpochSeconds)
-        assertEquals(1779271800L, quotes.first().paidAtEpochSeconds)
+        assertEquals("quote-1", quote.id)
+        assertEquals(21, quote.amount)
+        assertEquals("https://mint.example", quote.mintUrl)
+        assertEquals("lnbc1invoice", quote.request)
+        assertTrue(quote.isPaid)
+        assertTrue(quote.locked)
+        assertEquals(1_779_271_200L, quote.createdAtEpochSeconds)
+        assertEquals(1_779_271_800L, quote.paidAtEpochSeconds)
+        assertEquals(1_779_273_000L, quote.expiryEpochSeconds)
     }
 
     @Test
-    fun parsesPaidBooleanAsPaidState() {
-        val quotes = NPCService.parseQuotesJson(
-            """{"data":{"quotes":[{"quote_id":"abc","amount_sats":"42","paid":true}]}}""",
+    fun mapsNullableCdkQuoteFields() {
+        val quote = NPCService.fromCdkQuote(
+            NpubCashQuote(
+                id = "quote-2",
+                amount = 42uL,
+                unit = "sat",
+                createdAt = 100uL,
+                paidAt = null,
+                expiresAt = null,
+                mintUrl = null,
+                request = null,
+                state = null,
+                locked = null,
+            ),
         )
 
-        assertEquals(1, quotes.size)
-        assertEquals("abc", quotes.first().id)
-        assertEquals(42, quotes.first().amount)
-        assertTrue(quotes.first().isPaid)
+        assertEquals(42, quote.amount)
+        assertEquals(null, quote.paidAtEpochSeconds)
+        assertEquals(null, quote.expiryEpochSeconds)
+        assertEquals(false, quote.locked)
     }
 
     @Test
-    fun parsesOptionalMintQuoteMetadata() {
-        val quotes = NPCService.parseQuotesJson(
-            """
-            {
-              "quotes": [{
-                "quote_id": "quote-2",
-                "amount_sats": "99",
-                "mint_url": "https://mint.example",
-                "payment_request": "lnbc1invoice",
-                "status": "PAID",
-                "expires_at": "2026-05-20T10:30:00Z"
-              }]
-            }
-            """.trimIndent(),
-        )
+    fun derivesStandardBip39Seed() {
+        val mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+        val expected =
+            "c55257c360c07c72029aebc1b53c05ed0362ada38ead3e3e9efa3708e5349553" +
+                "1f09a6987599d18264c1e1c92f2cf141630c7a3c4ab7c81b2f001698e7463b04"
 
-        assertEquals("lnbc1invoice", quotes.first().request)
-        assertEquals(1779273000L, quotes.first().expiryEpochSeconds)
+        val seedHex = walletBip39Seed(mnemonic, passphrase = "TREZOR")
+            .joinToString("") { "%02x".format(it) }
+
+        assertEquals(expected, seedHex)
     }
 
     @Test

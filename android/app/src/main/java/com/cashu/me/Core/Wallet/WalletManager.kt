@@ -1,6 +1,7 @@
 package com.cashu.me.Core
 
 import java.net.URL
+import java.text.Normalizer
 import java.util.UUID
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -28,6 +29,9 @@ import com.cashu.me.Models.PendingReceiveToken
 import com.cashu.me.Models.PendingToken
 import com.cashu.me.Models.RestoreMintResult
 import com.cashu.me.Models.SendTokenResult
+import org.bouncycastle.crypto.digests.SHA512Digest
+import org.bouncycastle.crypto.generators.PKCS5S2ParametersGenerator
+import org.bouncycastle.crypto.params.KeyParameter
 
 class WalletManager(
     private val secureStorage: SecureStorage,
@@ -778,11 +782,11 @@ class WalletManager(
             walletStore.removeAllWalletData()
             settingsManager.prepareForWalletReplacement()
             nostrService.resetForWalletBoundary(deleteStoredKey = false)
+            npcService.resetForWalletBoundary()
             openWalletRepositoryWithRecovery(mnemonic)
             deriveNostrKey(mnemonic)
             secureStorage.saveString(StorageKeys.secureWalletMnemonic, mnemonic)
             settingsManager.deleteWalletScopedSecrets(settingsSnapshot, deleteNostrPrivateKey = true)
-            npcService.resetForWalletBoundary()
             nostrMintBackupService.resetForWalletBoundary()
             databasePathManager.removeWalletFileBackups(backups)
             loadCachedState(needsOnboarding = needsOnboarding)
@@ -890,16 +894,18 @@ class WalletManager(
     }
 
     private suspend fun deriveNostrKey(mnemonic: String) {
-        // iOS parity (WalletManager+NPC.initializeNostrKeypairLocally): the Nostr
-        // seed is sha256(mnemonic utf8) — NOT the BIP39 entropy, which is only
-        // 16 bytes for a 12-word mnemonic and would fail the ≥32-byte check.
-        // The same seed phrase must derive the same Nostr/P2PK identity on both
-        // platforms so locked ecash stays recoverable across them.
+        // The app's legacy Nostr/P2PK identity remains sha256(mnemonic utf8).
         runCatching {
             val seed = java.security.MessageDigest.getInstance("SHA-256")
                 .digest(mnemonic.toByteArray(Charsets.UTF_8))
             nostrService.deriveKeypairFromSeed(seed)
         }.onFailure { AppLogger.wallet.error("Nostr key derivation failed", it) }
+
+        // npub.cash is a separate NIP-06 identity derived by CDK from the
+        // 64-byte BIP39 seed. This matches iOS WalletManager+NPC exactly.
+        runCatching {
+            npcService.initializeWithSeed(walletBip39Seed(mnemonic))
+        }.onFailure { AppLogger.wallet.error("npub.cash key derivation failed", it) }
     }
 
     private suspend fun openWalletRepositoryWithRecovery(mnemonic: String) {
@@ -938,4 +944,14 @@ class WalletManager(
     fun reopenOnboarding() {
         update { copy(needsOnboarding = true, canExitOnboarding = true) }
     }
+}
+
+/** BIP39 PBKDF2-HMAC-SHA512 seed, with the NFKD normalization required by BIP39. */
+internal fun walletBip39Seed(mnemonic: String, passphrase: String = ""): ByteArray {
+    val password = Normalizer.normalize(mnemonic, Normalizer.Form.NFKD).toByteArray(Charsets.UTF_8)
+    val salt = Normalizer.normalize("mnemonic$passphrase", Normalizer.Form.NFKD).toByteArray(Charsets.UTF_8)
+    val generator = PKCS5S2ParametersGenerator(SHA512Digest()).apply {
+        init(password, salt, 2_048)
+    }
+    return (generator.generateDerivedParameters(512) as KeyParameter).key
 }
