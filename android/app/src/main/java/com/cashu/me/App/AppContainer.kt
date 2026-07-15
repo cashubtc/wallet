@@ -52,7 +52,7 @@ class AppContainer(context: Context) {
         },
         relayProvider = { settingsManager.state.value.nostrRelays },
     )
-    val npcService = NPCService(appContext, nostrService, settingsManager)
+    val npcService = NPCService(appContext, settingsManager)
     val nostrMintBackupService = NostrMintBackupService(settingsManager, settingsStore, cdkGateway)
     val walletManager = WalletManager(
         secureStorage = secureStorage,

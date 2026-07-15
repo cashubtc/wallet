@@ -11,22 +11,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.booleanOrNull
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.longOrNull
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import com.cashu.me.Core.Protocols.StorageKeys
+import org.cashudevkit.NpubCashClient
+import org.cashudevkit.NpubCashQuote
+import org.cashudevkit.npubcashDeriveSecretKeyFromSeed
+import org.cashudevkit.npubcashGetPubkey
 
 data class NPCQuote(
     val id: String,
@@ -64,18 +55,19 @@ interface NPCQuoteClaimHandler {
 
 class NPCService(
     context: Context,
-    private val nostrService: NostrService,
     private val settingsManager: SettingsManager,
 ) {
     private val prefs = context.applicationContext.getSharedPreferences("npc_store", Context.MODE_PRIVATE)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private val client = OkHttpClient()
-    private val json = Json { ignoreUnknownKeys = true }
     private val baseUrl = "https://npubx.cash"
     private val domain = "npubx.cash"
     private val refreshIntervalMillis = 120_000L
     private var refreshJob: Job? = null
     private var paymentCheckJob: Job? = null
+    private val connectionMutex = Mutex()
+    private var client: NpubCashClient? = null
+    private var nostrSecretKey: String? = null
+    private var nostrPublicKey: String? = null
     var quoteClaimHandler: NPCQuoteClaimHandler? = null
 
     private val mutableState = MutableStateFlow(loadInitialState())
@@ -83,24 +75,32 @@ class NPCService(
 
     init {
         scope.launch {
-            nostrService.state.collect { nostr ->
-                val lightningAddress = nostrService.seedDerivedLightningAddress(domain)
-                update {
-                    copy(
-                        lightningAddress = lightningAddress,
-                        isInitialized = nostr.isInitialized && nostrService.hasSeedDerivedKey(),
-                    )
-                }
-                if (mutableState.value.isEnabled && nostr.isInitialized) {
-                    connect()
-                }
-            }
-        }
-        scope.launch {
             settingsManager.state.collect {
                 applyPollingPreferences()
             }
         }
+    }
+
+    /**
+     * Initializes the npub.cash identity exactly as CDK does on iOS: derive the
+     * NIP-06 key from the 64-byte BIP39 seed, not from the wallet's legacy
+     * Nostr/P2PK key.
+     */
+    fun initializeWithSeed(seed: ByteArray) {
+        val secretKey = npubcashDeriveSecretKeyFromSeed(seed)
+        val publicKey = npubcashGetPubkey(secretKey)
+        val npub = Bech32.encode("npub", NostrService.hexToBytes(publicKey))
+
+        nostrSecretKey = secretKey
+        nostrPublicKey = publicKey
+        update {
+            copy(
+                lightningAddress = "$npub@$domain",
+                isInitialized = true,
+                errorMessage = null,
+            )
+        }
+        if (mutableState.value.isEnabled) scope.launch { connect() }
     }
 
     fun setEnabled(value: Boolean) {
@@ -122,10 +122,10 @@ class NPCService(
         scope.launch {
             update { copy(isLoading = true, errorMessage = null) }
             val result = runCatching {
+                if (client == null) connect()
                 setRemoteMint(mintUrl)
             }
-            result.onSuccess { configuredMint ->
-                val selected = configuredMint ?: mintUrl
+            result.onSuccess { selected ->
                 prefs.edit().putString(StorageKeys.npcSelectedMint, selected).apply()
                 update {
                     copy(
@@ -139,13 +139,10 @@ class NPCService(
             }.onFailure { error ->
                 update {
                     copy(
-                        selectedMintUrl = mintUrl,
-                        configuredMintUrl = configuredMintUrl,
                         isLoading = false,
                         errorMessage = error.message ?: "Failed to update npub.cash mint.",
                     )
                 }
-                prefs.edit().putString(StorageKeys.npcSelectedMint, mintUrl).apply()
             }
         }
     }
@@ -164,51 +161,80 @@ class NPCService(
             .remove(StorageKeys.npcLastCheck)
             .apply()
         mutableState.value = NPCState()
+        client?.close()
+        client = null
+        nostrSecretKey = null
+        nostrPublicKey = null
     }
 
     private suspend fun connect() {
-        val current = mutableState.value
-        if (!current.isEnabled || !current.isInitialized) {
-            update {
-                copy(
-                    isConnected = false,
-                    errorMessage = if (current.isEnabled) "Nostr keys are not initialized." else null,
-                )
+        connectionMutex.withLock {
+            val current = mutableState.value
+            val secretKey = nostrSecretKey
+            if (!current.isEnabled || !current.isInitialized || secretKey == null) {
+                update {
+                    copy(
+                        isConnected = false,
+                        errorMessage = if (current.isEnabled) "npub.cash keys are not initialized." else null,
+                    )
+                }
+                return@withLock
             }
-            return
-        }
-        update { copy(isLoading = true, errorMessage = null) }
-        val result = runCatching {
-            fetchQuotes()
-        }
-        result.onSuccess { quotes ->
-            val configured = mutableState.value.selectedMintUrl
-                ?: quotes.firstNotNullOfOrNull { it.mintUrl }
-                ?: ""
-            if (configured.isNotBlank()) prefs.edit().putString(StorageKeys.npcSelectedMint, configured).apply()
+            client?.close()
+            client = null
+            update { copy(isConnected = false, isLoading = true, errorMessage = null) }
+            val result = runCatching {
+                val connectedClient = NpubCashClient(baseUrl = baseUrl, nostrSecretKey = secretKey)
+                try {
+                    val quotes = connectedClient.getQuotes(since = null).map(::fromCdkQuote)
+                    val selected = mutableState.value.selectedMintUrl
+                    val configured = if (selected != null) {
+                        runCatching { connectedClient.setMintUrl(mintUrl = selected) }
+                            .getOrNull()
+                            ?.takeUnless { it.error }
+                            ?.mintUrl
+                            ?: selected
+                    } else {
+                        quotes.firstNotNullOfOrNull { it.mintUrl }.orEmpty()
+                    }
+                    ConnectedNPCClient(connectedClient, configured)
+                } catch (error: Throwable) {
+                    connectedClient.close()
+                    throw error
+                }
+            }
+            val connected = result.getOrElse { error ->
+                update {
+                    copy(
+                        isConnected = false,
+                        isLoading = false,
+                        errorMessage = error.message ?: "Not connected to npub.cash.",
+                    )
+                }
+                return@withLock
+            }
+            if (!mutableState.value.isEnabled || nostrSecretKey != secretKey) {
+                connected.client.close()
+                update { copy(isConnected = false, isLoading = false) }
+                return@withLock
+            }
+            client = connected.client
             update {
                 copy(
-                    configuredMintUrl = configured,
-                    selectedMintUrl = configured.ifBlank { selectedMintUrl },
+                    configuredMintUrl = connected.configuredMintUrl,
                     isConnected = true,
                     isLoading = false,
                     errorMessage = null,
                 )
             }
             applyPollingPreferences()
-        }.onFailure { error ->
-            update {
-                copy(
-                    isConnected = false,
-                    isLoading = false,
-                    errorMessage = error.message ?: "Not connected to npub.cash.",
-                )
-            }
         }
     }
 
     private fun disconnect() {
         stopBackgroundRefresh()
+        client?.close()
+        client = null
         update { copy(isConnected = false, isLoading = false, pendingPaidQuotes = emptyList()) }
     }
 
@@ -271,7 +297,7 @@ class NPCService(
 
     private fun p2pkPublicKeyFor(quote: NPCQuote): String? {
         if (!quote.locked) return null
-        val publicKey = nostrService.seedDerivedPublicKeyHex().takeIf { it.length == 64 } ?: return null
+        val publicKey = nostrPublicKey?.takeIf { it.length == 64 } ?: return null
         return "02$publicKey"
     }
 
@@ -301,62 +327,18 @@ class NPCService(
     }
 
     private suspend fun fetchQuotes(): List<NPCQuote> {
-        val endpoint = "$baseUrl/api/v2/quote"
-        val body = authenticatedRequest(endpoint, "GET")
-        return parseQuotesJson(body)
+        val connectedClient = client ?: error("Not connected to npub.cash.")
+        return connectedClient.getQuotes(since = null).map(::fromCdkQuote)
     }
 
-    private suspend fun setRemoteMint(mintUrl: String): String? {
-        val endpoint = "$baseUrl/api/v2/settings"
-        val body = """{"mint":"${mintUrl.escapeJson()}"}""".toRequestBody("application/json".toMediaType())
-        val response = authenticatedRequest(endpoint, "PUT", body)
-        val root = json.parseToJsonElement(response).jsonObject
-        val data = root["data"]?.jsonObject ?: root
-        if (data["error"]?.jsonPrimitive?.booleanOrNull == true) {
-            error("Failed to change mint.")
-        }
-        return data["mint"]?.jsonPrimitive?.contentOrNull
-            ?: data["mint_url"]?.jsonPrimitive?.contentOrNull
-            ?: data["mintUrl"]?.jsonPrimitive?.contentOrNull
-    }
-
-    private suspend fun authenticatedRequest(
-        url: String,
-        method: String,
-        body: okhttp3.RequestBody? = null,
-    ): String = withContext(Dispatchers.IO) {
-        val token = fetchJwtToken()
-        val request = Request.Builder()
-            .url(url)
-            .method(method, body)
-            .header("Authorization", "Bearer $token")
-            .build()
-        client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) error("npub.cash HTTP ${response.code}.")
-            response.body?.string() ?: error("Empty npub.cash response.")
-        }
-    }
-
-    private fun fetchJwtToken(): String {
-        val url = "$baseUrl/api/v2/auth/nip98"
-        val auth = nostrService.generateSeedNip98AuthHeader(url, "GET")
-        val request = Request.Builder()
-            .url(url)
-            .get()
-            .header("Authorization", "Nostr $auth")
-            .build()
-        client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) error("npub.cash auth HTTP ${response.code}.")
-            val body = response.body?.string() ?: error("Empty npub.cash auth response.")
-            val root = json.parseToJsonElement(body).jsonObject
-            return root["token"]?.jsonPrimitive?.contentOrNull
-                ?: root["data"]?.jsonObject?.get("token")?.jsonPrimitive?.contentOrNull
-                ?: error("npub.cash auth token missing.")
-        }
+    private suspend fun setRemoteMint(mintUrl: String): String {
+        val connectedClient = client ?: error("Not connected to npub.cash.")
+        val response = connectedClient.setMintUrl(mintUrl = mintUrl)
+        if (response.error) error("Failed to change mint.")
+        return response.mintUrl ?: mintUrl
     }
 
     private fun loadInitialState(): NPCState {
-        val nostr = nostrService.state.value
         val selectedMint = prefs.getString(StorageKeys.npcSelectedMint, null)
         val lastCheck = prefs.getLong(StorageKeys.npcLastCheck, Long.MIN_VALUE).takeIf { it != Long.MIN_VALUE }
         return NPCState(
@@ -364,9 +346,7 @@ class NPCService(
             automaticClaim = prefs.getBoolean(StorageKeys.npcAutomaticClaim, true),
             selectedMintUrl = selectedMint,
             lastCheckEpochMillis = lastCheck,
-            lightningAddress = nostrService.seedDerivedLightningAddress(domain),
             configuredMintUrl = selectedMint.orEmpty(),
-            isInitialized = nostr.isInitialized && nostrService.hasSeedDerivedKey(),
         )
     }
 
@@ -374,50 +354,18 @@ class NPCService(
         mutableState.value = mutableState.value.transform()
     }
 
-    private fun String.escapeJson(): String =
-        replace("\\", "\\\\").replace("\"", "\\\"")
-
     companion object {
-        private val parser = Json { ignoreUnknownKeys = true }
-
-        fun parseQuotesJson(body: String): List<NPCQuote> {
-            val root = parser.parseToJsonElement(body)
-            val quoteElements = quoteElements(root)
-            return quoteElements.mapNotNull { parseQuote(it) }
-        }
-
-        private fun quoteElements(root: JsonElement): List<JsonElement> {
-            if (root is JsonArray) return root
-            val objectRoot = root.jsonObject
-            val data = objectRoot["data"]
-            if (data is JsonArray) return data
-            if (data is JsonObject) {
-                data["quotes"]?.let { if (it is JsonArray) return it }
-                data["items"]?.let { if (it is JsonArray) return it }
-            }
-            objectRoot["quotes"]?.let { if (it is JsonArray) return it }
-            objectRoot["items"]?.let { if (it is JsonArray) return it }
-            return emptyList()
-        }
-
-        private fun parseQuote(element: JsonElement): NPCQuote? {
-            val obj = element.jsonObject
-            val id = stringValue(obj, "id", "quote", "quote_id") ?: return null
-            val amount = longValue(obj, "amount", "amount_sat", "amount_sats") ?: 0L
-            val paid = boolValue(obj, "paid", "is_paid")
-            val state = stringValue(obj, "state", "status") ?: if (paid == true) "PAID" else null
-            return NPCQuote(
-                id = id,
-                amount = amount,
-                mintUrl = stringValue(obj, "mint", "mint_url", "mintUrl"),
-                request = stringValue(obj, "request", "payment_request", "paymentRequest", "invoice"),
-                state = state,
-                locked = boolValue(obj, "locked", "is_locked") ?: false,
-                createdAtEpochSeconds = timestampValue(obj, "created_at", "createdAt", "created"),
-                paidAtEpochSeconds = timestampValue(obj, "paid_at", "paidAt"),
-                expiryEpochSeconds = timestampValue(obj, "expiry", "expires_at", "expiresAt", "expires"),
-            )
-        }
+        internal fun fromCdkQuote(quote: NpubCashQuote): NPCQuote = NPCQuote(
+            id = quote.id,
+            amount = quote.amount.toLong(),
+            mintUrl = quote.mintUrl,
+            request = quote.request,
+            state = quote.state,
+            locked = quote.locked == true,
+            createdAtEpochSeconds = quote.createdAt.toLong(),
+            paidAtEpochSeconds = quote.paidAt?.toLong(),
+            expiryEpochSeconds = quote.expiresAt?.toLong(),
+        )
 
         fun paidQuotesForProcessing(
             quotes: List<NPCQuote>,
@@ -427,25 +375,10 @@ class NPCService(
                 .filter { it.isPaid && it.id !in processedQuoteIds }
                 .sortedBy { it.paidAtEpochSeconds ?: it.createdAtEpochSeconds ?: Long.MAX_VALUE }
 
-        private fun stringValue(obj: JsonObject, vararg names: String): String? =
-            names.firstNotNullOfOrNull { name -> obj[name]?.jsonPrimitive?.contentOrNull }
-
-        private fun boolValue(obj: JsonObject, vararg names: String): Boolean? =
-            names.firstNotNullOfOrNull { name -> obj[name]?.jsonPrimitive?.booleanOrNull }
-
-        private fun longValue(obj: JsonObject, vararg names: String): Long? =
-            names.firstNotNullOfOrNull { name ->
-                obj[name]?.jsonPrimitive?.longOrNull
-                    ?: obj[name]?.jsonPrimitive?.contentOrNull?.toLongOrNull()
-            }
-
-        private fun timestampValue(obj: JsonObject, vararg names: String): Long? =
-            names.firstNotNullOfOrNull { name ->
-                val primitive = obj[name]?.jsonPrimitive ?: return@firstNotNullOfOrNull null
-                primitive.longOrNull ?: primitive.contentOrNull?.let { content ->
-                    content.toLongOrNull()
-                        ?: runCatching { java.time.Instant.parse(content).epochSecond }.getOrNull()
-                }
-            }
     }
+
+    private data class ConnectedNPCClient(
+        val client: NpubCashClient,
+        val configuredMintUrl: String,
+    )
 }
