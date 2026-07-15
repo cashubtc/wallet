@@ -29,6 +29,12 @@ android {
             "https://aff293071a9e53305e76990761d4b38f@o4511625394061312.ingest.de.sentry.io/4511625402712144"
         )
         buildConfigField("String", "SENTRY_DSN", "\"$sentryDsn\"")
+
+        // Per-report, anonymous NIP-17 support inbox. Release builds require an
+        // nprofile; FFI validation additionally rejects malformed or relay-less values.
+        val reportNprofile = providers.gradleProperty("nostrErrorReportNprofile").getOrElse("")
+        val escapedReportNprofile = reportNprofile.replace("\\", "\\\\").replace("\"", "\\\"")
+        buildConfigField("String", "NOSTR_ERROR_REPORT_NPROFILE", "\"$escapedReportNprofile\"")
     }
 
     buildTypes {
@@ -80,6 +86,21 @@ android {
                 }
             }
         }
+    }
+}
+
+val validateNostrErrorReportConfiguration by tasks.registering {
+    doLast {
+        val value = providers.gradleProperty("nostrErrorReportNprofile").orNull.orEmpty()
+        require(value.startsWith("nprofile1") && value.length > 20) {
+            "Release builds require -PnostrErrorReportNprofile=<nprofile with 1-3 relay hints>."
+        }
+    }
+}
+
+tasks.configureEach {
+    if (name.contains("Release", ignoreCase = true)) {
+        dependsOn(validateNostrErrorReportConfiguration)
     }
 }
 

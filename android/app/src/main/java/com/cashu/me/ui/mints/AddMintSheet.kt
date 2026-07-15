@@ -29,7 +29,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import kotlinx.coroutines.launch
-import com.cashu.me.Core.Wallet.userFacingWalletMessage
+import com.cashu.me.Core.Errors.AppError
 import com.cashu.me.Core.WalletManager
 import com.cashu.me.Core.mintUrlCandidates
 import com.cashu.me.Core.normalizeUserMintUrl
@@ -60,26 +60,28 @@ fun AddMintSheet(
 
     var url by remember(initialUrl) { mutableStateOf(initialUrl) }
     var nickname by remember { mutableStateOf("") }
-    var error by remember { mutableStateOf<String?>(null) }
+    var validationError by remember { mutableStateOf<String?>(null) }
+    var operationError by remember { mutableStateOf<AppError?>(null) }
     var isAdding by remember { mutableStateOf(false) }
 
     fun pasteFromClipboard() {
         val candidate = clipboard.getText()?.text?.let { mintUrlCandidates(it).firstOrNull() }
         if (candidate == null) {
-            error = "No valid mint URL in clipboard."
+            validationError = "No valid mint URL in clipboard."
         } else {
             url = candidate
-            error = null
+            validationError = null
         }
     }
 
     fun addMint() {
         val normalized = normalizeUserMintUrl(url)
         if (normalized == null) {
-            error = "Enter a valid HTTPS mint URL."
+            validationError = "Enter a valid HTTPS mint URL."
             return
         }
-        error = null
+        validationError = null
+        operationError = null
         isAdding = true
         scope.launch {
             runCatching { walletManager.addMint(normalized) }
@@ -89,7 +91,7 @@ fun AddMintSheet(
                     nickname = ""
                     onDismiss()
                 }
-                .onFailure { error = it.userFacingWalletMessage }
+                .onFailure { operationError = AppError.from(it, "add mint") }
             isAdding = false
         }
     }
@@ -117,12 +119,13 @@ fun AddMintSheet(
                 value = url,
                 onValueChange = {
                     url = it
-                    error = null
+                    validationError = null
+                    operationError = null
                 },
                 label = "Mint URL",
                 placeholder = "https://…",
                 singleLine = true,
-                isError = error != null,
+                isError = validationError != null || operationError != null,
                 modifier = Modifier.fillMaxWidth(),
                 keyboardOptions = KeyboardOptions(
                     capitalization = KeyboardCapitalization.None,
@@ -152,9 +155,8 @@ fun AddMintSheet(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
-            if (error != null) {
-                InlineNotice(text = error!!)
-            }
+            validationError?.let { InlineNotice(text = it) }
+            operationError?.let { InlineNotice(error = it) }
 
             Spacer(modifier = Modifier.height(CashuTheme.spacing.tight))
 
