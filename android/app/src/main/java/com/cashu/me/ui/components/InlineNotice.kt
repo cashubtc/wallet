@@ -125,7 +125,6 @@ fun InlineNotice(
         modifier = modifier
             .fillMaxWidth()
             .clickable(
-                enabled = error.isReportable,
                 role = Role.Button,
                 onClickLabel = "Open error details",
             ) { showsDetails = true }
@@ -141,7 +140,7 @@ fun InlineNotice(
         )
     }
     if (showsDetails) {
-        ErrorDetailsDialog(error = error, onDismiss = { showsDetails = false })
+        ErrorDetailsSheet(error = error, onDismiss = { showsDetails = false })
     }
 }
 

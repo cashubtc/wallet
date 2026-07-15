@@ -8,7 +8,8 @@ struct AddMintSheet: View {
     @State private var mintUrl = ""
     @State private var nickname = ""
     @State private var isAdding = false
-    @State private var errorMessage: String?
+    @State private var validationError: String?
+    @State private var operationError: AppError?
     @State private var showingScanner = false
     @FocusState private var urlFieldFocused: Bool
 
@@ -26,7 +27,8 @@ struct AddMintSheet: View {
                             .submitLabel(.go)
                             .onSubmit(addMint)
                             .onChange(of: mintUrl) {
-                                if errorMessage != nil { errorMessage = nil }
+                                validationError = nil
+                                operationError = nil
                             }
                             .accessibilityIdentifier("mints-add-url-field")
 
@@ -52,9 +54,8 @@ struct AddMintSheet: View {
             .scrollDismissesKeyboard(.interactively)
             .safeAreaInset(edge: .bottom) {
                 VStack(spacing: 12) {
-                    if let errorMessage {
-                        InlineNotice(message: errorMessage, severity: .error)
-                    }
+                    if let validationError { InlineNotice(message: validationError, severity: .error) }
+                    if let operationError { InlineNotice(error: operationError) }
 
                     Button(action: addMint) {
                         Group {
@@ -104,9 +105,10 @@ struct AddMintSheet: View {
     private func handleScannedMintUrl(_ raw: String) {
         if let normalized = Self.normalizedMintUrl(from: raw) {
             mintUrl = normalized
-            errorMessage = nil
+            validationError = nil
+            operationError = nil
         } else {
-            errorMessage = "No valid mint URL found in QR code."
+            validationError = "No valid mint URL found in QR code."
         }
     }
 
@@ -115,7 +117,8 @@ struct AddMintSheet: View {
         guard !urlToAdd.isEmpty, !isAdding else { return }
 
         isAdding = true
-        errorMessage = nil
+        validationError = nil
+        operationError = nil
         Task { @MainActor in
             do {
                 try await walletManager.addMint(url: urlToAdd)
@@ -124,7 +127,7 @@ struct AddMintSheet: View {
                 nickname = ""
                 dismiss()
             } catch {
-                errorMessage = error.userFacingWalletMessage
+                operationError = AppError.from(error, operation: "add mint")
             }
             isAdding = false
         }
@@ -133,14 +136,15 @@ struct AddMintSheet: View {
     private func pasteFromClipboard() {
         guard let clipboardContent = UIPasteboard.general.string,
               !clipboardContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            errorMessage = "Clipboard is empty."
+            validationError = "Clipboard is empty."
             return
         }
         if let normalized = Self.normalizedMintUrl(from: clipboardContent) {
             mintUrl = normalized
-            errorMessage = nil
+            validationError = nil
+            operationError = nil
         } else {
-            errorMessage = "No valid mint URL found in clipboard."
+            validationError = "No valid mint URL found in clipboard."
         }
     }
 

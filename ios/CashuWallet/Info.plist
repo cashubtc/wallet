@@ -17,5 +17,7 @@
 	<array>
 		<string>cashu</string>
 	</array>
+	<key>NostrErrorReportNprofile</key>
+	<string>$(NOSTR_ERROR_REPORT_NPROFILE)</string>
 </dict>
 </plist>

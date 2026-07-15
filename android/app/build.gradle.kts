@@ -31,7 +31,7 @@ android {
         buildConfigField("String", "SENTRY_DSN", "\"$sentryDsn\"")
 
         // Per-report, anonymous NIP-17 support inbox. Release builds require an
-        // nprofile; FFI validation additionally rejects malformed or relay-less values.
+        // nprofile; the app parser additionally rejects malformed or relay-less values.
         val reportNprofile = providers.gradleProperty("nostrErrorReportNprofile").getOrElse("")
         val escapedReportNprofile = reportNprofile.replace("\\", "\\\\").replace("\"", "\\\"")
         buildConfigField("String", "NOSTR_ERROR_REPORT_NPROFILE", "\"$escapedReportNprofile\"")

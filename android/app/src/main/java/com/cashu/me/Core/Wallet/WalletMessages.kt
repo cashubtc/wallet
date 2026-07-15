@@ -1,7 +1,7 @@
 package com.cashu.me.Core.Wallet
 
 import com.cashu.me.Core.Errors.AppError
-import org.cashudevkit.FfiErrorSeverity
+import com.cashu.me.Core.Errors.AppErrorSeverity
 
 /** Severity tier the UI should render a wallet message at (iOS ErrorSeverity). */
 enum class WalletMessageSeverity { Error, Caution, Info }
@@ -24,7 +24,7 @@ val Throwable.walletMessage: WalletMessage
 val Throwable.userFacingWalletMessage: String
     get() = walletMessage.text
 
-/** Delegates all CDK and uncoded detail normalization to the shared FFI table. */
+/** Delegates all CDK and uncoded detail normalization to the shared resolver boundary. */
 object WalletErrorMessages {
     fun classify(error: Throwable): WalletMessage = AppError.from(error, "unknown").toWalletMessage()
 
@@ -35,9 +35,9 @@ object WalletErrorMessages {
 fun AppError.toWalletMessage(): WalletMessage = WalletMessage(
     text = info.userMessage,
     severity = when (info.severity) {
-        FfiErrorSeverity.ERROR -> WalletMessageSeverity.Error
-        FfiErrorSeverity.CAUTION -> WalletMessageSeverity.Caution
-        FfiErrorSeverity.INFO -> WalletMessageSeverity.Info
+        AppErrorSeverity.Error -> WalletMessageSeverity.Error
+        AppErrorSeverity.Caution -> WalletMessageSeverity.Caution
+        AppErrorSeverity.Info -> WalletMessageSeverity.Info
     },
     isTerminal = info.terminal,
 )

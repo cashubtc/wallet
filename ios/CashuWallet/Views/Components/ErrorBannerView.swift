@@ -165,7 +165,7 @@ struct InlineNotice: View {
 
     var body: some View {
         Group {
-            if let appError, appError.isReportable {
+            if let appError {
                 Button { presentedError = appError } label: { noticeContent }
                     .buttonStyle(.plain)
                     .accessibilityHint("Opens error details and reporting")
@@ -253,12 +253,16 @@ private struct ErrorDetailsSheet: View {
                     detail("Platform", "\(preview.platform) \(preview.osVersion)")
                     detail("Technical detail", preview.technicalMessage)
                 }
+                Section("Privacy") {
+                    Text("Review this preview before sending. Never include your seed phrase, private keys, tokens, or passwords.")
+                        .foregroundStyle(.secondary)
+                }
                 Section("Optional note") {
                     TextEditor(text: $note)
                         .frame(minHeight: 90)
                         .disabled(isSending || receipt != nil)
                         .onChange(of: note) { _, value in
-                            if value.utf8.count > 1_024 { note = String(value.prefix(1_024)) }
+                            if value.utf8.count > 1_024 { note = value.limitedToUtf8Bytes(1_024) }
                         }
                     Text("\(note.utf8.count)/1024 bytes")
                         .font(.caption)
@@ -326,6 +330,15 @@ private struct ErrorDetailsSheet: View {
             }
             isSending = false
         }
+    }
+}
+
+private extension String {
+    func limitedToUtf8Bytes(_ maxBytes: Int) -> String {
+        guard utf8.count > maxBytes else { return self }
+        var result = self
+        while result.utf8.count > maxBytes && !result.isEmpty { result.removeLast() }
+        return result
     }
 }
 

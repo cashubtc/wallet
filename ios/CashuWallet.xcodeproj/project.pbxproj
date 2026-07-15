@@ -705,6 +705,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 6100000000000001 /* Build configuration list for PBXNativeTarget "CashuWallet" */;
 			buildPhases = (
+				52000000000000F2 /* Validate Nostr error reporting */,
 				5200000000000001 /* Sources */,
 				3100000000000001 /* Frameworks */,
 				5200000000000002 /* Resources */,
@@ -836,6 +837,21 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		52000000000000F2 /* Validate Nostr error reporting */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Validate Nostr error reporting";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${SRCROOT}/Scripts/validate-error-report-config.sh\"\n";
+		};
 		52000000000000F1 /* Fix CashuDevKitFFI Info.plist */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
@@ -1177,6 +1193,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
+				NOSTR_ERROR_REPORT_NPROFILE = "";
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-framework",
@@ -1216,6 +1233,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
+				NOSTR_ERROR_REPORT_NPROFILE = "";
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-framework",

@@ -81,6 +81,36 @@ class NIP44AndNIP17Test {
     }
 
     @Test
+    fun errorReportGiftWrapCanOnlyBeOpenedByRecipient() {
+        val recipientPrivate = NIP44.hexToBytes("2".padStart(64, '0'))
+        val recipientPubkey = NostrService.publicKeyHex("2".padStart(64, '0'))
+        val plaintext = """{"schema_version":1,"report_id":"report-1"}"""
+
+        val giftWrap = NostrErrorTransport.createGiftWrap(plaintext, recipientPubkey)
+        val rumor = NIP17.unwrap(giftWrap, recipientPrivate)
+
+        assertEquals(1059, giftWrap.kind)
+        assertEquals(14, rumor.kind)
+        assertEquals(plaintext, rumor.content)
+    }
+
+    @Test
+    fun supportNprofileParsesPubkeyAndDeduplicatedSecureRelays() {
+        val pubkey = NIP44.hexToBytes(NostrService.publicKeyHex("2".padStart(64, '0')))
+        val relay = "wss://relay.example".toByteArray()
+        val insecureRelay = "ws://insecure.example".toByteArray()
+        val tlv = byteArrayOf(0, pubkey.size.toByte()) + pubkey +
+            byteArrayOf(1, relay.size.toByte()) + relay +
+            byteArrayOf(1, relay.size.toByte()) + relay +
+            byteArrayOf(1, insecureRelay.size.toByte()) + insecureRelay
+
+        val parsed = NostrErrorTransport.parseNprofile(Bech32.encode("nprofile", tlv))
+
+        assertEquals(NostrService.publicKeyHex("2".padStart(64, '0')), parsed?.pubkeyHex)
+        assertEquals(listOf("wss://relay.example"), parsed?.relays)
+    }
+
+    @Test
     fun nip44PaddingMatchesSpecBoundaries() {
         assertEquals(32, NIP44.paddedLength(1))
         assertEquals(32, NIP44.paddedLength(32))

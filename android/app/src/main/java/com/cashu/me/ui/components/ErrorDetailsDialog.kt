@@ -4,17 +4,21 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -23,36 +27,37 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import com.cashu.me.Core.Errors.AppError
 import com.cashu.me.Core.Errors.NostrErrorReporter
+import com.cashu.me.Core.Errors.NostrReportReceipt
 import kotlinx.coroutines.launch
-import org.cashudevkit.NostrReportReceipt
 
 /** User-approved preview and delivery UI. Nothing in this modal is persisted. */
 @Composable
-fun ErrorDetailsDialog(error: AppError, onDismiss: () -> Unit) {
+@OptIn(ExperimentalMaterial3Api::class)
+fun ErrorDetailsSheet(error: AppError, onDismiss: () -> Unit) {
     var note by remember(error.reportId) { mutableStateOf("") }
     var isSending by remember(error.reportId) { mutableStateOf(false) }
     var deliveryError by remember(error.reportId) { mutableStateOf<String?>(null) }
     var receipt by remember(error.reportId) { mutableStateOf<NostrReportReceipt?>(null) }
     val scope = rememberCoroutineScope()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val preview = remember(error, note) { error.preparedReport(note.takeIf(String::isNotBlank)) }
     val configured = remember { NostrErrorReporter.isConfigured() }
 
-    Dialog(
+    ModalBottomSheet(
         onDismissRequest = { if (!isSending) onDismiss() },
-        properties = DialogProperties(usePlatformDefaultWidth = true),
+        sheetState = sheetState,
     ) {
-        Surface(shape = MaterialTheme.shapes.extraLarge, tonalElevation = 6.dp) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 680.dp)
-                    .padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 680.dp)
+                .imePadding()
+                .navigationBarsPadding()
+                .padding(horizontal = 20.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
                 Text("Error details", style = MaterialTheme.typography.headlineSmall)
                 Text(preview.userMessage, style = MaterialTheme.typography.bodyLarge)
 
@@ -69,9 +74,15 @@ fun ErrorDetailsDialog(error: AppError, onDismiss: () -> Unit) {
                     Detail("Platform", "${preview.platform} ${preview.osVersion}")
                     Detail("Technical detail", preview.technicalMessage)
 
+                    Text(
+                        "Review this preview before sending. Never include your seed phrase, private keys, tokens, or passwords.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+
                     OutlinedTextField(
                         value = note,
-                        onValueChange = { note = it.take(1_024) },
+                        onValueChange = { note = it.limitedToUtf8Bytes(1_024) },
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text("Optional note") },
                         supportingText = { Text("${note.length}/1024 · included in the preview above") },
@@ -126,7 +137,6 @@ fun ErrorDetailsDialog(error: AppError, onDismiss: () -> Unit) {
                         }
                     }
                 }
-            }
         }
     }
 }
@@ -137,4 +147,11 @@ private fun Detail(label: String, value: String) {
         Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         SelectionContainer { Text(value, style = MaterialTheme.typography.bodySmall) }
     }
+}
+
+private fun String.limitedToUtf8Bytes(maxBytes: Int): String {
+    if (toByteArray().size <= maxBytes) return this
+    var result = this
+    while (result.toByteArray().size > maxBytes && result.isNotEmpty()) result = result.dropLast(1)
+    return result
 }
