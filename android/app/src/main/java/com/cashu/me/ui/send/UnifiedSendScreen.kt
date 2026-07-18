@@ -775,6 +775,8 @@ private fun AmountFace(
     onContinue: () -> Unit,
 ) {
     val amountValue = amount.toLongOrNull() ?: 0L
+    val mintBalance = mint?.balance ?: 0L
+    val insufficient = amountValue > 0 && amountValue > mintBalance
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -803,12 +805,19 @@ private fun AmountFace(
             formatter = formatter,
         )
         Spacer(Modifier.weight(1f))
+        if (insufficient) {
+            InlineNotice(
+                text = "Insufficient balance",
+                severity = NoticeSeverity.Warning,
+            )
+            Spacer(Modifier.height(CashuTheme.spacing.default))
+        }
         NumberPadFooter(
             amount = amount,
             onAmountChange = onAmountChange,
             buttonText = "Continue",
             onButtonClick = onContinue,
-            buttonEnabled = amountValue > 0,
+            buttonEnabled = amountValue > 0 && !insufficient,
         )
     }
 }
