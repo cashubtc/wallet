@@ -169,7 +169,6 @@ struct ReceiveLightningView: View {
             .sheet(isPresented: $showMintPicker) {
                 MintSelectorSheet(selectedMint: $walletManager.activeMint)
                     .environmentObject(walletManager)
-                    .presentationDetents([.medium])
             }
             .sheet(isPresented: $showMethodPicker) {
                 MethodPickerSheet(
@@ -177,7 +176,6 @@ struct ReceiveLightningView: View {
                     options: availableMethodOptions,
                     onSelect: { applyMethodOption($0) }
                 )
-                .presentationDetents([.medium])
             }
             .sheet(isPresented: $showUnitPicker) {
                 UnitSelectorSheet(
@@ -185,7 +183,6 @@ struct ReceiveLightningView: View {
                     selectedUnit: effectiveUnit,
                     onSelect: selectReceiveUnit
                 )
-                .presentationDetents([.medium])
             }
             .onAppear {
                 syncSelectedMethodWithActiveMint()
