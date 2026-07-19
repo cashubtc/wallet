@@ -34,6 +34,7 @@ import com.cashu.me.Core.WalletManager
 import com.cashu.me.Core.mintUrlCandidates
 import com.cashu.me.Core.normalizeUserMintUrl
 import com.cashu.me.ui.components.CashuTextField
+import com.cashu.me.ui.components.FlowSheetTitle
 import com.cashu.me.ui.components.GhostButton
 import com.cashu.me.ui.components.InlineNotice
 import com.cashu.me.ui.components.PrimaryButton
@@ -106,12 +107,7 @@ fun AddMintSheet(
                 .padding(bottom = CashuTheme.spacing.comfortable),
             verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
         ) {
-            Text(
-                text = "Add Mint",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(vertical = CashuTheme.spacing.snug),
-            )
+            FlowSheetTitle(title = "Add Mint")
 
             CashuTextField(
                 value = url,

@@ -49,14 +49,7 @@ fun UnitPickerSheet(
                 .padding(horizontal = CashuTheme.spacing.comfortable)
                 .navigationBarsPadding(),
         ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(
-                    horizontal = CashuTheme.spacing.snug,
-                    vertical = CashuTheme.spacing.default,
-                ),
-            )
+            FlowSheetTitle(title = title)
             units.forEach { unit ->
                 val code = unit.uppercase()
                 val displayName = CurrencyRegistry.currencyForMintUnit(unit).displayName

@@ -36,6 +36,7 @@ import java.util.Locale
 import com.cashu.me.Core.PriceService
 import com.cashu.me.Core.SettingsManager
 import com.cashu.me.ui.components.CanvasDivider
+import com.cashu.me.ui.components.FlowSheetTitle
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.withMonoDigits
 
@@ -64,14 +65,7 @@ fun CurrencyPickerSheet(
         sheetState = sheetState,
     ) {
         Column(modifier = Modifier.navigationBarsPadding()) {
-            Text(
-                text = "Currency",
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(
-                    horizontal = CashuTheme.spacing.section,
-                    vertical = CashuTheme.spacing.default,
-                ),
-            )
+            FlowSheetTitle(title = "Currency")
             LazyColumn(modifier = Modifier.weight(1f, fill = false)) {
                 item("off") {
                     CurrencyRow(
