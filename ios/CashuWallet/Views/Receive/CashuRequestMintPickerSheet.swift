@@ -57,11 +57,6 @@ struct CashuRequestMintPickerSheet: View {
             .listStyle(.plain)
             .navigationTitle("Mint")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    SheetCloseButton()
-                }
-            }
         }
     }
 
@@ -148,14 +143,6 @@ struct CashuRequestUnitPickerSheet: View {
             .listStyle(.plain)
             .navigationTitle("Unit")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button(action: { dismiss() }) {
-                        Image(systemName: "xmark")
-                    }
-                    .accessibilityLabel("Close")
-                }
-            }
         }
     }
 

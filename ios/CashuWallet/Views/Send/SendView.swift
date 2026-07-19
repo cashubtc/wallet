@@ -3744,14 +3744,6 @@ struct UnitSelectorSheet: View {
             .scrollBounceBehavior(.basedOnSize)
             .navigationTitle("Select Unit")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button(action: { dismiss() }) {
-                        Image(systemName: "xmark")
-                    }
-                    .accessibilityLabel("Close")
-                }
-            }
         }
         .presentationDetents([.height(detentHeight)])
         .presentationDragIndicator(.visible)
@@ -3828,11 +3820,6 @@ struct MintSelectorSheet: View {
         }
         .navigationTitle("Select Mint")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                SheetCloseButton()
-            }
-        }
         .presentationDetents([.height(detentHeight)])
         .presentationDragIndicator(.visible)
     }
@@ -4069,11 +4056,6 @@ struct AddMintToPaySheet: View {
             .scrollBounceBehavior(.basedOnSize)
             .navigationTitle("Add a mint to pay")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    SheetCloseButton()
-                }
-            }
         }
         .presentationDetents([.height(detentHeight)])
         .presentationDragIndicator(.visible)
@@ -4139,9 +4121,10 @@ struct AddMintToPaySheet: View {
 /// instead of stretching to `.medium` — same technique as `AddMintToPaySheet`.
 struct MethodPickerSheet: View {
     @Environment(\.dismiss) private var dismiss
-    /// The live option, for the accent glyph + VoiceOver `.isSelected`. Read-only:
-    /// the parent owns the (method, isAmountless) state this maps to, so the
-    /// parent can react to a pick with side effects (e.g. auto-create) race-free.
+    /// The live option, for the trailing checkmark + VoiceOver `.isSelected`.
+    /// Read-only: the parent owns the (method, isAmountless) state this maps
+    /// to, so the parent can react to a pick with side effects (e.g.
+    /// auto-create) race-free.
     let selectedOption: ReceiveMethodOption
     let options: [ReceiveMethodOption]
     var onSelect: (ReceiveMethodOption) -> Void
@@ -4165,6 +4148,8 @@ struct MethodPickerSheet: View {
                     ForEach(options) { option in
                         Button(action: { select(option) }) {
                             HStack(spacing: 12) {
+                                optionIcon(for: option)
+
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(option.friendlyTitle)
                                         .font(.body.weight(.medium))
@@ -4175,12 +4160,10 @@ struct MethodPickerSheet: View {
 
                                 Spacer()
 
-                                // Glyph teaches the nav-bar mapping and carries selection:
-                                // accent when chosen, muted otherwise. The row's
-                                // `.isSelected` trait conveys state to VoiceOver.
-                                Image(systemName: option.navSymbol)
-                                    .foregroundStyle(selectedOption == option ? Color.accentColor : .secondary)
-                                    .accessibilityHidden(true)
+                                if selectedOption == option {
+                                    Image(systemName: "checkmark")
+                                        .foregroundStyle(Color.accentColor)
+                                }
                             }
                             .padding(.horizontal, 20)
                             .padding(.vertical, 12)
@@ -4201,11 +4184,6 @@ struct MethodPickerSheet: View {
             .scrollBounceBehavior(.basedOnSize)
             .navigationTitle("Receive with")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    SheetCloseButton()
-                }
-            }
         }
         .presentationDetents([.height(detentHeight)])
         .presentationDragIndicator(.visible)
@@ -4217,6 +4195,14 @@ struct MethodPickerSheet: View {
         }
         onSelect(option)   // parent mutates state + may auto-create
         dismiss()
+    }
+
+    private func optionIcon(for option: ReceiveMethodOption) -> some View {
+        Image(systemName: option.navSymbol)
+            .font(.title3.weight(.medium))
+            .foregroundStyle(.secondary)
+            .frame(width: 24)
+            .accessibilityHidden(true)
     }
 }
 
