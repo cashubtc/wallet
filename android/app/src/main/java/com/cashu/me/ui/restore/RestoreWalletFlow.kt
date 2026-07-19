@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cancel
@@ -20,6 +21,7 @@ import androidx.compose.material.icons.filled.RemoveCircleOutline
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.CellTower
 import androidx.compose.material.icons.outlined.ContentPaste
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -68,6 +70,7 @@ import com.cashu.me.ui.components.PrimaryButton
 import com.cashu.me.ui.components.SecondaryButton
 import com.cashu.me.ui.theme.CapsuleShape
 import com.cashu.me.ui.theme.CashuTheme
+import com.cashu.me.ui.theme.withMonoDigits
 import kotlinx.coroutines.launch
 
 // iOS restore twin: OnboardingView seed branch + Settings RestoreWalletView.
@@ -99,6 +102,14 @@ fun restoreOnboardingTitleStyle(): TextStyle =
         letterSpacing = (-0.5).sp,
         lineHeight = 40.sp,
     )
+
+// Single-line onboarding titles render at full display size and step down only
+// when the line would overflow (narrow devices / large font scales).
+private val OnboardingTitleAutoSize = TextAutoSize.StepBased(
+    minFontSize = 26.sp,
+    maxFontSize = 36.sp,
+    stepSize = 1.sp,
+)
 
 @Composable
 private fun restoreInAppTitleStyle(): TextStyle =
@@ -156,7 +167,7 @@ fun RestoreSeedStep(
     val title = if (presentation == RestorePresentation.InApp) {
         "Restore Wallet"
     } else {
-        "Restore\nWallet."
+        "Restore Wallet."
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -179,6 +190,8 @@ fun RestoreSeedStep(
                 style = restoreTitleStyle(presentation),
                 color = MaterialTheme.colorScheme.onSurface,
                 textAlign = titleTextAlign,
+                maxLines = if (presentation == RestorePresentation.Onboarding) 1 else Int.MAX_VALUE,
+                autoSize = if (presentation == RestorePresentation.Onboarding) OnboardingTitleAutoSize else null,
             )
             Text(
                 text = "Enter your 12 words in order.",
@@ -198,20 +211,22 @@ fun RestoreSeedStep(
                 .fillMaxWidth()
                 .padding(horizontal = HeaderPadding)
                 .padding(top = CashuTheme.spacing.section),
-            verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
+            verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.comfortable),
         ) {
-            Box(modifier = Modifier.fillMaxWidth()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+            ) {
                 CashuTextField(
                     value = input,
                     onValueChange = {
                         input = it
                         onClearError()
                     },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxSize(),
                     placeholder = "word1 word2 word3 …",
                     textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
-                    minLines = 5,
-                    maxLines = 8,
                     isError = errorText != null || (wordCount >= 12 && invalidCount > 0),
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None),
                 )
@@ -240,8 +255,12 @@ fun RestoreSeedStep(
                 }
             }
             Row(
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.micro),
+                horizontalArrangement = Arrangement.spacedBy(
+                    CashuTheme.spacing.micro,
+                    Alignment.CenterHorizontally,
+                ),
             ) {
                 Text(
                     text = "$wordCount / 12 words",
@@ -268,6 +287,7 @@ fun RestoreSeedStep(
         Column(
             modifier = Modifier
                 .padding(horizontal = CtaPadding)
+                .padding(top = CashuTheme.spacing.comfortable)
                 .padding(bottom = BottomPadding),
             verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.tight),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -437,11 +457,11 @@ fun RestoreMintsStep(
     }
     val (title, subtitle) = when (presentation) {
         RestorePresentation.Onboarding ->
-            "Recover\nYour Ecash." to
-                "Add the mints you used before to recover ecash from this seed."
+            "Recover Funds." to
+                "Add the mints you used before to recover funds from this seed."
         RestorePresentation.InApp ->
-            "Restore Ecash" to
-                "Add the mints you used before to recover ecash from this seed."
+            "Restore Funds" to
+                "Add the mints you used before to recover funds from this seed."
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -459,6 +479,8 @@ fun RestoreMintsStep(
                 style = restoreTitleStyle(presentation),
                 color = MaterialTheme.colorScheme.onSurface,
                 textAlign = titleTextAlign,
+                maxLines = if (presentation == RestorePresentation.Onboarding) 1 else Int.MAX_VALUE,
+                autoSize = if (presentation == RestorePresentation.Onboarding) OnboardingTitleAutoSize else null,
             )
             Text(
                 text = subtitle,
@@ -717,9 +739,9 @@ fun RestoreProgressStep(
         (phase as? RestoreMintPhase.Recovered)?.result?.unspent ?: 0L
     }
     val subhead = when {
-        !allSettled -> "Recovering ecash from your mints…"
+        !allSettled -> "Recovering funds from your mints…"
         totalRecovered > 0L -> "Here's what we recovered."
-        else -> "No ecash found on these mints."
+        else -> "No funds found on these mints."
     }
 
     val titleAlign = if (presentation == RestorePresentation.InApp) {
@@ -733,7 +755,7 @@ fun RestoreProgressStep(
         TextAlign.Start
     }
     val title = when (presentation) {
-        RestorePresentation.Onboarding -> "Recover\nYour Ecash."
+        RestorePresentation.Onboarding -> "Recover Funds."
         RestorePresentation.InApp ->
             if (allSettled) "Restore Complete" else "Restoring…"
     }
@@ -753,6 +775,8 @@ fun RestoreProgressStep(
                 style = restoreTitleStyle(presentation),
                 color = MaterialTheme.colorScheme.onSurface,
                 textAlign = titleTextAlign,
+                maxLines = if (presentation == RestorePresentation.Onboarding) 1 else Int.MAX_VALUE,
+                autoSize = if (presentation == RestorePresentation.Onboarding) OnboardingTitleAutoSize else null,
             )
             Text(
                 text = subhead,
@@ -785,10 +809,9 @@ fun RestoreProgressStep(
                     )
                     Text(
                         text = "Recovered: $totalRecovered sats",
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            fontWeight = FontWeight.SemiBold,
-                            fontFamily = FontFamily.Monospace,
-                        ),
+                        style = MaterialTheme.typography.bodyMedium
+                            .copy(fontWeight = FontWeight.SemiBold)
+                            .withMonoDigits(),
                         color = CashuTheme.colors.received,
                     )
                     if (presentation == RestorePresentation.InApp) {
@@ -832,6 +855,7 @@ fun RestoreProgressStep(
                 },
                 enabled = allSettled && !finishing,
                 loading = finishing,
+                colors = ButtonDefaults.filledTonalButtonColors(),
             )
         }
     }
@@ -920,14 +944,15 @@ private fun RestoreProgressRow(
                     )
                     Text(
                         text = "${phase.result.unspent} sats",
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            fontWeight = if (phase.result.unspent > 0) {
-                                FontWeight.SemiBold
-                            } else {
-                                FontWeight.Normal
-                            },
-                            fontFamily = FontFamily.Monospace,
-                        ),
+                        style = MaterialTheme.typography.bodyMedium
+                            .copy(
+                                fontWeight = if (phase.result.unspent > 0) {
+                                    FontWeight.SemiBold
+                                } else {
+                                    FontWeight.Normal
+                                },
+                            )
+                            .withMonoDigits(),
                         color = if (phase.result.unspent > 0) {
                             MaterialTheme.colorScheme.onSurface
                         } else {

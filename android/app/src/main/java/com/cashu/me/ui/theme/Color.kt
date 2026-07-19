@@ -9,7 +9,7 @@ import androidx.compose.ui.graphics.Color
 // Semantic state hues. Received/pending/error communicate payment state and are
 // the only chromatic colors in the app. Everything else is the monochrome
 // "inverted ink" scheme below.
-val ReceivedGreen = Color(0xFF2E7D32)
+val ReceivedGreen = Color(0xFF34C759)
 val PendingOrange = Color(0xFFEF6C00)
 val ErrorRed = Color(0xFFC62828)
 
@@ -123,7 +123,7 @@ internal val LightCashuColors = CashuColors(
 )
 
 internal val DarkCashuColors = CashuColors(
-    received = Color(0xFF81C784),
+    received = Color(0xFF30D158),
     pending = Color(0xFFFFB74D),
     receivedContainer = ReceivedGreen.copy(alpha = 0.20f),
     pendingContainer = PendingOrange.copy(alpha = 0.18f),

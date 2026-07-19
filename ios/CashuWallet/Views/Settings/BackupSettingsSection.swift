@@ -25,7 +25,7 @@ struct BackupSettingsSection: View {
                 } label: {
                     backupRestoreRow(
                         title: "Restore",
-                        subtitle: "Restore a wallet and recover ecash from mints.",
+                        subtitle: "Restore a wallet and recover funds from mints.",
                         systemImage: "arrow.counterclockwise.circle.fill"
                     )
                 }

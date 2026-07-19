@@ -665,10 +665,10 @@ struct RestoreWalletView: View {
         VStack(spacing: 0) {
             // Fixed header — stays put below the nav bar / top safe area.
             VStack(spacing: 6) {
-                Text("Restore Ecash")
+                Text("Restore Funds")
                     .font(.title2.weight(.semibold))
 
-                Text("Add the mints you used before to recover ecash from this seed.")
+                Text("Add the mints you used before to recover funds from this seed.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -850,10 +850,10 @@ struct RestoreWalletView: View {
     }
 
     private var restoreSubhead: String {
-        if !restoreAllSettled { return "Recovering ecash from your mints…" }
+        if !restoreAllSettled { return "Recovering funds from your mints…" }
         return restoreTotalRecovered > 0
             ? "Here's what we recovered."
-            : "No ecash found on these mints."
+            : "No funds found on these mints."
     }
 
     private var progressStep: some View {

@@ -494,7 +494,7 @@ struct OnboardingView: View {
                 Text("Restoring Wallet")
                     .font(.title2.weight(.semibold))
 
-                Text("Recovering your ecash from \(mintCount) mint\(mintCount == 1 ? "" : "s")…")
+                Text("Recovering your funds from \(mintCount) mint\(mintCount == 1 ? "" : "s")…")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -544,7 +544,7 @@ struct OnboardingView: View {
                     if walletManager.balance > 0 && count > 0 {
                         Text("across \(count) mint\(count == 1 ? "" : "s")")
                     } else {
-                        Text("Your ecash is ready.")
+                        Text("Your funds are ready.")
                     }
                 }
                 .font(.callout)
@@ -1028,10 +1028,11 @@ struct OnboardingView: View {
         return VStack(spacing: 16) {
             stagger(appeared: restoreInputAppeared, index: 0) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Restore\nWallet.")
+                    Text("Restore Wallet.")
                         .font(.largeTitle.weight(.heavy))
                         .tracking(-0.5)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
 
                     Text("Enter your 12 words in order.")
                         .font(.callout)
@@ -1146,12 +1147,13 @@ struct OnboardingView: View {
             // status bar, no matter how tall the list or whether the keyboard is up.
             stagger(appeared: restoreMintsAppeared, index: 0) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Recover\nYour Ecash.")
+                    Text("Recover Funds.")
                         .font(.largeTitle.weight(.heavy))
                         .tracking(-0.5)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
 
-                    Text("Add the mints you used before to recover ecash from this seed.")
+                    Text("Add the mints you used before to recover funds from this seed.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
@@ -1344,20 +1346,21 @@ struct OnboardingView: View {
     }
 
     private var restoreSubhead: String {
-        if !restoreAllSettled { return "Recovering ecash from your mints…" }
+        if !restoreAllSettled { return "Recovering funds from your mints…" }
         return restoreTotalRecovered > 0
             ? "Here's what we recovered."
-            : "No ecash found on these mints."
+            : "No funds found on these mints."
     }
 
     private var restoreProgressView: some View {
         VStack(spacing: 0) {
             stagger(appeared: restoreProgressAppeared, index: 0) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Recover\nYour Ecash.")
+                    Text("Recover Funds.")
                         .font(.largeTitle.weight(.heavy))
                         .tracking(-0.5)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
 
                     Text(restoreSubhead)
                         .font(.callout)

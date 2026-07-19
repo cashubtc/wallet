@@ -90,7 +90,7 @@ fun BackupRestoreScreen(
             )
             NavRow(
                 title = "Restore",
-                subtitle = "Restore a wallet and recover ecash from mints.",
+                subtitle = "Restore a wallet and recover funds from mints.",
                 leadingIcon = Icons.Outlined.Restore,
                 onClick = onOpenRestore,
             )
