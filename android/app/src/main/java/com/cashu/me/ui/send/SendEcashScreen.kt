@@ -625,22 +625,28 @@ private fun GeneratedFace(
             copied = false
         }
     }
-    // Poll the mint every 4s to detect when the recipient redeems the token.
+    // Poll the mint to detect when the recipient redeems the token. Mirrors
+    // iOS startClaimPolling: the spinner shows for the whole watch session
+    // (flipping Pending↔Checking per probe made the row flicker), intervals
+    // back off 5s → 15s, and after 10 checks the row rests at Pending.
     LaunchedEffect(result.token, mintUrl, pollingEnabled) {
         if (!pollingEnabled) return@LaunchedEffect
-        while (claimState != ClaimState.Claimed) {
-            delay(4_000)
-            claimState = ClaimState.Checking
+        claimState = ClaimState.Checking
+        var interval = 5_000L
+        repeat(10) {
+            delay(interval)
             // checkTokenSpent returns true once any proof is spent (redeemed);
-            // null means the check failed — stay Pending, never fake a claim.
+            // null means the check failed — keep watching, never fake a claim.
             val spent = runCatching {
                 walletManager.checkTokenSpent(result.token, mintUrl)
             }.getOrNull()
-            claimState = when {
-                spent == true -> ClaimState.Claimed
-                else -> ClaimState.Pending
+            if (spent == true) {
+                claimState = ClaimState.Claimed
+                return@LaunchedEffect
             }
+            interval = (interval + 1_000L).coerceAtMost(15_000L)
         }
+        claimState = ClaimState.Pending
     }
 
     // Claimed resolves to the shared full-screen terminal (iOS parity), with
