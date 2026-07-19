@@ -745,6 +745,7 @@ private fun GeneratedFace(
                 start = CashuTheme.spacing.comfortable,
                 end = CashuTheme.spacing.comfortable,
                 top = CashuTheme.spacing.micro,
+                bottom = CashuTheme.spacing.comfortable,
             ),
         )
         Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))

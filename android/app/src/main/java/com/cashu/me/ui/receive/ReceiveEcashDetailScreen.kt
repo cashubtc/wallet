@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -236,6 +237,10 @@ private fun ConfirmContent(
                 // Disabled until the fee/lock preview lands (net amount must be
                 // known before committing) and while P2PK-locked to foreign keys.
                 enabled = review != null && !review.locked,
+                // The app's one inverted-ink CTA — mirrors iOS's sole
+                // .glassButton(prominent: true) on the receive commit
+                // (ReceiveView.swift); every other bottom CTA is neutral gray.
+                colors = ButtonDefaults.buttonColors(),
             )
             Spacer(Modifier.height(CashuTheme.spacing.snug))
             GhostButton(
