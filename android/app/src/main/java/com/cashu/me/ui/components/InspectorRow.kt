@@ -32,7 +32,8 @@ private val InspectorEditHintSize = 16.dp
 /**
  * Two-column metadata row used inside Cashu Request / Transaction Detail inspector
  * groups. Optional leading icon, optional pencil affordance for editable rows
- * (which trigger a sub-sheet on tap).
+ * (which trigger a sub-sheet on tap), optional quiet trailing affordance for
+ * other tappable rows (e.g. tap-to-copy: ContentCopy → green Check).
  *
  * @param loading skeleton fill-in (iOS `.redacted(.placeholder)` on confirm fee
  *   rows): while true a quiet placeholder bar holds the value slot, then the
@@ -46,11 +47,13 @@ fun InspectorRow(
     leadingIcon: ImageVector? = null,
     editable: Boolean = false,
     onClick: (() -> Unit)? = null,
+    trailingIcon: ImageVector? = null,
+    trailingIconTint: Color? = null,
     valueMonospaced: Boolean = false,
     valueColor: Color? = null,
     loading: Boolean = false,
 ) {
-    val rowMod = if (onClick != null && editable) {
+    val rowMod = if (onClick != null) {
         modifier.fillMaxWidth().clickable(onClick = onClick)
     } else {
         modifier.fillMaxWidth()
@@ -97,6 +100,13 @@ fun InspectorRow(
                 imageVector = Icons.Outlined.Edit,
                 contentDescription = "Edit $label",
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(InspectorEditHintSize),
+            )
+        } else if (trailingIcon != null) {
+            Icon(
+                imageVector = trailingIcon,
+                contentDescription = null,
+                tint = trailingIconTint ?: MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(InspectorEditHintSize),
             )
         }

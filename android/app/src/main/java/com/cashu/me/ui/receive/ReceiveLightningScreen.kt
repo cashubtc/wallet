@@ -2,15 +2,9 @@ package com.cashu.me.ui.receive
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.Crossfade
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -37,8 +31,8 @@ import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.CurrencyBitcoin
 import androidx.compose.material.icons.outlined.IosShare
 import androidx.compose.material.icons.outlined.Payments
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Repeat
-import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.UnfoldMore
 import androidx.compose.material3.DropdownMenu
@@ -60,7 +54,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -77,6 +70,8 @@ import com.cashu.me.Core.AmountFormatter
 import com.cashu.me.Core.CashuRequestStore
 import com.cashu.me.Core.Protocols.CurrencyAmount
 import com.cashu.me.Core.Protocols.CurrencyRegistry
+import com.cashu.me.Core.OnchainExplorer
+import com.cashu.me.Core.OnchainPaymentObservation
 import com.cashu.me.Core.SettingsManager
 import com.cashu.me.Core.UnitAmountEntry
 import com.cashu.me.Core.Wallet.userFacingWalletMessage
@@ -90,6 +85,7 @@ import com.cashu.me.Models.PaymentMethodKind
 import com.cashu.me.ui.components.AmountEntryHero
 import com.cashu.me.ui.components.AmountText
 import com.cashu.me.ui.components.CanvasDivider
+import com.cashu.me.ui.components.ExplorerLinkRow
 import com.cashu.me.ui.components.IconSwap
 import com.cashu.me.ui.components.InlineNotice
 import com.cashu.me.ui.components.InspectorRow
@@ -103,11 +99,13 @@ import com.cashu.me.ui.components.QrCard
 import com.cashu.me.ui.components.SheetHeader
 import com.cashu.me.ui.components.TwoFaceScreen
 import com.cashu.me.ui.components.UnitPickerSheet
+import com.cashu.me.ui.components.WaitingForPaymentRow
+import com.cashu.me.ui.components.neutralActionButtonColors
+import com.cashu.me.ui.components.openInBrowser
 import com.cashu.me.ui.components.shareText
 import com.cashu.me.ui.components.ToolbarIcon
 import com.cashu.me.ui.theme.CapsuleShape
 import com.cashu.me.ui.theme.CashuTheme
-import com.cashu.me.ui.theme.rememberReducedMotion
 import com.cashu.me.ui.theme.withMonoDigits
 
 private sealed interface ReceiveLnFace {
@@ -139,6 +137,11 @@ fun ReceiveLightningScreen(
     // When a payment lands the whole screen crossfades to the shared full-screen
     // success terminal (iOS parity — no inline "Paid" row, no Done button).
     var successInfo by remember { mutableStateOf<ReceiveSuccessInfo?>(null) }
+    // On-chain quotes abandoned via "Use new address": a payment may already be
+    // racing toward the old address, so keep checking them for the life of the
+    // sheet (mint-status checks only — no extra explorer polling). Set
+    // semantics dedupe repeated presses.
+    var abandonedOnchainQuoteIds by remember { mutableStateOf(setOf<String>()) }
     var selectedReceiveUnit by remember { mutableStateOf<String?>(null) }
     var unitPickerOpen by remember { mutableStateOf(false) }
     var mintPickerOpen by remember { mutableStateOf(false) }
@@ -237,6 +240,24 @@ fun ReceiveLightningScreen(
     }
 
     /**
+     * Fresh deposit address from the overflow menu (BOLT12 "new invoice"
+     * parity). Remembers the outgoing quote first — a payment may already be
+     * racing toward it (screen-scoped watcher keeps checking it). The header
+     * can't see the Display block's live quote; the face quote is safe here
+     * because an Issued quote can't still be on screen (the success terminal
+     * takes over).
+     */
+    fun createNewOnchainAddress() {
+        val quote = (face as? ReceiveLnFace.Display)?.quote
+        if (quote != null && quote.paymentMethod == PaymentMethodKind.Onchain &&
+            quote.state != MintQuoteState.Issued && !quote.isExpired
+        ) {
+            abandonedOnchainQuoteIds = abandonedOnchainQuoteIds + quote.id
+        }
+        createMintRequest(PaymentMethodKind.Onchain, amountless = true)
+    }
+
+    /**
      * Re-mints the reusable BOLT12 offer at a new amount (iOS
      * `setReusableOfferAmount`). null / 0 → amountless (reuse existing offer);
      * positive → a fresh fixed-amount offer.
@@ -292,6 +313,50 @@ fun ReceiveLightningScreen(
         face = ReceiveLnFace.Input
     }
 
+    // Abandoned-quote watcher: every quote-keyed monitor re-keys to the
+    // replacement after "Use new address", so this screen-scoped loop is what
+    // keeps checking the old address(es). refreshPendingMintQuote returns
+    // whether tokens were actually minted — on-chain quotes can sit Pending
+    // until a mint attempt succeeds, so the Boolean (not the quote state) is
+    // the reliable signal. Keyed on isNotEmpty so the first pass runs
+    // immediately after the first tap (a quote already paid at tap time mints
+    // on the first tick). Dies with the sheet; the global pending-quote sweep
+    // remains the fallback after that.
+    LaunchedEffect(abandonedOnchainQuoteIds.isNotEmpty()) {
+        while (abandonedOnchainQuoteIds.isNotEmpty() && successInfo == null) {
+            for (quoteId in abandonedOnchainQuoteIds) {
+                val info = runCatching { walletManager.pollMintQuote(quoteId) }.getOrNull()
+                // Drop quotes that expired before the mint saw any deposit; a
+                // funded-but-expired quote keeps being checked.
+                if (info != null && info.isExpired &&
+                    info.state == MintQuoteState.Unpaid &&
+                    (info.amount ?: 0L) == 0L && info.amountPaid == 0L
+                ) {
+                    abandonedOnchainQuoteIds = abandonedOnchainQuoteIds - quoteId
+                    continue
+                }
+                val minted = runCatching { walletManager.refreshPendingMintQuote(quoteId) }
+                    .getOrDefault(false)
+                if (!minted) continue
+                abandonedOnchainQuoteIds = abandonedOnchainQuoteIds - quoteId
+                // Refetch for the credited amount (on-chain always mints sat).
+                val refreshed = runCatching { walletManager.pollMintQuote(quoteId) }.getOrNull() ?: info
+                val paidAmount = refreshed?.amount
+                    ?: refreshed?.amountIssued?.takeIf { it > 0 }
+                    ?: refreshed?.amountPaid?.takeIf { it > 0 }
+                successInfo = ReceiveSuccessInfo(
+                    amountLabel = paidAmount?.let {
+                        formatter.formatWalletSats(it, settings.useBitcoinSymbol)
+                    },
+                    mintName = walletState.mints.firstOrNull { it.url == refreshed?.mintUrl }?.name
+                        ?: walletState.activeMint?.name,
+                )
+                return@LaunchedEffect // terminal owns the sheet now
+            }
+            delay(30_000)
+        }
+    }
+
     // The paid terminal replaces the whole sheet body (header + faces), fading
     // in over the QR the way iOS swaps `body` to the success view.
     Crossfade(targetState = successInfo, label = "receive-ln-terminal") { terminal ->
@@ -325,10 +390,15 @@ fun ReceiveLightningScreen(
             actions = {
                 val current = face
                 if (current is ReceiveLnFace.Display) {
-                    if (current.quote.paymentMethod == PaymentMethodKind.Bolt12) {
-                        // Overflow menu keeps share + new-invoice secondary —
+                    val menuMethod = current.quote.paymentMethod
+                    if (menuMethod == PaymentMethodKind.Bolt12 ||
+                        menuMethod == PaymentMethodKind.Onchain
+                    ) {
+                        // Overflow menu keeps share + new-artifact secondary —
                         // quieter than a prominent Share / New pair (iOS still
-                        // uses ShareLink; Android folds both into ⋮).
+                        // uses ShareLink; Android folds both into ⋮). On-chain
+                        // mirrors BOLT12 with a fresh deposit address.
+                        val isOnchainMenu = menuMethod == PaymentMethodKind.Onchain
                         IconButton(onClick = { displayActionsOpen = true }) {
                             ToolbarIcon(Icons.Filled.MoreVert, contentDescription = "More options")
                         }
@@ -346,23 +416,34 @@ fun ReceiveLightningScreen(
                                     displayActionsOpen = false
                                     context.shareText(
                                         current.quote.request,
-                                        subject = "Reusable Invoice",
+                                        subject = if (isOnchainMenu) "Bitcoin Address" else "Reusable Invoice",
                                     )
                                 },
                             )
                             DropdownMenuItem(
                                 text = {
                                     Text(
-                                        if (creating) "Creating…" else "New reusable invoice",
+                                        when {
+                                            creating -> "Creating…"
+                                            isOnchainMenu -> "New address"
+                                            else -> "New reusable invoice"
+                                        },
                                     )
                                 },
                                 leadingIcon = {
-                                    Icon(Icons.Outlined.Repeat, contentDescription = null)
+                                    Icon(
+                                        if (isOnchainMenu) Icons.Outlined.Refresh else Icons.Outlined.Repeat,
+                                        contentDescription = null,
+                                    )
                                 },
                                 enabled = !creating,
                                 onClick = {
                                     displayActionsOpen = false
-                                    createNewReusableInvoice()
+                                    if (isOnchainMenu) {
+                                        createNewOnchainAddress()
+                                    } else {
+                                        createNewReusableInvoice()
+                                    }
                                 },
                             )
                         }
@@ -440,9 +521,8 @@ fun ReceiveLightningScreen(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth(),
-            forward = { initial, target ->
-                initial is ReceiveLnFace.Input && target is ReceiveLnFace.Display
-            },
+            // Display → Display (fresh on-chain address) also slides forward.
+            forward = { _, target -> target is ReceiveLnFace.Display },
             label = "receive-lightning-face",
         ) { current ->
             when (current) {
@@ -496,6 +576,42 @@ fun ReceiveLightningScreen(
                             runCatching { walletManager.pollMintQuote(current.quote.id) }
                                 .getOrNull()
                                 ?.let { liveQuote = it }
+                        }
+                    }
+                    // On-chain: watch the address on the block explorer so the
+                    // status line can report mempool/confirmation progress before
+                    // the mint credits the deposit, and nudge a mint attempt while
+                    // the quote is still un-issued (iOS refreshOnchainObservation
+                    // + mintQuoteIfReady parity). 30s cadence matches iOS and is
+                    // polite to the third-party explorer API.
+                    var onchainObservation by remember(current.quote.id) {
+                        mutableStateOf<OnchainPaymentObservation?>(null)
+                    }
+                    val quoteCreatedAtMillis = remember(current.quote.id) { System.currentTimeMillis() }
+                    LaunchedEffect(current.quote.id) {
+                        if (current.quote.paymentMethod != PaymentMethodKind.Onchain) return@LaunchedEffect
+                        while (true) {
+                            val quote = liveQuote
+                            // CDK reports the deposited amount on the quote once the
+                            // mint sees the payment; observing before that would
+                            // match any dust against an expectedAmount of zero.
+                            val expectedAmount = quote.amount ?: 0L
+                            val unissued = quote.state != MintQuoteState.Paid &&
+                                quote.state != MintQuoteState.Issued
+                            if (unissued && expectedAmount > 0) {
+                                onchainObservation = OnchainExplorer.observePayment(
+                                    address = quote.request,
+                                    mintUrl = quote.mintUrl ?: activeMint?.url,
+                                    expectedAmount = expectedAmount,
+                                    createdAfterEpochMillis = quoteCreatedAtMillis,
+                                )
+                                // Mint on the wallet's app-lifetime scope so a
+                                // dismissal never cancels a mint mid-flight.
+                                walletManager.launch {
+                                    runCatching { walletManager.refreshPendingMintQuote(quote.id) }
+                                }
+                            }
+                            delay(30_000)
                         }
                     }
                     val amountLabel = liveQuote.amount?.let {
@@ -555,6 +671,23 @@ fun ReceiveLightningScreen(
                             )
                         }
                     }
+                    val isOnchain = liveQuote.paymentMethod == PaymentMethodKind.Onchain
+                    val observation = onchainObservation
+                    val explorerUrl = if (isOnchain) {
+                        val explorerMintUrl = liveQuote.mintUrl ?: activeMint?.url
+                        observation?.txid?.let {
+                            OnchainExplorer.transactionWebUrl(
+                                txid = it,
+                                address = liveQuote.request,
+                                mintUrl = explorerMintUrl,
+                            )
+                        } ?: OnchainExplorer.addressWebUrl(
+                            address = liveQuote.request,
+                            mintUrl = explorerMintUrl,
+                        )
+                    } else {
+                        null
+                    }
                     DisplayFace(
                         quote = liveQuote,
                         amountLabel = amountLabel.takeUnless {
@@ -566,6 +699,16 @@ fun ReceiveLightningScreen(
                             .firstOrNull { it.quoteId == liveQuote.id }
                             ?.createdAtEpochMillis,
                         errorText = errorText,
+                        pendingStatusText = when {
+                            !isOnchain -> "Waiting for payment…"
+                            observation != null -> "${observation.statusText}. Trying to mint…"
+                            else -> "Waiting for on-chain payment…"
+                        },
+                        explorerLabel = if (observation == null) {
+                            "View address in block explorer"
+                        } else {
+                            "View transaction in block explorer"
+                        },
                         onCopy = { clipboard.setText(AnnotatedString(liveQuote.request)) },
                         onEditReusableAmount = if (
                             liveQuote.paymentMethod == PaymentMethodKind.Bolt12
@@ -574,6 +717,7 @@ fun ReceiveLightningScreen(
                         } else {
                             null
                         },
+                        onOpenExplorer = explorerUrl?.let { url -> { context.openInBrowser(url) } },
                     )
                 }
             }
@@ -798,8 +942,11 @@ private fun DisplayFace(
     mintName: String?,
     createdAtEpochMillis: Long?,
     errorText: String?,
+    pendingStatusText: String,
+    explorerLabel: String,
     onCopy: () -> Unit,
     onEditReusableAmount: (() -> Unit)?,
+    onOpenExplorer: (() -> Unit)?,
 ) {
     var copied by remember { mutableStateOf(false) }
     LaunchedEffect(copied) {
@@ -838,7 +985,7 @@ private fun DisplayFace(
                     receivedAmountLabel = receivedAmountLabel,
                 )
             } else {
-                WaitingForPaymentRow()
+                WaitingForPaymentRow(text = pendingStatusText)
             }
             errorText?.let { InlineNotice(text = it) }
             if (!isReusable) {
@@ -881,61 +1028,40 @@ private fun DisplayFace(
                         )
                     }
                 }
-            } else if (mintName != null) {
-                InspectorRow(
-                    label = "Mint",
-                    value = mintName,
-                    leadingIcon = Icons.Outlined.AccountBalance,
-                )
+            } else if (mintName != null || onOpenExplorer != null) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    if (mintName != null) {
+                        InspectorRow(
+                            label = "Mint",
+                            value = mintName,
+                            leadingIcon = Icons.Outlined.AccountBalance,
+                        )
+                    }
+                    if (onOpenExplorer != null) {
+                        if (mintName != null) {
+                            CanvasDivider(leadingInset = 16.dp)
+                        }
+                        ExplorerLinkRow(label = explorerLabel, onClick = onOpenExplorer)
+                    }
+                }
             }
         }
         Column(
             modifier = Modifier.padding(horizontal = CashuTheme.spacing.comfortable),
             verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
         ) {
+            // Copy is a secondary convenience, not a primary action — quiet
+            // neutral tonal fill (iOS gray .glassButton() parity on every rail).
             PrimaryButton(
                 text = if (copied) "Copied" else quote.paymentMethod.copyActionTitle,
                 onClick = {
                     onCopy()
                     copied = true
                 },
+                colors = neutralActionButtonColors(),
             )
         }
         Spacer(Modifier.navigationBarsPadding())
-    }
-}
-
-/** Pulsing clock + "Waiting for payment…" for one-shot invoices. */
-@Composable
-private fun WaitingForPaymentRow() {
-    val reducedMotion = rememberReducedMotion()
-    val transition = rememberInfiniteTransition(label = "waiting-pulse")
-    val alpha by transition.animateFloat(
-        initialValue = 1f,
-        targetValue = 0.4f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1100),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "waiting-pulse-alpha",
-    )
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
-    ) {
-        Box(modifier = Modifier.alpha(if (reducedMotion) 1f else alpha)) {
-            Icon(
-                imageVector = Icons.Outlined.Schedule,
-                contentDescription = null,
-                tint = CashuTheme.colors.pending,
-                modifier = Modifier.size(CashuTheme.spacing.loose),
-            )
-        }
-        Text(
-            text = "Waiting for payment…",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
     }
 }
 

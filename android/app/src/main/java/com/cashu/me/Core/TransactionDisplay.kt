@@ -11,6 +11,9 @@ import com.cashu.me.Core.Protocols.CurrencyRegistry
 data class TransactionDetailField(
     val label: String,
     val value: String,
+    // Full untruncated payload for tap-to-copy rows (the display `value` may be
+    // middle-truncated); null = row is not copyable.
+    val copyValue: String? = null,
 )
 
 object TransactionDisplay {
@@ -53,7 +56,8 @@ object TransactionDisplay {
      * shareable only for an unclaimed outgoing send; an incoming pending token
      * is money to claim, not a payment code. One-shot Lightning invoices retire
      * after settlement, reusable BOLT12 offers stay live, and on-chain addresses
-     * remain fundable after a payment and therefore always keep their QR.
+     * retire once the deposit is minted — a confirmed receive is a historical
+     * receipt (checkmark hero), not a payment code to re-present.
      */
     fun showsQr(transaction: WalletTransaction): Boolean = when (transaction.kind) {
         TransactionKind.Ecash ->
@@ -64,7 +68,8 @@ object TransactionDisplay {
             transaction.invoice != null &&
                 (transaction.status == TransactionStatus.Pending ||
                     transaction.invoice.startsWith("lno", ignoreCase = true))
-        TransactionKind.Onchain -> transaction.invoice != null
+        TransactionKind.Onchain ->
+            transaction.invoice != null && transaction.status == TransactionStatus.Pending
     }
 
     /**
@@ -95,12 +100,25 @@ object TransactionDisplay {
             if (transaction.fee > 0) add(TransactionDetailField("Fee", formatNativeAmount(transaction.fee, transaction.unit)))
             transaction.mintUrl?.let { add(TransactionDetailField("Mint", mintHost(it))) }
             if (transaction.kind == TransactionKind.Onchain) {
-                transaction.invoice?.let { add(TransactionDetailField("Address", it)) }
-                transaction.preimage?.let { add(TransactionDetailField("Transaction ID", it)) }
+                // Address/txid are reference blobs — show the decoder's standard
+                // 8…6 short form; tap-to-copy carries the full value.
+                transaction.invoice?.let {
+                    add(TransactionDetailField("Address", middleTruncated(it), copyValue = it))
+                }
+                transaction.preimage?.let {
+                    add(TransactionDetailField("Transaction ID", middleTruncated(it), copyValue = it))
+                }
             } else {
-                transaction.preimage?.let { add(TransactionDetailField("Payment Proof", it)) }
+                transaction.preimage?.let {
+                    add(TransactionDetailField("Payment Proof", it, copyValue = it))
+                }
             }
         }
+
+    /** `prefix(8)…suffix(6)` middle-truncation, the decoder's convention for
+     *  opaque destination blobs; short strings pass through untouched. */
+    private fun middleTruncated(value: String): String =
+        if (value.length > 16) "${value.take(8)}…${value.takeLast(6)}" else value
 
     private fun formatNativeAmount(amount: Long, unit: String): String =
         if (unit.equals("sat", ignoreCase = true)) {

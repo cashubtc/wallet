@@ -8,6 +8,9 @@ struct TransactionDetailView: View {
 
     @State private var copyButtonText = "Copy"
     @State private var showShareSheet = false
+    /// Label of the row whose value was just copied — drives the doc.on.doc →
+    /// green checkmark swap on tap-to-copy rows (Address / Transaction ID / …).
+    @State private var copiedRowLabel: String?
 
     /// Returns the content to display as a QR code.
     private var qrContent: String? {
@@ -51,8 +54,10 @@ struct TransactionDetailView: View {
             guard transaction.invoice != nil else { return false }
             return transaction.status == .pending || isReusableOffer
         case .onchain:
-            // An on-chain address stays fundable, so its QR is left as-is.
-            return transaction.invoice != nil
+            // The address is only worth re-presenting while the deposit is
+            // still awaited; once confirmed this is a historical receipt like
+            // a settled invoice — checkmark hero, no QR.
+            return transaction.invoice != nil && transaction.status == .pending
         }
     }
 
@@ -115,20 +120,22 @@ struct TransactionDetailView: View {
                         // Status + Date. Type is omitted — the nav title names it.
                         VStack(spacing: 0) {
                             ForEach(Array(detailRows.enumerated()), id: \.offset) { index, row in
-                                detailRow(icon: row.icon, label: row.label, value: row.value)
+                                if let copyValue = row.copyValue {
+                                    copyableRow(icon: row.icon, label: row.label, value: row.value, copyValue: copyValue)
+                                } else {
+                                    detailRow(icon: row.icon, label: row.label, value: row.value)
+                                }
                                 if index < detailRows.count - 1 { canvasDivider }
+                            }
+                            if let explorerURL = onchainExplorerURL {
+                                canvasDivider
+                                explorerLinkRow(label: "View in block explorer", url: explorerURL)
                             }
                         }
                         .padding(.top, 8)
                         .padding(.horizontal, 4)
                     }
                     .padding(.horizontal)
-                }
-
-                if let explorerURL = onchainExplorerURL {
-                    Link("View in block explorer", destination: explorerURL)
-                        .textLinkButton()
-                        .padding(.vertical, 12)
                 }
 
                 // Single primary action — Copy. Appears for an actionable
@@ -256,30 +263,32 @@ struct TransactionDetailView: View {
     /// correct as later rows drop out. Unit is gone (`unitLabel` is always BTC/SAT);
     /// the settled Request string is gone (its live form is the QR/Copy). On-chain
     /// keeps Address / Transaction ID (still actionable).
-    private var detailRows: [(icon: String, label: String, value: String)] {
-        var rows: [(icon: String, label: String, value: String)] = [
-            (statusFieldIcon, "Status", statusFieldValue),
-            ("calendar", "Date", transaction.date.formatted(date: .abbreviated, time: .shortened)),
+    private var detailRows: [(icon: String, label: String, value: String, copyValue: String?)] {
+        var rows: [(icon: String, label: String, value: String, copyValue: String?)] = [
+            (statusFieldIcon, "Status", statusFieldValue, nil),
+            ("calendar", "Date", transaction.date.formatted(date: .abbreviated, time: .shortened), nil),
         ]
         if transaction.fee > 0 {
-            rows.append(("arrow.up.arrow.down", "Fee", formattedNativeFee))
+            rows.append(("arrow.up.arrow.down", "Fee", formattedNativeFee, nil))
         }
         if transaction.kind == .onchain {
             if let mintUrl = transaction.mintUrl {
-                rows.append(("bitcoinsign.bank.building", "Mint", extractMintHost(mintUrl)))
+                rows.append(("bitcoinsign.bank.building", "Mint", extractMintHost(mintUrl), nil))
             }
+            // Address/txid are reference blobs — show the decoder's standard
+            // 8…6 short form; tap-to-copy carries the full value.
             if let request = transaction.invoice {
-                rows.append(("qrcode", "Address", request))
+                rows.append(("qrcode", "Address", PaymentRequestDecoder.middleTruncated(request), request))
             }
             if let preimage = transaction.preimage {
-                rows.append(("checkmark.seal", "Transaction ID", preimage))
+                rows.append(("checkmark.seal", "Transaction ID", PaymentRequestDecoder.middleTruncated(preimage), preimage))
             }
         } else {
             if let mintUrl = transaction.mintUrl {
-                rows.append(("bitcoinsign.bank.building", "Mint", extractMintHost(mintUrl)))
+                rows.append(("bitcoinsign.bank.building", "Mint", extractMintHost(mintUrl), nil))
             }
             if let preimage = transaction.preimage {
-                rows.append(("key", "Payment Proof", preimage))
+                rows.append(("key", "Payment Proof", preimage, preimage))
             }
         }
         return rows
@@ -319,6 +328,69 @@ struct TransactionDetailView: View {
         .font(.subheadline)
         .padding(.horizontal, 4)
         .padding(.vertical, 14)
+    }
+
+    /// Same shape as `detailRow` but tap-to-copy: copies the FULL value (the
+    /// display may be middle-truncated) with a success haptic and a fleeting
+    /// doc.on.doc → green checkmark swap — the app's copy-feedback convention
+    /// (iOS has no native toast). Deliberately no `.textSelection`: it would
+    /// fight the tap gesture, and the row itself is the copy affordance.
+    private func copyableRow(icon: String, label: String, value: String, copyValue: String) -> some View {
+        let isCopied = copiedRowLabel == label
+        return Button {
+            UIPasteboard.general.string = copyValue
+            HapticFeedback.notification(.success)
+            copiedRowLabel = label
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                if copiedRowLabel == label { copiedRowLabel = nil }
+            }
+        } label: {
+            HStack {
+                Label(label, systemImage: icon)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text(value)
+                    .fontWeight(.medium)
+                    .multilineTextAlignment(.trailing)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Image(systemName: isCopied ? "checkmark" : "doc.on.doc")
+                    .font(.footnote)
+                    .foregroundStyle(isCopied ? AnyShapeStyle(.green) : AnyShapeStyle(.tertiary))
+                    .padding(.leading, 4)
+            }
+            .font(.subheadline)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 14)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .animation(.snappy(duration: 0.18), value: copiedRowLabel)
+        .accessibilityLabel(isCopied ? "\(label) copied" : label)
+        .accessibilityHint("Copies the \(label.lowercased()) to clipboard")
+    }
+
+    /// Same shape as `detailRow` but opens an external URL, with the trailing
+    /// arrow-up-right glyph settings uses for outbound links — the on-chain
+    /// block explorer row (matches the receive screen's row).
+    private func explorerLinkRow(label: String, url: URL) -> some View {
+        Link(destination: url) {
+            HStack {
+                Label(label, systemImage: "safari")
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Image(systemName: "arrow.up.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .font(.subheadline)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 14)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .simultaneousGesture(TapGesture().onEnded { HapticFeedback.selection() })
+        .accessibilityHint("Opens the block explorer in your browser")
     }
 
     private var canvasDivider: some View {
