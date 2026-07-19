@@ -1,12 +1,6 @@
 package com.cashu.me.ui.receive
 
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -28,7 +22,6 @@ import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.CurrencyExchange
 import androidx.compose.material.icons.outlined.IosShare
 import androidx.compose.material.icons.outlined.Payments
-import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.Icon
@@ -50,7 +43,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -89,9 +81,9 @@ import com.cashu.me.ui.components.SecondaryButton
 import com.cashu.me.ui.components.SheetHeader
 import com.cashu.me.ui.components.ToolbarIcon
 import com.cashu.me.ui.components.UnitPickerSheet
+import com.cashu.me.ui.components.WaitingForPaymentRow
 import com.cashu.me.ui.components.shareText
 import com.cashu.me.ui.theme.CashuTheme
-import com.cashu.me.ui.theme.rememberReducedMotion
 import com.cashu.me.ui.theme.withMonoDigits
 import com.cashu.me.ui.receive.nfc.NfcReceiveIndicator
 import com.cashu.me.ui.receive.nfc.NfcReceiveLifecycle
@@ -530,11 +522,11 @@ private fun NfcReceivePhase.isNfcTransferActive(): Boolean = this in setOf(
 
 @Composable
 private fun StatusBlock(received: Boolean, paymentCount: Int) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
-    ) {
-        if (received) {
+    if (received) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
+        ) {
             Icon(
                 imageVector = Icons.Outlined.CheckCircle,
                 contentDescription = null,
@@ -546,32 +538,9 @@ private fun StatusBlock(received: Boolean, paymentCount: Int) {
                 style = MaterialTheme.typography.titleMedium,
                 color = CashuTheme.colors.received,
             )
-        } else {
-            val reducedMotion = rememberReducedMotion()
-            val transition = rememberInfiniteTransition(label = "waiting-pulse")
-            val alpha by transition.animateFloat(
-                initialValue = 1f,
-                targetValue = 0.4f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(1100),
-                    repeatMode = RepeatMode.Reverse,
-                ),
-                label = "waiting-pulse-alpha",
-            )
-            Box(modifier = Modifier.alpha(if (reducedMotion) 1f else alpha)) {
-                Icon(
-                    imageVector = Icons.Outlined.Schedule,
-                    contentDescription = null,
-                    tint = CashuTheme.colors.pending,
-                    modifier = Modifier.size(CashuTheme.spacing.loose),
-                )
-            }
-            Text(
-                text = "Waiting for payment…",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
         }
+    } else {
+        WaitingForPaymentRow()
     }
 }
 

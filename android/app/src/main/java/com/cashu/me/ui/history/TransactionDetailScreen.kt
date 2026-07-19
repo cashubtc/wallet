@@ -1,8 +1,5 @@
 package com.cashu.me.ui.history
 
-import android.content.Context
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -14,10 +11,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.IosShare
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.CenterAlignedTopAppBar
@@ -59,11 +57,13 @@ import com.cashu.me.ui.components.AmountText
 import com.cashu.me.ui.components.CanvasDivider
 import com.cashu.me.ui.components.DetailActionFooter
 import com.cashu.me.ui.components.EmptyState
+import com.cashu.me.ui.components.ExplorerLinkRow
 import com.cashu.me.ui.components.InspectorRow
 import com.cashu.me.ui.components.PrimaryButton
 import com.cashu.me.ui.components.QrCard
 import com.cashu.me.ui.components.ToolbarIcon
 import com.cashu.me.ui.components.neutralActionButtonColors
+import com.cashu.me.ui.components.openInBrowser
 import com.cashu.me.ui.components.shareText
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.withMonoDigits
@@ -119,6 +119,15 @@ fun TransactionDetailScreen(
         )?.mintQuoteIdForStatusRefresh
             ?: return@LaunchedEffect
         runCatching { walletManager.refreshPendingMintQuote(quoteId) }
+    }
+    // Tap-to-copy inspector rows (Address / Transaction ID / Payment Proof):
+    // which row last copied, for the ContentCopy → green Check swap.
+    var copiedFieldLabel by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(copiedFieldLabel) {
+        if (copiedFieldLabel != null) {
+            delay(3000)
+            copiedFieldLabel = null
+        }
     }
 
     val showsQr = transaction?.let { TransactionDisplay.showsQr(it) } == true
@@ -219,24 +228,40 @@ fun TransactionDetailScreen(
                 Column(modifier = Modifier.fillMaxWidth()) {
                     val fields = remember(transaction) { TransactionDisplay.detailFields(transaction) }
                     fields.forEachIndexed { index, field ->
+                        val fieldCopied = copiedFieldLabel == field.label
                         InspectorRow(
                             label = field.label,
                             value = field.value,
                             valueMonospaced = field.value.length > 24 ||
                                 field.label in MonospacedLabels,
+                            onClick = field.copyValue?.let { full ->
+                                {
+                                    // No app snackbar: Android 13+ shows the system
+                                    // clipboard bubble, so the row's check swap is
+                                    // the only in-app confirmation.
+                                    clipboard.setText(AnnotatedString(full))
+                                    copiedFieldLabel = field.label
+                                }
+                            },
+                            trailingIcon = field.copyValue?.let {
+                                if (fieldCopied) Icons.Outlined.Check else Icons.Outlined.ContentCopy
+                            },
+                            trailingIconTint = if (fieldCopied) CashuTheme.colors.received else null,
                         )
                         if (index != fields.lastIndex) CanvasDivider(leadingInset = 16.dp)
+                    }
+                    // Explorer link joins the detail rows (iOS parity), not the
+                    // pinned footer — it's reference material, not an action.
+                    if (explorerUrl != null) {
+                        if (fields.isNotEmpty()) CanvasDivider(leadingInset = 16.dp)
+                        ExplorerLinkRow(onClick = { context.openInBrowser(explorerUrl) })
                     }
                 }
                 Spacer(Modifier.height(CashuTheme.spacing.snug))
             }
 
-            if (explorerUrl != null || hasPrimaryAction) {
+            if (hasPrimaryAction) {
                 DetailActionFooter {
-                    if (explorerUrl != null) {
-                        ExplorerLinkRow(url = explorerUrl, onOpen = { context.openInBrowser(it) })
-                        if (hasPrimaryAction) Spacer(Modifier.height(CashuTheme.spacing.snug))
-                    }
                     if (pendingReceiveToken != null && onClaimReceiveToken != null) {
                         PrimaryButton(
                             text = "Receive",
@@ -260,9 +285,6 @@ fun TransactionDetailScreen(
         }
     }
 }
-
-// Inline link glyph next to the "View in block explorer" label.
-private val EXPLORER_GLYPH_SIZE = 18.dp
 
 // Historical success gets a more generous 96dp hero; failure stays restrained.
 private val COMPLETED_HERO_GLYPH_SIZE = 96.dp
@@ -297,39 +319,6 @@ private fun HeroAmount(
     )
 }
 
-@Composable
-private fun ExplorerLinkRow(url: String, onOpen: (String) -> Unit) {
-    androidx.compose.foundation.layout.Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(
-                horizontal = CashuTheme.spacing.comfortable,
-                vertical = CashuTheme.spacing.snug,
-            ),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
-    ) {
-        Icon(
-            imageVector = Icons.AutoMirrored.Outlined.OpenInNew,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(EXPLORER_GLYPH_SIZE),
-        )
-        Text(
-            text = "View in block explorer",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.weight(1f),
-        )
-        IconButton(onClick = { onOpen(url) }) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Outlined.OpenInNew,
-                contentDescription = "Open",
-            )
-        }
-    }
-}
-
 private fun WalletTransaction.explorerUrl(): String? {
     if (kind != TransactionKind.Onchain) return null
     return preimage?.let {
@@ -337,11 +326,4 @@ private fun WalletTransaction.explorerUrl(): String? {
     } ?: invoice?.let {
         OnchainExplorer.addressWebUrl(address = it, mintUrl = mintUrl)
     }
-}
-
-private fun Context.openInBrowser(url: String) {
-    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
-        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    }
-    startActivity(intent)
 }
