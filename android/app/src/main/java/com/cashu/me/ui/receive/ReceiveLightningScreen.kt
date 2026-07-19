@@ -147,6 +147,7 @@ fun ReceiveLightningScreen(
     var mintPickerOpen by remember { mutableStateOf(false) }
     var reusableAmountPickerOpen by remember { mutableStateOf(false) }
     var displayActionsOpen by remember { mutableStateOf(false) }
+    var methodPickerOpen by remember { mutableStateOf(false) }
 
     val activeMint = walletState.activeMint
     val supportedMethods = activeMint?.supportedMintMethods?.ifEmpty { listOf(PaymentMethodKind.Bolt11) }
@@ -456,10 +457,9 @@ fun ReceiveLightningScreen(
                     }
                 } else if (current is ReceiveLnFace.Input) {
                     // Method picker rides the header (iOS parity): an icon
-                    // opening a menu, shown only when >1 method exists.
+                    // opening a bottom sheet, shown only when >1 method exists.
                     if (supportedMethods.size > 1) {
-                        var methodMenuOpen by remember { mutableStateOf(false) }
-                        IconButton(onClick = { methodMenuOpen = true }) {
+                        IconButton(onClick = { methodPickerOpen = true }) {
                             // Animated glyph replacement on method switch
                             // (iOS .contentTransition(.symbolEffect(.replace))).
                             IconSwap(
@@ -467,41 +467,6 @@ fun ReceiveLightningScreen(
                                 contentDescription = "Receive method: ${method.friendlyTitle}, ${method.friendlyDescriptor}",
                                 iconSize = CashuTheme.iconSizes.toolbar,
                             )
-                        }
-                        DropdownMenu(
-                            expanded = methodMenuOpen,
-                            onDismissRequest = { methodMenuOpen = false },
-                            shape = MaterialTheme.shapes.large,
-                        ) {
-                            supportedMethods.forEach { kind ->
-                                DropdownMenuItem(
-                                    text = {
-                                        // Title + one-line descriptor (iOS friendlyTitle /
-                                        // friendlyDescriptor parity). Material3 MenuItem
-                                        // only takes a single text composable, so both
-                                        // lines live here.
-                                        Column {
-                                            Text(
-                                                text = kind.friendlyTitle,
-                                                style = MaterialTheme.typography.bodyLarge,
-                                            )
-                                            Text(
-                                                text = kind.friendlyDescriptor,
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            )
-                                        }
-                                    },
-                                    leadingIcon = { Icon(kind.menuIcon, contentDescription = null) },
-                                    trailingIcon = if (kind == method) {
-                                        { Icon(Icons.Filled.Check, contentDescription = "Selected") }
-                                    } else null,
-                                    onClick = {
-                                        methodMenuOpen = false
-                                        applyMethodOption(kind)
-                                    },
-                                )
-                            }
                         }
                     }
                     if (showsUnitSelector) {
@@ -751,6 +716,18 @@ fun ReceiveLightningScreen(
                 unitPickerOpen = false
             },
             onDismiss = { unitPickerOpen = false },
+        )
+    }
+
+    if (methodPickerOpen) {
+        ReceiveMethodPickerSheet(
+            methods = supportedMethods,
+            selectedMethod = method,
+            onSelect = { kind ->
+                methodPickerOpen = false
+                applyMethodOption(kind)
+            },
+            onDismiss = { methodPickerOpen = false },
         )
     }
 
@@ -1151,6 +1128,81 @@ private fun ReusableAmountEditSheet(
                     onDone(UnitAmountEntry.baseUnits(amount, decimals).takeIf { it > 0 })
                 },
             )
+        }
+    }
+}
+
+/** Receive-method chooser bottom sheet (iOS `MethodPickerSheet` / "Receive
+ *  with" parity) — replaces the old toolbar dropdown for mints that support
+ *  more than one receive rail. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ReceiveMethodPickerSheet(
+    methods: List<PaymentMethodKind>,
+    selectedMethod: PaymentMethodKind,
+    onSelect: (PaymentMethodKind) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = CashuTheme.spacing.comfortable)
+                .navigationBarsPadding(),
+        ) {
+            Text(
+                text = "Receive with",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(
+                    horizontal = CashuTheme.spacing.snug,
+                    vertical = CashuTheme.spacing.default,
+                ),
+            )
+            methods.forEach { kind ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onSelect(kind) }
+                        .padding(
+                            horizontal = CashuTheme.spacing.snug,
+                            vertical = CashuTheme.spacing.default,
+                        ),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
+                ) {
+                    Icon(
+                        imageVector = kind.menuIcon,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(CashuTheme.spacing.loose),
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = kind.friendlyTitle,
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium,
+                        )
+                        Text(
+                            text = kind.friendlyDescriptor,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (kind == selectedMethod) {
+                        Icon(
+                            imageVector = Icons.Filled.Check,
+                            contentDescription = "Selected",
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(CashuTheme.spacing.loose),
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(CashuTheme.spacing.snug))
         }
     }
 }
