@@ -6,6 +6,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -22,12 +24,20 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.cashu.me.ui.theme.CashuTheme
+import com.cashu.me.Core.Errors.AppError
 
 // iOS InlineNotice: caption icon, 6pt gap, 10pt pad when tinted, 12pt radius.
 private val NoticeIconSize = 14.dp
@@ -100,6 +110,37 @@ fun InlineNotice(
         Column(modifier = modifier.fillMaxWidth()) {
             content()
         }
+    }
+}
+
+/** Failure-only overload. Validation/caution strings keep using the non-clickable overload above. */
+@Composable
+fun InlineNotice(
+    error: AppError,
+    modifier: Modifier = Modifier,
+    tinted: Boolean = true,
+) {
+    var showsDetails by rememberSaveable(error.reportId) { mutableStateOf(false) }
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(
+                role = Role.Button,
+                onClickLabel = "Open error details",
+            ) { showsDetails = true }
+            .semantics {
+                contentDescription = "${error.info.userMessage}. Open error details and reporting."
+            },
+    ) {
+        InlineNotice(
+            text = error.info.userMessage,
+            detail = "Tap for details and reporting",
+            severity = NoticeSeverity.Error,
+            tinted = tinted,
+        )
+    }
+    if (showsDetails) {
+        ErrorDetailsSheet(error = error, onDismiss = { showsDetails = false })
     }
 }
 

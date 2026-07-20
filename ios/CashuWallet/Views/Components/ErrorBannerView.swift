@@ -1,4 +1,5 @@
 import SwiftUI
+import Cdk
 
 // MARK: - Severity
 
@@ -133,8 +134,49 @@ struct InlineNotice: View {
     var showsIcon: Bool = true
     /// Wrap in a 12pt tint surface. Off by default to preserve the existing calm look.
     var tinted: Bool = false
+    private var appError: AppError? = nil
+    @State private var presentedError: AppError?
+
+    init(
+        message: String,
+        title: String? = nil,
+        severity: ErrorSeverity = .error,
+        detail: String? = nil,
+        showsIcon: Bool = true,
+        tinted: Bool = false
+    ) {
+        self.message = message
+        self.title = title
+        self.severity = severity
+        self.detail = detail
+        self.showsIcon = showsIcon
+        self.tinted = tinted
+    }
+
+    /// Failure-only initializer. Validation, caution, pending, and success copy
+    /// continues to use the non-clickable string initializer above.
+    init(error: AppError, tinted: Bool = true) {
+        self.message = error.info.userMessage
+        self.severity = .error
+        self.detail = "Tap for details and reporting"
+        self.tinted = tinted
+        self.appError = error
+    }
 
     var body: some View {
+        Group {
+            if let appError {
+                Button { presentedError = appError } label: { noticeContent }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Opens error details and reporting")
+            } else {
+                noticeContent
+            }
+        }
+        .sheet(item: $presentedError) { ErrorDetailsSheet(error: $0) }
+    }
+
+    private var noticeContent: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             if showsIcon {
                 Image(systemName: severity.icon)
@@ -182,6 +224,121 @@ struct InlineNotice: View {
         var parts = [severity.announcementPrefix + (title.map { "\($0). " } ?? "") + message]
         if let detail { parts.append(detail) }
         return parts.joined(separator: " ")
+    }
+}
+
+// MARK: - Error report details
+
+private struct ErrorDetailsSheet: View {
+    let error: AppError
+    @Environment(\.dismiss) private var dismiss
+    @State private var note = ""
+    @State private var isSending = false
+    @State private var deliveryError: String?
+    @State private var receipt: NostrReportReceipt?
+
+    private var preview: NostrErrorReport {
+        error.preparedReport(userNote: note.isEmpty ? nil : note)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Message") { Text(preview.userMessage) }
+                Section("Report preview") {
+                    detail("Code / category", "\(preview.errorCode.map(String.init) ?? "—") · \(category)")
+                    detail("Operation", preview.operation)
+                    detail("Report ID", preview.reportId)
+                    detail("App", "\(preview.appName) \(preview.appVersion) (\(preview.appBuild))")
+                    detail("Platform", "\(preview.platform) \(preview.osVersion)")
+                    detail("Technical detail", preview.technicalMessage)
+                }
+                Section("Privacy") {
+                    Text("Review this preview before sending. Never include your seed phrase, private keys, tokens, or passwords.")
+                        .foregroundStyle(.secondary)
+                }
+                Section("Optional note") {
+                    TextEditor(text: $note)
+                        .frame(minHeight: 90)
+                        .disabled(isSending || receipt != nil)
+                        .onChange(of: note) { _, value in
+                            if value.utf8.count > 1_024 { note = value.limitedToUtf8Bytes(1_024) }
+                        }
+                    Text("\(note.utf8.count)/1024 bytes")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                if !NostrErrorReporter.isConfigured {
+                    Section { Text("Reporting is unavailable in this build.").foregroundStyle(.red) }
+                }
+                if let deliveryError {
+                    Section { Text(deliveryError).foregroundStyle(.red) }
+                }
+                if let receipt {
+                    Section {
+                        Text(
+                            receipt.failedRelays == 0
+                                ? "Report sent."
+                                : "Report sent to \(receipt.acceptedRelays) relay(s); \(receipt.failedRelays) failed."
+                        )
+                        .foregroundStyle(.green)
+                    }
+                }
+            }
+            .navigationTitle("Error details")
+            .navigationBarTitleDisplayMode(.inline)
+            .interactiveDismissDisabled(isSending)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(receipt == nil ? "Cancel" : "Done") { dismiss() }
+                        .disabled(isSending)
+                }
+                if receipt == nil {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button(deliveryError == nil ? "Send Report" : "Retry") { send() }
+                            .disabled(isSending || !NostrErrorReporter.isConfigured)
+                    }
+                }
+            }
+        }
+    }
+
+    private var category: String {
+        switch error.info.category {
+        case .protocol: "protocol"
+        case .internal: "internal"
+        }
+    }
+
+    @ViewBuilder
+    private func detail(_ label: String, _ value: String) -> some View {
+        LabeledContent(label) {
+            Text(value).multilineTextAlignment(.trailing).textSelection(.enabled)
+        }
+    }
+
+    private func send() {
+        guard !isSending else { return }
+        isSending = true
+        deliveryError = nil
+        Task {
+            do {
+                receipt = try await NostrErrorReporter.send(error, userNote: note.isEmpty ? nil : note)
+            } catch {
+                // A report delivery failure stays in this sheet; it never creates another AppError.
+                deliveryError = "The report could not be sent. Check your connection and retry."
+            }
+            isSending = false
+        }
+    }
+}
+
+private extension String {
+    func limitedToUtf8Bytes(_ maxBytes: Int) -> String {
+        guard utf8.count > maxBytes else { return self }
+        var result = self
+        while result.utf8.count > maxBytes && !result.isEmpty { result.removeLast() }
+        return result
     }
 }
 

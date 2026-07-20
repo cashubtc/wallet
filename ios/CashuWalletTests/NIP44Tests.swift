@@ -213,4 +213,49 @@ final class NIP44Tests: XCTestCase {
         let ck = Data(count: 32)
         XCTAssertThrowsError(try NIP44.decrypt(payload: "not-base64!!!", conversationKey: ck))
     }
+
+
+    // MARK: - Error reporting envelope
+
+    func testErrorReportGiftWrapRoundTrip() throws {
+        let plaintext = #"{"schema_version":1,"report_id":"report-1"}"#
+
+        let giftWrap = try NIP17.wrap(plaintext: plaintext, recipientPubkeyHex: pub2Hex)
+        let rumor = try NIP17.unwrap(giftWrap: giftWrap, recipientPrivateKey: sec2)
+
+        XCTAssertEqual(giftWrap.kind, 1059)
+        XCTAssertEqual(rumor.kind, 14)
+        XCTAssertEqual(rumor.content, plaintext)
+    }
+
+    func testSupportNprofileParsesOnlySecureRelayHints() throws {
+        let relay = Array("wss://relay.example".utf8)
+        let duplicate = Array("wss://relay.example".utf8)
+        let insecure = Array("ws://insecure.example".utf8)
+        let pubkey = Array(Data(hexString: pub2Hex)!)
+        let tlv = [UInt8(0), UInt8(pubkey.count)] + pubkey
+            + [UInt8(1), UInt8(relay.count)] + relay
+            + [UInt8(1), UInt8(duplicate.count)] + duplicate
+            + [UInt8(1), UInt8(insecure.count)] + insecure
+        let nprofile = try Bech32.encode(hrp: "nprofile", data: Data(tlv))
+
+        let recipient = NostrErrorTransport.parseNprofile(nprofile)
+
+        XCTAssertEqual(recipient?.pubkeyHex, pub2Hex)
+        XCTAssertEqual(recipient?.relays, ["wss://relay.example"])
+    }
+
+    func testErrorReportSanitizerRedactsSecretsAndLimitsUtf8() {
+        let source = "seed phrase: abandon ability able about above absent absorb abstract absurd abuse access accident "
+            + "cashuAeyJsb25nX3NlY3JldF90b2tlbiI6dHJ1ZX0 https://mint.example/path /Users/alice/wallet.db"
+
+        let sanitized = ErrorSanitizer.text(source, maxBytes: 120)
+
+        XCTAssertFalse(sanitized.contains("abandon ability"))
+        XCTAssertFalse(sanitized.contains("cashuA"))
+        XCTAssertFalse(sanitized.contains("mint.example"))
+        XCTAssertFalse(sanitized.contains("/Users/alice"))
+        XCTAssertLessThanOrEqual(sanitized.utf8.count, 120)
+        XCTAssertLessThanOrEqual(ErrorSanitizer.text(String(repeating: "🔒", count: 2_000), maxBytes: 1_024).utf8.count, 1_024)
+    }
 }

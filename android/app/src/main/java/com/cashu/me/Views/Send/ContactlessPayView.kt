@@ -33,6 +33,7 @@ import kotlinx.coroutines.withContext
 import com.cashu.me.Core.Services.NFCPaymentInput
 import com.cashu.me.Core.Services.NFCPaymentService
 import com.cashu.me.Core.Services.NFCReaderDelegate
+import com.cashu.me.Core.Errors.AppError
 import com.cashu.me.Core.WalletManager
 import com.cashu.me.ui.components.GhostButton
 import com.cashu.me.ui.components.InlineNotice
@@ -51,7 +52,7 @@ fun ContactlessPayView(
     val scope = rememberCoroutineScope()
     val service = remember(walletManager) { NFCPaymentService(walletManager) }
     var status by remember { mutableStateOf("Hold the phone near an NFC payment tag.") }
-    var error by remember { mutableStateOf<String?>(null) }
+    var error by remember { mutableStateOf<AppError?>(null) }
     var isProcessing by remember { mutableStateOf(false) }
     var paymentComplete by remember { mutableStateOf(false) }
     var lastPaymentAmount by remember { mutableStateOf<Long?>(null) }
@@ -96,7 +97,7 @@ fun ContactlessPayView(
                                 }
                             }
                         }.onFailure { failure ->
-                            error = failure.message ?: "NFC payment failed."
+                            error = AppError.from(failure, "contactless payment")
                             status = "Ready to scan again."
                         }
                         isProcessing = false
@@ -137,7 +138,7 @@ fun ContactlessPayView(
             Text("Payment sent!", style = MaterialTheme.typography.titleMedium)
             lastPaymentAmount?.let { Text("$it sat", style = MaterialTheme.typography.headlineSmall) }
         }
-        error?.let { InlineNotice(text = it) }
+        error?.let { InlineNotice(error = it) }
         PrimaryButton("Close", onClick = onClose)
         GhostButton(
             text = if (paymentComplete) "Pay again" else "Reset",

@@ -73,6 +73,15 @@ class AndroidReleaseConfigurationTest {
         assertTrue(source.contains("gateway.start(BuildConfig.SENTRY_DSN)"))
     }
 
+    @Test
+    fun releaseBuildRequiresNostrErrorReportNprofile() {
+        val source = sourceFile("build.gradle.kts", "app/build.gradle.kts").readText()
+
+        assertTrue(source.contains("NOSTR_ERROR_REPORT_NPROFILE"))
+        assertTrue(source.contains("validateNostrErrorReportConfiguration"))
+        assertTrue(source.contains("nprofile with 1-3 relay hints"))
+    }
+
     private fun assertContainsExclusion(root: Element, domain: String, path: String) {
         val excludes = root.getElementsByTagName("exclude")
         val found = (0 until excludes.length)
