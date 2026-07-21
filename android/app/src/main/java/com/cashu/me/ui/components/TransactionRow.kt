@@ -1,7 +1,7 @@
 package com.cashu.me.ui.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -53,6 +53,7 @@ fun TransactionRow(
     model: TransactionRowModel,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    onLongClick: (() -> Unit)? = null,
 ) {
     val tx = model.transaction
     val incoming = tx.type == TransactionType.Incoming
@@ -82,7 +83,10 @@ fun TransactionRow(
             .semantics {
                 contentDescription = semanticParts.joinToString(", ")
             }
-            .clickable(onClick = onClick)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick,
+            )
             // Slightly looser than the original 16pt so home Recent + History
             // breathe between rows without going sparse.
             .padding(horizontal = CashuTheme.spacing.comfortable, vertical = 18.dp),

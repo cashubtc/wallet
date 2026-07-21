@@ -100,6 +100,20 @@ class TransactionDisplayTest {
         assertEquals("Ecash token", TransactionDisplay.qrLabel(transaction))
     }
 
+    @Test
+    fun pendingReceiveTokenUsesClaimTitle() {
+        val transaction = transaction(
+            kind = TransactionKind.Ecash,
+            type = TransactionType.Incoming,
+            token = "cashu-pending-receive",
+        ).copy(
+            status = TransactionStatus.Pending,
+            isPendingReceiveToken = true,
+        )
+
+        assertEquals("Ecash to claim", TransactionDisplay.title(transaction))
+    }
+
     private fun transaction(
         kind: TransactionKind,
         type: TransactionType,

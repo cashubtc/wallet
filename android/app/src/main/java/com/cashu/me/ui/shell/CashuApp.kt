@@ -15,11 +15,15 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -27,15 +31,18 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.navigation.compose.rememberNavController
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 import com.cashu.me.App.AppContainer
 import com.cashu.me.Core.Navigation.CashuRoute
 import com.cashu.me.Core.PaymentRequestDecodeResult
@@ -88,6 +95,7 @@ private fun CashuAppContent(container: AppContainer) {
     val walletState by container.walletManager.state.collectAsState()
     val settings by container.settingsManager.state.collectAsState()
     val lifecycleOwner = LocalLifecycleOwner.current
+    val scope = rememberCoroutineScope()
     val isAuthenticated = walletState.isInitialized && !walletState.needsOnboarding
     val isRuntimeReady = isAuthenticated && walletState.isRuntimeReady
     // StartupTimingMetric's full-display boundary: cached balance and
@@ -106,12 +114,13 @@ private fun CashuAppContent(container: AppContainer) {
         }
     }
 
+    // iOS CashuWalletApp `.task` / scene `.active`: pending sent-token spend
+    // checks gate on `checkSentTokens` only (no separate startup flag).
     LaunchedEffect(isRuntimeReady) {
         if (isRuntimeReady) {
             container.cashuRequestListener.start()
-            val settings = container.settingsManager.state.value
-            if (settings.checkPendingOnStartup && settings.checkSentTokens) {
-                container.walletManager.checkAllPendingTokens()
+            if (container.settingsManager.state.value.checkSentTokens) {
+                runCatching { container.walletManager.checkAllPendingTokens() }
             }
         } else {
             container.cashuRequestListener.stop()
@@ -125,6 +134,13 @@ private fun CashuAppContent(container: AppContainer) {
                 Lifecycle.Event.ON_RESUME -> {
                     container.appLockManager.appBecameActive()
                     container.cashuRequestListener.start()
+                    if (event == Lifecycle.Event.ON_RESUME &&
+                        container.settingsManager.state.value.checkSentTokens
+                    ) {
+                        scope.launch {
+                            runCatching { container.walletManager.checkAllPendingTokens() }
+                        }
+                    }
                 }
                 Lifecycle.Event.ON_PAUSE,
                 Lifecycle.Event.ON_STOP -> {
@@ -462,7 +478,15 @@ private fun LoadingScreen() {
             .background(MaterialTheme.colorScheme.background),
         contentAlignment = Alignment.Center,
     ) {
-        LoadingIndicator()
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            LoadingIndicator()
+            Spacer(Modifier.height(16.dp))
+            Text(
+                text = "Loading Wallet...",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 

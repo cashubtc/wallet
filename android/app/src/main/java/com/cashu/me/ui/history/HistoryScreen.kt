@@ -33,7 +33,6 @@ import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.FilterList
 import androidx.compose.material.icons.outlined.History
-import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
@@ -121,6 +120,7 @@ fun HistoryScreen(
     var query by remember { mutableStateOf("") }
     var refreshing by remember { mutableStateOf(false) }
     var requestPendingDelete by remember { mutableStateOf<CashuRequest?>(null) }
+    var receiveTokenPendingDelete by remember { mutableStateOf<WalletTransaction?>(null) }
     val searchFocusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
 
@@ -266,7 +266,7 @@ fun HistoryScreen(
                 if (sections.isEmpty()) {
                     HistoryEmptyState(
                         filter = filter,
-                        hasQuery = query.isNotBlank(),
+                        query = query,
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxWidth(),
@@ -292,7 +292,7 @@ fun HistoryScreen(
                     ) {
                         sections.forEach { section ->
                             item(key = "header-${section.title}") {
-                                SectionHeader(section.title.uppercase())
+                                SectionHeader(section.title)
                             }
                             items(section.items, key = { it.key }) { item ->
                                 // Spring-animated placement on filter/search changes.
@@ -318,6 +318,11 @@ fun HistoryScreen(
                                                 secondaryAmount = amountDisplay.secondary,
                                             ),
                                             onClick = { onOpenTransaction(tx) },
+                                            onLongClick = if (tx.isPendingReceiveToken) {
+                                                { receiveTokenPendingDelete = tx }
+                                            } else {
+                                                null
+                                            },
                                         )
                                     }
                                     is HistoryItem.Req -> {
@@ -353,10 +358,10 @@ fun HistoryScreen(
     requestPendingDelete?.let { req ->
         AlertDialog(
             onDismissRequest = { requestPendingDelete = null },
-            title = { Text("Remove from history?") },
+            title = { Text("Remove this Cashu Request from history?") },
             text = {
                 Text(
-                    "Payments already received stay in your wallet; only the request entry is removed.",
+                    "The QR and any pending payment routing stay valid; this only removes the row from your history.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
             },
@@ -373,30 +378,54 @@ fun HistoryScreen(
             },
         )
     }
+
+    receiveTokenPendingDelete?.let { tx ->
+        AlertDialog(
+            onDismissRequest = { receiveTokenPendingDelete = null },
+            title = { Text("Remove this unclaimed ecash?") },
+            text = {
+                Text(
+                    "This ecash hasn't been claimed. Removing it discards the token — only the sender can re-issue it.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    walletManager.removePendingReceiveToken(tx.id)
+                    receiveTokenPendingDelete = null
+                    scope.launch { walletManager.loadTransactions() }
+                }) {
+                    Text("Remove", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { receiveTokenPendingDelete = null }) { Text("Cancel") }
+            },
+        )
+    }
 }
 
 @Composable
 private fun HistoryEmptyState(
     filter: HistoryFilter,
-    hasQuery: Boolean,
+    query: String,
     modifier: Modifier = Modifier,
 ) {
     val (icon, title, supporting) = when {
-        hasQuery -> Triple(Icons.Outlined.Search, "No matches", null)
-        filter == HistoryFilter.Pending -> Triple(
-            Icons.Outlined.Schedule,
-            "No pending transactions",
-            null,
+        query.isNotBlank() -> Triple(
+            Icons.Outlined.Search,
+            "No Results",
+            "No activity matches \"$query\".",
         )
-        filter == HistoryFilter.Completed -> Triple(
-            Icons.Outlined.Check,
-            "No completed transactions",
-            null,
+        filter != HistoryFilter.All -> Triple(
+            Icons.Outlined.FilterList,
+            "Nothing Here",
+            "No transactions match this filter.",
         )
         else -> Triple(
             Icons.Outlined.History,
-            "No activity yet",
-            "Your first payment will show up here.",
+            "No History Yet",
+            "Your payments will appear here.",
         )
     }
     // Pulse the empty-state glyph (resting state under reduce-motion).

@@ -316,7 +316,7 @@ fun MintDetailScreen(
                     )
                 }
                 DestructiveTextButton(
-                    text = "Remove mint",
+                    text = "Remove Mint",
                     onClick = { confirmingRemove = true },
                     modifier = Modifier.fillMaxWidth(),
                 )

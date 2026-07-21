@@ -92,7 +92,7 @@ fun LightningScreen(
             modifier = Modifier.fillMaxSize().padding(padding),
             verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
         ) {
-            SectionHeader("Lightning address")
+            SectionHeader("Lightning Address")
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -132,28 +132,28 @@ fun LightningScreen(
                 }
             }
 
-            SectionHeader("Settings")
+            SectionHeader("Preferences")
             ToggleRow(
-                title = "Enable Nostr-NPC bridge",
-                subtitle = "Route Lightning payments through the NPC quote handler",
+                title = "Enable Lightning Address",
+                subtitle = "Receive Lightning payments to your wallet using a Lightning address.",
                 checked = npcState.isEnabled,
                 onCheckedChange = { npcService.setEnabled(it) },
             )
             CanvasDivider(leadingInset = 16.dp)
             ToggleRow(
-                title = "Automatic claim",
-                subtitle = "Mint paid quotes without confirmation",
+                title = "Auto-claim payments",
+                subtitle = "Incoming payments are minted as ecash at your chosen mint.",
                 checked = npcState.automaticClaim,
                 onCheckedChange = { npcService.setAutomaticClaim(it) },
                 enabled = npcState.isEnabled,
             )
 
-            SectionHeader("Default mint")
+            SectionHeader("Receiving mint")
             val mintLabel = walletState.mints.firstOrNull { it.url == npcState.selectedMintUrl }?.name
                 ?: walletState.activeMint?.name
-                ?: "No mint"
+                ?: "Select a mint"
             InspectorRow(
-                label = "Mint",
+                label = "Receiving mint",
                 value = mintLabel,
                 editable = walletState.mints.isNotEmpty(),
                 onClick = { if (walletState.mints.isNotEmpty()) mintPickerOpen = true },
@@ -176,7 +176,7 @@ fun LightningScreen(
             Spacer(Modifier.height(CashuTheme.spacing.comfortable))
             Column(modifier = Modifier.fillMaxWidth().padding(horizontal = CashuTheme.spacing.comfortable)) {
                 PrimaryButton(
-                    text = if (npcState.isCheckingPayments) "Checking…" else "Check for paid quotes now",
+                    text = if (npcState.isCheckingPayments) "Checking…" else "Check for payments",
                     onClick = { npcService.checkAndClaimPayments() },
                     enabled = npcState.isEnabled && !npcState.isCheckingPayments,
                     loading = npcState.isCheckingPayments,

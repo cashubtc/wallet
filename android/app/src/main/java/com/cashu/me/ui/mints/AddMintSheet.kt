@@ -159,13 +159,13 @@ fun AddMintSheet(
             Spacer(modifier = Modifier.height(CashuTheme.spacing.tight))
 
             PrimaryButton(
-                text = "Add mint",
+                text = "Add Mint",
                 onClick = ::addMint,
                 enabled = url.isNotBlank() && !isAdding,
                 loading = isAdding,
             )
             GhostButton(
-                text = "Paste URL from clipboard",
+                text = "Paste URL from Clipboard",
                 onClick = ::pasteFromClipboard,
                 enabled = !isAdding,
                 modifier = Modifier.fillMaxWidth(),

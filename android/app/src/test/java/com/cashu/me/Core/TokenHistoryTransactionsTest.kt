@@ -63,6 +63,7 @@ class TokenHistoryTransactionsTest {
         assertEquals(0L, row.fee)
         assertEquals("eur", row.unit)
         assertTrue(row.isPendingToken)
+        assertTrue(row.isPendingReceiveToken)
     }
 
     @Test

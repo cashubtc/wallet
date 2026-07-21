@@ -41,6 +41,8 @@ import com.cashu.me.Core.WalletManager
 import com.cashu.me.ui.components.AmountFlipDisplay
 import com.cashu.me.ui.components.AmountText
 import com.cashu.me.ui.components.GhostButton
+import com.cashu.me.ui.components.InlineNotice
+import com.cashu.me.ui.components.NoticeSeverity
 import com.cashu.me.ui.components.PaymentStatusPhase
 import com.cashu.me.ui.components.PaymentStatusScreen
 import com.cashu.me.ui.components.PrimaryButton
@@ -221,9 +223,18 @@ private fun ConfirmContent(
         TokenInspectorRows(
             info = info,
             fee = fee,
-            locked = review?.locked == true,
+            lockedToLabel = review?.lockedToLabel,
             modifier = Modifier.padding(horizontal = CashuTheme.spacing.comfortable),
         )
+        if (review != null && !review.mintIsKnown) {
+            Spacer(Modifier.height(CashuTheme.spacing.snug))
+            InlineNotice(
+                text = "New mint",
+                detail = "You haven't used ${info.mint} before. Receiving adds it to your wallet — only continue if you trust it.",
+                severity = NoticeSeverity.Warning,
+                modifier = Modifier.padding(horizontal = CashuTheme.spacing.comfortable),
+            )
+        }
         Spacer(Modifier.weight(FooterWeight))
         Column(
             modifier = Modifier
@@ -244,7 +255,7 @@ private fun ConfirmContent(
             )
             Spacer(Modifier.height(CashuTheme.spacing.snug))
             GhostButton(
-                text = "Receive later",
+                text = "Receive Later",
                 onClick = onReceiveLater,
             )
             Spacer(Modifier.navigationBarsPadding())

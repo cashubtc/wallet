@@ -392,7 +392,7 @@ fun UnifiedSendScreen(
         // Status terminal replaces the whole body (iOS PaymentStatusView slot).
         when (val current = status) {
             SendStatus.Sending -> Box(Modifier.weight(1f).fillMaxWidth()) {
-                PaymentStatusScreen(phase = PaymentStatusPhase.Processing, title = "Sending payment…")
+                PaymentStatusScreen(phase = PaymentStatusPhase.Processing, title = "Processing…")
             }
             is SendStatus.Sent -> Box(Modifier.weight(1f).fillMaxWidth()) {
                 // Amount/Fee/Mint metadata rows (iOS PaymentStatusView success
@@ -403,7 +403,7 @@ fun UnifiedSendScreen(
                 val sentMint = current.result?.mintUrl ?: activeMintUrl
                 PaymentStatusScreen(
                     phase = PaymentStatusPhase.Success,
-                    title = "Payment sent",
+                    title = "Payment Sent!",
                     onDone = onClose,
                     rows = {
                         if (sentAmount > 0L) {
@@ -435,11 +435,11 @@ fun UnifiedSendScreen(
             is SendStatus.Failed -> Box(Modifier.weight(1f).fillMaxWidth()) {
                 PaymentStatusScreen(
                     phase = PaymentStatusPhase.Failure,
-                    title = "Payment failed",
+                    title = "Payment Failed",
                     detail = current.message.text,
                     // A terminal outcome (already paid) can't be retried — offer
                     // Done; anything else returns to the confirm step.
-                    doneLabel = if (current.message.isTerminal) "Done" else "Try again",
+                    doneLabel = if (current.message.isTerminal) "Done" else "Try Again",
                     onDone = {
                         if (current.message.isTerminal) onClose() else status = null
                     },
@@ -733,7 +733,7 @@ private fun NoMintsFace(onOpenMints: () -> Unit) {
     }
 }
 
-/** "TO" pill: caption label + middle-truncated recipient. */
+/** "To" pill: caption label + middle-truncated recipient. */
 @Composable
 private fun ToPill(destination: String) {
     Row(
@@ -744,7 +744,7 @@ private fun ToPill(destination: String) {
             .padding(horizontal = CashuTheme.spacing.comfortable),
     ) {
         Text(
-            text = "TO",
+            text = "To",
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -953,7 +953,7 @@ private fun ConfirmFace(
         if (quoteError != null) {
             Spacer(Modifier.height(CashuTheme.spacing.default))
             InlineNotice(text = quoteError)
-            GhostButton(text = "Try again", onClick = onRetryQuote)
+            GhostButton(text = "Try Again", onClick = onRetryQuote)
         }
         when (cashuRoute) {
             is CashuPaymentRequestRoute.UnsupportedUnit -> {

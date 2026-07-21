@@ -1,6 +1,5 @@
 package com.cashu.me.ui.settings
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -10,7 +9,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -24,7 +22,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.cashu.me.Core.SettingsManager
 import com.cashu.me.ui.components.CanvasDivider
-import com.cashu.me.ui.components.SectionHeader
 import com.cashu.me.ui.components.ToggleRow
 import com.cashu.me.ui.components.ToolbarIcon
 import com.cashu.me.ui.theme.CashuTheme
@@ -57,67 +54,76 @@ fun PrivacyScreen(
                 .padding(padding)
                 .verticalScroll(rememberScrollState()),
         ) {
-            SectionHeader("Security")
             ToggleRow(
-                title = "App Lock",
-                subtitle = "Require device authentication when returning to the wallet",
-                checked = settings.appLockEnabled,
-                onCheckedChange = settingsManager::setAppLockEnabled,
-            )
-
-            SectionHeader("Background work")
-            ToggleRow(
-                title = "Check pending tokens on startup",
-                subtitle = "Refresh status when the app launches",
-                checked = settings.checkPendingOnStartup,
-                onCheckedChange = settingsManager::setCheckPendingOnStartup,
-            )
-            CanvasDivider(leadingInset = 16.dp)
-            ToggleRow(
-                title = "Check sent token claims",
-                subtitle = "Detect when recipients redeem tokens you sent",
-                checked = settings.checkSentTokens,
-                onCheckedChange = settingsManager::setCheckSentTokens,
-            )
-            CanvasDivider(leadingInset = 16.dp)
-            ToggleRow(
-                title = "Check incoming invoices",
+                title = "Check incoming invoice",
                 subtitle = "Poll mint quotes while screens are open",
                 checked = settings.checkIncomingInvoices,
                 onCheckedChange = settingsManager::setCheckIncomingInvoices,
             )
             CanvasDivider(leadingInset = 16.dp)
             ToggleRow(
-                title = "Periodic invoice checks",
+                title = "Check all invoices",
                 subtitle = "Refresh quote status on a timer",
                 checked = settings.periodicallyCheckIncomingInvoices,
                 onCheckedChange = settingsManager::setPeriodicallyCheckIncomingInvoices,
+                enabled = settings.checkIncomingInvoices,
             )
-
-            SectionHeader("Network")
+            CanvasDivider(leadingInset = 16.dp)
+            ToggleRow(
+                title = "Check sent ecash",
+                subtitle = "Detect when recipients redeem tokens you sent",
+                checked = settings.checkSentTokens,
+                onCheckedChange = settingsManager::setCheckSentTokens,
+            )
+            CanvasDivider(leadingInset = 16.dp)
             ToggleRow(
                 title = "Use WebSockets",
                 subtitle = "Required for Nostr discovery and live invoice updates",
                 checked = settings.useWebsockets,
                 onCheckedChange = settingsManager::setUseWebsockets,
+                enabled = settings.checkIncomingInvoices || settings.checkSentTokens,
             )
-
-            SectionHeader("Convenience")
+            CanvasDivider(leadingInset = 16.dp)
             ToggleRow(
-                title = "Auto-paste ecash on Receive",
-                subtitle = "Prefill the token field from clipboard",
+                title = "Paste ecash automatically",
+                subtitle = "Prefill the token field from clipboard on Receive",
                 checked = settings.autoPasteEcashReceive,
                 onCheckedChange = settingsManager::setAutoPasteEcashReceive,
             )
-
-            SectionHeader("Diagnostics")
+            CanvasDivider(leadingInset = 16.dp)
+            ToggleRow(
+                title = "Listen for payment requests",
+                subtitle = "Receives ecash sent to your Nostr key while the app is open.",
+                checked = settings.enablePaymentRequests,
+                onCheckedChange = settingsManager::setEnablePaymentRequests,
+            )
+            CanvasDivider(leadingInset = 16.dp)
+            ToggleRow(
+                title = "Claim received ecash automatically",
+                subtitle = "Off asks you to confirm each incoming payment before it's claimed.",
+                checked = settings.receivePaymentRequestsAutomatically,
+                onCheckedChange = settingsManager::setReceivePaymentRequestsAutomatically,
+                enabled = settings.enablePaymentRequests,
+            )
+            CanvasDivider(leadingInset = 16.dp)
             ToggleRow(
                 title = "Send anonymous crash reports",
-                subtitle = "Opt-in. Screenshots and view hierarchy are never attached, and no Sentry PII is collected.",
+                subtitle = "Helps improve the app. No personal data, wallet addresses, or amounts are ever sent.",
                 checked = settings.sentryEnabled,
                 onCheckedChange = settingsManager::setSentryEnabled,
             )
 
+            Text(
+                text = "These settings affect your privacy and wallet responsiveness.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(
+                        horizontal = CashuTheme.spacing.comfortable,
+                        vertical = CashuTheme.spacing.comfortable,
+                    ),
+            )
         }
     }
 }

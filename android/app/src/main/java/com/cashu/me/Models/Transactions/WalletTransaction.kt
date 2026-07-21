@@ -20,6 +20,12 @@ data class WalletTransaction(
     /** Mint account unit for [amount] and [fee] (sat, usd, eur, or custom). */
     val unit: String = "sat",
     val isPendingToken: Boolean = false,
+    /**
+     * Incoming ecash the user hasn't claimed yet (a "Receive Later" token or a
+     * NUT-18 payment held for approval). Rows with this flag open the claim
+     * flow instead of a plain receipt — iOS `isPendingReceiveToken`.
+     */
+    val isPendingReceiveToken: Boolean = false,
     val quoteId: String? = null,
     val cashuRequestId: String? = null,
 ) {
