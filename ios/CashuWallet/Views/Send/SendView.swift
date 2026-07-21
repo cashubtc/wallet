@@ -1364,12 +1364,10 @@ struct UnifiedSendView: View {
 
     // MARK: Send-method buttons
 
-    /// The primary "ways to send" as a centered row of round Liquid Glass icon
-    /// buttons. The `HStack` is wrapped in a `GlassEffectContainer` on iOS 26 so
-    /// the adjacent circular glass surfaces sample light consistently (glass
-    /// can't sample other glass) — same technique as the home Receive/Send row.
+    /// The primary "ways to send" as a centered row of round filled icon
+    /// buttons (Apple's sheet-action-circle pattern; same component as Receive).
     private var sendMethodRow: some View {
-        let row = HStack(spacing: 28) {
+        HStack(spacing: 40) {
             sendMethodButton(icon: "qrcode.viewfinder", label: "Scan",
                              a11y: "Scan QR code", action: openScanner)
 
@@ -1387,18 +1385,10 @@ struct UnifiedSendView: View {
                 }
             }
         }
-
-        return Group {
-            if #available(iOS 26, *) {
-                GlassEffectContainer(spacing: 28) { row }
-            } else {
-                row
-            }
-        }
         .frame(maxWidth: .infinity)   // center the group on the leading-aligned canvas
     }
 
-    /// One round glass icon button with a one-word caption on the canvas below it.
+    /// One round filled icon button with a one-word caption on the canvas below it.
     /// Delegates to the shared `CircularGlassIconButton` so the Send and Receive
     /// sheets stay pixel-identical.
     private func sendMethodButton(
