@@ -79,17 +79,20 @@ class TokenService: ObservableObject {
         let localP2PKSigningKeys = SettingsManager.shared.allP2PKSigningKeyHexes().map { SecretKey(hex: $0) }
 
         // Create SendOptions
-        // includeFee: true — the token carries the recipient's redeem fee on top
-        // of `amount`, so receiving it credits the full amount and the fee we
-        // return below is the sender's real cost. Matches CDK's pay_request
-        // (see estimateCashuPaymentFee). With false, sending 755 produced a
-        // 755 token that redeemed to 754 while the send screen showed "no fee".
+        // includeFee: false — the token carries exactly `amount`; the redeem
+        // fee is the recipient's cost and their wallet shows it (see
+        // ReceiveTokenDetailView's fee preview). Crucially this lets Send Max
+        // move the whole balance: all proofs go out as-is, no swap, no fee —
+        // also on fee-charging mints. The fee we return below is only the
+        // sender-side change-swap fee (zero for a max send). Payment requests
+        // stay includeFee: true — there the requester must net the asked
+        // amount (see estimateCashuPaymentFee).
         let sendOptions = SendOptions(
             memo: sendMemo,
             conditions: spendingConditions,
             amountSplitTarget: SplitTarget.none,
             sendKind: SendKind.onlineExact,
-            includeFee: true,
+            includeFee: false,
             useP2bk: false,
             maxProofs: nil,
             metadata: [:],

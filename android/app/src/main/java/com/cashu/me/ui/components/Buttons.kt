@@ -92,11 +92,9 @@ private fun rememberPressAlpha(interactionSource: MutableInteractionSource): Flo
 }
 
 /**
- * Quiet neutral tonal fill for equally-weighted or secondary CTAs — the home
- * screen's Receive/Send pair and the transaction detail's Copy action. Matches
- * the history row's arrow chips instead of the loud inverted-ink primary, and
- * adapts to light/dark via the theme's surface roles. Pass to [PrimaryButton]'s
- * `colors`.
+ * Quiet neutral tonal fill — [PrimaryButton]'s default treatment, the analog
+ * of iOS's non-prominent glass capsule (`.glassButton()`). Matches the history
+ * row's arrow chips and adapts to light/dark via the theme's surface roles.
  */
 @Composable
 fun neutralActionButtonColors(): ButtonColors = ButtonDefaults.buttonColors(
@@ -107,14 +105,12 @@ fun neutralActionButtonColors(): ButtonColors = ButtonDefaults.buttonColors(
 )
 
 /**
- * The primary full-width CTA: filled M3 button on the theme's primary color
- * (inverted ink: black in light mode, white in dark), spring press-scale,
+ * The primary full-width CTA: gray tonal fill by default (iOS parity — every
+ * iOS bottom CTA is the non-prominent gray glass capsule), spring press-scale,
  * expressive loading indicator.
  *
- * Pass [colors] to override the default filled treatment (e.g. the home
- * screen's tonal Receive/Send pair via [neutralActionButtonColors], which
- * matches the history row's arrow chips instead of using the inverted-ink
- * primary color).
+ * Pass [colors] to override — the sole inverted-ink case is the Receive Ecash
+ * commit button, mirroring iOS's single `.glassButton(prominent: true)`.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -139,7 +135,7 @@ fun PrimaryButton(
             },
         enabled = enabled && !loading,
         interactionSource = interactionSource,
-        colors = colors ?: ButtonDefaults.buttonColors(),
+        colors = colors ?: neutralActionButtonColors(),
         contentPadding = PaddingValues(horizontal = CashuTheme.spacing.section, vertical = ButtonContentVertical),
     ) {
         Box(contentAlignment = Alignment.Center) {

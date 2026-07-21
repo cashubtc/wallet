@@ -134,6 +134,11 @@ fun NumberPadFooter(
             enabled = buttonEnabled,
             loading = buttonLoading,
         )
+        // Breathing room above the gesture area — the app-wide bottom-CTA
+        // margin (see AddMintSheet/PaymentStatusScreen), matching iOS's
+        // .padding(.bottom, 16). The raw inset alone left the button flush
+        // against the screen edge.
+        Spacer(Modifier.height(CashuTheme.spacing.comfortable))
         Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
     }
 }

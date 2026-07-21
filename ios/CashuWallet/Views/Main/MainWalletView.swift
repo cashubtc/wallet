@@ -305,8 +305,9 @@ struct MainWalletView: View {
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .transition(.opacity)
-            } else if settings.showFiatBalance && priceService.btcPriceUSD > 0 {
-                Text(priceService.formatSatsAsFiat(walletManager.balance))
+            } else if settings.showFiatBalance,
+                      let fiatBalance = priceService.formatSatsAsFiat(walletManager.balance) {
+                Text(fiatBalance)
             } else if let secondary = display.secondary {
                 Text(secondary)
                     .font(.body)

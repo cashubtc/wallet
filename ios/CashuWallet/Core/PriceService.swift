@@ -132,19 +132,11 @@ class PriceService: ObservableObject {
         return UInt64(sats)
     }
     
-    /// Format satoshis as selected fiat currency string.
-    func formatSatsAsFiat(_ sats: UInt64) -> String {
-        AmountFormatter.fiat(satsToFiat(sats), currencyCode: currencyCode)
-    }
-
-    /// Backward-compatible wrapper used by existing views
-    func satsToUSD(_ sats: UInt64) -> Double {
-        satsToFiat(sats)
-    }
-
-    /// Backward-compatible wrapper used by existing views
-    func formatSatsAsUSD(_ sats: UInt64) -> String {
-        formatSatsAsFiat(sats)
+    /// Format satoshis as selected fiat currency string. Nil when no price is
+    /// loaded or the amount converts to under one cent (sub-cent fiat is never
+    /// displayed).
+    func formatSatsAsFiat(_ sats: UInt64) -> String? {
+        AmountFormatter.fiat(sats: sats, btcPrice: btcPriceUSD, currencyCode: currencyCode)
     }
     
     /// Start auto-refresh timer

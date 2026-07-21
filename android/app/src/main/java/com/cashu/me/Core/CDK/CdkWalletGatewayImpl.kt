@@ -381,16 +381,20 @@ class CdkWalletGatewayImpl : CdkWalletGateway, NwcServiceGateway {
         val cdkUnit = cdkUnit(unit)
         if (!unit.equals("sat", ignoreCase = true)) ensureWalletUnlocked(mintUrl, cdkUnit)
         val conditions = p2pkPubkey?.let { CdkSpendingConditions.P2pk(it, null) }
-        // includeFee = true — the token carries the recipient's redeem fee on top
-        // of the requested amount, so receiving it credits the full amount and
-        // the fee returned below is the sender's real cost. Mirrors the iOS
-        // TokenService.sendTokens and CDK's pay_request.
+        // includeFee = false — the token carries exactly the requested amount;
+        // the redeem fee is the recipient's cost and their wallet shows it
+        // (see ReceiveFeeEstimator). Crucially this lets Send Max move the
+        // whole balance: all proofs go out as-is, no swap, no fee — also on
+        // fee-charging mints. The fee returned below is only the sender-side
+        // change-swap fee (zero for a max send). Payment requests stay
+        // includeFee = true — there the requester must net the asked amount.
+        // Mirrors iOS TokenService.sendTokens.
         val sendOptions = CdkSendOptions(
             memo = memo?.let { CdkSendMemo(it, true) },
             conditions = conditions,
             amountSplitTarget = CdkSplitTarget.None,
             sendKind = CdkSendKind.OnlineExact,
-            includeFee = true,
+            includeFee = false,
             useP2bk = false,
             maxProofs = null,
             metadata = emptyMap(),

@@ -15,6 +15,9 @@ struct SendView: View {
     @State private var errorMessage: String?
     @State private var errorSeverity: ErrorSeverity = .error
     @State private var errorShowsMintAction = false
+    // Optional second line under the error notice (e.g. the change-fee hint);
+    // overrides the generic insufficient-balance detail when set.
+    @State private var errorDetail: String?
     @State private var showMintPicker = false
     @State private var selectedSendMint: MintInfo?
 
@@ -225,7 +228,7 @@ struct SendView: View {
                     } else if let error = errorMessage {
                         sendInputNotice(
                             message: error,
-                            detail: errorShowsMintAction ? insufficientBalanceDetail : nil,
+                            detail: errorDetail ?? (errorShowsMintAction ? insufficientBalanceDetail : nil),
                             severity: errorSeverity
                         )
                     }
@@ -420,12 +423,29 @@ struct SendView: View {
 
     private func useMax(mint: MintInfo) {
         HapticFeedback.impact(.light)
+        // The gross balance is always sendable: sends don't include fees
+        // (TokenService includeFee: false), and a full-balance send matches
+        // the proof set exactly — no swap, no fee, also on fee-charging mints.
+        fillAmount(baseUnits: effectiveSendBalance)
+    }
+
+    /// Writes a base-unit amount into the keypad string in the current entry
+    /// mode. Fiat entry is coarser than sats, so the cents round-trip can land
+    /// above the target — which would leave a Send Max fill unsendable — and
+    /// gets trimmed a cent at a time until it fits.
+    private func fillAmount(baseUnits: UInt64) {
         if isSatSend {
             // Balance is sats; express it in the current entry unit so the keypad
             // string keeps its meaning.
-            amountString = AmountFormatter.entryConverted(raw: String(mint.balance), from: .sats, to: entryUnit)
+            amountString = AmountFormatter.entryConverted(raw: String(baseUnits), from: .sats, to: entryUnit)
+            guard entryUnit == .fiat else { return }
+            var cents = AmountFormatter.entryBaseUnits(raw: amountString, decimals: 2)
+            while cents > 0, AmountFormatter.entrySats(raw: amountString, unit: .fiat) > baseUnits {
+                cents -= 1
+                amountString = AmountFormatter.entryString(baseUnits: cents, decimals: 2)
+            }
         } else {
-            amountString = AmountFormatter.entryString(baseUnits: effectiveSendBalance, decimals: sendUnitDecimals)
+            amountString = AmountFormatter.entryString(baseUnits: baseUnits, decimals: sendUnitDecimals)
         }
     }
 
@@ -666,16 +686,21 @@ struct SendView: View {
                     // Detail rows on canvas with hairline dividers — same
                     // pattern as the Lightning Invoice screen.
                     VStack(spacing: 0) {
-                        detailRow(icon: "arrow.up.arrow.down", label: "Fee", value: generatedFeeText)
-                        canvasDivider
-                        detailRow(icon: "banknote", label: "Unit", value: generatedTokenUnit.uppercased())
-                        // Fiat conversion is only meaningful for sats; a non-sat
-                        // account unit has no BTC-price equivalent.
-                        if generatedIsSat {
+                        // Sender's send fee — zero unless the send needed a
+                        // change swap. The receiver's redeem fee is shown on
+                        // their side, so a "0 sat" row here only misleads.
+                        if tokenFee > 0 {
+                            detailRow(icon: "arrow.up.arrow.down", label: "Fee", value: generatedFeeText)
                             canvasDivider
-                            detailRow(icon: "banknote", label: "Fiat",
-                                      value: priceService.btcPriceUSD > 0
-                                          ? priceService.formatSatsAsFiat(generatedAmount) : "—")
+                        }
+                        detailRow(icon: "banknote", label: "Unit", value: generatedTokenUnit.uppercased())
+                        // Fiat conversion is only meaningful for sats, only when
+                        // the user opted into fiat balances, and only for amounts
+                        // worth at least a cent — matches Android's gating.
+                        if generatedIsSat, settings.showFiatBalance,
+                           let fiatValue = priceService.formatSatsAsFiat(generatedAmount) {
+                            canvasDivider
+                            detailRow(icon: "banknote", label: "Fiat", value: fiatValue)
                         }
                         if let mintURL = generatedTokenMintURL {
                             canvasDivider
@@ -722,8 +747,10 @@ struct SendView: View {
             : CurrencyAmount(value: generatedAmount, currency: generatedUnitCurrency).formatted()
         var rows: [PaymentStatusView.DetailRow] = [
             .init(icon: "bitcoinsign", label: "Amount", value: amountText),
-            .init(icon: "arrow.up.arrow.down", label: "Fee", value: generatedFeeText),
         ]
+        if tokenFee > 0 {
+            rows.append(.init(icon: "arrow.up.arrow.down", label: "Fee", value: generatedFeeText))
+        }
         if let mintURL = generatedTokenMintURL {
             rows.append(.init(
                 icon: "bitcoinsign.bank.building",
@@ -774,10 +801,11 @@ struct SendView: View {
         return "You have \(sendBalanceText) in \(mint.name)."
     }
 
-    private func presentError(_ message: String, severity: ErrorSeverity = .error, showsMintAction: Bool = false) {
+    private func presentError(_ message: String, severity: ErrorSeverity = .error, showsMintAction: Bool = false, detail: String? = nil) {
         errorMessage = message
         errorSeverity = severity
         errorShowsMintAction = showsMintAction
+        errorDetail = detail
     }
 
     private func extractMintHost(_ url: String) -> String {
@@ -820,11 +848,23 @@ struct SendView: View {
                 HapticFeedback.notification(.success)
             } catch {
                 let walletMessage = error.walletMessage
-                presentError(
-                    walletMessage.text,
-                    severity: walletMessage.severity,
-                    showsMintAction: error.isInsufficientBalanceError
-                )
+                if error.isInsufficientBalanceError, amount <= effectiveSendBalance {
+                    // The balance covers the amount, but the swap that makes
+                    // change for it carries a fee the remainder can't absorb —
+                    // the plain "Not enough balance." reads as a wallet bug when
+                    // the user typed exactly what the screen says they hold.
+                    presentError(
+                        "Not enough balance to cover the mint fee.",
+                        severity: .caution,
+                        detail: "The mint charges a fee to make change for this amount. Try Send Max."
+                    )
+                } else {
+                    presentError(
+                        walletMessage.text,
+                        severity: walletMessage.severity,
+                        showsMintAction: error.isInsufficientBalanceError
+                    )
+                }
                 HapticFeedback.notification(.error)
             }
             isGenerating = false
@@ -1364,12 +1404,10 @@ struct UnifiedSendView: View {
 
     // MARK: Send-method buttons
 
-    /// The primary "ways to send" as a centered row of round Liquid Glass icon
-    /// buttons. The `HStack` is wrapped in a `GlassEffectContainer` on iOS 26 so
-    /// the adjacent circular glass surfaces sample light consistently (glass
-    /// can't sample other glass) — same technique as the home Receive/Send row.
+    /// The primary "ways to send" as a centered row of round filled icon
+    /// buttons (Apple's sheet-action-circle pattern; same component as Receive).
     private var sendMethodRow: some View {
-        let row = HStack(spacing: 28) {
+        HStack(spacing: 40) {
             sendMethodButton(icon: "qrcode.viewfinder", label: "Scan",
                              a11y: "Scan QR code", action: openScanner)
 
@@ -1387,18 +1425,10 @@ struct UnifiedSendView: View {
                 }
             }
         }
-
-        return Group {
-            if #available(iOS 26, *) {
-                GlassEffectContainer(spacing: 28) { row }
-            } else {
-                row
-            }
-        }
         .frame(maxWidth: .infinity)   // center the group on the leading-aligned canvas
     }
 
-    /// One round glass icon button with a one-word caption on the canvas below it.
+    /// One round filled icon button with a one-word caption on the canvas below it.
     /// Delegates to the shared `CircularGlassIconButton` so the Send and Receive
     /// sheets stay pixel-identical.
     private func sendMethodButton(

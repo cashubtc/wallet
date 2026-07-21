@@ -205,8 +205,8 @@ struct MintDetailView: View {
             VStack(alignment: .trailing, spacing: 2) {
                 Text(AmountFormatter.sats(mint.balance, useBitcoinSymbol: settings.useBitcoinSymbol))
                     .monospacedDigit()
-                if showFiat {
-                    Text(priceService.formatSatsAsFiat(mint.balance))
+                if showFiat, let fiatBalance = priceService.formatSatsAsFiat(mint.balance) {
+                    Text(fiatBalance)
                         .font(.caption)
                         .monospacedDigit()
                         .foregroundStyle(.secondary)

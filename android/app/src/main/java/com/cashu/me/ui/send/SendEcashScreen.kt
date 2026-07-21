@@ -73,6 +73,7 @@ import com.cashu.me.Core.Protocols.CurrencyAmount
 import com.cashu.me.Core.Protocols.CurrencyRegistry
 import com.cashu.me.Core.SettingsManager
 import com.cashu.me.Core.UnitAmountEntry
+import com.cashu.me.Core.Wallet.isInsufficientBalance
 import com.cashu.me.Core.Wallet.userFacingWalletMessage
 import com.cashu.me.Core.WalletManager
 import com.cashu.me.Models.SendTokenResult
@@ -84,6 +85,7 @@ import com.cashu.me.ui.components.MintPickerSheet
 import com.cashu.me.ui.components.MintSelectorRow
 import com.cashu.me.ui.components.NumberPadFooter
 import com.cashu.me.ui.components.PrimaryButton
+import com.cashu.me.ui.components.neutralActionButtonColors
 import com.cashu.me.ui.components.QrCard
 import com.cashu.me.ui.components.SheetHeader
 import com.cashu.me.ui.components.TwoFaceScreen
@@ -337,7 +339,17 @@ fun SendEcashScreen(
                                 face = SendFace.Generated(result, mintUrl, effectiveUnit, amountValue)
                                 amount = ""
                             } catch (t: Throwable) {
-                                errorText = t.userFacingWalletMessage
+                                errorText = if (t.isInsufficientBalance && amountValue <= mintBalance) {
+                                    // The balance covers the amount, but the
+                                    // swap that makes change for it carries a
+                                    // fee the remainder can't absorb — the
+                                    // plain "Not enough balance." reads as a
+                                    // wallet bug when the user typed exactly
+                                    // what the screen says they hold.
+                                    "Not enough balance to cover the mint fee. Try Send Max."
+                                } else {
+                                    t.userFacingWalletMessage
+                                }
                             } finally {
                                 sending = false
                             }
@@ -614,22 +626,28 @@ private fun GeneratedFace(
             copied = false
         }
     }
-    // Poll the mint every 4s to detect when the recipient redeems the token.
+    // Poll the mint to detect when the recipient redeems the token. Mirrors
+    // iOS startClaimPolling: the spinner shows for the whole watch session
+    // (flipping Pending↔Checking per probe made the row flicker), intervals
+    // back off 5s → 15s, and after 10 checks the row rests at Pending.
     LaunchedEffect(result.token, mintUrl, pollingEnabled) {
         if (!pollingEnabled) return@LaunchedEffect
-        while (claimState != ClaimState.Claimed) {
-            delay(4_000)
-            claimState = ClaimState.Checking
+        claimState = ClaimState.Checking
+        var interval = 5_000L
+        repeat(10) {
+            delay(interval)
             // checkTokenSpent returns true once any proof is spent (redeemed);
-            // null means the check failed — stay Pending, never fake a claim.
+            // null means the check failed — keep watching, never fake a claim.
             val spent = runCatching {
                 walletManager.checkTokenSpent(result.token, mintUrl)
             }.getOrNull()
-            claimState = when {
-                spent == true -> ClaimState.Claimed
-                else -> ClaimState.Pending
+            if (spent == true) {
+                claimState = ClaimState.Claimed
+                return@LaunchedEffect
             }
+            interval = (interval + 1_000L).coerceAtMost(15_000L)
         }
+        claimState = ClaimState.Pending
     }
 
     // Claimed resolves to the shared full-screen terminal (iOS parity), with
@@ -656,66 +674,79 @@ private fun GeneratedFace(
         return
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(
-                horizontal = CashuTheme.spacing.comfortable,
-                vertical = CashuTheme.spacing.comfortable,
-            ),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.loose),
-    ) {
-        QrCard(
-            content = result.token,
-            shareSubject = "Cashu token",
-        )
-        Text(
-            text = amountLabel,
-            style = MaterialTheme.typography.headlineMedium.withMonoDigits(),
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        ClaimStatusRow(claimState = claimState)
-        // Detail rows: Fee -> Unit -> Fiat (sat-only) -> Mint (iOS order).
-        Column(modifier = Modifier.fillMaxWidth()) {
-            if (result.fee > 0L) {
-                com.cashu.me.ui.components.InspectorRow(
-                    label = "Fee",
-                    value = if (unit.equals("sat", ignoreCase = true)) {
-                        "${result.fee} sat"
-                    } else {
-                        CurrencyAmount(result.fee, CurrencyRegistry.currencyForMintUnit(unit)).formatted()
-                    },
-                    valueMonospaced = true,
-                )
-                com.cashu.me.ui.components.CanvasDivider(leadingInset = 16.dp)
-            }
-            com.cashu.me.ui.components.InspectorRow(
-                label = "Unit",
-                value = unit.uppercase(),
+    // Scroll region + pinned footer, mirroring iOS (ScrollView with the Copy
+    // button outside it) and TransactionDetailScreen's Copy action.
+    Column(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(
+                    horizontal = CashuTheme.spacing.comfortable,
+                    vertical = CashuTheme.spacing.comfortable,
+                ),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.loose),
+        ) {
+            QrCard(
+                content = result.token,
+                shareSubject = "Cashu token",
             )
-            if (fiatLabel != null) {
+            Text(
+                text = amountLabel,
+                style = MaterialTheme.typography.headlineMedium.withMonoDigits(),
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            ClaimStatusRow(claimState = claimState)
+            // Detail rows: Fee -> Unit -> Fiat (sat-only) -> Mint (iOS order).
+            Column(modifier = Modifier.fillMaxWidth()) {
+                if (result.fee > 0L) {
+                    com.cashu.me.ui.components.InspectorRow(
+                        label = "Fee",
+                        value = if (unit.equals("sat", ignoreCase = true)) {
+                            "${result.fee} sat"
+                        } else {
+                            CurrencyAmount(result.fee, CurrencyRegistry.currencyForMintUnit(unit)).formatted()
+                        },
+                        valueMonospaced = true,
+                    )
+                    com.cashu.me.ui.components.CanvasDivider(leadingInset = 16.dp)
+                }
+                com.cashu.me.ui.components.InspectorRow(
+                    label = "Unit",
+                    value = unit.uppercase(),
+                )
+                if (fiatLabel != null) {
+                    com.cashu.me.ui.components.CanvasDivider(leadingInset = 16.dp)
+                    com.cashu.me.ui.components.InspectorRow(
+                        label = "Fiat",
+                        value = fiatLabel,
+                        valueMonospaced = true,
+                    )
+                }
                 com.cashu.me.ui.components.CanvasDivider(leadingInset = 16.dp)
                 com.cashu.me.ui.components.InspectorRow(
-                    label = "Fiat",
-                    value = fiatLabel,
-                    valueMonospaced = true,
+                    label = "Mint",
+                    value = com.cashu.me.Core.shortenMintUrl(mintUrl),
                 )
             }
-            com.cashu.me.ui.components.CanvasDivider(leadingInset = 16.dp)
-            com.cashu.me.ui.components.InspectorRow(
-                label = "Mint",
-                value = com.cashu.me.Core.shortenMintUrl(mintUrl),
-            )
         }
-        Spacer(modifier = Modifier.height(CashuTheme.spacing.micro))
+        // Gray tonal fill instead of the inverted-ink primary — the analog of
+        // iOS's non-prominent glass capsule; adapts to light/dark.
         PrimaryButton(
             text = if (copied) "Copied" else "Copy",
             onClick = {
                 clipboard.setText(AnnotatedString(result.token))
                 copied = true
             },
+            colors = neutralActionButtonColors(),
+            modifier = Modifier.padding(
+                start = CashuTheme.spacing.comfortable,
+                end = CashuTheme.spacing.comfortable,
+                top = CashuTheme.spacing.micro,
+                bottom = CashuTheme.spacing.comfortable,
+            ),
         )
         Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
     }
