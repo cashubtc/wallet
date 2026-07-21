@@ -65,6 +65,9 @@ class AmountFormatter(
     override fun formatFiat(amountSats: Long, btcPrice: Double?, currencyCode: String): String? {
         val price = btcPrice ?: return null
         val fiat = amountSats.toDouble() / 100_000_000.0 * price
+        // Sub-cent conversions are never displayed — dust would render as a
+        // misleading "$0.00". Mirrors iOS AmountFormatter.fiat(sats:btcPrice:).
+        if (fiat < 0.01) return null
         // Wallet amounts use one stable currency presentation regardless of the
         // device locale. In particular, USD must be "$60.00", not "US$60.00"
         // or "60.00 $" on devices whose locale is outside the US.

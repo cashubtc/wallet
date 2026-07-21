@@ -31,10 +31,13 @@ enum AmountFormatter {
     }
 
     /// Converts sats at the supplied BTC price and formats the selected fiat
-    /// currency. A missing/non-positive price produces no conversion.
+    /// currency. A missing/non-positive price produces no conversion, and
+    /// neither does a sub-cent result — dust would render as a misleading
+    /// "$0.00", so anything under one cent is hidden instead.
     static func fiat(sats: UInt64, btcPrice: Double?, currencyCode: String) -> String? {
         guard let btcPrice, btcPrice > 0 else { return nil }
         let value = Double(sats) / 100_000_000.0 * btcPrice
+        guard value >= 0.01 else { return nil }
         return fiat(value, currencyCode: currencyCode)
     }
 

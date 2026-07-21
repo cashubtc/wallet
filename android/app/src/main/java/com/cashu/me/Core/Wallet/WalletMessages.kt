@@ -27,6 +27,15 @@ val Throwable.walletMessage: WalletMessage
 val Throwable.userFacingWalletMessage: String
     get() = walletMessage.text
 
+/**
+ * Whether the error classifies as insufficient balance (iOS
+ * `isInsufficientBalanceError`). Call sites holding balance context use it to
+ * upgrade the copy — e.g. the amount fits the balance but the change-swap fee
+ * doesn't.
+ */
+val Throwable.isInsufficientBalance: Boolean
+    get() = walletMessage.text == "Not enough balance."
+
 object WalletErrorMessages {
 
     private const val GENERIC_FALLBACK =

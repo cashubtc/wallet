@@ -25,6 +25,27 @@ final class AmountFormatterTests: XCTestCase {
         XCTAssertEqual(AmountFormatter.sats(0, useBitcoinSymbol: false), "0 sat")
     }
 
+    // MARK: - Fiat conversion
+
+    func testFiatConversionFormats() {
+        XCTAssertEqual(AmountFormatter.fiat(sats: 300_000, btcPrice: 20_000, currencyCode: "USD"), "$60.00")
+    }
+
+    func testFiatConversionExactlyOneCent() {
+        // 50 sats at $20k/BTC = $0.01 — the smallest displayable amount.
+        XCTAssertEqual(AmountFormatter.fiat(sats: 50, btcPrice: 20_000, currencyCode: "USD"), "$0.01")
+    }
+
+    func testFiatConversionUnderOneCentHidden() {
+        // 49 sats at $20k/BTC = $0.0098 — sub-cent conversions are never shown.
+        XCTAssertNil(AmountFormatter.fiat(sats: 49, btcPrice: 20_000, currencyCode: "USD"))
+    }
+
+    func testFiatConversionMissingPriceHidden() {
+        XCTAssertNil(AmountFormatter.fiat(sats: 1_000, btcPrice: nil, currencyCode: "USD"))
+        XCTAssertNil(AmountFormatter.fiat(sats: 1_000, btcPrice: 0, currencyCode: "USD"))
+    }
+
     // MARK: - Bitcoin symbol
 
     func testSmallAmountBitcoinSymbol() {

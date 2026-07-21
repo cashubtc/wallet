@@ -79,6 +79,18 @@ class AmountFormatterTest {
     }
 
     @Test
+    fun formatFiatShowsExactlyOneCent() {
+        // 50 sats at $20k/BTC = $0.01 — the smallest displayable amount.
+        assertEquals("$0.01", formatter.formatFiat(amountSats = 50, btcPrice = 20_000.0, currencyCode = "USD"))
+    }
+
+    @Test
+    fun formatFiatHidesSubCentAmounts() {
+        // 49 sats at $20k/BTC = $0.0098 — sub-cent conversions are never shown.
+        assertNull(formatter.formatFiat(amountSats = 49, btcPrice = 20_000.0, currencyCode = "USD"))
+    }
+
+    @Test
     fun usdUsesBareLeadingDollarSymbolRegardlessOfDeviceLocale() {
         val germanFormatter = AmountFormatter(Locale.GERMANY)
 

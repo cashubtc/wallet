@@ -20,8 +20,18 @@ struct CurrencyAmountDisplay: View {
     @ObservedObject private var priceService = PriceService.shared
     @ObservedObject private var settings = SettingsManager.shared
 
+    /// Display-mode fiat string; nil when no price is loaded or the amount
+    /// converts to under one cent (sub-cent fiat is never displayed).
+    private var displayFiat: String? {
+        priceService.formatSatsAsFiat(sats)
+    }
+
     private var fiatAvailable: Bool {
-        priceService.btcPriceUSD > 0
+        // Entry mode only needs a live price — the primary unit and flip pill
+        // must stay put while the user types through small values. Display
+        // mode also drops fiat for sub-cent amounts.
+        if entryRaw != nil { return priceService.btcPriceUSD > 0 }
+        return displayFiat != nil
     }
 
     private var effectivePrimary: AmountDisplayPrimary {
@@ -40,7 +50,7 @@ struct CurrencyAmountDisplay: View {
             )
         }
         switch effectivePrimary {
-        case .fiat: return priceService.formatSatsAsFiat(sats)
+        case .fiat: return displayFiat ?? AmountFormatter.sats(sats, useBitcoinSymbol: settings.useBitcoinSymbol)
         case .sats: return AmountFormatter.sats(sats, useBitcoinSymbol: settings.useBitcoinSymbol)
         }
     }
@@ -48,7 +58,10 @@ struct CurrencyAmountDisplay: View {
     private var secondaryText: String {
         switch effectivePrimary {
         case .fiat: return AmountFormatter.sats(sats, useBitcoinSymbol: settings.useBitcoinSymbol)
-        case .sats: return priceService.formatSatsAsFiat(sats)
+        case .sats:
+            // Entry mode keeps the raw conversion (even "$0.00") so the pill
+            // doesn't blink in and out while typing through small values.
+            return displayFiat ?? AmountFormatter.fiat(priceService.satsToFiat(sats), currencyCode: priceService.currencyCode)
         }
     }
 
