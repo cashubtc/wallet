@@ -294,11 +294,10 @@ struct UnifiedReceiveView: View {
 
     // MARK: Receive-method buttons
 
-    /// The primary "ways to receive" — a centered row of round Liquid Glass icon
-    /// buttons wrapped in a `GlassEffectContainer` on iOS 26 so adjacent circular
-    /// glass surfaces sample light consistently (same technique as Send).
+    /// The primary "ways to receive" — a centered row of round filled icon
+    /// buttons (Apple's sheet-action-circle pattern; same component as Send).
     private var receiveMethodRow: some View {
-        let row = HStack(spacing: 28) {
+        HStack(spacing: 40) {
             CircularGlassIconButton(icon: "qrcode.viewfinder", label: "Scan",
                                     a11y: "Scan QR code") {
                 HapticFeedback.selection()
@@ -316,14 +315,6 @@ struct UnifiedReceiveView: View {
                 route = .lightning
             }
             .accessibilityIdentifier("wallet-flow-receiveLightning")
-        }
-
-        return Group {
-            if #available(iOS 26, *) {
-                GlassEffectContainer(spacing: 28) { row }
-            } else {
-                row
-            }
         }
         .frame(maxWidth: .infinity)   // center the group on the leading-aligned canvas
     }
