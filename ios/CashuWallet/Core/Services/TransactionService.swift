@@ -526,8 +526,17 @@ class TransactionService: ObservableObject {
             let timestamp = timestamps[quote.id] ?? Date().timeIntervalSince1970
             timestamps[quote.id] = timestamp
             let createdAt = Date(timeIntervalSince1970: timestamp)
+            // A paid-but-unissued quote stays Pending even past expiry: the
+            // invoice settled, and NUT-04 lets the wallet mint it afterwards.
+            let isPaid = quote.state == .paid || quote.state == .issued || quote.amountPaid.value > 0
+            let isUnpaidBolt11 = paymentMethod == .bolt11 && !isPaid
+            let isExpiredUnpaidInvoice = isUnpaidBolt11
+                && quote.expiry > 0
+                && Date().timeIntervalSince1970 > Double(quote.expiry)
             let status: WalletTransaction.TransactionStatus =
-                quote.state == .issued || quote.amountIssued.value >= amount ? .completed : .pending
+                quote.state == .issued || quote.amountIssued.value >= amount ? .completed
+                : isExpiredUnpaidInvoice ? .expired
+                : .pending
 
             var storedPaymentProof = getPreimage(quoteId: quote.id)
             var statusNote: String?
@@ -566,6 +575,7 @@ class TransactionService: ObservableObject {
                 quoteId: quote.id
             )
             transaction.unit = PaymentRequestDecoder.unitDescription(quote.unit)
+            transaction.isUnpaidInvoice = isUnpaidBolt11
             transactions.append(transaction)
         }
 

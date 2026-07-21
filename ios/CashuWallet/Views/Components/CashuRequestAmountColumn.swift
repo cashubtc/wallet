@@ -1,10 +1,11 @@
 import SwiftUI
 
-// Shared trailing region for Cashu Request rows on Home and History.
-// - Received: .primary +amount + fiat sub-line (settled reads white).
+// Shared trailing region for Cashu Request rows in History.
+// - Received: green +amount + muted converted sub-line.
 // - Waiting (fixed amount): muted amount + fiat, no indicator (gray = waiting).
 // - Waiting (any amount, no fixed expected total): no trailing element.
-// All amounts share the .semibold weight. See DESIGN.md —
+// Primary and secondary values use neighboring type sizes and weights so they
+// read as one amount block. See DESIGN.md —
 // The Amount Column Rule, The One Green Rule, The Fiat Sub-Amount Rule.
 struct CashuRequestAmountColumn: View {
     let request: CashuRequest
@@ -20,9 +21,9 @@ struct CashuRequestAmountColumn: View {
             let display = amountDisplay(receivedAmount)
             VStack(alignment: .trailing, spacing: 2) {
                 Text("+\(display.primary)")
-                    .font(.system(.body, design: .rounded).weight(.semibold))
+                    .font(.system(.body, design: .rounded).weight(.medium))
                     .monospacedDigit()
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(.green)
                     .lineLimit(1)
                     // No `.minimumScaleFactor` — it collides with `.numericText`
                     // (short amounts collapse toward 50%).
@@ -30,7 +31,7 @@ struct CashuRequestAmountColumn: View {
 
                 if let secondary = display.secondary {
                     Text(secondary)
-                        .font(.caption)
+                        .font(.system(.subheadline, design: .rounded).weight(.regular))
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
                 }
@@ -39,14 +40,14 @@ struct CashuRequestAmountColumn: View {
             let display = amountDisplay(amount)
             VStack(alignment: .trailing, spacing: 2) {
                 Text(display.primary)
-                    .font(.system(.body, design: .rounded).weight(.semibold))
+                    .font(.system(.body, design: .rounded).weight(.medium))
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
 
                 if let secondary = display.secondary {
                     Text(secondary)
-                        .font(.caption)
+                        .font(.system(.subheadline, design: .rounded).weight(.regular))
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
                 }

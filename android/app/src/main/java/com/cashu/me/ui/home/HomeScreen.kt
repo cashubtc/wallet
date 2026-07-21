@@ -60,7 +60,6 @@ import com.cashu.me.Core.AmountDisplayPrimary
 import com.cashu.me.Core.AmountDisplayText
 import com.cashu.me.Core.AmountFormatter
 import com.cashu.me.Core.displayMintUnitAmount
-import com.cashu.me.Core.CashuRequestStore
 import com.cashu.me.Core.HomeBalance
 import com.cashu.me.Core.Protocols.CurrencyAmount
 import com.cashu.me.Core.Protocols.CurrencyRegistry
@@ -69,13 +68,11 @@ import com.cashu.me.Core.SettingsManager
 import com.cashu.me.Core.TransactionDisplay
 import com.cashu.me.Core.WalletManager
 import com.cashu.me.Core.displayText
-import com.cashu.me.Models.CashuRequest
+import com.cashu.me.Core.recentCompletedTransactions
 import com.cashu.me.Models.WalletTransaction
 import com.cashu.me.ui.components.BalanceDisplay
 import com.cashu.me.ui.components.BalanceHeroHeight
 import com.cashu.me.ui.components.CanvasDivider
-import com.cashu.me.ui.components.CashuRequestRow
-import com.cashu.me.ui.components.requestRowDisplay
 import com.cashu.me.ui.components.EmptyState
 import com.cashu.me.ui.components.GhostButton
 import com.cashu.me.ui.components.MintChip
@@ -99,11 +96,9 @@ fun HomeScreen(
     walletManager: WalletManager,
     settingsManager: SettingsManager,
     priceService: PriceService,
-    cashuRequestStore: CashuRequestStore,
     onOpenMints: () -> Unit,
     onOpenHistory: () -> Unit,
     onOpenTransaction: (WalletTransaction) -> Unit,
-    onOpenCashuRequest: (CashuRequest) -> Unit,
     onReceive: () -> Unit,
     onSend: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -113,7 +108,6 @@ fun HomeScreen(
     val walletState by walletManager.state.collectAsState()
     val settings by settingsManager.state.collectAsState()
     val priceState by priceService.state.collectAsState()
-    val requestState by cashuRequestStore.state.collectAsState()
     val formatter = remember { AmountFormatter() }
     val scope = rememberCoroutineScope()
     var refreshing by remember { mutableStateOf(false) }
@@ -129,10 +123,8 @@ fun HomeScreen(
         )
     }
 
-    // Unified timeline: merge transactions + Cashu Requests, dedup claim-tx ids,
-    // sort by date descending, cap at RECENT_LIMIT.
-    val recentItems = remember(walletState.transactions, requestState.requests) {
-        unifiedRecent(walletState.transactions, requestState.requests, RECENT_LIMIT)
+    val recentTransactions = remember(walletState.transactions) {
+        recentCompletedTransactions(walletState.transactions, RECENT_LIMIT)
     }
 
     // Received-delta beat (iOS MainWalletView "payment-received celebration"):
@@ -273,11 +265,11 @@ fun HomeScreen(
                 ),
             ) {
                 item("section-header") {
-                    if (recentItems.isNotEmpty()) {
+                    if (recentTransactions.isNotEmpty()) {
                         SectionHeader(text = "Recent")
                     }
                 }
-                if (recentItems.isEmpty()) {
+                if (recentTransactions.isEmpty()) {
                     item("empty") {
                         val hasMints = walletState.mints.isNotEmpty()
                         // iOS: a single quiet tray empty state, centered in the region
@@ -296,54 +288,30 @@ fun HomeScreen(
                         )
                     }
                 } else {
-                    items(recentItems, key = { it.key }) { item ->
+                    items(recentTransactions, key = { it.id }) { tx ->
                         // Spring-animated placement when the timeline reshuffles
-                        // (new payment lands, request claimed) — History parity.
+                        // as completed payments land — History parity.
                         Column(modifier = Modifier.animateItem()) {
-                            when (item) {
-                                is HomeRecentItem.Tx -> {
-                                    val tx = item.transaction
-                                    val amountDisplay = formatter.displayMintUnitAmount(
-                                        amount = tx.amount,
-                                        unit = tx.unit,
-                                        preferredPrimary = settings.amountDisplayPrimary,
-                                        showFiat = settings.showFiatBalance,
-                                        btcPrice = priceState.btcPrice,
-                                        currencyCode = settings.bitcoinPriceCurrency,
-                                        useBitcoinSymbol = settings.useBitcoinSymbol,
-                                    )
-                                    TransactionRow(
-                                        model = TransactionRowModel(
-                                            transaction = tx,
-                                            title = TransactionDisplay.title(tx),
-                                            timestamp = formatRelativeTimestamp(tx.dateEpochMillis),
-                                            primaryAmount = amountDisplay.primary,
-                                            secondaryAmount = amountDisplay.secondary,
-                                        ),
-                                        onClick = { onOpenTransaction(tx) },
-                                    )
-                                }
-                                is HomeRecentItem.Req -> {
-                                    val req = item.request
-                                    val amountDisplay = requestRowDisplay(
-                                        request = req,
-                                        formatter = formatter,
-                                        preferredPrimary = settings.amountDisplayPrimary,
-                                        showFiat = settings.showFiatBalance,
-                                        btcPrice = priceState.btcPrice,
-                                        currencyCode = settings.bitcoinPriceCurrency,
-                                        useBitcoinSymbol = settings.useBitcoinSymbol,
-                                    )
-                                    CashuRequestRow(
-                                        request = req,
-                                        timestamp = formatRelativeTimestamp(req.createdAtEpochMillis),
-                                        primaryAmountText = amountDisplay?.primary,
-                                        secondaryAmountText = amountDisplay?.secondary,
-                                        onClick = { onOpenCashuRequest(req) },
-                                    )
-                                }
-                            }
-                            if (item != recentItems.last()) CanvasDivider()
+                            val amountDisplay = formatter.displayMintUnitAmount(
+                                amount = tx.amount,
+                                unit = tx.unit,
+                                preferredPrimary = settings.amountDisplayPrimary,
+                                showFiat = settings.showFiatBalance,
+                                btcPrice = priceState.btcPrice,
+                                currencyCode = settings.bitcoinPriceCurrency,
+                                useBitcoinSymbol = settings.useBitcoinSymbol,
+                            )
+                            TransactionRow(
+                                model = TransactionRowModel(
+                                    transaction = tx,
+                                    title = TransactionDisplay.title(tx),
+                                    timestamp = formatRelativeTimestamp(tx.dateEpochMillis),
+                                    primaryAmount = amountDisplay.primary,
+                                    secondaryAmount = amountDisplay.secondary,
+                                ),
+                                onClick = { onOpenTransaction(tx) },
+                            )
+                            if (tx != recentTransactions.last()) CanvasDivider()
                         }
                     }
                     item("view-all") {
@@ -597,40 +565,4 @@ private fun ActionDuet(
             colors = actionColors,
         )
     }
-}
-
-/** Unified Home/History timeline item. Mirrors iOS HistoryItem enum. */
-internal sealed interface HomeRecentItem {
-    val date: Long
-    val key: String
-    data class Tx(val transaction: WalletTransaction) : HomeRecentItem {
-        override val date: Long get() = transaction.dateEpochMillis
-        override val key: String get() = "tx:${transaction.id}"
-    }
-    data class Req(val request: CashuRequest) : HomeRecentItem {
-        override val date: Long get() = request.createdAtEpochMillis
-        override val key: String get() = "req:${request.id}"
-    }
-}
-
-/**
- * Merge transactions + Cashu Requests, suppress transactions that are already
- * claim-attached to a request (so the request is the single representation),
- * sort by date desc, return up to [limit].
- */
-internal fun unifiedRecent(
-    transactions: List<WalletTransaction>,
-    requests: List<CashuRequest>,
-    limit: Int,
-): List<HomeRecentItem> {
-    val claimedTxIds = buildSet {
-        requests.forEach { req ->
-            req.receivedPayments.forEach { add(it.transactionId) }
-        }
-    }
-    val txItems = transactions
-        .filterNot { it.id in claimedTxIds }
-        .map { HomeRecentItem.Tx(it) as HomeRecentItem }
-    val reqItems = requests.map { HomeRecentItem.Req(it) as HomeRecentItem }
-    return (txItems + reqItems).sortedByDescending { it.date }.take(limit)
 }

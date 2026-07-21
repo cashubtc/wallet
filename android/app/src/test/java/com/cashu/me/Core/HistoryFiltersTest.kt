@@ -16,7 +16,8 @@ class HistoryFiltersTest {
         val pending = transaction("pending", TransactionStatus.Pending)
         val completed = transaction("completed", TransactionStatus.Completed)
         val failed = transaction("failed", TransactionStatus.Failed)
-        val transactions = listOf(pending, completed, failed)
+        val expired = transaction("expired", TransactionStatus.Expired)
+        val transactions = listOf(pending, completed, failed, expired)
 
         assertEquals(transactions, filterTransactions(transactions, HistoryFilter.All))
         assertEquals(listOf(pending), filterTransactions(transactions, HistoryFilter.Pending))

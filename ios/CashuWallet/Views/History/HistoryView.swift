@@ -569,7 +569,7 @@ struct HistoryView: View {
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(rowTitle(for: transaction)), \(formatAmount(transaction)), \(transaction.status == .pending ? transaction.displayStatusText.lowercased() : "completed"), \(formatRelativeDate(transaction.date))")
+        .accessibilityLabel("\(rowTitle(for: transaction)), \(formatAmount(transaction)), \(transaction.status == .completed ? "completed" : transaction.displayStatusText.lowercased()), \(formatRelativeDate(transaction.date))")
         .accessibilityHint("Opens transaction details")
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             if transaction.isPendingReceiveToken {
@@ -615,9 +615,8 @@ struct HistoryView: View {
                 currency: CurrencyRegistry.currency(forMintUnit: transaction.unit)
             ).formatted()
         }
-        guard transaction.status != .pending else { return value }
-        let prefix = transaction.type == .incoming ? "+" : "−"
-        return "\(prefix)\(value)"
+        guard !transaction.isUnsettled else { return value }
+        return transaction.type == .incoming ? "+\(value)" : value
     }
 
     private static let shortTimeFormatter: DateFormatter = {

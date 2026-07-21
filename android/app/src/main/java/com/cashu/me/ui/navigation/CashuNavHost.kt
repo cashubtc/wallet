@@ -276,14 +276,10 @@ private fun NavGraphBuilder.tabDestinations(
             walletManager = container.walletManager,
             settingsManager = container.settingsManager,
             priceService = container.priceService,
-            cashuRequestStore = container.cashuRequestStore,
             onOpenMints = { navController.navigateToTab(TopTab.Mints) },
             onOpenHistory = { navController.navigateToTab(TopTab.History) },
             onOpenTransaction = { tx ->
                 navController.navigate(transactionDetailRouteFor(tx.id))
-            },
-            onOpenCashuRequest = { req ->
-                navController.navigate(cashuRequestDetailRouteFor(req.id))
             },
             // Receive goes straight to the unified surface — no chooser (iOS
             // parity). Bitcoin is now a button inside that sheet, not a chooser row.

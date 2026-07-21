@@ -32,6 +32,7 @@ class PendingMintQuoteTransactionsTest {
         assertEquals(TransactionType.Incoming, row.type)
         assertEquals(TransactionKind.Lightning, row.kind)
         assertEquals(TransactionStatus.Pending, row.status)
+        assertTrue(row.isUnpaidInvoice)
         assertEquals("lnbc1quote", row.invoice)
         assertEquals("usd", row.unit)
         assertEquals(1_700_000_000_000L, row.dateEpochMillis)
@@ -66,6 +67,43 @@ class PendingMintQuoteTransactionsTest {
 
         assertEquals(42L, rows.single().amount)
         assertEquals(TransactionStatus.Completed, rows.single().status)
+        assertFalse(rows.single().isUnpaidInvoice)
+    }
+
+    @Test
+    fun expiresUnpaidBolt11InvoicesPastExpiry() {
+        val nowMillis = 1_700_000_000_000L
+        val nowSeconds = nowMillis / 1000
+
+        fun rowFor(quote: MintQuoteInfo) = pendingMintQuoteTransactions(
+            quotes = listOf(quote),
+            trackedMintUrls = setOf(MintUrl),
+            completedQuoteIds = emptySet(),
+            timestamps = mutableMapOf(),
+            nowEpochMillis = nowMillis,
+        ).single()
+
+        val expired = rowFor(quote(expiryEpochSeconds = nowSeconds - 1))
+        assertEquals(TransactionStatus.Expired, expired.status)
+        assertTrue(expired.isUnpaidInvoice)
+
+        val live = rowFor(quote(expiryEpochSeconds = nowSeconds + 60))
+        assertEquals(TransactionStatus.Pending, live.status)
+        assertTrue(live.isUnpaidInvoice)
+
+        // Paid before expiry stays mintable (NUT-04): Pending, titled as received.
+        val paid = rowFor(quote(state = MintQuoteState.Paid, amountPaid = 10, expiryEpochSeconds = nowSeconds - 1))
+        assertEquals(TransactionStatus.Pending, paid.status)
+        assertFalse(paid.isUnpaidInvoice)
+
+        // No expiry recorded (null or 0 sentinel) means the invoice never expires.
+        assertEquals(TransactionStatus.Pending, rowFor(quote(expiryEpochSeconds = null)).status)
+        assertEquals(TransactionStatus.Pending, rowFor(quote(expiryEpochSeconds = 0)).status)
+
+        // Only the BOLT11 rail expires; addresses stay fundable.
+        val onchain = rowFor(quote(method = PaymentMethodKind.Onchain, expiryEpochSeconds = nowSeconds - 1))
+        assertEquals(TransactionStatus.Pending, onchain.status)
+        assertFalse(onchain.isUnpaidInvoice)
     }
 
     @Test
@@ -129,13 +167,14 @@ class PendingMintQuoteTransactionsTest {
         amountPaid: Long = 0,
         amountIssued: Long = 0,
         unit: String = "sat",
+        expiryEpochSeconds: Long? = null,
     ) = MintQuoteInfo(
         id = id,
         request = "lnbc1quote",
         amount = amount,
         paymentMethod = method,
         state = state,
-        expiryEpochSeconds = null,
+        expiryEpochSeconds = expiryEpochSeconds,
         mintUrl = MintUrl,
         amountPaid = amountPaid,
         amountIssued = amountIssued,

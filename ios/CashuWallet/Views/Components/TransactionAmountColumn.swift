@@ -1,11 +1,12 @@
 import SwiftUI
 
 // Shared trailing region for transaction rows on Home and History.
-// Renders the amount VStack(sats, optional fiat) — trailing-aligned.
-// Amount color is a two-state ledger signal: .primary = settled,
-// .secondary = pending. No row badge; pending is conveyed by the muted
-// amount alone, and re-check lives on History pull-to-refresh. See
-// DESIGN.md — The One Green Rule, The Quiet Pending Rule,
+// Renders the configured primary amount plus its optional conversion —
+// trailing-aligned.
+// Amount styling is the ledger signal: received = green with a plus, sent =
+// primary with no sign, pending/expired = muted with no sign. No row badge;
+// re-check lives on History pull-to-refresh. See DESIGN.md — The Received
+// Amount Rule, The Quiet Pending Rule,
 // The Fiat Sub-Amount Rule.
 struct TransactionAmountColumn: View {
     let transaction: WalletTransaction
@@ -16,7 +17,7 @@ struct TransactionAmountColumn: View {
     var body: some View {
         VStack(alignment: .trailing, spacing: 2) {
             Text(formattedAmount)
-                .font(.system(.body, design: .rounded).weight(.semibold))
+                .font(.system(.body, design: .rounded).weight(.medium))
                 .monospacedDigit()
                 .foregroundStyle(amountColor)
                 .lineLimit(1)
@@ -28,30 +29,26 @@ struct TransactionAmountColumn: View {
 
             if let secondaryAmount {
                 Text(secondaryAmount)
-                    .font(.caption)
+                    .font(.system(.subheadline, design: .rounded).weight(.regular))
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
             }
         }
     }
 
-    // Two-state ledger: pending reads muted, everything settled reads
-    // .primary. Amounts are never green (see The One Green Rule).
+    // Received value is the only green element in the row. Sent value stays
+    // primary; unsettled (pending or expired) stays muted.
     private var amountColor: Color {
-        transaction.status == .pending ? .secondary : .primary
+        if transaction.isUnsettled { return .secondary }
+        return transaction.type == .incoming ? .green : .primary
     }
 
-    // The +/− sign is a *settled-ledger* signal: a pending receive hasn't
-    // credited the balance and a pending send hasn't debited it, so neither
-    // wears a sign until it settles — matching the waiting Cashu Request /
-    // Reusable Invoice, which shows a bare amount until paid. The sign and the
-    // `.primary` colour arrive together on settlement. See DESIGN.md — The
-    // Quiet Pending Rule.
+    // Only a settled receipt gets a sign. Sent, pending, and expired rows stay
+    // unsigned; direction remains explicit in the title and arrow.
     private var formattedAmount: String {
         let value = nativeAmount
-        guard transaction.status != .pending else { return value }
-        let prefix = transaction.type == .incoming ? "+" : "−"
-        return "\(prefix)\(value)"
+        guard !transaction.isUnsettled, transaction.type == .incoming else { return value }
+        return "+\(value)"
     }
 
     private var isSatUnit: Bool {

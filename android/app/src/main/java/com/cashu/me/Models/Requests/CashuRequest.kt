@@ -31,7 +31,7 @@ data class CashuRequest(
     val displayTitle: String
         get() = when (quoteKind?.lowercase()) {
             "bolt12" -> "Reusable Invoice"
-            "bolt11" -> if (receivedPayments.isEmpty()) "Lightning Invoice" else "Lightning received"
+            "bolt11" -> if (receivedPayments.isEmpty()) "Lightning invoice" else "Lightning received"
             "onchain" -> if (receivedPayments.isEmpty()) "Bitcoin Address" else "Bitcoin received"
             else -> "Cashu Request"
         }

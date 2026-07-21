@@ -17,10 +17,11 @@ object TransactionDisplay {
     // Kind-first, capitalized kind, lowercase verb — single source of truth for
     // rows AND the detail title, so a row and the sheet it opens read identically.
     fun title(transaction: WalletTransaction): String = when (transaction.kind) {
-        TransactionKind.Lightning -> if (transaction.type == TransactionType.Incoming) {
-            "Lightning received"
-        } else {
-            "Lightning paid"
+        TransactionKind.Lightning -> when {
+            transaction.type != TransactionType.Incoming -> "Lightning paid"
+            // Nothing has been received while the invoice awaits payment.
+            transaction.isUnpaidInvoice -> "Lightning invoice"
+            else -> "Lightning received"
         }
         TransactionKind.Onchain -> if (transaction.type == TransactionType.Incoming) {
             "Bitcoin received"
@@ -43,6 +44,7 @@ object TransactionDisplay {
         }
         TransactionStatus.Pending -> "Pending"
         TransactionStatus.Failed -> "Failed"
+        TransactionStatus.Expired -> "Expired"
     }
 
     fun qrContent(transaction: WalletTransaction): String? =

@@ -94,7 +94,7 @@ Top-to-bottom inside the pinned region:
 
 - **Notification toast** (top inset) — if `walletManager.lastNotification` non-null. Floating M3 surface with leading icon, message, and dismiss `IconButton`. Auto-dismiss after 5s. Toast carries the only allowed shadow in the app.
 - **"Recent activity" section header** — `labelMedium`, uppercase, letter-spaced, `onSurfaceVariant`. **Padding: 16dp top, 8dp bottom** (carve-out from the original 28dp top spec — matches iOS rhythm where `HistoryView` and `SettingsView` section headers both use 16pt top). Rendered via the shared `SectionHeader` component for consistency across Home, History, Settings, and Mints.
-- **Up to 5 transaction rows** — same anatomy as History rows (see §4.2). `CanvasDivider` between, none after last.
+- **Up to 5 completed transaction rows** — the latest settled sent/received payments, including payments received through reusable requests or offers. Generated receive artifacts and pending, failed, or expired transactions stay in History. Same anatomy as History rows (see §4.2). `CanvasDivider` between, none after last.
 - **"View all activity" `TextButton`** — bottom of section, navigates to History tab.
 
 **Empty state**: if no mints, replace the activity section with `EmptyState(icon = Icons.Outlined.AccountBalance, title = "Add a mint to get started", supporting = "Mints custody your ecash. Go to the Mints tab to add one.", actionLabel = "Add mint", onAction = …)`. If mints exist but no transactions, show `EmptyState(icon = Icons.Outlined.History, title = "No transactions yet", supporting = "Your activity will show up here.")`.
@@ -146,10 +146,10 @@ Pushed top-level destination from the History tab. `CenterAlignedTopAppBar(title
 | Slot | Contents |
 |------|---------|
 | Leading (40dp) | Method icon (Ecash custom glyph / `Icons.Filled.Bolt` for Lightning / `Icons.Outlined.CurrencyBitcoin` for on-chain) **with a bottom-trailing 16dp status badge** on a `surface`-colored circle. Badge swaps via `AnimatedContent` w/ fade-through (~280ms). |
-| Title (top) | `bodyLarge`, e.g. "Lightning received", "Bitcoin sent", "Sent ecash". |
+| Title (top) | `bodyLarge`, e.g. "Lightning received", "Bitcoin sent", "Sent ecash". *(2026-07-21: a BOLT11 mint quote still awaiting payment titles as "Lightning invoice" — `WalletTransaction.isUnpaidInvoice` via `TransactionDisplay.title()` — flipping to "Lightning received" only once paid. An unpaid invoice past its quote expiry keeps that title with status **Expired**: excluded from the Pending filter, QR/Copy/Share retired in detail, amount stays bare + muted.)* |
 | Subtitle (bottom) | `bodySmall`, `onSurfaceVariant`, relative timestamp ("2 hr ago"). |
-| Trailing top | Amount: `bodyLarge` semibold, monospaced digits, prefix `+`/`−`. Color rules below. |
-| Trailing bottom | Fiat sub-amount: `bodySmall`, `onSurfaceVariant`, monospaced. Only if `showFiatBalance && btcPriceUsd > 0`. |
+| Trailing top | Amount: `bodyLarge` medium, monospaced digits. Completed incoming gets `+`; outgoing is unsigned. Color rules below. |
+| Trailing bottom | Converted sub-amount: `bodyMedium` regular, `onSurfaceVariant`, monospaced. Only if `showFiatBalance && btcPriceUsd > 0`. The neighboring size and weight keep both currencies inside one amount block. |
 
 **Status badge colors:**
 - Pending: `Icons.Outlined.Schedule` (clock), `pending-orange`, pulsing alpha animation.
@@ -158,7 +158,8 @@ Pushed top-level destination from the History tab. `CenterAlignedTopAppBar(title
 
 **Amount color:**
 - Pending: `onSurfaceVariant`.
-- Completed: `received-green` (both directions — "money landed is money landed", per iOS).
+- Completed incoming: `received-green`, prefixed with `+`.
+- Completed outgoing: `onSurface`, unsigned. Direction is already carried by the title and arrow.
 - Failed: `onSurface`.
 
 **Divider:** `HorizontalDivider(thickness = 0.5.dp, color = outlineVariant)`, 28dp leading inset. None after the last row in a section.

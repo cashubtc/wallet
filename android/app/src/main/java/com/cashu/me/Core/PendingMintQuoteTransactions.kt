@@ -32,6 +32,14 @@ internal fun pendingMintQuoteTransactions(
         if (amount <= 0) return@mapNotNull null
 
         val timestamp = timestamps.getOrPut(quote.id) { nowEpochMillis }
+        // A paid-but-unissued quote stays Pending even past expiry: the invoice
+        // settled, and NUT-04 lets the wallet mint it after the invoice expires.
+        val isPaid = quote.state == MintQuoteState.Paid ||
+            quote.state == MintQuoteState.Issued ||
+            quote.amountPaid > 0
+        val isUnpaidBolt11 = quote.paymentMethod == PaymentMethodKind.Bolt11 && !isPaid
+        val expiry = quote.expiryEpochSeconds ?: 0
+        val isExpiredUnpaidInvoice = isUnpaidBolt11 && expiry > 0 && nowEpochMillis / 1000 > expiry
         WalletTransaction(
             id = quote.id,
             amount = amount,
@@ -42,15 +50,17 @@ internal fun pendingMintQuoteTransactions(
                 TransactionKind.Lightning
             },
             dateEpochMillis = timestamp,
-            status = if (quote.state == MintQuoteState.Issued || quote.amountIssued >= amount) {
-                TransactionStatus.Completed
-            } else {
-                TransactionStatus.Pending
+            status = when {
+                quote.state == MintQuoteState.Issued || quote.amountIssued >= amount ->
+                    TransactionStatus.Completed
+                isExpiredUnpaidInvoice -> TransactionStatus.Expired
+                else -> TransactionStatus.Pending
             },
             mintUrl = mintUrl,
             invoice = quote.request,
             quoteId = quote.id,
             unit = quote.unit,
+            isUnpaidInvoice = isUnpaidBolt11,
         )
     }
 
