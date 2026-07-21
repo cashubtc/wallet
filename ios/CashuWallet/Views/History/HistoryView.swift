@@ -244,7 +244,7 @@ struct HistoryView: View {
             // UISearchController/refresh-control plumbing so pull-to-refresh
             // stays stable while search is presented. Section headers stay as
             // plain rows (not `Section` headers) to keep them non-pinned, and
-            // native separators are hidden in favor of our CanvasDivider.
+            // native separators are hidden so activity rows flow on the canvas.
             List {
                 ForEach(sectionsWithOffsets, id: \.group.title) { entry in
                     sectionHeader(entry.group.title)
@@ -256,10 +256,6 @@ struct HistoryView: View {
                         let globalIndex = entry.startIndex + index
                         VStack(spacing: 0) {
                             row(for: item)
-
-                            if index < entry.group.items.count - 1 {
-                                CanvasDivider()
-                            }
                         }
                         .id(item.id)
                         .onAppear {

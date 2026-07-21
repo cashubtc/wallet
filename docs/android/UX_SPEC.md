@@ -23,8 +23,8 @@ Cashu Wallet is a **system utility**, not a crypto dashboard. The bar is set by 
 | **Quiet Pending Rule** | Pending state = clock icon + low-alpha orange tint, never a saturated pill. |
 | **Tabular Figure Rule** | All balances/amounts/fees use a monospaced-digit `FontFeatureSetting` and animate digits independently (`Modifier.animateContentSize` + `AnimatedContent` with `numericContentTransform`). |
 | **System-Style Rule** | All text uses `MaterialTheme.typography.*` slots so it scales with system font size. No hardcoded `sp` outside the theme file. |
-| **Flat-By-Default Rule** | No elevation on rows, cards, buttons. Depth from M3 tonal surfaces and 0.5dp dividers only. **One exception:** transient success toast (a floating M3 surface). |
-| **CanvasDivider Rule** | List rows on canvas screens are separated by a single 0.5dp `HorizontalDivider` with 28dp leading inset — never card stacks. |
+| **Flat-By-Default Rule** | No elevation on rows, cards, buttons. Depth comes from M3 tonal surfaces and deliberate spacing. **One exception:** transient success toast (a floating M3 surface). |
+| **CanvasDivider Rule** | Use a 0.5dp `HorizontalDivider` with 28dp leading inset where a detail screen needs explicit separation. Home and History activity rows omit dividers and rely on spacing. |
 | **Share-At-Top Rule** | When a screen shows a shareable QR (invoice, request, token, transaction), `Share` lives in the `TopAppBar` actions, never in the footer button stack. |
 | **Singular Button Rule** | Primary AND secondary CTAs both use `FilledTonalButton`. No `OutlinedButton`, no inverted-fill. Hierarchy via copy and disabled state. The single most-prominent action per screen (e.g. "Create Wallet") may use `Button` (filled). |
 | **Iconless-CTA Rule** | Primary CTAs (Copy, Send, Receive, Continue, New Request) are text-only. No leading icons. |
@@ -94,7 +94,7 @@ Top-to-bottom inside the pinned region:
 
 - **Notification toast** (top inset) — if `walletManager.lastNotification` non-null. Floating M3 surface with leading icon, message, and dismiss `IconButton`. Auto-dismiss after 5s. Toast carries the only allowed shadow in the app.
 - **"Recent activity" section header** — `labelMedium`, uppercase, letter-spaced, `onSurfaceVariant`. **Padding: 16dp top, 8dp bottom** (carve-out from the original 28dp top spec — matches iOS rhythm where `HistoryView` and `SettingsView` section headers both use 16pt top). Rendered via the shared `SectionHeader` component for consistency across Home, History, Settings, and Mints.
-- **Up to 5 completed transaction rows** — the latest settled sent/received payments, including payments received through reusable requests or offers. Generated receive artifacts and pending, failed, or expired transactions stay in History. Same anatomy as History rows (see §4.2). `CanvasDivider` between, none after last.
+- **Up to 5 completed transaction rows** — the latest settled sent/received payments, including payments received through reusable requests or offers. Generated receive artifacts and pending, failed, or expired transactions stay in History. Same anatomy as History rows (see §4.2). Rows use spacing only, with no separators.
 - **"View all activity" `TextButton`** — bottom of section, navigates to History tab.
 
 **Empty state**: if no mints, replace the activity section with `EmptyState(icon = Icons.Outlined.AccountBalance, title = "Add a mint to get started", supporting = "Mints custody your ecash. Go to the Mints tab to add one.", actionLabel = "Add mint", onAction = …)`. If mints exist but no transactions, show `EmptyState(icon = Icons.Outlined.History, title = "No transactions yet", supporting = "Your activity will show up here.")`.
@@ -162,7 +162,7 @@ Pushed top-level destination from the History tab. `CenterAlignedTopAppBar(title
 - Completed outgoing: `onSurface`, unsigned. Direction is already carried by the title and arrow.
 - Failed: `onSurface`.
 
-**Divider:** `HorizontalDivider(thickness = 0.5.dp, color = outlineVariant)`, 28dp leading inset. None after the last row in a section.
+**Divider:** none. Transaction and request rows use spacing and section grouping instead of horizontal rules.
 
 **Entrance:** first 8 rows on initial render animate in with 35ms stagger, 6dp y-offset → 0, fade in. Subsequent loads/filters re-render snappily without stagger.
 

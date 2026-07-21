@@ -82,7 +82,6 @@ import com.cashu.me.Core.displayText
 import com.cashu.me.Models.CashuRequest
 import com.cashu.me.Models.TransactionStatus
 import com.cashu.me.Models.WalletTransaction
-import com.cashu.me.ui.components.CanvasDivider
 import com.cashu.me.ui.components.CashuRequestRow
 import com.cashu.me.ui.components.requestRowDisplay
 import com.cashu.me.ui.components.CashuSearchBar
@@ -340,7 +339,6 @@ fun HistoryScreen(
                                         )
                                     }
                                 }
-                                if (item != section.items.last()) CanvasDivider()
                                 }
                             }
                         }

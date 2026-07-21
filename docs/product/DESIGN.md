@@ -162,8 +162,9 @@ What this system explicitly rejects, pulled verbatim from docs/product/PRODUCT.m
 - One sans family: San Francisco at native iOS text styles. No display pairings,
   no custom fonts, no fluid clamps.
 - Liquid Glass on iOS 26+ for primary interactive surfaces. Quiet fallbacks below.
-- Hairline `CanvasDivider` (0.5pt at `Color(.separator)`) as the single-canvas
-  separator. No card stacks, no nested containers.
+- Hairline `CanvasDivider` (0.5pt at `Color(.separator)`) where a single-canvas
+  detail needs separation. Home and History activity rows use spacing alone.
+  No card stacks, no nested containers.
 - Motion is exponential ease-out, in the 180–350ms range. Seven named animations
   carry the full vocabulary: row stagger, badge symbol-replace, chooser cascade,
   press feedback, sheet cross-fade (in-sheet flow swap), payment-received
@@ -555,7 +556,8 @@ The canonical list pattern. Defined in
   amount alone (the `arrow.triangle.2.circlepath` refresh button was removed
   2026-06-01). Manual re-check is History pull-to-refresh
   (`syncPendingMintQuotes()` + `checkAllPendingTokens()`).
-- **Separator**: `CanvasDivider()` with the default 28pt leading inset.
+- **Separator**: none. Home and History activity rows flow on the canvas with
+  spacing and section grouping carrying the rhythm.
 - **Entrance**: none — rows appear in place. *(Retired 2026-07-06.)* The list
   once staggered its first eight rows in on appearance, but the History tab is
   swapped for `Color.clear` when unselected (`MainTabView.tabContent`, a
@@ -746,9 +748,10 @@ moment — and it is still a system glyph at a system color.
 
 ### Named Rules
 
-**The CanvasDivider Rule.** Single-canvas screens (History, Lightning Invoice
-detail) use `CanvasDivider` between rows. Raw `Divider()` is legacy. There are
-no card stacks; rows sit directly on the canvas, separated only by the hairline.
+**The CanvasDivider Rule.** Single-canvas detail screens such as Lightning
+Invoice detail use `CanvasDivider` between rows. Raw `Divider()` is legacy.
+There are no card stacks. Home and History transaction activity are an explicit
+carve-out: their rows flow without hairlines, separated by spacing and grouping.
 
 *Carve-out (Settings, 2026-06-28):* the Settings screen and its detail
 subscreens drop hairlines entirely — rows flow on the bare canvas, separated by
@@ -954,8 +957,8 @@ curve or a delight beat):*
 - **Do** branch with `if #available(iOS 26.0, *)` for Liquid Glass and provide
   a quiet `.thinMaterial` or `.quaternary` fallback. Never ship a Liquid Glass
   surface that breaks on iOS 18.
-- **Do** use `CanvasDivider()` between rows on single-canvas screens. The
-  default 28pt leading inset already aligns to the icon column.
+- **Do** use `CanvasDivider()` when a single-canvas detail needs explicit row
+  separation. Home and History transaction activity intentionally omit it.
 - **Do** name iOS text styles (`.body`, `.largeTitle`, `.caption`) so Dynamic
   Type scales for free. Pair balance/amount text with `.minimumScaleFactor(0.5)`
   and `.lineLimit(1)` so AX5 doesn't truncate a money value.

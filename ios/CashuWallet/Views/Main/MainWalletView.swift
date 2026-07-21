@@ -529,12 +529,8 @@ struct MainWalletView: View {
         VStack(alignment: .leading, spacing: 0) {
             sectionHeader("Recent")
 
-            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+            ForEach(items) { item in
                 transactionRow(transaction: item)
-
-                if index < items.count - 1 {
-                    CanvasDivider()
-                }
             }
 
             Button(action: onViewAllHistory) {
