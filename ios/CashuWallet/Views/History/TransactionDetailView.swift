@@ -222,10 +222,11 @@ struct TransactionDetailView: View {
         }
     }
 
-    /// True when the hero renders nothing (a no-QR transaction still pending), so
-    /// the amount gets top breathing room instead of butting against the nav bar.
+    /// True when the hero renders nothing (a no-QR transaction still pending, or
+    /// an expired invoice — deliberately quiet, no glyph), so the amount gets top
+    /// breathing room instead of butting against the nav bar.
     private var heroSlotIsEmpty: Bool {
-        !showsQR && transaction.status == .pending
+        !showsQR && transaction.isUnsettled
     }
 
     /// The lifecycle word for the Status row. Direction/rail come from the nav
@@ -240,6 +241,7 @@ struct TransactionDetailView: View {
             }
         case .pending: return "Pending"
         case .failed:  return "Failed"
+        case .expired: return "Expired"
         }
     }
 
@@ -249,6 +251,7 @@ struct TransactionDetailView: View {
         case .completed: return "checkmark.circle"
         case .pending:   return "clock"
         case .failed:    return "xmark.circle"
+        case .expired:   return "clock.badge.xmark"
         }
     }
 

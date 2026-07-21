@@ -11,7 +11,6 @@ struct MainWalletView: View {
     @EnvironmentObject var navigationManager: NavigationManager
     @ObservedObject var settings = SettingsManager.shared
     @ObservedObject var priceService = PriceService.shared
-    @ObservedObject private var requestStore = CashuRequestStore.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var activeSheet: WalletSheet?
@@ -23,10 +22,6 @@ struct MainWalletView: View {
     @State private var receiveEcashDetent: PresentationDetent = .medium
     @State private var contactlessCoordinator = ContactlessPaymentCoordinator()
     @State private var selectedTransaction: WalletTransaction?
-    /// Unclaimed incoming token being claimed (rows open the claim flow
-    /// directly — one Receive tap, no intermediate detail sheet).
-    @State private var claimReceiveToken: PendingReceiveToken?
-    @State private var selectedRequest: CashuRequest?
     @State private var topInsetHeight: CGFloat = 0
     /// Last-viewed home balance unit, persisted so the wallet reopens on it.
     /// Clamped back to "sat" whenever that unit no longer carries a balance.
@@ -126,25 +121,6 @@ struct MainWalletView: View {
                 TransactionDetailView(transaction: transaction)
                     .environmentObject(walletManager)
                     .canvasSheetBackground()
-            }
-            // Claim flow for an unclaimed incoming token. `item:` captures the
-            // pending token at presentation, so the content stays stable while
-            // the claim removes it from the store (a live lookup here would go
-            // nil mid-flow and blank the screen).
-            .fullScreenCover(item: $claimReceiveToken) { pending in
-                ReceiveTokenDetailView(
-                    tokenString: pending.token,
-                    onComplete: { claimReceiveToken = nil },
-                    claim: { try await walletManager.claimPendingReceiveToken(pending) }
-                )
-                .environmentObject(walletManager)
-            }
-            .sheet(item: $selectedRequest) { request in
-                NavigationStack {
-                    CashuRequestDetailView(request: request)
-                        .environmentObject(walletManager)
-                }
-                .canvasSheetBackground()
             }
             .task { await walletManager.loadTransactions() }
         }
@@ -550,16 +526,12 @@ struct MainWalletView: View {
         }
     }
 
-    private func recentList(_ items: [HomeItem]) -> some View {
+    private func recentList(_ items: [WalletTransaction]) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             sectionHeader("Recent")
 
-            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                row(for: item)
-
-                if index < items.count - 1 {
-                    CanvasDivider()
-                }
+            ForEach(items) { item in
+                transactionRow(transaction: item)
             }
 
             Button(action: onViewAllHistory) {
@@ -590,49 +562,13 @@ struct MainWalletView: View {
             .padding(.bottom, 14)
     }
 
-    // MARK: - Recent items pipeline (mirrors HistoryView, capped at 5)
+    // MARK: - Recent completed payments
 
-    private enum HomeItem: Identifiable {
-        case transaction(WalletTransaction)
-        case request(CashuRequest)
-
-        var id: String {
-            switch self {
-            case .transaction(let t): return "tx-\(t.id)"
-            case .request(let r):     return "req-\(r.id)"
-            }
-        }
-
-        var date: Date {
-            switch self {
-            case .transaction(let t): return t.date
-            case .request(let r):     return r.createdAt
-            }
-        }
-    }
-
-    /// Suppress transactions that are already represented by a Cashu Request
-    /// row, then merge requests + transactions, sort desc, cap.
-    private var recentItems: [HomeItem] {
-        let claimedTxIds = Set(requestStore.requests.flatMap { $0.receivedPayments.map(\.transactionId) })
-        let txItems: [HomeItem] = walletManager.transactions
-            .filter { !claimedTxIds.contains($0.id) }
-            .map(HomeItem.transaction)
-        let reqItems: [HomeItem] = requestStore.requests.map(HomeItem.request)
-        return (txItems + reqItems)
-            .sorted { $0.date > $1.date }
-            .prefix(recentRowCap)
-            .map { $0 }
-    }
-
-    @ViewBuilder
-    private func row(for item: HomeItem) -> some View {
-        switch item {
-        case .transaction(let tx):
-            transactionRow(transaction: tx)
-        case .request(let req):
-            cashuRequestRow(request: req)
-        }
+    private var recentItems: [WalletTransaction] {
+        HomeActivity.recentTransactions(
+            from: walletManager.transactions,
+            limit: recentRowCap
+        )
     }
 
     // MARK: - Transaction row (slimmer than HistoryView's variant)
@@ -640,14 +576,7 @@ struct MainWalletView: View {
     private func transactionRow(transaction: WalletTransaction) -> some View {
         Button {
             HapticFeedback.selection()
-            // Unclaimed incoming ecash goes straight to the claim flow — one
-            // Receive tap, no intermediate detail sheet.
-            if transaction.isPendingReceiveToken,
-               let pending = walletManager.pendingReceiveTokens.first(where: { $0.tokenId == transaction.id }) {
-                claimReceiveToken = pending
-            } else {
-                selectedTransaction = transaction
-            }
+            selectedTransaction = transaction
         } label: {
             HStack(spacing: 14) {
                 rowIcon(for: transaction)
@@ -673,7 +602,7 @@ struct MainWalletView: View {
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(rowTitle(for: transaction)), \(formatAmount(transaction)), \(transaction.status == .pending ? "pending" : "completed"), \(formatRelativeDate(transaction.date))")
+        .accessibilityLabel("\(rowTitle(for: transaction)), \(formatAmount(transaction)), \(transaction.status == .completed ? "completed" : transaction.displayStatusText.lowercased()), \(formatRelativeDate(transaction.date))")
         .accessibilityHint("Opens transaction details")
     }
 
@@ -696,56 +625,8 @@ struct MainWalletView: View {
                 currency: CurrencyRegistry.currency(forMintUnit: transaction.unit)
             ).formatted()
         }
-        guard transaction.status != .pending else { return value }
-        let prefix = transaction.type == .incoming ? "+" : "−"
-        return "\(prefix)\(value)"
-    }
-
-    // MARK: - Cashu Request row
-
-    private func cashuRequestRow(request: CashuRequest) -> some View {
-        let isReceived = !request.receivedPayments.isEmpty
-        return Button {
-            HapticFeedback.selection()
-            selectedRequest = request
-        } label: {
-            HStack(spacing: 14) {
-                TransactionIcon(direction: .incoming)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(request.displayTitle)
-                        .font(.body.weight(.medium))
-                        .lineLimit(1)
-
-                    Text(formatRelativeDate(request.createdAt))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer(minLength: 8)
-
-                CashuRequestAmountColumn(
-                    request: request,
-                    received: isReceived,
-                    receivedAmount: totalReceived(for: request)
-                )
-            }
-            .padding(.horizontal, 4)
-            .padding(.vertical, 16)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(request.displayTitle), \(isReceived ? "received" : "waiting for payment"), \(formatRelativeDate(request.createdAt))")
-        .accessibilityHint("Opens request details")
-    }
-
-    private func totalReceived(for request: CashuRequest) -> UInt64 {
-        let ids = Set(request.receivedPayments.map(\.transactionId))
-        guard !ids.isEmpty else { return 0 }
-        return walletManager.transactions
-            .filter { ids.contains($0.id) }
-            .reduce(UInt64(0)) { $0 + $1.amount }
+        guard !transaction.isUnsettled else { return value }
+        return transaction.type == .incoming ? "+\(value)" : value
     }
 
     // MARK: - Relative date

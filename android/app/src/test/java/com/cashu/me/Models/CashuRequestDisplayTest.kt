@@ -20,7 +20,7 @@ class CashuRequestDisplayTest {
         val bolt12 = CashuRequest(encoded = "lno1", quoteKind = "bolt12")
         val onchain = CashuRequest(encoded = "bc1q", quoteKind = "onchain")
 
-        assertEquals("Lightning Invoice", bolt11.displayTitle)
+        assertEquals("Lightning invoice", bolt11.displayTitle)
         assertEquals("Reusable Invoice", bolt12.displayTitle)
         assertEquals("Bitcoin Address", onchain.displayTitle)
         assertFalse(bolt11.isEcashRequest)

@@ -118,7 +118,7 @@ struct CashuRequest: Codable, Identifiable, Hashable {
         case .bolt12:
             return "Reusable Invoice"
         case .bolt11:
-            return receivedPayments.isEmpty ? "Lightning Invoice" : "Lightning received"
+            return receivedPayments.isEmpty ? "Lightning invoice" : "Lightning received"
         case .onchain:
             return receivedPayments.isEmpty ? "Bitcoin Address" : "Bitcoin received"
         }

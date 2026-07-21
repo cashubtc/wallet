@@ -77,8 +77,8 @@ fun requestRowDisplay(
 }
 
 /**
- * Cashu Request timeline row, paired with [TransactionRow] in History and Home
- * Recent. A request is structurally an incoming-ecash event in waiting, so the
+ * Cashu Request timeline row, paired with [TransactionRow] in History. A
+ * request is structurally an incoming-ecash event in waiting, so the
  * leading icon is the same muted down-arrow. Amount states mirror iOS
  * CashuRequestAmountColumn: fixed+waiting → bare muted amount; received →
  * "+amount" in primary; any-amount+waiting → no trailing element (caller passes
@@ -127,9 +127,9 @@ fun CashuRequestRow(
                 Text(
                     text = if (received) "+$primaryAmountText" else primaryAmountText,
                     style = MaterialTheme.typography.bodyLarge.withMonoDigits(),
-                    fontWeight = FontWeight.SemiBold,
+                    fontWeight = FontWeight.Medium,
                     color = if (received) {
-                        MaterialTheme.colorScheme.onSurface
+                        CashuTheme.colors.received
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     },
@@ -138,7 +138,8 @@ fun CashuRequestRow(
             if (secondaryAmountText != null) {
                 Text(
                     text = secondaryAmountText,
-                    style = MaterialTheme.typography.bodySmall.withMonoDigits(),
+                    style = MaterialTheme.typography.bodyMedium.withMonoDigits(),
+                    fontWeight = FontWeight.Normal,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }

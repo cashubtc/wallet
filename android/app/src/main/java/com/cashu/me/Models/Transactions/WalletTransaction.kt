@@ -22,9 +22,15 @@ data class WalletTransaction(
     val isPendingToken: Boolean = false,
     val quoteId: String? = null,
     val cashuRequestId: String? = null,
+    /** BOLT11 mint quote still awaiting payment — titles the row "Lightning invoice". */
+    val isUnpaidInvoice: Boolean = false,
 ) {
     val displayStatusText: String
         get() = if (status == TransactionStatus.Pending) statusNote ?: status.displayText else status.displayText
+
+    /** Quiet Pending rule: expired never credited the balance, so it keeps the bare muted amount. */
+    val isUnsettled: Boolean
+        get() = status == TransactionStatus.Pending || status == TransactionStatus.Expired
 }
 
 @Serializable
@@ -51,12 +57,14 @@ enum class TransactionKind {
 enum class TransactionStatus {
     Pending,
     Completed,
-    Failed;
+    Failed,
+    Expired;
 
     val displayText: String
         get() = when (this) {
             Pending -> "Pending"
             Completed -> "Completed"
             Failed -> "Failed"
+            Expired -> "Expired"
         }
 }

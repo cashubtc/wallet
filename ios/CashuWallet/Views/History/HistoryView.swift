@@ -244,7 +244,7 @@ struct HistoryView: View {
             // UISearchController/refresh-control plumbing so pull-to-refresh
             // stays stable while search is presented. Section headers stay as
             // plain rows (not `Section` headers) to keep them non-pinned, and
-            // native separators are hidden in favor of our CanvasDivider.
+            // native separators are hidden so activity rows flow on the canvas.
             List {
                 ForEach(sectionsWithOffsets, id: \.group.title) { entry in
                     sectionHeader(entry.group.title)
@@ -256,10 +256,6 @@ struct HistoryView: View {
                         let globalIndex = entry.startIndex + index
                         VStack(spacing: 0) {
                             row(for: item)
-
-                            if index < entry.group.items.count - 1 {
-                                CanvasDivider()
-                            }
                         }
                         .id(item.id)
                         .onAppear {
@@ -569,7 +565,7 @@ struct HistoryView: View {
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(rowTitle(for: transaction)), \(formatAmount(transaction)), \(transaction.status == .pending ? transaction.displayStatusText.lowercased() : "completed"), \(formatRelativeDate(transaction.date))")
+        .accessibilityLabel("\(rowTitle(for: transaction)), \(formatAmount(transaction)), \(transaction.status == .completed ? "completed" : transaction.displayStatusText.lowercased()), \(formatRelativeDate(transaction.date))")
         .accessibilityHint("Opens transaction details")
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             if transaction.isPendingReceiveToken {
@@ -615,9 +611,8 @@ struct HistoryView: View {
                 currency: CurrencyRegistry.currency(forMintUnit: transaction.unit)
             ).formatted()
         }
-        guard transaction.status != .pending else { return value }
-        let prefix = transaction.type == .incoming ? "+" : "−"
-        return "\(prefix)\(value)"
+        guard !transaction.isUnsettled else { return value }
+        return transaction.type == .incoming ? "+\(value)" : value
     }
 
     private static let shortTimeFormatter: DateFormatter = {

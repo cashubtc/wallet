@@ -33,6 +33,32 @@ class TransactionDisplayTest {
     }
 
     @Test
+    fun unpaidInvoiceTitlesAsInvoiceUntilPaid() {
+        val unpaid = transaction(
+            kind = TransactionKind.Lightning,
+            type = TransactionType.Incoming,
+            invoice = "lnbc1test",
+        ).copy(status = TransactionStatus.Pending, isUnpaidInvoice = true)
+
+        assertEquals("Lightning invoice", TransactionDisplay.title(unpaid))
+        assertEquals("Lightning received", TransactionDisplay.title(unpaid.copy(isUnpaidInvoice = false)))
+    }
+
+    @Test
+    fun expiredInvoiceRetiresQrAndReadsExpired() {
+        val expired = transaction(
+            kind = TransactionKind.Lightning,
+            type = TransactionType.Incoming,
+            invoice = "lnbc1test",
+        ).copy(status = TransactionStatus.Expired, isUnpaidInvoice = true)
+
+        assertEquals("Lightning invoice", TransactionDisplay.title(expired))
+        assertEquals("Expired", TransactionDisplay.statusText(expired))
+        assertTrue(!TransactionDisplay.showsQr(expired))
+        assertEquals(null, TransactionDisplay.copyableContent(expired))
+    }
+
+    @Test
     fun settledArtifactsAreNotScannableButEcashKeepsCopyReceipt() {
         val settledEcash = transaction(
             kind = TransactionKind.Ecash,

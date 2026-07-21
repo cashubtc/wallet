@@ -112,7 +112,7 @@ components:
     rounded: "circle"
     iconSymbol: "arrow.down (incoming) / arrow.up (outgoing)"
     iconSize: "16px"
-    note: "Leading 36x36 history-row glyph (TransactionIcon). Pure directional arrow, always muted; direction is the arrow's orientation, never colour. The amount carries settled/pending state via .primary / .secondary — never green (One Green Rule). Carve-out: supersedes the prior kind-glyph + corner directional badge model."
+    note: "Leading 36x36 history-row glyph (TransactionIcon). Pure directional arrow, always muted; direction is the arrow's orientation, never colour. The primary amount carries state: green +amount for completed incoming, unsigned .primary for completed outgoing, .secondary for pending/expired. Carve-out: supersedes the prior kind-glyph + corner directional badge model."
   row-inspector-editable:
     backgroundColor: "transparent"
     textColor: "{colors.primary-text}"
@@ -162,8 +162,9 @@ What this system explicitly rejects, pulled verbatim from docs/product/PRODUCT.m
 - One sans family: San Francisco at native iOS text styles. No display pairings,
   no custom fonts, no fluid clamps.
 - Liquid Glass on iOS 26+ for primary interactive surfaces. Quiet fallbacks below.
-- Hairline `CanvasDivider` (0.5pt at `Color(.separator)`) as the single-canvas
-  separator. No card stacks, no nested containers.
+- Hairline `CanvasDivider` (0.5pt at `Color(.separator)`) where a single-canvas
+  detail needs separation. Home and History activity rows use spacing alone.
+  No card stacks, no nested containers.
 - Motion is exponential ease-out, in the 180–350ms range. Seven named animations
   carry the full vocabulary: row stagger, badge symbol-replace, chooser cascade,
   press feedback, sheet cross-fade (in-sheet flow swap), payment-received
@@ -207,18 +208,17 @@ opacity for foreground (icon, status text) and at low opacity (10–18%) when us
 as a tinted background.
 
 - **Confirmed Green** (`Color.green`, ≈ `#34C759` / `#30D158`): green is the
-  receiver's reward, but **no longer on a ledger amount** — *as of 2026-06-01
-  in-row amount green is retired* (see the amended One Green Rule; transaction
-  and Cashu Request row amounts are `.primary` when settled, `.secondary` when
-  pending). Green lives in **off-row / detail-surface success states**: the
+  receiver's reward. A completed incoming transaction or received Cashu Request
+  uses green for its primary `+amount`; outgoing amounts remain `.primary`, and
+  pending/expired amounts remain `.secondary`. Green also lives in
+  **off-row / detail-surface success states**: the
   default-mint indicator dot; the `checkmark.seal.fill` "N payments received"
   status and `checkmark.circle.fill` toast inside `CashuRequestDetailView`; the
   64pt `checkmark.circle.fill` success icon on `PaymentStatusView`; and the same
   64pt completed check on the transaction detail sheet (`TransactionDetailView`).
-  *As of 2026-07-05 the home received-delta beat is no longer green* (see the One
-  Green Rule). **Nothing on a list row is green.** The leading directional arrow
-  is always `.secondary` regardless of direction or state — green belongs to
-  receipt-confirmation surfaces, not the ledger line.
+  *As of 2026-07-05 the home received-delta beat is no longer green.* The leading
+  directional arrow is always `.secondary` regardless of direction or state;
+  only the received primary amount turns green on a ledger row.
 - **Pending Orange** (`Color.orange`, ≈ `#FF9500` / `#FF9F0A`): foreground for the
   "Waiting for payment…" clock on a Cashu Request and the amber
   `exclamationmark.triangle.fill` caution on `PaymentStatusView`. It does **not**
@@ -246,20 +246,18 @@ as a tinted background.
 `Color(.separator)`) or one of three state hues at a stated opacity. There is no
 fourth case.
 
-**The One Green Rule.** *Amended 2026-06-01: in-row amount green is retired —
-amounts are never green.* A transaction row's amount is now a **two-state
-ledger signal**: `.secondary` while `transaction.status == .pending`, `.primary`
-once settled (both directions, both kinds — incoming, outgoing, ecash,
-Lightning, on-chain). A received Cashu Request renders `.primary` too. The
-shared `TransactionAmountColumn` (`ios/CashuWallet/Views/Components/`) is the
-canonical implementation: `amountColor` is exactly
-`transaction.status == .pending ? .secondary : .primary`; do not re-derive the
-color elsewhere. *Rationale for the carve-out:* mixing green/white/gray amounts
-at mixed weights read as noisy rather than calm; a single white-settles /
-gray-pends language is more aligned with the "System Utility" North Star, and
-direction is already carried by the leading arrow + the `+`/`−` prefix.
-Green now survives in **one off-row place only**, which is not a
-transaction-row amount:
+**The One Green Rule.** *Amended 2026-07-21:* within a ledger row, green belongs
+only to the primary amount of completed incoming money: green `+amount` for an
+incoming transaction or received Cashu Request. A completed outgoing amount is
+unsigned `.primary`; pending and expired amounts are unsigned `.secondary`.
+The title, timestamp, leading arrow, and converted sub-amount never turn green.
+The shared `TransactionAmountColumn` is the canonical implementation; do not
+re-derive the sign or color elsewhere. Direction for outgoing rows is already
+carried by the title and upward arrow, so a minus sign adds noise without new
+information.
+
+Outside ledger rows, confirmed green also appears in deliberate success and
+selection states, including:
 1. The **default-mint indicator dot** — a small green dot on a mint's icon
    (Mints list `MintsListView`, mint profile `MintDetailView`) marking the
    user's selected default mint. A *selection* marker (same axis as "Set as
@@ -293,7 +291,11 @@ directional-arrow-on-a-circle hero and the small green "✓ Received" badge are 
 State also rides an explicit **`Status` row** — the first detail row, monochrome
 value (the hero glyph already carries the colour): completed → **Claimed** (ecash)
 / **Paid** (lightning) / **Confirmed** (on-chain); pending → **Pending**; failed →
-**Failed**. A **`Date` row** follows. Remaining rows are conditional essentials —
+**Failed**; expired → **Expired** *(added 2026-07-21: an unpaid BOLT11 invoice
+past its quote expiry — the QR/Share/Copy retire with it and the hero stays
+empty like a pending no-QR row; no red X, since nothing failed, the invoice
+simply lapsed. A quote paid before expiry stays **Pending** even past expiry —
+NUT-04 lets it be minted afterwards)*. A **`Date` row** follows. Remaining rows are conditional essentials —
 **Fee** when `> 0`, **Mint** always; the **Unit** row and the settled **Request**
 row stay dropped (`unitLabel` is always BTC/SAT; the live request is the QR/Copy).
 On-chain keeps **Address** / **Transaction ID** and its address QR. The **Type**
@@ -324,29 +326,24 @@ The muted-orange pending language survives only off the list, on the
 sheet's pending state is now a monochrome "Pending" `Status` row — no orange,
 2026-07-05(c).) Never a full-saturation pill, never a loud "PENDING" wordmark.
 
-*Amended 2026-06-27: the leading `+`/`−` sign is itself a settled-ledger
-signal. A pending row — either direction — renders a **bare, unsigned** amount;
-the sign appears only on settlement, together with the `.primary` colour. This
-unifies the transaction column (`TransactionAmountColumn`, used by BOLT11 /
-Lightning / ecash) with the waiting Cashu Request / Reusable Invoice
-(`CashuRequestAmountColumn`), which already showed a bare amount until paid — so
-a pending incoming BOLT11 invoice no longer shows `+21` while a waiting BOLT12
-offer shows `21`.*
+*Amended 2026-07-21: only a completed incoming row uses a sign: green `+amount`.
+Completed outgoing rows are unsigned and `.primary`; their title and upward arrow
+already carry direction. Pending and expired rows are also unsigned and muted.
+Cashu Request / Reusable Invoice rows follow the same rule: waiting is bare and
+muted, received is green with `+`.*
 
-*Amended 2026-06-27: the leading `+`/`−` sign is itself a settled-ledger
-signal. A pending row — either direction — renders a **bare, unsigned** amount;
-the sign appears only on settlement, together with the `.primary` colour. This
-unifies the transaction column (`TransactionAmountColumn`, used by BOLT11 /
-Lightning / ecash) with the waiting Cashu Request / Reusable Invoice
-(`CashuRequestAmountColumn`), which already showed a bare amount until paid — so
-a pending incoming BOLT11 invoice no longer shows `+21` while a waiting BOLT12
-offer shows `21`.*
+*Amended 2026-07-21: **expired** rows (`isUnsettled` = pending or expired) keep
+the same bare, muted amount — an expired invoice never credited the balance, so
+it must not read as settled.*
 
 **The Fiat Sub-Amount Rule.** When
-`settings.showFiatBalance && priceService.btcPriceUSD > 0`, any row that
-renders a sats amount also renders the fiat equivalent directly below it in
-`.caption / .secondary / .monospacedDigit()` — supplementary text, never a
-peer. Cashu Request "any amount" rows (no fixed expected total) render no
+`settings.showFiatBalance && priceService.btcPriceUSD > 0`, any sat-unit row
+renders its configured primary amount with the converted value below it in
+`.system(.subheadline, design: .rounded).weight(.regular) / .secondary /
+.monospacedDigit()`. The primary value is the neighboring
+`.system(.body, design: .rounded).weight(.medium)`: enough hierarchy to preserve
+the configured primary currency without making the conversion read like tiny
+metadata. Cashu Request "any amount" rows (no fixed expected total) render no
 trailing element and therefore no fiat. Fiat re-renders silently on price
 ticks; no `.contentTransition`. Same gate as the hero balance fiat line, so
 turning fiat off in Settings clears the entire app uniformly.
@@ -549,18 +546,23 @@ The canonical list pattern. Defined in
   (Models.swift), reused by the History/Home rows **and** the transaction detail
   nav title, so a row and the sheet it opens always read identically. *(2026-06-01:
   was verb-first lowercase "Received ecash"; unified to kind-first.)*
+  *(2026-07-21: a BOLT11 mint quote still awaiting payment titles as
+  **"Lightning invoice"** — `isUnpaidInvoice` — flipping to "Lightning received"
+  only once the invoice is paid. "Received" must never assert money that hasn't
+  arrived; this also covers the expired state, which keeps the invoice title.
+  Mirrors the request-row precedent `CashuRequest.displayTitle`.)*
 - **Timestamp**: `.caption`, `Color.secondary`, immediately under the title.
   Formatted with `RelativeDateTimeFormatter(.abbreviated)` ("2 hr ago", "3 d ago").
-- **Trailing amount**: `.system(.body, design: .rounded).weight(.semibold)
-  .monospacedDigit()`, `.contentTransition(.numericText(value:))`, prefixed
-  with `+` or `−`. Two-state colour: pending → `Color.secondary`, everything
-  settled → `.primary` (both directions, both kinds; never green — see the
-  amended One Green Rule).
+- **Trailing amount**: `.system(.body, design: .rounded).weight(.medium)
+  .monospacedDigit()`, `.contentTransition(.numericText(value:))`. Completed
+  incoming → green `+amount`; completed outgoing → unsigned `.primary`; pending
+  or expired → unsigned `.secondary`.
 - **Pending indicator**: none on the row. Pending is the muted `.secondary`
   amount alone (the `arrow.triangle.2.circlepath` refresh button was removed
   2026-06-01). Manual re-check is History pull-to-refresh
   (`syncPendingMintQuotes()` + `checkAllPendingTokens()`).
-- **Separator**: `CanvasDivider()` with the default 28pt leading inset.
+- **Separator**: none. Home and History activity rows flow on the canvas with
+  spacing and section grouping carrying the rhythm.
 - **Entrance**: none — rows appear in place. *(Retired 2026-07-06.)* The list
   once staggered its first eight rows in on appearance, but the History tab is
   swapped for `Color.clear` when unselected (`MainTabView.tabContent`, a
@@ -589,13 +591,14 @@ section. Defined in `HistoryView.swift` → `cashuRequestRow(request:, staggerIn
   `.secondary` — matches transaction rows exactly. The payment count
   ("3 payments received") is no longer surfaced on the row; it lives in
   `CashuRequestDetailView`.
-- **Trailing amount** (all `.semibold`, matching every other amount):
+- **Trailing amount** (`.body` medium primary with a `.subheadline` regular
+  conversion, matching every other amount):
   - Fixed-amount + waiting: `amount` in `.secondary`, no indicator — the muted
     amount alone signals waiting (the target is visible while pending).
-  - Fixed-amount + received: `+amount` in `.primary`, monospaced digit,
+  - Fixed-amount + received: `+amount` in `.green`, monospaced digit,
     `.contentTransition(.numericText(value:))`. Cumulative for multi-payment.
   - Any-amount + waiting: no trailing element at all.
-  - Any-amount + received: `+\(totalReceived)` in `.primary`, cumulative.
+  - Any-amount + received: `+\(totalReceived)` in `.green`, cumulative.
 - **Duplicate suppression**: when a payment lands, `WalletManager
   .receiveCashuRequestPayment` diffs the mint's incoming transaction ids
   before/after the receive, identifies the new CDK tx id, and stores it on
@@ -672,12 +675,12 @@ camera scanner only.
 The signature surface of the NUT-18 receive flow.
 `ios/CashuWallet/Views/Receive/CashuRequestDetailView.swift`. The view runs in two
 contexts: as the receive-flow face inside a `.medium`/`.large` sheet from
-`ReceiveEcashView`, or — from History/Home — presented as its **own bottom
+`ReceiveEcashView`, or — from History — presented as its **own bottom
 `.sheet`** (wrapped in a `NavigationStack` at the call site for its toolbar).
 **Detail surfaces are always bottom sheets, never pushed** — tapping any
-history/recent item (transaction *or* Cashu Request) slides up the same way, so
-the two never diverge into a push vs. sheet split. The same content scales to
-both contexts.
+History item or completed Home transaction slides up the same way, so the two
+never diverge into a push vs. sheet split. The same content scales to both
+contexts.
 
 - **QR**: 280×280 `QRCodeView(content:, showControls: false, staticOnly: true)`
   on a `Color.white` `RoundedRectangle(cornerRadius: 20)` with 16pt padding.
@@ -697,7 +700,7 @@ both contexts.
     on-screen request (the `.cashuTokenReceived` notification carries the
     `requestId`). In the **receive flow** (watching a fresh request, `onClose`
     set) it dwells ~1.2s then the sheet auto-dismisses — mirroring the Lightning
-    invoice. When **inspecting** an existing request from History/Home it holds
+    invoice. When **inspecting** an existing request from History it holds
     2.5s then reverts to the persistent count (no dismiss).
   - Received (persistent) → `checkmark.seal.fill` + "N payments received",
     `Color.green`. Quiet — no symbol effect, no animation.
@@ -750,9 +753,10 @@ moment — and it is still a system glyph at a system color.
 
 ### Named Rules
 
-**The CanvasDivider Rule.** Single-canvas screens (History, Lightning Invoice
-detail) use `CanvasDivider` between rows. Raw `Divider()` is legacy. There are
-no card stacks; rows sit directly on the canvas, separated only by the hairline.
+**The CanvasDivider Rule.** Single-canvas detail screens such as Lightning
+Invoice detail use `CanvasDivider` between rows. Raw `Divider()` is legacy.
+There are no card stacks. Home and History transaction activity are an explicit
+carve-out: their rows flow without hairlines, separated by spacing and grouping.
 
 *Carve-out (Settings, 2026-06-28):* the Settings screen and its detail
 subscreens drop hairlines entirely — rows flow on the bare canvas, separated by
@@ -958,8 +962,8 @@ curve or a delight beat):*
 - **Do** branch with `if #available(iOS 26.0, *)` for Liquid Glass and provide
   a quiet `.thinMaterial` or `.quaternary` fallback. Never ship a Liquid Glass
   surface that breaks on iOS 18.
-- **Do** use `CanvasDivider()` between rows on single-canvas screens. The
-  default 28pt leading inset already aligns to the icon column.
+- **Do** use `CanvasDivider()` when a single-canvas detail needs explicit row
+  separation. Home and History transaction activity intentionally omit it.
 - **Do** name iOS text styles (`.body`, `.largeTitle`, `.caption`) so Dynamic
   Type scales for free. Pair balance/amount text with `.minimumScaleFactor(0.5)`
   and `.lineLimit(1)` so AX5 doesn't truncate a money value.

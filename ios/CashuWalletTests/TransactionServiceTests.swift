@@ -15,6 +15,51 @@ final class TransactionServiceTests: XCTestCase {
         )
     }
 
+    func testHomeActivityShowsOnlyLatestCompletedTransactions() {
+        let now = Date()
+        var completedIncoming = transaction(
+            id: "received-via-request",
+            status: .completed,
+            date: now.addingTimeInterval(-10),
+            type: .incoming
+        )
+        completedIncoming.cashuRequestId = "request"
+        let completedOutgoing = transaction(
+            id: "sent",
+            status: .completed,
+            date: now
+        )
+        let pending = transaction(
+            id: "pending-request",
+            status: .pending,
+            date: now.addingTimeInterval(10)
+        )
+        let failed = transaction(
+            id: "failed",
+            status: .failed,
+            date: now.addingTimeInterval(20)
+        )
+        let expired = transaction(
+            id: "expired",
+            status: .expired,
+            date: now.addingTimeInterval(30)
+        )
+
+        let recent = HomeActivity.recentTransactions(
+            from: [completedIncoming, pending, failed, completedOutgoing, expired],
+            limit: 5
+        )
+
+        XCTAssertEqual(recent.map(\.id), ["sent", "received-via-request"])
+        XCTAssertEqual(
+            HomeActivity.recentTransactions(
+                from: [completedIncoming, completedOutgoing],
+                limit: 1
+            ).map(\.id),
+            ["sent"]
+        )
+    }
+
     // MARK: - Saved token (txId ↔ encoded token)
 
     func testGetTokenNilByDefault() {
@@ -261,7 +306,71 @@ final class TransactionServiceTests: XCTestCase {
         )
     }
 
+    // MARK: - Unpaid / expired invoice display
+
+    func testUnpaidInvoiceTitlesAsInvoiceUntilPaid() {
+        var transaction = WalletTransaction(
+            id: "quote",
+            amount: 500,
+            type: .incoming,
+            kind: .lightning,
+            date: Date(),
+            memo: nil,
+            status: .pending
+        )
+        transaction.isUnpaidInvoice = true
+
+        XCTAssertEqual(transaction.displayTitle, "Lightning invoice")
+
+        transaction.isUnpaidInvoice = false
+        XCTAssertEqual(transaction.displayTitle, "Lightning received")
+    }
+
+    func testExpiredStatusDisplayAndQuietPending() {
+        var transaction = WalletTransaction(
+            id: "quote",
+            amount: 500,
+            type: .incoming,
+            kind: .lightning,
+            date: Date(),
+            memo: nil,
+            status: .expired
+        )
+        transaction.isUnpaidInvoice = true
+
+        XCTAssertEqual(transaction.status.displayText, "Expired")
+        XCTAssertEqual(transaction.displayStatusText, "Expired")
+        XCTAssertEqual(transaction.displayTitle, "Lightning invoice")
+        XCTAssertTrue(transaction.isUnsettled)
+        XCTAssertFalse(WalletTransaction(
+            id: "settled",
+            amount: 500,
+            type: .incoming,
+            kind: .lightning,
+            date: Date(),
+            memo: nil,
+            status: .completed
+        ).isUnsettled)
+    }
+
     // MARK: - Helpers
+
+    private func transaction(
+        id: String,
+        status: WalletTransaction.TransactionStatus,
+        date: Date,
+        type: WalletTransaction.TransactionType = .outgoing
+    ) -> WalletTransaction {
+        WalletTransaction(
+            id: id,
+            amount: 1,
+            type: type,
+            kind: .ecash,
+            date: date,
+            memo: nil,
+            status: status
+        )
+    }
 
     private func pendingToken(id: String, amount: UInt64) -> PendingToken {
         PendingToken(

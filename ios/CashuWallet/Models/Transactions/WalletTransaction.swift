@@ -46,6 +46,16 @@ struct WalletTransaction: Identifiable {
     /// (a reusable BOLT12 offer, a BOLT11 invoice, an on-chain address).
     var quoteId: String? = nil
 
+    /// BOLT11 mint quote still awaiting payment — titles the row
+    /// "Lightning invoice" until the invoice settles.
+    var isUnpaidInvoice: Bool = false
+
+    /// The Quiet Pending treatment (bare, muted amount) covers expired too:
+    /// an expired invoice never credited the balance.
+    var isUnsettled: Bool {
+        status == .pending || status == .expired
+    }
+
     var displayStatusText: String {
         if status == .pending {
             return statusNote ?? status.displayText
@@ -60,6 +70,8 @@ struct WalletTransaction: Identifiable {
     /// transaction detail nav title.
     var displayTitle: String {
         if isPendingReceiveToken { return "Ecash to claim" }
+        // Nothing has been received while the invoice awaits payment.
+        if isUnpaidInvoice { return "Lightning invoice" }
         switch (kind, type) {
         case (.ecash,     .incoming): return "Ecash received"
         case (.ecash,     .outgoing): return "Ecash sent"
@@ -101,14 +113,31 @@ struct WalletTransaction: Identifiable {
         case pending
         case completed
         case failed
-        
+        case expired
+
         var displayText: String {
             switch self {
             case .pending: return "Pending"
             case .completed: return "Completed"
             case .failed: return "Failed"
+            case .expired: return "Expired"
             }
         }
+    }
+}
+
+/// Home is a compact settled-ledger view, not an operational queue. Generated
+/// receive artifacts and every non-completed state remain available in History.
+enum HomeActivity {
+    static func recentTransactions(
+        from transactions: [WalletTransaction],
+        limit: Int
+    ) -> [WalletTransaction] {
+        transactions
+            .filter { $0.status == .completed }
+            .sorted { $0.date > $1.date }
+            .prefix(max(0, limit))
+            .map { $0 }
     }
 }
 

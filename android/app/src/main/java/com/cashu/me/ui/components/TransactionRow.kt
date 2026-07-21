@@ -45,8 +45,8 @@ data class TransactionRowModel(
 /**
  * Canonical timeline row. Leading muted directional arrow (direction is the
  * arrow's orientation, never colour); kind is named in the title. The amount is
- * a two-state ledger signal: bare + muted while pending, signed + primary once
- * settled (One Green Rule / Quiet Pending — no badge, no spinner, no green).
+ * the ledger signal: received is green with a plus, sent is primary with no
+ * sign, and pending/expired is muted with no sign.
  */
 @Composable
 fun TransactionRow(
@@ -56,18 +56,14 @@ fun TransactionRow(
 ) {
     val tx = model.transaction
     val incoming = tx.type == TransactionType.Incoming
-    val pending = tx.status == TransactionStatus.Pending
-    val amountColor = if (pending) {
-        MaterialTheme.colorScheme.onSurfaceVariant
-    } else {
-        MaterialTheme.colorScheme.onSurface
+    val unsettled = tx.isUnsettled
+    val amountColor = when {
+        unsettled -> MaterialTheme.colorScheme.onSurfaceVariant
+        incoming -> CashuTheme.colors.received
+        else -> MaterialTheme.colorScheme.onSurface
     }
-    val amountText = if (pending) {
-        model.primaryAmount
-    } else {
-        "${if (incoming) "+" else "−"}${model.primaryAmount}"
-    }
-    val semanticAmount = if (pending) model.primaryAmount else "${if (incoming) "+" else "-"}${model.primaryAmount}"
+    val amountText = if (!unsettled && incoming) "+${model.primaryAmount}" else model.primaryAmount
+    val semanticAmount = amountText
     val semanticParts = listOfNotNull(
         model.title,
         if (incoming) "Incoming" else "Outgoing",
@@ -108,13 +104,14 @@ fun TransactionRow(
             Text(
                 text = amountText,
                 style = MaterialTheme.typography.bodyLarge.withMonoDigits(),
-                fontWeight = FontWeight.SemiBold,
+                fontWeight = FontWeight.Medium,
                 color = amountColor,
             )
             if (model.secondaryAmount != null) {
                 Text(
                     text = model.secondaryAmount,
-                    style = MaterialTheme.typography.bodySmall.withMonoDigits(),
+                    style = MaterialTheme.typography.bodyMedium.withMonoDigits(),
+                    fontWeight = FontWeight.Normal,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
