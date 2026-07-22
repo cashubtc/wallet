@@ -1,8 +1,11 @@
 package com.cashu.me.ui.receive
 
+import com.cashu.me.Core.NfcReceive.NfcReceivePhase
 import com.cashu.me.Models.CashuRequestPayment
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CashuRequestPaymentObservationTest {
@@ -54,6 +57,14 @@ class CashuRequestPaymentObservationTest {
         )
 
         assertEquals("new-2", received?.transactionId)
+    }
+
+    @Test
+    fun `NFC session stays mounted while payment record and success state hand off`() {
+        assertTrue(shouldKeepNfcSessionMounted(false, NfcReceivePhase.Redeeming))
+        assertTrue(shouldKeepNfcSessionMounted(false, NfcReceivePhase.Success))
+        assertFalse(shouldKeepNfcSessionMounted(false, NfcReceivePhase.Inactive))
+        assertTrue(shouldKeepNfcSessionMounted(true, NfcReceivePhase.Waiting))
     }
 
     private fun payment(id: String, amount: Long = 1) = CashuRequestPayment(

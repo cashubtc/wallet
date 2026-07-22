@@ -8,6 +8,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -123,7 +124,8 @@ fun CashuRequestDetailScreen(
     var unitPickerOpen by remember { mutableStateOf(false) }
     var regenerateError by remember { mutableStateOf<String?>(null) }
     val offerNfcReceive = request?.shouldOfferNfcReceive() == true
-    val nfcTransferActive = offerNfcReceive && nfcState.phase.isNfcTransferActive()
+    val keepNfcSessionMounted = shouldKeepNfcSessionMounted(offerNfcReceive, nfcState.phase)
+    val nfcTransferActive = keepNfcSessionMounted && nfcState.phase.isNfcTransferActive()
 
     // Re-signs the same NUT-18 request in place (same id/history entry) — used
     // by the Mint sheet, the Amount sheet's Done, and "New Request" (called
@@ -205,7 +207,7 @@ fun CashuRequestDetailScreen(
     // Existing payments form the baseline, so revisiting history stays inline.
     val successPayment = request?.receivedPayments
         ?.firstOrNull { it.transactionId == successPaymentId }
-    if (request != null && successPayment != null) {
+    if (request != null && successPayment != null && nfcState.phase != NfcReceivePhase.Success) {
         val isSatRequest = request.unit.equals("sat", ignoreCase = true)
         val requestCurrency = CurrencyRegistry.currencyForMintUnit(request.unit)
         val amountLabel = successPayment.amount.takeIf { it > 0L }?.let {
@@ -282,7 +284,7 @@ fun CashuRequestDetailScreen(
             return@Scaffold
         }
 
-        if (offerNfcReceive) {
+        if (keepNfcSessionMounted) {
             NfcReceiveLifecycle(
                 coordinator = nfcReceiveCoordinator,
                 request = request,
@@ -477,10 +479,46 @@ fun CashuRequestDetailScreen(
         }
     }
 
-    if (offerNfcReceive) {
-        NfcReceiveOverlay(coordinator = nfcReceiveCoordinator)
+    if (keepNfcSessionMounted) {
+        val nfcSuccessAmountLabel = request?.let { currentRequest ->
+            nfcState.amount?.takeIf { it > 0L }?.let { amount ->
+                if (currentRequest.unit.equals("sat", ignoreCase = true)) {
+                    formatter.formatWalletSats(amount, settings.useBitcoinSymbol)
+                } else {
+                    CurrencyAmount(
+                        amount,
+                        CurrencyRegistry.currencyForMintUnit(currentRequest.unit),
+                    ).formatted()
+                }
+            }
+        }
+        val nfcSuccessMintName = nfcState.settlementMint?.let { url ->
+            walletState.mints.firstOrNull { it.url == url }?.name ?: url
+        }
+        NfcReceiveOverlay(
+            coordinator = nfcReceiveCoordinator,
+            successAmountLabel = nfcSuccessAmountLabel,
+            successMintName = nfcSuccessMintName,
+            onSuccessDone = {
+                nfcReceiveCoordinator.deactivate()
+                onClose()
+            },
+        )
     }
 }
+
+internal fun shouldKeepNfcSessionMounted(
+    offerNfcReceive: Boolean,
+    phase: NfcReceivePhase,
+): Boolean = offerNfcReceive || phase in setOf(
+    NfcReceivePhase.Connected,
+    NfcReceivePhase.Receiving,
+    NfcReceivePhase.Validating,
+    NfcReceivePhase.Redeeming,
+    NfcReceivePhase.Converting,
+    NfcReceivePhase.Success,
+    NfcReceivePhase.Failure,
+)
 
 private fun NfcReceivePhase.isNfcTransferActive(): Boolean = this in setOf(
     NfcReceivePhase.Connected,
@@ -607,24 +645,32 @@ internal fun CashuRequestSuccessTerminal(
         title = "Payment received",
         onDone = onDone,
         rows = {
-            if (amountLabel != null) {
-                InspectorRow(
-                    label = "Amount",
-                    value = amountLabel,
-                    leadingIcon = Icons.Outlined.Payments,
-                    valueMonospaced = true,
-                )
-            }
-            if (mintName != null) {
-                if (amountLabel != null) CanvasDivider(leadingInset = 16.dp)
-                InspectorRow(
-                    label = "Mint",
-                    value = mintName,
-                    leadingIcon = Icons.Outlined.AccountBalance,
-                )
-            }
+            CashuRequestReceiptRows(amountLabel = amountLabel, mintName = mintName)
         },
     )
+}
+
+@Composable
+internal fun ColumnScope.CashuRequestReceiptRows(
+    amountLabel: String?,
+    mintName: String?,
+) {
+    if (amountLabel != null) {
+        InspectorRow(
+            label = "Amount",
+            value = amountLabel,
+            leadingIcon = Icons.Outlined.Payments,
+            valueMonospaced = true,
+        )
+    }
+    if (mintName != null) {
+        if (amountLabel != null) CanvasDivider(leadingInset = 16.dp)
+        InspectorRow(
+            label = "Mint",
+            value = mintName,
+            leadingIcon = Icons.Outlined.AccountBalance,
+        )
+    }
 }
 
 /**

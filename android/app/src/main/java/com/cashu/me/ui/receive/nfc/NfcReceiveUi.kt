@@ -62,6 +62,7 @@ import com.cashu.me.Models.CashuRequest
 import com.cashu.me.ui.components.PaymentStatusPhase
 import com.cashu.me.ui.components.PaymentStatusScreen
 import com.cashu.me.ui.components.SpinnerRing
+import com.cashu.me.ui.receive.CashuRequestReceiptRows
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.rememberReducedMotion
 
@@ -79,7 +80,21 @@ fun NfcReceiveLifecycle(
     val context = LocalContext.current
     val activity = context.findActivity()
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    DisposableEffect(activity, lifecycle, coordinator, request, settlementMintUrl) {
+    // Payment history is updated immediately before the coordinator publishes
+    // Success. Key the HCE session only to signed-request fields so that update
+    // cannot dispose the processing overlay and expose the QR screen for a frame.
+    DisposableEffect(
+        activity,
+        lifecycle,
+        coordinator,
+        request.id,
+        request.encoded,
+        request.amount,
+        request.unit,
+        request.mints,
+        request.memo,
+        settlementMintUrl,
+    ) {
         val adapter = NfcAdapter.getDefaultAdapter(context)
         val component = ComponentName(context, CashuNfcHostApduService::class.java)
         fun resume() {
@@ -217,7 +232,12 @@ internal fun NfcReceiveIndicatorContent(state: NfcReceiveState, modifier: Modifi
 }
 
 @Composable
-fun NfcReceiveOverlay(coordinator: NfcReceiveCoordinator) {
+fun NfcReceiveOverlay(
+    coordinator: NfcReceiveCoordinator,
+    successAmountLabel: String?,
+    successMintName: String?,
+    onSuccessDone: () -> Unit,
+) {
     val state by coordinator.state.collectAsState()
     val visible = state.phase in setOf(
         NfcReceivePhase.Connected,
@@ -225,6 +245,7 @@ fun NfcReceiveOverlay(coordinator: NfcReceiveCoordinator) {
         NfcReceivePhase.Validating,
         NfcReceivePhase.Redeeming,
         NfcReceivePhase.Converting,
+        NfcReceivePhase.Success,
         NfcReceivePhase.Failure,
     )
     val haptics = LocalHapticFeedback.current
@@ -239,26 +260,65 @@ fun NfcReceiveOverlay(coordinator: NfcReceiveCoordinator) {
         exit = fadeOut(spring(stiffness = Spring.StiffnessMedium)),
     ) {
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-            when (state.phase) {
-                NfcReceivePhase.Failure -> PaymentStatusScreen(
-                    phase = PaymentStatusPhase.Failure,
-                    title = "Payment failed",
-                    detail = state.message ?: "The payment could not be received.",
-                    doneLabel = "Try again",
-                    onDone = coordinator::clearResult,
-                )
-                NfcReceivePhase.Validating, NfcReceivePhase.Redeeming, NfcReceivePhase.Converting -> PaymentStatusScreen(
-                    phase = PaymentStatusPhase.Processing,
-                    title = when (state.phase) {
+            NfcReceiveOverlayContent(
+                state = state,
+                successAmountLabel = successAmountLabel,
+                successMintName = successMintName,
+                onSuccessDone = onSuccessDone,
+                onRetry = coordinator::clearResult,
+            )
+        }
+    }
+}
+
+@Composable
+internal fun NfcReceiveOverlayContent(
+    state: NfcReceiveState,
+    successAmountLabel: String?,
+    successMintName: String?,
+    onSuccessDone: () -> Unit,
+    onRetry: () -> Unit,
+) {
+    when (state.phase) {
+        NfcReceivePhase.Failure -> PaymentStatusScreen(
+            phase = PaymentStatusPhase.Failure,
+            title = "Payment failed",
+            detail = state.message ?: "The payment could not be received.",
+            doneLabel = "Try again",
+            onDone = onRetry,
+        )
+        NfcReceivePhase.Validating,
+        NfcReceivePhase.Redeeming,
+        NfcReceivePhase.Converting,
+        NfcReceivePhase.Success,
+        -> {
+            val succeeded = state.phase == NfcReceivePhase.Success
+            PaymentStatusScreen(
+                phase = if (succeeded) PaymentStatusPhase.Success else PaymentStatusPhase.Processing,
+                title = if (succeeded) {
+                    "Payment received"
+                } else {
+                    when (state.phase) {
                         NfcReceivePhase.Validating -> "Checking payment"
                         NfcReceivePhase.Redeeming -> "Securing ecash"
                         else -> "Moving to your default mint"
-                    },
-                    detail = "Transfer complete — you can move the phones apart.",
-                )
-                else -> NfcTransferScreen()
-            }
+                    }
+                },
+                detail = if (succeeded) null else "Transfer complete — you can move the phones apart.",
+                onDone = onSuccessDone.takeIf { succeeded },
+                rows = if (succeeded) {
+                    {
+                        CashuRequestReceiptRows(
+                            amountLabel = successAmountLabel,
+                            mintName = successMintName,
+                        )
+                    }
+                } else {
+                    null
+                },
+            )
         }
+        else -> NfcTransferScreen()
     }
 }
 
