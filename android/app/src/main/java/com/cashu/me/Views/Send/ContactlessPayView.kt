@@ -3,30 +3,49 @@ package com.cashu.me.Views.Send
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import android.content.Intent
 import android.nfc.NdefMessage
 import android.nfc.NfcAdapter
 import android.nfc.Tag
 import android.nfc.tech.Ndef
+import android.provider.Settings
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Nfc
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LoadingIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SheetValue
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -34,30 +53,94 @@ import com.cashu.me.Core.Services.NFCPaymentInput
 import com.cashu.me.Core.Services.NFCPaymentService
 import com.cashu.me.Core.Services.NFCReaderDelegate
 import com.cashu.me.Core.WalletManager
-import com.cashu.me.ui.components.GhostButton
 import com.cashu.me.ui.components.InlineNotice
 import com.cashu.me.ui.components.PrimaryButton
+
+/**
+ * Android has no system-owned NFC reader sheet, so reader mode is presented in
+ * a native Material 3 modal bottom sheet. The host owns dismissal animation and
+ * prevents accidental swipe/back dismissal while a tag is being read or written.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ContactlessPaySheet(
+    walletManager: WalletManager,
+    onDismissed: () -> Unit,
+    onLightningRequest: (String) -> Unit,
+) {
+    val dismissLocked = remember { mutableStateOf(false) }
+    val confirmValueChange = remember {
+        { value: SheetValue -> value != SheetValue.Hidden || !dismissLocked.value }
+    }
+    val sheetState = rememberBottomSheetState(
+        initialValue = SheetValue.Hidden,
+        enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
+        confirmValueChange = confirmValueChange,
+    )
+    val scope = rememberCoroutineScope()
+    var closing by remember { mutableStateOf(false) }
+
+    fun hideThen(action: () -> Unit) {
+        if (closing) return
+        closing = true
+        // Deliberate navigation is allowed to end the session even if the tag
+        // callback has not yet delivered its final idle-state recomposition.
+        dismissLocked.value = false
+        scope.launch { sheetState.hide() }.invokeOnCompletion { action() }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = {
+            if (!dismissLocked.value && !closing) {
+                closing = true
+                onDismissed()
+            }
+        },
+        sheetState = sheetState,
+    ) {
+        ContactlessPayView(
+            walletManager = walletManager,
+            onLightningRequest = { invoice ->
+                hideThen { onLightningRequest(invoice) }
+            },
+            onDismissLockChanged = { dismissLocked.value = it },
+        )
+    }
+}
 
 @Composable
 fun ContactlessPayView(
     walletManager: WalletManager,
-    contentPadding: PaddingValues = PaddingValues(),
-    onClose: () -> Unit,
+    modifier: Modifier = Modifier,
     onLightningRequest: (String) -> Unit,
+    onDismissLockChanged: (Boolean) -> Unit = {},
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val activity = remember(context) { context.findActivity() }
     val adapter = remember(context) { NfcAdapter.getDefaultAdapter(context) }
     val scope = rememberCoroutineScope()
     val service = remember(walletManager) { NFCPaymentService(walletManager) }
+    val currentDismissLockChanged by rememberUpdatedState(onDismissLockChanged)
+    var nfcEnabled by remember(adapter) { mutableStateOf(adapter?.isEnabled == true) }
     var status by remember { mutableStateOf("Hold the phone near an NFC payment tag.") }
     var error by remember { mutableStateOf<String?>(null) }
     var isProcessing by remember { mutableStateOf(false) }
     var paymentComplete by remember { mutableStateOf(false) }
     var lastPaymentAmount by remember { mutableStateOf<Long?>(null) }
 
-    DisposableEffect(activity, adapter, service) {
-        if (activity != null && adapter?.isEnabled == true) {
+    DisposableEffect(lifecycleOwner, adapter) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                nfcEnabled = adapter?.isEnabled == true
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    DisposableEffect(activity, adapter, service, nfcEnabled) {
+        if (activity != null && adapter != null && nfcEnabled) {
             val flags = (
                 NfcAdapter.FLAG_READER_NFC_A or
                     NfcAdapter.FLAG_READER_NFC_B or
@@ -71,6 +154,7 @@ fun ContactlessPayView(
                     scope.launch {
                         if (isProcessing) return@launch
                         isProcessing = true
+                        currentDismissLockChanged(true)
                         paymentComplete = false
                         lastPaymentAmount = null
                         error = null
@@ -100,6 +184,7 @@ fun ContactlessPayView(
                             status = "Ready to scan again."
                         }
                         isProcessing = false
+                        currentDismissLockChanged(false)
                     }
                 },
                 flags,
@@ -110,45 +195,106 @@ fun ContactlessPayView(
             if (activity != null && adapter != null) {
                 runCatching { adapter.disableReaderMode(activity) }
             }
+            currentDismissLockChanged(false)
         }
     }
 
+    ContactlessPayContent(
+        availability = when {
+            adapter == null -> ContactlessAvailability.Unavailable
+            !nfcEnabled -> ContactlessAvailability.Disabled
+            else -> ContactlessAvailability.Ready
+        },
+        status = status,
+        error = error,
+        isProcessing = isProcessing,
+        paymentComplete = paymentComplete,
+        lastPaymentAmount = lastPaymentAmount,
+        modifier = modifier,
+        onOpenNfcSettings = { context.openNfcSettings() },
+    )
+}
+
+internal enum class ContactlessAvailability { Unavailable, Disabled, Ready }
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+internal fun ContactlessPayContent(
+    availability: ContactlessAvailability,
+    status: String,
+    error: String?,
+    isProcessing: Boolean,
+    paymentComplete: Boolean,
+    lastPaymentAmount: Long?,
+    onOpenNfcSettings: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(contentPadding)
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag("contactlessSheetContent")
+            .padding(horizontal = 24.dp)
+            .padding(bottom = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text("Contactless", style = MaterialTheme.typography.headlineSmall)
-        if (adapter == null) {
-            InlineNotice(text = "NFC is not available on this device.")
-        } else if (!adapter.isEnabled) {
-            InlineNotice(text = "NFC is disabled in system settings.")
-        } else {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (isProcessing) {
-                    LoadingIndicator()
-                }
-                Text(status, color = MaterialTheme.colorScheme.secondary)
+        Text(
+            text = "Contactless",
+            style = MaterialTheme.typography.headlineSmall,
+            textAlign = TextAlign.Center,
+        )
+        Surface(
+            modifier = Modifier.size(80.dp),
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = Icons.Outlined.Nfc,
+                    contentDescription = null,
+                    modifier = Modifier.size(40.dp),
+                    tint = MaterialTheme.colorScheme.onSurface,
+                )
             }
         }
+
+        when (availability) {
+            ContactlessAvailability.Unavailable ->
+                InlineNotice(text = "NFC is not available on this device.")
+            ContactlessAvailability.Disabled ->
+                InlineNotice(text = "NFC is disabled in system settings.")
+            ContactlessAvailability.Ready ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (isProcessing) {
+                        LoadingIndicator(modifier = Modifier.size(24.dp))
+                    }
+                    Text(
+                        text = status,
+                        modifier = Modifier.padding(start = if (isProcessing) 8.dp else 0.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                    )
+                }
+        }
+
         if (paymentComplete) {
             Text("Payment sent!", style = MaterialTheme.typography.titleMedium)
-            lastPaymentAmount?.let { Text("$it sat", style = MaterialTheme.typography.headlineSmall) }
+            lastPaymentAmount?.let {
+                Text("$it sat", style = MaterialTheme.typography.headlineSmall)
+            }
         }
         error?.let { InlineNotice(text = it) }
-        PrimaryButton("Close", onClick = onClose)
-        GhostButton(
-            text = if (paymentComplete) "Pay again" else "Reset",
-            enabled = !isProcessing,
-            onClick = {
-                error = null
-                paymentComplete = false
-                lastPaymentAmount = null
-                status = "Hold the phone near an NFC payment tag."
-            },
-        )
+
+        when (availability) {
+            ContactlessAvailability.Disabled ->
+                PrimaryButton("Open NFC settings", onClick = onOpenNfcSettings)
+            ContactlessAvailability.Unavailable,
+            ContactlessAvailability.Ready -> Unit
+        }
     }
 }
 
@@ -183,3 +329,8 @@ private tailrec fun Context.findActivity(): Activity? =
         is ContextWrapper -> baseContext.findActivity()
         else -> null
     }
+
+private fun Context.openNfcSettings() {
+    runCatching { startActivity(Intent(Settings.ACTION_NFC_SETTINGS)) }
+        .recoverCatching { startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS)) }
+}

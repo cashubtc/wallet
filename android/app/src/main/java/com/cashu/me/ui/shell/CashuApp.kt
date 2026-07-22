@@ -42,7 +42,7 @@ import com.cashu.me.Core.PaymentRequestDecodeResult
 import com.cashu.me.Core.PaymentRequestDecoder
 import com.cashu.me.Core.TokenParser
 import com.cashu.me.Views.Components.ScannerView
-import com.cashu.me.Views.Send.ContactlessPayView
+import com.cashu.me.Views.Send.ContactlessPaySheet
 import com.cashu.me.ui.onboarding.OnboardingScreen
 import com.cashu.me.ui.navigation.Routes
 import com.cashu.me.ui.navigation.TopTab
@@ -188,6 +188,7 @@ private fun AuthenticatedShell(container: AppContainer) {
     // The active money flow, hosted in a modal bottom sheet (iOS WalletFlow sheets).
     var activeFlow by remember { mutableStateOf<WalletFlow?>(null) }
     var flowDismissLocked by remember { mutableStateOf(false) }
+    var openContactlessAfterFlowDismiss by remember { mutableStateOf(false) }
     var pendingReceiveScan by remember { mutableStateOf<String?>(null) }
     var pendingSendScan by remember { mutableStateOf<String?>(null) }
     var pendingMintScan by remember { mutableStateOf<String?>(null) }
@@ -259,21 +260,6 @@ private fun AuthenticatedShell(container: AppContainer) {
             navController = navController,
         )
         AnimatedVisibility(
-            visible = showContactless,
-            enter = overlayEnter,
-            exit = overlayExit,
-        ) {
-            ContactlessPayView(
-                walletManager = container.walletManager,
-                onClose = { showContactless = false },
-                onLightningRequest = { invoice ->
-                    pendingSendScan = invoice
-                    showContactless = false
-                    activeFlow = WalletFlow.Send
-                },
-            )
-        }
-        AnimatedVisibility(
             visible = activeScannerTarget != null,
             enter = overlayEnter,
             exit = overlayExit,
@@ -330,17 +316,15 @@ private fun AuthenticatedShell(container: AppContainer) {
         // instead of popping the NavHost — or exiting the app — underneath it.
         // Declared after WalletScaffold so this callback registers last on the
         // OnBackPressedDispatcher and takes precedence over NavHost back handling
-        // while an overlay is visible. Receive detail renders above the scanner,
-        // which renders above Contactless — dismissal order matches. (Flow
-        // sheets live in their own window and handle back themselves.)
-        BackHandler(enabled = !appLockState.isLocked && (receiveTokenDetail != null || activeScannerTarget != null || showContactless)) {
-            when (shellBackAction(receiveTokenDetail != null, activeScannerTarget != null, showContactless)) {
+        // while an overlay is visible. Receive detail renders above the scanner.
+        // Modal sheets live in their own windows and handle back themselves.
+        BackHandler(enabled = !appLockState.isLocked && (receiveTokenDetail != null || activeScannerTarget != null)) {
+            when (shellBackAction(receiveTokenDetail != null, activeScannerTarget != null)) {
                 com.cashu.me.ui.navigation.ShellBackAction.CloseReceiveDetail -> {
                     // Never abandon a redeem in flight.
                     if (!receiveDetailDismissLocked) receiveTokenDetail = null
                 }
                 com.cashu.me.ui.navigation.ShellBackAction.CloseScanner -> scannerTarget = null
-                com.cashu.me.ui.navigation.ShellBackAction.CloseContactless -> showContactless = false
                 null -> Unit
             }
         }
@@ -355,7 +339,13 @@ private fun AuthenticatedShell(container: AppContainer) {
     WalletFlowSheetHost(
         flow = activeFlow,
         dismissLocked = flowDismissLocked,
-        onDismissed = { activeFlow = null },
+        onDismissed = {
+            activeFlow = null
+            if (openContactlessAfterFlowDismiss) {
+                openContactlessAfterFlowDismiss = false
+                showContactless = true
+            }
+        },
         snackbarHostState = container.snackbarHostState,
     ) { flow, close ->
         when (flow) {
@@ -366,9 +356,7 @@ private fun AuthenticatedShell(container: AppContainer) {
                 cashuRequestStore = container.cashuRequestStore,
                 onOpenRequest = { id ->
                     close()
-                    // Fresh (just-created, actively waiting) → arms the full-screen
-                    // takeover on the first payment; history entries pass fresh=false.
-                    navController.navigate(cashuRequestDetailRouteFor(id, fresh = true))
+                    navController.navigate(cashuRequestDetailRouteFor(id))
                 },
                 onClose = close,
                 // Universal scanner (Send parity): auto-routes whatever it reads.
@@ -412,8 +400,10 @@ private fun AuthenticatedShell(container: AppContainer) {
                     scannerTarget = ScannerTarget.Auto
                 },
                 onContactless = {
+                    // Android has no system NFC sheet. Let Send finish its hide
+                    // animation before mounting the fresh Material NFC sheet.
+                    openContactlessAfterFlowDismiss = true
                     close()
-                    showContactless = true
                 },
                 onSendEcash = { activeFlow = WalletFlow.SendEcash },
                 onOpenReceiveToken = { token ->
@@ -442,6 +432,18 @@ private fun AuthenticatedShell(container: AppContainer) {
                 onDismissLockChanged = { flowDismissLocked = it },
             )
         }
+    }
+
+    if (showContactless) {
+        ContactlessPaySheet(
+            walletManager = container.walletManager,
+            onDismissed = { showContactless = false },
+            onLightningRequest = { invoice ->
+                showContactless = false
+                pendingSendScan = invoice
+                activeFlow = WalletFlow.Send
+            },
+        )
     }
 }
 

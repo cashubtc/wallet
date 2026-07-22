@@ -131,7 +131,6 @@ fun CashuNavHost(
                 cashuRequestStore = container.cashuRequestStore,
                 nfcReceiveCoordinator = container.nfcReceiveCoordinator,
                 requestId = requestId,
-                isReceiveFlow = entry.arguments?.getBoolean("fresh") == true,
                 onClose = { navController.popBackStack() },
                 snackbarHostState = container.snackbarHostState,
             )
@@ -248,9 +247,9 @@ internal fun transactionDetailRouteFor(transactionId: String): String {
     return Routes.TRANSACTION_DETAIL.replace("{transactionId}", encoded)
 }
 
-internal fun cashuRequestDetailRouteFor(requestId: String, fresh: Boolean = false): String {
+internal fun cashuRequestDetailRouteFor(requestId: String): String {
     val encoded = URLEncoder.encode(requestId, StandardCharsets.UTF_8.name())
-    return "request/$encoded?fresh=$fresh"
+    return "request/$encoded?fresh=false"
 }
 
 private fun NavGraphBuilder.tabDestinations(

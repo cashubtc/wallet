@@ -9,17 +9,13 @@ class BackNavigationPolicyTest {
     fun shellBackPrioritizesTopmostOverlay() {
         assertEquals(
             ShellBackAction.CloseReceiveDetail,
-            shellBackAction(receiveDetailVisible = true, scannerVisible = true, contactlessVisible = true),
+            shellBackAction(receiveDetailVisible = true, scannerVisible = true),
         )
         assertEquals(
             ShellBackAction.CloseScanner,
-            shellBackAction(receiveDetailVisible = false, scannerVisible = true, contactlessVisible = true),
+            shellBackAction(receiveDetailVisible = false, scannerVisible = true),
         )
-        assertEquals(
-            ShellBackAction.CloseContactless,
-            shellBackAction(receiveDetailVisible = false, scannerVisible = false, contactlessVisible = true),
-        )
-        assertNull(shellBackAction(receiveDetailVisible = false, scannerVisible = false, contactlessVisible = false))
+        assertNull(shellBackAction(receiveDetailVisible = false, scannerVisible = false))
     }
 
     @Test

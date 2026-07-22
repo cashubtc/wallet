@@ -1,19 +1,14 @@
 package com.cashu.me.ui.receive
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -51,6 +46,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -76,6 +72,7 @@ import com.cashu.me.Core.SettingsManager
 import com.cashu.me.Core.UnitAmountEntry
 import com.cashu.me.Core.Wallet.userFacingWalletMessage
 import com.cashu.me.Core.WalletManager
+import com.cashu.me.Models.CashuRequestPayment
 import com.cashu.me.ui.components.AmountEntryHero
 import com.cashu.me.ui.components.AmountText
 import com.cashu.me.ui.components.CanvasDivider
@@ -110,10 +107,6 @@ fun CashuRequestDetailScreen(
     nfcReceiveCoordinator: NfcReceiveCoordinator,
     requestId: String,
     onClose: () -> Unit,
-    // True when opened straight after creating the request (actively waiting).
-    // Only then does the first payment take over full-screen (iOS parity);
-    // from history the screen stays inline/persistent (reusable, multi-payment).
-    isReceiveFlow: Boolean = false,
     snackbarHostState: SnackbarHostState? = null,
 ) {
     val storeState by cashuRequestStore.state.collectAsState()
@@ -131,7 +124,8 @@ fun CashuRequestDetailScreen(
     var unitPickerOpen by remember { mutableStateOf(false) }
     var regenerateError by remember { mutableStateOf<String?>(null) }
     val offerNfcReceive = request?.shouldOfferNfcReceive() == true
-    val nfcTransferActive = offerNfcReceive && nfcState.phase.isNfcTransferActive()
+    val keepNfcSessionMounted = shouldKeepNfcSessionMounted(offerNfcReceive, nfcState.phase)
+    val nfcTransferActive = keepNfcSessionMounted && nfcState.phase.isNfcTransferActive()
 
     // Re-signs the same NUT-18 request in place (same id/history entry) — used
     // by the Mint sheet, the Amount sheet's Done, and "New Request" (called
@@ -195,41 +189,47 @@ fun CashuRequestDetailScreen(
         }
     }
 
-    // Track payment count changes for celebration animation.
     val paymentCount = request?.receivedPayments?.size ?: 0
-    var previousCount by remember(requestId) { mutableStateOf(paymentCount) }
-    var celebrate by remember { mutableStateOf(false) }
-    // Fresh receive-flow only: the first payment arms a single-fire full-screen
-    // takeover (iOS `didAutoComplete`). History views never set this.
-    var didComplete by remember(requestId) { mutableStateOf(false) }
-    LaunchedEffect(paymentCount) {
-        if (paymentCount > previousCount && previousCount >= 0) {
-            if (isReceiveFlow) didComplete = true
-            celebrate = true
-            delay(2500)
-            celebrate = false
+    var observedPaymentIds by rememberSaveable(requestId) {
+        mutableStateOf(request?.receivedPayments?.map { it.transactionId })
+    }
+    var successPaymentId by rememberSaveable(requestId) { mutableStateOf<String?>(null) }
+    LaunchedEffect(requestId, request?.receivedPayments) {
+        val currentPayments = request?.receivedPayments ?: return@LaunchedEffect
+        newestUnseenPayment(observedPaymentIds, currentPayments)?.let { payment ->
+            successPaymentId = payment.transactionId
         }
-        previousCount = paymentCount
+        observedPaymentIds = currentPayments.map { it.transactionId }
     }
 
-    // Fresh + paid → replace the whole screen with the shared success terminal,
-    // auto-dismissing after a brief dwell (no Done button, matching Receive
-    // Lightning). Reusable/history requests never reach here.
-    if (isReceiveFlow && didComplete && request != null) {
+    // A payment that lands while this request is open always gets the shared
+    // full-screen receipt, regardless of whether it arrived via NFC or Nostr.
+    // Existing payments form the baseline, so revisiting history stays inline.
+    val successPayment = request?.receivedPayments
+        ?.firstOrNull { it.transactionId == successPaymentId }
+    if (request != null && successPayment != null && nfcState.phase != NfcReceivePhase.Success) {
         val isSatRequest = request.unit.equals("sat", ignoreCase = true)
         val requestCurrency = CurrencyRegistry.currencyForMintUnit(request.unit)
-        val receivedAmount = request.amount?.takeIf { it > 0L } ?: request.totalReceived.takeIf { it > 0L }
-        val amountLabel = receivedAmount?.let {
+        val amountLabel = successPayment.amount.takeIf { it > 0L }?.let {
             if (isSatRequest) formatter.formatWalletSats(it, settings.useBitcoinSymbol)
             else CurrencyAmount(it, requestCurrency).formatted()
         }
-        val mintName = request.mints.firstOrNull()?.let { url ->
+        val transactionMintUrl = walletState.transactions
+            .firstOrNull { it.id == successPayment.transactionId }
+            ?.mintUrl
+        val creditedMintUrl = transactionMintUrl
+            ?: nfcState.settlementMint.takeIf { nfcState.phase == NfcReceivePhase.Success }
+            ?: request.mints.singleOrNull()
+        val mintName = creditedMintUrl?.let { url ->
             walletState.mints.firstOrNull { it.url == url }?.name ?: url
-        } ?: "Any mint"
+        }
         CashuRequestSuccessTerminal(
             amountLabel = amountLabel,
             mintName = mintName,
-            onDone = onClose,
+            onDone = {
+                nfcReceiveCoordinator.deactivate()
+                onClose()
+            },
         )
         return
     }
@@ -284,7 +284,7 @@ fun CashuRequestDetailScreen(
             return@Scaffold
         }
 
-        if (offerNfcReceive) {
+        if (keepNfcSessionMounted) {
             NfcReceiveLifecycle(
                 coordinator = nfcReceiveCoordinator,
                 request = request,
@@ -340,7 +340,6 @@ fun CashuRequestDetailScreen(
                 StatusBlock(
                     received = request.receivedPayments.isNotEmpty(),
                     paymentCount = paymentCount,
-                    celebrate = celebrate,
                 )
 
                 Column(modifier = Modifier.fillMaxWidth()) {
@@ -480,10 +479,46 @@ fun CashuRequestDetailScreen(
         }
     }
 
-    if (offerNfcReceive) {
-        NfcReceiveOverlay(coordinator = nfcReceiveCoordinator)
+    if (keepNfcSessionMounted) {
+        val nfcSuccessAmountLabel = request?.let { currentRequest ->
+            nfcState.amount?.takeIf { it > 0L }?.let { amount ->
+                if (currentRequest.unit.equals("sat", ignoreCase = true)) {
+                    formatter.formatWalletSats(amount, settings.useBitcoinSymbol)
+                } else {
+                    CurrencyAmount(
+                        amount,
+                        CurrencyRegistry.currencyForMintUnit(currentRequest.unit),
+                    ).formatted()
+                }
+            }
+        }
+        val nfcSuccessMintName = nfcState.settlementMint?.let { url ->
+            walletState.mints.firstOrNull { it.url == url }?.name ?: url
+        }
+        NfcReceiveOverlay(
+            coordinator = nfcReceiveCoordinator,
+            successAmountLabel = nfcSuccessAmountLabel,
+            successMintName = nfcSuccessMintName,
+            onSuccessDone = {
+                nfcReceiveCoordinator.deactivate()
+                onClose()
+            },
+        )
     }
 }
+
+internal fun shouldKeepNfcSessionMounted(
+    offerNfcReceive: Boolean,
+    phase: NfcReceivePhase,
+): Boolean = offerNfcReceive || phase in setOf(
+    NfcReceivePhase.Connected,
+    NfcReceivePhase.Receiving,
+    NfcReceivePhase.Validating,
+    NfcReceivePhase.Redeeming,
+    NfcReceivePhase.Converting,
+    NfcReceivePhase.Success,
+    NfcReceivePhase.Failure,
+)
 
 private fun NfcReceivePhase.isNfcTransferActive(): Boolean = this in setOf(
     NfcReceivePhase.Connected,
@@ -494,39 +529,20 @@ private fun NfcReceivePhase.isNfcTransferActive(): Boolean = this in setOf(
 )
 
 @Composable
-private fun StatusBlock(received: Boolean, paymentCount: Int, celebrate: Boolean) {
+private fun StatusBlock(received: Boolean, paymentCount: Int) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
     ) {
         if (received) {
-            // Live celebration grows in gently (0.9 → 1, the one delight beat);
-            // the persistent N-payments state is quiet — no animation.
-            AnimatedVisibility(
-                visible = true,
-                enter = if (celebrate) {
-                    scaleIn(
-                        animationSpec = spring(dampingRatio = 0.7f, stiffness = Spring.StiffnessMediumLow),
-                        initialScale = 0.9f,
-                    ) + fadeIn()
-                } else {
-                    fadeIn()
-                },
-                exit = fadeOut(),
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.CheckCircle,
-                    contentDescription = null,
-                    tint = CashuTheme.colors.received,
-                    modifier = Modifier.size(CashuTheme.spacing.loose),
-                )
-            }
+            Icon(
+                imageVector = Icons.Outlined.CheckCircle,
+                contentDescription = null,
+                tint = CashuTheme.colors.received,
+                modifier = Modifier.size(CashuTheme.spacing.loose),
+            )
             Text(
-                text = when {
-                    celebrate -> "Payment received!"
-                    paymentCount == 1 -> "1 payment received"
-                    else -> "$paymentCount payments received"
-                },
+                text = if (paymentCount == 1) "1 payment received" else "$paymentCount payments received",
                 style = MaterialTheme.typography.titleMedium,
                 color = CashuTheme.colors.received,
             )
@@ -617,40 +633,54 @@ private fun CashuRequestAmountEditSheet(
     }
 }
 
-/** Full-screen shared success terminal for a fresh request's first payment
- *  (iOS `CashuRequestDetailView.paymentSuccessView`). Auto-dismisses after a
- *  brief dwell — no Done button, mirroring Receive Lightning. */
+/** Full-screen shared receipt for a payment that lands while the request is open. */
 @Composable
-private fun CashuRequestSuccessTerminal(
+internal fun CashuRequestSuccessTerminal(
     amountLabel: String?,
     mintName: String?,
     onDone: () -> Unit,
 ) {
-    LaunchedEffect(Unit) {
-        delay(1800)
-        onDone()
-    }
     PaymentStatusScreen(
         phase = PaymentStatusPhase.Success,
-        title = "Payment Received!",
-        onDone = null,
+        title = "Payment received",
+        onDone = onDone,
         rows = {
-            if (amountLabel != null) {
-                InspectorRow(
-                    label = "Amount",
-                    value = amountLabel,
-                    leadingIcon = Icons.Outlined.Payments,
-                    valueMonospaced = true,
-                )
-            }
-            if (mintName != null) {
-                if (amountLabel != null) CanvasDivider(leadingInset = 16.dp)
-                InspectorRow(
-                    label = "Mint",
-                    value = mintName,
-                    leadingIcon = Icons.Outlined.AccountBalance,
-                )
-            }
+            CashuRequestReceiptRows(amountLabel = amountLabel, mintName = mintName)
         },
     )
+}
+
+@Composable
+internal fun ColumnScope.CashuRequestReceiptRows(
+    amountLabel: String?,
+    mintName: String?,
+) {
+    if (amountLabel != null) {
+        InspectorRow(
+            label = "Amount",
+            value = amountLabel,
+            leadingIcon = Icons.Outlined.Payments,
+            valueMonospaced = true,
+        )
+    }
+    if (mintName != null) {
+        if (amountLabel != null) CanvasDivider(leadingInset = 16.dp)
+        InspectorRow(
+            label = "Mint",
+            value = mintName,
+            leadingIcon = Icons.Outlined.AccountBalance,
+        )
+    }
+}
+
+/**
+ * Returns the newest payment that was not present in the last observed snapshot.
+ * A null snapshot means the request has just opened, so its payments establish
+ * the baseline and must not replay an old success terminal.
+ */
+internal fun newestUnseenPayment(
+    observedPaymentIds: Collection<String>?,
+    currentPayments: List<CashuRequestPayment>,
+): CashuRequestPayment? = observedPaymentIds?.let { observed ->
+    currentPayments.lastOrNull { it.transactionId !in observed }
 }

@@ -99,7 +99,7 @@ class NfcReceiveCoordinator(
             armed = false
             mutableState.value = NfcReceiveState(
                 NfcReceivePhase.NeedsAmount,
-                "Add an amount to enable Tap to receive.",
+                "Set an amount to receive by tap.",
             )
             return
         }
@@ -147,7 +147,7 @@ class NfcReceiveCoordinator(
         val adapter = NfcAdapter.getDefaultAdapter(appContext)
         return when {
             adapter == null || !manager.hasSystemFeature(PackageManager.FEATURE_NFC_HOST_CARD_EMULATION) ->
-                NfcReceiveState(NfcReceivePhase.Unavailable, "Tap to receive is not available on this device.")
+                NfcReceiveState(NfcReceivePhase.Unavailable, "Receiving by tap isn't available on this device.")
             !adapter.isEnabled -> NfcReceiveState(NfcReceivePhase.Disabled, "Turn on NFC to receive by tap.")
             else -> NfcReceiveState(NfcReceivePhase.Inactive)
         }

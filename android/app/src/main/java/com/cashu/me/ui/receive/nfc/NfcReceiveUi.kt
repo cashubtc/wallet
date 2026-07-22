@@ -9,14 +9,19 @@ import android.nfc.cardemulation.CardEmulation
 import android.os.Build
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
-import androidx.compose.foundation.background
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -43,6 +48,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -51,11 +57,19 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.cashu.me.Core.NfcReceive.CashuNfcHostApduService
 import com.cashu.me.Core.NfcReceive.NfcReceiveCoordinator
 import com.cashu.me.Core.NfcReceive.NfcReceivePhase
+import com.cashu.me.Core.NfcReceive.NfcReceiveState
 import com.cashu.me.Models.CashuRequest
 import com.cashu.me.ui.components.PaymentStatusPhase
 import com.cashu.me.ui.components.PaymentStatusScreen
 import com.cashu.me.ui.components.SpinnerRing
+import com.cashu.me.ui.receive.CashuRequestReceiptRows
 import com.cashu.me.ui.theme.CashuTheme
+import com.cashu.me.ui.theme.rememberReducedMotion
+
+private const val NfcIndicatorResizeMillis = 220
+private const val NfcIndicatorFadeOutMillis = 90
+private const val NfcIndicatorFadeInMillis = 150
+private const val NfcIndicatorFadeInDelayMillis = 60
 
 @Composable
 fun NfcReceiveLifecycle(
@@ -66,7 +80,21 @@ fun NfcReceiveLifecycle(
     val context = LocalContext.current
     val activity = context.findActivity()
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    DisposableEffect(activity, lifecycle, coordinator, request, settlementMintUrl) {
+    // Payment history is updated immediately before the coordinator publishes
+    // Success. Key the HCE session only to signed-request fields so that update
+    // cannot dispose the processing overlay and expose the QR screen for a frame.
+    DisposableEffect(
+        activity,
+        lifecycle,
+        coordinator,
+        request.id,
+        request.encoded,
+        request.amount,
+        request.unit,
+        request.mints,
+        request.memo,
+        settlementMintUrl,
+    ) {
         val adapter = NfcAdapter.getDefaultAdapter(context)
         val component = ComponentName(context, CashuNfcHostApduService::class.java)
         fun resume() {
@@ -106,6 +134,12 @@ fun NfcReceiveLifecycle(
 @Composable
 fun NfcReceiveIndicator(coordinator: NfcReceiveCoordinator, modifier: Modifier = Modifier) {
     val state by coordinator.state.collectAsState()
+    NfcReceiveIndicatorContent(state = state, modifier = modifier)
+}
+
+@Composable
+internal fun NfcReceiveIndicatorContent(state: NfcReceiveState, modifier: Modifier = Modifier) {
+    val reducedMotion = rememberReducedMotion()
     val active = state.phase in setOf(
         NfcReceivePhase.Waiting,
         NfcReceivePhase.Connected,
@@ -119,41 +153,91 @@ fun NfcReceiveIndicator(coordinator: NfcReceiveCoordinator, modifier: Modifier =
         animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
         label = "nfc-indicator-color",
     )
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .animateContentSize(animationSpec = spring(stiffness = Spring.StiffnessMediumLow))
-            .background(indicatorColor, MaterialTheme.shapes.small)
-            .padding(horizontal = CashuTheme.spacing.default, vertical = CashuTheme.spacing.default),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
+    Box(
+        modifier = modifier.fillMaxWidth(),
+        contentAlignment = Alignment.Center,
     ) {
-        Icon(
-            imageVector = Icons.Outlined.Nfc,
-            contentDescription = null,
-            tint = if (active) CashuTheme.colors.pending else MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(18.dp),
-        )
-        AnimatedContent(
-            targetState = state.phase to (state.message ?: if (active) "Another wallet can use Send → Tap" else "Open this request with NFC enabled"),
-            transitionSpec = {
-                fadeIn(spring(stiffness = Spring.StiffnessMedium)) togetherWith
-                    fadeOut(spring(stiffness = Spring.StiffnessMedium))
+        Surface(
+            modifier = if (reducedMotion) {
+                Modifier.testTag("nfcReceiveIndicatorSurface")
+            } else {
+                Modifier
+                    .testTag("nfcReceiveIndicatorSurface")
+                    .animateContentSize(
+                        animationSpec = tween(
+                            durationMillis = NfcIndicatorResizeMillis,
+                            easing = FastOutSlowInEasing,
+                        ),
+                        alignment = Alignment.Center,
+                    )
             },
-            label = "nfc-indicator-content",
-            modifier = Modifier.weight(1f),
-        ) { (_, line) ->
-            Text(
-                text = line,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            shape = MaterialTheme.shapes.small,
+            color = indicatorColor,
+        ) {
+            Row(
+                modifier = Modifier
+                    .testTag("nfcReceiveIndicatorContent")
+                    .padding(
+                        horizontal = CashuTheme.spacing.default,
+                        vertical = CashuTheme.spacing.snug,
+                    ),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Nfc,
+                    contentDescription = null,
+                    tint = if (active) CashuTheme.colors.pending else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp),
+                )
+                AnimatedContent(
+                    targetState = state.phase to (state.message ?: if (active) {
+                        "Ask the sender to hold their phone near yours."
+                    } else {
+                        "Open this request with NFC enabled."
+                    }),
+                    transitionSpec = {
+                        if (reducedMotion) {
+                            (EnterTransition.None togetherWith ExitTransition.None).using(null)
+                        } else {
+                            (
+                                fadeIn(
+                                    tween(
+                                        durationMillis = NfcIndicatorFadeInMillis,
+                                        delayMillis = NfcIndicatorFadeInDelayMillis,
+                                        easing = LinearOutSlowInEasing,
+                                    ),
+                                ) togetherWith fadeOut(
+                                    tween(
+                                        durationMillis = NfcIndicatorFadeOutMillis,
+                                        easing = FastOutLinearInEasing,
+                                    ),
+                                )
+                            ).using(null)
+                        }
+                    },
+                    contentAlignment = Alignment.Center,
+                    label = "nfc-indicator-content",
+                ) { (_, line) ->
+                    Text(
+                        text = line,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            }
         }
     }
 }
 
 @Composable
-fun NfcReceiveOverlay(coordinator: NfcReceiveCoordinator) {
+fun NfcReceiveOverlay(
+    coordinator: NfcReceiveCoordinator,
+    successAmountLabel: String?,
+    successMintName: String?,
+    onSuccessDone: () -> Unit,
+) {
     val state by coordinator.state.collectAsState()
     val visible = state.phase in setOf(
         NfcReceivePhase.Connected,
@@ -176,32 +260,65 @@ fun NfcReceiveOverlay(coordinator: NfcReceiveCoordinator) {
         exit = fadeOut(spring(stiffness = Spring.StiffnessMedium)),
     ) {
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-            when (state.phase) {
-                NfcReceivePhase.Success -> PaymentStatusScreen(
-                    phase = PaymentStatusPhase.Success,
-                    title = "Payment received",
-                    detail = state.amount?.let { "$it sat added to your wallet" } ?: "Ecash added to your wallet",
-                    onDone = coordinator::clearResult,
-                )
-                NfcReceivePhase.Failure -> PaymentStatusScreen(
-                    phase = PaymentStatusPhase.Failure,
-                    title = "Payment failed",
-                    detail = state.message ?: "The payment could not be received.",
-                    doneLabel = "Try again",
-                    onDone = coordinator::clearResult,
-                )
-                NfcReceivePhase.Validating, NfcReceivePhase.Redeeming, NfcReceivePhase.Converting -> PaymentStatusScreen(
-                    phase = PaymentStatusPhase.Processing,
-                    title = when (state.phase) {
+            NfcReceiveOverlayContent(
+                state = state,
+                successAmountLabel = successAmountLabel,
+                successMintName = successMintName,
+                onSuccessDone = onSuccessDone,
+                onRetry = coordinator::clearResult,
+            )
+        }
+    }
+}
+
+@Composable
+internal fun NfcReceiveOverlayContent(
+    state: NfcReceiveState,
+    successAmountLabel: String?,
+    successMintName: String?,
+    onSuccessDone: () -> Unit,
+    onRetry: () -> Unit,
+) {
+    when (state.phase) {
+        NfcReceivePhase.Failure -> PaymentStatusScreen(
+            phase = PaymentStatusPhase.Failure,
+            title = "Payment failed",
+            detail = state.message ?: "The payment could not be received.",
+            doneLabel = "Try again",
+            onDone = onRetry,
+        )
+        NfcReceivePhase.Validating,
+        NfcReceivePhase.Redeeming,
+        NfcReceivePhase.Converting,
+        NfcReceivePhase.Success,
+        -> {
+            val succeeded = state.phase == NfcReceivePhase.Success
+            PaymentStatusScreen(
+                phase = if (succeeded) PaymentStatusPhase.Success else PaymentStatusPhase.Processing,
+                title = if (succeeded) {
+                    "Payment received"
+                } else {
+                    when (state.phase) {
                         NfcReceivePhase.Validating -> "Checking payment"
                         NfcReceivePhase.Redeeming -> "Securing ecash"
                         else -> "Moving to your default mint"
-                    },
-                    detail = "Transfer complete — you can move the phones apart.",
-                )
-                else -> NfcTransferScreen()
-            }
+                    }
+                },
+                detail = if (succeeded) null else "Transfer complete — you can move the phones apart.",
+                onDone = onSuccessDone.takeIf { succeeded },
+                rows = if (succeeded) {
+                    {
+                        CashuRequestReceiptRows(
+                            amountLabel = successAmountLabel,
+                            mintName = successMintName,
+                        )
+                    }
+                } else {
+                    null
+                },
+            )
         }
+        else -> NfcTransferScreen()
     }
 }
 
