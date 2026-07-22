@@ -36,7 +36,6 @@ import com.cashu.me.ui.theme.CashuTheme
 // iOS renders the glyph hierarchically at 0.62 opacity; dim the tint the same
 // amount so the icon sits behind the text instead of competing with it.
 private const val EmptyStateIconAlpha = 0.62f
-private const val EmptyStateActionWidthFraction = 0.7f
 
 /**
  * Size variants mirroring iOS NativeEmptyState.Style. Dimensions are the iOS
@@ -164,9 +163,12 @@ fun EmptyState(
             PrimaryButton(
                 text = actionLabel,
                 onClick = onAction,
-                // Deliberately narrower than a full-width CTA: the empty-state
-                // action is an invitation, not the screen's primary commit.
-                modifier = Modifier.fillMaxWidth(EmptyStateActionWidthFraction),
+                // Full width at 32dp side margins (16dp component padding +
+                // 16dp here) — iOS renders every primary CTA as a full-width
+                // capsule inset 32pt, including this one.
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = CashuTheme.spacing.comfortable),
             )
         }
     }
