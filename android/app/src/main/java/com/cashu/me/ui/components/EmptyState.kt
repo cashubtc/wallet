@@ -25,14 +25,33 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.cashu.me.ui.theme.rememberReducedMotion
 import com.cashu.me.ui.theme.CashuTheme
 
-// M3 empty-state icon is 48dp (component-level, not on the spacing scale).
-private val EmptyStateIconSize = 48.dp
-private const val EmptyStateActionWidthFraction = 0.7f
+// iOS renders the glyph hierarchically at 0.62 opacity; dim the tint the same
+// amount so the icon sits behind the text instead of competing with it.
+private const val EmptyStateIconAlpha = 0.62f
+
+/**
+ * Size variants mirroring iOS NativeEmptyState.Style. Dimensions are the iOS
+ * point values, deliberately off the spacing scale. (iOS also has a smaller
+ * `.compact`; add it here when an Android call site needs one.)
+ */
+enum class EmptyStateSize(
+    internal val iconSize: Dp,
+    internal val iconGap: Dp,
+) {
+    /** Full-tab empty trays (Home, History): 56dp glyph, title2-scale text. */
+    FullScreen(iconSize = 56.dp, iconGap = 12.dp),
+
+    /** Content-fit hosts like the Send sheet: 42dp glyph, headline-scale text. */
+    Section(iconSize = 42.dp, iconGap = 10.dp),
+}
 // iOS NativeEmptyState entrance: opacity 0→1, scale 0.96→1, rise from 8pt.
 private const val EntranceInitialScale = 0.96f
 private val EntranceRise = 8.dp
@@ -48,6 +67,8 @@ private const val EntranceDamping = 0.82f
  * @param fillHeight when true (default), expands to fill the parent and
  *   centers its content — home/history empty trays. Set false for wrap-content
  *   hosts like a content-fit Send bottom sheet.
+ * @param size glyph/text scale; [EmptyStateSize.Section] matches the smaller
+ *   iOS `.section` style used inside sheets.
  */
 @Composable
 fun EmptyState(
@@ -58,6 +79,7 @@ fun EmptyState(
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null,
     fillHeight: Boolean = true,
+    size: EmptyStateSize = EmptyStateSize.FullScreen,
 ) {
     val reduceMotion = rememberReducedMotion()
     var appeared by remember { mutableStateOf(false) }
@@ -96,26 +118,42 @@ fun EmptyState(
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = EmptyStateIconAlpha),
             modifier = Modifier
-                .size(EmptyStateIconSize)
+                .size(size.iconSize)
                 .graphicsLayer {
                     scaleX = iconBounce
                     scaleY = iconBounce
                 },
         )
-        Spacer(Modifier.height(CashuTheme.spacing.comfortable))
+        Spacer(Modifier.height(size.iconGap))
         Text(
             text = title,
-            style = MaterialTheme.typography.titleMedium,
+            // iOS title2/headline semibold; the M3 roles ship lighter weights.
+            style = when (size) {
+                EmptyStateSize.FullScreen ->
+                    MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold)
+                EmptyStateSize.Section ->
+                    MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        letterSpacing = 0.sp,
+                    )
+            },
             color = MaterialTheme.colorScheme.onSurface,
             textAlign = TextAlign.Center,
         )
         if (supporting != null) {
-            Spacer(Modifier.height(CashuTheme.spacing.snug))
+            Spacer(Modifier.height(CashuTheme.spacing.micro))
             Text(
                 text = supporting,
-                style = MaterialTheme.typography.bodyMedium,
+                // iOS body/subheadline with SF's near-zero tracking; the M3
+                // roles' default letter spacing reads looser than the iOS twin.
+                style = when (size) {
+                    EmptyStateSize.FullScreen ->
+                        MaterialTheme.typography.bodyLarge.copy(letterSpacing = 0.sp)
+                    EmptyStateSize.Section ->
+                        MaterialTheme.typography.bodyMedium.copy(letterSpacing = 0.sp)
+                },
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
             )
@@ -125,9 +163,12 @@ fun EmptyState(
             PrimaryButton(
                 text = actionLabel,
                 onClick = onAction,
-                // Deliberately narrower than a full-width CTA: the empty-state
-                // action is an invitation, not the screen's primary commit.
-                modifier = Modifier.fillMaxWidth(EmptyStateActionWidthFraction),
+                // Full width at 32dp side margins (16dp component padding +
+                // 16dp here) — iOS renders every primary CTA as a full-width
+                // capsule inset 32pt, including this one.
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = CashuTheme.spacing.comfortable),
             )
         }
     }

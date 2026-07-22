@@ -74,16 +74,17 @@ struct HistoryView: View {
         NavigationStack {
             Group {
                 if filteredItems.isEmpty {
-                    // Don't show the "No History Yet" empty state until the first
-                    // load finishes: on the very first tab visit the transaction
-                    // service is empty (still loading), and rendering the animated
-                    // empty state here made it swoop in for a beat before the list
-                    // arrived. A brief blank canvas during the (fast, local) load
-                    // reads as nothing happening — then the list or the real empty
-                    // state settles in place. Later visits already have cached data,
-                    // so this branch isn't taken.
+                    // Don't show the empty state until the first load finishes:
+                    // rendering it during the (fast, local) initial load made it
+                    // swoop in for a beat before a populated list arrived. The
+                    // pre-load branch must be a placeholder view, not nothing —
+                    // an empty Group detaches every modifier below, including
+                    // the .task that performs the initial load, deadlocking a
+                    // fresh wallet on a blank screen.
                     if didInitialLoad {
                         emptyStateView
+                    } else {
+                        Color.clear
                     }
                 } else {
                     historyList
@@ -473,9 +474,9 @@ struct HistoryView: View {
             // copy so the two screens read as deliberate siblings, not
             // accidental duplicates.
             NativeEmptyState(
-                title: "No History Yet",
+                title: "No Activity Yet",
                 systemImage: "clock.arrow.circlepath",
-                description: "Your payments will appear here."
+                description: "Your first payment will show up here."
             )
         }
     }

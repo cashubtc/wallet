@@ -28,6 +28,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.AccountBalance
+import androidx.compose.material.icons.outlined.ArrowCircleDown
 import androidx.compose.material.icons.outlined.Cancel
 import androidx.compose.material.icons.outlined.Nfc
 import androidx.compose.material.icons.outlined.Payments
@@ -77,6 +78,7 @@ import com.cashu.me.ui.components.AmountText
 import com.cashu.me.ui.components.CanvasDivider
 import com.cashu.me.ui.components.CashuTextField
 import com.cashu.me.ui.components.EmptyState
+import com.cashu.me.ui.components.EmptyStateSize
 import com.cashu.me.ui.components.FlowSheetTitle
 import com.cashu.me.ui.components.GhostButton
 import com.cashu.me.ui.components.InlineNotice
@@ -618,12 +620,15 @@ private fun InputFace(
         !hasBalance -> {
             // Compact (no fillMaxHeight) so the sheet hugs this empty state.
             EmptyState(
-                icon = Icons.Outlined.Payments,
+                // Circled down arrow — same glyph and .section scale as the
+                // iOS zero-balance Send sheet.
+                icon = Icons.Outlined.ArrowCircleDown,
                 title = "Nothing to send yet",
                 supporting = "Receive some ecash before you can send.",
                 actionLabel = "Receive",
                 onAction = onReceive,
                 fillHeight = false,
+                size = EmptyStateSize.Section,
                 modifier = Modifier
                     .padding(vertical = CashuTheme.spacing.section)
                     .navigationBarsPadding(),
