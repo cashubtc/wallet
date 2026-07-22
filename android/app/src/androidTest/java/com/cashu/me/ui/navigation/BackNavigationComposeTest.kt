@@ -33,12 +33,10 @@ class BackNavigationComposeTest {
             "shell:receive-detail" to shellBackAction(
                 receiveDetailVisible = true,
                 scannerVisible = true,
-                contactlessVisible = true,
             )!!.name,
             "shell:scanner" to shellBackAction(
                 receiveDetailVisible = false,
                 scannerVisible = true,
-                contactlessVisible = true,
             )!!.name,
             "onboarding:restore-progress-working" to onboardingBackAction(
                 OnboardingBackState.RestoreProgress,

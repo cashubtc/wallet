@@ -3,18 +3,15 @@ package com.cashu.me.ui.navigation
 enum class ShellBackAction {
     CloseReceiveDetail,
     CloseScanner,
-    CloseContactless,
 }
 
 fun shellBackAction(
     receiveDetailVisible: Boolean,
     scannerVisible: Boolean,
-    contactlessVisible: Boolean,
 ): ShellBackAction? =
     when {
         receiveDetailVisible -> ShellBackAction.CloseReceiveDetail
         scannerVisible -> ShellBackAction.CloseScanner
-        contactlessVisible -> ShellBackAction.CloseContactless
         else -> null
     }
 
