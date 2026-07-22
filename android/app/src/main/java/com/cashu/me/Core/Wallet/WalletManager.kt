@@ -166,6 +166,12 @@ class WalletManager(
             }
             runCatching { nwcManager.startIfEnabled() }
                 .onFailure { AppLogger.wallet.error("Deferred NWC startup failed", it) }
+
+            // Arm the foreground poll from the runtime-ready path as well: the
+            // CashuApp lifecycle observer normally starts it on ON_START, but a
+            // missed event must never leave quote detection dead until the next
+            // background/foreground cycle (guard-protected, no-op if running).
+            startPendingQuoteForegroundPolling()
         }
     }
 

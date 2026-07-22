@@ -813,6 +813,14 @@ extension WalletManager {
     }
 
     private func startDeferredStartupMaintenance() {
+        // Arm the foreground quote poll from the runtime path that provably
+        // runs on every launch. App-level wiring alone is not enough: the
+        // scenePhase `.active` onChange is unreliable at cold launch (hence the
+        // duplicated CashuRequestListener start), and the ContentView `.task`
+        // chain parks behind `await CashuRequestListener.shared.start()` (a
+        // Nostr connect that can hang), so anything queued after it may never
+        // run. Guard-protected — the scenePhase handler only stops/restarts it.
+        startPendingQuoteForegroundPolling()
         guard startupMaintenanceTask == nil else { return }
 
         startupMaintenanceTask = Task(priority: .utility) { [weak self] in
@@ -885,8 +893,11 @@ extension WalletManager {
 
         // Saga recovery above only single-polls async-accepted (NUT-05) melts and
         // skips them while still pending; re-arm their completion tracking here.
+        // The mint-quote pass settles anything paid while the app was gone
+        // (Android startup parity) instead of waiting for the first poll tick.
         if !Task.isCancelled {
             await syncPendingMeltQuotes()
+            await syncPendingMintQuotes()
         }
         return recoveredWalletState
     }
