@@ -225,7 +225,6 @@ fun NfcReceiveOverlay(coordinator: NfcReceiveCoordinator) {
         NfcReceivePhase.Validating,
         NfcReceivePhase.Redeeming,
         NfcReceivePhase.Converting,
-        NfcReceivePhase.Success,
         NfcReceivePhase.Failure,
     )
     val haptics = LocalHapticFeedback.current
@@ -241,12 +240,6 @@ fun NfcReceiveOverlay(coordinator: NfcReceiveCoordinator) {
     ) {
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             when (state.phase) {
-                NfcReceivePhase.Success -> PaymentStatusScreen(
-                    phase = PaymentStatusPhase.Success,
-                    title = "Payment received",
-                    detail = state.amount?.let { "$it sat added to your wallet" } ?: "Ecash added to your wallet",
-                    onDone = coordinator::clearResult,
-                )
                 NfcReceivePhase.Failure -> PaymentStatusScreen(
                     phase = PaymentStatusPhase.Failure,
                     title = "Payment failed",

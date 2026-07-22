@@ -356,9 +356,7 @@ private fun AuthenticatedShell(container: AppContainer) {
                 cashuRequestStore = container.cashuRequestStore,
                 onOpenRequest = { id ->
                     close()
-                    // Fresh (just-created, actively waiting) → arms the full-screen
-                    // takeover on the first payment; history entries pass fresh=false.
-                    navController.navigate(cashuRequestDetailRouteFor(id, fresh = true))
+                    navController.navigate(cashuRequestDetailRouteFor(id))
                 },
                 onClose = close,
                 // Universal scanner (Send parity): auto-routes whatever it reads.
