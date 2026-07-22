@@ -25,13 +25,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.cashu.me.ui.theme.rememberReducedMotion
 import com.cashu.me.ui.theme.CashuTheme
 
-// M3 empty-state icon is 48dp (component-level, not on the spacing scale).
-private val EmptyStateIconSize = 48.dp
+// Matches iOS NativeEmptyState's 56pt glyph (component-level, not on the
+// spacing scale).
+private val EmptyStateIconSize = 56.dp
+// iOS renders the glyph hierarchically at 0.62 opacity; dim the tint the same
+// amount so the icon sits behind the text instead of competing with it.
+private const val EmptyStateIconAlpha = 0.62f
 private const val EmptyStateActionWidthFraction = 0.7f
 // iOS NativeEmptyState entrance: opacity 0→1, scale 0.96→1, rise from 8pt.
 private const val EntranceInitialScale = 0.96f
@@ -96,7 +102,7 @@ fun EmptyState(
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = EmptyStateIconAlpha),
             modifier = Modifier
                 .size(EmptyStateIconSize)
                 .graphicsLayer {
@@ -104,18 +110,21 @@ fun EmptyState(
                     scaleY = iconBounce
                 },
         )
-        Spacer(Modifier.height(CashuTheme.spacing.comfortable))
+        Spacer(Modifier.height(CashuTheme.spacing.default))
         Text(
             text = title,
-            style = MaterialTheme.typography.titleMedium,
+            // iOS title2 semibold (22pt); titleLarge is 22sp but ships Normal.
+            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
             color = MaterialTheme.colorScheme.onSurface,
             textAlign = TextAlign.Center,
         )
         if (supporting != null) {
-            Spacer(Modifier.height(CashuTheme.spacing.snug))
+            Spacer(Modifier.height(CashuTheme.spacing.micro))
             Text(
                 text = supporting,
-                style = MaterialTheme.typography.bodyMedium,
+                // iOS body (17pt) with SF's near-zero tracking; bodyLarge's
+                // default 0.5sp letter spacing reads looser than the iOS twin.
+                style = MaterialTheme.typography.bodyLarge.copy(letterSpacing = 0.sp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
             )

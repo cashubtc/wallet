@@ -1,13 +1,7 @@
 package com.cashu.me.ui.history
 
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.layout.Box
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.VisibilityThreshold
 import androidx.compose.animation.core.spring
@@ -21,7 +15,6 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -58,16 +51,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.IntSize
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import com.cashu.me.Core.AmountFormatter
@@ -94,7 +84,6 @@ import com.cashu.me.ui.components.TransactionRow
 import com.cashu.me.ui.components.TransactionRowModel
 import com.cashu.me.ui.components.formatRelativeTimestamp
 import com.cashu.me.ui.theme.CashuTheme
-import com.cashu.me.ui.theme.rememberReducedMotion
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -393,57 +382,17 @@ private fun HistoryEmptyState(
         )
         else -> Triple(
             Icons.Outlined.History,
-            "No activity yet",
+            "No Activity Yet",
             "Your first payment will show up here.",
         )
     }
-    // Pulse the empty-state glyph (resting state under reduce-motion).
-    val reducedMotion = rememberReducedMotion()
-    val transition = rememberInfiniteTransition(label = "empty-pulse")
-    val pulseAlpha by transition.animateFloat(
-        initialValue = 0.4f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1200),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "empty-pulse-alpha",
-    )
-    Box(
+    EmptyState(
+        icon = icon,
+        title = title,
+        supporting = supporting,
         modifier = modifier,
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .size(HISTORY_EMPTY_ICON_SIZE)
-                    .alpha(if (icon == Icons.Outlined.History && !reducedMotion) pulseAlpha else 1f),
-            )
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            if (supporting != null) {
-                Text(
-                    text = supporting,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-    }
+    )
 }
-
-// Smaller-than-48dp on purpose: this is an inline empty-state glyph inside an
-// already-spaced column, not the standalone EmptyState component.
-private val HISTORY_EMPTY_ICON_SIZE = 40.dp
 
 /** Unified History timeline item. Mirrors iOS HistoryItem enum. */
 internal sealed interface HistoryItem {
