@@ -64,6 +64,20 @@ data class MeltQuoteInfo(
 }
 
 @Serializable
+enum class MeltSettlement {
+    /** The mint paid out synchronously; preimage/fee are final. */
+    Settled,
+
+    /**
+     * The mint accepted the melt for asynchronous (NUT-05) settlement —
+     * typical for on-chain. Amount/fee are the quote's numbers (fee = reserve
+     * upper bound) until the payment settles; the pending-melt watcher or
+     * `syncPendingMeltQuotes` completes the bookkeeping (iOS parity).
+     */
+    Pending,
+}
+
+@Serializable
 data class MeltPaymentResult(
     val preimage: String?,
     val amount: Long,
@@ -71,4 +85,5 @@ data class MeltPaymentResult(
     val mintUrl: String,
     val paymentMethod: PaymentMethodKind? = null,
     val request: String? = null,
+    val settlement: MeltSettlement = MeltSettlement.Settled,
 )

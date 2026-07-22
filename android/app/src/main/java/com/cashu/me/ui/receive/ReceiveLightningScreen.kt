@@ -83,6 +83,7 @@ import com.cashu.me.Core.Wallet.userFacingWalletMessage
 import com.cashu.me.Core.WalletManager
 import com.cashu.me.Core.mintQuoteDisplayExpiry
 import com.cashu.me.Core.quoteExpiryText
+import com.cashu.me.Core.shouldPollMintQuote
 import com.cashu.me.Models.MintInfo
 import com.cashu.me.Models.MintQuoteInfo
 import com.cashu.me.Models.MintQuoteState
@@ -485,17 +486,44 @@ fun ReceiveLightningScreen(
                     LaunchedEffect(current.quote.id) {
                         persistReusableOffer(current.quote)
                     }
-                    LaunchedEffect(current.quote.id) {
+                    // Websocket push is a preference-gated accelerator; the
+                    // polling loop below is the always-on fallback that also
+                    // covers a dead subscription (iOS ReceiveLightningView
+                    // parity).
+                    LaunchedEffect(current.quote.id, settings.useWebsockets) {
+                        if (!settings.useWebsockets) return@LaunchedEffect
                         walletManager.subscribeToMintQuote(current.quote.id)
-                            .catch { /* swallow; we'll fall back to manual polling */ }
+                            .catch { /* swallow; polling below is the fallback */ }
                             .collectLatest { liveQuote = it }
                     }
                     LaunchedEffect(current.quote.id) {
+                        // iOS pollMintQuote parity: linear backoff (+1s per
+                        // iteration up to the max), terminal-state/expiry aware
+                        // via shouldPollMintQuote. Per-rail intervals:
+                        // BOLT11 5s→15s, BOLT12 10s→30s, on-chain flat 30s.
+                        val (initialMs, maxMs) = when (current.quote.paymentMethod) {
+                            PaymentMethodKind.Bolt11 -> 5_000L to 15_000L
+                            PaymentMethodKind.Bolt12 -> 10_000L to 30_000L
+                            PaymentMethodKind.Onchain -> 30_000L to 30_000L
+                        }
+                        var intervalMs = initialMs
                         while (true) {
-                            delay(15_000)
-                            runCatching { walletManager.pollMintQuote(current.quote.id) }
+                            delay(intervalMs)
+                            val refreshed = runCatching { walletManager.pollMintQuote(current.quote.id) }
                                 .getOrNull()
-                                ?.let { liveQuote = it }
+                                ?: continue // transient failure — keep monitoring
+                            liveQuote = refreshed
+                            // Reusable BOLT12 offers stay open after each
+                            // payment (the mint never marks them terminally
+                            // paid), so keep polling for the next one.
+                            val keepPolling = refreshed.paymentMethod == PaymentMethodKind.Bolt12 ||
+                                shouldPollMintQuote(
+                                    state = refreshed.state,
+                                    expiryEpochSeconds = refreshed.expiryEpochSeconds,
+                                    nowEpochSeconds = System.currentTimeMillis() / 1000,
+                                )
+                            if (!keepPolling) break
+                            if (intervalMs < maxMs) intervalMs = minOf(intervalMs + 1_000, maxMs)
                         }
                     }
                     val amountLabel = liveQuote.amount?.let {

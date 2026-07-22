@@ -107,6 +107,7 @@ struct CashuWalletApp: App {
                     if PriceService.shared.isEnabled {
                         PriceService.shared.startAutoRefresh()
                     }
+                    walletManager.startPendingQuoteForegroundPolling()
                 case .inactive:
                     // The app-switcher snapshot is taken here, before `.background`.
                     appLockManager.appResignedActive()
@@ -117,6 +118,7 @@ struct CashuWalletApp: App {
                     // off during the brief background-transition window before suspension.
                     NPCService.shared.stopBackgroundRefresh()
                     PriceService.shared.stopAutoRefresh()
+                    walletManager.stopPendingQuoteForegroundPolling()
                 @unknown default:
                     break
                 }

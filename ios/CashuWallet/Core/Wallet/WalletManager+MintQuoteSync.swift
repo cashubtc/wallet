@@ -3,16 +3,45 @@ import Cdk
 
 extension WalletManager {
     /// Cooldown-gated sync for passive triggers (opening History, returning to
-    /// foreground). Skips when a sync ran within `mintQuoteSyncCooldown`, so a
-    /// paid offer settles on its own without re-polling the mint on every tab
-    /// switch. Pull-to-refresh calls `syncPendingMintQuotes()` directly to
-    /// bypass the cooldown (explicit user intent).
+    /// foreground, the foreground poll). Skips when a sync ran within
+    /// `mintQuoteSyncCooldown`, so a paid offer settles on its own without
+    /// re-polling the mint on every tab switch. Pull-to-refresh calls
+    /// `syncPendingMintQuotes()` directly to bypass the cooldown (explicit
+    /// user intent).
     func syncPendingMintQuotesIfStale() async {
         if let last = lastMintQuoteSyncAt,
            Date().timeIntervalSince(last) < mintQuoteSyncCooldown {
             return
         }
         await syncPendingMintQuotes()
+    }
+
+    // MARK: - Foreground polling
+
+    /// While the app is active, re-check pending quotes every
+    /// `pendingQuotePollInterval` so a payment lands on its own — e.g. a
+    /// BOLT12 offer paid from another wallet while Home sits open — instead of
+    /// waiting for pull-to-refresh. The mint sync stays cooldown-gated (the
+    /// poll interval equals `mintQuoteSyncCooldown`, so this never exceeds one
+    /// pass per interval); the melt sync is a cheap no-op unless a NUT-05
+    /// async melt is tracked and its in-process waiter died.
+    /// Started/stopped from `CashuWalletApp` on scenePhase (Android parity).
+    func startPendingQuoteForegroundPolling() {
+        guard pendingQuotePollTask == nil else { return }
+        pendingQuotePollTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let interval = self?.pendingQuotePollInterval else { break }
+                try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
+                guard !Task.isCancelled else { break }
+                await self?.syncPendingMintQuotesIfStale()
+                await self?.syncPendingMeltQuotes()
+            }
+        }
+    }
+
+    func stopPendingQuoteForegroundPolling() {
+        pendingQuotePollTask?.cancel()
+        pendingQuotePollTask = nil
     }
 
     func syncPendingMintQuotes() async {

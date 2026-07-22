@@ -18,6 +18,7 @@ import com.cashu.me.Core.PaymentRequestParser
 import com.cashu.me.Models.MeltPaymentResult
 import com.cashu.me.Models.MeltQuoteInfo
 import com.cashu.me.Models.MeltQuoteState
+import com.cashu.me.Models.MeltSettlement
 import com.cashu.me.Models.MintInfo
 import com.cashu.me.Models.MintQuoteInfo
 import com.cashu.me.Models.NutSupport
@@ -33,6 +34,7 @@ import org.cashudevkit.Amount as CdkAmount
 import org.cashudevkit.BackupOptions as CdkBackupOptions
 import org.cashudevkit.BitcoinNetwork as CdkBitcoinNetwork
 import org.cashudevkit.CurrencyUnit as CdkCurrencyUnit
+import org.cashudevkit.MeltConfirmOutcome as CdkMeltConfirmOutcome
 import org.cashudevkit.MeltQuote as CdkMeltQuote
 import org.cashudevkit.MintInfo as CdkMintInfo
 import org.cashudevkit.MintQuote as CdkMintQuote
@@ -362,18 +364,61 @@ class CdkWalletGatewayImpl : CdkWalletGateway, NwcServiceGateway {
         }
     }
 
-    override suspend fun meltTokens(quoteId: String, mintUrl: String?): MeltPaymentResult = cdkCall {
+    override suspend fun meltTokens(quoteId: String, mintUrl: String?): MeltConfirmation = cdkCall {
         val quote = database?.getMeltQuote(quoteId)
         val wallet = walletFor(mintUrl ?: quote?.mintUrl?.url ?: firstWallet().mintUrl().url)
         val prepared = wallet.prepareMelt(quoteId)
-        val finalized = prepared.confirm()
-        MeltPaymentResult(
-            preimage = finalized.preimage,
-            amount = finalized.amount.value.toLong(),
-            feePaid = finalized.feePaid.value.toLong(),
-            mintUrl = wallet.mintUrl().url,
-            paymentMethod = quote?.paymentMethod?.toDomain(),
-            request = quote?.request,
+        // `respond-async` lets the mint accept the payment and pay out in the
+        // background (NUT-05) instead of holding the request open — the usual
+        // shape for on-chain melts (iOS LightningService.meltTokens parity).
+        when (val outcome = prepared.confirmPreferAsync()) {
+            is CdkMeltConfirmOutcome.Paid -> {
+                val finalized = outcome.finalized
+                MeltConfirmation(
+                    result = MeltPaymentResult(
+                        preimage = finalized.preimage,
+                        amount = finalized.amount.value.toLong(),
+                        feePaid = finalized.feePaid.value.toLong(),
+                        mintUrl = wallet.mintUrl().url,
+                        paymentMethod = quote?.paymentMethod?.toDomain(),
+                        request = quote?.request,
+                        settlement = MeltSettlement.Settled,
+                    ),
+                    pendingMelt = null,
+                )
+            }
+            is CdkMeltConfirmOutcome.Pending -> MeltConfirmation(
+                // Amount and fee aren't final until the payment settles; report
+                // the quote's numbers (fee = reserve upper bound) so the UI has
+                // facts to show.
+                result = MeltPaymentResult(
+                    preimage = null,
+                    amount = quote?.amount?.value?.toLong() ?: 0,
+                    feePaid = quote?.feeReserve?.value?.toLong() ?: 0,
+                    mintUrl = wallet.mintUrl().url,
+                    paymentMethod = quote?.paymentMethod?.toDomain(),
+                    request = quote?.request,
+                    settlement = MeltSettlement.Pending,
+                ),
+                pendingMelt = outcome.pending,
+            )
+        }
+    }
+
+    override suspend fun checkMeltQuoteStatus(quoteId: String, mintUrl: String?): MeltQuoteInfo = cdkCall {
+        val stored = database?.getMeltQuote(quoteId)
+        val wallet = walletFor(mintUrl ?: stored?.mintUrl?.url ?: firstWallet().mintUrl().url)
+        val quote = wallet.checkMeltQuoteStatus(quoteId)
+        quote.toDomain(fallbackMethod = stored?.paymentMethod?.toDomain() ?: quote.paymentMethod.toDomain())
+    }
+
+    override suspend fun recoverIncompleteSagas(mintUrl: String): SagaRecoveryReport = cdkCall {
+        val report = walletFor(mintUrl, CdkCurrencyUnit.Sat).recoverIncompleteSagas()
+        SagaRecoveryReport(
+            recovered = report.recovered.toLong(),
+            compensated = report.compensated.toLong(),
+            skipped = report.skipped.toLong(),
+            failed = report.failed.toLong(),
         )
     }
 

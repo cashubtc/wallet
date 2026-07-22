@@ -1,6 +1,7 @@
 package com.cashu.me.Core.CDK
 
 import kotlinx.coroutines.flow.Flow
+import org.cashudevkit.PendingMelt
 import com.cashu.me.Core.NPCQuote
 import com.cashu.me.Models.MeltPaymentResult
 import com.cashu.me.Models.MeltQuoteInfo
@@ -50,7 +51,17 @@ interface CdkWalletGateway {
     suspend fun mintNPCQuote(quote: NPCQuote, p2pkPubkey: String?): Long
     suspend fun createMeltQuote(request: String, amountSats: Long? = null, preferredMintURL: String? = null): MeltQuoteInfo
     suspend fun listMeltQuotes(): List<MeltQuoteInfo>
-    suspend fun meltTokens(quoteId: String, mintUrl: String? = null): MeltPaymentResult
+    suspend fun meltTokens(quoteId: String, mintUrl: String? = null): MeltConfirmation
+
+    /** Re-check a melt quote against the mint (NUT-05 async settlement follow-up). */
+    suspend fun checkMeltQuoteStatus(quoteId: String, mintUrl: String? = null): MeltQuoteInfo
+
+    /**
+     * Ask CDK to complete or compensate interrupted wallet sagas for a mint
+     * (e.g. a melt the process never saw the outcome of). iOS startup
+     * maintenance parity.
+     */
+    suspend fun recoverIncompleteSagas(mintUrl: String): SagaRecoveryReport
     suspend fun sendEcashToken(amount: Long, memo: String?, p2pkPubkey: String?, mintUrl: String, unit: String = "sat", p2pkSigningKeys: List<String> = emptyList()): SendTokenResult
     suspend fun receiveEcashToken(tokenString: String, p2pkSigningKeys: List<String> = emptyList()): Long
     suspend fun receiveNfcEcashToken(
@@ -71,6 +82,29 @@ data class ForeignNfcSettlement(
     val sourceMintUrl: String,
     val settlementMintUrl: String,
 )
+
+/**
+ * Outcome of confirming a melt (iOS LightningService.MeltConfirmation parity).
+ * Settled synchronously for most Lightning payments; carries a `PendingMelt`
+ * handle when the mint accepted asynchronous (NUT-05) settlement, which
+ * on-chain melts typically do. The handle's `wait()` completes when the mint
+ * reaches a terminal state; it dies with the process, so WalletManager also
+ * persists the quote and re-checks it via `syncPendingMeltQuotes()`.
+ */
+data class MeltConfirmation(
+    val result: MeltPaymentResult,
+    val pendingMelt: PendingMelt?,
+)
+
+/** Counts from CDK's `recoverIncompleteSagas()` for one mint. */
+data class SagaRecoveryReport(
+    val recovered: Long,
+    val compensated: Long,
+    val skipped: Long,
+    val failed: Long,
+) {
+    val hasActivity: Boolean get() = recovered > 0 || compensated > 0 || skipped > 0 || failed > 0
+}
 
 data class NfcReceiveReceipt(
     val amountReceived: Long,

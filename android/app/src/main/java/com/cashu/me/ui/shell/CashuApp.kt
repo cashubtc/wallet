@@ -125,12 +125,19 @@ private fun CashuAppContent(container: AppContainer) {
                 Lifecycle.Event.ON_RESUME -> {
                     container.appLockManager.appBecameActive()
                     container.cashuRequestListener.start()
+                    if (event == Lifecycle.Event.ON_START) {
+                        // iOS scenePhase `.active` parity: re-check pending
+                        // quotes that moved while the app was away, then keep
+                        // re-checking while the app stays in the foreground.
+                        container.walletManager.startPendingQuoteForegroundPolling()
+                    }
                 }
                 Lifecycle.Event.ON_PAUSE,
                 Lifecycle.Event.ON_STOP -> {
                     container.appLockManager.appResignedActive()
                     if (event == Lifecycle.Event.ON_STOP) {
                         container.cashuRequestListener.stop()
+                        container.walletManager.stopPendingQuoteForegroundPolling()
                     }
                 }
                 else -> Unit
@@ -140,6 +147,7 @@ private fun CashuAppContent(container: AppContainer) {
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
             container.cashuRequestListener.stop()
+            container.walletManager.stopPendingQuoteForegroundPolling()
         }
     }
 

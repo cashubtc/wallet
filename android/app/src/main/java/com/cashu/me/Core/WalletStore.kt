@@ -62,6 +62,14 @@ class WalletStore(
     fun saveMintQuoteTimestamps(timestamps: Map<String, Long>) =
         saveMap(StorageKeys.walletMintQuoteTimestamps, Long.serializer(), timestamps)
 
+    // Melt quotes a mint accepted for asynchronous (NUT-05) settlement that we
+    // still owe completion bookkeeping, keyed by quote ID with the paying
+    // mint's URL as value (iOS WalletStore parity).
+    fun loadPendingMeltQuotes(): Map<String, String> =
+        loadMap(StorageKeys.walletPendingMeltQuotes, String.serializer())
+    fun savePendingMeltQuotes(quotes: Map<String, String>) =
+        saveMap(StorageKeys.walletPendingMeltQuotes, String.serializer(), quotes)
+
     fun loadProcessedNPCQuotes(): List<String> = loadList(StorageKeys.walletProcessedNPCQuotes, String.serializer())
     fun saveProcessedNPCQuotes(quotes: List<String>) =
         saveList(StorageKeys.walletProcessedNPCQuotes, String.serializer(), quotes)

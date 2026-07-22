@@ -56,17 +56,25 @@ class WalletManager: ObservableObject {
     var mintQuoteSyncsInFlight: Set<String> = []
 
     /// Throttle state for passive mint-quote syncs (opening History, app
-    /// foreground). Collapses overlapping triggers and rate-limits how often
-    /// we re-poll the mint so reusable BOLT12 offers don't hammer it.
+    /// foreground, the foreground poll). Collapses overlapping triggers and
+    /// rate-limits how often we re-poll the mint so reusable BOLT12 offers
+    /// don't hammer it. Kept equal to `pendingQuotePollInterval` (Android
+    /// parity) so the poll drives one sync pass per interval.
     var isSyncingMintQuotes = false
     var lastMintQuoteSyncAt: Date?
-    let mintQuoteSyncCooldown: TimeInterval = 45
+    let mintQuoteSyncCooldown: TimeInterval = 30
 
     /// In-process waiters for melts a mint accepted asynchronously (NUT-05),
     /// keyed by quote ID. These die with the process; `walletStore`'s
     /// pending-melt-quote record plus `syncPendingMeltQuotes()` are the
     /// relaunch backstop.
     var pendingMeltWaiters: [String: Task<Void, Never>] = [:]
+
+    /// Foreground quote poll (started/stopped on scenePhase changes). Re-checks
+    /// pending mint + melt quotes while the app is active so a payment lands
+    /// without pull-to-refresh (Android parity).
+    var pendingQuotePollTask: Task<Void, Never>?
+    let pendingQuotePollInterval: TimeInterval = 30
 
     // MARK: - Services
 
