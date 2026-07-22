@@ -9,14 +9,19 @@ import android.nfc.cardemulation.CardEmulation
 import android.os.Build
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
-import androidx.compose.foundation.background
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -43,6 +48,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -51,11 +57,18 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.cashu.me.Core.NfcReceive.CashuNfcHostApduService
 import com.cashu.me.Core.NfcReceive.NfcReceiveCoordinator
 import com.cashu.me.Core.NfcReceive.NfcReceivePhase
+import com.cashu.me.Core.NfcReceive.NfcReceiveState
 import com.cashu.me.Models.CashuRequest
 import com.cashu.me.ui.components.PaymentStatusPhase
 import com.cashu.me.ui.components.PaymentStatusScreen
 import com.cashu.me.ui.components.SpinnerRing
 import com.cashu.me.ui.theme.CashuTheme
+import com.cashu.me.ui.theme.rememberReducedMotion
+
+private const val NfcIndicatorResizeMillis = 220
+private const val NfcIndicatorFadeOutMillis = 90
+private const val NfcIndicatorFadeInMillis = 150
+private const val NfcIndicatorFadeInDelayMillis = 60
 
 @Composable
 fun NfcReceiveLifecycle(
@@ -106,6 +119,12 @@ fun NfcReceiveLifecycle(
 @Composable
 fun NfcReceiveIndicator(coordinator: NfcReceiveCoordinator, modifier: Modifier = Modifier) {
     val state by coordinator.state.collectAsState()
+    NfcReceiveIndicatorContent(state = state, modifier = modifier)
+}
+
+@Composable
+internal fun NfcReceiveIndicatorContent(state: NfcReceiveState, modifier: Modifier = Modifier) {
+    val reducedMotion = rememberReducedMotion()
     val active = state.phase in setOf(
         NfcReceivePhase.Waiting,
         NfcReceivePhase.Connected,
@@ -119,35 +138,80 @@ fun NfcReceiveIndicator(coordinator: NfcReceiveCoordinator, modifier: Modifier =
         animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
         label = "nfc-indicator-color",
     )
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .animateContentSize(animationSpec = spring(stiffness = Spring.StiffnessMediumLow))
-            .background(indicatorColor, MaterialTheme.shapes.small)
-            .padding(horizontal = CashuTheme.spacing.default, vertical = CashuTheme.spacing.default),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
+    Box(
+        modifier = modifier.fillMaxWidth(),
+        contentAlignment = Alignment.Center,
     ) {
-        Icon(
-            imageVector = Icons.Outlined.Nfc,
-            contentDescription = null,
-            tint = if (active) CashuTheme.colors.pending else MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(18.dp),
-        )
-        AnimatedContent(
-            targetState = state.phase to (state.message ?: if (active) "Another wallet can use Send → Tap" else "Open this request with NFC enabled"),
-            transitionSpec = {
-                fadeIn(spring(stiffness = Spring.StiffnessMedium)) togetherWith
-                    fadeOut(spring(stiffness = Spring.StiffnessMedium))
+        Surface(
+            modifier = if (reducedMotion) {
+                Modifier.testTag("nfcReceiveIndicatorSurface")
+            } else {
+                Modifier
+                    .testTag("nfcReceiveIndicatorSurface")
+                    .animateContentSize(
+                        animationSpec = tween(
+                            durationMillis = NfcIndicatorResizeMillis,
+                            easing = FastOutSlowInEasing,
+                        ),
+                        alignment = Alignment.Center,
+                    )
             },
-            label = "nfc-indicator-content",
-            modifier = Modifier.weight(1f),
-        ) { (_, line) ->
-            Text(
-                text = line,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            shape = MaterialTheme.shapes.small,
+            color = indicatorColor,
+        ) {
+            Row(
+                modifier = Modifier
+                    .testTag("nfcReceiveIndicatorContent")
+                    .padding(
+                        horizontal = CashuTheme.spacing.default,
+                        vertical = CashuTheme.spacing.snug,
+                    ),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Nfc,
+                    contentDescription = null,
+                    tint = if (active) CashuTheme.colors.pending else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp),
+                )
+                AnimatedContent(
+                    targetState = state.phase to (state.message ?: if (active) {
+                        "Ask the sender to hold their phone near yours."
+                    } else {
+                        "Open this request with NFC enabled."
+                    }),
+                    transitionSpec = {
+                        if (reducedMotion) {
+                            (EnterTransition.None togetherWith ExitTransition.None).using(null)
+                        } else {
+                            (
+                                fadeIn(
+                                    tween(
+                                        durationMillis = NfcIndicatorFadeInMillis,
+                                        delayMillis = NfcIndicatorFadeInDelayMillis,
+                                        easing = LinearOutSlowInEasing,
+                                    ),
+                                ) togetherWith fadeOut(
+                                    tween(
+                                        durationMillis = NfcIndicatorFadeOutMillis,
+                                        easing = FastOutLinearInEasing,
+                                    ),
+                                )
+                            ).using(null)
+                        }
+                    },
+                    contentAlignment = Alignment.Center,
+                    label = "nfc-indicator-content",
+                ) { (_, line) ->
+                    Text(
+                        text = line,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            }
         }
     }
 }
