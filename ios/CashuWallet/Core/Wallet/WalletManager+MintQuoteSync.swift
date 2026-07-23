@@ -16,6 +16,23 @@ extension WalletManager {
         await syncPendingMintQuotes()
     }
 
+    /// Silent single-quote check + mint if paid. Used when opening a pending
+    /// Lightning / on-chain receive in transaction detail (Android
+    /// `refreshPendingMintQuote` parity). Does not touch the global loading
+    /// flag; ownership of UI stays with the detail screen.
+    @discardableResult
+    func refreshPendingMintQuote(quoteId: String) async -> Bool {
+        let minted = await syncPendingMintQuote(
+            quoteId: quoteId,
+            allowPendingOnchainMintAttempt: true
+        )
+        if minted {
+            await refreshBalance()
+        }
+        await loadTransactions()
+        return minted
+    }
+
     // MARK: - Foreground polling
 
     /// While the app is active, re-check pending quotes every

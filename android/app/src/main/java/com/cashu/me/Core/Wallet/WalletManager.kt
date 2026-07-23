@@ -491,16 +491,21 @@ class WalletManager(
             }
         }
 
-    suspend fun refreshPendingMintQuote(quoteId: String): Boolean =
-        withLoadingResult {
-            val minted = mintQuoteSyncService.syncPendingMintQuote(
-                quoteId,
-                allowPendingOnchainMintAttempt = true,
-            )
-            if (minted) refreshBalance()
-            loadTransactions()
-            minted
-        }
+    /**
+     * Silent single-quote check + mint if paid. Used by Receive (per-quote
+     * poll) and transaction detail open — must not flip the global loading
+     * flag (passive UX). Pull-to-refresh / full [syncPendingMintQuotes] stay
+     * the bulk path.
+     */
+    suspend fun refreshPendingMintQuote(quoteId: String): Boolean {
+        val minted = mintQuoteSyncService.syncPendingMintQuote(
+            quoteId,
+            allowPendingOnchainMintAttempt = true,
+        )
+        if (minted) refreshBalance()
+        loadTransactions()
+        return minted
+    }
 
     /**
      * Cooldown-gated sync for passive triggers (app start, resume, History

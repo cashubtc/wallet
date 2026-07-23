@@ -91,6 +91,18 @@ fun TransactionDetailScreen(
             copied = false
         }
     }
+    // Single-quote check on open (not the full pending list). Re-checks this
+    // mint quote against the mint and mints if already paid — same path Receive
+    // uses for its per-quote poll, without the global loading spinner.
+    // Keyed only on transactionId so a successful mint → Completed transition
+    // does not cancel the in-flight check.
+    LaunchedEffect(transactionId) {
+        val quoteId = walletManager.state.value.transactions
+            .firstOrNull { it.id == transactionId }
+            ?.mintQuoteIdForStatusRefresh
+            ?: return@LaunchedEffect
+        runCatching { walletManager.refreshPendingMintQuote(quoteId) }
+    }
 
     val showsQr = transaction?.let { TransactionDisplay.showsQr(it) } == true
     val qrContent = transaction?.let { TransactionDisplay.qrContent(it) }
