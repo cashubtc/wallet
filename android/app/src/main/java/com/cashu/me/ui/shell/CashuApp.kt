@@ -27,13 +27,15 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.IntOffset
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.ProcessLifecycleOwner
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.navigation.compose.rememberNavController
 import kotlinx.coroutines.flow.StateFlow
 import com.cashu.me.App.AppContainer
@@ -106,6 +108,8 @@ private fun CashuAppContent(container: AppContainer) {
         }
     }
 
+    val isRuntimeReadyRef by rememberUpdatedState(isRuntimeReady)
+
     LaunchedEffect(isRuntimeReady) {
         if (isRuntimeReady) {
             container.cashuRequestListener.start()
@@ -113,23 +117,54 @@ private fun CashuAppContent(container: AppContainer) {
             if (settings.checkPendingOnStartup && settings.checkSentTokens) {
                 container.walletManager.checkAllPendingTokens()
             }
+            // Runtime became ready while the process is already foregrounded —
+            // ProcessLifecycle ON_START won't re-fire. Arm quote detection now
+            // (iOS deferred-startup parity).
+            if (ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+                container.walletManager.onAppEnteredForeground()
+            }
         } else {
             container.cashuRequestListener.stop()
+            container.walletManager.stopPendingQuoteForegroundPolling()
         }
     }
-    DisposableEffect(lifecycleOwner, isRuntimeReady) {
+
+    // App-process foreground (not Activity): M3 ModalBottomSheet runs in its own
+    // Dialog window and can ON_STOP the Activity while the user is still in the
+    // app. Quote detection must keep running — iOS scenePhase parity.
+    DisposableEffect(container) {
+        val processLifecycle = ProcessLifecycleOwner.get().lifecycle
         val observer = LifecycleEventObserver { _, event ->
-            if (!isRuntimeReady) return@LifecycleEventObserver
+            when (event) {
+                Lifecycle.Event.ON_START -> {
+                    if (isRuntimeReadyRef) {
+                        container.walletManager.onAppEnteredForeground()
+                    }
+                }
+                Lifecycle.Event.ON_STOP -> {
+                    container.walletManager.stopPendingQuoteForegroundPolling()
+                }
+                else -> Unit
+            }
+        }
+        processLifecycle.addObserver(observer)
+        onDispose {
+            processLifecycle.removeObserver(observer)
+            container.walletManager.stopPendingQuoteForegroundPolling()
+        }
+    }
+
+    // Activity lifecycle: app-lock + Cashu-request listener only. Do not stop
+    // quote polling here — sheets/overlays pause the Activity without leaving
+    // the app.
+    DisposableEffect(lifecycleOwner, container) {
+        val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_START,
                 Lifecycle.Event.ON_RESUME -> {
                     container.appLockManager.appBecameActive()
-                    container.cashuRequestListener.start()
-                    if (event == Lifecycle.Event.ON_START) {
-                        // iOS scenePhase `.active` parity: re-check pending
-                        // quotes that moved while the app was away, then keep
-                        // re-checking while the app stays in the foreground.
-                        container.walletManager.startPendingQuoteForegroundPolling()
+                    if (isRuntimeReadyRef) {
+                        container.cashuRequestListener.start()
                     }
                 }
                 Lifecycle.Event.ON_PAUSE,
@@ -137,7 +172,6 @@ private fun CashuAppContent(container: AppContainer) {
                     container.appLockManager.appResignedActive()
                     if (event == Lifecycle.Event.ON_STOP) {
                         container.cashuRequestListener.stop()
-                        container.walletManager.stopPendingQuoteForegroundPolling()
                     }
                 }
                 else -> Unit
@@ -147,7 +181,6 @@ private fun CashuAppContent(container: AppContainer) {
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
             container.cashuRequestListener.stop()
-            container.walletManager.stopPendingQuoteForegroundPolling()
         }
     }
 

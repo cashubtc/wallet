@@ -3,6 +3,9 @@ package com.cashu.me.Core
 import java.net.URL
 import java.text.Normalizer
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -70,8 +73,11 @@ class WalletManager(
     // rate-limits how often we re-poll the mint so reusable BOLT12 offers
     // don't hammer it (iOS WalletManager+MintQuoteSync parity). Pull-to-refresh
     // calls [syncPendingMintQuotes] directly to bypass the cooldown.
-    private var isSyncingMintQuotes = false
-    private var lastMintQuoteSyncAtMs: Long? = null
+    // Atomic: startup maintenance runs on Dispatchers.IO while the foreground
+    // poll runs on the main-scoped job.
+    private val isSyncingMintQuotes = AtomicBoolean(false)
+    // 0 = never synced. Written/read across the IO + Main poll jobs.
+    private val lastMintQuoteSyncAtMs = AtomicLong(0L)
 
     // In-process waiters for melts a mint accepted asynchronously (NUT-05),
     // keyed by quote ID. These die with the process; `walletStore`'s
@@ -79,9 +85,10 @@ class WalletManager(
     // backstop (iOS WalletManager+PendingMelts parity).
     private val pendingMeltWaiters = mutableMapOf<String, Job>()
 
-    // Foreground quote poll (started/stopped on lifecycle ON_START/ON_STOP).
-    // Re-checks pending mint + melt quotes while the app is active so a
-    // payment lands without pull-to-refresh (iOS parity).
+    // Foreground quote poll (started/stopped on ProcessLifecycle ON_START/ON_STOP
+    // so M3 ModalBottomSheet dialog windows don't kill it). Re-checks pending
+    // mint + melt quotes while the app is active so a payment lands without
+    // pull-to-refresh (iOS parity).
     private var pendingQuotePollJob: Job? = null
 
     override suspend fun initialize() {
@@ -167,11 +174,10 @@ class WalletManager(
             runCatching { nwcManager.startIfEnabled() }
                 .onFailure { AppLogger.wallet.error("Deferred NWC startup failed", it) }
 
-            // Arm the foreground poll from the runtime-ready path as well: the
-            // CashuApp lifecycle observer normally starts it on ON_START, but a
-            // missed event must never leave quote detection dead until the next
-            // background/foreground cycle (guard-protected, no-op if running).
-            startPendingQuoteForegroundPolling()
+            // Arm quote detection from the runtime-ready path as well: Process
+            // lifecycle ON_START may have already fired before isRuntimeReady
+            // flipped true. Guard-protected — no-op if the poll is running.
+            onAppEnteredForeground()
         }
     }
 
@@ -504,8 +510,8 @@ class WalletManager(
      * intent). iOS `syncPendingMintQuotesIfStale` parity.
      */
     suspend fun syncPendingMintQuotesIfStale() {
-        val last = lastMintQuoteSyncAtMs
-        if (last != null && System.currentTimeMillis() - last < MINT_QUOTE_SYNC_COOLDOWN_MS) return
+        val last = lastMintQuoteSyncAtMs.get()
+        if (last != 0L && System.currentTimeMillis() - last < MINT_QUOTE_SYNC_COOLDOWN_MS) return
         syncPendingMintQuotes()
     }
 
@@ -519,12 +525,17 @@ class WalletManager(
         // Coarse in-flight guard: collapse overlapping triggers (e.g. the
         // foreground poll firing while a pull-to-refresh sync is running) into
         // one pass so the full per-quote loop never runs twice concurrently.
-        if (isSyncingMintQuotes) return 0
-        isSyncingMintQuotes = true
-        lastMintQuoteSyncAtMs = System.currentTimeMillis()
+        if (!isSyncingMintQuotes.compareAndSet(false, true)) return 0
+        lastMintQuoteSyncAtMs.set(System.currentTimeMillis())
         try {
-            val pendingQuotes = runCatching { gateway.listUnissuedMintQuotes() }
-                .getOrDefault(emptyList())
+            val pendingQuotes = try {
+                gateway.listUnissuedMintQuotes()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                AppLogger.wallet.error("Failed to list unissued mint quotes", error)
+                emptyList()
+            }
             var mintedCount = 0
             pendingQuotes.forEach { quote ->
                 if (
@@ -540,7 +551,7 @@ class WalletManager(
             loadTransactions()
             return mintedCount
         } finally {
-            isSyncingMintQuotes = false
+            isSyncingMintQuotes.set(false)
         }
     }
 
@@ -690,6 +701,32 @@ class WalletManager(
     // MARK: - Foreground quote polling
 
     /**
+     * iOS `scenePhase == .active` parity: one-shot stale mint/melt sync, then
+     * arm the repeating poll. Safe to call repeatedly (poll start is
+     * idempotent; mint sync is cooldown-gated).
+     */
+    fun onAppEnteredForeground() {
+        startPendingQuoteForegroundPolling()
+        if (!mutableState.value.isRuntimeReady) return
+        scope.launch {
+            try {
+                syncPendingMintQuotesIfStale()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                AppLogger.wallet.error("Foreground mint quote sync failed", error)
+            }
+            try {
+                syncPendingMeltQuotes()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                AppLogger.wallet.error("Foreground melt quote sync failed", error)
+            }
+        }
+    }
+
+    /**
      * While the app is active, re-check pending quotes every
      * [PENDING_QUOTE_POLL_INTERVAL_MS] so a payment lands on its own — e.g. a
      * BOLT12 offer paid from another wallet while Home sits open — instead of
@@ -697,19 +734,32 @@ class WalletManager(
      * poll interval equals [MINT_QUOTE_SYNC_COOLDOWN_MS], so this never
      * exceeds one pass per interval); the melt sync is a cheap no-op unless a
      * NUT-05 async melt is tracked and its in-process waiter died.
-     * Started/stopped from `CashuApp` on ON_START/ON_STOP (iOS parity).
+     * Started/stopped from `CashuApp` via [ProcessLifecycleOwner] ON_START /
+     * ON_STOP (not the Activity — ModalBottomSheet dialogs must not stop it).
      */
     fun startPendingQuoteForegroundPolling() {
         if (pendingQuotePollJob?.isActive == true) return
         pendingQuotePollJob = scope.launch {
             while (isActive) {
-                if (mutableState.value.isRuntimeReady) {
-                    runCatching { syncPendingMintQuotesIfStale() }
-                        .onFailure { AppLogger.wallet.error("Foreground mint quote sync failed", it) }
-                    runCatching { syncPendingMeltQuotes() }
-                        .onFailure { AppLogger.wallet.error("Foreground melt quote sync failed", it) }
-                }
+                // Delay first: [onAppEnteredForeground] already did the immediate
+                // pass (iOS poll-loop + scenePhase one-shot shape).
                 delay(PENDING_QUOTE_POLL_INTERVAL_MS)
+                if (!isActive) break
+                if (!mutableState.value.isRuntimeReady) continue
+                try {
+                    syncPendingMintQuotesIfStale()
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Throwable) {
+                    AppLogger.wallet.error("Foreground mint quote sync failed", error)
+                }
+                try {
+                    syncPendingMeltQuotes()
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Throwable) {
+                    AppLogger.wallet.error("Foreground melt quote sync failed", error)
+                }
             }
         }
     }
