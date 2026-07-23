@@ -57,6 +57,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import com.cashu.me.Core.AmountFormatter
@@ -312,6 +313,8 @@ fun UnifiedSendScreen(
                         status = SendStatus.Sent(null)
                     }
                 }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
             } catch (t: Throwable) {
                 status = SendStatus.Failed(t.walletMessage)
             }
@@ -361,15 +364,18 @@ fun UnifiedSendScreen(
         val rail = locked as? LockedRail.Melt ?: return@LaunchedEffect
         meltQuote = null
         quoteError = null
-        runCatching {
-            walletManager.createMeltQuote(
+        try {
+            meltQuote = walletManager.createMeltQuote(
                 request = rail.raw,
                 // Invoices/offers carry their own amount; address rails pass the entry.
                 amountSats = if (rail.knownAmount != null) null else confirmAmount,
                 preferredMintURL = activeMintUrl,
             )
-        }.onSuccess { meltQuote = it }
-            .onFailure { quoteError = it.userFacingWalletMessage }
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (failure: Throwable) {
+            quoteError = failure.userFacingWalletMessage
+        }
     }
 
     // Block sheet dismissal while the melt is in flight — a stray swipe must
@@ -538,8 +544,8 @@ fun UnifiedSendScreen(
                             topUpError = null
                             topUpLoading = true
                             scope.launch {
-                                runCatching {
-                                    createExternalTopUpQuote(
+                                try {
+                                    topUpQuote = createExternalTopUpQuote(
                                         mintUrl = mintUrl,
                                         requestedAmountSats = requestedAmount,
                                     ) { targetMintUrl, amount, method, unit ->
@@ -550,9 +556,13 @@ fun UnifiedSendScreen(
                                             unit = unit,
                                         )
                                     }
-                                }.onSuccess { topUpQuote = it }
-                                    .onFailure { topUpError = it.userFacingWalletMessage }
-                                topUpLoading = false
+                                } catch (cancellation: CancellationException) {
+                                    throw cancellation
+                                } catch (failure: Throwable) {
+                                    topUpError = failure.userFacingWalletMessage
+                                } finally {
+                                    topUpLoading = false
+                                }
                             }
                         },
                         quote = meltQuote,

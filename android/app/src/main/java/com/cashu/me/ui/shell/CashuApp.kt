@@ -229,7 +229,7 @@ private fun AuthenticatedShell(container: AppContainer) {
     // The active money flow, hosted in a modal bottom sheet (iOS WalletFlow sheets).
     var activeFlow by remember { mutableStateOf<WalletFlow?>(null) }
     var flowDismissLocked by remember { mutableStateOf(false) }
-    var openContactlessAfterFlowDismiss by remember { mutableStateOf(false) }
+    val flowHandoff = remember { WalletFlowHandoffCoordinator() }
     var pendingReceiveScan by remember { mutableStateOf<String?>(null) }
     var pendingSendScan by remember { mutableStateOf<String?>(null) }
     var pendingMintScan by remember { mutableStateOf<String?>(null) }
@@ -382,10 +382,10 @@ private fun AuthenticatedShell(container: AppContainer) {
         dismissLocked = flowDismissLocked,
         onDismissed = {
             activeFlow = null
-            if (openContactlessAfterFlowDismiss) {
-                openContactlessAfterFlowDismiss = false
-                showContactless = true
-            }
+            flowHandoff.completeDismissal(
+                openScanner = { scannerTarget = ScannerTarget.Auto },
+                openContactless = { showContactless = true },
+            )
         },
         snackbarHostState = container.snackbarHostState,
     ) { flow, close ->
@@ -404,8 +404,7 @@ private fun AuthenticatedShell(container: AppContainer) {
                 // Camera overlays render in the activity window, underneath this
                 // sheet's dialog window — the sheet must yield before scanning.
                 onScan = {
-                    close()
-                    scannerTarget = ScannerTarget.Auto
+                    flowHandoff.requestScanner(close)
                 },
                 // A pasted/scanned token opens the full-screen claim page — same
                 // destination Send bounces a token to (iOS ReceiveTokenDetailView).
@@ -437,14 +436,12 @@ private fun AuthenticatedShell(container: AppContainer) {
                 settingsManager = container.settingsManager,
                 onClose = close,
                 onScan = {
-                    close()
-                    scannerTarget = ScannerTarget.Auto
+                    flowHandoff.requestScanner(close)
                 },
                 onContactless = {
                     // Android has no system NFC sheet. Let Send finish its hide
                     // animation before mounting the fresh Material NFC sheet.
-                    openContactlessAfterFlowDismiss = true
-                    close()
+                    flowHandoff.requestContactless(close)
                 },
                 onSendEcash = { activeFlow = WalletFlow.SendEcash },
                 onOpenReceiveToken = { token ->

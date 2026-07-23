@@ -37,6 +37,41 @@ sealed interface WalletFlow {
 }
 
 /**
+ * Defers activity-window overlays until the modal sheet's hide animation has
+ * completed. Starting an overlay while the sheet is still composed lets a fast
+ * result route back into the outgoing flow before [onDismissed] clears it.
+ */
+internal class WalletFlowHandoffCoordinator {
+    private var pending: Destination? = null
+
+    fun requestScanner(close: () -> Unit) {
+        pending = Destination.Scanner
+        close()
+    }
+
+    fun requestContactless(close: () -> Unit) {
+        pending = Destination.Contactless
+        close()
+    }
+
+    fun completeDismissal(
+        openScanner: () -> Unit,
+        openContactless: () -> Unit,
+    ) {
+        when (pending.also { pending = null }) {
+            Destination.Scanner -> openScanner()
+            Destination.Contactless -> openContactless()
+            null -> Unit
+        }
+    }
+
+    private enum class Destination {
+        Scanner,
+        Contactless,
+    }
+}
+
+/**
  * Single ModalBottomSheet hosting whichever flow is active. Keeping one sheet
  * (instead of one per flow) lets Send → Send Ecash swap content inside the
  * open sheet rather than tearing the window down and re-presenting.
