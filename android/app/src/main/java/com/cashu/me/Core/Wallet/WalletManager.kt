@@ -1213,13 +1213,16 @@ class WalletManager(
 
     private suspend fun <T> withLoadingResult(block: suspend () -> T): T {
         update { copy(isLoading = true, errorMessage = null) }
-        return runCatching { block() }
-            .onSuccess { update { copy(isLoading = false) } }
-            .onFailure { error ->
-                AppLogger.wallet.error("Wallet operation failed", error)
-                update { copy(isLoading = false, errorMessage = error.message) }
-            }
-            .getOrThrow()
+        return try {
+            block().also { update { copy(isLoading = false) } }
+        } catch (cancellation: CancellationException) {
+            update { copy(isLoading = false) }
+            throw cancellation
+        } catch (error: Throwable) {
+            AppLogger.wallet.error("Wallet operation failed", error)
+            update { copy(isLoading = false, errorMessage = error.message) }
+            throw error
+        }
     }
 
     private fun update(transform: WalletState.() -> WalletState) {
