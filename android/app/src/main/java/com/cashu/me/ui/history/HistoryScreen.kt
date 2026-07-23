@@ -221,7 +221,7 @@ fun HistoryScreen(
                     // mint quotes and pending (NUT-05) melts, then re-verify
                     // pending sent tokens.
                     runCatching {
-                        walletManager.syncPendingMintQuotes()
+                        walletManager.syncPendingMintQuotes(force = true)
                         walletManager.syncPendingMeltQuotes()
                         walletManager.loadTransactions()
                         if (walletState.pendingTokens.isNotEmpty()) {

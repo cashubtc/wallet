@@ -16,8 +16,13 @@ struct TransactionDetailView: View {
     }
 
     /// Live row from the wallet when present; falls back to the open-time seed.
+    /// After a mint, CDK replaces the pending quote-id row with a new transaction
+    /// id that still carries `quoteId` — follow that so status flips in place.
     private var transaction: WalletTransaction {
-        walletManager.transactions.first(where: { $0.id == seed.id }) ?? seed
+        walletManager.transactions.resolveForDetail(
+            openId: seed.id,
+            openQuoteId: seed.quoteId ?? seed.id
+        ) ?? seed
     }
 
     /// Returns the content to display as a QR code.

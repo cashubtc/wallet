@@ -167,7 +167,7 @@ fun HomeScreen(
                         // Match iOS MainWalletView: pulling the wallet timeline
                         // re-checks pending receives and sent ecash, which also
                         // reloads the transactions shown in Recent.
-                        walletManager.syncPendingMintQuotes()
+                        walletManager.syncPendingMintQuotes(force = true)
                         walletManager.checkAllPendingTokens()
                     } catch (error: CancellationException) {
                         throw error

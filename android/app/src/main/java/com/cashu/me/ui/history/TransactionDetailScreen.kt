@@ -47,6 +47,7 @@ import com.cashu.me.Core.AmountFormatter
 import com.cashu.me.Core.Protocols.CurrencyAmount
 import com.cashu.me.Core.Protocols.CurrencyRegistry
 import com.cashu.me.Core.OnchainExplorer
+import com.cashu.me.Core.resolveTransactionForDetail
 import com.cashu.me.Core.SettingsManager
 import com.cashu.me.Core.TransactionDisplay
 import com.cashu.me.Core.WalletManager
@@ -83,7 +84,22 @@ fun TransactionDetailScreen(
     val clipboard = LocalClipboardManager.current
     val formatter = remember { AmountFormatter() }
 
-    val transaction = walletState.transactions.firstOrNull { it.id == transactionId }
+    // Pending mint-quote rows use id == quoteId; after mint CDK swaps in a new
+    // transaction id with the same quoteId. Keep the open-time identity so the
+    // detail can follow Pending → Completed without flashing "not found".
+    var openSnapshot by remember(transactionId) { mutableStateOf<WalletTransaction?>(null) }
+    val resolved = remember(walletState.transactions, transactionId, openSnapshot) {
+        resolveTransactionForDetail(
+            transactions = walletState.transactions,
+            openId = transactionId,
+            openQuoteId = openSnapshot?.quoteId ?: openSnapshot?.id,
+        )
+    }
+    LaunchedEffect(resolved) {
+        if (resolved != null) openSnapshot = resolved
+    }
+    val transaction = resolved ?: openSnapshot
+
     var copied by remember { mutableStateOf(false) }
     LaunchedEffect(copied) {
         if (copied) {
@@ -97,9 +113,10 @@ fun TransactionDetailScreen(
     // Keyed only on transactionId so a successful mint → Completed transition
     // does not cancel the in-flight check.
     LaunchedEffect(transactionId) {
-        val quoteId = walletManager.state.value.transactions
-            .firstOrNull { it.id == transactionId }
-            ?.mintQuoteIdForStatusRefresh
+        val quoteId = resolveTransactionForDetail(
+            transactions = walletManager.state.value.transactions,
+            openId = transactionId,
+        )?.mintQuoteIdForStatusRefresh
             ?: return@LaunchedEffect
         runCatching { walletManager.refreshPendingMintQuote(quoteId) }
     }

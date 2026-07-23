@@ -62,7 +62,9 @@ class WalletManager: ObservableObject {
     /// parity) so the poll drives one sync pass per interval.
     var isSyncingMintQuotes = false
     var lastMintQuoteSyncAt: Date?
-    let mintQuoteSyncCooldown: TimeInterval = 30
+    let mintQuoteSyncCooldown: TimeInterval = 5
+    /// Per-quote passive-check backoff (Android `MintQuoteCheckBackoff` parity).
+    var mintQuoteCheckThrottle: [String: MintQuoteCheckBackoff.Entry] = [:]
 
     /// In-process waiters for melts a mint accepted asynchronously (NUT-05),
     /// keyed by quote ID. These die with the process; `walletStore`'s
@@ -74,7 +76,7 @@ class WalletManager: ObservableObject {
     /// pending mint + melt quotes while the app is active so a payment lands
     /// without pull-to-refresh (Android parity).
     var pendingQuotePollTask: Task<Void, Never>?
-    let pendingQuotePollInterval: TimeInterval = 30
+    let pendingQuotePollInterval: TimeInterval = 5
 
     // MARK: - Services
 

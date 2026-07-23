@@ -6,25 +6,26 @@ extension WalletManager {
     /// foreground, the foreground poll). Skips when a sync ran within
     /// `mintQuoteSyncCooldown`, so a paid offer settles on its own without
     /// re-polling the mint on every tab switch. Pull-to-refresh calls
-    /// `syncPendingMintQuotes()` directly to bypass the cooldown (explicit
-    /// user intent).
+    /// `syncPendingMintQuotes(force: true)` to bypass pass cooldown (explicit
+    /// user intent). Per-quote exponential backoff still applies unless forced.
     func syncPendingMintQuotesIfStale() async {
         if let last = lastMintQuoteSyncAt,
            Date().timeIntervalSince(last) < mintQuoteSyncCooldown {
             return
         }
-        await syncPendingMintQuotes()
+        await syncPendingMintQuotes(force: false)
     }
 
     /// Silent single-quote check + mint if paid. Used when opening a pending
     /// Lightning / on-chain receive in transaction detail (Android
-    /// `refreshPendingMintQuote` parity). Does not touch the global loading
-    /// flag; ownership of UI stays with the detail screen.
+    /// `refreshPendingMintQuote` parity). Forced past unpaid backoff (brief
+    /// debounce only). Does not touch the global loading flag.
     @discardableResult
     func refreshPendingMintQuote(quoteId: String) async -> Bool {
         let minted = await syncPendingMintQuote(
             quoteId: quoteId,
-            allowPendingOnchainMintAttempt: true
+            allowPendingOnchainMintAttempt: true,
+            force: true
         )
         if minted {
             await refreshBalance()
@@ -61,10 +62,14 @@ extension WalletManager {
         pendingQuotePollTask = nil
     }
 
-    func syncPendingMintQuotes() async {
-        // Coarse in-flight guard: collapse overlapping triggers (e.g. opening
-        // History while a foreground sync is already running) into one pass so
-        // the full per-quote loop never runs twice concurrently.
+    /// Re-check unissued mint quotes against their mints and mint the paid ones.
+    /// - Parameter force: when `false` (poll / startup / History open), per-quote
+    ///   exponential backoff applies and at most
+    ///   `MintQuoteCheckBackoff.maxPassiveChecksPerPass` quotes are checked per
+    ///   pass. When `true` (pull-to-refresh), every quote is eligible subject
+    ///   only to a short per-quote debounce.
+    func syncPendingMintQuotes(force: Bool = false) async {
+        // Coarse in-flight guard: collapse overlapping triggers into one pass.
         guard !isSyncingMintQuotes else { return }
         isSyncingMintQuotes = true
         lastMintQuoteSyncAt = Date()
@@ -76,13 +81,32 @@ extension WalletManager {
         }
 
         var mintedAny = false
+        let now = Date()
 
         do {
             let pendingQuotes = try await db.getUnissuedMintQuotes()
-            for quote in pendingQuotes {
+            let ordered = pendingQuotes
+                .filter { quote in
+                    MintQuoteCheckBackoff.shouldCheck(
+                        entry: mintQuoteCheckThrottle[quote.id],
+                        now: now,
+                        force: force
+                    )
+                }
+                .sorted { lhs, rhs in
+                    let left = mintQuoteCheckThrottle[lhs.id]?.lastCheckedAt ?? .distantPast
+                    let right = mintQuoteCheckThrottle[rhs.id]?.lastCheckedAt ?? .distantPast
+                    return left < right
+                }
+            let toCheck = force
+                ? ordered
+                : Array(ordered.prefix(MintQuoteCheckBackoff.maxPassiveChecksPerPass))
+
+            for quote in toCheck {
                 let minted = await syncPendingMintQuote(
                     quoteId: quote.id,
-                    allowPendingOnchainMintAttempt: false
+                    allowPendingOnchainMintAttempt: false,
+                    force: force
                 )
                 mintedAny = mintedAny || minted
             }
@@ -133,8 +157,15 @@ extension WalletManager {
     @discardableResult
     private func syncPendingMintQuote(
         quoteId: String,
-        allowPendingOnchainMintAttempt: Bool
+        allowPendingOnchainMintAttempt: Bool,
+        force: Bool = false
     ) async -> Bool {
+        let now = Date()
+        let prior = mintQuoteCheckThrottle[quoteId]
+        guard MintQuoteCheckBackoff.shouldCheck(entry: prior, now: now, force: force) else {
+            return false
+        }
+
         guard !mintQuoteSyncsInFlight.contains(quoteId) else {
             return false
         }
@@ -150,6 +181,10 @@ extension WalletManager {
             guard updatedQuote.state == .paid
                 || updatedQuote.state == .issued
                 || (allowPendingOnchainMintAttempt && updatedQuote.paymentMethod == .onchain) else {
+                mintQuoteCheckThrottle[quoteId] = MintQuoteCheckBackoff.afterUnpaidOrError(
+                    entry: prior,
+                    now: now
+                )
                 return false
             }
 
@@ -163,26 +198,44 @@ extension WalletManager {
                 if let storedQuote,
                    storedQuote.amountPaid.value > 0,
                    storedQuote.amountIssued.value >= storedQuote.amountPaid.value {
+                    mintQuoteCheckThrottle[quoteId] = MintQuoteCheckBackoff.afterUnpaidOrError(
+                        entry: prior,
+                        now: now
+                    )
                     return false
                 }
             }
 
             do {
                 _ = try await lightningService.mintTokens(quoteId: quoteId)
+                mintQuoteCheckThrottle[quoteId] = MintQuoteCheckBackoff.afterMintedOrSettled(now: now)
                 return true
             } catch {
                 if isAlreadyIssuedMintError(error) {
+                    mintQuoteCheckThrottle[quoteId] = MintQuoteCheckBackoff.afterMintedOrSettled(now: now)
                     return true
                 }
 
                 if updatedQuote.paymentMethod == .onchain, updatedQuote.state == .pending {
+                    mintQuoteCheckThrottle[quoteId] = MintQuoteCheckBackoff.afterUnpaidOrError(
+                        entry: prior,
+                        now: now
+                    )
                     return false
                 }
 
                 AppLogger.wallet.error("Failed to mint pending quote \(quoteId): \(error)")
+                mintQuoteCheckThrottle[quoteId] = MintQuoteCheckBackoff.afterUnpaidOrError(
+                    entry: prior,
+                    now: now
+                )
                 return false
             }
         } catch {
+            mintQuoteCheckThrottle[quoteId] = MintQuoteCheckBackoff.afterUnpaidOrError(
+                entry: prior,
+                now: now
+            )
             if isMissingQuoteError(error) {
                 return false
             }

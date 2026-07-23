@@ -433,6 +433,7 @@ extension WalletManager {
         activeUnit = "sat"
         errorMessage = nil
         mintQuoteSyncsInFlight.removeAll()
+        mintQuoteCheckThrottle.removeAll()
         npcQuotesInFlight.removeAll()
         processedQuotes.removeAll()
         mintService.clearState()

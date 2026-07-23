@@ -273,7 +273,7 @@ struct HistoryView: View {
             .scrollContentBackground(.hidden)
             .contentMargins(.bottom, 32, for: .scrollContent)
             .refreshable {
-                await walletManager.syncPendingMintQuotes()
+                await walletManager.syncPendingMintQuotes(force: true)
                 await walletManager.syncPendingMeltQuotes()
                 await walletManager.checkAllPendingTokens()
             }

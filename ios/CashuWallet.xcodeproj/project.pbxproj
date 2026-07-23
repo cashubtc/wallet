@@ -88,6 +88,7 @@
 		D200000000000105 /* WalletManager+CashuPaymentRequests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D100000000000105 /* WalletManager+CashuPaymentRequests.swift */; };
 		D200000000000106 /* WalletManager+Tokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = D100000000000106 /* WalletManager+Tokens.swift */; };
 		D200000000000107 /* WalletManager+MintQuoteSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = D100000000000107 /* WalletManager+MintQuoteSync.swift */; };
+		D20000000000010B /* MintQuoteCheckBackoff.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000010B /* MintQuoteCheckBackoff.swift */; };
 		D200000000000108 /* WalletManager+Backup.swift in Sources */ = {isa = PBXBuildFile; fileRef = D100000000000108 /* WalletManager+Backup.swift */; };
 		D200000000000109 /* WalletErrors.swift in Sources */ = {isa = PBXBuildFile; fileRef = D100000000000109 /* WalletErrors.swift */; };
 		D20000000000010A /* WalletManager+PendingMelts.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000010A /* WalletManager+PendingMelts.swift */; };
@@ -99,6 +100,7 @@
 		D200000000000206 /* QuoteModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = D100000000000206 /* QuoteModels.swift */; };
 		D200000000000207 /* QuoteStates.swift in Sources */ = {isa = PBXBuildFile; fileRef = D100000000000207 /* QuoteStates.swift */; };
 		D200000000000208 /* WalletTransaction.swift in Sources */ = {isa = PBXBuildFile; fileRef = D100000000000208 /* WalletTransaction.swift */; };
+		D200000000000213 /* WalletTransactionDetailLookup.swift in Sources */ = {isa = PBXBuildFile; fileRef = D100000000000213 /* WalletTransactionDetailLookup.swift */; };
 		D200000000000209 /* TokenTransferModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = D100000000000209 /* TokenTransferModels.swift */; };
 		D200000000000210 /* RestoreMintResult.swift in Sources */ = {isa = PBXBuildFile; fileRef = D100000000000210 /* RestoreMintResult.swift */; };
 		D200000000000211 /* TokenInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = D100000000000211 /* TokenInfo.swift */; };
@@ -233,6 +235,7 @@
 		D100000000000105 /* WalletManager+CashuPaymentRequests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WalletManager+CashuPaymentRequests.swift"; sourceTree = "<group>"; };
 		D100000000000106 /* WalletManager+Tokens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WalletManager+Tokens.swift"; sourceTree = "<group>"; };
 		D100000000000107 /* WalletManager+MintQuoteSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WalletManager+MintQuoteSync.swift"; sourceTree = "<group>"; };
+		D10000000000010B /* MintQuoteCheckBackoff.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MintQuoteCheckBackoff.swift"; sourceTree = "<group>"; };
 		D100000000000108 /* WalletManager+Backup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WalletManager+Backup.swift"; sourceTree = "<group>"; };
 		D100000000000109 /* WalletErrors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WalletErrors.swift; sourceTree = "<group>"; };
 		D10000000000010A /* WalletManager+PendingMelts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WalletManager+PendingMelts.swift"; sourceTree = "<group>"; };
@@ -244,6 +247,7 @@
 		D100000000000206 /* QuoteModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuoteModels.swift; sourceTree = "<group>"; };
 		D100000000000207 /* QuoteStates.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuoteStates.swift; sourceTree = "<group>"; };
 		D100000000000208 /* WalletTransaction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WalletTransaction.swift; sourceTree = "<group>"; };
+		D100000000000213 /* WalletTransactionDetailLookup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WalletTransactionDetailLookup.swift; sourceTree = "<group>"; };
 		D100000000000209 /* TokenTransferModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TokenTransferModels.swift; sourceTree = "<group>"; };
 		D100000000000210 /* RestoreMintResult.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RestoreMintResult.swift; sourceTree = "<group>"; };
 		D100000000000211 /* TokenInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TokenInfo.swift; sourceTree = "<group>"; };
@@ -612,6 +616,7 @@
 				D100000000000105 /* WalletManager+CashuPaymentRequests.swift */,
 				D100000000000106 /* WalletManager+Tokens.swift */,
 				D100000000000107 /* WalletManager+MintQuoteSync.swift */,
+				D10000000000010B /* MintQuoteCheckBackoff.swift */,
 				D100000000000108 /* WalletManager+Backup.swift */,
 				D100000000000109 /* WalletErrors.swift */,
 			);
@@ -675,6 +680,7 @@
 			isa = PBXGroup;
 			children = (
 				D100000000000208 /* WalletTransaction.swift */,
+				D100000000000213 /* WalletTransactionDetailLookup.swift */,
 			);
 			path = Transactions;
 			sourceTree = "<group>";
@@ -890,6 +896,7 @@
 				D200000000000105 /* WalletManager+CashuPaymentRequests.swift in Sources */,
 				D200000000000106 /* WalletManager+Tokens.swift in Sources */,
 				D200000000000107 /* WalletManager+MintQuoteSync.swift in Sources */,
+				D20000000000010B /* MintQuoteCheckBackoff.swift in Sources */,
 				D200000000000108 /* WalletManager+Backup.swift in Sources */,
 				D200000000000109 /* WalletErrors.swift in Sources */,
 				D200000000000201 /* PaymentMethodKind.swift in Sources */,
@@ -900,6 +907,7 @@
 				D200000000000206 /* QuoteModels.swift in Sources */,
 				D200000000000207 /* QuoteStates.swift in Sources */,
 				D200000000000208 /* WalletTransaction.swift in Sources */,
+				D200000000000213 /* WalletTransactionDetailLookup.swift in Sources */,
 				D200000000000209 /* TokenTransferModels.swift in Sources */,
 				D200000000000210 /* RestoreMintResult.swift in Sources */,
 				D200000000000211 /* TokenInfo.swift in Sources */,

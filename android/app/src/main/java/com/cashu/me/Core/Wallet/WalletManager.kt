@@ -494,13 +494,13 @@ class WalletManager(
     /**
      * Silent single-quote check + mint if paid. Used by Receive (per-quote
      * poll) and transaction detail open — must not flip the global loading
-     * flag (passive UX). Pull-to-refresh / full [syncPendingMintQuotes] stay
-     * the bulk path.
+     * flag (passive UX). Forced past unpaid backoff (brief debounce only).
      */
     suspend fun refreshPendingMintQuote(quoteId: String): Boolean {
         val minted = mintQuoteSyncService.syncPendingMintQuote(
             quoteId,
             allowPendingOnchainMintAttempt = true,
+            force = true,
         )
         if (minted) refreshBalance()
         loadTransactions()
@@ -511,25 +511,27 @@ class WalletManager(
      * Cooldown-gated sync for passive triggers (app start, resume, History
      * open, the foreground poll). Skips when a sync ran within
      * [MINT_QUOTE_SYNC_COOLDOWN_MS]. Pull-to-refresh calls
-     * [syncPendingMintQuotes] directly to bypass the cooldown (explicit user
-     * intent). iOS `syncPendingMintQuotesIfStale` parity.
+     * [syncPendingMintQuotes] with `force = true` (explicit user intent).
+     * iOS `syncPendingMintQuotesIfStale` parity.
      */
     suspend fun syncPendingMintQuotesIfStale() {
         val last = lastMintQuoteSyncAtMs.get()
         if (last != 0L && System.currentTimeMillis() - last < MINT_QUOTE_SYNC_COOLDOWN_MS) return
-        syncPendingMintQuotes()
+        syncPendingMintQuotes(force = false)
     }
 
     /**
-     * Re-check every unissued mint quote against its mint and mint the paid
-     * ones. Silent by design (iOS parity): runs on passive triggers and the
-     * foreground poll, so it must never flip the global loading flag or nag
-     * with operation errors — failures are logged, the next trigger retries.
+     * Re-check unissued mint quotes against their mints and mint the paid ones.
+     * Silent by design (iOS parity): must never flip the global loading flag.
+     *
+     * @param force when false (poll / startup / History open), per-quote
+     *   exponential backoff applies and at most
+     *   [MintQuoteCheckBackoff.MAX_PASSIVE_CHECKS_PER_PASS] quotes are checked
+     *   per pass. when true (pull-to-refresh), every quote is eligible subject
+     *   only to a short per-quote debounce.
      */
-    suspend fun syncPendingMintQuotes(): Int {
-        // Coarse in-flight guard: collapse overlapping triggers (e.g. the
-        // foreground poll firing while a pull-to-refresh sync is running) into
-        // one pass so the full per-quote loop never runs twice concurrently.
+    suspend fun syncPendingMintQuotes(force: Boolean = false): Int {
+        // Coarse in-flight guard: collapse overlapping triggers into one pass.
         if (!isSyncingMintQuotes.compareAndSet(false, true)) return 0
         lastMintQuoteSyncAtMs.set(System.currentTimeMillis())
         try {
@@ -541,12 +543,30 @@ class WalletManager(
                 AppLogger.wallet.error("Failed to list unissued mint quotes", error)
                 emptyList()
             }
+            val now = System.currentTimeMillis()
+            val ordered = pendingQuotes
+                .filter { quote ->
+                    MintQuoteCheckBackoff.shouldCheck(
+                        mintQuoteSyncService.throttleEntry(quote.id),
+                        now,
+                        force,
+                    )
+                }
+                .sortedBy { quote ->
+                    mintQuoteSyncService.throttleEntry(quote.id)?.lastCheckedAtMs ?: 0L
+                }
+            val toCheck = if (force) {
+                ordered
+            } else {
+                ordered.take(MintQuoteCheckBackoff.MAX_PASSIVE_CHECKS_PER_PASS)
+            }
             var mintedCount = 0
-            pendingQuotes.forEach { quote ->
+            toCheck.forEach { quote ->
                 if (
                     mintQuoteSyncService.syncPendingMintQuote(
                         quote.id,
                         allowPendingOnchainMintAttempt = false,
+                        force = force,
                     )
                 ) {
                     mintedCount += 1
@@ -1218,11 +1238,11 @@ class WalletManager(
         // Minimum gap between passive mint-quote sync passes. Equal to the
         // foreground poll interval so the poll drives one pass per interval
         // (iOS `mintQuoteSyncCooldown` parity).
-        const val MINT_QUOTE_SYNC_COOLDOWN_MS = 30_000L
+        const val MINT_QUOTE_SYNC_COOLDOWN_MS = 5_000L
 
         // How often the foreground poll re-checks pending quotes while the
         // app is active (iOS `pendingQuotePollInterval` parity).
-        const val PENDING_QUOTE_POLL_INTERVAL_MS = 30_000L
+        const val PENDING_QUOTE_POLL_INTERVAL_MS = 5_000L
     }
 }
 
