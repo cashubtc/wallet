@@ -84,17 +84,25 @@ class TransactionDisplayTest {
     }
 
     @Test
-    fun bitcoinAddressRemainsQrAndCopyableAfterReceiving() {
-        val received = transaction(
+    fun confirmedOnchainReceiveRetiresQrAndKeepsAddressInDetails() {
+        val pending = transaction(
             kind = TransactionKind.Onchain,
             type = TransactionType.Incoming,
             invoice = "bc1qreceived",
+        ).copy(status = TransactionStatus.Pending)
+        assertTrue(TransactionDisplay.showsQr(pending))
+        assertEquals("bc1qreceived", TransactionDisplay.copyableContent(pending))
+        assertEquals("Bitcoin address", TransactionDisplay.qrLabel(pending))
+
+        val received = pending.copy(
+            status = TransactionStatus.Completed,
             preimage = "txid",
         )
-
-        assertTrue(TransactionDisplay.showsQr(received))
-        assertEquals("bc1qreceived", TransactionDisplay.copyableContent(received))
-        assertEquals("Bitcoin address", TransactionDisplay.qrLabel(received))
+        assertTrue(!TransactionDisplay.showsQr(received))
+        assertEquals(null, TransactionDisplay.copyableContent(received))
+        val fields = TransactionDisplay.detailFields(received)
+        assertTrue(fields.any { it.label == "Address" && it.copyValue == "bc1qreceived" })
+        assertTrue(fields.any { it.label == "Transaction ID" && it.copyValue == "txid" })
     }
 
     @Test
