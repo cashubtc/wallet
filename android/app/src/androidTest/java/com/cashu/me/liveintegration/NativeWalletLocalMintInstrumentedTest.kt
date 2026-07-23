@@ -97,7 +97,7 @@ class NativeWalletLocalMintInstrumentedTest {
                 amountSats = null,
                 preferredMintURL = nutshellMintUrl,
             )
-            val melt = payer.gateway.meltTokens(meltQuote.id, nutshellMintUrl)
+            val melt = payer.gateway.meltTokens(meltQuote.id, nutshellMintUrl).result
             assertEquals(PaymentMethodKind.Bolt11, melt.paymentMethod)
             assertTrue(melt.amount > 0)
             assertTrue(payer.gateway.totalBalance(nutshellMintUrl) < 17L)

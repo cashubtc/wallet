@@ -113,7 +113,11 @@ fun HistoryScreen(
     val keyboardController = LocalSoftwareKeyboardController.current
 
     LaunchedEffect(Unit) {
+        // Show the current ledger immediately, then quietly re-check pending
+        // mint quotes (throttled) so a paid BOLT12 offer lands in history just
+        // by opening the tab — no pull-to-refresh (iOS HistoryView parity).
         walletManager.loadTransactions()
+        walletManager.syncPendingMintQuotesIfStale()
     }
 
     // Unified, filtered, searched timeline merging transactions + Cashu Requests.
@@ -203,9 +207,11 @@ fun HistoryScreen(
                 scope.launch {
                     refreshing = true
                     // Manual re-check lives here (iOS parity): resume unissued
-                    // mint quotes, then re-verify pending sent tokens.
+                    // mint quotes and pending (NUT-05) melts, then re-verify
+                    // pending sent tokens.
                     runCatching {
-                        walletManager.syncPendingMintQuotes()
+                        walletManager.syncPendingMintQuotes(force = true)
+                        walletManager.syncPendingMeltQuotes()
                         walletManager.loadTransactions()
                         if (walletState.pendingTokens.isNotEmpty()) {
                             walletManager.checkAllPendingTokens()

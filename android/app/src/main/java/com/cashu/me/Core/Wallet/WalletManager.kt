@@ -3,18 +3,26 @@ package com.cashu.me.Core
 import java.net.URL
 import java.text.Normalizer
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import org.cashudevkit.PendingMelt
+import org.cashudevkit.QuoteState as CdkQuoteState
 import com.cashu.me.Core.CDK.CdkWalletGateway
 import com.cashu.me.Core.Platform.WalletDatabasePathManager
 import com.cashu.me.Core.Protocols.SecureStorage
@@ -22,6 +30,7 @@ import com.cashu.me.Core.Protocols.StorageKeys
 import com.cashu.me.Core.Protocols.WalletServiceProtocol
 import com.cashu.me.Models.MeltPaymentResult
 import com.cashu.me.Models.MeltQuoteInfo
+import com.cashu.me.Models.MeltQuoteState
 import com.cashu.me.Models.MintInfo
 import com.cashu.me.Models.MintQuoteInfo
 import com.cashu.me.Models.PaymentMethodKind
@@ -58,6 +67,29 @@ class WalletManager(
     private val transactionLoader = WalletTransactionLoader(walletStore, gateway)
     private val npcQuotesInFlight = mutableSetOf<String>()
     private var processedNPCQuotes = walletStore.loadProcessedNPCQuotes().toMutableSet()
+
+    // Throttle state for passive mint-quote syncs (app start, resume, History
+    // open, the foreground poll). Collapses overlapping triggers and
+    // rate-limits how often we re-poll the mint so reusable BOLT12 offers
+    // don't hammer it (iOS WalletManager+MintQuoteSync parity). Pull-to-refresh
+    // calls [syncPendingMintQuotes] directly to bypass the cooldown.
+    // Atomic: startup maintenance runs on Dispatchers.IO while the foreground
+    // poll runs on the main-scoped job.
+    private val isSyncingMintQuotes = AtomicBoolean(false)
+    // 0 = never synced. Written/read across the IO + Main poll jobs.
+    private val lastMintQuoteSyncAtMs = AtomicLong(0L)
+
+    // In-process waiters for melts a mint accepted asynchronously (NUT-05),
+    // keyed by quote ID. These die with the process; `walletStore`'s
+    // pending-melt-quote record plus [syncPendingMeltQuotes] are the relaunch
+    // backstop (iOS WalletManager+PendingMelts parity).
+    private val pendingMeltWaiters = mutableMapOf<String, Job>()
+
+    // Foreground quote poll (started/stopped on ProcessLifecycle ON_START/ON_STOP
+    // so M3 ModalBottomSheet dialog windows don't kill it). Re-checks pending
+    // mint + melt quotes while the app is active so a payment lands without
+    // pull-to-refresh (iOS parity).
+    private var pendingQuotePollJob: Job? = null
 
     override suspend fun initialize() {
         initializationMutex.withLock {
@@ -117,9 +149,35 @@ class WalletManager(
             if (hasStoredWallet) {
                 runCatching { refreshBalance() }
                     .onFailure { AppLogger.wallet.error("Deferred balance refresh failed", it) }
+
+                // iOS startup maintenance parity: complete/compensate wallet
+                // sagas interrupted by a process death (e.g. mid-melt), then
+                // settle any melt/mint quotes that moved while the app was gone.
+                mutableState.value.mints.forEach { mint ->
+                    runCatching { gateway.recoverIncompleteSagas(mint.url) }
+                        .onSuccess { report ->
+                            if (report.hasActivity) {
+                                AppLogger.wallet.info(
+                                    "Recovered wallet sagas for mint ${mint.url}: " +
+                                        "recovered=${report.recovered} compensated=${report.compensated} " +
+                                        "skipped=${report.skipped} failed=${report.failed}",
+                                )
+                            }
+                        }
+                        .onFailure { AppLogger.wallet.error("Wallet saga recovery failed for mint ${mint.url}", it) }
+                }
+                runCatching { syncPendingMeltQuotes() }
+                    .onFailure { AppLogger.wallet.error("Startup pending melt sync failed", it) }
+                runCatching { syncPendingMintQuotes() }
+                    .onFailure { AppLogger.wallet.error("Startup pending mint quote sync failed", it) }
             }
             runCatching { nwcManager.startIfEnabled() }
                 .onFailure { AppLogger.wallet.error("Deferred NWC startup failed", it) }
+
+            // Arm quote detection from the runtime-ready path as well: Process
+            // lifecycle ON_START may have already fired before isRuntimeReady
+            // flipped true. Guard-protected — no-op if the poll is running.
+            onAppEnteredForeground()
         }
     }
 
@@ -433,27 +491,82 @@ class WalletManager(
             }
         }
 
-    suspend fun refreshPendingMintQuote(quoteId: String): Boolean =
-        withLoadingResult {
-            val minted = mintQuoteSyncService.syncPendingMintQuote(
-                quoteId,
-                allowPendingOnchainMintAttempt = true,
-            )
-            if (minted) refreshBalance()
-            loadTransactions()
-            minted
-        }
+    /**
+     * Silent single-quote check + mint if paid. Used by Receive (per-quote
+     * poll) and transaction detail open — must not flip the global loading
+     * flag (passive UX). Forced past unpaid backoff (brief debounce only).
+     */
+    suspend fun refreshPendingMintQuote(quoteId: String): Boolean {
+        val minted = mintQuoteSyncService.syncPendingMintQuote(
+            quoteId,
+            allowPendingOnchainMintAttempt = true,
+            force = true,
+        )
+        if (minted) refreshBalance()
+        loadTransactions()
+        return minted
+    }
 
-    suspend fun syncPendingMintQuotes(): Int =
-        withLoadingResult {
-            val pendingQuotes = runCatching { gateway.listUnissuedMintQuotes() }
-                .getOrDefault(emptyList())
+    /**
+     * Cooldown-gated sync for passive triggers (app start, resume, History
+     * open, the foreground poll). Skips when a sync ran within
+     * [MINT_QUOTE_SYNC_COOLDOWN_MS]. Pull-to-refresh calls
+     * [syncPendingMintQuotes] with `force = true` (explicit user intent).
+     * iOS `syncPendingMintQuotesIfStale` parity.
+     */
+    suspend fun syncPendingMintQuotesIfStale() {
+        val last = lastMintQuoteSyncAtMs.get()
+        if (last != 0L && System.currentTimeMillis() - last < MINT_QUOTE_SYNC_COOLDOWN_MS) return
+        syncPendingMintQuotes(force = false)
+    }
+
+    /**
+     * Re-check unissued mint quotes against their mints and mint the paid ones.
+     * Silent by design (iOS parity): must never flip the global loading flag.
+     *
+     * @param force when false (poll / startup / History open), per-quote
+     *   exponential backoff applies and at most
+     *   [MintQuoteCheckBackoff.MAX_PASSIVE_CHECKS_PER_PASS] quotes are checked
+     *   per pass. when true (pull-to-refresh), every quote is eligible subject
+     *   only to a short per-quote debounce.
+     */
+    suspend fun syncPendingMintQuotes(force: Boolean = false): Int {
+        // Coarse in-flight guard: collapse overlapping triggers into one pass.
+        if (!isSyncingMintQuotes.compareAndSet(false, true)) return 0
+        lastMintQuoteSyncAtMs.set(System.currentTimeMillis())
+        try {
+            val pendingQuotes = try {
+                gateway.listUnissuedMintQuotes()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                AppLogger.wallet.error("Failed to list unissued mint quotes", error)
+                emptyList()
+            }
+            val now = System.currentTimeMillis()
+            val ordered = pendingQuotes
+                .filter { quote ->
+                    MintQuoteCheckBackoff.shouldCheck(
+                        mintQuoteSyncService.throttleEntry(quote.id),
+                        now,
+                        force,
+                    )
+                }
+                .sortedBy { quote ->
+                    mintQuoteSyncService.throttleEntry(quote.id)?.lastCheckedAtMs ?: 0L
+                }
+            val toCheck = if (force) {
+                ordered
+            } else {
+                ordered.take(MintQuoteCheckBackoff.MAX_PASSIVE_CHECKS_PER_PASS)
+            }
             var mintedCount = 0
-            pendingQuotes.forEach { quote ->
+            toCheck.forEach { quote ->
                 if (
                     mintQuoteSyncService.syncPendingMintQuote(
                         quote.id,
                         allowPendingOnchainMintAttempt = false,
+                        force = force,
                     )
                 ) {
                     mintedCount += 1
@@ -461,8 +574,11 @@ class WalletManager(
             }
             if (mintedCount > 0) refreshBalance()
             loadTransactions()
-            mintedCount
+            return mintedCount
+        } finally {
+            isSyncingMintQuotes.set(false)
         }
+    }
 
     override fun isNPCQuoteProcessed(quoteId: String): Boolean =
         quoteId in processedNPCQuotes || quoteId in walletStore.loadProcessedNPCQuotes()
@@ -498,12 +614,185 @@ class WalletManager(
 
     override suspend fun meltTokens(quoteId: String, mintUrl: String?): MeltPaymentResult =
         withLoadingResult {
-            val result = gateway.meltTokens(quoteId, mintUrl)
-            transactionLoader.saveMeltPaymentMetadata(quoteId, result)
+            val confirmation = gateway.meltTokens(quoteId, mintUrl)
+            val result = confirmation.result
+            val pendingMelt = confirmation.pendingMelt
+            if (pendingMelt != null) {
+                // Mint accepted the payment for asynchronous NUT-05 settlement
+                // (the usual case for on-chain melts). Remember the quote so a
+                // relaunch can pick it back up, then wait for it in the
+                // background. Bookkeeping (preimage/fee) lands when it settles.
+                rememberPendingMeltQuote(quoteId, result.mintUrl)
+                watchPendingMelt(pendingMelt, quoteId)
+            } else {
+                transactionLoader.saveMeltPaymentMetadata(quoteId, result)
+            }
             refreshBalance()
             loadTransactions()
             result
         }
+
+    // MARK: - Asynchronous melt settlement (NUT-05, iOS WalletManager+PendingMelts parity)
+
+    /**
+     * Wait in the background for an async-accepted melt and finish the
+     * bookkeeping when it settles. One waiter per quote; the waiter dies with
+     * the process and [syncPendingMeltQuotes] takes over after relaunch.
+     */
+    private fun watchPendingMelt(pendingMelt: PendingMelt, quoteId: String) {
+        if (pendingMeltWaiters[quoteId]?.isActive == true) return
+        pendingMeltWaiters[quoteId] = scope.launch {
+            try {
+                val finalized = withContext(Dispatchers.IO) { pendingMelt.wait() }
+                if (finalized.state == CdkQuoteState.PAID) {
+                    recordFinalizedMelt(quoteId, finalized.preimage, finalized.feePaid.value.toLong())
+                }
+                // A non-paid terminal state means the payment failed and the
+                // saga already compensated (proofs returned).
+                forgetPendingMeltQuote(quoteId)
+                refreshBalance()
+                loadTransactions()
+            } catch (error: Throwable) {
+                // Leave the quote tracked — syncPendingMeltQuotes retries later.
+                AppLogger.wallet.error("Pending melt wait failed for quote $quoteId", error)
+            } finally {
+                pendingMeltWaiters.remove(quoteId)
+            }
+        }
+    }
+
+    /**
+     * Poll mints for melts still recorded as pending — e.g. after a relaunch
+     * killed the in-process waiter. Cheap no-op when nothing is tracked.
+     * `checkMeltQuoteStatus` completes the underlying wallet saga (releasing
+     * change / compensating proofs) when the mint reports a terminal state.
+     */
+    suspend fun syncPendingMeltQuotes() {
+        val tracked = walletStore.loadPendingMeltQuotes()
+        if (tracked.isEmpty() || !mutableState.value.isRuntimeReady) return
+
+        var settledAny = false
+        for ((quoteId, mintUrl) in tracked) {
+            // An in-process waiter owns this quote's completion.
+            if (pendingMeltWaiters[quoteId]?.isActive == true) continue
+            try {
+                val quote = gateway.checkMeltQuoteStatus(quoteId, mintUrl)
+                when (quote.state) {
+                    MeltQuoteState.Paid -> {
+                        recordFinalizedMelt(quoteId, quote.paymentProof, null)
+                        forgetPendingMeltQuote(quoteId)
+                        settledAny = true
+                    }
+                    MeltQuoteState.Unpaid, MeltQuoteState.Failed -> {
+                        // Once a mint has accepted async processing, a fall back
+                        // to unpaid/failed is terminal: the payment failed and
+                        // the saga compensated (proofs returned).
+                        forgetPendingMeltQuote(quoteId)
+                        settledAny = true
+                    }
+                    MeltQuoteState.Pending, MeltQuoteState.Unknown -> Unit
+                }
+            } catch (error: Throwable) {
+                AppLogger.wallet.error("Pending melt status check failed for quote $quoteId", error)
+            }
+        }
+
+        if (settledAny) {
+            refreshBalance()
+            loadTransactions()
+        }
+    }
+
+    // Persist the durable facts of a settled melt (payment proof, actual fee).
+    private fun recordFinalizedMelt(quoteId: String, preimage: String?, feePaid: Long?) {
+        preimage?.let {
+            walletStore.savePaymentPreimages(walletStore.loadPaymentPreimages() + (quoteId to it))
+        }
+        feePaid?.let {
+            walletStore.saveMeltQuoteFees(walletStore.loadMeltQuoteFees() + (quoteId to it))
+        }
+    }
+
+    private fun rememberPendingMeltQuote(quoteId: String, mintUrl: String) {
+        walletStore.savePendingMeltQuotes(walletStore.loadPendingMeltQuotes() + (quoteId to mintUrl))
+    }
+
+    private fun forgetPendingMeltQuote(quoteId: String) {
+        val tracked = walletStore.loadPendingMeltQuotes()
+        if (quoteId !in tracked) return
+        walletStore.savePendingMeltQuotes(tracked - quoteId)
+    }
+
+    // MARK: - Foreground quote polling
+
+    /**
+     * iOS `scenePhase == .active` parity: one-shot stale mint/melt sync, then
+     * arm the repeating poll. Safe to call repeatedly (poll start is
+     * idempotent; mint sync is cooldown-gated).
+     */
+    fun onAppEnteredForeground() {
+        startPendingQuoteForegroundPolling()
+        if (!mutableState.value.isRuntimeReady) return
+        scope.launch {
+            try {
+                syncPendingMintQuotesIfStale()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                AppLogger.wallet.error("Foreground mint quote sync failed", error)
+            }
+            try {
+                syncPendingMeltQuotes()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                AppLogger.wallet.error("Foreground melt quote sync failed", error)
+            }
+        }
+    }
+
+    /**
+     * While the app is active, re-check pending quotes every
+     * [PENDING_QUOTE_POLL_INTERVAL_MS] so a payment lands on its own — e.g. a
+     * BOLT12 offer paid from another wallet while Home sits open — instead of
+     * waiting for pull-to-refresh. The mint sync stays cooldown-gated (the
+     * poll interval equals [MINT_QUOTE_SYNC_COOLDOWN_MS], so this never
+     * exceeds one pass per interval); the melt sync is a cheap no-op unless a
+     * NUT-05 async melt is tracked and its in-process waiter died.
+     * Started/stopped from `CashuApp` via [ProcessLifecycleOwner] ON_START /
+     * ON_STOP (not the Activity — ModalBottomSheet dialogs must not stop it).
+     */
+    fun startPendingQuoteForegroundPolling() {
+        if (pendingQuotePollJob?.isActive == true) return
+        pendingQuotePollJob = scope.launch {
+            while (isActive) {
+                // Delay first: [onAppEnteredForeground] already did the immediate
+                // pass (iOS poll-loop + scenePhase one-shot shape).
+                delay(PENDING_QUOTE_POLL_INTERVAL_MS)
+                if (!isActive) break
+                if (!mutableState.value.isRuntimeReady) continue
+                try {
+                    syncPendingMintQuotesIfStale()
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Throwable) {
+                    AppLogger.wallet.error("Foreground mint quote sync failed", error)
+                }
+                try {
+                    syncPendingMeltQuotes()
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Throwable) {
+                    AppLogger.wallet.error("Foreground melt quote sync failed", error)
+                }
+            }
+        }
+    }
+
+    fun stopPendingQuoteForegroundPolling() {
+        pendingQuotePollJob?.cancel()
+        pendingQuotePollJob = null
+    }
 
     override suspend fun sendTokens(amount: Long, memo: String?, p2pkPubkey: String?, mintUrl: String?, unit: String): SendTokenResult {
         val selectedMint = mintUrl ?: mutableState.value.activeMint?.url ?: throw IllegalStateException("No active mint.")
@@ -943,6 +1232,17 @@ class WalletManager(
 
     fun reopenOnboarding() {
         update { copy(needsOnboarding = true, canExitOnboarding = true) }
+    }
+
+    private companion object {
+        // Minimum gap between passive mint-quote sync passes. Equal to the
+        // foreground poll interval so the poll drives one pass per interval
+        // (iOS `mintQuoteSyncCooldown` parity).
+        const val MINT_QUOTE_SYNC_COOLDOWN_MS = 5_000L
+
+        // How often the foreground poll re-checks pending quotes while the
+        // app is active (iOS `pendingQuotePollInterval` parity).
+        const val PENDING_QUOTE_POLL_INTERVAL_MS = 5_000L
     }
 }
 

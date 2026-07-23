@@ -3,11 +3,27 @@ import SwiftUI
 struct TransactionDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var walletManager: WalletManager
-    let transaction: WalletTransaction
+    /// Snapshot at open; [transaction] prefers the live wallet row so a
+    /// successful open-check can flip Pending → Completed without dismissing.
+    private let seed: WalletTransaction
     @ObservedObject var settings = SettingsManager.shared
 
     @State private var copyButtonText = "Copy"
     @State private var showShareSheet = false
+
+    init(transaction: WalletTransaction) {
+        self.seed = transaction
+    }
+
+    /// Live row from the wallet when present; falls back to the open-time seed.
+    /// After a mint, CDK replaces the pending quote-id row with a new transaction
+    /// id that still carries `quoteId` — follow that so status flips in place.
+    private var transaction: WalletTransaction {
+        walletManager.transactions.resolveForDetail(
+            openId: seed.id,
+            openQuoteId: seed.quoteId ?? seed.id
+        ) ?? seed
+    }
 
     /// Returns the content to display as a QR code.
     private var qrContent: String? {
@@ -173,6 +189,13 @@ struct TransactionDetailView: View {
                 } else if let invoice = transaction.invoice {
                     ShareSheet(items: [invoice])
                 }
+            }
+            // Single-quote check on open (not the full pending list). Re-checks
+            // this mint quote against the mint and mints if already paid —
+            // Android TransactionDetailScreen parity.
+            .task(id: seed.id) {
+                guard let quoteId = seed.mintQuoteIdForStatusRefresh else { return }
+                _ = await walletManager.refreshPendingMintQuote(quoteId: quoteId)
             }
         }
     }
