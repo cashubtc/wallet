@@ -30,6 +30,11 @@ struct ReceiveLightningView: View {
     @State private var onchainObservation: OnchainPaymentObservation?
     @State private var quoteCreatedAt: Date?
     @State private var monitoredQuoteId: String?
+    /// On-chain quotes abandoned via "Use new address" — a payment may already
+    /// be racing toward the old address, so keep checking them for the life of
+    /// the sheet (Android parity). Mint-status checks only; no explorer polling.
+    @State private var abandonedOnchainQuoteIds: [String] = []
+    @State private var abandonedQuoteTask: Task<Void, Never>?
 
     // Multi-unit mint: the user's explicit unit pick for this receive (nil = the
     // mint's default mintable unit), plus the picker flag.
@@ -78,23 +83,37 @@ struct ReceiveLightningView: View {
 
                 if let quote = mintQuote, !isPaid {
                     ToolbarItem(placement: .topBarTrailing) {
-                        if quote.paymentMethod == .bolt12 {
+                        if quote.paymentMethod == .bolt12 || quote.paymentMethod == .onchain {
                             // Overflow menu keeps Share + New quieter than a
                             // dedicated share glyph + second bottom CTA
-                            // (Android ⋮ parity).
+                            // (Android ⋮ parity). On-chain mirrors BOLT12's
+                            // "new artifact" item with a fresh address.
                             Menu {
                                 ShareLink(item: quote.request) {
                                     Label("Share", systemImage: "square.and.arrow.up")
                                 }
-                                Button {
-                                    createNewAmountlessOffer(unit: quote.unit)
-                                } label: {
-                                    Label(
-                                        isCreatingRequest ? "Creating…" : "New reusable invoice",
-                                        systemImage: "arrow.2.squarepath"
-                                    )
+                                if quote.paymentMethod == .bolt12 {
+                                    Button {
+                                        createNewAmountlessOffer(unit: quote.unit)
+                                    } label: {
+                                        Label(
+                                            isCreatingRequest ? "Creating…" : "New reusable invoice",
+                                            systemImage: "arrow.2.squarepath"
+                                        )
+                                    }
+                                    .disabled(isCreatingRequest)
+                                } else {
+                                    Button {
+                                        trackAbandonedOnchainQuote()
+                                        createRequest(method: .onchain, amountless: false, forceNew: true)
+                                    } label: {
+                                        Label(
+                                            isCreatingRequest ? "Creating…" : "New address",
+                                            systemImage: "arrow.clockwise"
+                                        )
+                                    }
+                                    .disabled(isCreatingRequest)
                                 }
-                                .disabled(isCreatingRequest)
                             } label: {
                                 Image(systemName: "ellipsis")
                                     .toolbarIconTapTarget()
@@ -150,7 +169,6 @@ struct ReceiveLightningView: View {
             .sheet(isPresented: $showMintPicker) {
                 MintSelectorSheet(selectedMint: $walletManager.activeMint)
                     .environmentObject(walletManager)
-                    .presentationDetents([.medium])
             }
             .sheet(isPresented: $showMethodPicker) {
                 MethodPickerSheet(
@@ -158,7 +176,6 @@ struct ReceiveLightningView: View {
                     options: availableMethodOptions,
                     onSelect: { applyMethodOption($0) }
                 )
-                .presentationDetents([.medium])
             }
             .sheet(isPresented: $showUnitPicker) {
                 UnitSelectorSheet(
@@ -166,7 +183,6 @@ struct ReceiveLightningView: View {
                     selectedUnit: effectiveUnit,
                     onSelect: selectReceiveUnit
                 )
-                .presentationDetents([.medium])
             }
             .onAppear {
                 syncSelectedMethodWithActiveMint()
@@ -196,6 +212,8 @@ struct ReceiveLightningView: View {
                 quoteStatusTask = nil
                 expiryTimer = nil
                 monitoredQuoteId = nil
+                abandonedQuoteTask?.cancel()
+                abandonedQuoteTask = nil
             }
         }
         .accessibilityIdentifier("receive-lightning-screen")
@@ -654,23 +672,27 @@ struct ReceiveLightningView: View {
                         .foregroundStyle(expiryTimeRemaining < 60 ? Color.red : Color.primary.opacity(0.5))
                     }
 
-                    if let mint = walletManager.activeMint {
-                        detailRow(
-                            icon: "bitcoinsign.bank.building",
-                            label: "Mint",
-                            value: extractMintHost(mint.url)
-                        )
+                    if walletManager.activeMint != nil || blockExplorerURL(for: quote) != nil {
+                        VStack(spacing: 0) {
+                            if let mint = walletManager.activeMint {
+                                detailRow(
+                                    icon: "bitcoinsign.bank.building",
+                                    label: "Mint",
+                                    value: extractMintHost(mint.url)
+                                )
+                            }
+                            if let explorerURL = blockExplorerURL(for: quote) {
+                                if walletManager.activeMint != nil {
+                                    canvasDivider
+                                }
+                                explorerLinkRow(label: blockExplorerLabel(for: quote), url: explorerURL)
+                            }
+                        }
                         .padding(.top, 8)
                         .padding(.horizontal, 4)
                     }
                 }
                 .padding(.horizontal)
-            }
-
-            if let explorerURL = blockExplorerURL(for: quote) {
-                Link(blockExplorerLabel(for: quote), destination: explorerURL)
-                    .font(.subheadline.weight(.medium))
-                    .padding(.vertical, 12)
             }
 
             Button(action: { copyRequest(quote.request) }) {
@@ -719,17 +741,11 @@ struct ReceiveLightningView: View {
                         .accessibilityLabel("Request amount: \(amount) \(quote.unit)")
                 }
             } else {
+                // "New address" lives in the toolbar overflow menu (BOLT12
+                // parity); this slot only shows progress while it generates.
                 if isCreatingRequest {
                     ProgressView()
                         .tint(.secondary)
-                } else if quote.paymentMethod == .onchain {
-                    Button { createRequest(method: .onchain, amountless: false, forceNew: true) } label: {
-                        Label("Use new address", systemImage: "arrow.clockwise")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                    .accessibilityLabel("Use new address")
-                    .accessibilityHint("Generates a fresh deposit address and replaces the current QR code")
                 }
             }
         }
@@ -778,6 +794,29 @@ struct ReceiveLightningView: View {
         }
         .buttonStyle(.plain)
         .accessibilityHint("Edits the \(label.lowercased())")
+    }
+
+    /// Same shape as `detailRow` but opens an external URL, with the trailing
+    /// arrow-up-right glyph settings uses for outbound links — used for the
+    /// on-chain block explorer row.
+    private func explorerLinkRow(label: String, url: URL) -> some View {
+        Link(destination: url) {
+            HStack {
+                Label(label, systemImage: "safari")
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Image(systemName: "arrow.up.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .font(.subheadline)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 14)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .simultaneousGesture(TapGesture().onEnded { HapticFeedback.selection() })
+        .accessibilityHint("Opens the block explorer in your browser")
     }
 
     private var canvasDivider: some View {
@@ -839,11 +878,11 @@ struct ReceiveLightningView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "clock")
                         .symbolEffect(.pulse, options: .repeating, isActive: !reduceMotion)
+                        .foregroundStyle(.orange)
                         .accessibilityHidden(true)
                     Text(pendingStatusText)
                 }
                 .font(.subheadline)
-                .foregroundStyle(.orange)
                 .transition(.opacity)
             }
         }
@@ -1183,6 +1222,77 @@ struct ReceiveLightningView: View {
                 expiryTimer?.invalidate()
                 quoteStatusTask?.cancel()
             }
+        }
+    }
+
+    /// "Use new address" re-keys every monitor to the replacement quote
+    /// (`createRequest` resets `monitoredQuoteId` and cancels
+    /// `quoteStatusTask`); this keeps the outgoing address on a 30s
+    /// mint-status check so a payment already in flight still lands with the
+    /// full success screen. Multiple presses accrue; ids are deduped.
+    private func trackAbandonedOnchainQuote() {
+        guard let quote = mintQuote,
+              quote.paymentMethod == .onchain,
+              quote.state != .issued,
+              !quote.isExpired,
+              !abandonedOnchainQuoteIds.contains(quote.id) else { return }
+        abandonedOnchainQuoteIds.append(quote.id)
+        startAbandonedQuoteWatcher()
+    }
+
+    private func startAbandonedQuoteWatcher() {
+        guard abandonedQuoteTask == nil else { return }
+        abandonedQuoteTask = Task { @MainActor in
+            while !Task.isCancelled && !isPaid && !abandonedOnchainQuoteIds.isEmpty {
+                await checkAbandonedOnchainQuotes()
+                try? await Task.sleep(nanoseconds: 30_000_000_000)
+            }
+            abandonedQuoteTask = nil
+        }
+    }
+
+    @MainActor
+    private func checkAbandonedOnchainQuotes() async {
+        for quoteId in abandonedOnchainQuoteIds {
+            guard !isPaid, !Task.isCancelled else { return }
+            guard let info = try? await walletManager.checkMintQuote(quoteId: quoteId) else { continue }
+            // Drop quotes that expired before the mint saw any deposit; a
+            // funded-but-expired quote keeps being probed.
+            if info.isExpired, info.state == .pending, (info.amount ?? 0) == 0 {
+                abandonedOnchainQuoteIds.removeAll { $0 == quoteId }
+                continue
+            }
+            // On-chain quotes sit .pending until a mint attempt succeeds — the
+            // mint call is the probe (mintQuoteIfReady parity; not-yet-funded
+            // failures are expected and swallowed).
+            var mintedAmount: UInt64?
+            do {
+                mintedAmount = try await walletManager.mintTokens(quoteId: quoteId)
+            } catch {
+                guard isAlreadyIssuedMintError(error) else { continue }
+            }
+            abandonedOnchainQuoteIds.removeAll { $0 == quoteId }
+            // Stop the live quote's monitoring BEFORE swapping `mintQuote`, so
+            // the display view's onChange can't restart polling mid-swap; then
+            // reuse the standard success path.
+            quoteStatusTask?.cancel()
+            monitoredQuoteId = nil
+            expiryTimer?.invalidate()
+            let refreshed = (try? await walletManager.checkMintQuote(quoteId: quoteId)) ?? info
+            // `receiveSuccessRows` and the home toast need a non-nil amount;
+            // fall back to the freshly minted amount if the quote lacks one.
+            mintQuote = refreshed.amount != nil ? refreshed : MintQuoteInfo(
+                id: refreshed.id,
+                request: refreshed.request,
+                amount: mintedAmount,
+                paymentMethod: .onchain,
+                state: .issued,
+                expiry: refreshed.expiry,
+                createdAt: refreshed.createdAt,
+                unit: refreshed.unit
+            )
+            await completeReceivedQuote(mintInBackground: false)
+            return
         }
     }
 

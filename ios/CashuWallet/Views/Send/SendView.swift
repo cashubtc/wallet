@@ -135,7 +135,6 @@ struct SendView: View {
                     onSelect: selectSendMint
                 )
                     .environmentObject(walletManager)
-                    .presentationDetents([.medium])
             }
             .sheet(isPresented: $showUnitPicker) {
                 UnitSelectorSheet(
@@ -143,7 +142,6 @@ struct SendView: View {
                     selectedUnit: effectiveSendUnit,
                     onSelect: selectSendUnit
                 )
-                .presentationDetents([.medium])
             }
             .sheet(isPresented: $showShareSheet) {
                 if let token = generatedToken {
@@ -2136,7 +2134,6 @@ struct UnifiedSendView: View {
                 }
             )
             .environmentObject(walletManager)
-            .presentationDetents([.medium])
         case .cashuRequest:
             MintSelectorSheet(
                 selectedMint: $selectedMint,
@@ -2149,7 +2146,6 @@ struct UnifiedSendView: View {
                 }
             )
             .environmentObject(walletManager)
-            .presentationDetents([.medium])
         case nil:
             EmptyView()
         }
@@ -2914,7 +2910,6 @@ struct MeltView: View {
                     onSelect: selectMeltMint
                 )
                     .environmentObject(walletManager)
-                    .presentationDetents([.medium])
             }
             .onAppear {
                 syncMeltModeWithAvailableMints()
@@ -3696,45 +3691,62 @@ struct UnitSelectorSheet: View {
     let selectedUnit: String
     let onSelect: (String) -> Void
 
+    /// Measured height of the rows, driving a content-fit detent so the sheet
+    /// hugs its units instead of stretching to `.medium`. Mirrors `AddMintToPaySheet`.
+    @State private var rowsHeight: CGFloat = 0
+
+    /// Fixed sheet chrome around the measured rows: drag indicator + inline nav
+    /// bar + a little bottom breathing room.
+    private static let navChrome: CGFloat = 96
+
+    private var detentHeight: CGFloat {
+        let rows = rowsHeight > 0 ? rowsHeight : CGFloat(units.count) * 68
+        return rows + Self.navChrome
+    }
+
     var body: some View {
         NavigationStack {
-            List(units, id: \.self) { unit in
-                Button(action: { select(unit) }) {
-                    HStack(spacing: 12) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(unit.uppercased())
-                                .font(.body.weight(.medium))
-                            if let subtitle = unitSubtitle(unit) {
-                                Text(subtitle)
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
+            ScrollView {
+                VStack(spacing: 0) {
+                    ForEach(units, id: \.self) { unit in
+                        Button(action: { select(unit) }) {
+                            HStack(spacing: 12) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(unit.uppercased())
+                                        .font(.body.weight(.medium))
+                                    if let subtitle = unitSubtitle(unit) {
+                                        Text(subtitle)
+                                            .font(.subheadline)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+
+                                Spacer()
+
+                                if unit == selectedUnit {
+                                    Image(systemName: "checkmark")
+                                        .foregroundStyle(Color.accentColor)
+                                }
                             }
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 12)
+                            .contentShape(Rectangle())
                         }
-
-                        Spacer()
-
-                        if unit == selectedUnit {
-                            Image(systemName: "checkmark")
-                                .foregroundStyle(Color.accentColor)
-                        }
+                        .buttonStyle(.plain)
                     }
-                    .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
-                .listRowSeparator(.hidden)
+                .onGeometryChange(for: CGFloat.self) { proxy in
+                    proxy.size.height
+                } action: { newHeight in
+                    rowsHeight = newHeight
+                }
             }
-            .listStyle(.plain)
+            .scrollBounceBehavior(.basedOnSize)
             .navigationTitle("Select Unit")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button(action: { dismiss() }) {
-                        Image(systemName: "xmark")
-                    }
-                    .accessibilityLabel("Close")
-                }
-            }
         }
+        .presentationDetents([.height(detentHeight)])
+        .presentationDragIndicator(.visible)
     }
 
     private func select(_ unit: String) {
@@ -3759,6 +3771,28 @@ struct MintSelectorSheet: View {
     private let paymentMethod: PaymentMethodKind?
     private let minimumAmount: UInt64?
     private let onSelect: ((MintInfo) -> Void)?
+
+    /// Measured height of the mint rows, driving a content-fit detent so the
+    /// sheet hugs its mints instead of stretching to `.medium`. Mirrors
+    /// `AddMintToPaySheet`. Only applies to `mintListView` — the empty states
+    /// below use a fixed compact height instead, since they're static
+    /// messages, not a list to measure.
+    @State private var rowsHeight: CGFloat = 0
+
+    /// Fixed sheet chrome around the measured rows: drag indicator + inline nav
+    /// bar + a little bottom breathing room.
+    private static let navChrome: CGFloat = 96
+
+    /// Fixed height for the empty / no-compatible-mints messages.
+    private static let compactStateHeight: CGFloat = 320
+
+    private var detentHeight: CGFloat {
+        guard sourceMints.isEmpty == false, displayMints.isEmpty == false else {
+            return Self.compactStateHeight
+        }
+        let rows = rowsHeight > 0 ? rowsHeight : CGFloat(displayMints.count) * 68
+        return rows + Self.navChrome
+    }
 
     init(
         selectedMint: Binding<MintInfo?>,
@@ -3786,11 +3820,8 @@ struct MintSelectorSheet: View {
         }
         .navigationTitle("Select Mint")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                SheetCloseButton()
-            }
-        }
+        .presentationDetents([.height(detentHeight)])
+        .presentationDragIndicator(.visible)
     }
 
     private var emptyStateView: some View {
@@ -3843,41 +3874,53 @@ struct MintSelectorSheet: View {
     }
 
     private var mintListView: some View {
-        List(displayMints) { mint in
-            Button(action: { selectMint(mint) }) {
-                HStack(spacing: 12) {
-                    mintIcon(for: mint)
-                        .overlay(alignment: .bottomTrailing) {
+        ScrollView {
+            VStack(spacing: 0) {
+                ForEach(displayMints) { mint in
+                    Button(action: { selectMint(mint) }) {
+                        HStack(spacing: 12) {
+                            mintIcon(for: mint)
+                                .overlay(alignment: .bottomTrailing) {
+                                    if selectedMint?.id == mint.id {
+                                        Circle()
+                                            .fill(.green)
+                                            .frame(width: 12, height: 12)
+                                            .overlay(
+                                                Circle().stroke(Color(.systemBackground), lineWidth: 2)
+                                            )
+                                            .offset(x: 2, y: 2)
+                                    }
+                                }
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(mint.name)
+                                    .font(.body.weight(.medium))
+                                Text(mintSubtitle(for: mint))
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            Spacer()
+
                             if selectedMint?.id == mint.id {
-                                Circle()
-                                    .fill(.green)
-                                    .frame(width: 12, height: 12)
-                                    .overlay(
-                                        Circle().stroke(Color(.systemBackground), lineWidth: 2)
-                                    )
-                                    .offset(x: 2, y: 2)
+                                Image(systemName: "checkmark")
+                                    .foregroundStyle(Color.accentColor)
                             }
                         }
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(mint.name)
-                            .font(.body.weight(.medium))
-                        Text(mintSubtitle(for: mint))
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 12)
+                        .contentShape(Rectangle())
                     }
-
-                    Spacer()
-
-                    if selectedMint?.id == mint.id {
-                        Image(systemName: "checkmark")
-                            .foregroundStyle(Color.accentColor)
-                    }
+                    .buttonStyle(.plain)
                 }
             }
-            .listRowSeparator(.hidden)
+            .onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.size.height
+            } action: { newHeight in
+                rowsHeight = newHeight
+            }
         }
-        .listStyle(.plain)
+        .scrollBounceBehavior(.basedOnSize)
     }
 
     private func mintSubtitle(for mint: MintInfo) -> String {
@@ -4013,11 +4056,6 @@ struct AddMintToPaySheet: View {
             .scrollBounceBehavior(.basedOnSize)
             .navigationTitle("Add a mint to pay")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    SheetCloseButton()
-                }
-            }
         }
         .presentationDetents([.height(detentHeight)])
         .presentationDragIndicator(.visible)
@@ -4077,57 +4115,78 @@ struct AddMintToPaySheet: View {
 
 // MARK: - Method Picker Sheet
 
-/// Medium-detent picker for choosing a receive/send rail. Mirrors
+/// Content-fit picker for choosing a receive/send rail. Mirrors
 /// `MintSelectorSheet`: plain rows with a friendly title + descriptor and a
-/// trailing checkmark, dismiss-on-select. Detent is applied by the caller.
+/// trailing checkmark, dismiss-on-select. Sizes itself to its (2-4) rows
+/// instead of stretching to `.medium` — same technique as `AddMintToPaySheet`.
 struct MethodPickerSheet: View {
     @Environment(\.dismiss) private var dismiss
-    /// The live option, for the accent glyph + VoiceOver `.isSelected`. Read-only:
-    /// the parent owns the (method, isAmountless) state this maps to, so the
-    /// parent can react to a pick with side effects (e.g. auto-create) race-free.
+    /// The live option, for the trailing checkmark + VoiceOver `.isSelected`.
+    /// Read-only: the parent owns the (method, isAmountless) state this maps
+    /// to, so the parent can react to a pick with side effects (e.g.
+    /// auto-create) race-free.
     let selectedOption: ReceiveMethodOption
     let options: [ReceiveMethodOption]
     var onSelect: (ReceiveMethodOption) -> Void
 
+    /// Measured height of the option rows, driving a content-fit detent.
+    @State private var rowsHeight: CGFloat = 0
+
+    /// Fixed sheet chrome around the measured rows: drag indicator + inline nav
+    /// bar + a little bottom breathing room.
+    private static let navChrome: CGFloat = 96
+
+    private var detentHeight: CGFloat {
+        let rows = rowsHeight > 0 ? rowsHeight : CGFloat(options.count) * 68
+        return rows + Self.navChrome
+    }
+
     var body: some View {
         NavigationStack {
-            List(options) { option in
-                Button(action: { select(option) }) {
-                    HStack(spacing: 12) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(option.friendlyTitle)
-                                .font(.body.weight(.medium))
-                            Text(option.friendlyDescriptor)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
+            ScrollView {
+                VStack(spacing: 0) {
+                    ForEach(options) { option in
+                        Button(action: { select(option) }) {
+                            HStack(spacing: 12) {
+                                optionIcon(for: option)
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(option.friendlyTitle)
+                                        .font(.body.weight(.medium))
+                                    Text(option.friendlyDescriptor)
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                }
+
+                                Spacer()
+
+                                if selectedOption == option {
+                                    Image(systemName: "checkmark")
+                                        .foregroundStyle(Color.accentColor)
+                                }
+                            }
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 12)
+                            .contentShape(Rectangle())
                         }
-
-                        Spacer()
-
-                        // Glyph teaches the nav-bar mapping and carries selection:
-                        // accent when chosen, muted otherwise. The row's
-                        // `.isSelected` trait conveys state to VoiceOver.
-                        Image(systemName: option.navSymbol)
-                            .foregroundStyle(selectedOption == option ? Color.accentColor : .secondary)
-                            .accessibilityHidden(true)
+                        .buttonStyle(.plain)
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("\(option.friendlyTitle). \(option.friendlyDescriptor)")
+                        .accessibilityAddTraits(selectedOption == option ? .isSelected : [])
                     }
-                    .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
-                .listRowSeparator(.hidden)
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel("\(option.friendlyTitle). \(option.friendlyDescriptor)")
-                .accessibilityAddTraits(selectedOption == option ? .isSelected : [])
+                .onGeometryChange(for: CGFloat.self) { proxy in
+                    proxy.size.height
+                } action: { newHeight in
+                    rowsHeight = newHeight
+                }
             }
-            .listStyle(.plain)
+            .scrollBounceBehavior(.basedOnSize)
             .navigationTitle("Receive with")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    SheetCloseButton()
-                }
-            }
         }
+        .presentationDetents([.height(detentHeight)])
+        .presentationDragIndicator(.visible)
     }
 
     private func select(_ option: ReceiveMethodOption) {
@@ -4136,6 +4195,14 @@ struct MethodPickerSheet: View {
         }
         onSelect(option)   // parent mutates state + may auto-create
         dismiss()
+    }
+
+    private func optionIcon(for option: ReceiveMethodOption) -> some View {
+        Image(systemName: option.navSymbol)
+            .font(.title3.weight(.medium))
+            .foregroundStyle(.secondary)
+            .frame(width: 24)
+            .accessibilityHidden(true)
     }
 }
 
