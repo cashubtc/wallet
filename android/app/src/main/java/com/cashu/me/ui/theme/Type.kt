@@ -201,6 +201,7 @@ data class CashuTypeRoles(
     val title: TextStyle,
     val overline: TextStyle,
     val buttonLabel: TextStyle,
+    val compactButtonLabel: TextStyle,
     val sheetTitle: TextStyle,
     val numberPadKey: TextStyle,
     val metadata: TextStyle,
@@ -260,6 +261,8 @@ fun cashuTypeRoles(fonts: CashuFonts = CashuFonts.Geist): CashuTypeRoles {
             .atSize(12.sp, leading = LeadingLabel, trackingEm = t.overline)
             .copy(fontWeight = FontWeight.SemiBold),
 
+        compactButtonLabel = m3.titleMedium.atSize(17.sp, leading = LeadingLabel, trackingEm = t.buttonLabel)
+            .copy(fontWeight = FontWeight.SemiBold),
         buttonLabel = m3.titleMedium
             .atSize(18.sp, leading = LeadingLabel, trackingEm = t.buttonLabel)
             .copy(fontWeight = FontWeight.SemiBold),

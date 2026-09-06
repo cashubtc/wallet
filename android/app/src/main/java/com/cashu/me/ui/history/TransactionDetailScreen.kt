@@ -284,8 +284,9 @@ fun TransactionReceiptSheet(
                 )
             } else {
                 if (copyableContent != null) {
-                        SecondaryButton(
+                    SecondaryButton(
                         text = "Copy",
+                        compact = true,
                         onClick = {
                             scope.launch {
                                 clipboard.setClipEntry(
