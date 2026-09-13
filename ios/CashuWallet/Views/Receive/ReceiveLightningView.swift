@@ -802,14 +802,12 @@ struct ReceiveLightningView: View {
                 .foregroundStyle(.secondary)
             Spacer()
             Text(value)
-                .fontWeight(.medium)
+                .fontWeight(.regular)
                 .multilineTextAlignment(.trailing)
-                .lineLimit(1)
+                .lineLimit(2)
                 .truncationMode(.middle)
         }
-        .font(.subheadline)
-        .padding(.horizontal, 4)
-        .padding(.vertical, 12)
+        .paymentDetailRow()
     }
 
     /// Same as `detailRow` but tappable, with a trailing pencil — used for the
@@ -821,18 +819,16 @@ struct ReceiveLightningView: View {
                     .foregroundStyle(.secondary)
                 Spacer()
                 Text(value)
-                    .fontWeight(.medium)
+                    .fontWeight(.regular)
                     .multilineTextAlignment(.trailing)
-                    .lineLimit(1)
+                    .lineLimit(2)
                     .truncationMode(.middle)
                 Image(systemName: "pencil")
                     .font(.footnote)
                     .foregroundStyle(.tertiary)
                     .padding(.leading, 4)
             }
-            .font(.subheadline)
-            .padding(.horizontal, 4)
-            .padding(.vertical, 12)
+            .paymentDetailRow(isInteractive: true)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -852,9 +848,7 @@ struct ReceiveLightningView: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.tertiary)
             }
-            .font(.subheadline)
-            .padding(.horizontal, 4)
-            .padding(.vertical, 12)
+            .paymentDetailRow(isInteractive: true)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -957,16 +951,12 @@ struct ReceiveLightningView: View {
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(.secondary)
                 .transition(reduceMotion ? .opacity : .asymmetric(insertion: .scale(scale: 0.9).combined(with: .opacity), removal: .opacity))
-            } else {
-                HStack(spacing: 6) {
-                    Image(systemName: "clock")
-                        .symbolEffect(.pulse, options: .repeating, isActive: !reduceMotion)
-                        .foregroundStyle(.orange)
-                        .accessibilityHidden(true)
-                    Text(pendingStatusText)
-                }
-                .font(.subheadline)
-                .transition(.opacity)
+            } else if mintQuote?.paymentMethod == .onchain,
+                      let observation = onchainObservation {
+                Text("\(observation.statusText). Trying to mint...")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .transition(.opacity)
             }
         }
         .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.5, dampingFraction: 0.7), value: isPaid)
@@ -974,22 +964,6 @@ struct ReceiveLightningView: View {
         .animation(.easeInOut(duration: 0.2), value: isMinting)
         .animation(.easeInOut(duration: 0.2), value: isExpired)
         .animation(.easeInOut(duration: 0.2), value: mintRetryStatus.state)
-    }
-
-    private var pendingStatusText: String {
-        guard let quote = mintQuote else {
-            return "Waiting for payment..."
-        }
-
-        switch quote.paymentMethod {
-        case .bolt11, .bolt12:
-            return "Waiting for payment..."
-        case .onchain:
-            if let observation = onchainObservation {
-                return "\(observation.statusText). Trying to mint..."
-            }
-            return "Waiting for on-chain payment..."
-        }
     }
 
     // MARK: - Helpers

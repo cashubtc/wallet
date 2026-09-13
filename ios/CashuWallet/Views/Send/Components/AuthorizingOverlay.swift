@@ -195,8 +195,8 @@ struct PaymentStatusView: View {
                         detailRow(row)
                     }
                 }
-                .frame(maxWidth: successAmount == nil ? .infinity : 320)
-                .padding(.horizontal, successAmount == nil ? 16 : 24)
+                .frame(maxWidth: PaymentDetailMetrics.maxWidth)
+                .padding(.horizontal, 24)
                 // Beat 3: the receipt settles in last. Opacity + a 6pt rise —
                 // never blur; these rows are money values.
                 .opacity(bandVisible ? 1 : 0)
@@ -316,9 +316,7 @@ struct PaymentStatusView: View {
 
     private func detailRow(_ row: DetailRow) -> some View {
         standardDetailRow(row)
-            .font(successAmount == nil ? .subheadline : .footnote)
-            .padding(.horizontal, successAmount == nil ? 4 : 16)
-            .padding(.vertical, successAmount == nil ? 14 : 8)
+            .paymentDetailRow()
             .accessibilityElement(children: .combine)
     }
 
@@ -334,9 +332,9 @@ struct PaymentStatusView: View {
                 ProgressView().controlSize(.mini)
             } else {
                 Text(row.value)
-                    .fontWeight(successAmount == nil ? .medium : .regular)
+                    .fontWeight(.regular)
                     .multilineTextAlignment(.trailing)
-                    .lineLimit(successAmount == nil ? 1 : 2)
+                    .lineLimit(2)
                     .truncationMode(.middle)
                     .contentTransition(.opacity)
             }

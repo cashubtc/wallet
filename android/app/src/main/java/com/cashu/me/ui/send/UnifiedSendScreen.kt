@@ -1125,39 +1125,15 @@ private fun EstimatedCashuRequestFeeRow(
     presentation: CashuRequestFeePresentation,
     modifier: Modifier = Modifier,
 ) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .heightIn(min = 32.dp)
-            .semantics(mergeDescendants = true) {
-                stateDescription = if (presentation.loading) {
-                    "Calculating"
-                } else {
-                    presentation.value
-                }
-            },
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = "Estimated fee",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.weight(1f))
-        SkeletonValue(loading = presentation.loading) {
-            Text(
-                text = presentation.value,
-                style = if (presentation.valueMonospaced) {
-                    MaterialTheme.typography.bodyMedium.withMonoDigits()
-                } else {
-                    MaterialTheme.typography.bodyMedium
-                },
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-            )
-        }
-    }
+    InspectorRow(
+        label = "Estimated fee",
+        value = presentation.value,
+        valueMonospaced = presentation.valueMonospaced,
+        loading = presentation.loading,
+        modifier = modifier.semantics(mergeDescendants = true) {
+            stateDescription = if (presentation.loading) "Calculating" else presentation.value
+        },
+    )
 }
 
 @Composable
@@ -1718,17 +1694,19 @@ private fun TopUpQuoteSheet(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
             )
-            Text(
-                text = when (phase) {
-                    CashuRequestTopUpPhase.AwaitingPayment -> "Waiting for payment…"
-                    CashuRequestTopUpPhase.PayingRequest -> "Payment received — paying request…"
-                    CashuRequestTopUpPhase.Failed -> "Cashu Request payment is not complete."
-                    CashuRequestTopUpPhase.Done -> "Payment sent"
-                },
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-            )
+            if (phase != CashuRequestTopUpPhase.AwaitingPayment) {
+                Text(
+                    text = when (phase) {
+                        CashuRequestTopUpPhase.AwaitingPayment -> ""
+                        CashuRequestTopUpPhase.PayingRequest -> "Payment received — paying request…"
+                        CashuRequestTopUpPhase.Failed -> "Cashu Request payment is not complete."
+                        CashuRequestTopUpPhase.Done -> "Payment sent"
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
+            }
             errorMessage?.let {
                 InlineNotice(text = it, severity = errorSeverity)
             }

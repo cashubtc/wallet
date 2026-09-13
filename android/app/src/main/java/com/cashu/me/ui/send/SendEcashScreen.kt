@@ -47,7 +47,6 @@ import androidx.compose.material.icons.outlined.IosShare
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
@@ -66,7 +65,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -120,7 +118,6 @@ import com.cashu.me.ui.components.ToolbarIcon
 import com.cashu.me.ui.components.TwoFaceScreen
 import com.cashu.me.ui.components.UnitPickerSheet
 import com.cashu.me.ui.components.neutralActionButtonColors
-import com.cashu.me.ui.components.rememberPendingPulseAlpha
 import com.cashu.me.ui.components.shareText
 import com.cashu.me.ui.settings.P2PKKeyDisplay
 import com.cashu.me.ui.testing.UiTestTags
@@ -1137,7 +1134,9 @@ private fun GeneratedFace(
                 confirmationMessage = "Copied ecash token",
             )
             GeneratedEcashAmount(presentation = amountPresentation)
-            ClaimStatusRow(claimState = claimState)
+            if (claimState == ClaimState.Checking) {
+                ClaimStatusRow(claimState = claimState)
+            }
             if (!pollingEnabled) {
                 when (val outcome = manualCheckResult) {
                     PendingTokenClaimCheckResult.NotClaimed -> InlineNotice(
@@ -1286,26 +1285,7 @@ private fun ClaimStatusRow(
         label = "claim-state",
     ) { state ->
         when (state) {
-            ClaimState.Pending -> {
-                val pulseAlpha = rememberPendingPulseAlpha()
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.tight),
-                    modifier = Modifier.alpha(pulseAlpha),
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Schedule,
-                        contentDescription = null,
-                        tint = com.cashu.me.ui.theme.CashuTheme.colors.onPendingContainer,
-                        modifier = Modifier.size(STATUS_ICON_SMALL),
-                    )
-                    Text(
-                        text = "Pending",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                }
-            }
+            ClaimState.Pending -> Unit
             ClaimState.Checking -> {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,

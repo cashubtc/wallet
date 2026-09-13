@@ -8,6 +8,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -27,7 +30,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -45,8 +47,15 @@ import com.cashu.me.ui.theme.withMonoDigits
 private val InspectorLeadingIconSize = 18.dp
 private val InspectorEditHintSize = 16.dp
 
-/** Supporting receipt facts beneath the completed payment's amount. */
-internal val LocalPaymentSuccessDetails = staticCompositionLocalOf { false }
+/** Payment flows share an inset column; compact History receipts use the full sheet width. */
+internal val PaymentDetailMaxWidth = 320.dp
+
+enum class InspectorRowStyle { Payment, History, Standard }
+
+internal fun Modifier.paymentDetailWidth(): Modifier = fillMaxWidth()
+    .wrapContentWidth(Alignment.CenterHorizontally)
+    .widthIn(max = PaymentDetailMaxWidth)
+    .fillMaxWidth()
 
 /**
  * Two-column metadata row used inside Cashu Request / Transaction Detail inspector
@@ -74,79 +83,96 @@ fun InspectorRow(
     valueColor: Color? = null,
     secondaryValue: String? = null,
     loading: Boolean = false,
+    style: InspectorRowStyle = InspectorRowStyle.Payment,
 ) {
-    val successDetails = LocalPaymentSuccessDetails.current
-    val rowStyle = if (successDetails) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge
-    val rowMod = if (onClick != null) {
-        modifier.fillMaxWidth().clickable(onClick = onClick)
-    } else {
-        modifier.fillMaxWidth()
+    val paymentDetails = style == InspectorRowStyle.Payment
+    val rowStyle = if (style == InspectorRowStyle.Standard) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.bodyMedium
+    val stacked = style != InspectorRowStyle.Standard && trailingIcon != null && LocalConfiguration.current.fontScale > 1.3f
+    val columnModifier = when (style) {
+        InspectorRowStyle.Payment -> modifier.paymentDetailWidth()
+        InspectorRowStyle.History -> modifier.fillMaxWidth().heightIn(min = 48.dp)
+        InspectorRowStyle.Standard -> modifier.fillMaxWidth()
     }
-    Row(
+    val rowMod = if (onClick != null) {
+        columnModifier.heightIn(min = 48.dp).clickable(onClick = onClick)
+    } else {
+        columnModifier
+    }
+    Column(
         modifier = rowMod.padding(
             horizontal = CashuTheme.spacing.comfortable,
-            vertical = if (successDetails) CashuTheme.spacing.snug else CashuTheme.spacing.default,
+            vertical = if (paymentDetails) CashuTheme.spacing.snug else CashuTheme.spacing.default,
         ),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
+        verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug, Alignment.CenterVertically),
     ) {
-        if (leadingIcon != null) {
-            Icon(
-                imageVector = leadingIcon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(InspectorLeadingIconSize),
-            )
+        if (stacked) {
+            Text(label, style = rowStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Text(
-            text = label,
-            style = rowStyle,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        // Value fills the remaining width and right-aligns its text so it sits
-        // flush against the trailing edge, matching iOS (HStack + Spacer).
-        Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
-            SkeletonValue(loading = loading) {
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(
-                        text = value,
-                        style = if (valueMonospaced) {
-                            rowStyle.withMonoDigits()
-                        } else rowStyle,
-                        color = valueColor ?: MaterialTheme.colorScheme.onSurface,
-                        maxLines = if (successDetails) 2 else 1,
-                        overflow = TextOverflow.MiddleEllipsis,
-                        textAlign = TextAlign.End,
-                    )
-                    if (secondaryValue != null) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
+        ) {
+            if (leadingIcon != null) {
+                Icon(
+                    imageVector = leadingIcon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(InspectorLeadingIconSize),
+                )
+            }
+            if (!stacked) {
+                Text(
+                    text = label,
+                    style = rowStyle,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            // Values align to the trailing edge in columns, or to the label
+            // above when a copyable row stacks for accessibility text.
+            Box(modifier = Modifier.weight(1f), contentAlignment = if (stacked) Alignment.CenterStart else Alignment.CenterEnd) {
+                SkeletonValue(loading = loading) {
+                    Column(horizontalAlignment = if (stacked) Alignment.Start else Alignment.End) {
                         Text(
-                            text = secondaryValue,
+                            text = value,
                             style = if (valueMonospaced) {
-                                MaterialTheme.typography.bodyMedium.withMonoDigits()
-                            } else MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
+                                rowStyle.withMonoDigits()
+                            } else rowStyle,
+                            color = valueColor ?: MaterialTheme.colorScheme.onSurface,
+                            maxLines = if (style == InspectorRowStyle.Standard) 1 else 2,
                             overflow = TextOverflow.MiddleEllipsis,
-                            textAlign = TextAlign.End,
+                            textAlign = if (stacked) TextAlign.Start else TextAlign.End,
                         )
+                        if (secondaryValue != null) {
+                            Text(
+                                text = secondaryValue,
+                                style = if (valueMonospaced) {
+                                    MaterialTheme.typography.bodyMedium.withMonoDigits()
+                                } else MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.MiddleEllipsis,
+                                textAlign = if (stacked) TextAlign.Start else TextAlign.End,
+                            )
+                        }
                     }
                 }
             }
-        }
-        if (editable) {
-            Icon(
-                imageVector = Icons.Outlined.Edit,
-                contentDescription = "Edit $label",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(InspectorEditHintSize),
-            )
-        } else if (trailingIcon != null) {
-            Icon(
-                imageVector = trailingIcon,
-                contentDescription = null,
-                tint = trailingIconTint ?: MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(InspectorEditHintSize),
-            )
+            if (editable) {
+                Icon(
+                    imageVector = Icons.Outlined.Edit,
+                    contentDescription = "Edit $label",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(InspectorEditHintSize),
+                )
+            } else if (trailingIcon != null) {
+                Icon(
+                    imageVector = trailingIcon,
+                    contentDescription = null,
+                    tint = trailingIconTint ?: MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(InspectorEditHintSize),
+                )
+            }
         }
     }
 }
@@ -155,7 +181,11 @@ fun InspectorRow(
 /** Prose belongs to the inspector, with a native reader for longer descriptions. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DescriptionDetailRow(description: String, label: String = "Description") {
+fun DescriptionDetailRow(
+    description: String,
+    label: String = "Description",
+    style: InspectorRowStyle = InspectorRowStyle.Payment,
+) {
     var overflowing by remember(description) { mutableStateOf(false) }
     var showFullDescription by remember(description) { mutableStateOf(false) }
     val configuration = LocalConfiguration.current
@@ -163,9 +193,9 @@ fun DescriptionDetailRow(description: String, label: String = "Description") {
         configuration.fontScale > 1.3f) 1 else 3
 
     Column(
-        modifier = Modifier.fillMaxWidth().padding(
+        modifier = (if (style == InspectorRowStyle.Payment) Modifier.paymentDetailWidth() else Modifier.fillMaxWidth()).padding(
             horizontal = CashuTheme.spacing.comfortable,
-            vertical = CashuTheme.spacing.default,
+            vertical = if (style == InspectorRowStyle.Payment) CashuTheme.spacing.snug else CashuTheme.spacing.default,
         ),
         verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
     ) {
@@ -179,7 +209,7 @@ fun DescriptionDetailRow(description: String, label: String = "Description") {
         SelectionContainer {
             Text(
                 text = description,
-                style = MaterialTheme.typography.bodyLarge,
+                style = MaterialTheme.typography.bodyMedium,
                 maxLines = previewLines,
                 overflow = TextOverflow.Ellipsis,
                 onTextLayout = { overflowing = it.hasVisualOverflow },

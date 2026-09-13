@@ -77,6 +77,7 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import java.text.DateFormat
 import java.util.Date
@@ -131,7 +132,6 @@ import com.cashu.me.ui.components.QrCard
 import com.cashu.me.ui.components.SheetHeader
 import com.cashu.me.ui.components.TwoFaceScreen
 import com.cashu.me.ui.components.UnitPickerSheet
-import com.cashu.me.ui.components.WaitingForPaymentRow
 import com.cashu.me.ui.components.neutralActionButtonColors
 import com.cashu.me.ui.components.openInBrowser
 import com.cashu.me.ui.components.shareText
@@ -1036,10 +1036,8 @@ fun ReceiveLightningScreen(
                         },
                         fiatCurrencyCode = settings.bitcoinPriceCurrency,
                         useBitcoinSymbol = settings.useBitcoinSymbol,
-                        pendingStatusText = when {
-                            !isOnchain -> "Waiting for payment…"
-                            observation != null -> "${observation.statusText}. Trying to mint…"
-                            else -> "Waiting for on-chain payment…"
+                        onchainStatusText = observation?.takeIf { isOnchain }?.let {
+                            "${it.statusText}. Trying to mint…"
                         },
                         explorerLabel = if (observation == null) {
                             "View address in block explorer"
@@ -1350,7 +1348,7 @@ private fun DisplayFace(
     fiatPrice: Double?,
     fiatCurrencyCode: String,
     useBitcoinSymbol: Boolean,
-    pendingStatusText: String,
+    onchainStatusText: String?,
     explorerLabel: String,
     onCopy: () -> Unit,
     onRetryPendingMint: () -> Unit,
@@ -1404,15 +1402,20 @@ private fun DisplayFace(
                     useBitcoinSymbol = useBitcoinSymbol,
                 )
             }
-            if (settlementState != null) {
+            if (settlementState != null && settlementState != MintQuoteSettlementState.Waiting) {
                 MintQuoteSettlementStatus(
                     state = settlementState,
                     onRetry = onRetryPendingMint,
                 )
             } else if (isExpired) {
                 InlineNotice(text = "Expired", severity = NoticeSeverity.Error, centered = true)
-            } else {
-                WaitingForPaymentRow(text = pendingStatusText)
+            } else if (onchainStatusText != null) {
+                Text(
+                    text = onchainStatusText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
             }
             errorText?.let { InlineNotice(text = it, severity = NoticeSeverity.Error) }
             if (!isReusable && settlementState == null && !isExpired) {
@@ -1550,7 +1553,7 @@ private fun MintQuoteSettlementStatus(
         label = "mint-quote-settlement-status",
     ) { current ->
         when (current) {
-            MintQuoteSettlementState.Waiting -> WaitingForPaymentRow()
+            MintQuoteSettlementState.Waiting -> Unit
             MintQuoteSettlementState.PaymentDetected -> Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),

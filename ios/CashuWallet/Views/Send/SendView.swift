@@ -662,7 +662,7 @@ struct SendView: View {
                         )
                     }
 
-                    // Status — inline badge transition while pending/checking.
+                    // Show feedback only while a claim check is active.
                     // No `tokenClaimed` branch: the body swaps to the
                     // full-screen success terminal the instant the claim
                     // lands, so an inline Claimed badge here could never
@@ -676,15 +676,6 @@ struct SendView: View {
                             }
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
-                            .transition(.opacity)
-                        } else {
-                            HStack(spacing: 6) {
-                                Image(systemName: "clock")
-                                    .symbolEffect(.pulse, options: .repeating, isActive: !reduceMotion)
-                                Text("Pending")
-                            }
-                            .font(.subheadline)
-                            .foregroundStyle(.orange)
                             .transition(.opacity)
                         }
                     }
@@ -817,13 +808,11 @@ struct SendView: View {
                 .foregroundStyle(.secondary)
             Spacer()
             Text(value)
-                .fontWeight(.medium)
-                .lineLimit(1)
+                .fontWeight(.regular)
+                .lineLimit(2)
                 .truncationMode(.middle)
         }
-        .font(.subheadline)
-        .padding(.horizontal, 4)
-        .padding(.vertical, 14)
+        .paymentDetailRow()
     }
 
     private func formatBalance(_ sats: UInt64) -> String {
@@ -2074,9 +2063,9 @@ struct UnifiedSendView: View {
             Spacer()
             MintAvatarView(iconUrl: mint.iconUrl, name: mint.name, size: 22)
             Text(mint.name)
-                .fontWeight(.medium)
+                .fontWeight(.regular)
                 .foregroundStyle(.primary)
-                .lineLimit(1)
+                .lineLimit(2)
                 .truncationMode(.middle)
             if switchable {
                 Image(systemName: "chevron.down")
@@ -2084,9 +2073,7 @@ struct UnifiedSendView: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .font(.subheadline)
-        .padding(.horizontal, 4)
-        .padding(.vertical, 14)
+        .paymentDetailRow(isInteractive: switchable)
 
         if switchable {
             Button(action: {
@@ -2792,14 +2779,12 @@ struct UnifiedSendView: View {
                     Spacer()
                     Text(hosts.isEmpty ? "Add a mint to pay"
                             : (hosts.count == 1 ? hosts[0] : "You hold none of these"))
-                        .fontWeight(.medium)
+                        .fontWeight(.regular)
                         .foregroundStyle(.orange)
-                        .lineLimit(1)
+                        .lineLimit(2)
                         .truncationMode(.middle)
                 }
-                .font(.subheadline)
-                .padding(.horizontal, 4)
-                .padding(.vertical, 14)
+                .paymentDetailRow()
                 .accessibilityElement(children: .combine)
             }
         }
@@ -2815,18 +2800,16 @@ struct UnifiedSendView: View {
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
                 Text(host)
-                    .fontWeight(.medium)
+                    .fontWeight(.regular)
                     .foregroundStyle(.primary)
-                    .lineLimit(1)
+                    .lineLimit(2)
                     .truncationMode(.middle)
                 Text(subtitle)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
         }
-        .font(.subheadline)
-        .padding(.horizontal, 4)
-        .padding(.vertical, 14)
+        .paymentDetailRow()
         .accessibilityElement(children: .combine)
     }
 
@@ -2837,9 +2820,7 @@ struct UnifiedSendView: View {
             Spacer()
             creqFeeValueText
         }
-        .font(.subheadline)
-        .padding(.horizontal, 4)
-        .padding(.vertical, 14)
+        .paymentDetailRow()
         .accessibilityElement(children: .combine)
     }
 
@@ -2848,16 +2829,16 @@ struct UnifiedSendView: View {
         if needsAcquire {
             // Funding the mint routes over Lightning, which always carries a fee;
             // the exact reserve is confirmed during the transfer and in History.
-            Text("Network fee").fontWeight(.medium).foregroundStyle(.secondary)
+            Text("Network fee").fontWeight(.regular).foregroundStyle(.secondary)
         } else {
             switch feeState {
             case .loading:
                 ProgressView().controlSize(.mini)
             case .free:
-                Text("No fee").fontWeight(.medium)
+                Text("No fee").fontWeight(.regular)
             case .amount(let fee):
                 Text(AmountFormatter.sats(fee, useBitcoinSymbol: settings.useBitcoinSymbol))
-                    .fontWeight(.medium)
+                    .fontWeight(.regular)
             case .idle, .unavailable:
                 Text("—").foregroundStyle(.secondary)
             }
@@ -2870,14 +2851,12 @@ struct UnifiedSendView: View {
                 .foregroundStyle(.secondary)
             Spacer()
             Text(value)
-                .fontWeight(.medium)
+                .fontWeight(.regular)
                 .multilineTextAlignment(.trailing)
                 .lineLimit(2)
                 .truncationMode(.tail)
         }
-        .font(.subheadline)
-        .padding(.horizontal, 4)
-        .padding(.vertical, 14)
+        .paymentDetailRow()
         .accessibilityElement(children: .combine)
     }
 
@@ -3594,14 +3573,12 @@ struct MeltView: View {
                 .foregroundStyle(.secondary)
             Spacer()
             Text(value)
-                .fontWeight(.medium)
+                .fontWeight(.regular)
                 .multilineTextAlignment(.trailing)
-                .lineLimit(1)
+                .lineLimit(2)
                 .truncationMode(.middle)
         }
-        .font(.subheadline)
-        .padding(.horizontal, 4)
-        .padding(.vertical, 14)
+        .paymentDetailRow()
         .accessibilityElement(children: .combine)
     }
 

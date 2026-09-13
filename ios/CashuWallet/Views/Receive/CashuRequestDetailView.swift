@@ -297,15 +297,6 @@ struct CashuRequestDetailView: View {
                 }
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(receivedStatusColor)
-            } else {
-                HStack(spacing: 6) {
-                    Image(systemName: "clock")
-                        .foregroundStyle(.orange)
-                        .symbolEffect(.pulse, options: .repeating, isActive: !reduceMotion)
-                    Text("Waiting for payment…")
-                }
-                .font(.subheadline)
-                .foregroundStyle(.primary)
             }
         }
         .animation(.easeInOut(duration: 0.2), value: paymentCount)
@@ -320,17 +311,16 @@ struct CashuRequestDetailView: View {
 
     @ViewBuilder
     private func deliveryStatus(for request: CashuRequest) -> some View {
-        if paymentCount > 0 || request.rail != .ecash {
+        if paymentCount > 0 {
             statusBadge
-        } else if let notice = CashuRequestNostrReadiness.current().deliveryNotice {
+        } else if request.rail == .ecash,
+                  let notice = CashuRequestNostrReadiness.current().deliveryNotice {
             InlineNotice(
                 message: notice.message,
                 title: notice.title,
                 severity: .caution
             )
             .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.98)))
-        } else {
-            statusBadge
         }
     }
 
@@ -367,14 +357,12 @@ struct CashuRequestDetailView: View {
                 .foregroundStyle(.secondary)
             Spacer()
             Text(value)
-                .fontWeight(.medium)
+                .fontWeight(.regular)
                 .multilineTextAlignment(.trailing)
-                .lineLimit(1)
+                .lineLimit(2)
                 .truncationMode(.middle)
         }
-        .font(.subheadline)
-        .padding(.vertical, 12)
-        .padding(.horizontal, 4)
+        .paymentDetailRow()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
         .accessibilityValue(value)
@@ -387,18 +375,16 @@ struct CashuRequestDetailView: View {
                     .foregroundStyle(.secondary)
                 Spacer()
                 Text(value)
-                    .fontWeight(.medium)
+                    .fontWeight(.regular)
                     .multilineTextAlignment(.trailing)
-                    .lineLimit(1)
+                    .lineLimit(2)
                     .truncationMode(.middle)
                 Image(systemName: "pencil")
                     .font(.footnote)
                     .foregroundStyle(.tertiary)
                     .padding(.leading, 4)
             }
-            .font(.subheadline)
-            .padding(.vertical, 12)
-            .padding(.horizontal, 4)
+            .paymentDetailRow(isInteractive: true)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

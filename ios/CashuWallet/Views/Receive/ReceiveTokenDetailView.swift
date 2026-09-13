@@ -205,9 +205,7 @@ struct ReceiveTokenDetailView: View {
                             Spacer()
                             ProgressView().scaleEffect(0.8)
                         }
-                        .font(.subheadline)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 14)
+                        .paymentDetailRow()
                     } else if let receiveFee {
                         // Prospective charge (docs/product/copy-guidance.md):
                         // "No fee" states the user is charged nothing; a bare
@@ -221,14 +219,15 @@ struct ReceiveTokenDetailView: View {
                             Text("Fee unavailable")
                                 .foregroundStyle(.secondary)
                             Spacer()
-                            Button("Retry") {
+                            Button {
                                 Task { await calculateFee() }
+                            } label: {
+                                Text("Retry")
+                                    .frame(minHeight: PaymentDetailMetrics.minimumTouchHeight)
                             }
                             .disabled(!isValidToken)
                         }
-                        .font(.subheadline)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 14)
+                        .paymentDetailRow()
                     }
                     detailRow(label: "Mint", value: shortMintUrl(mintUrl))
                     if let memo = reviewPresentation.memo {
@@ -345,17 +344,15 @@ struct ReceiveTokenDetailView: View {
             Spacer()
             HStack(spacing: 6) {
                 Text(lockedKeyLabel)
-                    .fontWeight(.medium)
-                    .lineLimit(1)
+                    .fontWeight(.regular)
+                    .lineLimit(2)
                     .truncationMode(.middle)
                 Image(systemName: tokenLockedToKnownKey ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
                     .font(.caption)
                     .foregroundStyle(tokenLockedToKnownKey ? Color.secondary : Color.orange)
             }
         }
-        .font(.subheadline)
-        .padding(.horizontal, 4)
-        .padding(.vertical, 14)
+        .paymentDetailRow()
     }
 
     private var lockedKeyLabel: String {
@@ -370,13 +367,11 @@ struct ReceiveTokenDetailView: View {
                 .foregroundStyle(.secondary)
             Spacer()
             Text(value)
-                .fontWeight(.medium)
-                .lineLimit(1)
+                .fontWeight(.regular)
+                .lineLimit(2)
                 .truncationMode(.middle)
         }
-        .font(.subheadline)
-        .padding(.horizontal, 4)
-        .padding(.vertical, 14)
+        .paymentDetailRow()
     }
 
     /// Sender-provided prose stays fully reviewable instead of inheriting the
@@ -388,13 +383,11 @@ struct ReceiveTokenDetailView: View {
                 .fixedSize(horizontal: true, vertical: false)
             Spacer(minLength: 0)
             Text(memo.text)
-                .fontWeight(.medium)
+                .fontWeight(.regular)
                 .multilineTextAlignment(.trailing)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .font(.subheadline)
-        .padding(.horizontal, 4)
-        .padding(.vertical, 14)
+        .paymentDetailRow()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(memo.accessibilityLabel)
         .accessibilityValue(memo.accessibilityValue)

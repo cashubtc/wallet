@@ -194,7 +194,8 @@ class ActivityDetailJourneyTest {
         store.attachPayment(original.id, "second", 34)
         robot.tapText("History").tapText("Cashu Request").awaitText("2 payments received")
         compose.onNodeWithText("Mint").performScrollTo().performClick()
-        robot.tapText("Nutshell UI Test Mint").awaitText("Waiting for payment…")
+        robot.tapText("Nutshell UI Test Mint").awaitText("SAT")
+        compose.onNodeWithText("Waiting for payment…").assertDoesNotExist()
         compose.onNodeWithText("Total received").assertDoesNotExist()
         compose.onNodeWithText("SAT").assertIsDisplayed()
         compose.onNode(hasText("Amount").and(hasText("Any"))).assertExists()
@@ -207,7 +208,8 @@ class ActivityDetailJourneyTest {
         screenshot("request-after-currency-change")
         // A payment to the previous code must not trigger success on this sheet.
         compose.runOnIdle { store.attachPayment(original.id, "late", 10) }
-        robot.awaitText("Waiting for payment…")
+        compose.onNodeWithText("Payment Received!").assertDoesNotExist()
+        compose.onNodeWithText("Waiting for payment…").assertDoesNotExist()
         compose.runOnIdle { store.attachPayment(next.id, "new", 21) }
         robot.awaitText("Payment Received!")
     }

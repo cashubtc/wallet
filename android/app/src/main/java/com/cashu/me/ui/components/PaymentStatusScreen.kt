@@ -30,7 +30,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -363,12 +362,11 @@ fun PaymentStatusScreen(
                     }
                 }
                 if (rows != null && (phase != PaymentStatusPhase.Processing || showRowsDuringProcessing)) {
-                    val successDetails = phase == PaymentStatusPhase.Success && !settlementPending && !successAmount.isNullOrBlank()
                     Column(
                         modifier = Modifier
                             .align(Alignment.CenterHorizontally)
                             .padding(horizontal = CashuTheme.spacing.comfortable)
-                            .widthIn(max = if (successDetails) 320.dp else androidx.compose.ui.unit.Dp.Infinity)
+                            .widthIn(max = PaymentDetailMaxWidth)
                             .fillMaxWidth()
                             .padding(top = CashuTheme.spacing.snug)
                             .graphicsLayer {
@@ -380,7 +378,7 @@ fun PaymentStatusScreen(
                                 }
                             },
                     ) {
-                        CompositionLocalProvider(LocalPaymentSuccessDetails provides successDetails) { rows() }
+                        rows()
                     }
                 }
             }

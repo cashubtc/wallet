@@ -3,6 +3,7 @@ import SwiftUI
 struct TransactionDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @EnvironmentObject var walletManager: WalletManager
     /// Snapshot at open; [transaction] prefers the live wallet row so a
     /// successful open-check can flip Pending → Completed without dismissing.
@@ -184,13 +185,13 @@ struct TransactionDetailView: View {
                     }
                     if row.label == "Mint", transaction.descriptionHash == nil,
                        let description = transaction.displayDescription {
-                        DescriptionDetailRow(description: description)
+                        DescriptionDetailRow(description: description, layout: .history)
                     }
                 }
                 if !detailRows.contains(where: { $0.label == "Mint" }),
                    transaction.descriptionHash == nil,
                    let description = transaction.displayDescription {
-                    DescriptionDetailRow(description: description)
+                    DescriptionDetailRow(description: description, layout: .history)
                 }
                 if let explorerURL = onchainExplorerURL {
                     explorerLinkRow(label: "View in block explorer", url: explorerURL)
@@ -386,15 +387,12 @@ struct TransactionDetailView: View {
                 .foregroundStyle(.secondary)
             Spacer()
             Text(value)
-                .fontWeight(.medium)
+                .fontWeight(.regular)
                 .multilineTextAlignment(.trailing)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
         }
-        .font(.subheadline)
-        .padding(.horizontal, 4)
-        .padding(.vertical, 12)
-        .frame(minHeight: 44)
+        .paymentDetailRow(layout: .history)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
         .accessibilityValue(value)
@@ -409,24 +407,28 @@ struct TransactionDetailView: View {
             HapticFeedback.notification(.success)
             ConfirmationToast.show(copyConfirmationMessage(for: label))
         } label: {
-            HStack {
+            let layout = dynamicTypeSize.isAccessibilitySize
+                ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+                : AnyLayout(HStackLayout(spacing: 8))
+            layout {
                 Text(label)
                     .foregroundStyle(.secondary)
-                Spacer()
-                Text(value)
-                    .fontWeight(.medium)
-                    .multilineTextAlignment(.trailing)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Image(systemName: "doc.on.doc")
-                    .font(.footnote)
-                    .foregroundStyle(.tertiary)
-                    .padding(.leading, 4)
+                if !dynamicTypeSize.isAccessibilitySize {
+                    Spacer()
+                }
+                HStack(spacing: 8) {
+                    Text(value)
+                        .fontWeight(.regular)
+                        .multilineTextAlignment(dynamicTypeSize.isAccessibilitySize ? .leading : .trailing)
+                        .lineLimit(2)
+                        .truncationMode(.middle)
+                    Image(systemName: "doc.on.doc")
+                        .font(.footnote)
+                        .foregroundStyle(.tertiary)
+                }
+                .frame(maxWidth: .infinity, alignment: dynamicTypeSize.isAccessibilitySize ? .leading : .trailing)
             }
-            .font(.subheadline)
-            .padding(.horizontal, 4)
-            .padding(.vertical, 12)
-            .frame(minHeight: 44)
+            .paymentDetailRow(layout: .history, isInteractive: true)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -448,10 +450,7 @@ struct TransactionDetailView: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.tertiary)
             }
-            .font(.subheadline)
-            .padding(.horizontal, 4)
-            .padding(.vertical, 12)
-            .frame(minHeight: 44)
+            .paymentDetailRow(layout: .history, isInteractive: true)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -596,6 +595,7 @@ struct TransactionReceiptAmountPair: View {
 /// Prose belongs to the inspector, with a native reader for longer descriptions.
 struct DescriptionDetailRow: View {
     let description: String
+    var layout: PaymentDetailLayout = .flow
     @Environment(\.compactPaymentDetails) private var compactPaymentDetails
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -638,9 +638,7 @@ struct DescriptionDetailRow: View {
                 }
                 .accessibilityIdentifier("payment-description-preview")
         }
-        .font(.subheadline)
-        .padding(.horizontal, 4)
-        .padding(.vertical, 12)
+        .paymentDetailRow(layout: layout)
         .sheet(isPresented: $showFullDescription) {
             PaymentDescriptionView(description: description)
                 .presentationDetents([.large])

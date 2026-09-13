@@ -417,14 +417,12 @@ struct CashuRequestRouteExplanationRow: View {
                 .foregroundStyle(.secondary)
             Spacer()
             Text(explanation.localizedValue)
-                .fontWeight(.medium)
+                .fontWeight(.regular)
                 .multilineTextAlignment(.trailing)
                 .lineLimit(2)
                 .truncationMode(.tail)
         }
-        .font(.subheadline)
-        .padding(.horizontal, 4)
-        .padding(.vertical, 14)
+        .paymentDetailRow()
         .accessibilityElement(children: .combine)
     }
 }
@@ -845,9 +843,7 @@ struct CashuPaymentRequestPayView: View {
             Spacer()
             feeValueText
         }
-        .font(.subheadline)
-        .padding(.horizontal, 4)
-        .padding(.vertical, 14)
+        .paymentDetailRow()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Fees")
         .accessibilityValue(feeAccessibilityValue)
@@ -862,9 +858,7 @@ struct CashuPaymentRequestPayView: View {
             Spacer()
             feeValueText
         }
-        .font(.subheadline)
-        .padding(.horizontal, 4)
-        .padding(.vertical, FlowRowMetrics.verticalPadding)
+        .paymentDetailRow()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Estimated fee")
         .accessibilityValue(feeAccessibilityValue)
@@ -875,16 +869,16 @@ struct CashuPaymentRequestPayView: View {
         if needsAcquire {
             // Funding the mint routes over Lightning, which always carries a fee;
             // the exact reserve is confirmed during the transfer and in History.
-            Text("Network fee").fontWeight(.medium).foregroundStyle(.secondary)
+            Text("Network fee").fontWeight(.regular).foregroundStyle(.secondary)
         } else {
             switch feeState {
             case .loading:
                 ProgressView().controlSize(.mini)
             case .free:
-                Text("No fee").fontWeight(.medium)
+                Text("No fee").fontWeight(.regular)
             case .amount(let fee):
                 Text(AmountFormatter.sats(fee, useBitcoinSymbol: settings.useBitcoinSymbol))
-                    .fontWeight(.medium)
+                    .fontWeight(.regular)
             case .idle:
                 Text("—").foregroundStyle(.secondary)
             case .unavailable:
@@ -963,14 +957,12 @@ struct CashuPaymentRequestPayView: View {
                 .foregroundStyle(.secondary)
             Spacer()
             Text(value)
-                .fontWeight(.medium)
+                .fontWeight(.regular)
                 .multilineTextAlignment(.trailing)
                 .lineLimit(2)
                 .truncationMode(.tail)
         }
-        .font(.subheadline)
-        .padding(.horizontal, 4)
-        .padding(.vertical, 14)
+        .paymentDetailRow()
         .accessibilityElement(children: .combine)
     }
 
@@ -1599,10 +1591,7 @@ struct CashuTopUpInvoiceSheet: View {
         // choreography) instead of popping per poll beat.
         switch phase {
         case .awaitingPayment:
-            Label("Waiting for payment…", systemImage: "clock")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .transition(.opacity)
+            EmptyView()
         case .paying:
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)

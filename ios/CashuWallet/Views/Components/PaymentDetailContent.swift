@@ -4,6 +4,32 @@ extension EnvironmentValues {
     @Entry var compactPaymentDetails = false
 }
 
+enum PaymentDetailMetrics {
+    static let maxWidth: CGFloat = 320
+    static let horizontalPadding: CGFloat = 16
+    static let verticalPadding: CGFloat = 8
+    static let minimumTouchHeight: CGFloat = 44
+}
+
+enum PaymentDetailLayout {
+    case flow
+    // Compact History sheets use their full width and roomier receipt rows.
+    case history
+}
+
+extension View {
+    /// Shared receipt typography and spacing; interactive rows keep native touch targets.
+    func paymentDetailRow(layout: PaymentDetailLayout = .flow, isInteractive: Bool = false) -> some View {
+        self
+            .font(.footnote)
+            .padding(.horizontal, layout == .history ? 4 : PaymentDetailMetrics.horizontalPadding)
+            .padding(.vertical, layout == .history ? 12 : PaymentDetailMetrics.verticalPadding)
+            .frame(minHeight: isInteractive || layout == .history ? PaymentDetailMetrics.minimumTouchHeight : nil)
+            .frame(maxWidth: layout == .history ? .infinity : PaymentDetailMetrics.maxWidth)
+            .frame(maxWidth: .infinity)
+    }
+}
+
 /// Fits the QR around the receipt's actual text, keeping related details together.
 /// Scrolling remains available when accessibility text needs more than one screen.
 struct PaymentDetailContent<Hero: View, Details: View>: View {

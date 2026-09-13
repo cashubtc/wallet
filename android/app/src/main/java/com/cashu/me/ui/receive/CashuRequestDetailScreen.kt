@@ -97,7 +97,6 @@ import com.cashu.me.ui.components.SheetHeader
 import com.cashu.me.ui.components.TextButtonContext
 import com.cashu.me.ui.components.ToolbarIcon
 import com.cashu.me.ui.components.UnitPickerSheet
-import com.cashu.me.ui.components.WaitingForPaymentRow
 import com.cashu.me.ui.components.shareText
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.withMonoDigits
@@ -364,7 +363,7 @@ fun CashuRequestDetailScreen(
                             detail = deliveryNotice.message,
                             severity = NoticeSeverity.Caution,
                         )
-                    } else {
+                    } else if (request.receivedPayments.isNotEmpty()) {
                         StatusBlock(
                             received = request.receivedPayments.isNotEmpty(),
                             paymentCount = paymentCount,
@@ -589,8 +588,7 @@ private fun NfcReceivePhase.isNfcTransferActive(): Boolean = this in setOf(
 
 @Composable
 private fun StatusBlock(received: Boolean, paymentCount: Int) {
-    // Waiting → received swaps with the same fade + scale-in the terminal
-    // glyph uses, so an arriving payment reads as a morph, not a pop.
+    // Received counts retain the shared payment feedback treatment.
     AnimatedContent(
         targetState = received,
         transitionSpec = {
@@ -623,8 +621,6 @@ private fun StatusBlock(received: Boolean, paymentCount: Int) {
                     color = CashuTheme.colors.onReceivedContainer,
                 )
             }
-        } else {
-            WaitingForPaymentRow()
         }
     }
 }
