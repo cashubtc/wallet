@@ -193,3 +193,79 @@ struct MintSelectorRow: View {
         return "\(direction.label) \(mint.name)"
     }
 }
+
+/// Amount entry groups the mint with the amount it qualifies. The picker is a
+/// single centered target; spending context and Max occupy a quieter second line.
+struct AmountEntryMintSelector: View {
+    let direction: MintSelectorDirection
+    let mint: MintInfo
+    var balanceText: String? = nil
+    var onUseMax: (() -> Void)? = nil
+    var onChooseMint: (() -> Void)? = nil
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if let onChooseMint {
+                Button(action: onChooseMint) { identity }
+                    .buttonStyle(.plain)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("\(direction.label) \(mint.name)")
+                    .accessibilityHint("Choose a different mint")
+            } else {
+                identity
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("\(direction.label) \(mint.name)")
+            }
+            if let balanceText {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 12) { availableBalance(balanceText); maxAction }
+                    VStack(spacing: 0) { availableBalance(balanceText); maxAction }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var identity: some View {
+        HStack(spacing: 6) {
+            Text("\(direction.label) \(mint.name)")
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+            if onChooseMint != nil {
+                Image(systemName: "chevron.down")
+                    .font(.caption)
+                    .accessibilityHidden(true)
+            }
+        }
+        .font(.subheadline)
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 8)
+        .frame(minHeight: 48)
+        .contentShape(Rectangle())
+    }
+
+    private func availableBalance(_ text: String) -> some View {
+        Text("\(text) available")
+            .font(.subheadline)
+            .monospacedDigit()
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .multilineTextAlignment(.center)
+    }
+
+    @ViewBuilder
+    private var maxAction: some View {
+        if let onUseMax {
+            Button(action: onUseMax) {
+                Text("Max")
+                    .font(.subheadline.weight(.medium))
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Send maximum")
+            .accessibilityHint("Fill the amount with your full mint balance")
+        }
+    }
+}

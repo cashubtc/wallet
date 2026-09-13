@@ -479,26 +479,23 @@ struct CashuPaymentRequestPayView: View {
                 statusView(paymentPhase)
                     .transition(.opacity)
               } else {
-                // Family-style confirm layout. Fixed-amount any/multi-mint requests
-                // get a top mint pill (matching Pay Lightning); amountless requests
-                // keep their fee preview and source mint beside the amount controls,
-                // directly above the number pad (matching Android and the unified
-                // Send amount screen). A fixed-amount request pinned to one required
-                // mint keeps the centered mint-identity header above the amount.
-                // Read-only request facts sit beneath.
-                // Fixed-amount requests use the shared Pay-flow anchor so their facts
-                // remain aligned with processing / success. Amount entry instead
-                // centers the complete amount lockup in the non-scrolling space above
-                // the fixed fee, mint, and number-pad controls.
+                // Keep the source selector with the amount, as in Receive.
+                // Amount entry reserves its keypad in the footer.
                 PayFlowScaffold(
                     contentLayout: request.amount == nil ? .centered : .anchoredScrollable
                 ) {
-                    VStack(spacing: 12) {
+                    VStack(spacing: 8) {
                         if showsMintIdentityHeader {
                             mintHeader
                                 .padding(.horizontal)
                         }
                         amountSection
+                        if request.amount != nil,
+                           request.isSatUnit,
+                           let selected = pickerSelectedMint {
+                            paymentMintSelector(selected)
+                                .padding(.horizontal, NumberPadMetrics.gutter)
+                        }
                     }
                 } details: {
                     requestDetailsSection
@@ -539,7 +536,7 @@ struct CashuPaymentRequestPayView: View {
                         Button(action: payRequest) {
                             LoadingButtonLabel(title: payButtonTitle, isLoading: isPaying)
                         }
-                        .glassButton()
+                        .flatSheetSecondaryButton()
                         .disabled(!canPay)
                         .accessibilityLabel(payButtonTitle)
                         .accessibilityValue(isPaying ? "In progress" : "")
@@ -554,14 +551,6 @@ struct CashuPaymentRequestPayView: View {
                             }
                             .environmentObject(walletManager)
                         }
-                    }
-                } topAccessory: {
-                    if request.amount != nil,
-                       request.isSatUnit,
-                       let selected = pickerSelectedMint {
-                        paymentMintSelector(selected)
-                            .padding(.horizontal, NumberPadMetrics.gutter)
-                            .padding(.top, 8)
                     }
                 }
               }
@@ -640,14 +629,13 @@ struct CashuPaymentRequestPayView: View {
             useMaximumAmount(from: mint)
         } : nil
 
-        return MintSelectorRow(
+        return AmountEntryMintSelector(
             direction: .source,
             mint: mint,
-            balanceText: AmountFormatter.sats(
+            balanceText: isAmountEntry ? AmountFormatter.sats(
                 mint.balance,
                 useBitcoinSymbol: settings.useBitcoinSymbol
-            ),
-            showsBalance: isAmountEntry,
+            ) : nil,
             onUseMax: onUseMax,
             onChooseMint: candidateMints.count > 1 ? {
                 HapticFeedback.selection()

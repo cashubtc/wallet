@@ -2,6 +2,8 @@ package com.cashu.me.ui.components
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -263,4 +265,73 @@ private fun MintBalance(balanceText: String, modifier: Modifier = Modifier) {
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
     )
+}
+
+/** The centered mint context used by Receive, Send and Create Ecash amount entry. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun AmountEntryMintSelector(
+    direction: MintSelectorDirection,
+    mint: MintInfo,
+    balanceText: String? = null,
+    onPickMint: (() -> Unit)? = null,
+    onUseMax: (() -> Unit)? = null,
+) {
+    val description = "${direction.label} ${mint.name}"
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+        Row(
+            modifier = Modifier
+                .heightIn(min = MinimumTouchTarget)
+                .then(if (onPickMint != null) Modifier.clickable(role = Role.Button, onClick = onPickMint) else Modifier)
+                .semantics(mergeDescendants = true) { }
+                .padding(horizontal = CashuTheme.spacing.snug),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.micro),
+        ) {
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            if (onPickMint != null) {
+                Icon(
+                    Icons.Outlined.KeyboardArrowDown,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(ChevronSize),
+                )
+            }
+        }
+        if (balanceText != null) {
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default, Alignment.CenterHorizontally),
+            ) {
+                Box(Modifier.heightIn(min = MinimumTouchTarget), contentAlignment = Alignment.Center) {
+                    Text(
+                        text = bitcoinAmountText("$balanceText available"),
+                        style = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum"),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    )
+                }
+                if (onUseMax != null) {
+                    TextButton(
+                        onClick = onUseMax,
+                        modifier = Modifier
+                            .defaultMinSize(minWidth = MinimumTouchTarget, minHeight = MinimumTouchTarget)
+                            .semantics { contentDescription = "Send maximum" },
+                        contentPadding = PaddingValues(horizontal = 0.dp),
+                    ) {
+                        Text("Max", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface)
+                    }
+                }
+            }
+        }
+    }
 }

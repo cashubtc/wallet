@@ -460,7 +460,8 @@ private struct PaymentSheetSurfaceHarness: View {
                         PaymentStatusView(
                             details: [
                                 .init(label: "Amount", isAmount: true, value: amount),
-                                .init(label: "Mint", value: "Example mint")
+                                .init(label: "Mint", value: "Example mint"),
+                                .init(label: "Fees", value: "2 sat")
                             ],
                             phase: .success,
                             successTitle: "Payment Received!",

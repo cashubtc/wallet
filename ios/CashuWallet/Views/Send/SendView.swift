@@ -1594,10 +1594,8 @@ struct UnifiedSendView: View {
 
     // MARK: Pinned "To" row
 
-    /// Recipient row in the flow-row vocabulary — the same quiet, unboxed shape
-    /// as `MintSelectorRow`, so "From" and "To" share one left edge and one
-    /// label style. No fill or capsule: the amount stays the screen's focal
-    /// point, and the row is still tappable to change the recipient.
+    /// The recipient stays pinned above the step swap and remains tappable
+    /// to change the destination.
     private func toRow(_ locked: SendAmountDestination) -> some View {
         Button(action: editRecipient) {
             HStack(alignment: .firstTextBaseline, spacing: FlowRowMetrics.gap) {
@@ -1622,19 +1620,13 @@ struct UnifiedSendView: View {
         .accessibilityHint("Double-tap to change the recipient")
     }
 
-    /// Confirm-step mint selector, floated in the scaffold's `topAccessory` so
-    /// its presence (confirm) or absence (status) never shifts the anchored
-    /// amount hero (see `PayFlowScaffold`). It sits under the pinned "To" row
-    /// the step machine keeps outside the swap — the recipient holds still,
-    /// only this row arrives. The mint is `nil` for Cashu-request states with
-    /// no held mint — those keep an actionable row in the details instead.
+    /// The source mint accompanies the amount, matching Receive amount entry.
     @ViewBuilder
-    private func confirmHeader(mint: MintInfo?) -> some View {
+    private func confirmMintSelector(mint: MintInfo?) -> some View {
         if let mint {
-            MintSelectorRow(
+            AmountEntryMintSelector(
                 direction: .source,
                 mint: mint,
-                balanceText: AmountFormatter.sats(mint.balance, useBitcoinSymbol: settings.useBitcoinSymbol),
                 onChooseMint: canChangeMint ? {
                     HapticFeedback.selection()
                     showingMintPicker = true
@@ -1921,26 +1913,29 @@ struct UnifiedSendView: View {
             || (meltQuote == nil && errorMessage != nil && errorShowsMintAction)
         return VStack(spacing: 0) {
             PayFlowScaffold {
-                if let quote = shortQuote {
-                    confirmCautionFace(
-                        message: "Not enough balance.",
-                        detail: mintInfo(for: quote).map { mint in
-                            "This mint holds \(AmountFormatter.sats(mint.balance, useBitcoinSymbol: settings.useBitcoinSymbol)); the payment reserves up to \(AmountFormatter.sats(quote.totalAmount, useBitcoinSymbol: settings.useBitcoinSymbol))."
-                        }
-                    )
-                    .transition(.opacity)
-                } else if let quote = meltQuote {
-                    CurrencyAmountDisplay(sats: quote.amount, primary: $settings.amountDisplayPrimary)
+                VStack(spacing: 8) {
+                    if let quote = shortQuote {
+                        confirmCautionFace(
+                            message: "Not enough balance.",
+                            detail: mintInfo(for: quote).map { mint in
+                                "This mint holds \(AmountFormatter.sats(mint.balance, useBitcoinSymbol: settings.useBitcoinSymbol)); the payment reserves up to \(AmountFormatter.sats(quote.totalAmount, useBitcoinSymbol: settings.useBitcoinSymbol))."
+                            }
+                        )
                         .transition(.opacity)
-                } else if let errorMessage {
-                    confirmCautionFace(
-                        message: errorMessage,
-                        detail: errorShowsMintAction ? meltInsufficientDetail : nil
-                    )
-                    .transition(.opacity)
-                } else {
-                    SpinnerRing()
+                    } else if let quote = meltQuote {
+                        CurrencyAmountDisplay(sats: quote.amount, primary: $settings.amountDisplayPrimary)
+                            .transition(.opacity)
+                    } else if let errorMessage {
+                        confirmCautionFace(
+                            message: errorMessage,
+                            detail: errorShowsMintAction ? meltInsufficientDetail : nil
+                        )
                         .transition(.opacity)
+                    } else {
+                        SpinnerRing()
+                            .transition(.opacity)
+                    }
+                    confirmMintSelector(mint: meltQuote.flatMap(mintInfo(for:)) ?? activeMeltMint)
                 }
             } details: {
                 if let quote = meltQuote, shortQuote == nil {
@@ -1957,8 +1952,6 @@ struct UnifiedSendView: View {
                 }
             } footer: {
                 EmptyView()
-            } topAccessory: {
-                confirmHeader(mint: meltQuote.flatMap(mintInfo(for:)) ?? activeMeltMint)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
@@ -2436,10 +2429,13 @@ struct UnifiedSendView: View {
         // Shared Pay-flow scaffold so the request facts sit at the same Y as the
         // processing / success screens.
         PayFlowScaffold {
-            CurrencyAmountDisplay(
-                sats: paymentAmountForCreq ?? 0,
-                primary: $settings.amountDisplayPrimary
-            )
+            VStack(spacing: 8) {
+                CurrencyAmountDisplay(
+                    sats: paymentAmountForCreq ?? 0,
+                    primary: $settings.amountDisplayPrimary
+                )
+                confirmMintSelector(mint: creqTopMint(creq))
+            }
         } details: {
             creqRequestDetails(creq)
 
@@ -2461,7 +2457,7 @@ struct UnifiedSendView: View {
             Button(action: payCreq) {
                 Text(creqPayButtonTitle)
             }
-            .glassButton()
+            .flatSheetSecondaryButton()
             .disabled(!creqCanPay)
             .padding(.horizontal)
             .padding(.bottom, 16)
@@ -2474,8 +2470,6 @@ struct UnifiedSendView: View {
                 }
                 .environmentObject(walletManager)
             }
-        } topAccessory: {
-            confirmHeader(mint: creqTopMint(creq))
         }
     }
 
@@ -3322,10 +3316,9 @@ struct MeltView: View {
     private var requestInputView: some View {
         VStack(spacing: 0) {
             if let mint = displayMeltMint {
-                MintSelectorRow(
+                AmountEntryMintSelector(
                     direction: .source,
                     mint: mint,
-                    balanceText: AmountFormatter.sats(mint.balance, useBitcoinSymbol: settings.useBitcoinSymbol),
                     onChooseMint: canChangeMint ? {
                         HapticFeedback.selection()
                         showingMintPicker = true
@@ -3518,10 +3511,23 @@ struct MeltView: View {
         // Shared Pay-flow scaffold (see `PayFlowScaffold`) so the details block sits
         // at the same Y here as on the processing / success screens.
         return PayFlowScaffold {
-            CurrencyAmountDisplay(
-                sats: displayAmount,
-                primary: $settings.amountDisplayPrimary
-            )
+            VStack(spacing: 8) {
+                CurrencyAmountDisplay(
+                    sats: displayAmount,
+                    primary: $settings.amountDisplayPrimary
+                )
+                if let mint = selectorMint {
+                    AmountEntryMintSelector(
+                        direction: .source,
+                        mint: mint,
+                        onChooseMint: canChangeMint ? {
+                            HapticFeedback.selection()
+                            showingMintPicker = true
+                        } : nil
+                    )
+                        .padding(.horizontal)
+                }
+            }
         } details: {
             VStack(spacing: 0) {
                 meltDetailRow(label: "Method", value: methodName)
@@ -3579,20 +3585,6 @@ struct MeltView: View {
             .disabled(isLoading || isPaying || !canPay)
             .padding(.horizontal)
             .padding(.bottom, 16)
-        } topAccessory: {
-            if let mint = selectorMint {
-                MintSelectorRow(
-                    direction: .source,
-                    mint: mint,
-                    balanceText: AmountFormatter.sats(mint.balance, useBitcoinSymbol: settings.useBitcoinSymbol),
-                    onChooseMint: canChangeMint ? {
-                        HapticFeedback.selection()
-                        showingMintPicker = true
-                    } : nil
-                )
-                    .padding(.horizontal)
-                    .padding(.top, 12)
-            }
         }
     }
 

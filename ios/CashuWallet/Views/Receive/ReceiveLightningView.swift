@@ -742,7 +742,7 @@ struct ReceiveLightningView: View {
                 value: formatQuoteAmount(amount, unit: quote.unit)
             ))
         }
-        if let mint = mintDisplayValue(for: quote) {
+        if quote.paymentMethod != .bolt11, let mint = mintDisplayValue(for: quote) {
             rows.append(.init(
                 label: "Mint",
                 value: mint

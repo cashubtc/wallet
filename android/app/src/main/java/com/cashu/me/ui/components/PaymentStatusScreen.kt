@@ -24,11 +24,13 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -316,6 +318,8 @@ fun PaymentStatusScreen(
                     ) {
                         AnimatedContent(
                             targetState = title,
+                            modifier = Modifier.fillMaxWidth(),
+                            contentAlignment = Alignment.Center,
                             transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(150)) },
                             label = "payment-status-title",
                         ) { currentTitle ->
@@ -326,7 +330,9 @@ fun PaymentStatusScreen(
                                 ),
                                 color = MaterialTheme.colorScheme.onSurface,
                                 textAlign = TextAlign.Center,
-                                modifier = Modifier.padding(horizontal = CashuTheme.spacing.page),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = CashuTheme.spacing.page),
                             )
                         }
                         if (phase == PaymentStatusPhase.Success && !settlementPending && !successAmount.isNullOrBlank()) {
@@ -357,11 +363,14 @@ fun PaymentStatusScreen(
                     }
                 }
                 if (rows != null && (phase != PaymentStatusPhase.Processing || showRowsDuringProcessing)) {
+                    val successDetails = phase == PaymentStatusPhase.Success && !settlementPending && !successAmount.isNullOrBlank()
                     Column(
                         modifier = Modifier
+                            .align(Alignment.CenterHorizontally)
+                            .padding(horizontal = CashuTheme.spacing.comfortable)
+                            .widthIn(max = if (successDetails) 320.dp else androidx.compose.ui.unit.Dp.Infinity)
                             .fillMaxWidth()
                             .padding(top = CashuTheme.spacing.snug)
-                            .padding(horizontal = CashuTheme.spacing.comfortable)
                             .graphicsLayer {
                                 alpha = if (showRowsDuringProcessing) 1f else terminalAlpha
                                 // Beat 3's settle-rise — opacity + 6dp only,
@@ -370,7 +379,9 @@ fun PaymentStatusScreen(
                                     translationY = 6.dp.toPx() * (1f - terminalAlpha)
                                 }
                             },
-                    ) { rows() }
+                    ) {
+                        CompositionLocalProvider(LocalPaymentSuccessDetails provides successDetails) { rows() }
+                    }
                 }
             }
 

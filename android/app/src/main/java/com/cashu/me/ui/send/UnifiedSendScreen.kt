@@ -107,11 +107,13 @@ import com.cashu.me.ui.components.MethodActionRow
 import com.cashu.me.ui.components.MintPickerSheet
 import com.cashu.me.ui.components.MintSelectorDirection
 import com.cashu.me.ui.components.MintSelectorRow
+import com.cashu.me.ui.components.AmountEntryMintSelector
 import com.cashu.me.ui.components.NoticeSeverity
 import com.cashu.me.ui.components.NumberPadFooter
 import com.cashu.me.ui.components.PaymentStatusPhase
 import com.cashu.me.ui.components.PaymentStatusScreen
 import com.cashu.me.ui.components.PrimaryButton
+import com.cashu.me.ui.components.SecondaryButton
 import com.cashu.me.ui.components.QrCard
 import com.cashu.me.ui.components.SheetHeader
 import com.cashu.me.ui.components.SkeletonValue
@@ -1091,11 +1093,8 @@ private fun InputFace(
 }
 
 /**
- * Recipient row in the flow-row vocabulary — the same quiet, unboxed shape as
- * [MintSelectorRow], so "From" and "To" share one left edge and one label
- * style instead of a lone capsule breaking the alignment (iOS `toRow` parity).
- * Rendered once above the step swap, so the recipient never travels or
- * double-renders between the amount and confirm faces.
+ * Recipient row, rendered once above the step swap so the recipient stays
+ * pinned between the amount and confirm faces (iOS `toRow` parity).
  */
 @Composable
 private fun ToRow(destination: String, modifier: Modifier = Modifier) {
@@ -1379,6 +1378,14 @@ private fun ConfirmFace(
                     formatter = formatter,
                 )
             }
+            if (mint != null) {
+                Spacer(Modifier.height(CashuTheme.spacing.snug))
+                AmountEntryMintSelector(
+                    direction = MintSelectorDirection.Source,
+                    mint = mint,
+                    onPickMint = onPickMint.takeIf { canPickMint },
+                )
+            }
         }
         if (!quoteLoading && !quoteFailed && !insufficient) {
         Column(
@@ -1536,6 +1543,15 @@ private fun ConfirmFace(
                 text = "Retry Quote",
                 onClick = onRetryQuote,
             )
+            !isMelt -> SecondaryButton(
+                text = cashuRequestPayButtonText(
+                    route = cashuRoute,
+                    fallback = "Pay ${cashuAmountLabel ?: formatter.formatWalletSats(amountSats, useBitcoinSymbol)}",
+                ),
+                onClick = onPay,
+                modifier = Modifier.testTag(UiTestTags.SendPaymentSubmit),
+                enabled = canPayCashuRequest && quoteError == null,
+            )
             else -> PrimaryButton(
                 text = cashuRequestPayButtonText(
                     route = cashuRoute,
@@ -1543,28 +1559,12 @@ private fun ConfirmFace(
                 ),
                 onClick = onPay,
                 modifier = Modifier.testTag(UiTestTags.SendPaymentSubmit),
-                enabled = if (isMelt) {
-                    quote != null && !insufficient && quoteError == null
-                } else {
-                    canPayCashuRequest && quoteError == null
-                },
+                enabled = quote != null && !insufficient && quoteError == null,
             )
         }
         Spacer(Modifier.navigationBarsPadding())
         }
-        // Floating From selector (iOS topAccessory): overlaid so its presence
-        // never shifts the anchored hero band below it.
-        if (mint != null) {
-            MintSelectorRow(
-                direction = MintSelectorDirection.Source,
-                mint = mint,
-                balanceText = formatter.formatWalletSats(mintBalance, useBitcoinSymbol),
-                onPickMint = onPickMint.takeIf { canPickMint },
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(horizontal = CashuTheme.spacing.comfortable),
-            )
-        }
+
     }
 }
 

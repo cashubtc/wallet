@@ -149,10 +149,17 @@ struct PaymentStatusView: View {
                 // landed. Inert (opacity 1, offset 0) outside a celebration
                 // mount, so the morph path renders byte-identically.
                 VStack(spacing: 8) {
-                    Text(statusTitle)
-                        .font(.title2.weight(.semibold))
-                        .contentTransition(.opacity)
-                        .multilineTextAlignment(.center)
+                    // Keep both titles centered during the crossfade. A Text
+                    // content transition interpolates their different widths,
+                    // sliding the outgoing title sideways as the amount arrives.
+                    ZStack {
+                        Text(statusTitle)
+                            .font(.title2.weight(.semibold))
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: .infinity)
+                            .id(statusTitle)
+                            .transition(.opacity)
+                    }
 
                     if let amount = successAmount {
                         AmountLockup(
@@ -188,7 +195,8 @@ struct PaymentStatusView: View {
                         detailRow(row)
                     }
                 }
-                .padding(.horizontal)
+                .frame(maxWidth: successAmount == nil ? .infinity : 320)
+                .padding(.horizontal, successAmount == nil ? 16 : 24)
                 // Beat 3: the receipt settles in last. Opacity + a 6pt rise —
                 // never blur; these rows are money values.
                 .opacity(bandVisible ? 1 : 0)
@@ -308,9 +316,9 @@ struct PaymentStatusView: View {
 
     private func detailRow(_ row: DetailRow) -> some View {
         standardDetailRow(row)
-            .font(.subheadline)
-            .padding(.horizontal, 4)
-            .padding(.vertical, 14)
+            .font(successAmount == nil ? .subheadline : .footnote)
+            .padding(.horizontal, successAmount == nil ? 4 : 16)
+            .padding(.vertical, successAmount == nil ? 14 : 8)
             .accessibilityElement(children: .combine)
     }
 
@@ -326,9 +334,9 @@ struct PaymentStatusView: View {
                 ProgressView().controlSize(.mini)
             } else {
                 Text(row.value)
-                    .fontWeight(.medium)
+                    .fontWeight(successAmount == nil ? .medium : .regular)
                     .multilineTextAlignment(.trailing)
-                    .lineLimit(1)
+                    .lineLimit(successAmount == nil ? 1 : 2)
                     .truncationMode(.middle)
                     .contentTransition(.opacity)
             }

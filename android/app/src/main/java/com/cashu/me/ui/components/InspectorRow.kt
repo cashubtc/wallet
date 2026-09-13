@@ -27,6 +27,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -43,6 +44,9 @@ import com.cashu.me.ui.theme.withMonoDigits
 // so the inspector reads as denser metadata, not list-row chrome.
 private val InspectorLeadingIconSize = 18.dp
 private val InspectorEditHintSize = 16.dp
+
+/** Supporting receipt facts beneath the completed payment's amount. */
+internal val LocalPaymentSuccessDetails = staticCompositionLocalOf { false }
 
 /**
  * Two-column metadata row used inside Cashu Request / Transaction Detail inspector
@@ -71,6 +75,8 @@ fun InspectorRow(
     secondaryValue: String? = null,
     loading: Boolean = false,
 ) {
+    val successDetails = LocalPaymentSuccessDetails.current
+    val rowStyle = if (successDetails) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge
     val rowMod = if (onClick != null) {
         modifier.fillMaxWidth().clickable(onClick = onClick)
     } else {
@@ -79,7 +85,7 @@ fun InspectorRow(
     Row(
         modifier = rowMod.padding(
             horizontal = CashuTheme.spacing.comfortable,
-            vertical = CashuTheme.spacing.default,
+            vertical = if (successDetails) CashuTheme.spacing.snug else CashuTheme.spacing.default,
         ),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
@@ -94,10 +100,7 @@ fun InspectorRow(
         }
         Text(
             text = label,
-            // bodyLarge, not bodyMedium: every neighboring row vocabulary
-            // (settings rows, MintSelectorRow, the flow rows) reads at 16sp,
-            // and 14sp here made payment facts look like fine print.
-            style = MaterialTheme.typography.bodyLarge,
+            style = rowStyle,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         // Value fills the remaining width and right-aligns its text so it sits
@@ -108,10 +111,10 @@ fun InspectorRow(
                     Text(
                         text = value,
                         style = if (valueMonospaced) {
-                            MaterialTheme.typography.bodyLarge.withMonoDigits()
-                        } else MaterialTheme.typography.bodyLarge,
+                            rowStyle.withMonoDigits()
+                        } else rowStyle,
                         color = valueColor ?: MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
+                        maxLines = if (successDetails) 2 else 1,
                         overflow = TextOverflow.MiddleEllipsis,
                         textAlign = TextAlign.End,
                     )

@@ -57,7 +57,10 @@ class PaymentSheetSurfaceComposeTest {
                         phase = PaymentStatusPhase.Success,
                         title = "Payment sent",
                         successAmount = "27,237 sat",
-                        rows = { InspectorRow("Mint", "Example mint") },
+                        rows = {
+                            InspectorRow("Mint", "Example mint")
+                            InspectorRow("Fees", "2 sat")
+                        },
                         onDone = close,
                     )
                 }

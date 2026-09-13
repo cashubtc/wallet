@@ -1943,7 +1943,7 @@ private fun ReceiveSuccessTerminal(
         modifier = modifier,
         successAmount = info.amountLabel,
         rows = {
-            if (info.mintName != null) {
+            if (info.method != PaymentMethodKind.Bolt11 && info.mintName != null) {
                 InspectorRow(
                     label = "Mint",
                     value = info.mintName,

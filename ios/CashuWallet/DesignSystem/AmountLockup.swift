@@ -62,10 +62,8 @@ struct AmountLockup: View {
     /// so the digits are unmistakably the subject. At parity the unit occupies
     /// roughly a third of the lockup while carrying none of the information.
     ///
-    /// The unit sits on the digits' **baseline**, not their cap line. Cap
-    /// alignment was tried and reads wrong: a unit word is lowercase, so its
-    /// visual mass is at x-height, and lifting it to the cap line leaves it
-    /// floating like a superscript rather than belonging to the same amount.
+    /// Center the unit beside the numeral's visible height. Keeping the offset
+    /// inside the same Text makes the alignment scale with long amounts.
     private var composed: Text {
         let pointSize = role.pointSize(at: typeSize)
         let unitSize = pointSize * CashuTextRole.unitScale
@@ -74,6 +72,10 @@ struct AmountLockup: View {
             Text(word)
                 .font(fonts.font(.sans, size: unitSize, weight: role.weight.oneStepDown))
                 .foregroundStyle(.secondary)
+                .baselineOffset((
+                    fonts.capHeight(.sans, size: pointSize, weight: role.weight)
+                    - fonts.capHeight(.sans, size: unitSize, weight: role.weight.oneStepDown)
+                ) / 2)
         }
 
         // A 1pt carrier whose tracking supplies the whole optical gap.
