@@ -8,7 +8,15 @@ on:
       - 'ios/**'
       - 'CI/**'
       - '.github/workflows/ios-tests.yml'
+  schedule:
+    - cron: '0 4 * * *'
   workflow_dispatch:
+    inputs:
+      tier:
+        description: Payment test depth
+        type: choice
+        default: pr
+        options: [pr, full]
 
 concurrency:
   group: ios-tests-${{ github.ref }}
@@ -17,12 +25,15 @@ concurrency:
 env:
   NUTSHELL_MINT_URL: http://localhost:3338
   CDK_MINT_URL: http://127.0.0.1:3339
+  PAYMENT_TIER: ${{ (github.event_name == 'schedule' && 'full') || inputs.tier || 'pr' }}
+  TEST_RUNNER_PAYMENT_FIXTURE_URL: http://127.0.0.1:3341
+  TEST_RUNNER_PAYMENT_TEST_TIER: ${{ (github.event_name == 'schedule' && 'full') || inputs.tier || 'pr' }}
 
 jobs:
   ios-tests:
     name: iOS Unit, Mint Integration & UI Tests
     runs-on: macos-26
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
     - name: Checkout code
@@ -95,7 +106,8 @@ jobs:
 
         ./CI/setup-nutshell.sh &
         NUTSHELL_SETUP_PID=$!
-        ./CI/setup-cdk.sh &
+        # The shared multi-unit profile enables the USD UI payment journey.
+        ./CI/setup-cdk.sh 3339 android &
         CDK_SETUP_PID=$!
 
         STATUS=0
@@ -114,10 +126,14 @@ jobs:
         ./CI/start-cdk.sh &
         CDK_START_PID=$!
 
+        python3 CI/receipt-recovery-proxy.py > "$RUNNER_TEMP/receipt-proxy.log" 2>&1 &
+        echo $! > "$RUNNER_TEMP/receipt-proxy.pid"
         STATUS=0
         wait "$NUTSHELL_START_PID" || STATUS=$?
         wait "$CDK_START_PID" || STATUS=$?
-        exit "$STATUS"
+        if [ "$STATUS" != 0 ]; then exit "$STATUS"; fi
+        ./CI/start-payment-fixtures.sh
+        CI/.nutshell-venv/bin/python -m unittest discover -s CI/payment-tests -v
 
     - name: Run unit and mint integration tests
       id: unit_tests
@@ -139,9 +155,11 @@ jobs:
 
     # UI tests are deliberately serial. Two simulator clones on the hosted
     # three-core VM caused accessibility startup timeouts and made the suite
-    # slower. A failed test gets one retry in a fresh app process.
-    - name: Run iOS UI smoke tests
+    # slower. Run once: Xcode's repetition flags reran the entire bundle,
+    # doubling runtime and obscuring first-attempt interaction failures.
+    - name: Run iOS UI journeys
       id: ui_tests
+      timeout-minutes: 30
       if: ${{ always() && steps.build.outcome == 'success' && steps.setup_mints.outcome == 'success' && steps.start_mints.outcome == 'success' }}
       continue-on-error: true
       run: |
@@ -158,17 +176,22 @@ jobs:
           -test-timeouts-enabled YES \
           -default-test-execution-time-allowance 90 \
           -maximum-test-execution-time-allowance 150 \
-          -retry-tests-on-failure \
-          -test-iterations 2 \
-          -test-repetition-relaunch-enabled YES \
           -resultBundlePath "$RUNNER_TEMP/CashuWalletUITests.xcresult" \
           CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="-" \
           | tee ios-ui-test-output.log | xcbeautify
+
+    - name: Enforce executed payment coverage
+      if: ${{ always() && steps.build.outcome == 'success' }}
+      run: |
+        python3 CI/payment-tests/check_coverage.py --platform ios --tier "$PAYMENT_TIER" \
+          "$RUNNER_TEMP/CashuWalletUnitTests.xcresult" "$RUNNER_TEMP/CashuWalletUITests.xcresult"
 
     - name: Stop local test mints
       if: always()
       run: |
         chmod +x CI/stop-nutshell.sh CI/stop-cdk.sh
+        if [ -f "$RUNNER_TEMP/receipt-proxy.pid" ]; then kill "$(cat "$RUNNER_TEMP/receipt-proxy.pid")" || true; fi
+        ./CI/stop-payment-fixtures.sh
         ./CI/stop-nutshell.sh &
         NUTSHELL_STOP_PID=$!
         ./CI/stop-cdk.sh &
@@ -201,12 +224,12 @@ jobs:
           exit 1
         fi
         if [ "${{ steps.ui_tests.outcome }}" != "success" ]; then
-          echo "UI smoke tests failed after retry"
+          echo "UI journeys failed"
           exit 1
         fi
 
     - name: Upload failed test diagnostics
-      if: failure()
+      if: ${{ always() && (failure() || cancelled() || steps.ui_tests.outcome == 'failure') }}
       uses: actions/upload-artifact@v4
       with:
         name: ios-test-results-${{ github.sha }}

@@ -82,6 +82,14 @@ xcodebuild test \
 ./CI/stop-cdk.sh
 ```
 
+## Payment safety pack
+
+The [payment coverage review and runbook](payment-tests/README.md) describes the
+new scenario-isolated fault proxy, controlled fee/no-fee mints, native payment
+suites, live UI journeys, required-test manifest, known regression, and prioritized
+remaining gaps. Both platform workflows run core payment cases on PRs and the
+expanded request/NWC/unit matrix nightly.
+
 ## Test Coverage
 
 The integration tests verify **CDK-Swift ↔ real mint** compatibility:
@@ -175,19 +183,24 @@ max_delay_time = 0
 
 ## GitHub Actions Workflow
 
-The workflow (`.github/workflows/integration-tests.yml`) runs on every push/PR to main:
+The iOS workflow (`.github/workflows/ios-tests.yml`) runs for relevant pull
+requests and pushes to main/develop. Native UI coverage is described in the
+[wallet UI matrix](../docs/testing/wallet-ui-coverage.md). The workflow uses
+`./CI/setup-cdk.sh 3339 android` to enable the shared SAT/USD profile needed by
+the multi-currency UI journey; the historical profile name is used by both apps.
 
 1. Checks out code
 2. Setups Python 3.11 and Xcode
 3. Restores the Swift package cache
-4. Sets up and starts Nutshell and CDK in parallel
-5. Builds the iOS test products while the simulator boots
-6. Runs unit, protocol, and UI tests in one bounded-parallel Xcode session
-7. Exercises all live protocol scenarios and onboarding against both mints
+4. Builds the iOS test products while the simulator boots
+5. Sets up and starts Nutshell and CDK in parallel
+6. Runs unit/protocol tests, followed by serial native UI journeys
+7. Exercises local-mint payments, restore, onboarding, and settings
 8. Uploads test results and both mint logs on failure
 
-The optimized workflow targets roughly 6–9 minutes instead of the previous
-19–26 minute range; the exact duration depends on hosted-runner load and cache state.
+UI tests run once so first-attempt failures remain visible. The UI step has a
+30-minute bound inside the 45-minute job, leaving time for cleanup and failed
+test diagnostics; duration depends on hosted-runner load and cache state.
 
 ## Manual Testing
 
@@ -269,3 +282,16 @@ This isn't just "does the app work" — this tests **CDK-Swift ↔ real Cashu mi
 - ✅ Multi-mint management
 
 **This catches real integration bugs** that unit tests can't find!
+
+### Interrupted receipt recovery
+
+`python3 CI/receipt-recovery-proxy.py` starts a loopback-only proxy on port 3340
+in front of the Nutshell test mint on port 3338. The iOS `ReceiveRecoveryTests`
+and Android `ReceiptRecoveryInstrumentedTest` exercise a completed receipt before
+app tracking, an accepted swap whose response is interrupted, an offline database
+reopen, and repeated CDK reconciliation. They never redeem the original token a
+second time. Run these tests serially because they share the proxy's fault state.
+The native CI jobs start and stop the proxy automatically. Android uses
+`cashu.nativeWalletLocalMintIntegration=true` and
+`cashu.receiptRecoveryMintUrl=http://10.0.2.2:3340` on hosted emulators; use an ADB
+reverse mapping and the emulator loopback address for a local run.

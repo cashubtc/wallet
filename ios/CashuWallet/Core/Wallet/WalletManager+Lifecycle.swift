@@ -482,6 +482,9 @@ extension WalletManager {
             SettingsManager.shared.resetWalletScopedData()
         }
 
+        if let relay = IntegrationTestConfig.localPaymentTestRelay {
+            SettingsManager.shared.nostrRelays = [relay]
+        }
         if IntegrationTestConfig.shouldSeedWallet {
             do {
                 try await installSeededUITestWallet()
@@ -697,6 +700,7 @@ extension WalletManager {
             protectsBackgroundExecution: true
         ) {
             let mintUrl = MintUrl(url: normalizedUrl)
+            self.walletStore.setMintRemoved(url: normalizedUrl, removed: false)
 
             // Create wallet for this mint
             try await walletRepository.createWallet(mintUrl: mintUrl, unit: .sat, targetProofCount: nil)
@@ -751,7 +755,7 @@ extension WalletManager {
             }
         }
         needsOnboarding = false
-        guard !IntegrationTestConfig.shouldUseDeterministicUIRuntime else { return }
+        guard IntegrationTestConfig.shouldRunPaymentServices else { return }
         startDeferredStartupMaintenance()
         CashuRequestListener.shared.attach(walletManager: self)
         CashuRequestListener.shared.requestStart()
@@ -891,7 +895,7 @@ extension WalletManager {
         resetRuntimeState()
         do {
             try await Task.detached(priority: .userInitiated) {
-                try WalletReplacementCheckpoint.flushDatabases(in: replacementURLs)
+                try await WalletReplacementCheckpoint.flushDatabases(in: replacementURLs)
                 try DurableWalletReplacement(storage: KeychainService(), urls: replacementURLs).begin(state: snapshotData)
             }.value
             removeWalletBoundaryDefaults(defaultsSnapshot)
@@ -942,7 +946,7 @@ extension WalletManager {
     private func resumeCashuRequestListener() {
         guard walletRepository != nil else { return }
         CashuRequestListener.shared.attach(walletManager: self)
-        guard !IntegrationTestConfig.shouldUseDeterministicUIRuntime else { return }
+        guard IntegrationTestConfig.shouldRunPaymentServices else { return }
         CashuRequestListener.shared.requestStart()
     }
 
@@ -1442,6 +1446,7 @@ extension WalletManager {
 
     private func performBestEffortWalletStartupMaintenanceAssumingLease() async -> Bool {
         guard walletRepository != nil else { return false }
+        let reconciledReceipts = await reconcileReceivedAccountsAssumingLease()
         let mintUrls = trackedMintUrlsForWalletAccess()
         guard !mintUrls.isEmpty else { return false }
 
@@ -1450,7 +1455,7 @@ extension WalletManager {
         var keysetRefreshTimestamps = storedKeysetRefreshTimestamps
             .filter { mintUrls.contains($0.key) }
         var timestampsChanged = keysetRefreshTimestamps != storedKeysetRefreshTimestamps
-        var recoveredWalletState = false
+        var recoveredWalletState = reconciledReceipts
 
         let wallets = await trackedWalletsAssumingWalletOperationLease()
         for mintUrlString in mintUrls {
@@ -1606,7 +1611,7 @@ struct DurableWalletReplacement {
 /// Native FFI handles can be released asynchronously. A successful checkpoint
 /// establishes a stable database image before the replacement journal copies it.
 enum WalletReplacementCheckpoint {
-    static func flushDatabases(in urls: [URL]) throws {
+    static func flushDatabases(in urls: [URL], retryTimeout: Duration = .seconds(1)) async throws {
         for url in urls {
             var directory: ObjCBool = false
             guard FileManager.default.fileExists(atPath: url.path, isDirectory: &directory) else { continue }
@@ -1614,25 +1619,56 @@ enum WalletReplacementCheckpoint {
                 ? try FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: nil)
                 : [url]
             for database in candidates where database.pathExtension == "db" || database.pathExtension == "sqlite" {
-                try flush(database)
+                try await flush(database, retryTimeout: retryTimeout)
             }
         }
     }
 
-    private static func flush(_ url: URL) throws {
+    private static func flush(_ url: URL, retryTimeout: Duration) async throws {
         var connection: OpaquePointer?
         guard sqlite3_open_v2(url.path, &connection, SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX, nil) == SQLITE_OK else {
             if let connection { sqlite3_close(connection) }
             throw CocoaError(.fileReadUnknown)
         }
         defer { sqlite3_close(connection) }
+
+        // CDK's final native reference is released asynchronously. Retry both
+        // schema locks during prepare and busy checkpoint results while that
+        // teardown finishes. A competing checkpoint bypasses SQLite's busy
+        // handler, so a busy timeout alone cannot cover every transient lock.
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: retryTimeout)
+        while true {
+            try Task.checkCancellation()
+            do {
+                try checkpoint(connection)
+                return
+            } catch WalletCheckpointError.busy {
+                guard clock.now < deadline else { throw WalletCheckpointError.busy }
+                try await clock.sleep(until: min(deadline, clock.now.advanced(by: .milliseconds(20))))
+            }
+        }
+    }
+
+    private static func checkpoint(_ connection: OpaquePointer?) throws {
         var statement: OpaquePointer?
-        guard sqlite3_prepare_v2(connection, "PRAGMA wal_checkpoint(TRUNCATE)", -1, &statement, nil) == SQLITE_OK else {
+        let prepared = sqlite3_prepare_v2(connection, "PRAGMA wal_checkpoint(TRUNCATE)", -1, &statement, nil)
+        defer { sqlite3_finalize(statement) }
+        guard prepared == SQLITE_OK else {
+            if isBusy(prepared) { throw WalletCheckpointError.busy }
             throw CocoaError(.fileWriteUnknown)
         }
-        defer { sqlite3_finalize(statement) }
-        guard sqlite3_step(statement) == SQLITE_ROW, sqlite3_column_int(statement, 0) == 0 else {
-            throw WalletError.networkError("Wallet database is still busy. Try again in a moment.")
+        let result = sqlite3_step(statement)
+        if isBusy(result) || (result == SQLITE_ROW && sqlite3_column_int(statement, 0) != 0) {
+            throw WalletCheckpointError.busy
         }
+        guard result == SQLITE_ROW else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+    }
+
+    private static func isBusy(_ result: Int32) -> Bool {
+        let primaryCode = result & 0xff
+        return primaryCode == SQLITE_BUSY || primaryCode == SQLITE_LOCKED
     }
 }

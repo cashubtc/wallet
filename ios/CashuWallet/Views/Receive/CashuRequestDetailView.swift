@@ -10,7 +10,6 @@ struct CashuRequestDetailView: View {
     @ObservedObject private var nostr = NostrService.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @Environment(\.colorScheme) private var colorScheme
 
     let onClose: (() -> Void)?
     let showsNavigationHeader: Bool
@@ -292,21 +291,14 @@ struct CashuRequestDetailView: View {
         Group {
             if paymentCount > 0 {
                 HStack(spacing: 6) {
-                    Image(systemName: "checkmark.circle")
+                    Image(systemName: "checkmark.circle.fill")
                     Text(paymentCount == 1 ? "1 payment received" : "\(paymentCount) payments received")
                 }
                 .font(.subheadline.weight(.medium))
-                .foregroundStyle(receivedStatusColor)
+                .foregroundStyle(.green)
             }
         }
         .animation(.easeInOut(duration: 0.2), value: paymentCount)
-    }
-
-    /// Matches Android's received status ink with readable contrast on the sheet.
-    private var receivedStatusColor: Color {
-        colorScheme == .dark
-            ? Color(red: 183 / 255, green: 240 / 255, blue: 200 / 255)
-            : Color(red: 11 / 255, green: 82 / 255, blue: 39 / 255)
     }
 
     @ViewBuilder

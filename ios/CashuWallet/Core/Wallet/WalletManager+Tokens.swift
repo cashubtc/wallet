@@ -55,25 +55,34 @@ extension WalletManager {
         return result
     }
 
-    /// Balance of a specific (mint, unit) wallet, in that unit's base units.
-    /// "sat" resolves from the cached per-mint balance; other units query CDK
-    /// directly since the app doesn't cache non-sat balances. Returns nil on any
-    /// failure (e.g. a mint that doesn't actually support the unit).
+    /// Existing units for balance displays; payment options still use metadata.
+    func storedAccountUnits(mintURL: String) async -> [String]? {
+        guard let db, let repo = walletRepository else { return nil }
+        return try? await operationCoordinator.perform(kind: .balance, resourceID: mintURL) {
+            let accounts = try await StoredWalletAccount.discover(database: db, repository: repo)
+            return Set(accounts.filter { $0.matches(mintURL: mintURL) }.map(\.unitName)).sorted()
+        }
+    }
+
+    /// Balance of a durable account. Returns nil when storage is unavailable.
     func unitBalance(mintURL: String, unit: String) async -> UInt64? {
         if unit.lowercased() == "sat" {
             return mints.first(where: { $0.url == mintURL })?.balance
         }
-        guard let repo = walletRepository else { return nil }
+        guard let db, let repo = walletRepository else { return nil }
         do {
             return try await operationCoordinator.perform(
                 kind: .balance,
                 resourceID: mintURL
             ) {
-                let mintUrl = MintUrl(url: mintURL)
                 let currencyUnit = PaymentRequestDecoder.currencyUnit(from: unit)
-                try await repo.createWallet(mintUrl: mintUrl, unit: currencyUnit, targetProofCount: nil)
-                let wallet = try await repo.getWallet(mintUrl: mintUrl, unit: currencyUnit)
-                return try await wallet.totalBalance().value
+                let accounts = try await StoredWalletAccount.discover(database: db, repository: repo)
+                    .filter { $0.unit == currencyUnit && $0.matches(mintURL: mintURL) }
+                var total: UInt64 = 0
+                for account in accounts {
+                    total += try await db.getBalance(mintUrl: MintUrl(url: account.mintURL), unit: account.unit, state: [.unspent])
+                }
+                return total
             }
         } catch {
             AppLogger.wallet.debug(
@@ -115,6 +124,11 @@ extension WalletManager {
             defaultFailureOutcome: .ambiguousFailure
         ) {
             do {
+                // This receive has passed approval. Allow its durable receipt
+                // to reconnect a previously removed mint, even after a lost response.
+                if let recoveryContext {
+                    self.walletStore.setMintRemoved(url: recoveryContext.mintURL, removed: false)
+                }
                 // Receive first: tokenService creates the CDK wallet and consumes the
                 // keyset counter. Enriching the mint (createWallet/fetchMintInfo) before
                 // this desyncs the counter and makes the mint reject "duplicate outputs"
@@ -126,9 +140,13 @@ extension WalletManager {
                     .subtracting(beforeIds)
                     .first
 
+                if let recoveryContext {
+                    self.mintService.trackReceivedMintLocally(url: recoveryContext.mintURL, unit: recoveryContext.unit)
+                }
                 try? await self.ensureMintTrackedForToken(tokenString)
                 return (amount, newTransactionID)
             } catch {
+                await self.reconcileReceivedAccountsAssumingLease()
                 await self.captureWalletFailureDiagnostics(kind: .receive)
                 await self.recoverWalletStateAfterFailureAssumingWalletOperationLease(
                     kind: .receive,

@@ -37,21 +37,41 @@ class FakeWalletGateway(
     initialBalances: Map<String, Long> = emptyMap(),
     initialTransactions: List<WalletTransaction> = emptyList(),
     private val supportedMintMethods: List<PaymentMethodKind> = listOf(PaymentMethodKind.Bolt11),
+    private val supportedUnits: List<String> = listOf("sat"),
 ) : WalletGateway {
     private val sequence = AtomicInteger(1)
     private val walletUrls = linkedSetOf<String>()
     private val walletUnits = linkedMapOf<String, MutableSet<String>>()
     private val mintInfo = linkedMapOf<String, MintInfo>()
     private val balances = initialBalances.toMutableMap()
+    private val nonSatBalances = mutableMapOf<Pair<String, String>, Long>()
+    var lastSentMint: String? = null
+        private set
+    var lastSentUnit: String? = null
+        private set
+    var lastSentAmount: Long? = null
+        private set
+    var pendingSendClaimed = false
     private val transactions = initialTransactions.toMutableList()
     private val mintQuotes = linkedMapOf<String, MutableStateFlow<MintQuoteInfo>>()
     private val meltQuotes = linkedMapOf<String, MeltQuoteInfo>()
     private var repositoryOpen = false
 
+    var receiveCandidates = emptyList<com.cashu.me.Core.CDK.ReceiveRecoveryCandidate>()
+    var receiveRecoveryCalls = 0
+    var metadataFetches = 0
+    var metadataFailure: Throwable? = null
+    var onMetadataFetch: (() -> Unit)? = null
     var nextFailure: Throwable? = null
     var nextCloseFailure: Throwable? = null
     val latestMintQuoteId: String?
         get() = mintQuotes.keys.lastOrNull()
+
+    suspend fun setUnitBalance(mintUrl: String, unit: String, amount: Long) {
+        ensureWallet(mintUrl, unit)
+        if (unit.equals("sat", ignoreCase = true)) setBalance(mintUrl, amount)
+        else nonSatBalances[normalize(mintUrl) to unit] = amount
+    }
 
     fun setBalance(mintUrl: String, amount: Long) {
         balances[normalize(mintUrl)] = amount
@@ -117,6 +137,7 @@ class FakeWalletGateway(
     }
 
     override suspend fun removeWalletIfSingleUnit(mintUrl: String): Boolean {
+        failIfRequested()
         val normalized = normalize(mintUrl)
         val registeredUnits = walletUnits[normalized].orEmpty().toList()
         if (registeredUnits.size > 1) throw MultiUnitWalletRemovalException(registeredUnits)
@@ -129,6 +150,9 @@ class FakeWalletGateway(
     }
 
     override suspend fun fetchMintInfo(mintUrl: String): MintInfo? {
+        metadataFetches++
+        onMetadataFetch?.invoke()
+        metadataFailure?.let { throw it }
         failIfRequested()
         check(repositoryOpen) { "Fake wallet repository is not open." }
         val normalized = normalize(mintUrl)
@@ -146,14 +170,21 @@ class FakeWalletGateway(
         )
     }
 
+    override suspend fun storedAccounts() = walletUnits.flatMap { (url, units) ->
+        units.map { com.cashu.me.Core.CDK.WalletAccountReference(url, it) }
+    } + transactions.mapNotNull { tx -> tx.mintUrl?.let { com.cashu.me.Core.CDK.WalletAccountReference(it, tx.unit) } }
+
+    override suspend fun storedAccountBalance(account: com.cashu.me.Core.CDK.WalletAccountReference): Long =
+        unitBalance(account.mintUrl, account.unit)
+
     override suspend fun totalBalance(mintUrl: String): Long =
         balances[normalize(mintUrl)] ?: 0
 
     override suspend fun unitBalance(mintUrl: String, unit: String): Long =
-        if (unit.equals("sat", ignoreCase = true)) totalBalance(mintUrl) else 0
+        if (unit.equals("sat", ignoreCase = true)) totalBalance(mintUrl) else nonSatBalances[normalize(mintUrl) to unit] ?: 0
 
     override suspend fun unitBalanceIfExists(mintUrl: String, unit: String): Long? =
-        if (unit.equals("sat", ignoreCase = true)) totalBalance(mintUrl) else null
+        if (unit.equals("sat", ignoreCase = true)) totalBalance(mintUrl) else nonSatBalances[normalize(mintUrl) to unit]
 
     override suspend fun createMintQuote(
         amount: Long?,
@@ -199,7 +230,7 @@ class FakeWalletGateway(
         check(quote.state == MintQuoteState.Paid) { "Fake quote has not been paid." }
         val credited = (quote.amountPaid.takeIf { it > 0 } ?: quote.amount ?: 0) - quote.amountIssued
         val mintUrl = checkNotNull(quote.mintUrl)
-        balances[mintUrl] = (balances[mintUrl] ?: 0) + credited
+        setUnitBalance(mintUrl, quote.unit, unitBalance(mintUrl, quote.unit) + credited)
         transactions += WalletTransaction(
             id = "mint-payment-${sequence.getAndIncrement()}",
             quoteId = quote.id,
@@ -296,6 +327,13 @@ class FakeWalletGateway(
     override suspend fun checkMeltQuoteStatus(quoteId: String, mintUrl: String?): MeltQuoteInfo =
         checkNotNull(meltQuotes[quoteId]) { "Unknown fake melt quote $quoteId" }
 
+    override suspend fun receiveRecoveryCandidates() = receiveCandidates
+    override suspend fun recoverReceiveAccount(candidate: com.cashu.me.Core.CDK.ReceiveRecoveryCandidate): SagaRecoveryReport {
+        receiveRecoveryCalls++
+        failIfRequested()
+        return SagaRecoveryReport(0, 0, 0, 0)
+    }
+
     override suspend fun recoverIncompleteSagas(mintUrl: String): SagaRecoveryReport =
         SagaRecoveryReport(recovered = 0, compensated = 0, skipped = 0, failed = 0)
 
@@ -310,8 +348,11 @@ class FakeWalletGateway(
         failIfRequested()
         val normalized = normalize(mintUrl)
         val fee = 1L
-        check((balances[normalized] ?: 0) >= amount + fee) { "Insufficient balance." }
-        balances[normalized] = checkNotNull(balances[normalized]) - amount - fee
+        check(unitBalance(normalized, unit) >= amount + fee) { "Insufficient balance." }
+        setUnitBalance(normalized, unit, unitBalance(normalized, unit) - amount - fee)
+        lastSentMint = normalized
+        lastSentUnit = unit
+        lastSentAmount = amount
         return SendTokenResult(
             token = DeterministicToken,
             fee = fee,
@@ -365,7 +406,10 @@ class FakeWalletGateway(
 
     override suspend fun estimateCashuPaymentRequestFee(amountSats: Long, mintUrl: String): Long = 0
 
-    override suspend fun checkTokenSpendable(token: String, mintUrl: String): Boolean = true
+    // Despite the gateway method's historical name, true means proofs are
+    // spent. App-synthesized send rows use this path rather than a saga check.
+    override suspend fun checkTokenSpendable(token: String, mintUrl: String): Boolean =
+        if (lastSentAmount != null) pendingSendClaimed else true
 
     override suspend fun listTransactions(
         unitsByMint: Map<String, List<String>>,
@@ -373,7 +417,17 @@ class FakeWalletGateway(
 
     override suspend fun listPendingSendOperationIds(mintUrl: String, unit: String): List<String> = emptyList()
 
-    override suspend fun checkPendingSendClaimed(mintUrl: String, operationId: String, unit: String): Boolean = false
+    override suspend fun checkPendingSendClaimed(mintUrl: String, operationId: String, unit: String): Boolean {
+        failIfRequested()
+        if (pendingSendClaimed) {
+            for (index in transactions.indices) {
+                if (transactions[index].sagaId == operationId) {
+                    transactions[index] = transactions[index].copy(status = TransactionStatus.Completed)
+                }
+            }
+        }
+        return pendingSendClaimed
+    }
 
     override suspend fun revokePendingSend(mintUrl: String, operationId: String, unit: String): Long = 0
 
@@ -398,11 +452,16 @@ class FakeWalletGateway(
         seed: ByteArray,
         clientSecretKey: String?,
         maxPaymentMsat: ULong?,
-    ): NwcServiceHandle = FakeNwcServiceHandle
+    ): NwcServiceHandle = FakeNwcServiceHandle(
+        "nostr+walletconnect://" + "01".repeat(32) + "?relay=wss%3A%2F%2Frelay.test&secret=" +
+            (clientSecretKey ?: sequence.getAndIncrement().toString(16).padStart(64, '0')),
+    )
 
     private fun defaultMint(url: String): MintInfo = MintInfo(
         url = url,
         supportedMintMethods = supportedMintMethods,
+        units = supportedUnits,
+        mintUnits = supportedUnits,
         name = if (url == TestMintUrl) "Nutshell UI Test Mint" else "Test Mint",
         description = "Deterministic instrumented-test mint",
         nutSupport = NutSupport(
@@ -427,8 +486,7 @@ class FakeWalletGateway(
     }
 }
 
-private object FakeNwcServiceHandle : NwcServiceHandle {
-    override val connectionUri: String = "nostr+walletconnect://deterministic-ui-test"
+private class FakeNwcServiceHandle(override val connectionUri: String) : NwcServiceHandle {
     private var running = false
 
     override suspend fun start() {

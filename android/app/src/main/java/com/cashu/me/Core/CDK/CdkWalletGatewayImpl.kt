@@ -262,14 +262,29 @@ class CdkWalletGatewayImpl : WalletGateway {
         )
     }
 
+    override suspend fun storedAccounts(): List<WalletAccountReference> = cdkCall {
+        val db = checkNotNull(database)
+        // Do not suppress discovery failures: callers must retain their last
+        // complete projection instead of interpreting an incomplete scan as zero.
+        buildList {
+            addAll(requireRepository().getWallets().map { WalletAccountReference(it.mintUrl().url, it.unit().toDomainUnit()) })
+            addAll(db.getProofs(null, null, null, null).map { WalletAccountReference(it.mintUrl.url, it.unit.toDomainUnit()) })
+            addAll(db.listTransactions(null, null, null).map { WalletAccountReference(it.mintUrl.url, it.unit.toDomainUnit()) })
+            addAll(db.getMintQuotes().map { WalletAccountReference(it.mintUrl.url, it.unit.toDomainUnit()) })
+            addAll(db.getMeltQuotes().mapNotNull { quote -> quote.mintUrl?.let { WalletAccountReference(it.url, quote.unit.toDomainUnit()) } })
+        }.distinct()
+    }
+
+    override suspend fun storedAccountBalance(account: WalletAccountReference): Long = cdkCall {
+        checkNotNull(database).getBalance(CdkMintUrl(account.mintUrl), cdkUnit(account.unit), listOf(org.cashudevkit.ProofState.UNSPENT)).toLong()
+    }
+
     override suspend fun totalBalance(mintUrl: String): Long = cdkCall {
         walletFor(mintUrl).totalBalance().value.toLong()
     }
 
     override suspend fun unitBalance(mintUrl: String, unit: String): Long = cdkCall {
-        val cdkUnit = cdkUnit(unit)
-        ensureWalletUnlocked(mintUrl, cdkUnit)
-        walletFor(mintUrl, cdkUnit).totalBalance().value.toLong()
+        checkNotNull(database).getBalance(CdkMintUrl(mintUrl), cdkUnit(unit), listOf(org.cashudevkit.ProofState.UNSPENT)).toLong()
     }
 
     override suspend fun unitBalanceIfExists(mintUrl: String, unit: String): Long? = cdkCall {
@@ -620,6 +635,27 @@ class CdkWalletGatewayImpl : WalletGateway {
         quote.toDomain(fallbackMethod = stored?.paymentMethod?.toDomain() ?: quote.paymentMethod.toDomain())
     }
 
+    override suspend fun receiveRecoveryCandidates(): List<ReceiveRecoveryCandidate> = cdkCall {
+        val db = checkNotNull(database)
+        val states = listOf(org.cashudevkit.ProofState.UNSPENT, org.cashudevkit.ProofState.RESERVED, org.cashudevkit.ProofState.PENDING)
+        val proofs = db.getProofs(null, null, states, null).map {
+            ReceiveRecoveryCandidate(it.mintUrl.url, it.unit.toDomainUnit())
+        }
+        (proofs + db.getIncompleteSagas().mapNotNull(::receiveRecoveryCandidate)).distinct()
+    }
+
+    override suspend fun recoverReceiveAccount(candidate: ReceiveRecoveryCandidate): SagaRecoveryReport = cdkCall {
+        val unit = cdkUnit(candidate.unit)
+        // Reconstruct a missing account locally. Do not fetch mint metadata or
+        // replace an existing wallet/keyset counter before resuming its saga.
+        val repo = requireRepository()
+        if (!repo.getWallets().any { mintRemovalUrlsMatch(it.mintUrl().url, candidate.mintUrl) && it.unit() == unit }) {
+            repo.createWallet(CdkMintUrl(candidate.mintUrl), unit, null)
+        }
+        val report = walletFor(candidate.mintUrl, unit).recoverIncompleteSagas()
+        SagaRecoveryReport(report.recovered.toLong(), report.compensated.toLong(), report.skipped.toLong(), report.failed.toLong())
+    }
+
     override suspend fun recoverIncompleteSagas(mintUrl: String): SagaRecoveryReport = cdkCall {
         val report = walletFor(mintUrl, CdkCurrencyUnit.Sat).recoverIncompleteSagas()
         SagaRecoveryReport(
@@ -804,14 +840,9 @@ class CdkWalletGatewayImpl : WalletGateway {
 
     override suspend fun listTransactions(unitsByMint: Map<String, List<String>>): List<WalletTransaction> = cdkCall {
         unitsByMint.flatMap { (mintUrl, units) ->
-            units.flatMap units@{ unit ->
-                val wallet = runCatching { walletFor(mintUrl, cdkUnit(unit)) }
-                    .getOrNull() ?: return@units emptyList()
-                val incoming = runCatching { wallet.listTransactions(CdkTransactionDirection.INCOMING) }
-                    .getOrDefault(emptyList())
-                val outgoing = runCatching { wallet.listTransactions(CdkTransactionDirection.OUTGOING) }
-                    .getOrDefault(emptyList())
-                (incoming + outgoing).map { it.toDomain(unit) }
+            units.flatMap { unit ->
+                checkNotNull(database).listTransactions(CdkMintUrl(mintUrl), null, cdkUnit(unit))
+                    .map { it.toDomain(it.unit.toDomainUnit()) }
             }
         }
     }
