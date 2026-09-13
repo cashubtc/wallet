@@ -1098,12 +1098,9 @@ private fun GeneratedFace(
             com.cashu.me.ui.components.PaymentStatusScreen(
                 phase = com.cashu.me.ui.components.PaymentStatusPhase.Success,
                 title = "Claimed",
+                successAmount = amountPresentation.primary,
                 onDone = onDone,
                 rows = {
-                    com.cashu.me.ui.components.InspectorRow(
-                        label = "Amount",
-                        value = amountPresentation.primary,
-                    )
                     receipt.fee?.let { feeLabel ->
                         com.cashu.me.ui.components.InspectorRow(
                             label = "Fee",

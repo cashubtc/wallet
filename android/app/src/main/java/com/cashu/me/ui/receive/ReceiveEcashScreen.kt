@@ -113,6 +113,7 @@ fun ReceiveEcashScreen(
     prefilledPayload: String? = null,
     onPrefilledConsumed: () -> Unit = {},
     allowAutomaticClipboardRead: Boolean = true,
+    onCompactSheetChanged: (Boolean) -> Unit = {},
 ) {
     val walletState by walletManager.state.collectAsState()
     val settings by settingsManager.state.collectAsState()
@@ -220,6 +221,7 @@ fun ReceiveEcashScreen(
         onPrefilledConsumed()
     }
 
+    LaunchedEffect(requestFailure == null) { onCompactSheetChanged(requestFailure == null) }
     val failure = requestFailure
     if (failure != null) {
         Column(

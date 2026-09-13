@@ -652,6 +652,7 @@ private fun CashuRequestAmountEditSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.background,
     ) {
         Column(
             modifier = Modifier
@@ -698,9 +699,10 @@ internal fun CashuRequestSuccessTerminal(
         modifier = modifier,
         phase = PaymentStatusPhase.Success,
         title = "Payment Received!",
+        successAmount = amountLabel,
         onDone = onDone,
         rows = {
-            CashuRequestReceiptRows(amountLabel = amountLabel, mintName = mintName)
+            CashuRequestReceiptRows(amountLabel = null, mintName = mintName)
         },
     )
 }

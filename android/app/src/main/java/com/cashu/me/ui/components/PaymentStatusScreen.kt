@@ -51,6 +51,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.cashu.me.Core.AmountParts
+import com.cashu.me.ui.theme.AmountScale
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.rememberReducedMotion
 
@@ -97,6 +99,7 @@ fun PaymentStatusScreen(
     // completion: the glyph becomes a pending clock instead of the green
     // check, with no celebration bounce (iOS parity).
     settlementPending: Boolean = false,
+    successAmount: String? = null,
 ) {
     val haptics = LocalHapticFeedback.current
     val inspectionMode = LocalInspectionMode.current
@@ -191,7 +194,7 @@ fun PaymentStatusScreen(
                         .fillMaxWidth()
                         .heightIn(min = StatusHeroMinHeight),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
+                    verticalArrangement = Arrangement.Top,
                 ) {
                     AnimatedContent(
                         targetState = phase,
@@ -326,19 +329,31 @@ fun PaymentStatusScreen(
                                 modifier = Modifier.padding(horizontal = CashuTheme.spacing.page),
                             )
                         }
-                        Spacer(Modifier.height(CashuTheme.spacing.snug))
-                        Text(
-                            text = detail ?: " ",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center,
-                            maxLines = 3,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = StatusDescriptionMinHeight)
-                                .padding(horizontal = StatusDescriptionHorizontalPadding)
-                                .graphicsLayer { alpha = if (detail == null) 0f else 1f },
-                        )
+                        if (phase == PaymentStatusPhase.Success && !settlementPending && !successAmount.isNullOrBlank()) {
+                            Spacer(Modifier.height(CashuTheme.spacing.comfortable))
+                            AmountHero(
+                                parts = AmountParts.parse(successAmount),
+                                scale = AmountScale.Hero,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                animated = false,
+                                accessibilityPrefix = "Amount",
+                                modifier = Modifier.padding(horizontal = CashuTheme.spacing.page),
+                            )
+                        } else {
+                            Spacer(Modifier.height(CashuTheme.spacing.snug))
+                            Text(
+                                text = detail ?: " ",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center,
+                                maxLines = 3,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = StatusDescriptionMinHeight)
+                                    .padding(horizontal = StatusDescriptionHorizontalPadding)
+                                    .graphicsLayer { alpha = if (detail == null) 0f else 1f },
+                            )
+                        }
                     }
                 }
                 if (rows != null && (phase != PaymentStatusPhase.Processing || showRowsDuringProcessing)) {

@@ -356,8 +356,14 @@ internal fun TokenClaimTerminal(
         is TokenClaimStatus.Claimed -> ClaimRows(status.amount, status.fee, status.unit, status.mint)
         is TokenClaimStatus.Failed -> ClaimRows(status.amount, status.fee, status.unit, status.mint)
     }
+    fun formattedClaimAmount(value: Long, unit: String): String = if (unit.equals("sat", ignoreCase = true)) {
+        formatter.formatWalletSats(value, useBitcoinSymbol)
+    } else {
+        CurrencyAmount(value, CurrencyRegistry.currencyForMintUnit(unit)).formatted()
+    }
     PaymentStatusScreen(
         phase = phase,
+        successAmount = rowData?.let { formattedClaimAmount(it.amount, it.unit) },
         title = when (status) {
             TokenClaimStatus.Claiming -> "Claiming…"
             is TokenClaimStatus.Claimed -> "Payment Received!"
@@ -380,17 +386,10 @@ internal fun TokenClaimTerminal(
         },
         rows = rowData?.let { data ->
             {
-                val isSat = data.unit.equals("sat", ignoreCase = true)
-                val currency = CurrencyRegistry.currencyForMintUnit(data.unit)
-                fun formatted(value: Long): String = if (isSat) {
-                    formatter.formatWalletSats(value, useBitcoinSymbol)
-                } else {
-                    CurrencyAmount(value, currency).formatted()
+                fun formatted(value: Long) = formattedClaimAmount(value, data.unit)
+                if (phase != PaymentStatusPhase.Success) {
+                    InspectorRow(label = "Amount", value = formatted(data.amount))
                 }
-                InspectorRow(
-                    label = "Amount",
-                    value = formatted(data.amount),
-                )
                 if (data.fee > 0L) {
                     InspectorRow(
                         label = "Fee",

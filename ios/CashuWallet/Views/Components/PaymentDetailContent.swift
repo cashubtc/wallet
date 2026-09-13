@@ -62,7 +62,7 @@ struct ActivityDetailSheet<Content: View>: View {
                     }
                 }
         }
-        .compactBottomSheetSurface()
+        .walletSheetSurface(fillsScreen: !fitsContent)
         .contentFitDetent(contentHeight, enabled: fitsContent, estimate: 500, navigationBar: true)
         .presentationDragIndicator(.visible)
         .accessibilityAction(.escape) { dismiss() }

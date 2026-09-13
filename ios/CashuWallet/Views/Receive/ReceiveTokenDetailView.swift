@@ -307,6 +307,7 @@ struct ReceiveTokenDetailView: View {
         var rows: [PaymentStatusView.DetailRow] = [
             .init(
                 label: "Amount",
+                isAmount: true,
                 value: formatAmount(claimedAmount ?? netReceiveAmount)
             ),
         ]

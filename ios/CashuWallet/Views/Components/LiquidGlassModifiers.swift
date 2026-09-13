@@ -143,10 +143,20 @@ extension View {
     /// perimeter catches a restrained amount of light without replacing the
     /// native sheet's shape, detents, dimming, or gesture behavior.
     func compactBottomSheetSurface() -> some View {
+        walletSheetSurface(fillsScreen: false)
+    }
+
+    /// Full-height flows share Home's canvas; compact sheets retain their
+    /// elevated surface. Controls and native presentation behavior stay the same.
+    func walletSheetSurface(fillsScreen: Bool) -> some View {
         self
             .environment(\.bottomSheetSurfaceStyle, .compact)
             .presentationBackground {
-                CompactSheetBackground()
+                if fillsScreen {
+                    WalletCanvasBackground()
+                } else {
+                    CompactSheetBackground()
+                }
             }
     }
 
@@ -490,18 +500,22 @@ private struct ConditionalCanvasSheetBackground: ViewModifier {
 }
 
 private struct CanvasSheetBackground: ViewModifier {
+    func body(content: Content) -> some View {
+        content.presentationBackground { WalletCanvasBackground() }
+    }
+}
+
+private struct WalletCanvasBackground: View {
     @Environment(\.colorScheme) private var colorScheme
 
-    func body(content: Content) -> some View {
-        content.presentationBackground {
-            Color(uiColor: UIColor.systemBackground.resolvedColor(
-                with: UITraitCollection(traitsFrom: [
-                    UITraitCollection(userInterfaceStyle: colorScheme == .dark ? .dark : .light),
-                    UITraitCollection(userInterfaceLevel: .base),
-                ])
-            ))
-            .ignoresSafeArea()
-        }
+    var body: some View {
+        Color(uiColor: UIColor.systemBackground.resolvedColor(
+            with: UITraitCollection(traitsFrom: [
+                UITraitCollection(userInterfaceStyle: colorScheme == .dark ? .dark : .light),
+                UITraitCollection(userInterfaceLevel: .base),
+            ])
+        ))
+        .ignoresSafeArea()
     }
 }
 

@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -40,9 +39,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -81,9 +78,6 @@ import com.cashu.me.Core.Bech32
 import com.cashu.me.ui.components.LocalConfirmationToastController
 import com.cashu.me.ui.components.PrimaryButton
 import com.cashu.me.ui.components.CashuModalBottomSheet
-import com.cashu.me.ui.components.InspectorRow
-import com.cashu.me.ui.components.PaymentStatusPhase
-import com.cashu.me.ui.components.PaymentStatusScreen
 import com.cashu.me.ui.components.QrCard
 import com.cashu.me.ui.components.SecondaryButton
 import com.cashu.me.ui.components.SheetHeader
@@ -358,117 +352,70 @@ fun KeyCard(
     }
 }
 
-/** Shared expanded QR sheet with visible copy/share actions (iOS QRCodeDetailSheet parity). */
+/** Shared expanded QR sheet with native copy/share actions. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun QrDetailSheet(
-    title: String,
-    content: String,
-    onDismiss: () -> Unit,
-    receivedAmount: String? = null,
-    statusMessage: String? = null,
-    // Receive owns a full-height parent. Settings expands this sheet instead.
-    onPaymentReceived: (() -> Unit)? = null,
-    showsContent: Boolean = true,
-) {
-    val sheetState = rememberBottomSheetState(
-        initialValue = SheetValue.Hidden,
-        enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
-    )
+fun QrDetailSheet(title: String, content: String, onDismiss: () -> Unit) {
     val clipboard = LocalClipboard.current
     val clipboardScope = rememberCoroutineScope()
     val context = LocalContext.current
     val confirmationToastController = LocalConfirmationToastController.current
-    val dismissSheet = com.cashu.me.ui.components.rememberSheetDismissAction(sheetState)
-    LaunchedEffect(receivedAmount) {
-        if (receivedAmount != null && onPaymentReceived != null) {
-            dismissSheet(onPaymentReceived)
-        }
-    }
-
-    CashuModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        sheetGesturesEnabled = !dismissSheet.isDismissing,
-    ) {
-        if (receivedAmount != null && onPaymentReceived == null) {
-            Column(modifier = Modifier.fillMaxHeight()) {
+    CashuModalBottomSheet(onDismissRequest = onDismiss) {
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = CashuTheme.spacing.comfortable)
+                    .navigationBarsPadding()
+                    .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                // Canonical sheet chrome, like the sibling reveal sheet —
+                // not a bare titleMedium line.
                 SheetHeader(title = title)
-                PaymentStatusScreen(
-                    phase = PaymentStatusPhase.Success,
-                    title = "Payment Received!",
-                    onDone = { dismissSheet(onDismiss) },
-                    rows = { InspectorRow(label = "Amount", value = receivedAmount, valueMonospaced = true) },
-                    modifier = Modifier.weight(1f)
-                        .testTag("lightning-address-payment-received"),
+                Spacer(Modifier.height(CashuTheme.spacing.snug))
+                QrCard(
+                    content = content,
+                    size = 248.dp,
+                    staticOnly = true,
+                    shareSubject = title,
+                    confirmationMessage = "Copied ${title.lowercase()}",
                 )
-            }
-        } else {
-            Box(modifier = Modifier.fillMaxWidth()) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = CashuTheme.spacing.comfortable)
-                        .navigationBarsPadding()
-                        .verticalScroll(rememberScrollState()),
-                    horizontalAlignment = Alignment.CenterHorizontally,
+                Spacer(Modifier.height(CashuTheme.spacing.comfortable))
+                Text(
+                    text = content,
+                    style = CashuTheme.type.monoDisplay,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.MiddleEllipsis,
+                )
+                Spacer(Modifier.height(CashuTheme.spacing.section))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
                 ) {
-                    // Canonical sheet chrome, like the sibling reveal sheet —
-                    // not a bare titleMedium line.
-                    SheetHeader(title = title)
-                    Spacer(Modifier.height(CashuTheme.spacing.snug))
-                    QrCard(
-                        content = content,
-                        size = 248.dp,
-                        staticOnly = true,
-                        shareSubject = title,
-                        confirmationMessage = "Copied ${title.lowercase()}",
+                    SecondaryButton(
+                        text = "Copy",
+                        onClick = {
+                            clipboardScope.launch {
+                                clipboard.setClipEntry(
+                                    ClipEntry(ClipData.newPlainText(title, content)),
+                                )
+                                confirmationToastController?.show("Copied ${title.lowercase()}")
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
                     )
-                    if (showsContent) {
-                        Spacer(Modifier.height(CashuTheme.spacing.comfortable))
-                        Text(
-                            text = content,
-                            style = CashuTheme.type.monoDisplay,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1,
-                            overflow = TextOverflow.MiddleEllipsis,
-                        )
-                    }
-                    if (statusMessage != null) {
-                        Spacer(Modifier.height(CashuTheme.spacing.default))
-                        Text(statusMessage, style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
-                    }
-                    Spacer(Modifier.height(CashuTheme.spacing.section))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
-                    ) {
-                        SecondaryButton(
-                            text = "Copy",
-                            onClick = {
-                                clipboardScope.launch {
-                                    clipboard.setClipEntry(
-                                        ClipEntry(ClipData.newPlainText(title, content)),
-                                    )
-                                    confirmationToastController?.show("Copied ${title.lowercase()}")
-                                }
-                            },
-                            modifier = Modifier.weight(1f),
-                        )
-                        PrimaryButton(
-                            text = "Share",
-                            onClick = { context.shareText(content, title) },
-                            // Inverted ink, matching the confirm sheets' action button
-                            // and iOS's white Share pill (PrimaryButton is gray by default).
-                            colors = ButtonDefaults.buttonColors(),
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
-                    Spacer(Modifier.height(CashuTheme.spacing.comfortable))
+                    PrimaryButton(
+                        text = "Share",
+                        onClick = { context.shareText(content, title) },
+                        // Inverted ink, matching the confirm sheets' action button
+                        // and iOS's white Share pill (PrimaryButton is gray by default).
+                        colors = ButtonDefaults.buttonColors(),
+                        modifier = Modifier.weight(1f),
+                    )
                 }
+                Spacer(Modifier.height(CashuTheme.spacing.comfortable))
             }
         }
     }

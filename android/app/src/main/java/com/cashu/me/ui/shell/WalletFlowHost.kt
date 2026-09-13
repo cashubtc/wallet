@@ -8,6 +8,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.SnackbarHost
@@ -104,6 +105,7 @@ fun WalletFlowSheetHost(
     onBackdropVisibilityChanged: (Boolean) -> Unit,
     onDismissed: () -> Unit,
     snackbarHostState: SnackbarHostState,
+    compactContent: Boolean = flow != WalletFlow.ReceiveLightning && flow != WalletFlow.SendEcash,
     content: @Composable (flow: WalletFlow, close: () -> Unit) -> Unit,
 ) {
     if (flow == null) return
@@ -133,7 +135,8 @@ fun WalletFlowSheetHost(
         onDismissRequest = onDismissed,
         sheetState = sheetState,
         sheetGesturesEnabled = !dismiss.isDismissing,
-        containerColor = CashuTheme.colors.compactSheetContainer,
+        containerColor = if (compactContent) CashuTheme.colors.compactSheetContainer
+            else MaterialTheme.colorScheme.background,
         onBackdropVisibilityChanged = onBackdropVisibilityChanged,
     ) {
         CompactSheetContent {

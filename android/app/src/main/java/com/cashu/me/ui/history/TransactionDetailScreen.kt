@@ -348,6 +348,7 @@ fun TransactionReceiptSheet(
 
     ActivityDetailSheet(
         title = title,
+        fitsContent = !(showsQr && description != null),
         onDismissRequest = onDismissRequest,
         sheetState = sheetState,
         sheetGesturesEnabled = !dismiss.isDismissing,

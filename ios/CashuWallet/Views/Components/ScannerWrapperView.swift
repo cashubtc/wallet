@@ -1227,6 +1227,7 @@ struct CashuPaymentRequestPayView: View {
         var rows: [PaymentStatusView.DetailRow] = [
             .init(
                 label: "Amount",
+                isAmount: true,
                 value: paymentAmount.map { "\($0) sat" } ?? "",
                 isPending: paymentAmount == nil
             ),

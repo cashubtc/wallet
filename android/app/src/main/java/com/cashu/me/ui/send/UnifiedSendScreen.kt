@@ -191,6 +191,7 @@ fun UnifiedSendScreen(
     prefilledPayload: String? = null,
     onPrefilledConsumed: () -> Unit = {},
     onDismissLockChanged: (Boolean) -> Unit = {},
+    onCompactSheetChanged: (Boolean) -> Unit = {},
 ) {
     val walletState by walletManager.state.collectAsState()
     val settings by settingsManager.state.collectAsState()
@@ -608,6 +609,7 @@ fun UnifiedSendScreen(
     // Compact while the input face is up so Scan/Ecash/Tap sit near the thumb;
     // amount/confirm/status need the full sheet for the keypad and pay scaffold.
     val prefersCompactSheet = status == null && step == SendStep.Input
+    LaunchedEffect(prefersCompactSheet) { onCompactSheetChanged(prefersCompactSheet) }
     Column(
         modifier = (
             if (prefersCompactSheet) {
@@ -884,8 +886,14 @@ private fun SendStatusTerminal(
     // A terminal outcome (already paid) can't be retried — offer Done;
     // anything else returns to the confirm step.
     val failure = (status as? SendStatus.Failed)?.message
+    val successAmount = if (status is SendStatus.Sent && !settlementPending) {
+        status.details.rows.firstOrNull { it.key == SendPaymentDetailKey.Amount }
+            ?.takeIf { it.value is SendPaymentDetailValue.Sats || it.value is SendPaymentDetailValue.Text }
+            ?.let { formatPaymentDetail(it, formatter, useBitcoinSymbol) }
+    } else null
     PaymentStatusScreen(
         modifier = modifier,
+        successAmount = successAmount,
         phase = when (status) {
             is SendStatus.Sending -> PaymentStatusPhase.Processing
             is SendStatus.Sent -> PaymentStatusPhase.Success
@@ -912,7 +920,7 @@ private fun SendStatusTerminal(
                 { if (status.message.isTerminal) onClose() else onRetry() }
             }
         },
-        rows = { SendPaymentDetailRows(status.details, formatter, useBitcoinSymbol) },
+        rows = { SendPaymentDetailRows(status.details, formatter, useBitcoinSymbol, showAmount = successAmount == null) },
     )
 }
 
@@ -921,22 +929,11 @@ internal fun SendPaymentDetailRows(
     details: SendPaymentDetails,
     formatter: AmountFormatter,
     useBitcoinSymbol: Boolean,
+    showAmount: Boolean = true,
 ) {
-    details.rows.forEachIndexed { index, row ->
+    details.rows.filter { showAmount || it.key != SendPaymentDetailKey.Amount }.forEach { row ->
         val loading = row.value == SendPaymentDetailValue.Pending
-        val value = when (val detailValue = row.value) {
-            SendPaymentDetailValue.Pending -> ""
-            SendPaymentDetailValue.Unavailable -> "Unavailable"
-            is SendPaymentDetailValue.Text -> detailValue.text
-            is SendPaymentDetailValue.Sats -> {
-                val formatted = formatter.formatWalletSats(detailValue.amount, useBitcoinSymbol)
-                when {
-                    row.key in FeeDetailKeys && detailValue.amount == 0L -> "No fee"
-                    detailValue.isUpperBound -> "Up to $formatted"
-                    else -> formatted
-                }
-            }
-        }
+        val value = formatPaymentDetail(row, formatter, useBitcoinSymbol)
         InspectorRow(
             label = row.label,
             value = value,
@@ -948,6 +945,24 @@ internal fun SendPaymentDetailRows(
             valueMonospaced = row.valueMonospaced,
             loading = loading,
         )
+    }
+}
+
+private fun formatPaymentDetail(
+    row: SendPaymentDetailRow,
+    formatter: AmountFormatter,
+    useBitcoinSymbol: Boolean,
+): String = when (val detailValue = row.value) {
+    SendPaymentDetailValue.Pending -> ""
+    SendPaymentDetailValue.Unavailable -> "Unavailable"
+    is SendPaymentDetailValue.Text -> detailValue.text
+    is SendPaymentDetailValue.Sats -> {
+        val formatted = formatter.formatWalletSats(detailValue.amount, useBitcoinSymbol)
+        when {
+            row.key in FeeDetailKeys && detailValue.amount == 0L -> "No fee"
+            detailValue.isUpperBound -> "Up to $formatted"
+            else -> formatted
+        }
     }
 }
 

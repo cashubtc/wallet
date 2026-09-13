@@ -571,7 +571,7 @@ fun ReceiveLightningScreen(
                 .testTag(UiTestTags.ReceiveLightningScreen),
         ) {
             SheetHeader(
-                title = terminal.title ?: receiveRequestHeaderTitle(terminal.method),
+                title = receiveRequestHeaderTitle(terminal.method),
                 navigationIcon = Icons.Outlined.Close,
                 navigationContentDescription = "Close",
                 onNavigationClick = onClose,
@@ -1090,21 +1090,7 @@ fun ReceiveLightningScreen(
     }
 
     if (lightningAddressOpen) {
-        LightningAddressReceiveSheet(
-            npcService, settingsManager,
-            onDismiss = { lightningAddressOpen = false },
-            onPaymentReceived = { receipt ->
-                // The nested sheet has finished hiding. Replace the amount form
-                // with the same terminal used for an issued Lightning invoice.
-                lightningAddressOpen = false
-                successInfo = ReceiveSuccessInfo(
-                    amountLabel = formatter.formatWalletSats(receipt.amount, settings.useBitcoinSymbol),
-                    mintName = null,
-                    method = PaymentMethodKind.Bolt11,
-                    title = "Lightning Address",
-                )
-            },
-        )
+        LightningAddressReceiveModal(npcService, settingsManager, onDismiss = { lightningAddressOpen = false })
     }
     if (mintPickerOpen) {
         MintPickerSheet(
@@ -1939,7 +1925,6 @@ private data class ReceiveSuccessInfo(
     val amountLabel: String?,
     val mintName: String?,
     val method: PaymentMethodKind,
-    val title: String? = null,
 )
 
 /** Full-screen shared success terminal for a paid receive (iOS
@@ -1956,14 +1941,8 @@ private fun ReceiveSuccessTerminal(
         title = "Payment Received!",
         onDone = onDone,
         modifier = modifier,
+        successAmount = info.amountLabel,
         rows = {
-            if (info.amountLabel != null) {
-                InspectorRow(
-                    label = "Amount",
-                    value = info.amountLabel,
-                    valueMonospaced = true,
-                )
-            }
             if (info.mintName != null) {
                 InspectorRow(
                     label = "Mint",

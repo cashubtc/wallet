@@ -1220,51 +1220,11 @@ struct RestoreWalletView: View {
 // MARK: - QR Code Detail Sheet
 
 struct QRCodeDetailSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
     let title: String
     let content: String
-    var receivedAmount: String? = nil
-    var statusMessage: String? = nil
-    var showsContent = true
-
     @State private var contentHeight: CGFloat = 0
 
     var body: some View {
-        Group {
-            if let receivedAmount {
-                NavigationStack {
-                    PaymentStatusView(
-                        details: [.init(label: "Amount", value: receivedAmount)],
-                        phase: .success,
-                        successTitle: "Payment Received!",
-                        onDone: { dismiss() },
-                        onRetry: {}
-                    )
-                    .accessibilityIdentifier("lightning-address-payment-received")
-                    .navigationTitle(title)
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbarBackground(.hidden, for: .navigationBar)
-                }
-                .presentationDetents([.large])
-                .transition(.opacity)
-            } else {
-                qrContent
-                    .transition(.opacity)
-            }
-        }
-        .compactBottomSheetSurface()
-        .presentationDragIndicator(.visible)
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: receivedAmount != nil)
-        .onChange(of: receivedAmount) { _, amount in
-            if let amount {
-                UIAccessibility.post(notification: .announcement, argument: "Payment received. \(amount)")
-            }
-        }
-    }
-
-    private var qrContent: some View {
         ScrollView {
             VStack(spacing: 0) {
                 Text(title)
@@ -1278,21 +1238,10 @@ struct QRCodeDetailSheet: View {
                     .clipShape(.rect(cornerRadius: 16))
                     .padding(.top, 24)
 
-                if showsContent {
-                    Text(content)
-                        .cashuText(.monoDisplay)
-                        .truncationMode(.middle)
-                        .padding(.top, 16)
-                }
-
-                if let statusMessage {
-                    Text(statusMessage)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.top, 12)
-                }
+                Text(content)
+                    .cashuText(.monoDisplay)
+                    .truncationMode(.middle)
+                    .padding(.top, 16)
 
                 HStack(spacing: 12) {
                     Button(action: copyToClipboard) {
@@ -1314,6 +1263,8 @@ struct QRCodeDetailSheet: View {
         }
         .scrollBounceBehavior(.basedOnSize)
         .contentFitDetent(contentHeight, estimate: 480, navigationBar: false)
+        .compactBottomSheetSurface()
+        .presentationDragIndicator(.visible)
     }
 
     private func copyToClipboard() {

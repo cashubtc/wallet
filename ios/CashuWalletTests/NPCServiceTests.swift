@@ -5,12 +5,54 @@ import Cdk
 
 @MainActor
 final class NPCServiceTests: XCTestCase {
-    func testAddressReceiptExpandsToSharedSuccess() async throws {
+    func testAddressReceiptStaysInFullScreenModal() async throws {
         try await verifyAddressReceiptPresentation(colorScheme: .dark, dynamicTypeSize: .large)
     }
 
-    func testAddressReceiptExpandsAtAccessibilityTextSize() async throws {
+    func testAddressReceiptSupportsAccessibilityTextSize() async throws {
         try await verifyAddressReceiptPresentation(colorScheme: .light, dynamicTypeSize: .accessibility3)
+    }
+
+    func testPaymentSheetChangesSurfaceWithoutPresentingAgainInDarkMode() async throws {
+        try await verifyPaymentSheetSurface(colorScheme: .dark)
+    }
+
+    func testPaymentSheetChangesSurfaceWithoutPresentingAgainInLightMode() async throws {
+        try await verifyPaymentSheetSurface(colorScheme: .light)
+    }
+
+    private func verifyPaymentSheetSurface(colorScheme: ColorScheme) async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+        let previousKeyWindow = scene.windows.first(where: \.isKeyWindow)
+        let model = AddressReceiptPresentationModel()
+        let host = UIHostingController(rootView: PaymentSheetSurfaceHarness(model: model))
+        let window = UIWindow(windowScene: scene)
+        window.overrideUserInterfaceStyle = colorScheme == .dark ? .dark : .light
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            host.dismiss(animated: false)
+            window.isHidden = true
+            window.rootViewController = nil
+            previousKeyWindow?.makeKeyAndVisible()
+        }
+        try await Task.sleep(for: .milliseconds(650))
+        let presented = try XCTUnwrap(host.presentedViewController)
+        func capture(_ name: String) {
+            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+            }
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "Payment sheet - \(colorScheme) - \(name)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+        capture("compact")
+        model.amount = "27,237 sat"
+        try await Task.sleep(for: .milliseconds(850))
+        XCTAssertTrue(host.presentedViewController === presented)
+        XCTAssertNil(presented.presentedViewController)
+        capture("success")
     }
 
     private func verifyAddressReceiptPresentation(
@@ -33,6 +75,9 @@ final class NPCServiceTests: XCTestCase {
         }
         try await Task.sleep(for: .milliseconds(600))
         let presented = try XCTUnwrap(host.presentedViewController)
+        XCTAssertTrue([UIModalPresentationStyle.fullScreen, .overFullScreen].contains(presented.modalPresentationStyle))
+        let initialBounds = presented.view.bounds
+        XCTAssertEqual(initialBounds.size, window.bounds.size)
         let qrImage = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
             window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
         }
@@ -40,10 +85,15 @@ final class NPCServiceTests: XCTestCase {
         qrAttachment.name = "Lightning Address QR - \(colorScheme) - \(dynamicTypeSize)"
         qrAttachment.lifetime = .keepAlways
         add(qrAttachment)
-        model.amount = "21 sats"
-        try await Task.sleep(for: .milliseconds(900))
-        XCTAssertEqual(presented.sheetPresentationController?.detents.map(\.identifier), [UISheetPresentationController.Detent.Identifier.large])
-        XCTAssertGreaterThan(presented.view.bounds.height, window.bounds.height * 0.8)
+        model.amount = dynamicTypeSize.isAccessibilitySize ? "21,000,000 sats" : "1 sat"
+        // Receipt replaces only the content; the native modal retains its
+        // presentation controller and full-screen bounds for the whole transition.
+        for _ in 0..<9 {
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertTrue(host.presentedViewController === presented)
+            XCTAssertNil(presented.presentedViewController)
+            XCTAssertEqual(presented.view.bounds, initialBounds)
+        }
         let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
             window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
         }
@@ -388,10 +438,49 @@ private struct AddressReceiptPresentationHarness: View {
     let dynamicTypeSize: DynamicTypeSize
 
     var body: some View {
-        Color.clear.sheet(isPresented: .constant(true)) {
-            QRCodeDetailSheet(title: "Lightning Address", content: "receiver@example.com",
-                              receivedAmount: model.amount, showsContent: false)
+        Color.clear.fullScreenCover(isPresented: .constant(true)) {
+            LightningAddressReceiveContent(
+                address: "npub1" + String(repeating: "q", count: 58) + "@example.com",
+                receivedAmount: model.amount
+            )
+                .canvasSheetBackground()
                 .environment(\.dynamicTypeSize, dynamicTypeSize)
+        }
+    }
+}
+
+private struct PaymentSheetSurfaceHarness: View {
+    @ObservedObject var model: AddressReceiptPresentationModel
+
+    var body: some View {
+        Color.clear.sheet(isPresented: .constant(true)) {
+            NavigationStack {
+                Group {
+                    if let amount = model.amount {
+                        PaymentStatusView(
+                            details: [
+                                .init(label: "Amount", isAmount: true, value: amount),
+                                .init(label: "Mint", value: "Example mint")
+                            ],
+                            phase: .success,
+                            successTitle: "Payment Received!",
+                            onDone: {}, onRetry: {}
+                        )
+                    } else {
+                        VStack(spacing: 24) {
+                            Text("Scan")
+                            Text("Ecash")
+                            Text("Bitcoin")
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                }
+                .navigationTitle("Receive")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .topBarLeading) { SheetCloseButton() } }
+            }
+            .presentationDetents(model.amount == nil ? [.height(300)] : [.large])
+            .walletSheetSurface(fillsScreen: model.amount != nil)
         }
     }
 }

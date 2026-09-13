@@ -185,6 +185,7 @@ struct SendView: View {
         // A stray swipe must not tear down the flow while proofs are being
         // swapped into the locked/pending token.
         .interactiveDismissDisabled(isGenerating)
+        .walletSheetSurface(fillsScreen: true)
     }
 
     // MARK: - Send Input View
@@ -788,7 +789,7 @@ struct SendView: View {
             ? AmountFormatter.sats(generatedAmount, useBitcoinSymbol: settings.useBitcoinSymbol)
             : CurrencyAmount(value: generatedAmount, currency: generatedUnitCurrency).formatted()
         var rows: [PaymentStatusView.DetailRow] = [
-            .init(label: "Amount", value: amountText),
+            .init(label: "Amount", isAmount: true, value: amountText),
         ]
         if tokenFee > 0 {
             rows.append(.init(label: "Fee", value: generatedFeeText))
@@ -1478,7 +1479,7 @@ struct UnifiedSendView: View {
         .presentationDragIndicator(routedPresentation ? .hidden : .visible)
         // A stray swipe must not tear down the flow while the melt is executing.
         .interactiveDismissDisabled(step == .sending)
-        .compactBottomSheetSurface()
+        .walletSheetSurface(fillsScreen: !prefersCompactSheet)
     }
 
     // MARK: Input step
@@ -2149,6 +2150,7 @@ struct UnifiedSendView: View {
                 }
                 rows.append(.init(
                     label: "Amount",
+                    isAmount: true,
                     value: AmountFormatter.sats(quote.amount, useBitcoinSymbol: settings.useBitcoinSymbol)
                 ))
                 if let explanation = activeRouteExplanation {
@@ -2179,6 +2181,7 @@ struct UnifiedSendView: View {
             // in place instead of inserting mid-list and shoving the rows below down.
             rows.append(.init(
                 label: "Amount",
+                isAmount: true,
                 value: paymentAmountForCreq.map {
                     AmountFormatter.sats($0, useBitcoinSymbol: settings.useBitcoinSymbol)
                 } ?? "",
@@ -3632,7 +3635,7 @@ struct MeltView: View {
                     value: PaymentRequestParser.normalizeBitcoinRequest(requestInput)
                 ))
             }
-            rows.append(.init(label: "Amount", value: "\(quote.amount) sat"))
+            rows.append(.init(label: "Amount", isAmount: true, value: "\(quote.amount) sat"))
             rows.append(.init(label: "Max fee", value: "\(quote.feeReserve) sat"))
             if let mint = mintInfo(for: quote) {
                 rows.append(.init(label: "Mint", value: mint.name))

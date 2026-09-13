@@ -26,6 +26,7 @@ struct PaymentStatusView: View {
     /// Label-only, matching the receipt rows in TransactionDetailView — no leading glyph.
     struct DetailRow: Identifiable {
         let label: String
+        var isAmount: Bool = false
         let value: String
         /// When true the value slot shows a mini spinner instead of `value`, so a row
         /// whose datum is still resolving keeps its slot reserved (no pop-in / reflow).
@@ -128,11 +129,18 @@ struct PaymentStatusView: View {
     /// band's own delayed animation supplies its cadence).
     private var bandVisible: Bool { !staged || entered }
 
+    private var successAmount: DetailRow? {
+        guard phase == .success, !settlementPending else { return nil }
+        return details.first { $0.isAmount && !$0.isPending && !$0.value.isEmpty }
+    }
+
+    private var receiptDetails: [DetailRow] {
+        details.filter { $0.id != successAmount?.id }
+    }
+
     var body: some View {
-        // Same vertical scaffold as the confirm screens (`PayFlowScaffold`), so the
-        // details block sits at the SAME Y across confirm → processing → success and
-        // never jumps as the state changes. The morphing icon + title occupy the hero
-        // band where the amount hero sits on the confirm screen.
+        // Reuse the payment scaffold. Completed payments promote the amount
+        // into the hero; the remaining receipt facts stay below it.
         PayFlowScaffold {
             VStack(spacing: 16) {
                 iconSlot
@@ -146,26 +154,37 @@ struct PaymentStatusView: View {
                         .contentTransition(.opacity)
                         .multilineTextAlignment(.center)
 
-                    // Reserved slot so success ↔ failure never nudges the icon above it.
-                    Text(statusMessage ?? " ")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .lineLimit(3)
-                        .opacity(statusMessage == nil ? 0 : 1)
-                        .padding(.horizontal, 32)
-                        .frame(minHeight: 44)
+                    if let amount = successAmount {
+                        AmountLockup(
+                            parts: AmountParts.parse(amount.value),
+                            role: .amountHero,
+                            accessibilityPrefix: amount.label
+                        )
+                        .padding(.horizontal, 24)
+                        .padding(.top, 16)
+                    } else {
+                        // Reserved slot so success ↔ failure never nudges the icon above it.
+                        Text(statusMessage ?? " ")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(3)
+                            .opacity(statusMessage == nil ? 0 : 1)
+                            .padding(.horizontal, 32)
+                            .frame(minHeight: 44)
+                    }
                 }
                 .opacity(bandVisible ? 1 : 0)
                 .offset(y: staged && !entered ? 8 : 0)
                 .animation(.smooth(duration: 0.3).delay(0.12), value: entered)
             }
+            .frame(minHeight: 220, alignment: .top)
         } details: {
             // Payment facts are terminal-only: processing shows just the spinner
             // and title, matching the claiming screen.
-            if !details.isEmpty, phase != .processing {
+            if !receiptDetails.isEmpty, phase != .processing {
                 VStack(spacing: 0) {
-                    ForEach(Array(details.enumerated()), id: \.element.id) { index, row in
+                    ForEach(receiptDetails) { row in
                         detailRow(row)
                     }
                 }
@@ -288,6 +307,14 @@ struct PaymentStatusView: View {
     }
 
     private func detailRow(_ row: DetailRow) -> some View {
+        standardDetailRow(row)
+            .font(.subheadline)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 14)
+            .accessibilityElement(children: .combine)
+    }
+
+    private func standardDetailRow(_ row: DetailRow) -> some View {
         HStack {
             Text(row.label)
                 .foregroundStyle(.secondary)
@@ -306,10 +333,6 @@ struct PaymentStatusView: View {
                     .contentTransition(.opacity)
             }
         }
-        .font(.subheadline)
-        .padding(.horizontal, 4)
-        .padding(.vertical, 14)
-        .accessibilityElement(children: .combine)
     }
 
     private func handlePhase(_ newPhase: Phase, announce: Bool) {

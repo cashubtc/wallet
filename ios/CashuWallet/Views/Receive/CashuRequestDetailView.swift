@@ -135,7 +135,7 @@ struct CashuRequestDetailView: View {
             guard let quoteID = monitoredQuoteID else { return }
             await walletManager.monitorDisplayedMintQuote(quoteID: quoteID, homeHaptic: false)
         }
-        .compactBottomSheetSurface()
+        .walletSheetSurface(fillsScreen: true)
     }
 
     /// Keep the current receipt stable; payments arriving during it are picked
@@ -172,6 +172,7 @@ struct CashuRequestDetailView: View {
         if let receivedAmount {
             rows.append(.init(
                 label: "Amount",
+                isAmount: true,
                 value: request.map { formatAmount(receivedAmount, unit: $0.unit) }
                     ?? AmountFormatter.sats(receivedAmount, useBitcoinSymbol: settings.useBitcoinSymbol)
             ))

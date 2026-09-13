@@ -305,6 +305,9 @@ private fun AuthenticatedShell(container: AppContainer) {
     // The active money flow, hosted in a modal bottom sheet (iOS WalletFlow sheets).
     var activeFlow by remember { mutableStateOf<WalletFlow?>(null) }
     var flowDismissLocked by remember { mutableStateOf(false) }
+    var flowUsesCompactSheet by remember(activeFlow) {
+        mutableStateOf(activeFlow != WalletFlow.ReceiveLightning && activeFlow != WalletFlow.SendEcash)
+    }
     var isFlowBackdropVisible by remember { mutableStateOf(false) }
     val flowHandoff = remember { WalletFlowHandoffCoordinator() }
     var pendingSendScan by remember { mutableStateOf<String?>(null) }
@@ -587,6 +590,7 @@ private fun AuthenticatedShell(container: AppContainer) {
         // prevents a sheet from mounting for a frame if readiness drops.
         flow = activeFlow.takeIf { walletState.isRuntimeReady },
         dismissLocked = flowDismissLocked,
+        compactContent = flowUsesCompactSheet,
         onBackdropVisibilityChanged = { isFlowBackdropVisible = it },
         onDismissed = {
             activeFlow = null
@@ -635,6 +639,7 @@ private fun AuthenticatedShell(container: AppContainer) {
                 // Bitcoin opens the mint's Lightning / on-chain receive dialog.
                 onReceiveBitcoin = { activeFlow = WalletFlow.ReceiveLightning },
                 allowAutomaticClipboardRead = container.runtimePolicy.allowAutomaticClipboardReads,
+                onCompactSheetChanged = { flowUsesCompactSheet = it },
             )
 
             WalletFlow.ReceiveLightning -> ReceiveLightningScreen(
@@ -673,6 +678,7 @@ private fun AuthenticatedShell(container: AppContainer) {
                 onReceive = { activeFlow = WalletFlow.ReceiveEcash },
                 prefilledPayload = pendingSendScan,
                 onPrefilledConsumed = { pendingSendScan = null },
+                onCompactSheetChanged = { flowUsesCompactSheet = it },
                 mintDiscoveryManager = container.mintDiscoveryManager,
                 allowCleartextLocalTestMints = container.runtimePolicy.allowCleartextLocalTestMints,
                 onDismissLockChanged = { flowDismissLocked = it },
@@ -701,6 +707,7 @@ private fun AuthenticatedShell(container: AppContainer) {
 
             WalletFlow.Contactless -> ContactlessPayView(
                 walletManager = container.walletManager,
+                onCompactSheetChanged = { flowUsesCompactSheet = it },
                 onDone = close,
                 onLightningRequest = { invoice ->
                     // A read bolt11 is a Send: swap the sheet content, pre-filled.

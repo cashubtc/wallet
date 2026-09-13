@@ -30,6 +30,7 @@ import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -77,6 +78,7 @@ fun ContactlessPayView(
     onLightningRequest: (String) -> Unit,
     onDone: () -> Unit,
     onDismissLockChanged: (Boolean) -> Unit = {},
+    onCompactSheetChanged: (Boolean) -> Unit = {},
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -93,6 +95,7 @@ fun ContactlessPayView(
     var lastPaymentAmount by remember { mutableStateOf<Long?>(null) }
     val currentIsProcessing by rememberUpdatedState(isProcessing)
     val currentPaymentComplete by rememberUpdatedState(paymentComplete)
+    LaunchedEffect(paymentComplete) { onCompactSheetChanged(!paymentComplete) }
 
     DisposableEffect(lifecycleOwner, adapter) {
         val observer = LifecycleEventObserver { _, event ->
@@ -200,7 +203,7 @@ internal fun ContactlessPayContent(
         PaymentStatusScreen(
             phase = PaymentStatusPhase.Success,
             title = "Payment sent",
-            detail = lastPaymentAmount?.let {
+            successAmount = lastPaymentAmount?.let {
                 CurrencyAmount(
                     value = it,
                     currency = CurrencyRegistry.currencyForMintUnit("sat"),

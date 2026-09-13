@@ -703,7 +703,7 @@ struct MainWalletView: View {
             .environmentObject(walletManager)
             .presentationDetents([.large])
             .presentationDragIndicator(.visible)
-            .flatBottomSheetSurface()
+            .walletSheetSurface(fillsScreen: true)
         case .scanner:
             // The scanner self-dismisses on a successful read and hands the
             // payload back; the routed surface presents only after this sheet
@@ -725,17 +725,15 @@ struct MainWalletView: View {
             SendView()
                 .environmentObject(walletManager)
                 .presentationDetents([.large])
-                .compactBottomSheetSurface()
         case .receiveLightning:
             ReceiveLightningView()
                 .environmentObject(walletManager)
                 .presentationDetents([.large])
-                .compactBottomSheetSurface()
         case .meltInvoice(let invoice):
             MeltViewWithInvoice(invoice: invoice)
                 .environmentObject(walletManager)
                 .presentationDetents([.large])
-                .flatBottomSheetSurface()
+                .walletSheetSurface(fillsScreen: true)
         case .connectMint:
             // Same surface the Send sheet shows when there are no mints — the
             // detents and canvas background live inside it.
@@ -744,7 +742,7 @@ struct MainWalletView: View {
         case .discoverMints:
             MintDiscoverySheet()
             .environmentObject(walletManager)
-            .flatBottomSheetSurface()
+            .walletSheetSurface(fillsScreen: true)
         }
     }
 

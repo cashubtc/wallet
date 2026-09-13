@@ -309,6 +309,7 @@ internal fun NfcReceiveOverlayContent(
                     NfcReceivePhase.Success -> null
                     else -> "Transfer complete — you can move the phones apart."
                 },
+                successAmount = successAmountLabel,
                 doneLabel = if (phase == NfcReceivePhase.Failure) "Try again" else "Done",
                 onDone = when (phase) {
                     NfcReceivePhase.Success -> onSuccessDone
@@ -318,7 +319,7 @@ internal fun NfcReceiveOverlayContent(
                 rows = if (phase == NfcReceivePhase.Success) {
                     {
                         CashuRequestReceiptRows(
-                            amountLabel = successAmountLabel,
+                            amountLabel = null,
                             mintName = successMintName,
                         )
                     }

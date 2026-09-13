@@ -1,11 +1,12 @@
 package com.cashu.me.ui.settings
 
+import android.content.ClipData
+
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,13 +14,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.QrCode2
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -43,8 +45,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -54,6 +58,7 @@ import com.cashu.me.Core.SettingsManager
 import com.cashu.me.Core.WalletManager
 import com.cashu.me.Core.WalletState
 import com.cashu.me.ui.components.InlineNotice
+import com.cashu.me.ui.components.LocalConfirmationToastController
 import com.cashu.me.ui.components.MintPickerSheet
 import com.cashu.me.ui.components.NavRow
 import com.cashu.me.ui.components.NoticeSeverity
@@ -112,6 +117,8 @@ fun LightningScreen(
     val npcState by npcService.state.collectAsState()
     val settings by settingsManager.state.collectAsState()
     val scope = rememberCoroutineScope()
+    val clipboard = LocalClipboard.current
+    val toast = LocalConfirmationToastController.current
     LaunchedEffect(npcService) { npcService.initializeIfEnabled() }
 
     var mintPickerOpen by remember { mutableStateOf(false) }
@@ -161,8 +168,12 @@ fun LightningScreen(
                 if (addressReady) {
                     LightningAddressRow(
                         address = npcState.lightningAddress,
-                        statusColor = npcStatusColor(npcState),
-                        statusLabel = npcStatusLabel(npcState),
+                        onCopy = {
+                            scope.launch {
+                                clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("Lightning Address", npcState.lightningAddress)))
+                                toast?.show("Copied Lightning address")
+                            }
+                        },
                         onShowQr = { addressQrOpen = true },
                     )
                 }
@@ -257,7 +268,7 @@ fun LightningScreen(
     }
 
     if (addressQrOpen) {
-        com.cashu.me.ui.receive.LightningAddressReceiveSheet(
+        com.cashu.me.ui.receive.LightningAddressReceiveModal(
             npcService = npcService,
             settingsManager = settingsManager,
             onDismiss = { addressQrOpen = false },
@@ -322,31 +333,28 @@ internal fun LightningAddressSetupFeedback(
 @Composable
 private fun LightningAddressRow(
     address: String,
-    statusColor: Color,
-    statusLabel: String,
+    onCopy: () -> Unit,
     onShowQr: () -> Unit,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onShowQr)
-            .semantics {
-                contentDescription = "Lightning address: $address. $statusLabel."
-            }
             .padding(
-                horizontal = CashuTheme.spacing.comfortable,
-                vertical = CashuTheme.spacing.default,
+                start = CashuTheme.spacing.comfortable,
+                end = CashuTheme.spacing.snug,
+                top = CashuTheme.spacing.snug,
+                bottom = CashuTheme.spacing.snug,
             ),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
     ) {
         Box(
-            modifier = Modifier
-                .size(CashuTheme.spacing.snug)
-                .clip(CircleShape)
-                .background(statusColor),
-        )
-        Column(modifier = Modifier.weight(1f)) {
+            modifier = Modifier.weight(1f)
+                .heightIn(min = 48.dp)
+                .clickable(onClick = onShowQr)
+                .semantics { contentDescription = "Lightning address: $address" }
+                .padding(end = CashuTheme.spacing.snug),
+            contentAlignment = Alignment.CenterStart,
+        ) {
             Text(
                 text = address,
                 style = MaterialTheme.typography.bodyLarge.copy(fontFamily = CashuTheme.fonts.mono).withSlashedZero(),
@@ -354,18 +362,21 @@ private fun LightningAddressRow(
                 maxLines = 1,
                 overflow = TextOverflow.MiddleEllipsis,
             )
-            Text(
-                text = statusLabel,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+        }
+        IconButton(onClick = onCopy) {
+            Icon(
+                imageVector = Icons.Outlined.ContentCopy,
+                contentDescription = "Copy Lightning address",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        Icon(
-            imageVector = Icons.Outlined.QrCode2,
-            contentDescription = "Show QR",
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(CashuTheme.spacing.loose),
-        )
+        IconButton(onClick = onShowQr) {
+            Icon(
+                imageVector = Icons.Outlined.QrCode2,
+                contentDescription = "Show Lightning address QR code",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 
@@ -418,20 +429,3 @@ private fun CheckForPaymentsRow(
         },
     )
 }
-
-@Composable
-private fun npcStatusColor(state: NPCState): Color {
-    return when {
-        state.errorMessage != null -> MaterialTheme.colorScheme.error
-        state.isConnected -> CashuTheme.colors.received
-        else -> CashuTheme.colors.pending
-    }
-}
-
-internal fun npcStatusLabel(state: NPCState): String =
-    when {
-        state.errorMessage != null -> if (state.isConnected) "Needs attention" else "Not connected"
-        state.isConnected -> "Connected"
-        state.isLoading -> "Connecting"
-        else -> "Not connected"
-    }
