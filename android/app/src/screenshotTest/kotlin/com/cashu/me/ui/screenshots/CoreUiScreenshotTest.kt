@@ -246,7 +246,7 @@ fun paymentSuccessScreenshot() {
         PaymentStatusScreen(
             phase = PaymentStatusPhase.Success,
             title = "Payment Received!",
-            detail = "2,500 sat",
+            successAmount = "2,500 sat",
             onDone = {},
         )
     }
