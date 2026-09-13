@@ -27,6 +27,7 @@ struct ReceiveLightningView: View {
     @EnvironmentObject var walletManager: WalletManager
     @ObservedObject private var settings = SettingsManager.shared
     @ObservedObject private var priceService = PriceService.shared
+    @ObservedObject private var npcService = NPCService.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var amountString = ""
@@ -34,6 +35,7 @@ struct ReceiveLightningView: View {
     /// BOLT12 only: when true the offer is amountless (sender chooses).
     @State private var isAmountless = false
     @State private var showMethodPicker = false
+    @State private var showLightningAddress = false
     @State private var mintQuote: MintQuoteInfo?
     @State private var isCreatingRequest = false
     @State private var isMinting = false
@@ -212,6 +214,9 @@ struct ReceiveLightningView: View {
             .sheet(isPresented: $showMintPicker) {
                 MintSelectorSheet(selectedMint: $walletManager.activeMint)
                     .environmentObject(walletManager)
+            }
+            .backdropSheet(isPresented: $showLightningAddress) {
+                LightningAddressReceiveSheet(address: npcService.lightningAddress)
             }
             .sheet(isPresented: $showMethodPicker) {
                 MethodPickerSheet(
@@ -444,6 +449,20 @@ struct ReceiveLightningView: View {
 
     private var amountInputView: some View {
         VStack(spacing: 0) {
+            if npcService.isEnabled && npcService.isInitialized && !npcService.lightningAddress.isEmpty {
+                Button {
+                    HapticFeedback.selection()
+                    showLightningAddress = true
+                } label: {
+                    Label("Lightning Address", systemImage: "qrcode")
+                        .font(.body.weight(.medium))
+                        .frame(minHeight: 44)
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 8)
+                .accessibilityHint("Show your address to receive any amount")
+                .accessibilityIdentifier("receive-lightning-address")
+            }
             Spacer()
 
             amountHero

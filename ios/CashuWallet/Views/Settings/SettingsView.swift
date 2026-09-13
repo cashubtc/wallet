@@ -1221,9 +1221,12 @@ struct RestoreWalletView: View {
 
 struct QRCodeDetailSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let title: String
     let content: String
+    var receivedAmount: String? = nil
+    var statusMessage: String? = nil
 
     @State private var contentHeight: CGFloat = 0
 
@@ -1232,47 +1235,94 @@ struct QRCodeDetailSheet: View {
         // value line off below the fold, so the one thing the QR encodes was
         // invisible until the user dragged. The sheet now hugs title + QR +
         // value + actions exactly, matching Android's content-height sheet.
-        VStack(spacing: 0) {
-            // In-content title — like every receipt sheet, dismissal is the
-            // drag indicator / swipe, not a floating close-X.
-            Text(title)
-                .font(.title2.weight(.semibold))
+        ScrollView {
+            VStack(spacing: 0) {
+                // In-content title — like every receipt sheet, dismissal is the
+                // drag indicator / swipe, not a floating close-X.
+                Text(title)
+                    .font(.title2.weight(.semibold))
+                    .multilineTextAlignment(.center)
 
-            QRCodeView(content: content, showControls: false)
-                .padding()
-                .frame(width: 280, height: 280)
-                .background(Color.white)
-                .clipShape(.rect(cornerRadius: 16))
-                .padding(.top, 24)
-
-            // One middle-truncated line at full body size and primary ink —
-            // this is the sheet's second focal point, not a footnote. The full
-            // value travels via Copy/Share.
-            Text(content)
-                .cashuText(.monoDisplay)
-                .truncationMode(.middle)
-                .padding(.top, 16)
-
-            HStack(spacing: 12) {
-                Button(action: copyToClipboard) {
-                    Text("Copy")
+                if let receivedAmount {
+                    VStack(spacing: 20) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 64))
+                            .foregroundStyle(Color.green)
+                            .accessibilityHidden(true)
+                        Text("Payment received")
+                            .font(.title2.weight(.semibold))
+                            .multilineTextAlignment(.center)
+                        Text(receivedAmount)
+                            .cashuText(.amountCompact)
+                            .lineLimit(nil)
+                            .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 280)
+                    .padding(.top, 24)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("lightning-address-payment-received")
+                } else {
+                    QRCodeView(content: content, showControls: false)
+                        .padding()
+                        .frame(width: 280, height: 280)
+                        .background(Color.white)
+                        .clipShape(.rect(cornerRadius: 16))
+                        .padding(.top, 24)
                 }
-                .flatSheetSecondaryButton()
 
-                ShareLink(item: content) {
-                    Text("Share")
+                // One middle-truncated line at full body size and primary ink —
+                // this is the sheet's second focal point, not a footnote. The full
+                // value travels via Copy/Share.
+                Text(content)
+                    .cashuText(.monoDisplay)
+                    .truncationMode(.middle)
+                    .padding(.top, 16)
+
+                if let statusMessage, receivedAmount == nil {
+                    Text(statusMessage)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 12)
                 }
-                .glassButton()
+
+                if receivedAmount != nil {
+                    Button("Done") { dismiss() }
+                        .glassButton()
+                        .padding(.top, 24)
+                } else {
+                    HStack(spacing: 12) {
+                        Button(action: copyToClipboard) {
+                            Text("Copy")
+                        }
+                        .flatSheetSecondaryButton()
+
+                        ShareLink(item: content) {
+                            Text("Share")
+                        }
+                        .glassButton()
+                    }
+                    .padding(.top, 24)
+                }
             }
-            .padding(.top, 24)
+            .padding(.horizontal, 24)
+            .padding(.top, 20)
+            .padding(.bottom, 16)
+            .contentFitMeasured { contentHeight = $0 }
         }
-        .padding(.horizontal, 24)
-        .padding(.top, 20)
-        .padding(.bottom, 16)
-        .contentFitMeasured { contentHeight = $0 }
+        .scrollBounceBehavior(.basedOnSize)
         .contentFitDetent(contentHeight, estimate: 480, navigationBar: false)
         .compactBottomSheetSurface()
         .presentationDragIndicator(.visible)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: receivedAmount != nil)
+        .sensoryFeedback(.success, trigger: receivedAmount != nil)
+        .onChange(of: receivedAmount) { _, amount in
+            if let amount {
+                UIAccessibility.post(notification: .announcement, argument: "Payment received. \(amount)")
+            }
+        }
     }
 
     private func copyToClipboard() {

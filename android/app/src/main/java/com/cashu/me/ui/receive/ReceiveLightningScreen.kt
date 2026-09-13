@@ -38,6 +38,8 @@ import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Timer
+import androidx.compose.material.icons.outlined.QrCode
+import com.cashu.me.Core.NPCService
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
@@ -184,12 +186,15 @@ private const val MAX_OFFER_DESCRIPTION_LENGTH = 640
 @Composable
 fun ReceiveLightningScreen(
     walletManager: WalletManager,
+    npcService: NPCService,
     cashuRequestStore: CashuRequestStore,
     settingsManager: SettingsManager,
     priceService: PriceService,
     onClose: () -> Unit,
 ) {
     val walletState by walletManager.state.collectAsState()
+    val npcState by npcService.state.collectAsState()
+    var lightningAddressOpen by remember { mutableStateOf(false) }
     val settings by settingsManager.state.collectAsState()
     val priceState by priceService.state.collectAsState()
     val cashuRequestState by cashuRequestStore.state.collectAsState()
@@ -725,6 +730,9 @@ fun ReceiveLightningScreen(
                         CreatingOverlay(method = method)
                     } else {
                         InputFace(
+                            onShowLightningAddress = { lightningAddressOpen = true }.takeIf {
+                                npcState.isEnabled && npcState.isInitialized && npcState.lightningAddress.isNotBlank()
+                            },
                             amount = amount,
                             onAmountChange = { amount = it; errorText = null },
                             selectedMethod = method,
@@ -1081,6 +1089,9 @@ fun ReceiveLightningScreen(
     }
     }
 
+    if (lightningAddressOpen) {
+        LightningAddressReceiveSheet(npcService, settingsManager, onDismiss = { lightningAddressOpen = false })
+    }
     if (mintPickerOpen) {
         MintPickerSheet(
             mints = walletState.mints,
@@ -1220,6 +1231,7 @@ internal fun InputFace(
     amountValid: Boolean,
     errorText: String?,
     onCreate: () -> Unit,
+    onShowLightningAddress: (() -> Unit)? = null,
 ) {
     Column(
         modifier = Modifier
@@ -1229,6 +1241,16 @@ internal fun InputFace(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Spacer(Modifier.height(CashuTheme.spacing.default))
+        if (onShowLightningAddress != null) {
+            androidx.compose.material3.TextButton(
+                onClick = onShowLightningAddress,
+                modifier = Modifier.testTag("receive-lightning-address"),
+            ) {
+                Icon(Icons.Outlined.QrCode, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.size(8.dp))
+                Text("Lightning Address", style = MaterialTheme.typography.bodyLarge)
+            }
+        }
         Spacer(Modifier.weight(1f))
         if (selectedMethod == PaymentMethodKind.Onchain) {
             Text(

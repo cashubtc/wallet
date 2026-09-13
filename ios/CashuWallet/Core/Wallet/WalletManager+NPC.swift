@@ -64,10 +64,14 @@ extension WalletManager {
                   let userInfo = notification.userInfo,
                   let mintQuote = userInfo["mintQuote"] as? MintQuote else { return }
             let spendingConditions = userInfo["spendingConditions"] as? SpendingConditions
+            let npcQuote = userInfo["npcQuote"] as? NpubCashQuote
+            let address = userInfo["address"] as? String
             Task {
                 await self.mintNPCQuote(
                     mintQuote: mintQuote,
-                    spendingConditions: spendingConditions
+                    spendingConditions: spendingConditions,
+                    npcQuote: npcQuote,
+                    address: address
                 )
             }
         }
@@ -75,7 +79,9 @@ extension WalletManager {
 
     func mintNPCQuote(
         mintQuote: MintQuote,
-        spendingConditions: SpendingConditions? = nil
+        spendingConditions: SpendingConditions? = nil,
+        npcQuote: NpubCashQuote? = nil,
+        address: String? = nil
     ) async {
         guard !processedQuotes.contains(mintQuote.id),
               !npcQuotesInFlight.contains(mintQuote.id) else { return }
@@ -120,14 +126,21 @@ extension WalletManager {
 
                         await self.refreshBalanceAssumingWalletOperationLease()
                         await self.loadTransactionsAssumingWalletOperationLease()
+                        let inFlow: Bool
+                        if let npcQuote, let address {
+                            inFlow = NPCService.shared.publishReceivedPayment(NPCPaymentReceipt(
+                                quoteID: npcQuote.id, address: address,
+                                amount: totalAmount, paidAt: npcQuote.paidAt
+                            ))
+                        } else {
+                            inFlow = false
+                        }
                         SentryService.breadcrumb("NPC quote minted", category: "wallet.npc")
 
                         NotificationCenter.default.post(
                             name: .cashuTokenReceived,
                             object: nil,
-                            // Background receive: no receive sheet is up to confirm it, so
-                            // ask the home beat to fire the "sats landed" haptic.
-                            userInfo: ["amount": totalAmount, "source": "npub.cash", "homeHaptic": true]
+                            userInfo: ["amount": totalAmount, "source": "npub.cash", "homeHaptic": !inFlow]
                         )
                     } catch {
                         await self.captureWalletFailureDiagnostics(kind: .mint, quoteID: mintQuote.id)

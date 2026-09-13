@@ -808,6 +808,7 @@ class WalletManager(
     override suspend fun claimNPCQuote(quote: NPCQuote, p2pkPubkey: String?): Boolean {
         if (isNPCQuoteProcessed(quote.id) || quote.id in npcQuotesInFlight) return true
         npcQuotesInFlight += quote.id
+        val address = npcService.state.value.lightningAddress
         return try {
             val mintUrl = quote.mintUrl ?: mutableState.value.activeMint?.url
                 ?: throw IllegalStateException("npub.cash quote ${quote.id} has no mint URL.")
@@ -817,10 +818,16 @@ class WalletManager(
             p2pkPubkey?.let(settingsManager::markP2PKKeyUsed)
             refreshBalance()
             loadTransactions()
+            val confirmationOwner = npcService.publishReceivedPayment(com.cashu.me.Core.NPCPaymentReceipt(
+                quoteId = quote.id,
+                address = address,
+                amount = amount,
+                paidAtEpochSeconds = quote.paidAtEpochSeconds,
+            ))
             publishReceivedPayment(
                 amount = amount,
                 unit = "sat",
-                confirmationOwner = ReceiveConfirmationOwner.Home,
+                confirmationOwner = confirmationOwner,
             )
             amount > 0 || isNPCQuoteProcessed(quote.id)
         } catch (error: Throwable) {

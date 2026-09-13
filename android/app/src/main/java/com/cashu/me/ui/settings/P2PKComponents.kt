@@ -25,6 +25,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.ContentCopy
@@ -66,6 +67,9 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -204,7 +208,7 @@ fun KeyCard(
                 )
                 val statusText = status.text
                 if (statusText != null) {
-                    Row(
+                      Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.micro),
                     ) {
@@ -357,6 +361,8 @@ fun QrDetailSheet(
     title: String,
     content: String,
     onDismiss: () -> Unit,
+    receivedAmount: String? = null,
+    statusMessage: String? = null,
 ) {
     val sheetState = rememberBottomSheetState(
         initialValue = SheetValue.Hidden,
@@ -366,6 +372,11 @@ fun QrDetailSheet(
     val clipboardScope = rememberCoroutineScope()
     val context = LocalContext.current
     val confirmationToastController = LocalConfirmationToastController.current
+    val haptics = LocalHapticFeedback.current
+    val dismissSheet = com.cashu.me.ui.components.rememberSheetDismissAction(sheetState)
+    LaunchedEffect(receivedAmount) {
+        if (receivedAmount != null) haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -384,15 +395,34 @@ fun QrDetailSheet(
                 // not a bare titleMedium line.
                 SheetHeader(title = title)
                 Spacer(Modifier.height(CashuTheme.spacing.snug))
-                QrCard(
-                    content = content,
-                    // 248 code + 16 cushion = the 280 card iOS draws, so both
-                    // sheets carry the same code-to-sheet proportion.
-                    size = 248.dp,
-                    staticOnly = true,
-                    shareSubject = title,
-                    confirmationMessage = "Copied ${title.lowercase()}",
-                )
+                if (receivedAmount != null) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 280.dp)
+                            .testTag("lightning-address-payment-received")
+                            .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(20.dp, Alignment.CenterVertically),
+                    ) {
+                        Icon(Icons.Filled.CheckCircle, contentDescription = null,
+                            tint = CashuTheme.colors.received, modifier = Modifier.size(64.dp))
+                        Text("Payment received", style = MaterialTheme.typography.headlineSmall,
+                            textAlign = TextAlign.Center)
+                        Text(receivedAmount, style = CashuTheme.type.amountCompact,
+                            textAlign = TextAlign.Center)
+                    }
+                } else {
+                    QrCard(
+                        content = content,
+                        // 248 code + 16 cushion = the 280 card iOS draws, so both
+                        // sheets carry the same code-to-sheet proportion.
+                        size = 248.dp,
+                        staticOnly = true,
+                        shareSubject = title,
+                        confirmationMessage = "Copied ${title.lowercase()}",
+                    )
+                }
                 Spacer(Modifier.height(CashuTheme.spacing.comfortable))
                 // One middle-truncated line at full body size and primary ink —
                 // the sheet's second focal point, not a footnote. The full
@@ -404,31 +434,43 @@ fun QrDetailSheet(
                     maxLines = 1,
                     overflow = TextOverflow.MiddleEllipsis,
                 )
+                if (statusMessage != null && receivedAmount == null) {
+                    Spacer(Modifier.height(CashuTheme.spacing.default))
+                    Text(statusMessage, style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+                }
                 Spacer(Modifier.height(CashuTheme.spacing.section))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
-                ) {
-                    SecondaryButton(
-                        text = "Copy",
-                        onClick = {
-                            clipboardScope.launch {
-                                clipboard.setClipEntry(
-                                    ClipEntry(ClipData.newPlainText(title, content)),
-                                )
-                                confirmationToastController?.show("Copied ${title.lowercase()}")
-                            }
-                        },
-                        modifier = Modifier.weight(1f),
-                    )
-                    PrimaryButton(
-                        text = "Share",
-                        onClick = { context.shareText(content, title) },
-                        // Inverted ink, matching the confirm sheets' action button
-                        // and iOS's white Share pill (PrimaryButton is gray by default).
-                        colors = ButtonDefaults.buttonColors(),
-                        modifier = Modifier.weight(1f),
-                    )
+                if (receivedAmount != null) {
+                    PrimaryButton(text = "Done", onClick = { dismissSheet(onDismiss) },
+                        colors = ButtonDefaults.buttonColors(), modifier = Modifier.fillMaxWidth())
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
+                    ) {
+                        SecondaryButton(
+                            text = "Copy",
+                            onClick = {
+                                clipboardScope.launch {
+                                    clipboard.setClipEntry(
+                                        ClipEntry(ClipData.newPlainText(title, content)),
+                                    )
+                                    confirmationToastController?.show("Copied ${title.lowercase()}")
+                                }
+                            },
+                            modifier = Modifier.weight(1f),
+                        )
+                        PrimaryButton(
+                            text = "Share",
+                            onClick = { context.shareText(content, title) },
+                            // Inverted ink, matching the confirm sheets' action button
+                            // and iOS's white Share pill (PrimaryButton is gray by default).
+                            colors = ButtonDefaults.buttonColors(),
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
                 }
                 Spacer(Modifier.height(CashuTheme.spacing.comfortable))
             }

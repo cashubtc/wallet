@@ -109,10 +109,7 @@ struct LightningAddressSettingsSection: View {
             )
         }
         .backdropSheet(isPresented: $showAddressQR) {
-            QRCodeDetailSheet(
-                title: "Lightning Address",
-                content: npcService.lightningAddress
-            )
+            LightningAddressReceiveSheet(address: npcService.lightningAddress)
         }
     }
 
@@ -301,5 +298,56 @@ struct LightningAddressSettingsSection: View {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .abbreviated
         return formatter.localizedString(for: date, relativeTo: Date())
+    }
+}
+
+/// Shared by Lightning settings and Receive Bitcoin; only this sheet owns
+/// focused polling, so copy/share and dismissal keep their existing behavior.
+struct LightningAddressReceiveSheet: View {
+    let address: String
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
+    @ObservedObject private var npcService = NPCService.shared
+    @ObservedObject private var settings = SettingsManager.shared
+    @State private var openedAt = Date()
+    @State private var receipt: NPCPaymentReceipt?
+    @State private var pendingReceipt: NPCPaymentReceipt?
+
+    var body: some View {
+        QRCodeDetailSheet(
+            title: "Lightning Address", content: address,
+            receivedAmount: receipt.map { AmountFormatter.sats($0.amount, useBitcoinSymbol: settings.useBitcoinSymbol) },
+            statusMessage: statusMessage
+        )
+        .task(id: scenePhase == .active && receipt == nil) {
+            guard scenePhase == .active, receipt == nil else { return }
+            await npcService.monitorPayments(address: address, openedAt: openedAt)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .npcPaymentReceived)) { notification in
+            guard receipt == nil, let payment = notification.userInfo?["receipt"] as? NPCPaymentReceipt,
+                  payment.belongsToReceiveSession(address: address, openedAt: openedAt) else { return }
+            receipt = payment
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .npcPaymentPending)) { notification in
+            guard let payment = notification.userInfo?["receipt"] as? NPCPaymentReceipt,
+                  payment.belongsToReceiveSession(address: address, openedAt: openedAt) else { return }
+            pendingReceipt = payment
+        }
+        .onChange(of: npcService.isEnabled) { _, enabled in if !enabled { dismiss() } }
+        .onChange(of: npcService.lightningAddress) { _, value in if value != address { dismiss() } }
+    }
+
+    private var statusMessage: String? {
+        if !settings.checkIncomingInvoices {
+            return "Payment checks are off in Privacy settings."
+        }
+        if let error = npcService.errorMessage { return error }
+        if !npcService.automaticClaim {
+            if let pendingReceipt {
+                return "Payment detected: \(AmountFormatter.sats(pendingReceipt.amount, useBitcoinSymbol: settings.useBitcoinSymbol)). Auto-claim is off."
+            }
+            return "Auto-claim is off. Enable it in Lightning settings to add payments to your wallet."
+        }
+        return nil
     }
 }

@@ -257,9 +257,9 @@ fun LightningScreen(
     }
 
     if (addressQrOpen) {
-        QrDetailSheet(
-            title = "Lightning Address",
-            content = npcState.lightningAddress,
+        com.cashu.me.ui.receive.LightningAddressReceiveSheet(
+            npcService = npcService,
+            settingsManager = settingsManager,
             onDismiss = { addressQrOpen = false },
         )
     }

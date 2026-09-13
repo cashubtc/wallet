@@ -4,6 +4,59 @@ import Cdk
 
 @MainActor
 final class NPCServiceTests: XCTestCase {
+    func testVisibleAddressChecksPromptlyWithoutPeriodicChecksAndStopsOnDismiss() async throws {
+        let client = ControlledNPCClient()
+        client.automaticResponsesAfter = 1
+        let settings = makeSettings(enabled: true)
+        let service = NPCService(settingsStore: settings, receiveRefreshInterval: 0.01, makeClient: { _, _ in client })
+        try service.initializeWithSeed(Data(repeating: 1, count: 64))
+        await client.nextRequest()
+        let connection = Task { await service.connect() }
+        client.complete(.success([]))
+        await connection.value
+        settings.checkIncomingInvoices = true
+        settings.periodicallyCheckIncomingInvoices = false
+
+        let monitor = Task { await service.monitorPayments(address: service.lightningAddress, openedAt: Date()) }
+        try await Task.sleep(for: .milliseconds(60))
+        XCTAssertGreaterThanOrEqual(client.requestCount, 3, "The open sheet must not wait for the two-minute poll")
+        monitor.cancel()
+        await monitor.value
+        let stoppedCount = client.requestCount
+        try await Task.sleep(for: .milliseconds(40))
+        XCTAssertEqual(client.requestCount, stoppedCount)
+        service.disconnect()
+    }
+
+    func testVisibleAddressRespectsDisabledPaymentChecks() async throws {
+        let client = ControlledNPCClient()
+        client.automaticResponsesAfter = 1
+        let service = NPCService(settingsStore: makeSettings(enabled: true), receiveRefreshInterval: 0.01,
+                                 makeClient: { _, _ in client })
+        try service.initializeWithSeed(Data(repeating: 1, count: 64))
+        await client.nextRequest()
+        let connection = Task { await service.connect() }
+        client.complete(.success([]))
+        await connection.value
+        let monitor = Task { await service.monitorPayments(address: service.lightningAddress, openedAt: Date()) }
+        try await Task.sleep(for: .milliseconds(40))
+        XCTAssertEqual(client.requestCount, 1)
+        monitor.cancel()
+        await monitor.value
+        service.disconnect()
+    }
+
+    func testAddressReceiptRejectsOldOtherWalletUnknownTimeAndZeroCredits() {
+        let openedAt = Date(timeIntervalSince1970: 100.75)
+        let fresh = NPCPaymentReceipt(quoteID: "new", address: "test@example.com", amount: 21, paidAt: 101)
+        XCTAssertTrue(fresh.belongsToReceiveSession(address: fresh.address, openedAt: openedAt))
+        XCTAssertFalse(fresh.belongsToReceiveSession(address: "other@example.com", openedAt: openedAt))
+        for (amount, paidAt): (UInt64, UInt64?) in [(21, 99), (21, nil), (0, 101)] {
+            let receipt = NPCPaymentReceipt(quoteID: "old", address: fresh.address, amount: amount, paidAt: paidAt)
+            XCTAssertFalse(receipt.belongsToReceiveSession(address: fresh.address, openedAt: openedAt))
+        }
+    }
+
     func testSetupRetryRecoversRuntimeAndUsesStoredSeed() async throws {
         var ready = false
         var initializedSeed: Data?
