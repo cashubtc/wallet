@@ -1,9 +1,58 @@
 import XCTest
+import SwiftUI
 import Cdk
 @testable import CashuWallet
 
 @MainActor
 final class NPCServiceTests: XCTestCase {
+    func testAddressReceiptExpandsToSharedSuccess() async throws {
+        try await verifyAddressReceiptPresentation(colorScheme: .dark, dynamicTypeSize: .large)
+    }
+
+    func testAddressReceiptExpandsAtAccessibilityTextSize() async throws {
+        try await verifyAddressReceiptPresentation(colorScheme: .light, dynamicTypeSize: .accessibility3)
+    }
+
+    private func verifyAddressReceiptPresentation(
+        colorScheme: ColorScheme, dynamicTypeSize: DynamicTypeSize
+    ) async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+        let previousKeyWindow = scene.windows.first(where: \.isKeyWindow)
+        let model = AddressReceiptPresentationModel()
+        let host = UIHostingController(rootView: AddressReceiptPresentationHarness(
+            model: model, dynamicTypeSize: dynamicTypeSize))
+        let window = UIWindow(windowScene: scene)
+        window.overrideUserInterfaceStyle = colorScheme == .dark ? .dark : .light
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            host.dismiss(animated: false)
+            window.isHidden = true
+            window.rootViewController = nil
+            previousKeyWindow?.makeKeyAndVisible()
+        }
+        try await Task.sleep(for: .milliseconds(600))
+        let presented = try XCTUnwrap(host.presentedViewController)
+        let qrImage = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
+        let qrAttachment = XCTAttachment(image: qrImage)
+        qrAttachment.name = "Lightning Address QR - \(colorScheme) - \(dynamicTypeSize)"
+        qrAttachment.lifetime = .keepAlways
+        add(qrAttachment)
+        model.amount = "21 sats"
+        try await Task.sleep(for: .milliseconds(900))
+        XCTAssertEqual(presented.sheetPresentationController?.detents.map(\.identifier), [UISheetPresentationController.Detent.Identifier.large])
+        XCTAssertGreaterThan(presented.view.bounds.height, window.bounds.height * 0.8)
+        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
+        let attachment = XCTAttachment(image: image)
+        attachment.name = "Lightning Address success - \(colorScheme) - \(dynamicTypeSize)"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     func testVisibleAddressChecksPromptlyWithoutPeriodicChecksAndStopsOnDismiss() async throws {
         let client = ControlledNPCClient()
         client.automaticResponsesAfter = 1
@@ -327,4 +376,22 @@ private final class ControlledNPCClient: NpubCashClientProtocol {
     func getMissingQuotes(quoteIds: [String]) async throws -> [NpubCashQuote] { [] }
     func getUserInfo() async throws -> NpubCashUserResponse { throw NPCError.invalidResponse }
     func setQuoteLocking(lockQuotes: Bool) async throws -> NpubCashUserResponse { throw NPCError.invalidResponse }
+}
+
+@MainActor
+private final class AddressReceiptPresentationModel: ObservableObject {
+    @Published var amount: String?
+}
+
+private struct AddressReceiptPresentationHarness: View {
+    @ObservedObject var model: AddressReceiptPresentationModel
+    let dynamicTypeSize: DynamicTypeSize
+
+    var body: some View {
+        Color.clear.sheet(isPresented: .constant(true)) {
+            QRCodeDetailSheet(title: "Lightning Address", content: "receiver@example.com",
+                              receivedAmount: model.amount, showsContent: false)
+                .environment(\.dynamicTypeSize, dynamicTypeSize)
+        }
+    }
 }

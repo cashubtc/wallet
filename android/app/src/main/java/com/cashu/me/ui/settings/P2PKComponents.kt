@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -25,7 +26,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.filled.Key
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.ContentCopy
@@ -80,6 +80,10 @@ import com.cashu.me.Core.AppLockManager
 import com.cashu.me.Core.Bech32
 import com.cashu.me.ui.components.LocalConfirmationToastController
 import com.cashu.me.ui.components.PrimaryButton
+import com.cashu.me.ui.components.CashuModalBottomSheet
+import com.cashu.me.ui.components.InspectorRow
+import com.cashu.me.ui.components.PaymentStatusPhase
+import com.cashu.me.ui.components.PaymentStatusScreen
 import com.cashu.me.ui.components.QrCard
 import com.cashu.me.ui.components.SecondaryButton
 import com.cashu.me.ui.components.SheetHeader
@@ -363,6 +367,9 @@ fun QrDetailSheet(
     onDismiss: () -> Unit,
     receivedAmount: String? = null,
     statusMessage: String? = null,
+    // Receive owns a full-height parent. Settings expands this sheet instead.
+    onPaymentReceived: (() -> Unit)? = null,
+    showsContent: Boolean = true,
 ) {
     val sheetState = rememberBottomSheetState(
         initialValue = SheetValue.Hidden,
@@ -372,80 +379,69 @@ fun QrDetailSheet(
     val clipboardScope = rememberCoroutineScope()
     val context = LocalContext.current
     val confirmationToastController = LocalConfirmationToastController.current
-    val haptics = LocalHapticFeedback.current
     val dismissSheet = com.cashu.me.ui.components.rememberSheetDismissAction(sheetState)
     LaunchedEffect(receivedAmount) {
-        if (receivedAmount != null) haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+        if (receivedAmount != null && onPaymentReceived != null) {
+            dismissSheet(onPaymentReceived)
+        }
     }
 
-    ModalBottomSheet(
+    CashuModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
+        sheetGesturesEnabled = !dismissSheet.isDismissing,
     ) {
-        Box(modifier = Modifier.fillMaxWidth()) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = CashuTheme.spacing.comfortable)
-                    .navigationBarsPadding()
-                    .verticalScroll(rememberScrollState()),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                // Canonical sheet chrome, like the sibling reveal sheet —
-                // not a bare titleMedium line.
+        if (receivedAmount != null && onPaymentReceived == null) {
+            Column(modifier = Modifier.fillMaxHeight()) {
                 SheetHeader(title = title)
-                Spacer(Modifier.height(CashuTheme.spacing.snug))
-                if (receivedAmount != null) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 280.dp)
-                            .testTag("lightning-address-payment-received")
-                            .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(20.dp, Alignment.CenterVertically),
-                    ) {
-                        Icon(Icons.Filled.CheckCircle, contentDescription = null,
-                            tint = CashuTheme.colors.received, modifier = Modifier.size(64.dp))
-                        Text("Payment received", style = MaterialTheme.typography.headlineSmall,
-                            textAlign = TextAlign.Center)
-                        Text(receivedAmount, style = CashuTheme.type.amountCompact,
-                            textAlign = TextAlign.Center)
-                    }
-                } else {
+                PaymentStatusScreen(
+                    phase = PaymentStatusPhase.Success,
+                    title = "Payment Received!",
+                    onDone = { dismissSheet(onDismiss) },
+                    rows = { InspectorRow(label = "Amount", value = receivedAmount, valueMonospaced = true) },
+                    modifier = Modifier.weight(1f)
+                        .testTag("lightning-address-payment-received"),
+                )
+            }
+        } else {
+            Box(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = CashuTheme.spacing.comfortable)
+                        .navigationBarsPadding()
+                        .verticalScroll(rememberScrollState()),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    // Canonical sheet chrome, like the sibling reveal sheet —
+                    // not a bare titleMedium line.
+                    SheetHeader(title = title)
+                    Spacer(Modifier.height(CashuTheme.spacing.snug))
                     QrCard(
                         content = content,
-                        // 248 code + 16 cushion = the 280 card iOS draws, so both
-                        // sheets carry the same code-to-sheet proportion.
                         size = 248.dp,
                         staticOnly = true,
                         shareSubject = title,
                         confirmationMessage = "Copied ${title.lowercase()}",
                     )
-                }
-                Spacer(Modifier.height(CashuTheme.spacing.comfortable))
-                // One middle-truncated line at full body size and primary ink —
-                // the sheet's second focal point, not a footnote. The full
-                // value travels via Copy/Share.
-                Text(
-                    text = content,
-                    style = CashuTheme.type.monoDisplay,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.MiddleEllipsis,
-                )
-                if (statusMessage != null && receivedAmount == null) {
-                    Spacer(Modifier.height(CashuTheme.spacing.default))
-                    Text(statusMessage, style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
-                }
-                Spacer(Modifier.height(CashuTheme.spacing.section))
-                if (receivedAmount != null) {
-                    PrimaryButton(text = "Done", onClick = { dismissSheet(onDismiss) },
-                        colors = ButtonDefaults.buttonColors(), modifier = Modifier.fillMaxWidth())
-                } else {
+                    if (showsContent) {
+                        Spacer(Modifier.height(CashuTheme.spacing.comfortable))
+                        Text(
+                            text = content,
+                            style = CashuTheme.type.monoDisplay,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.MiddleEllipsis,
+                        )
+                    }
+                    if (statusMessage != null) {
+                        Spacer(Modifier.height(CashuTheme.spacing.default))
+                        Text(statusMessage, style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+                    }
+                    Spacer(Modifier.height(CashuTheme.spacing.section))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
@@ -471,8 +467,8 @@ fun QrDetailSheet(
                             modifier = Modifier.weight(1f),
                         )
                     }
+                    Spacer(Modifier.height(CashuTheme.spacing.comfortable))
                 }
-                Spacer(Modifier.height(CashuTheme.spacing.comfortable))
             }
         }
     }

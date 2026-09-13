@@ -36,6 +36,8 @@ struct ReceiveLightningView: View {
     @State private var isAmountless = false
     @State private var showMethodPicker = false
     @State private var showLightningAddress = false
+    @State private var pendingLightningAddressReceipt: NPCPaymentReceipt?
+    @State private var lightningAddressReceipt: NPCPaymentReceipt?
     @State private var mintQuote: MintQuoteInfo?
     @State private var isCreatingRequest = false
     @State private var isMinting = false
@@ -82,7 +84,19 @@ struct ReceiveLightningView: View {
     var body: some View {
         NavigationStack {
             Group {
-                if let failure = requestFailure {
+                if let receipt = lightningAddressReceipt {
+                    PaymentStatusView(
+                        details: [.init(label: "Amount", value: AmountFormatter.sats(
+                            receipt.amount, useBitcoinSymbol: settings.useBitcoinSymbol
+                        ))],
+                        phase: .success,
+                        successTitle: "Payment Received!",
+                        onDone: { dismiss() },
+                        onRetry: {}
+                    )
+                    .accessibilityIdentifier("lightning-address-payment-received")
+                    .transition(.opacity)
+                } else if let failure = requestFailure {
                     requestFailureView(failure)
                         .transition(.opacity)
                 } else if isPaid, let quote = mintQuote {
@@ -114,6 +128,7 @@ struct ReceiveLightningView: View {
             }
             .animation(.smooth(duration: 0.3), value: mintQuote != nil)
             .animation(.smooth(duration: 0.3), value: isPaid)
+            .animation(reduceMotion ? nil : .smooth(duration: 0.3), value: lightningAddressReceipt != nil)
             .animation(.smooth(duration: 0.3), value: requestFailure != nil)
             .navigationBarTitleDisplayMode(.inline)
             .navigationTitle(screenTitle)
@@ -126,7 +141,7 @@ struct ReceiveLightningView: View {
                     SheetCloseButton()
                 }
 
-                if requestFailure == nil, let quote = mintQuote, !isPaid {
+                if lightningAddressReceipt == nil, requestFailure == nil, let quote = mintQuote, !isPaid {
                     ToolbarItem(placement: .topBarTrailing) {
                         if quote.paymentMethod == .bolt12 || quote.paymentMethod == .onchain {
                             // Overflow menu keeps Share + New quieter than a
@@ -172,7 +187,7 @@ struct ReceiveLightningView: View {
                             .accessibilityLabel("Share request")
                         }
                     }
-                } else if requestFailure == nil && shouldShowMethodPicker && !isCreatingRequest {
+                } else if lightningAddressReceipt == nil && requestFailure == nil && shouldShowMethodPicker && !isCreatingRequest {
                     // Liquid Glass method switcher. On iOS 26 the toolbar renders
                     // bar buttons as glass, so this reads as a sibling of the
                     // close button by construction. Replaces the old inline
@@ -196,7 +211,7 @@ struct ReceiveLightningView: View {
                 // Unit selector — only in the amount-entry state, for a mint that
                 // can mint more than one unit (on-chain is amountless, no unit).
                 // Declared after the method button so it sits to its right.
-                if requestFailure == nil, mintQuote == nil, !isCreatingRequest, selectedMethod != .onchain,
+                if lightningAddressReceipt == nil, requestFailure == nil, mintQuote == nil, !isCreatingRequest, selectedMethod != .onchain,
                    let mint = walletManager.activeMint, mint.supportsMultipleMintUnits {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button {
@@ -215,8 +230,20 @@ struct ReceiveLightningView: View {
                 MintSelectorSheet(selectedMint: $walletManager.activeMint)
                     .environmentObject(walletManager)
             }
-            .backdropSheet(isPresented: $showLightningAddress) {
-                LightningAddressReceiveSheet(address: npcService.lightningAddress)
+            .backdropSheet(isPresented: $showLightningAddress, onDismiss: {
+                // Mount the shared terminal after the nested sheet has gone, so
+                // its celebration and haptic belong to the visible receive flow.
+                lightningAddressReceipt = pendingLightningAddressReceipt
+                pendingLightningAddressReceipt = nil
+                if let receipt = lightningAddressReceipt {
+                    let amount = AmountFormatter.sats(receipt.amount, useBitcoinSymbol: settings.useBitcoinSymbol)
+                    AccessibilityNotification.Announcement("Payment received. \(amount)").post()
+                }
+            }) {
+                LightningAddressReceiveSheet(address: npcService.lightningAddress) { receipt in
+                    pendingLightningAddressReceipt = receipt
+                    showLightningAddress = false
+                }
             }
             .sheet(isPresented: $showMethodPicker) {
                 MethodPickerSheet(
@@ -340,6 +367,7 @@ struct ReceiveLightningView: View {
     }
 
     private var screenTitle: String {
+        if lightningAddressReceipt != nil { return "Lightning Address" }
         let method = requestFailure?.retry.method ?? mintQuote?.paymentMethod
         guard let method else { return "Receive" }
 

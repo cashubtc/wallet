@@ -24,6 +24,7 @@ fun LightningAddressReceiveSheet(
     npcService: NPCService,
     settingsManager: SettingsManager,
     onDismiss: () -> Unit,
+    onPaymentReceived: ((NPCPaymentReceipt) -> Unit)? = null,
 ) {
     val npc by npcService.state.collectAsState()
     val settings by settingsManager.state.collectAsState()
@@ -66,5 +67,9 @@ fun LightningAddressReceiveSheet(
         onDismiss = onDismiss,
         receivedAmount = receipt?.let { formatter.formatWalletSats(it.amount, settings.useBitcoinSymbol) },
         statusMessage = statusMessage,
+        showsContent = false,
+        onPaymentReceived = onPaymentReceived?.let { receive ->
+            { receipt?.let(receive); Unit }
+        },
     )
 }

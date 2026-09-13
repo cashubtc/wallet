@@ -305,6 +305,7 @@ struct LightningAddressSettingsSection: View {
 /// focused polling, so copy/share and dismissal keep their existing behavior.
 struct LightningAddressReceiveSheet: View {
     let address: String
+    var onPaymentReceived: ((NPCPaymentReceipt) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
     @ObservedObject private var npcService = NPCService.shared
@@ -316,8 +317,11 @@ struct LightningAddressReceiveSheet: View {
     var body: some View {
         QRCodeDetailSheet(
             title: "Lightning Address", content: address,
-            receivedAmount: receipt.map { AmountFormatter.sats($0.amount, useBitcoinSymbol: settings.useBitcoinSymbol) },
-            statusMessage: statusMessage
+            receivedAmount: onPaymentReceived == nil
+                ? receipt.map { AmountFormatter.sats($0.amount, useBitcoinSymbol: settings.useBitcoinSymbol) }
+                : nil,
+            statusMessage: statusMessage,
+            showsContent: false
         )
         .task(id: scenePhase == .active && receipt == nil) {
             guard scenePhase == .active, receipt == nil else { return }
@@ -327,6 +331,7 @@ struct LightningAddressReceiveSheet: View {
             guard receipt == nil, let payment = notification.userInfo?["receipt"] as? NPCPaymentReceipt,
                   payment.belongsToReceiveSession(address: address, openedAt: openedAt) else { return }
             receipt = payment
+            onPaymentReceived?(payment)
         }
         .onReceive(NotificationCenter.default.publisher(for: .npcPaymentPending)) { notification in
             guard let payment = notification.userInfo?["receipt"] as? NPCPaymentReceipt,
