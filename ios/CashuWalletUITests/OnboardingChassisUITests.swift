@@ -334,7 +334,9 @@ final class OnboardingChassisUITests: UITestBase {
         tapWhenReady(app.buttons["Use Seed Phrase"], timeout: 10)
         let field = app.textFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 10))
-        XCTAssertTrue(app.keyboards.element.waitForExistence(timeout: 10), "Seed entry should focus on arrival")
+        // This journey exercises verified-word scrubbing. Explicitly focus
+        // after the animated entrance; autofocus has separate coverage above.
+        focusTextField(field)
         // Rapid keyboard input must not replay a committed word before the
         // next SwiftUI render pass, even while word transitions animate.
         field.typeText(Array(repeating: "abandon", count: 11).joined(separator: " ") + " about ")
