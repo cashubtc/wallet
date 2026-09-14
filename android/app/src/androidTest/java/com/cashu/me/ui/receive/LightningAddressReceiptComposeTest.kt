@@ -11,8 +11,9 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
-import androidx.test.platform.app.InstrumentationRegistry
-import android.os.ParcelFileDescriptor
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.test.captureToImage
+import androidx.test.core.graphics.writeToTestStorage
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.cashu.me.ui.setCashuContent
 import org.junit.Assert.assertEquals
@@ -94,13 +95,26 @@ class LightningAddressReceiptComposeTest {
         compose.onNodeWithTag("lightning-address-modal-content").assertDoesNotExist()
     }
 
+    @Test
+    fun failedClaimOffersRetryWithoutShowingSuccess() {
+        var retries = 0
+        compose.setCashuContent {
+            LightningAddressModal(onDismiss = {}) {
+                LightningAddressReceiveContent(address = address, onDismiss = {},
+                    statusMessage = "Payment detected, but it couldn't be added to your wallet.",
+                    onRetry = { retries++ })
+            }
+        }
+        compose.onNodeWithText("Try again").performScrollTo().assertIsDisplayed().performClick()
+        assertEquals(1, retries)
+        capture("claim-failed-light")
+        compose.onNodeWithText("Payment Received!").assertDoesNotExist()
+        compose.onNodeWithText("Copy").assertIsDisplayed()
+    }
+
     private fun capture(name: String) {
         compose.waitForIdle()
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
-        // Keep review captures after Gradle uninstalls the isolated test app.
-        val command = instrumentation.uiAutomation.executeShellCommand(
-            "screencap -p /sdcard/Download/cashu-npc-$name.png",
-        )
-        ParcelFileDescriptor.AutoCloseInputStream(command).use { it.readBytes() }
+        compose.onNodeWithTag("lightning-address-modal-content").captureToImage()
+            .asAndroidBitmap().writeToTestStorage("cashu-npc-$name")
     }
 }

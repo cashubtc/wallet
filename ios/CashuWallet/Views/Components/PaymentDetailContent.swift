@@ -30,6 +30,41 @@ extension View {
     }
 }
 
+/// Preserve the compact two-column receipt at ordinary sizes; never truncate
+/// payment facts to keep that shape when text or the value needs more space.
+struct PaymentDetailPair<Value: View>: View {
+    let label: String
+    @ViewBuilder var value: () -> Value
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            stacked
+        } else {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(label).foregroundStyle(.secondary)
+                    Spacer(minLength: 16)
+                    HStack(alignment: .firstTextBaseline) { value() }
+                        .multilineTextAlignment(.trailing)
+                        .fixedSize(horizontal: true, vertical: false)
+                }
+                stacked
+            }
+        }
+    }
+
+    private var stacked: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label).foregroundStyle(.secondary)
+            HStack(alignment: .firstTextBaseline) { value() }
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
 /// Fits the QR around the receipt's actual text, keeping related details together.
 /// Scrolling remains available when accessibility text needs more than one screen.
 struct PaymentDetailContent<Hero: View, Details: View>: View {

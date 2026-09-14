@@ -95,6 +95,37 @@ class NPCReceiveMonitoringTest {
         } finally { fixture.close() }
     }
 
+    @Test(timeout = 10_000)
+    fun claimFailureCanBeRetriedWithoutReportingAnUncreditedPayment() = runBlocking {
+        val fixture = Fixture(this, allowChecks = false)
+        try {
+            fixture.service.initializeWithSeed(byteArrayOf(1))
+            fixture.service.connect()
+            val paid = NPCQuote("paid", 21, "https://mint.example", state = "PAID",
+                locked = false, createdAtEpochSeconds = 100, paidAtEpochSeconds = 101)
+            fixture.quotes = listOf(paid)
+            var attempts = 0
+            fixture.service.quoteClaimHandler = object : NPCQuoteClaimHandler {
+                override fun isNPCQuoteProcessed(quoteId: String) = attempts >= 2
+                override suspend fun claimNPCQuote(quote: NPCQuote, p2pkPubkey: String?): Boolean {
+                    assertEquals(listOf(paid), fixture.service.state.value.claimingQuotes)
+                    attempts++
+                    return attempts >= 2
+                }
+            }
+            fixture.settings.value = fixture.settings.value.copy(checkIncomingInvoices = true)
+            fixture.service.retryPayments()
+            assertEquals(listOf(paid), fixture.service.state.value.pendingPaidQuotes)
+            assertNotNull(fixture.service.state.value.errorMessage)
+            assertTrue(fixture.service.state.value.claimingQuotes.isEmpty())
+            fixture.service.retryPayments()
+            assertEquals(2, attempts)
+            assertTrue(fixture.service.state.value.pendingPaidQuotes.isEmpty())
+            assertTrue(fixture.service.state.value.claimingQuotes.isEmpty())
+            assertNull(fixture.service.state.value.errorMessage)
+        } finally { fixture.close() }
+    }
+
     private class Fixture(parent: CoroutineScope, allowChecks: Boolean = true) {
         private val scope = CoroutineScope(parent.coroutineContext + SupervisorJob())
         val settings = MutableStateFlow(SettingsState(checkIncomingInvoices = allowChecks,

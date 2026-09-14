@@ -46,7 +46,7 @@ class NfcReceiveSuccessTransitionComposeTest {
 
         compose.onNodeWithContentDescription("Success").assertIsDisplayed()
         compose.onNodeWithText("Payment Received!").assertIsDisplayed()
-        compose.onNodeWithText("19 sat").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Amount: 19 sat", useUnmergedTree = true).assertIsDisplayed()
         compose.onNodeWithText("Minibits mint").assertIsDisplayed()
         compose.onNodeWithText("Done").assertIsDisplayed()
     }

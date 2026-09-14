@@ -199,10 +199,7 @@ struct ReceiveTokenDetailView: View {
             VStack(spacing: 16) {
                 VStack(spacing: 0) {
                     if isLoadingFee {
-                        HStack {
-                            Text("Fee")
-                                .foregroundStyle(.secondary)
-                            Spacer()
+                        PaymentDetailPair(label: "Fee") {
                             ProgressView().scaleEffect(0.8)
                         }
                         .paymentDetailRow()
@@ -215,10 +212,7 @@ struct ReceiveTokenDetailView: View {
                             value: receiveFee == 0 ? "No fee" : formatFee(receiveFee)
                         )
                     } else {
-                        HStack {
-                            Text("Fee unavailable")
-                                .foregroundStyle(.secondary)
-                            Spacer()
+                        PaymentDetailPair(label: "Fee unavailable") {
                             Button {
                                 Task { await calculateFee() }
                             } label: {
@@ -339,14 +333,10 @@ struct ReceiveTokenDetailView: View {
     /// The "locked to" row: shows "Your key" when the wallet holds the matching
     /// key, otherwise the npub the ecash is locked to plus a caution glyph.
     private var lockedToRow: some View {
-        HStack {
-            Text("Locked to")
-                .foregroundStyle(.secondary)
-            Spacer()
+        PaymentDetailPair(label: "Locked to") {
             HStack(spacing: 6) {
                 Text(lockedKeyLabel)
                     .fontWeight(.regular)
-                    .lineLimit(2)
                     .truncationMode(.middle)
                 Image(systemName: tokenLockedToKnownKey ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
                     .font(.caption)
@@ -363,13 +353,9 @@ struct ReceiveTokenDetailView: View {
     }
 
     private func detailRow(label: String, value: String) -> some View {
-        HStack {
-            Text(label)
-                .foregroundStyle(.secondary)
-            Spacer()
+        PaymentDetailPair(label: label) {
             Text(value)
                 .fontWeight(.regular)
-                .lineLimit(2)
                 .truncationMode(.middle)
         }
         .paymentDetailRow()
@@ -378,14 +364,9 @@ struct ReceiveTokenDetailView: View {
     /// Sender-provided prose stays fully reviewable instead of inheriting the
     /// single-line, middle-truncated treatment used for identifiers.
     private func memoRow(_ memo: ReceiveTokenReviewPresentation.Memo) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Text(memo.accessibilityLabel)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: true, vertical: false)
-            Spacer(minLength: 0)
+        PaymentDetailPair(label: memo.accessibilityLabel) {
             Text(memo.text)
                 .fontWeight(.regular)
-                .multilineTextAlignment(.trailing)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .paymentDetailRow()

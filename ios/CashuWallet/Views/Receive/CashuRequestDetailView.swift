@@ -344,14 +344,9 @@ struct CashuRequestDetailView: View {
     // MARK: - Detail rows
 
     private func detailRow(label: String, value: String) -> some View {
-        HStack {
-            Text(label)
-                .foregroundStyle(.secondary)
-            Spacer()
+        PaymentDetailPair(label: label) {
             Text(value)
                 .fontWeight(.regular)
-                .multilineTextAlignment(.trailing)
-                .lineLimit(2)
                 .truncationMode(.middle)
         }
         .paymentDetailRow()
@@ -362,14 +357,9 @@ struct CashuRequestDetailView: View {
 
     private func editableRow(label: String, value: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack {
-                Text(label)
-                    .foregroundStyle(.secondary)
-                Spacer()
+            PaymentDetailPair(label: label) {
                 Text(value)
                     .fontWeight(.regular)
-                    .multilineTextAlignment(.trailing)
-                    .lineLimit(2)
                     .truncationMode(.middle)
                 Image(systemName: "pencil")
                     .font(.footnote)

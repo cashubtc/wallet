@@ -71,7 +71,7 @@ class ReusableReceiveJourneyTest {
         for (total in listOf(21L, 42L)) {
             compose.runOnIdle { fake.markMintQuotePaid(quoteId, amountPaid = total) }
             robot.awaitText("Payment Received!", timeoutMillis = 20_000)
-            compose.onNodeWithText("₿21").assertIsDisplayed()
+            robot.awaitDescription("Amount: 21 sats")
             robot.tapText("Done").awaitText("Copy invoice")
             compose.onNodeWithText("Payment Received!").assertDoesNotExist()
             assertEquals(quoteId, fake.latestMintQuoteId)

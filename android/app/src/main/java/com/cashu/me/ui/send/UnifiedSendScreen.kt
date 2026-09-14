@@ -106,7 +106,6 @@ import com.cashu.me.ui.components.InspectorRow
 import com.cashu.me.ui.components.MethodActionRow
 import com.cashu.me.ui.components.MintPickerSheet
 import com.cashu.me.ui.components.MintSelectorDirection
-import com.cashu.me.ui.components.MintSelectorRow
 import com.cashu.me.ui.components.AmountEntryMintSelector
 import com.cashu.me.ui.components.NoticeSeverity
 import com.cashu.me.ui.components.NumberPadFooter
@@ -1220,12 +1219,10 @@ private fun AmountFace(
         }
         // Under the amount, over the keypad (Send Ecash / Receive parity).
         if (mint != null) {
-            MintSelectorRow(
+            AmountEntryMintSelector(
                 direction = MintSelectorDirection.Source,
                 mint = mint,
                 balanceText = balanceText,
-                showBalance = true,
-                modifier = Modifier.padding(horizontal = CashuTheme.spacing.snug),
                 onPickMint = onPickMint,
                 // Gated on a spendable balance, the way Send Ecash already does
                 // it — an empty mint offered a Max that filled in zero.

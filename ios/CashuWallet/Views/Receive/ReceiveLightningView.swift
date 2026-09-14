@@ -570,11 +570,9 @@ struct ReceiveLightningView: View {
     // MARK: - Mint Selector
 
     private func mintSelector(mint: MintInfo) -> some View {
-        MintSelectorRow(
+        AmountEntryMintSelector(
             direction: .destination,
             mint: mint,
-            balanceText: formatBalance(mint.balance),
-            showsBalance: true,
             // One mint means nothing to choose between, so the row drops its
             // chevron and stops opening a picker that would list a single row.
             onChooseMint: walletManager.mints.count > 1 ? { showMintPicker = true } : nil
@@ -797,14 +795,9 @@ struct ReceiveLightningView: View {
     // MARK: - Detail Row
 
     private func detailRow(label: String, value: String) -> some View {
-        HStack {
-            Text(label)
-                .foregroundStyle(.secondary)
-            Spacer()
+        PaymentDetailPair(label: label) {
             Text(value)
                 .fontWeight(.regular)
-                .multilineTextAlignment(.trailing)
-                .lineLimit(2)
                 .truncationMode(.middle)
         }
         .paymentDetailRow()
@@ -814,14 +807,9 @@ struct ReceiveLightningView: View {
     /// Amount row on the reusable offer screen (mirrors the Cashu Request screen).
     private func editableRow(label: String, value: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack {
-                Text(label)
-                    .foregroundStyle(.secondary)
-                Spacer()
+            PaymentDetailPair(label: label) {
                 Text(value)
                     .fontWeight(.regular)
-                    .multilineTextAlignment(.trailing)
-                    .lineLimit(2)
                     .truncationMode(.middle)
                 Image(systemName: "pencil")
                     .font(.footnote)
@@ -840,10 +828,7 @@ struct ReceiveLightningView: View {
     /// on-chain block explorer row.
     private func explorerLinkRow(label: String, url: URL) -> some View {
         Link(destination: url) {
-            HStack {
-                Text(label)
-                    .foregroundStyle(.secondary)
-                Spacer()
+            PaymentDetailPair(label: label) {
                 Image(systemName: "arrow.up.right")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.tertiary)

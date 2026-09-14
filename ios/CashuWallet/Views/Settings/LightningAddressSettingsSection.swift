@@ -309,7 +309,9 @@ struct LightningAddressReceiveView: View {
         LightningAddressReceiveContent(
             address: address,
             receivedAmount: receipt.map { AmountFormatter.sats($0.amount, useBitcoinSymbol: settings.useBitcoinSymbol) },
-            statusMessage: statusMessage
+            statusMessage: statusMessage,
+            onRetry: canRetry ? { Task { await npcService.retryPayments() } } : nil,
+            retrying: npcService.paymentCheckInProgress
         )
         .task(id: scenePhase == .active && receipt == nil) {
             guard scenePhase == .active, receipt == nil else { return }
@@ -329,11 +331,26 @@ struct LightningAddressReceiveView: View {
         .onChange(of: npcService.lightningAddress) { _, value in if value != address { dismiss() } }
     }
 
+    private var activeClaim: NPCPaymentClaim? {
+        npcService.paymentClaims.values
+            .filter { $0.receipt.belongsToReceiveSession(address: address, openedAt: openedAt) }
+            .sorted { ($0.receipt.paidAt ?? 0) > ($1.receipt.paidAt ?? 0) }
+            .first
+    }
+
+    private var canRetry: Bool {
+        settings.checkIncomingInvoices && (activeClaim?.phase == .failed || npcService.errorMessage != nil)
+    }
+
     private var statusMessage: String? {
         if !settings.checkIncomingInvoices {
             return "Payment checks are off in Privacy settings."
         }
+        if activeClaim?.phase == .failed {
+            return "Payment detected, but it couldn't be added to your wallet."
+        }
         if let error = npcService.errorMessage { return error }
+        if activeClaim?.phase == .claiming { return "Payment detected. Adding to your wallet…" }
         if !npcService.automaticClaim {
             if let pendingReceipt {
                 return "Payment detected: \(AmountFormatter.sats(pendingReceipt.amount, useBitcoinSymbol: settings.useBitcoinSymbol)). Auto-claim is off."
@@ -349,6 +366,9 @@ struct LightningAddressReceiveContent: View {
     let address: String
     var receivedAmount: String? = nil
     var statusMessage: String? = nil
+    var onRetry: (() -> Void)? = nil
+    var retrying = false
+    var announce: (String) -> Void = { AccessibilityNotification.Announcement($0).post() }
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -378,9 +398,14 @@ struct LightningAddressReceiveContent: View {
                 ToolbarItem(placement: .topBarLeading) { SheetCloseButton() }
             }
         }
+        .onChange(of: statusMessage) { oldValue, newValue in
+            if receivedAmount == nil, let message = newValue, message != oldValue {
+                announce(message)
+            }
+        }
         .onChange(of: receivedAmount) { _, amount in
             if let amount {
-                AccessibilityNotification.Announcement("Payment received. \(amount)").post()
+                announce("Payment received. \(amount)")
             }
         }
     }
@@ -410,6 +435,16 @@ struct LightningAddressReceiveContent: View {
                             .multilineTextAlignment(.center)
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(.horizontal, 24)
+                    }
+                    if let onRetry {
+                        Button(action: onRetry) {
+                            Text("Try again")
+                                .font(.subheadline.weight(.medium))
+                                .frame(minHeight: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(retrying)
                     }
                 }
                 .frame(maxWidth: .infinity, minHeight: geometry.size.height)

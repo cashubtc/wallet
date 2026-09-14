@@ -314,11 +314,10 @@ struct SendView: View {
     // MARK: - Mint Selector
 
     private func mintSelector(mint: MintInfo) -> some View {
-        MintSelectorRow(
+        AmountEntryMintSelector(
             direction: .source,
             mint: mint,
             balanceText: sendBalanceText,
-            showsBalance: true,
             // Gated on a spendable balance: an empty mint offered a Max that
             // filled in zero.
             onUseMax: effectiveSendBalance > 0 ? { useMax(mint: mint) } : nil,
@@ -808,13 +807,9 @@ struct SendView: View {
     }
 
     private func detailRow(label: String, value: String) -> some View {
-        HStack {
-            Text(label)
-                .foregroundStyle(.secondary)
-            Spacer()
+        PaymentDetailPair(label: label) {
             Text(value)
                 .fontWeight(.regular)
-                .lineLimit(2)
                 .truncationMode(.middle)
         }
         .paymentDetailRow()
@@ -1824,11 +1819,10 @@ struct UnifiedSendView: View {
     }
 
     private func amountMintRow(_ mint: MintInfo) -> some View {
-        MintSelectorRow(
+        AmountEntryMintSelector(
             direction: .source,
             mint: mint,
             balanceText: AmountFormatter.sats(mint.balance, useBitcoinSymbol: settings.useBitcoinSymbol),
-            showsBalance: true,
             // Gated on a spendable balance, matching Send Ecash — this row
             // offered a Max on an empty mint that filled in zero.
             onUseMax: mint.balance > 0 ? useMax : nil,
@@ -2062,15 +2056,11 @@ struct UnifiedSendView: View {
     /// can be switched. Tapping a switchable row opens the mint picker.
     @ViewBuilder
     private func mintDetailRow(label: String, mint: MintInfo, switchable: Bool) -> some View {
-        let content = HStack(spacing: 8) {
-            Text(label)
-                .foregroundStyle(.secondary)
-            Spacer()
+        let content = PaymentDetailPair(label: label) {
             MintAvatarView(iconUrl: mint.iconUrl, name: mint.name, size: 22)
             Text(mint.name)
                 .fontWeight(.regular)
                 .foregroundStyle(.primary)
-                .lineLimit(2)
                 .truncationMode(.middle)
             if switchable {
                 Image(systemName: "chevron.down")
@@ -2799,15 +2789,11 @@ struct UnifiedSendView: View {
     /// recoverable — names the target mint with a quiet "what to do" subtitle,
     /// no alarming color (the CTA does the work).
     private func creqActionableMintRow(host: String, subtitle: String) -> some View {
-        HStack(spacing: 8) {
-            Text("Mint")
-                .foregroundStyle(.secondary)
-            Spacer()
+        PaymentDetailPair(label: "Mint") {
             VStack(alignment: .trailing, spacing: 2) {
                 Text(host)
                     .fontWeight(.regular)
                     .foregroundStyle(.primary)
-                    .lineLimit(2)
                     .truncationMode(.middle)
                 Text(subtitle)
                     .font(.caption)
@@ -2819,10 +2805,7 @@ struct UnifiedSendView: View {
     }
 
     private var creqFeesRow: some View {
-        HStack {
-            Text("Fees")
-                .foregroundStyle(.secondary)
-            Spacer()
+        PaymentDetailPair(label: "Fees") {
             creqFeeValueText
         }
         .paymentDetailRow()
@@ -2851,14 +2834,9 @@ struct UnifiedSendView: View {
     }
 
     private func creqDetailRow(label: String, value: String) -> some View {
-        HStack {
-            Text(label)
-                .foregroundStyle(.secondary)
-            Spacer()
+        PaymentDetailPair(label: label) {
             Text(value)
                 .fontWeight(.regular)
-                .multilineTextAlignment(.trailing)
-                .lineLimit(2)
                 .truncationMode(.tail)
         }
         .paymentDetailRow()
@@ -3573,14 +3551,9 @@ struct MeltView: View {
     }
 
     private func meltDetailRow(label: String, value: String) -> some View {
-        HStack {
-            Text(label)
-                .foregroundStyle(.secondary)
-            Spacer()
+        PaymentDetailPair(label: label) {
             Text(value)
                 .fontWeight(.regular)
-                .multilineTextAlignment(.trailing)
-                .lineLimit(2)
                 .truncationMode(.middle)
         }
         .paymentDetailRow()

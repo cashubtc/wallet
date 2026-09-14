@@ -25,6 +25,7 @@ import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -127,9 +128,17 @@ private fun LightningAddressReceiveSession(
         NPCPaymentReceipt(quote.id, address, quote.amount, quote.paidAtEpochSeconds)
             .belongsToReceiveSession(address, openedAt)
     }
+    val scope = rememberCoroutineScope()
+    val claiming = npc.claimingQuotes.any { quote ->
+        NPCPaymentReceipt(quote.id, address, quote.amount, quote.paidAtEpochSeconds)
+            .belongsToReceiveSession(address, openedAt)
+    }
+    val claimFailed = npc.automaticClaim && pending != null
     val statusMessage = when {
         !settings.checkIncomingInvoices -> "Payment checks are off in Privacy settings."
+        claimFailed -> "Payment detected, but it couldn't be added to your wallet."
         npc.errorMessage != null -> npc.errorMessage
+        claiming -> "Payment detected. Adding to your wallet…"
         !npc.automaticClaim && pending != null ->
             "Payment detected: ${formatter.formatWalletSats(pending.amount, settings.useBitcoinSymbol)}. Auto-claim is off."
         !npc.automaticClaim -> "Auto-claim is off. Enable it in Lightning settings to add payments to your wallet."
@@ -140,6 +149,10 @@ private fun LightningAddressReceiveSession(
         onDismiss = onDismiss,
         receivedAmount = receipt?.let { formatter.formatWalletSats(it.amount, settings.useBitcoinSymbol) },
         statusMessage = statusMessage,
+        onRetry = if (settings.checkIncomingInvoices && (claimFailed || npc.errorMessage != null)) {
+            { scope.launch { npcService.retryPayments() }; Unit }
+        } else null,
+        retrying = npc.isCheckingPayments,
     )
 }
 
@@ -150,6 +163,8 @@ internal fun LightningAddressReceiveContent(
     onDismiss: () -> Unit,
     receivedAmount: String? = null,
     statusMessage: String? = null,
+    onRetry: (() -> Unit)? = null,
+    retrying: Boolean = false,
 ) {
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
@@ -184,7 +199,8 @@ internal fun LightningAddressReceiveContent(
             } else {
                 Column(Modifier.fillMaxSize()) {
                     BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
-                        val qrSize = minOf(280.dp, maxWidth - 48.dp)
+                        // QrCard adds 16dp on each side; 280dp is the complete card.
+                        val qrSize = (minOf(280.dp, maxWidth - 48.dp) - 32.dp).coerceAtLeast(0.dp)
                         Column(
                             Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).heightIn(min = maxHeight)
                                 .padding(CashuTheme.spacing.comfortable),
@@ -209,6 +225,9 @@ internal fun LightningAddressReceiveContent(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     textAlign = TextAlign.Center,
                                     modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+                            }
+                            if (onRetry != null) {
+                                TextButton(onClick = onRetry, enabled = !retrying) { Text("Try again") }
                             }
                         }
                     }

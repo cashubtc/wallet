@@ -14,6 +14,12 @@ struct NPCPaymentReceipt: Equatable {
     }
 }
 
+struct NPCPaymentClaim: Equatable {
+    enum Phase { case claiming, failed }
+    let receipt: NPCPaymentReceipt
+    var phase: Phase
+}
+
 /// Service for NPubCash integration using CDK NpubCashClient
 /// Provides Lightning address functionality via Nostr identity
 @MainActor
@@ -64,6 +70,7 @@ class NPCService: ObservableObject {
     @Published var isLoading: Bool = false
     @Published var isConnected: Bool = false
     @Published var errorMessage: String?
+    @Published private(set) var paymentClaims: [String: NPCPaymentClaim] = [:]
     
     /// Whether the service has been initialized with keys
     var isInitialized: Bool {
@@ -82,12 +89,12 @@ class NPCService: ObservableObject {
     private var client: (any NpubCashClientProtocol)?
     private var suppressSettingsSideEffects = false
     private var connectionTask: Task<Void, Never>?
-    private var sessionID = UUID()
+    private(set) var sessionID = UUID()
     private let makeClient: (String, String) throws -> any NpubCashClientProtocol
     private var nostrSecretKey: String?
     private var nostrPubkey: String?
     private var refreshTimer: Timer?
-    private var paymentCheckInProgress = false
+    @Published private(set) var paymentCheckInProgress = false
     private let settingsStore: SettingsStore
     private let refreshInterval: TimeInterval
     private let receiveRefreshInterval: TimeInterval
@@ -259,6 +266,7 @@ class NPCService: ObservableObject {
     func disconnect() {
         sessionID = UUID()
         receiveSessions.removeAll()
+        paymentClaims.removeAll()
         connectionTask?.cancel()
         connectionTask = nil
         isLoading = false
@@ -361,6 +369,7 @@ class NPCService: ObservableObject {
         var userInfo: [String: Any] = [
             "mintQuote": mintQuote,
             "npcQuote": quote,
+            "sessionID": sessionID,
             "address": lightningAddress
         ]
 
@@ -408,6 +417,26 @@ class NPCService: ObservableObject {
                 try await Task.sleep(for: .seconds(receiveRefreshInterval))
             } catch { return }
         }
+    }
+
+    // Claim outcomes are separate from quote-fetch errors: a successful poll
+    // must not clear a failure to credit an already-paid invoice.
+    func updatePaymentClaim(_ receipt: NPCPaymentReceipt, phase: NPCPaymentClaim.Phase, session: UUID) {
+        guard isCurrentSession(session), receipt.address == lightningAddress else { return }
+        // Keep the recovery message stable during automatic background retries.
+        if phase == .claiming, paymentClaims[receipt.quoteID]?.phase == .failed { return }
+        paymentClaims[receipt.quoteID] = NPCPaymentClaim(receipt: receipt, phase: phase)
+    }
+
+    func finishPaymentClaim(quoteID: String, session: UUID) {
+        guard isCurrentSession(session) else { return }
+        paymentClaims.removeValue(forKey: quoteID)
+    }
+
+    func retryPayments() async {
+        guard !paymentCheckInProgress else { return }
+        paymentClaims = paymentClaims.filter { $0.value.phase != .failed }
+        await checkAndClaimPayments()
     }
 
     /// Publish only after issuance, balance refresh, and history refresh succeed.

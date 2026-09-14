@@ -428,14 +428,9 @@ struct CashuRequestRouteExplanationRow: View {
     let explanation: CashuRequestRouteExplanation
 
     var body: some View {
-        HStack {
-            Text("Route")
-                .foregroundStyle(.secondary)
-            Spacer()
+        PaymentDetailPair(label: "Route") {
             Text(explanation.localizedValue)
                 .fontWeight(.regular)
-                .multilineTextAlignment(.trailing)
-                .lineLimit(2)
                 .truncationMode(.tail)
         }
         .paymentDetailRow()
@@ -853,10 +848,7 @@ struct CashuPaymentRequestPayView: View {
     /// Fee row. "No fee" is exact (the mint charges no swap fee); a sat value is
     /// the exact fee for a fee-charging mint; "—" before an amount exists.
     private var feesRow: some View {
-        HStack {
-            Text("Fees")
-                .foregroundStyle(.secondary)
-            Spacer()
+        PaymentDetailPair(label: "Fees") {
             feeValueText
         }
         .paymentDetailRow()
@@ -868,10 +860,7 @@ struct CashuPaymentRequestPayView: View {
     /// Compact, non-scrolling amount-entry metadata. It reserves its place while
     /// the debounced estimate is loading, so neither the mint row nor keypad jumps.
     private var amountEntryFeeRow: some View {
-        HStack {
-            Text("Estimated fee")
-                .foregroundStyle(.secondary)
-            Spacer()
+        PaymentDetailPair(label: "Estimated fee") {
             feeValueText
         }
         .paymentDetailRow()
@@ -968,14 +957,9 @@ struct CashuPaymentRequestPayView: View {
     /// (TransactionDetailView, CashuRequestDetailView). Memo text is prose, so it
     /// wraps once and tail-truncates rather than middle-truncating like an ID.
     private func detailRow(label: String, value: String) -> some View {
-        HStack {
-            Text(label)
-                .foregroundStyle(.secondary)
-            Spacer()
+        PaymentDetailPair(label: label) {
             Text(value)
                 .fontWeight(.regular)
-                .multilineTextAlignment(.trailing)
-                .lineLimit(2)
                 .truncationMode(.tail)
         }
         .paymentDetailRow()

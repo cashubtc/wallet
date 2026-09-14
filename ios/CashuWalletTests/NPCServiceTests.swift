@@ -5,6 +5,138 @@ import Cdk
 
 @MainActor
 final class NPCServiceTests: XCTestCase {
+    func testClaimFailureSurvivesAutomaticRetryUntilCredited() {
+        let service = makeService(client: ControlledNPCClient())
+        service.lightningAddress = "test@example.com"
+        let session = service.sessionID
+        let receipt = NPCPaymentReceipt(quoteID: "paid-quote", address: service.lightningAddress,
+                                        amount: 21, paidAt: 101)
+        service.updatePaymentClaim(receipt, phase: .claiming, session: session)
+        XCTAssertEqual(service.paymentClaims[receipt.quoteID]?.phase, .claiming)
+        service.updatePaymentClaim(receipt, phase: .failed, session: session)
+        service.errorMessage = nil // A healthy poll must not clear an issuance error.
+        service.updatePaymentClaim(receipt, phase: .claiming, session: session)
+        XCTAssertEqual(service.paymentClaims[receipt.quoteID]?.phase, .failed)
+        service.finishPaymentClaim(quoteID: receipt.quoteID, session: session)
+        XCTAssertTrue(service.paymentClaims.isEmpty)
+        service.disconnect()
+    }
+
+    func testClaimFeedbackRejectsAnotherAddressAndLateWalletSession() {
+        let service = makeService(client: ControlledNPCClient())
+        service.lightningAddress = "test@example.com"
+        let session = service.sessionID
+        let receipt = NPCPaymentReceipt(quoteID: "paid-quote", address: "other@example.com",
+                                        amount: 21, paidAt: 101)
+        service.updatePaymentClaim(receipt, phase: .failed, session: session)
+        XCTAssertTrue(service.paymentClaims.isEmpty)
+        let current = NPCPaymentReceipt(quoteID: receipt.quoteID, address: service.lightningAddress,
+                                        amount: 21, paidAt: 101)
+        service.updatePaymentClaim(current, phase: .failed, session: session)
+        service.disconnect()
+        service.updatePaymentClaim(current, phase: .failed, session: session)
+        XCTAssertTrue(service.paymentClaims.isEmpty)
+    }
+
+    func testExplicitRetryClearsClaimFailureAndChecksAgain() async throws {
+        let client = ControlledNPCClient()
+        client.automaticResponsesAfter = 1
+        let settings = makeSettings(enabled: true)
+        let service = NPCService(settingsStore: settings, makeClient: { _, _ in client })
+        try service.initializeWithSeed(Data(repeating: 1, count: 64))
+        await client.nextRequest()
+        let connection = Task { await service.connect() }
+        client.complete(.success([]))
+        await connection.value
+        settings.checkIncomingInvoices = true
+        let receipt = NPCPaymentReceipt(quoteID: "paid-quote", address: service.lightningAddress,
+                                        amount: 21, paidAt: 101)
+        service.updatePaymentClaim(receipt, phase: .failed, session: service.sessionID)
+        let count = client.requestCount
+        await service.retryPayments()
+        XCTAssertTrue(service.paymentClaims.isEmpty)
+        XCTAssertEqual(client.requestCount, count + 1)
+        service.disconnect()
+    }
+
+    func testAddressStatusAnnouncesMeaningfulChangesOnce() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let model = AddressReceiptPresentationModel()
+        var announcements: [String] = []
+        let host = UIHostingController(rootView: AddressReceiptPresentationHarness(
+            model: model, dynamicTypeSize: .large, announce: { announcements.append($0) }))
+        let window = UIWindow(windowScene: scene)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            host.dismiss(animated: false)
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        try await Task.sleep(for: .milliseconds(600))
+        model.statusMessage = "Payment detected. Adding to your wallet…"
+        try await Task.sleep(for: .milliseconds(150))
+        model.statusMessage = "Payment detected. Adding to your wallet…"
+        try await Task.sleep(for: .milliseconds(150))
+        model.statusMessage = "Payment detected, but it couldn't be added to your wallet."
+        try await Task.sleep(for: .milliseconds(150))
+        XCTAssertEqual(announcements.count, 2)
+        model.amount = "21 sat"
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertEqual(announcements.last, "Payment received. 21 sat")
+        XCTAssertEqual(announcements.count, 3)
+    }
+
+    func testLongPaymentDetailsAdaptToAccessibilityText() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let longValue = "A receiving mint with a deliberately long descriptive name"
+        let valueHost = UIHostingController(rootView: Text(longValue).font(.footnote)
+            .fixedSize(horizontal: false, vertical: true).environment(\.dynamicTypeSize, .accessibility3))
+        let pairHost = UIHostingController(rootView: PaymentDetailPair(label: "Mint") { Text(longValue) }
+            .font(.footnote).environment(\.dynamicTypeSize, .accessibility3))
+        let valueHeight = valueHost.sizeThatFits(in: CGSize(width: 288, height: 10_000)).height
+        let pairHeight = pairHost.sizeThatFits(in: CGSize(width: 288, height: 10_000)).height
+        XCTAssertGreaterThan(pairHeight, valueHeight + 4, "The label must have its own line above the full value")
+        for scheme in [ColorScheme.light, .dark] {
+            let host = UIHostingController(rootView:
+                ScrollView {
+                    VStack(spacing: 0) {
+                        PaymentDetailPair(label: "Mint") { Text("A receiving mint with a deliberately long descriptive name") }
+                            .paymentDetailRow()
+                        PaymentDetailPair(label: "Fees") { Text("21,000,000 sat") }
+                            .paymentDetailRow()
+                        Button {} label: {
+                            PaymentDetailPair(label: "Amount") {
+                                Text("21,000,000 sat")
+                                Image(systemName: "pencil")
+                            }.paymentDetailRow(isInteractive: true)
+                        }.buttonStyle(.plain)
+                    }
+                }
+                .canvasSheetBackground()
+                .environment(\.dynamicTypeSize, .accessibility3)
+                .environment(\.colorScheme, scheme)
+            )
+            host.overrideUserInterfaceStyle = scheme == .dark ? .dark : .light
+            let window = UIWindow(windowScene: scene)
+            window.rootViewController = host
+            window.makeKeyAndVisible()
+            try await Task.sleep(for: .milliseconds(200))
+            let attachment = XCTAttachment(image: UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+            })
+            attachment.name = "Payment details - long values - \(scheme) - accessibility3"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+        previous?.makeKeyAndVisible()
+    }
+
     func testAddressReceiptStaysInFullScreenModal() async throws {
         try await verifyAddressReceiptPresentation(colorScheme: .dark, dynamicTypeSize: .large)
     }
@@ -431,17 +563,21 @@ private final class ControlledNPCClient: NpubCashClientProtocol {
 @MainActor
 private final class AddressReceiptPresentationModel: ObservableObject {
     @Published var amount: String?
+    @Published var statusMessage: String?
 }
 
 private struct AddressReceiptPresentationHarness: View {
     @ObservedObject var model: AddressReceiptPresentationModel
     let dynamicTypeSize: DynamicTypeSize
+    var announce: (String) -> Void = { AccessibilityNotification.Announcement($0).post() }
 
     var body: some View {
         Color.clear.fullScreenCover(isPresented: .constant(true)) {
             LightningAddressReceiveContent(
                 address: "npub1" + String(repeating: "q", count: 58) + "@example.com",
-                receivedAmount: model.amount
+                receivedAmount: model.amount,
+                statusMessage: model.statusMessage,
+                announce: announce
             )
                 .canvasSheetBackground()
                 .environment(\.dynamicTypeSize, dynamicTypeSize)

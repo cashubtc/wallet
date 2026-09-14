@@ -68,6 +68,7 @@ data class NPCState(
     val isCheckingPayments: Boolean = false,
     val errorMessage: String? = null,
     val pendingPaidQuotes: List<NPCQuote> = emptyList(),
+    val claimingQuotes: List<NPCQuote> = emptyList(),
 )
 
 interface NPCQuoteClaimHandler {
@@ -352,6 +353,7 @@ class NPCService internal constructor(
                 isCheckingPayments = false,
                 errorMessage = null,
                 pendingPaidQuotes = emptyList(),
+                claimingQuotes = emptyList(),
             )
         }
     }
@@ -412,6 +414,14 @@ class NPCService internal constructor(
         }
     }
 
+    suspend fun retryPayments() = withContext(scope.coroutineContext.minusKey(Job)) {
+        if (paymentCheckJob?.isActive != true) {
+            update { copy(pendingPaidQuotes = emptyList()) }
+            checkAndClaimPayments()
+        }
+        paymentCheckJob?.join()
+    }
+
     private suspend fun claimPaidQuotes(
         paidQuotes: List<NPCQuote>,
         handler: NPCQuoteClaimHandler?,
@@ -421,12 +431,15 @@ class NPCService internal constructor(
         return paidQuotes.filterNot { quote ->
             currentCoroutineContext().ensureActive()
             if (!isCurrentSession(session)) return emptyList()
+            update { copy(claimingQuotes = listOf(quote)) }
             val claimed = try {
                 handler.claimNPCQuote(quote, p2pkPublicKeyFor(quote))
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Exception) {
                 false
+            } finally {
+                if (isCurrentSession(session)) update { copy(claimingQuotes = emptyList()) }
             }
             claimed || handler.isNPCQuoteProcessed(quote.id)
         }

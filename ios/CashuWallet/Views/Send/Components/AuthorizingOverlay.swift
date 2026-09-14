@@ -321,10 +321,7 @@ struct PaymentStatusView: View {
     }
 
     private func standardDetailRow(_ row: DetailRow) -> some View {
-        HStack {
-            Text(row.label)
-                .foregroundStyle(.secondary)
-            Spacer()
+        PaymentDetailPair(label: row.label) {
             if row.isPending {
                 // Value not resolved yet — hold the slot with a mini spinner (matches
                 // the confirm screen's loading-fee treatment) rather than dropping the
@@ -333,8 +330,6 @@ struct PaymentStatusView: View {
             } else {
                 Text(row.value)
                     .fontWeight(.regular)
-                    .multilineTextAlignment(.trailing)
-                    .lineLimit(2)
                     .truncationMode(.middle)
                     .contentTransition(.opacity)
             }

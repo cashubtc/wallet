@@ -104,7 +104,7 @@ import com.cashu.me.ui.components.GhostButton
 import com.cashu.me.ui.components.InlineNotice
 import com.cashu.me.ui.components.LocalConfirmationToastController
 import com.cashu.me.ui.components.MintPickerSheet
-import com.cashu.me.ui.components.MintSelectorRow
+import com.cashu.me.ui.components.AmountEntryMintSelector
 import com.cashu.me.ui.components.MintSelectorDirection
 import com.cashu.me.ui.components.NoticeSeverity
 import com.cashu.me.ui.components.PaymentStatusPhase
@@ -713,12 +713,10 @@ private fun InputFace(
         // toolbar: it qualifies the amount, so it reads as a setting on the way
         // to the action rather than a second header competing with the title.
         if (activeMint != null) {
-            MintSelectorRow(
+            AmountEntryMintSelector(
                 direction = MintSelectorDirection.Source,
                 mint = activeMint,
                 balanceText = balanceText,
-                showBalance = true,
-                modifier = Modifier.padding(horizontal = CashuTheme.spacing.snug),
                 onPickMint = onPickMint,
                 onUseMax = if (canUseMax) onUseMax else null,
             )

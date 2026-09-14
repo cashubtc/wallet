@@ -334,30 +334,42 @@ fun PaymentStatusScreen(
                                     .padding(horizontal = CashuTheme.spacing.page),
                             )
                         }
-                        if (phase == PaymentStatusPhase.Success && !settlementPending && !successAmount.isNullOrBlank()) {
-                            Spacer(Modifier.height(CashuTheme.spacing.comfortable))
-                            AmountHero(
-                                parts = AmountParts.parse(successAmount),
-                                scale = AmountScale.Hero,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                animated = false,
-                                accessibilityPrefix = "Amount",
-                                modifier = Modifier.padding(horizontal = CashuTheme.spacing.page),
-                            )
-                        } else {
-                            Spacer(Modifier.height(CashuTheme.spacing.snug))
-                            Text(
-                                text = detail ?: " ",
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                textAlign = TextAlign.Center,
-                                maxLines = 3,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(min = StatusDescriptionMinHeight)
-                                    .padding(horizontal = StatusDescriptionHorizontalPadding)
-                                    .graphicsLayer { alpha = if (detail == null) 0f else 1f },
-                            )
+                        AnimatedContent(
+                            targetState = successAmount?.takeIf {
+                                phase == PaymentStatusPhase.Success && !settlementPending && it.isNotBlank()
+                            },
+                            transitionSpec = {
+                                (fadeIn(tween(200)) togetherWith fadeOut(tween(150))).using(null)
+                            },
+                            label = "payment-status-amount",
+                        ) { amount ->
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                if (amount != null) {
+                                    Spacer(Modifier.height(CashuTheme.spacing.comfortable))
+                                    AmountHero(
+                                        parts = AmountParts.parse(amount),
+                                        scale = AmountScale.Hero,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        animated = false,
+                                        accessibilityPrefix = "Amount",
+                                        modifier = Modifier.padding(horizontal = CashuTheme.spacing.page),
+                                    )
+                                } else {
+                                    Spacer(Modifier.height(CashuTheme.spacing.snug))
+                                    Text(
+                                        text = detail ?: " ",
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        textAlign = TextAlign.Center,
+                                        maxLines = 3,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .heightIn(min = StatusDescriptionMinHeight)
+                                            .padding(horizontal = StatusDescriptionHorizontalPadding)
+                                            .graphicsLayer { alpha = if (detail == null) 0f else 1f },
+                                    )
+                                }
+                            }
                         }
                     }
                 }

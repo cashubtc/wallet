@@ -120,7 +120,7 @@ import com.cashu.me.ui.components.InspectorRow
 import com.cashu.me.ui.components.LocalConfirmationToastController
 import com.cashu.me.ui.components.MintPickerSheet
 import com.cashu.me.ui.components.MintSelectorDirection
-import com.cashu.me.ui.components.MintSelectorRow
+import com.cashu.me.ui.components.AmountEntryMintSelector
 import com.cashu.me.ui.components.NoticeSeverity
 import com.cashu.me.ui.components.NumberPadFooter
 import com.cashu.me.ui.components.PaymentStatusPhase
@@ -1297,12 +1297,9 @@ internal fun InputFace(
         Spacer(Modifier.weight(1f))
         // Under the amount, over the keypad — the same slot the send flows use.
         if (mint != null) {
-            MintSelectorRow(
+            AmountEntryMintSelector(
                 direction = MintSelectorDirection.Destination,
                 mint = mint,
-                balanceText = mintBalanceText,
-                showBalance = true,
-                modifier = Modifier.padding(horizontal = CashuTheme.spacing.snug),
                 onPickMint = onPickMint,
             )
             Spacer(Modifier.height(CashuTheme.spacing.snug))

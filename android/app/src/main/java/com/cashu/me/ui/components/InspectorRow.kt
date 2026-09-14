@@ -6,6 +6,7 @@ import android.content.res.Configuration
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.heightIn
@@ -35,7 +36,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -87,91 +91,108 @@ fun InspectorRow(
 ) {
     val paymentDetails = style == InspectorRowStyle.Payment
     val rowStyle = if (style == InspectorRowStyle.Standard) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.bodyMedium
-    val stacked = style != InspectorRowStyle.Standard && trailingIcon != null && LocalConfiguration.current.fontScale > 1.3f
     val columnModifier = when (style) {
         InspectorRowStyle.Payment -> modifier.paymentDetailWidth()
         InspectorRowStyle.History -> modifier.fillMaxWidth().heightIn(min = 48.dp)
         InspectorRowStyle.Standard -> modifier.fillMaxWidth()
     }
-    val rowMod = if (onClick != null) {
-        columnModifier.heightIn(min = 48.dp).clickable(onClick = onClick)
-    } else {
-        columnModifier
-    }
-    Column(
-        modifier = rowMod.padding(
-            horizontal = CashuTheme.spacing.comfortable,
-            vertical = if (paymentDetails) CashuTheme.spacing.snug else CashuTheme.spacing.default,
-        ),
-        verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug, Alignment.CenterVertically),
-    ) {
-        if (stacked) {
-            Text(label, style = rowStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    val textMeasurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    BoxWithConstraints(modifier = columnModifier) {
+        val gapCount = 1 + (if (leadingIcon != null) 1 else 0) + (if (editable || trailingIcon != null) 1 else 0)
+        val decorationWidth = CashuTheme.spacing.default * gapCount +
+            (if (leadingIcon != null) InspectorLeadingIconSize else 0.dp) +
+            (if (editable || trailingIcon != null) InspectorEditHintSize else 0.dp)
+        val availableWidth = with(density) {
+            (maxWidth - CashuTheme.spacing.comfortable * 2 - decorationWidth).roundToPx()
         }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
+        val labelWidth = textMeasurer.measure(AnnotatedString(label), rowStyle, maxLines = 1, softWrap = false).size.width
+        val valueWidth = textMeasurer.measure(AnnotatedString(value),
+            if (valueMonospaced) rowStyle.withMonoDigits() else rowStyle, maxLines = 1, softWrap = false).size.width
+        val stacked = style != InspectorRowStyle.Standard &&
+            (density.fontScale > 1.3f || labelWidth + valueWidth > availableWidth)
+        val rowMod = if (onClick != null) {
+            Modifier.heightIn(min = 48.dp).clickable(onClick = onClick)
+        } else {
+            Modifier
+        }
+        Column(
+            modifier = rowMod.padding(
+                horizontal = CashuTheme.spacing.comfortable,
+                vertical = if (paymentDetails) CashuTheme.spacing.snug else CashuTheme.spacing.default,
+            ),
+            verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug, Alignment.CenterVertically),
         ) {
-            if (leadingIcon != null) {
-                Icon(
-                    imageVector = leadingIcon,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(InspectorLeadingIconSize),
-                )
+            if (stacked) {
+                Text(label, style = rowStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            if (!stacked) {
-                Text(
-                    text = label,
-                    style = rowStyle,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            // Values align to the trailing edge in columns, or to the label
-            // above when a copyable row stacks for accessibility text.
-            Box(modifier = Modifier.weight(1f), contentAlignment = if (stacked) Alignment.CenterStart else Alignment.CenterEnd) {
-                SkeletonValue(loading = loading) {
-                    Column(horizontalAlignment = if (stacked) Alignment.Start else Alignment.End) {
-                        Text(
-                            text = value,
-                            style = if (valueMonospaced) {
-                                rowStyle.withMonoDigits()
-                            } else rowStyle,
-                            color = valueColor ?: MaterialTheme.colorScheme.onSurface,
-                            maxLines = if (style == InspectorRowStyle.Standard) 1 else 2,
-                            overflow = TextOverflow.MiddleEllipsis,
-                            textAlign = if (stacked) TextAlign.Start else TextAlign.End,
-                        )
-                        if (secondaryValue != null) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
+            ) {
+                if (leadingIcon != null) {
+                    Icon(
+                        imageVector = leadingIcon,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(InspectorLeadingIconSize),
+                    )
+                }
+                if (!stacked) {
+                    Text(
+                        text = label,
+                        style = rowStyle,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                // Values align to the trailing edge in columns, or to the label
+                // above when a row stacks for long values or accessibility text.
+                Box(modifier = Modifier.weight(1f), contentAlignment = if (stacked) Alignment.CenterStart else Alignment.CenterEnd) {
+                    SkeletonValue(loading = loading) {
+                        Column(horizontalAlignment = if (stacked) Alignment.Start else Alignment.End) {
                             Text(
-                                text = secondaryValue,
+                                text = value,
+                                modifier = if (stacked) Modifier.fillMaxWidth() else Modifier,
                                 style = if (valueMonospaced) {
-                                    MaterialTheme.typography.bodyMedium.withMonoDigits()
-                                } else MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.MiddleEllipsis,
+                                    rowStyle.withMonoDigits()
+                                } else rowStyle,
+                                color = valueColor ?: MaterialTheme.colorScheme.onSurface,
+                                maxLines = if (stacked) Int.MAX_VALUE else if (style == InspectorRowStyle.Standard) 1 else 2,
+                                overflow = if (stacked) TextOverflow.Clip else TextOverflow.MiddleEllipsis,
                                 textAlign = if (stacked) TextAlign.Start else TextAlign.End,
                             )
+                            if (secondaryValue != null) {
+                                Text(
+                                    text = secondaryValue,
+                                    modifier = if (stacked) Modifier.fillMaxWidth() else Modifier,
+                                    style = if (valueMonospaced) {
+                                        MaterialTheme.typography.bodyMedium.withMonoDigits()
+                                    } else MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = if (stacked) Int.MAX_VALUE else 1,
+                                    overflow = if (stacked) TextOverflow.Clip else TextOverflow.MiddleEllipsis,
+                                    textAlign = if (stacked) TextAlign.Start else TextAlign.End,
+                                )
+                            }
                         }
                     }
                 }
-            }
-            if (editable) {
-                Icon(
-                    imageVector = Icons.Outlined.Edit,
-                    contentDescription = "Edit $label",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(InspectorEditHintSize),
-                )
-            } else if (trailingIcon != null) {
-                Icon(
-                    imageVector = trailingIcon,
-                    contentDescription = null,
-                    tint = trailingIconTint ?: MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(InspectorEditHintSize),
-                )
+                if (editable) {
+                    Icon(
+                        imageVector = Icons.Outlined.Edit,
+                        contentDescription = "Edit $label",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(InspectorEditHintSize),
+                    )
+                } else if (trailingIcon != null) {
+                    Icon(
+                        imageVector = trailingIcon,
+                        contentDescription = null,
+                        tint = trailingIconTint ?: MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(InspectorEditHintSize),
+                    )
+                }
             }
         }
     }

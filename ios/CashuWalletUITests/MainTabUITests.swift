@@ -131,7 +131,7 @@ final class ActivityDetailUITests: XCTestCase {
         XCTAssertEqual(total.value as? String, "₿1,234")
         app.buttons["Unit"].tap()
         app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "USD")).firstMatch.tap()
-        XCTAssertTrue(app.staticTexts["Waiting for payment…"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "cashu.history.payment-code").firstMatch.waitForExistence(timeout: 5))
         XCTAssertEqual(app.buttons["Unit"].value as? String, "USD")
         XCTAssertFalse(total.exists)
         let attachment = XCTAttachment(screenshot: app.screenshot())
@@ -140,7 +140,7 @@ final class ActivityDetailUITests: XCTestCase {
         add(attachment)
         app.buttons["Mint"].tap()
         app.staticTexts["Sat mint"].tap()
-        XCTAssertTrue(app.staticTexts["Waiting for payment…"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "cashu.history.payment-code").firstMatch.waitForExistence(timeout: 5))
         XCTAssertFalse(total.exists)
         let unit = app.descendants(matching: .any).matching(identifier: "Unit").firstMatch
         XCTAssertEqual(unit.value as? String, "SAT")

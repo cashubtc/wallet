@@ -1,7 +1,12 @@
 package com.cashu.me.ui.components
 
-import android.graphics.Color
-import android.os.ParcelFileDescriptor
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.test.core.graphics.writeToTestStorage
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -17,7 +22,6 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.platform.app.InstrumentationRegistry
 import com.cashu.me.ui.setCashuContent
 import com.cashu.me.ui.shell.WalletFlow
 import com.cashu.me.ui.shell.WalletFlowSheetHost
@@ -46,7 +50,7 @@ class PaymentSheetSurfaceComposeTest {
                 snackbarHostState = remember { SnackbarHostState() },
             ) { _, close ->
                 if (compact.value) {
-                    Column(Modifier.fillMaxWidth().height(300.dp)) {
+                    Column(Modifier.fillMaxWidth().height(300.dp).testTag("payment-surface-probe")) {
                         SheetHeader(title = "Send")
                         Text("Scan")
                         Text("Ecash")
@@ -54,6 +58,7 @@ class PaymentSheetSurfaceComposeTest {
                     }
                 } else {
                     PaymentStatusScreen(
+                        modifier = Modifier.testTag("payment-surface-probe"),
                         phase = PaymentStatusPhase.Success,
                         title = "Payment sent",
                         successAmount = "27,237 sat",
@@ -72,21 +77,17 @@ class PaymentSheetSurfaceComposeTest {
         compose.onNodeWithText("Done").assertIsDisplayed()
         compose.runOnIdle { assertEquals(0, dismissals) }
         capture("success-${if (dark) "dark" else "light"}")
-        val screenshot = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
-        try {
-            // Empty lower part of the full-height flow: no text or controls here.
-            assertEquals(if (dark) Color.BLACK else Color.WHITE,
-                screenshot.getPixel(screenshot.width / 2, screenshot.height * 3 / 4))
-        } finally {
-            screenshot.recycle()
-        }
+        // Capture the sheet's Compose window, not a global display coordinate.
+        // UiAutomation screenshots on the managed API 35 display returned
+        // transparent pixels even though the dialog's content was visible.
+        val pixels = compose.onNodeWithTag("payment-surface-probe").captureToImage().toPixelMap()
+        assertEquals(if (dark) Color.Black else Color.White,
+            pixels[pixels.width / 2, pixels.height * 3 / 4])
     }
 
     private fun capture(name: String) {
         compose.waitForIdle()
-        val command = InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(
-            "screencap -p /sdcard/Download/cashu-surface-$name.png",
-        )
-        ParcelFileDescriptor.AutoCloseInputStream(command).use { it.readBytes() }
+        compose.onNodeWithTag("payment-surface-probe").captureToImage()
+            .asAndroidBitmap().writeToTestStorage("cashu-surface-$name")
     }
 }

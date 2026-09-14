@@ -231,6 +231,7 @@ fun MintsScreen(
         ModalBottomSheet(
             onDismissRequest = { discoveryOpen = false },
             sheetState = sheetState,
+            containerColor = MaterialTheme.colorScheme.background,
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {
                 Text(
