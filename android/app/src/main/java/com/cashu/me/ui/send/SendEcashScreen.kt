@@ -326,9 +326,9 @@ fun SendEcashScreen(
     LaunchedEffect(sending) { onDismissLockChanged(sending) }
 
     // Dismissal contract: system back = swipe = abandon to the wallet, so the
-    // sheet handles it. The header owns internal step-back (Generated → Input,
-    // Failure → Input) and shows a close on Input itself, which has nowhere to
-    // step back to. Swallow back only while a token is being generated.
+    // sheet handles it. A generated token completes the flow and closes to the
+    // wallet too. Only failure returns to input for another attempt.
+    // Swallow back while a token is being generated.
     BackHandler(enabled = sending) {}
 
     Column(
@@ -342,19 +342,16 @@ fun SendEcashScreen(
                 is SendFace.Generated -> "Pending Ecash"
                 is SendFace.Failure -> "Send Ecash"
             },
-            // Input has no parent step — leaving it lands on the wallet — so it
-            // gets a close. The result faces really do step back, and keep the
-            // arrow. The glyph matches what the control does.
-            navigationIcon = if (face == SendFace.Input) {
-                Icons.Outlined.Close
-            } else {
+            navigationIcon = if (face is SendFace.Failure) {
                 Icons.AutoMirrored.Outlined.ArrowBack
+            } else {
+                Icons.Outlined.Close
             },
-            navigationContentDescription = if (face == SendFace.Input) "Close" else "Back",
+            navigationContentDescription = if (face is SendFace.Failure) "Back" else "Close",
             onNavigationClick = {
                 when (face) {
                     SendFace.Input -> onClose()
-                    is SendFace.Generated -> face = SendFace.Input
+                    is SendFace.Generated -> onClose()
                     is SendFace.Failure -> face = SendFace.Input
                 }
             },
@@ -497,6 +494,7 @@ fun SendEcashScreen(
                     walletManager = walletManager,
                     result = current.result,
                     mintUrl = current.mintUrl,
+                    mintName = com.cashu.me.Core.mintDisplayName(current.mintUrl, walletState.mints),
                     unit = current.unit,
                     pollingEnabled = settings.checkSentTokens,
                     amountPresentation = paymentConfirmationAmountPresentation(
@@ -1037,6 +1035,7 @@ private fun GeneratedFace(
     walletManager: com.cashu.me.Core.WalletManager,
     result: SendTokenResult,
     mintUrl: String,
+    mintName: String,
     unit: String,
     pollingEnabled: Boolean,
     amountPresentation: PaymentConfirmationAmountPresentation,
@@ -1108,7 +1107,7 @@ private fun GeneratedFace(
                     }
                     com.cashu.me.ui.components.InspectorRow(
                         label = "Mint",
-                        value = receipt.mint,
+                        value = mintName,
                     )
                 },
             )
@@ -1181,7 +1180,7 @@ private fun GeneratedFace(
                 }
                 com.cashu.me.ui.components.InspectorRow(
                     label = "Mint",
-                    value = com.cashu.me.Core.shortenMintUrl(mintUrl),
+                    value = mintName,
                 )
             }
         }

@@ -1,5 +1,6 @@
 package com.cashu.me.Core
 
+import com.cashu.me.Models.MintInfo
 import java.net.URL
 
 internal fun normalizeUserMintUrl(
@@ -43,3 +44,9 @@ internal fun shortenMintUrl(url: String): String =
     url.removePrefix("https://")
         .removePrefix("http://")
         .trimEnd('/')
+
+internal fun mintDisplayName(url: String, mints: List<MintInfo>): String =
+    mints.firstOrNull {
+        normalizedMintUrlForSelection(it.url) == normalizedMintUrlForSelection(url)
+    }?.name?.trim()?.takeIf { it.isNotEmpty() }
+        ?: shortenMintUrl(url.trim())

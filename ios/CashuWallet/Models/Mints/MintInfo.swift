@@ -45,6 +45,17 @@ struct MintPreviewInfo {
 }
 
 extension MintInfo {
+    static func displayName(for url: String, in mints: [MintInfo]) -> String {
+        func normalized(_ value: String) -> String {
+            value.trimmingCharacters(in: .whitespacesAndNewlines)
+                .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        }
+        let name = mints.first { normalized($0.url) == normalized(url) }?.name
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if let name, !name.isEmpty { return name }
+        return URL(string: url)?.host ?? normalized(url)
+    }
+
     /// True when the mint advertises more than one unit, so a unit chooser is
     /// worth surfacing. Single-unit mints hide the selector entirely.
     var supportsMultipleUnits: Bool { units.count > 1 }

@@ -88,6 +88,7 @@ class FunctionalWalletJourneyTest {
             .tapDescription("5")
             .tapTextWithinTag(UiTestTags.SendEcashScreen, "Send")
             .awaitText("Pending Ecash")
+            .awaitText("Nutshell UI Test Mint")
 
         assertEquals(474L, runBlocking { fake.totalBalance(FakeWalletGateway.TestMintUrl) })
         val sentTransaction = checkNotNull(
@@ -96,11 +97,31 @@ class FunctionalWalletJourneyTest {
             },
         )
 
-        robot.pressSystemBack()
+        compose.onNodeWithContentDescription("Back").assertDoesNotExist()
+        robot.tapDescription("Close")
             .awaitTag(UiTestTags.WalletScreen)
+            .assertTagDoesNotExist(UiTestTags.SendEcashScreen)
             .tapText("History")
             .awaitTag(UiTestTags.HistoryScreen)
             .awaitTag(UiTestTags.transactionRow(sentTransaction.id))
+    }
+
+    @Test
+    fun generatedEcashSystemBackReturnsToWallet() {
+        val fixture = launch(FixtureMode.FundedWithHistory)
+        robot.awaitTag(UiTestTags.WalletScreen)
+            .tapTag(UiTestTags.WalletSend)
+            .tapDescription("Ecash. Create ecash")
+            .awaitTag(UiTestTags.SendEcashScreen)
+            .tapDescription("2")
+            .tapDescription("5")
+            .tapTag(UiTestTags.SendEcashSubmit)
+            .awaitText("Pending Ecash")
+            .pressSystemBack()
+            .awaitTag(UiTestTags.WalletScreen)
+            .assertTagDoesNotExist(UiTestTags.SendEcashScreen)
+
+        assertEquals(474L, runBlocking { fixture.fakeGateway!!.totalBalance(FakeWalletGateway.TestMintUrl) })
     }
 
     @Test
@@ -113,14 +134,37 @@ class FunctionalWalletJourneyTest {
 
         robot.awaitTag(UiTestTags.ReceiveEcashDetail)
             .awaitText("Receive Ecash")
+            .awaitText("Nutshell UI Test Mint")
             .tapTextWithinTag(UiTestTags.ReceiveEcashDetail, "Receive")
             .awaitText("Payment Received!")
+            .awaitText("Nutshell UI Test Mint")
             .tapText("Done")
             .awaitTag(UiTestTags.WalletScreen)
             .tapText("History")
             .awaitText("Ecash received")
 
         assertEquals(25L, runBlocking { fake.totalBalance(FakeWalletGateway.TestMintUrl) })
+    }
+
+    @Test
+    fun receiveFailureKeepsMintNameWhenReturningToReview() {
+        val fixture = launch(
+            FixtureMode.SeededWithMint,
+            deepLink = "cashu:${FakeWalletGateway.DeterministicToken}",
+        )
+        robot.awaitTag(UiTestTags.ReceiveEcashDetail)
+            .awaitText("Nutshell UI Test Mint")
+            .awaitText("No fee")
+        compose.runOnIdle {
+            fixture.fakeGateway!!.nextFailure = IllegalStateException("Temporary backend failure. Try again.")
+        }
+        robot.tapTextWithinTag(UiTestTags.ReceiveEcashDetail, "Receive")
+            .awaitText("Couldn't Receive")
+            .awaitText("Nutshell UI Test Mint")
+            .tapText("Try again")
+            .awaitText("Receive Ecash")
+            .awaitText("Nutshell UI Test Mint")
+        compose.onNodeWithText(FakeWalletGateway.TestMintUrl).assertDoesNotExist()
     }
 
     @Test

@@ -165,7 +165,9 @@ fun TransactionReceiptSheet(
     val fields = remember(current, walletState.mints) {
         TransactionDisplay.detailFields(current).filterNot { it.label == "Memo" }.map { field ->
             if (field.label == "Mint") {
-                field.copy(value = walletState.mints.firstOrNull { it.url == current.mintUrl }?.name ?: field.value)
+                field.copy(value = current.mintUrl?.let {
+                    com.cashu.me.Core.mintDisplayName(it, walletState.mints)
+                } ?: field.value)
             } else field
         }
     }
@@ -227,8 +229,8 @@ fun TransactionReceiptSheet(
                         style = InspectorRowStyle.History,
                         label = field.label,
                         value = field.value,
-                        valueMonospaced = field.value.length > 24 ||
-                            field.label in MonospacedLabels,
+                        valueMonospaced = field.label != "Mint" &&
+                            (field.value.length > 24 || field.label in MonospacedLabels),
                         onClick = field.copyValue?.let { full ->
                             {
                                 scope.launch {

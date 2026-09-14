@@ -39,6 +39,7 @@ import kotlinx.coroutines.launch
 import com.cashu.me.Core.AmountDisplayPrimary
 import com.cashu.me.Core.AmountFormatter
 import com.cashu.me.Core.AmountParts
+import com.cashu.me.Core.mintDisplayName
 import com.cashu.me.Core.PriceService
 import com.cashu.me.Core.Protocols.CurrencyAmount
 import com.cashu.me.Core.Protocols.CurrencyRegistry
@@ -163,6 +164,7 @@ fun ReceiveEcashDetailScreen(
                     useBitcoinSymbol = settings.useBitcoinSymbol,
                     onDone = onDone,
                     onRetry = { status = null },
+                    knownMints = walletState.mints,
                 )
             } else when (parsed) {
                 is TokenParseOutcome.Invalid -> PaymentStatusScreen(
@@ -182,6 +184,7 @@ fun ReceiveEcashDetailScreen(
                     amountPrimary = AmountDisplayPrimary.fromRaw(settings.amountDisplayPrimary),
                     onFlipPrimary = { settingsManager.setAmountDisplayPrimary(it.rawValue) },
                     mintTrust = mintTrust,
+                    mintName = mintDisplayName(parsed.info.mint, walletState.mints),
                     onClose = onDone,
                     onReceive = { review?.let { target -> claim(target) } },
                     secondaryActionText = if (heldPayment != null) "Decline" else "Receive later",
@@ -219,6 +222,7 @@ private fun ConfirmContent(
     amountPrimary: AmountDisplayPrimary,
     onFlipPrimary: (AmountDisplayPrimary) -> Unit,
     mintTrust: ReceiveMintTrust?,
+    mintName: String,
     onClose: () -> Unit,
     onReceive: () -> Unit,
     secondaryActionText: String,
@@ -277,6 +281,7 @@ private fun ConfirmContent(
         Spacer(Modifier.weight(HeroBottomWeight))
         TokenInspectorRows(
             info = info,
+            mintName = mintName,
             fee = fee,
             p2pkLock = review?.p2pkLock,
             formatter = formatter,

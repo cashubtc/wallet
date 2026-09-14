@@ -223,7 +223,7 @@ struct ReceiveTokenDetailView: View {
                         }
                         .paymentDetailRow()
                     }
-                    detailRow(label: "Mint", value: shortMintUrl(mintUrl))
+                    detailRow(label: "Mint", value: MintInfo.displayName(for: mintUrl, in: walletManager.mints))
                     if let memo = reviewPresentation.memo {
                         memoRow(memo)
                     }
@@ -312,7 +312,7 @@ struct ReceiveTokenDetailView: View {
         if !mintUrl.isEmpty {
             rows.append(.init(
                 label: "Mint",
-                value: shortMintUrl(mintUrl)
+                value: MintInfo.displayName(for: mintUrl, in: walletManager.mints)
             ))
         }
         return rows

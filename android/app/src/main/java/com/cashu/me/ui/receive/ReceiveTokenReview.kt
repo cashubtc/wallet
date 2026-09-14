@@ -11,6 +11,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import com.cashu.me.Core.AmountFormatter
+import com.cashu.me.Core.mintDisplayName
 import com.cashu.me.Core.Protocols.CurrencyAmount
 import com.cashu.me.Core.Protocols.CurrencyRegistry
 import com.cashu.me.Core.SettingsManager
@@ -19,6 +20,7 @@ import com.cashu.me.Core.Wallet.WalletMessage
 import com.cashu.me.Core.Wallet.walletMessage
 import com.cashu.me.Core.WalletManager
 import com.cashu.me.Models.PendingReceiveToken
+import com.cashu.me.Models.MintInfo
 import com.cashu.me.Models.TokenInfo
 import com.cashu.me.ui.components.InspectorRow
 import com.cashu.me.ui.components.PaymentStatusPhase
@@ -272,6 +274,7 @@ internal fun TokenInspectorRows(
     formatter: AmountFormatter,
     useBitcoinSymbol: Boolean,
     modifier: Modifier = Modifier,
+    mintName: String = mintDisplayName(info.mint, emptyList()),
 ) {
     val isSatToken = info.unit.equals("sat", ignoreCase = true)
     val tokenCurrency = CurrencyRegistry.currencyForMintUnit(info.unit)
@@ -291,7 +294,7 @@ internal fun TokenInspectorRows(
         )
         InspectorRow(
             label = "Mint",
-            value = info.mint,
+            value = mintName,
         )
         lockPresentation?.let { lock ->
             lock.targetLabels.forEachIndexed { index, target ->
@@ -342,6 +345,7 @@ internal fun TokenClaimTerminal(
     useBitcoinSymbol: Boolean,
     onDone: () -> Unit,
     onRetry: () -> Unit,
+    knownMints: List<MintInfo> = emptyList(),
 ) {
     val phase = when (status) {
         TokenClaimStatus.Claiming -> PaymentStatusPhase.Processing
@@ -399,7 +403,7 @@ internal fun TokenClaimTerminal(
                 if (data.mint.isNotEmpty()) {
                     InspectorRow(
                         label = "Mint",
-                        value = data.mint,
+                        value = mintDisplayName(data.mint, knownMints),
                     )
                 }
             }

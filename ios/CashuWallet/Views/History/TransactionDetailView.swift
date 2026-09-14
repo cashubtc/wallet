@@ -345,7 +345,7 @@ struct TransactionDetailView: View {
         }
         if transaction.kind == .onchain {
             if let mintUrl = transaction.mintUrl {
-                rows.append(("Mint", walletManager.mints.first(where: { $0.url == mintUrl })?.name ?? extractMintHost(mintUrl), nil))
+                rows.append(("Mint", MintInfo.displayName(for: mintUrl, in: walletManager.mints), nil))
             }
             // Address/txid are reference blobs — show the decoder's standard
             // 8…6 short form; tap-to-copy carries the full value.
@@ -357,7 +357,7 @@ struct TransactionDetailView: View {
             }
         } else {
             if let mintUrl = transaction.mintUrl {
-                rows.append(("Mint", walletManager.mints.first(where: { $0.url == mintUrl })?.name ?? extractMintHost(mintUrl), nil))
+                rows.append(("Mint", MintInfo.displayName(for: mintUrl, in: walletManager.mints), nil))
             }
             if let hash = transaction.descriptionHash {
                 rows.append(("Hash", PaymentRequestDecoder.middleTruncated(hash), hash))

@@ -723,7 +723,7 @@ struct SendView: View {
                             detailRow(label: "Fiat", value: fiatValue)
                         }
                         if let mintURL = generatedTokenMintURL {
-                            detailRow(label: "Mint", value: extractMintHost(mintURL))
+                            detailRow(label: "Mint", value: MintInfo.displayName(for: mintURL, in: walletManager.mints))
                         }
                     }
                     .padding(.top, 8)
@@ -792,7 +792,7 @@ struct SendView: View {
         if let mintURL = generatedTokenMintURL {
             rows.append(.init(
                 label: "Mint",
-                value: extractMintHost(mintURL)
+                value: MintInfo.displayName(for: mintURL, in: walletManager.mints)
             ))
         }
         return rows
