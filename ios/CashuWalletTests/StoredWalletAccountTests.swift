@@ -193,14 +193,12 @@ private final class FailingAccountHistoryDatabase: WalletSqliteDatabase, @unchec
     }
     override func listTransactions(mintUrl: MintUrl?, direction: TransactionDirection?, unit: CurrencyUnit?) async throws -> [Cdk.Transaction] {
         if failAccountReads && unit != nil { throw NSError(domain: "TestStorage", code: 1) }
+        if failDiscoveryReads && unit == nil { throw NSError(domain: "TestStorage", code: 2) }
         return try await super.listTransactions(mintUrl: mintUrl, direction: direction, unit: unit)
     }
     override func getMintQuotes() async throws -> [MintQuote] {
-        if failDiscoveryReads { throw NSError(domain: "TestStorage", code: 2) }
-        return try await super.getMintQuotes()
-    }
-    override func getUnissuedMintQuotes() async throws -> [MintQuote] {
+        // Quote recovery now reads all quotes so partial custom deposits survive.
         if failQuoteReads { throw NSError(domain: "TestStorage", code: 3) }
-        return try await super.getUnissuedMintQuotes()
+        return try await super.getMintQuotes()
     }
 }

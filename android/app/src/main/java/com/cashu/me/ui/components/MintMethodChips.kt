@@ -9,6 +9,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Bolt
+import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.CurrencyBitcoin
 import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material3.Icon
@@ -99,4 +100,5 @@ private val PaymentMethodKind.rowIcon: ImageVector?
         PaymentMethodKind.Bolt11 -> Icons.Outlined.Bolt
         PaymentMethodKind.Bolt12 -> Icons.Outlined.Repeat
         PaymentMethodKind.Onchain -> Icons.Outlined.CurrencyBitcoin
+        else -> Icons.Outlined.Payments
     }

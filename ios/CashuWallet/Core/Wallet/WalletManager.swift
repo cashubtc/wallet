@@ -92,7 +92,8 @@ class WalletManager: ObservableObject {
             guard let self else { return [] }
             return self.trackedMintUrlsForWalletAccess()
         },
-        walletStore: walletStore
+        walletStore: walletStore,
+        getMints: { [weak self] in self?.mints ?? [] }
     )
     
     /// Token operations service

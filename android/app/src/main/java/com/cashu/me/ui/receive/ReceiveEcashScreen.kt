@@ -115,6 +115,7 @@ fun ReceiveEcashScreen(
     allowAutomaticClipboardRead: Boolean = true,
 ) {
     val walletState by walletManager.state.collectAsState()
+    val hasCustomMethods = walletState.mints.any { mint -> mint.effectiveMintMethods.any { it.isCustom } }
     val settings by settingsManager.state.collectAsState()
     val clipboard = LocalClipboardManager.current
 
@@ -349,10 +350,10 @@ fun ReceiveEcashScreen(
                     onClick = ::createNewRequest,
                 )
                 MethodActionRow(
-                    icon = Icons.Outlined.CurrencyBitcoin,
-                    title = "Bitcoin",
-                    subtitle = "Lightning or on-chain",
-                    accessibilityLabel = "Bitcoin. Receive over Lightning or on-chain",
+                    icon = if (hasCustomMethods) Icons.Outlined.Payments else Icons.Outlined.CurrencyBitcoin,
+                    title = if (hasCustomMethods) "Payment" else "Bitcoin",
+                    subtitle = if (hasCustomMethods) "Choose a payment method" else "Lightning or on-chain",
+                    accessibilityLabel = if (hasCustomMethods) "Payment. Choose a payment method" else "Bitcoin. Receive over Lightning or on-chain",
                     onClick = onReceiveBitcoin,
                     enabled = walletState.activeMint != null,
                     status = if (walletState.activeMint == null) "Mint needed" else null,

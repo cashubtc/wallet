@@ -31,6 +31,42 @@ struct PaymentDetailContent<Hero: View, Details: View>: View {
     }
 }
 
+/// The full quote ID is the interoperable counter reference; its suffix is a visual aid.
+struct QuoteReferenceDetails: View {
+    let quoteID: String
+    var request: String = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Button {
+                UIPasteboard.general.string = quoteID
+                ConfirmationToast.show("Copied quote ID")
+            } label: {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Quote ID").font(.caption).foregroundStyle(.secondary)
+                    Text("\(Text(String(quoteID.dropLast(6))).foregroundStyle(.secondary))\(Text(String(quoteID.suffix(6))).bold())")
+                        .font(.footnote.monospaced())
+                        .multilineTextAlignment(.leading)
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Quote ID: \(quoteID)")
+            .accessibilityHint("Copy the full quote ID")
+            if !request.isEmpty && request != quoteID {
+                Button {
+                    UIPasteboard.general.string = request
+                    ConfirmationToast.show("Copied payment request")
+                } label: {
+                    Text(verbatim: request).font(.body).multilineTextAlignment(.leading)
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Copy the payment request")
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
 
 /// Native activity presentation shared by transactions and stored requests.
 /// Each body retains its adaptive QR, status cues and pinned actions.

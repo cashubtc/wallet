@@ -46,6 +46,8 @@ struct WalletTransaction: Identifiable {
 
     /// Mint account unit for `amount` ("sat", "usd", "eur", or custom).
     var unit: String = "sat"
+    var paymentMethod: PaymentMethodKind? = nil
+    var paymentMethodLabel: String? = nil
 
     /// CDK wallet-saga (operation) id backing this transaction, when the row
     /// came from CDK. Pending sent tokens use it for `checkSendStatus` /
@@ -82,6 +84,7 @@ struct WalletTransaction: Identifiable {
     /// quote can still mint after the invoice timer.
     var mintQuoteIdForStatusRefresh: String? {
         guard type == .incoming else { return nil }
+        if kind == .custom { return quoteId }
         guard kind == .lightning || kind == .onchain else { return nil }
         guard !isPendingReceiveToken else { return nil }
         guard invoice != nil else { return nil }
@@ -95,6 +98,8 @@ struct WalletTransaction: Identifiable {
     /// available from their dedicated request detail screen.
     var hasActionablePaymentCode: Bool {
         switch kind {
+        case .custom:
+            return quoteId != nil
         case .ecash:
             return type == .outgoing && status == .pending && token?.isEmpty == false
         case .lightning:
@@ -121,6 +126,12 @@ struct WalletTransaction: Identifiable {
         if isPendingReceiveToken { return "Ecash to claim" }
         // Nothing has been received while the invoice awaits payment.
         if isUnpaidInvoice { return "Lightning invoice" }
+        if kind == .custom {
+            let label = paymentMethodLabel ?? paymentMethod?.displayName ?? "Payment"
+            let action = status == .pending ? "pending" : status == .failed ? "failed"
+                : status == .expired ? "expired" : type == .incoming ? "received" : "paid"
+            return "\(label) \(action)"
+        }
         switch (kind, type) {
         case (.ecash,     .incoming): return "Ecash received"
         case (.ecash,     .outgoing): return "Ecash sent"
@@ -128,6 +139,7 @@ struct WalletTransaction: Identifiable {
         case (.lightning, .outgoing): return "Lightning paid"
         case (.onchain,   .incoming): return "Bitcoin received"
         case (.onchain,   .outgoing): return "Bitcoin sent"
+        case (.custom, _): return "Payment"
         }
     }
 
@@ -148,12 +160,14 @@ struct WalletTransaction: Identifiable {
         case ecash      // Ecash token send/receive
         case lightning  // Lightning invoice mint/melt
         case onchain    // On-chain address mint/melt
+        case custom
         
         var displayName: String {
             switch self {
             case .ecash: return "Ecash"
             case .lightning: return "Lightning"
             case .onchain: return "On-chain"
+            case .custom: return "Payment"
             }
         }
     }

@@ -1262,6 +1262,7 @@ struct UnifiedSendView: View {
     // Scanner / mint picker / empty state
     @State private var showingScanner = false
     @State private var showingMintPicker = false
+    @State private var customMeltDestination: CustomMeltDestination?
     @State private var addMintError: String?
     /// Pushed connect-a-mint step, when the wallet has no mints yet.
     @State private var connectMintRoute: ConnectMintRoute?
@@ -1428,6 +1429,10 @@ struct UnifiedSendView: View {
                     .canvasSheetBackground()
             }
             .sheet(isPresented: $showingMintPicker) { mintPickerSheet }
+            .sheet(item: $customMeltDestination) { destination in
+                CustomMeltView(mint: destination.mint, method: destination.method)
+                    .environmentObject(walletManager)
+            }
             .sheet(item: $topUpContext) { context in
                 CashuTopUpInvoiceSheet(context: context, onComplete: {
                     topUpContext = nil
@@ -1526,6 +1531,15 @@ struct UnifiedSendView: View {
         let tapAvailable = NFCNDEFReaderSession.readingAvailable
 
         return VStack(spacing: 12) {
+            ForEach(walletManager.mints) { mint in
+                ForEach((mint.meltMethodSettings ?? []).filter { $0.method.isCustom }) { method in
+                    MethodActionRow(icon: method.method.navSymbol, title: method.displayName,
+                                    subtitle: "\(mint.name) · \(method.unit.uppercased())",
+                                    accessibilityLabel: "\(method.displayName). \(mint.name). \(method.unit)") {
+                        customMeltDestination = CustomMeltDestination(mint: mint, method: method)
+                    }
+                }
+            }
             MethodActionRow(
                 icon: "qrcode.viewfinder",
                 title: "Scan",
@@ -4409,6 +4423,7 @@ struct MethodPickerSheet: View {
     /// auto-create) race-free.
     let selectedOption: ReceiveMethodOption
     let options: [ReceiveMethodOption]
+    var methodName: (PaymentMethodKind) -> String = { $0.friendlyTitle }
     var onSelect: (ReceiveMethodOption) -> Void
 
     /// Measured height of the option rows, driving a content-fit detent.
@@ -4433,7 +4448,7 @@ struct MethodPickerSheet: View {
                                 optionIcon(for: option)
 
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(option.friendlyTitle)
+                                    Text(methodName(option.method))
                                         .font(.body.weight(.medium))
                                     Text(option.friendlyDescriptor)
                                         .font(.subheadline)
@@ -4453,7 +4468,7 @@ struct MethodPickerSheet: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityElement(children: .combine)
-                        .accessibilityLabel("\(option.friendlyTitle). \(option.friendlyDescriptor)")
+                        .accessibilityLabel("\(methodName(option.method)). \(option.friendlyDescriptor)")
                         .accessibilityAddTraits(selectedOption == option ? .isSelected : [])
                     }
                 }
@@ -4519,4 +4534,199 @@ struct CashuTokenShareSheet: UIViewControllerRepresentable {
 #Preview {
     SendView()
         .environmentObject(WalletManager())
+}
+
+private struct CustomMeltDestination: Identifiable {
+    let mint: MintInfo
+    let method: AdvertisedPaymentMethod
+    var id: String { "\(mint.id):\(method.id)" }
+}
+
+/// Explicit method selection makes an opaque backend request unambiguous.
+private struct CustomMeltView: View {
+    let mint: MintInfo
+    let method: AdvertisedPaymentMethod
+    @EnvironmentObject private var walletManager: WalletManager
+    @Environment(\.dismiss) private var dismiss
+    @State private var amountText = ""
+    @State private var request = ""
+    @State private var requestDraft = ""
+    @State private var showRequestEditor = false
+    @State private var quote: MeltQuoteInfo?
+    @State private var balance: UInt64?
+    @State private var working = false
+    @State private var submitted = false
+    @State private var settled = false
+    @State private var settledFee: UInt64?
+    @State private var error: String?
+
+    private var currency: any Currency { CurrencyRegistry.currency(forMintUnit: method.unit) }
+    private var amount: UInt64? { AmountFormatter.validatedEntryBaseUnits(raw: amountText, decimals: currency.decimals) }
+    private func formatted(_ amount: UInt64) -> String { CurrencyAmount(value: amount, currency: currency).formatted() }
+    private var amountWarning: String? {
+        guard let amount else { return nil }
+        if amount > (balance ?? 0) { return "Insufficient balance." }
+        if let minimum = method.minAmount, amount < minimum { return "Minimum: \(formatted(minimum))" }
+        if let maximum = method.maxAmount, amount > maximum { return "Maximum: \(formatted(maximum))" }
+        return nil
+    }
+    private var transaction: WalletTransaction? {
+        guard let quote else { return nil }
+        return walletManager.transactions.first { $0.quoteId == quote.id && $0.mintUrl == mint.url && $0.unit == method.unit }
+    }
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if settled, let quote {
+                    PaymentStatusView(details: [
+                        .init(label: "Amount", value: formatted(quote.amount)),
+                        .init(label: "Fee", value: formatted(settledFee ?? transaction?.fee ?? 0)),
+                        .init(label: "Mint", value: mint.name)
+                    ], phase: .success, onDone: { dismiss() }, onRetry: {})
+                } else if let quote {
+                    quoteDisplay(quote)
+                } else {
+                    QuoteAmountEntry {
+                        let entryAmount = AmountFormatter.entryBaseUnits(raw: amountText, decimals: currency.decimals)
+                        VStack(spacing: 12) {
+                            AmountLockup(parts: AmountParts.parse(formatted(entryAmount)), role: .amountHero,
+                                         value: Double(entryAmount), accessibilityPrefix: "Payment amount")
+                                .accessibilityIdentifier("custom-payment-amount")
+                            if let warning = error ?? amountWarning { InlineNotice(message: warning, severity: .caution) }
+                        }
+                    } details: {
+                        MintSelectorRow(direction: .source, mint: mint, balanceText: balance.map(formatted) ?? "…", showsBalance: true)
+                    } keypad: {
+                        NumberPadAmountInput(amountString: $amountText, decimals: currency.decimals)
+                            .disabled(working)
+                    } action: {
+                        Button(action: createQuote) {
+                            LoadingButtonLabel(title: "Create quote", isLoading: working)
+                        }
+                        .flatSheetSecondaryButton()
+                        .disabled(working || amount.map { !method.accepts($0) || $0 > (balance ?? 0) } != false)
+                        .accessibilityIdentifier("custom-payment-quote")
+                    }
+                }
+            }
+            .navigationTitle(method.displayName)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() }.disabled(working) }
+                if quote == nil {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button("Payment request or memo", systemImage: request.isEmpty ? "note.text.badge.plus" : "note.text") {
+                            requestDraft = request
+                            showRequestEditor = true
+                        }
+                        .disabled(working)
+                        .accessibilityValue(request.isEmpty ? "Optional" : request)
+                    }
+                }
+            }
+            .alert("Payment request or memo", isPresented: $showRequestEditor) {
+                TextField("Optional", text: $requestDraft)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled()
+                    .accessibilityIdentifier("custom-payment-request")
+                Button("Cancel", role: .cancel) {}
+                Button("Save") { request = requestDraft }
+            }
+        }
+        .task { balance = await walletManager.unitBalance(mintURL: mint.url, unit: method.unit) }
+        .onChange(of: transaction?.status) {
+            if submitted && transaction?.status == .completed { settled = true; error = nil }
+        }
+        .interactiveDismissDisabled(working)
+        .presentationDetents([.large])
+    }
+
+    private func quoteDisplay(_ quote: MeltQuoteInfo) -> some View {
+        VStack(spacing: 0) {
+            PaymentDetailContent { qrSize in
+                QRCodeView(content: quote.id, showControls: false, staticOnly: true)
+                    .frame(width: qrSize, height: qrSize)
+                    .padding(16)
+                    .background(Color.white, in: RoundedRectangle(cornerRadius: 20))
+                    .accessibilityLabel("Quote ID QR code")
+                    .contextMenu {
+                        Button("Copy quote ID", systemImage: "doc.on.doc") {
+                            UIPasteboard.general.string = quote.id
+                            ConfirmationToast.show("Copied quote ID")
+                        }
+                        ShareLink(item: quote.id)
+                    }
+            } details: {
+                VStack(spacing: 16) {
+                    AmountLockup(parts: AmountParts.parse(formatted(quote.amount)), role: .amountCompact,
+                                 value: Double(quote.amount), accessibilityPrefix: "Payment amount")
+                    if submitted && (error == nil || transaction != nil) {
+                        Label(working ? "Sending…" : transaction?.status == .failed ? "Payment failed" : "Payment pending",
+                              systemImage: transaction?.status == .failed ? "exclamationmark.circle" : "clock")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                    }
+                    QuoteReferenceDetails(quoteID: quote.id)
+                    if !submitted && quote.totalAmount > (balance ?? 0) {
+                        InlineNotice(message: "Insufficient balance, including fees.", severity: .caution)
+                    }
+                    if !submitted && quote.isExpired {
+                        InlineNotice(message: "Quote expired. Edit the amount to request a new quote.", severity: .caution)
+                    }
+                    if let error { InlineNotice(message: error, severity: .caution) }
+                    VStack(spacing: 24) {
+                        LabeledContent("Maximum fee", value: formatted(quote.feeReserve))
+                        LabeledContent("Total", value: formatted(quote.totalAmount))
+                        LabeledContent("Mint", value: mint.name)
+                        if !request.isEmpty { DescriptionDetailRow(description: request) }
+                    }
+                    .font(.subheadline)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 12)
+                }
+            }
+            VStack(spacing: 8) {
+                if submitted {
+                    Button("Done") { dismiss() }.glassButton(prominent: true).disabled(working)
+                } else {
+                    Button(working ? "Sending…" : "Pay") { pay(quote) }
+                        .glassButton(prominent: true)
+                        .disabled(working || quote.isExpired || quote.totalAmount > (balance ?? 0))
+                        .accessibilityIdentifier("custom-payment-pay")
+                    Button("Edit amount") { self.quote = nil; error = nil }
+                        .ctaStackTextLinkButton().disabled(working)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 16)
+        }
+    }
+
+    private func createQuote() {
+        guard let amount, method.accepts(amount), !working else { return }
+        working = true
+        error = nil
+        Task { @MainActor in
+            defer { working = false }
+            do {
+                quote = try await walletManager.createCustomMeltQuote(method: method.method, request: request,
+                    amount: amount, mintURL: mint.url, unit: method.unit)
+            } catch { self.error = error.localizedDescription }
+        }
+    }
+
+    private func pay(_ quote: MeltQuoteInfo) {
+        guard !working && !submitted else { return }
+        working = true
+        submitted = true
+        error = nil
+        Task { @MainActor in
+            defer { working = false }
+            do {
+                let result = try await walletManager.meltTokens(quoteId: quote.id, mintUrl: quote.mintUrl)
+                settled = result.settlement == .settled
+                if settled { settledFee = result.feePaid }
+            } catch { self.error = error.localizedDescription }
+        }
+    }
 }

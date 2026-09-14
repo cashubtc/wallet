@@ -262,11 +262,13 @@ class CdkWalletGatewayImpl : WalletGateway {
         )
     }
 
-    override suspend fun storedAccounts(): List<WalletAccountReference> = cdkCall {
+    override suspend fun storedAccounts(): List<WalletAccountReference> = cdkCall { storedAccountsUnlocked() }
+
+    private suspend fun storedAccountsUnlocked(): List<WalletAccountReference> {
         val db = checkNotNull(database)
         // Do not suppress discovery failures: callers must retain their last
         // complete projection instead of interpreting an incomplete scan as zero.
-        buildList {
+        return buildList {
             addAll(requireRepository().getWallets().map { WalletAccountReference(it.mintUrl().url, it.unit().toDomainUnit()) })
             addAll(db.getProofs(null, null, null, null).map { WalletAccountReference(it.mintUrl.url, it.unit.toDomainUnit()) })
             addAll(db.listTransactions(null, null, null).map { WalletAccountReference(it.mintUrl.url, it.unit.toDomainUnit()) })
@@ -295,6 +297,13 @@ class CdkWalletGatewayImpl : WalletGateway {
         val cdkUnit = cdkUnit(unit)
         if (!unit.equals("sat", ignoreCase = true)) ensureWalletUnlocked(mintUrl, cdkUnit)
         val wallet = walletFor(mintUrl, cdkUnit)
+        if (method.isCustom) {
+            val settings = wallet.fetchMintInfo()?.nuts?.reportedMintSettings()
+                ?.firstOrNull { it.method == method && it.unit == unit }
+            require(amount != null && settings?.accepts(amount) == true) {
+                "This payment method or amount is not supported by the selected mint and unit."
+            }
+        }
         val quote = wallet.mintQuote(
             paymentMethod = cdkPaymentMethod(method),
             amount = amount?.toCdkAmount(),
@@ -344,6 +353,7 @@ class CdkWalletGatewayImpl : WalletGateway {
     }
 
     override fun subscribeToMintQuote(quoteId: String, mayRefresh: () -> Boolean): Flow<MintQuoteInfo> = flow {
+        if (storedMintQuote(quoteId)?.paymentMethod?.isCustom == true) return@flow
         val subscription = cdkCall {
             val quote = database?.getMintQuote(quoteId)
                 ?: throw CdkGatewayUnavailable("No stored mint quote for $quoteId.")
@@ -372,7 +382,12 @@ class CdkWalletGatewayImpl : WalletGateway {
     }.flowOn(Dispatchers.IO)
 
     override suspend fun listUnissuedMintQuotes(): List<MintQuoteInfo> = cdkCall {
-        database?.getUnissuedMintQuotes().orEmpty().map { quote ->
+        // CDK's unissued query omits custom quotes after a partial issuance.
+        database?.getMintQuotes().orEmpty().filter { quote ->
+            quote.amountIssued.value == 0uL || quote.paymentMethod == CdkPaymentMethod.Bolt12 ||
+                (quote.paymentMethod.toDomain().isCustom &&
+                    (quote.amountIssued.value < (quote.amount?.value ?: ULong.MAX_VALUE) || quote.amountPaid.value > quote.amountIssued.value))
+        }.map { quote ->
             val method = quote.paymentMethod.toDomain()
             quote.withLocalMintQuoteMetadata(method).toDomain(
                 fallbackAmount = null,
@@ -500,6 +515,26 @@ class CdkWalletGatewayImpl : WalletGateway {
         quote.toDomain(fallbackMethod = method)
     }
 
+    override suspend fun createCustomMeltQuote(
+        method: PaymentMethodKind, request: String, amount: Long, mintUrl: String, unit: String,
+    ): MeltQuoteInfo = cdkCall {
+        val wallet = walletFor(mintUrl, cdkUnit(unit))
+        val settings = wallet.fetchMintInfo()?.nuts?.reportedMeltSettings()
+            ?.firstOrNull { it.method == method && it.unit == unit }
+        require(method.isCustom && settings?.accepts(amount) == true) {
+            "This payment method or amount is not supported by the selected mint and unit."
+        }
+        val extra = kotlinx.serialization.json.buildJsonObject {
+            put("amount", kotlinx.serialization.json.JsonPrimitive(amount))
+        }.toString()
+        val quote = wallet.meltQuote(cdkPaymentMethod(method), request, null, extra)
+        val maximum = Long.MAX_VALUE.toULong()
+        require(quote.amount.value in 1uL..maximum && quote.feeReserve.value <= maximum - quote.amount.value) {
+            "The mint returned an invalid payment amount or fee."
+        }
+        quote.toDomain(fallbackMethod = method)
+    }
+
     override suspend fun listMeltQuotes(): List<MeltQuoteInfo> = cdkCall {
         database?.getMeltQuotes().orEmpty().map { quote ->
             quote.toDomain(fallbackMethod = quote.paymentMethod.toDomain())
@@ -508,7 +543,7 @@ class CdkWalletGatewayImpl : WalletGateway {
 
     override suspend fun meltTokens(quoteId: String, mintUrl: String?): MeltConfirmation = cdkCall {
         val quote = database?.getMeltQuote(quoteId)
-        val wallet = walletFor(mintUrl ?: quote?.mintUrl?.url ?: firstWallet().mintUrl().url)
+        val wallet = walletFor(mintUrl ?: quote?.mintUrl?.url ?: firstWallet().mintUrl().url, quote?.unit ?: CdkCurrencyUnit.Sat)
         val prepared = try { wallet.prepareMelt(quoteId) } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
@@ -630,7 +665,7 @@ class CdkWalletGatewayImpl : WalletGateway {
 
     override suspend fun checkMeltQuoteStatus(quoteId: String, mintUrl: String?): MeltQuoteInfo = cdkCall {
         val stored = database?.getMeltQuote(quoteId)
-        val wallet = walletFor(mintUrl ?: stored?.mintUrl?.url ?: firstWallet().mintUrl().url)
+        val wallet = walletFor(mintUrl ?: stored?.mintUrl?.url ?: firstWallet().mintUrl().url, stored?.unit ?: CdkCurrencyUnit.Sat)
         val quote = wallet.checkMeltQuoteStatus(quoteId)
         quote.toDomain(fallbackMethod = stored?.paymentMethod?.toDomain() ?: quote.paymentMethod.toDomain())
     }
@@ -657,12 +692,14 @@ class CdkWalletGatewayImpl : WalletGateway {
     }
 
     override suspend fun recoverIncompleteSagas(mintUrl: String): SagaRecoveryReport = cdkCall {
-        val report = walletFor(mintUrl, CdkCurrencyUnit.Sat).recoverIncompleteSagas()
+        val reports = storedAccountsUnlocked()
+            .filter { mintRemovalUrlsMatch(it.mintUrl, mintUrl) }
+            .map { walletFor(it.mintUrl, cdkUnit(it.unit)).recoverIncompleteSagas() }
         SagaRecoveryReport(
-            recovered = report.recovered.toLong(),
-            compensated = report.compensated.toLong(),
-            skipped = report.skipped.toLong(),
-            failed = report.failed.toLong(),
+            recovered = reports.sumOf { it.recovered.toLong() },
+            compensated = reports.sumOf { it.compensated.toLong() },
+            skipped = reports.sumOf { it.skipped.toLong() },
+            failed = reports.sumOf { it.failed.toLong() },
         )
     }
 
@@ -949,13 +986,14 @@ class CdkWalletGatewayImpl : WalletGateway {
         PaymentMethodKind.Bolt11 -> CdkPaymentMethod.Bolt11
         PaymentMethodKind.Bolt12 -> CdkPaymentMethod.Bolt12
         PaymentMethodKind.Onchain -> CdkPaymentMethod.Onchain
+        else -> CdkPaymentMethod.Custom(method.rawValue)
     }
 
     private fun CdkPaymentMethod.toDomain(): PaymentMethodKind = when (this) {
         CdkPaymentMethod.Bolt11 -> PaymentMethodKind.Bolt11
         CdkPaymentMethod.Bolt12 -> PaymentMethodKind.Bolt12
         CdkPaymentMethod.Onchain -> PaymentMethodKind.Onchain
-        is CdkPaymentMethod.Custom -> PaymentMethodKind.fromRaw(method) ?: PaymentMethodKind.Bolt11
+        is CdkPaymentMethod.Custom -> PaymentMethodKind.fromRaw(method) ?: error("Invalid stored payment method")
     }
 
     private fun CdkQuoteState.toMintState(): MintQuoteState = when (this) {
@@ -1000,6 +1038,8 @@ class CdkWalletGatewayImpl : WalletGateway {
             iconUrl = iconUrl,
             units = units,
             mintUnits = mintUnits,
+            mintMethodSettings = nuts.reportedMintSettings(),
+            meltMethodSettings = nuts.reportedMeltSettings(),
             supportedMintMethods = mintMethods,
             supportedMeltMethods = meltMethods,
             supportsBolt12MintDescription = nuts.reportsBolt12MintDescription(),
@@ -1126,6 +1166,7 @@ class CdkWalletGatewayImpl : WalletGateway {
         paymentMethod = paymentMethod.toDomain().takeIf { it == fallbackMethod } ?: fallbackMethod,
         state = state.toMeltState(),
         expiryEpochSeconds = expiry.toLong(),
+        unit = unit.toDomainUnit(),
         request = request,
         paymentProof = paymentProof,
     )
@@ -1141,6 +1182,7 @@ class CdkWalletGatewayImpl : WalletGateway {
                 PaymentMethodKind.Onchain -> TransactionKind.Onchain
                 PaymentMethodKind.Bolt11, PaymentMethodKind.Bolt12 -> TransactionKind.Lightning
                 null -> TransactionKind.Ecash
+                else -> TransactionKind.Custom
             },
             dateEpochMillis = timestamp.toLong() * 1000,
             memo = memo,
@@ -1152,6 +1194,7 @@ class CdkWalletGatewayImpl : WalletGateway {
             invoice = paymentRequest,
             fee = fee.value.toLong(),
             unit = unit,
+            paymentMethod = method,
             sagaId = sagaId,
             quoteId = quoteId,
         )

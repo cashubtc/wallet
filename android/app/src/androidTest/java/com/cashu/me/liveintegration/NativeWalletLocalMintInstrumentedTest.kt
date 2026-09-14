@@ -39,6 +39,62 @@ class NativeWalletLocalMintInstrumentedTest {
         workDir.deleteRecursively()
     }
 
+    @Test(timeout = 60_000)
+    fun customDepositRestartAndWithdrawalStayInTheirUnit() = runBlocking {
+        val url = args.getString("cashu.customMethodMintUrl")
+        assumeTrue("Set cashu.customMethodMintUrl for a CDK 0.18 branch/bux fakewallet mint", url != null)
+        requireNotNull(url)
+        assertMintEndpointReady(url)
+        workDir.mkdirs()
+        val payer = TestWallet("custom-recovery")
+        val branch = requireNotNull(PaymentMethodKind.fromRaw("branch"))
+        fun step(value: String) = android.util.Log.i("CustomPaymentTest", value)
+        try {
+            step("deposit")
+            payer.open()
+            payer.gateway.ensureWallet(url)
+            val mint = requireNotNull(payer.gateway.fetchMintInfo(url))
+            assertTrue(branch in mint.mintMethods("bux"))
+            assertFalse(branch in mint.mintMethods("sat"))
+            val quote = payer.gateway.createMintQuote(100, branch, url, "bux").awaitPaid(payer.gateway)
+            assertEquals("bux", quote.unit)
+            val mnemonic = payer.mnemonic
+            step("reopen deposit")
+            payer.close()
+            payer.open(mnemonic)
+            assertTrue(payer.gateway.listUnissuedMintQuotes().any { it.id == quote.id })
+            assertEquals(100L, payer.gateway.mintTokens(quote.id))
+            assertTrue(payer.gateway.checkMintQuote(quote.id).hasSettledPayment)
+            step("create withdrawal")
+            val melt = payer.gateway.createCustomMeltQuote(branch, "test payout", 21, url, "bux")
+            assertEquals(21L, melt.amount)
+            assertEquals("bux", melt.unit)
+            assertEquals("test payout", melt.request)
+            payer.gateway.meltTokens(melt.id, url)
+            step("reopen withdrawal")
+            payer.close()
+            payer.open(mnemonic)
+            step("recover withdrawal")
+            for (attempt in 0..<50) {
+                payer.gateway.recoverIncompleteSagas(url)
+                if (payer.gateway.listTransactions(mapOf(url to listOf("bux")))
+                        .any { it.quoteId == melt.id && it.status == com.cashu.me.Models.TransactionStatus.Completed }) break
+                delay(100)
+            }
+            step("verify withdrawal")
+            assertEquals(com.cashu.me.Models.MeltQuoteState.Paid, payer.gateway.checkMeltQuoteStatus(melt.id, url).state)
+            val payment = payer.gateway.listTransactions(mapOf(url to listOf("bux"))).first { it.quoteId == melt.id }
+            assertEquals(com.cashu.me.Models.TransactionStatus.Completed, payment.status)
+            assertEquals(100L, payer.gateway.unitBalance(url, "bux") + payment.amount + payment.fee)
+            assertEquals(0L, payer.gateway.unitBalance(url, "sat"))
+            assertEquals("bux", payer.gateway.checkMeltQuoteStatus(melt.id, url).unit)
+            assertEquals(0L, payer.gateway.recoverIncompleteSagas(url).failed)
+        } finally {
+            step("close")
+            payer.close()
+        }
+    }
+
     @Test
     fun bolt12PaidButUnissuedQuoteRecoversAfterDatabaseReopen() = runBlocking {
         assumeNativeMatrixEnabled()

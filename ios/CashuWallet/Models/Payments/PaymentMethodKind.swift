@@ -1,9 +1,40 @@
+import Foundation
 import Cdk
 
-enum PaymentMethodKind: String, CaseIterable, Codable, Hashable, Sendable {
-    case bolt11
-    case bolt12
-    case onchain
+struct PaymentMethodKind: RawRepresentable, Codable, Hashable, Sendable {
+    let rawValue: String
+    static let bolt11 = Self(rawValue: "bolt11")!
+    static let bolt12 = Self(rawValue: "bolt12")!
+    static let onchain = Self(rawValue: "onchain")!
+
+    init?(rawValue: String) {
+        let value = ["bolt11", "bolt12", "onchain"].contains(rawValue.lowercased())
+            ? rawValue.lowercased() : rawValue
+        guard (1...32).contains(value.utf8.count), value.utf8.allSatisfy({
+            (97...122).contains($0) || (48...57).contains($0) || $0 == 95 || $0 == 45
+        }) else { return nil }
+        self.rawValue = value
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let value = try container.decode(String.self)
+        guard let method = Self(rawValue: value) else {
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Invalid payment method")
+        }
+        self = method
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+
+    var isCustom: Bool { self != .bolt11 && self != .bolt12 && self != .onchain }
+
+    static func ordered(_ methods: [Self]) -> [Self] {
+        Array(Set(methods)).sorted { ($0.sortOrder, $0.rawValue) < ($1.sortOrder, $1.rawValue) }
+    }
 
     static func from(_ cdkMethod: Cdk.PaymentMethod) -> PaymentMethodKind? {
         switch cdkMethod {
@@ -14,7 +45,7 @@ enum PaymentMethodKind: String, CaseIterable, Codable, Hashable, Sendable {
         case .onchain:
             return .onchain
         case .custom(let method):
-            return method.lowercased() == PaymentMethodKind.onchain.rawValue ? .onchain : nil
+            return Self(rawValue: method)
         }
     }
 
@@ -26,6 +57,8 @@ enum PaymentMethodKind: String, CaseIterable, Codable, Hashable, Sendable {
             return .bolt12
         case .onchain:
             return .onchain
+        default:
+            return .custom(method: rawValue)
         }
     }
 
@@ -37,6 +70,9 @@ enum PaymentMethodKind: String, CaseIterable, Codable, Hashable, Sendable {
             return "BOLT12"
         case .onchain:
             return "On-chain"
+        default:
+            let label = rawValue.split(whereSeparator: { $0 == "_" || $0 == "-" }).map { $0.capitalized }.joined(separator: " ")
+            return label.isEmpty ? rawValue : label
         }
     }
 
@@ -48,6 +84,8 @@ enum PaymentMethodKind: String, CaseIterable, Codable, Hashable, Sendable {
             return "\u{1F517}"
         case .onchain:
             return "\u{20BF}"
+        default:
+            return "↔"
         }
     }
 
@@ -59,6 +97,8 @@ enum PaymentMethodKind: String, CaseIterable, Codable, Hashable, Sendable {
             return "Invoice"
         case .onchain:
             return "Address"
+        default:
+            return "Payment request"
         }
     }
 
@@ -72,6 +112,8 @@ enum PaymentMethodKind: String, CaseIterable, Codable, Hashable, Sendable {
             return "Reusable invoice"
         case .onchain:
             return "On-chain address"
+        default:
+            return displayName
         }
     }
 
@@ -84,6 +126,8 @@ enum PaymentMethodKind: String, CaseIterable, Codable, Hashable, Sendable {
             return "Share once, paid many times"
         case .onchain:
             return "Slower, for larger amounts"
+        default:
+            return "Pay using this mint’s payment method"
         }
     }
 
@@ -96,6 +140,8 @@ enum PaymentMethodKind: String, CaseIterable, Codable, Hashable, Sendable {
             return "Create invoice"
         case .onchain:
             return "Create address"
+        default:
+            return "Create request"
         }
     }
 
@@ -109,6 +155,8 @@ enum PaymentMethodKind: String, CaseIterable, Codable, Hashable, Sendable {
             return "arrow.2.squarepath"
         case .onchain:
             return "bitcoinsign"
+        default:
+            return "creditcard"
         }
     }
 
@@ -120,6 +168,8 @@ enum PaymentMethodKind: String, CaseIterable, Codable, Hashable, Sendable {
             return 1
         case .onchain:
             return 2
+        default:
+            return 3
         }
     }
 
@@ -139,11 +189,12 @@ enum PaymentMethodKind: String, CaseIterable, Codable, Hashable, Sendable {
 /// case is retained (dormant) for the resolved/current mappings but is no longer
 /// offered in the picker. Every other rail maps to a single row. UI-only: the
 /// service layer still sees a `PaymentMethodKind` plus a nil/non-nil amount.
-enum ReceiveMethodOption: Hashable, Identifiable, CaseIterable {
+enum ReceiveMethodOption: Hashable, Identifiable {
     case lightning        // bolt11
     case reusableFixed    // bolt12, amount entered on the amount screen
     case reusableAny      // bolt12, amountless (sender decides)
     case onchain          // onchain
+    case custom(PaymentMethodKind)
 
     var id: Self { self }
 
@@ -154,6 +205,7 @@ enum ReceiveMethodOption: Hashable, Identifiable, CaseIterable {
         case .reusableFixed: return (.bolt12, false)
         case .reusableAny:   return (.bolt12, true)
         case .onchain:       return (.onchain, false)
+        case .custom(let method): return (method, false)
         }
     }
 
@@ -172,6 +224,7 @@ enum ReceiveMethodOption: Hashable, Identifiable, CaseIterable {
         case .reusableFixed: return "Reusable invoice"
         case .reusableAny:   return "Reusable invoice"
         case .onchain:                     return "On-chain address"
+        case .custom(let method): return method.friendlyTitle
         }
     }
 
@@ -182,6 +235,7 @@ enum ReceiveMethodOption: Hashable, Identifiable, CaseIterable {
         case .reusableFixed: return "Fixed amount, paid many times"
         case .reusableAny:   return "Any amount, paid many times"
         case .onchain:       return "Slower, for larger amounts"
+        case .custom(let method): return method.friendlyDescriptor
         }
     }
 
@@ -202,6 +256,7 @@ enum ReceiveMethodOption: Hashable, Identifiable, CaseIterable {
             case .bolt11:  return [.lightning]
             case .bolt12:  return [.reusableAny]
             case .onchain: return [.onchain]
+            default: return [.custom(method)]
             }
         }
     }
@@ -214,6 +269,7 @@ enum ReceiveMethodOption: Hashable, Identifiable, CaseIterable {
         case .bolt11:  return .lightning
         case .bolt12:  return isAmountless ? .reusableAny : .reusableFixed
         case .onchain: return .onchain
+        default: return .custom(method)
         }
     }
 }

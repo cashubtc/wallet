@@ -19,6 +19,8 @@ data class MintInfo(
     // (absent — hide the direction), non-empty = the reported methods.
     val supportedMintMethods: List<PaymentMethodKind>? = null,
     val supportedMeltMethods: List<PaymentMethodKind>? = null,
+    val mintMethodSettings: List<AdvertisedPaymentMethod>? = null,
+    val meltMethodSettings: List<AdvertisedPaymentMethod>? = null,
     // NUT-04 bolt12 MintMethodSettings.description. Default false so records
     // persisted before this landed, and mints that omit the field, fail closed
     // (the Description row stays hidden until a live fetch advertises true).
@@ -35,6 +37,15 @@ data class MintInfo(
     val lastUpdatedEpochMillis: Long = System.currentTimeMillis(),
 ) {
     val id: String get() = url
+
+    fun mintMethods(unit: String): List<PaymentMethodKind> = mintMethodSettings?.let { settings ->
+        PaymentMethodKind.ordered(settings.filter { it.unit == unit }.map { it.method })
+    } ?: effectiveMintMethods
+
+    fun methodName(method: PaymentMethodKind, unit: String, melt: Boolean = false): String =
+        (if (melt) meltMethodSettings else mintMethodSettings)
+            ?.firstOrNull { it.method == method && it.unit == unit }?.displayName ?: method.friendlyTitle
+
 
     /**
      * Mint (receive) rails with the pre-fetch compatibility default: a mint whose
@@ -101,3 +112,20 @@ data class NutSupport(
     val htlc: Boolean = false,               // NUT-14
     val webSocket: Boolean = false,          // NUT-20
 )
+
+/** A method belongs to one mint, direction, and unit; its label is never its identity. */
+@Serializable
+data class AdvertisedPaymentMethod(
+    val method: PaymentMethodKind,
+    val unit: String,
+    val name: String? = null,
+    val minAmount: Long? = null,
+    val maxAmount: Long? = null,
+) {
+    val displayName: String get() = if (!method.isCustom) method.friendlyTitle else
+        name?.trim()?.takeIf { it.isNotEmpty() && it.length <= 30 && it.none(Char::isISOControl) }
+            ?: method.displayName
+
+    fun accepts(amount: Long): Boolean =
+        amount > 0 && amount >= (minAmount ?: 0) && amount <= (maxAmount ?: Long.MAX_VALUE)
+}

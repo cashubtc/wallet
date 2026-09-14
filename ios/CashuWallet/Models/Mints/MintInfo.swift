@@ -24,6 +24,20 @@ struct MintInfo: Identifiable, Equatable, Codable {
     /// Supported NUT-05 payment methods for sending
     var supportedMeltMethods: [PaymentMethodKind] = [.bolt11]
 
+    /// Nil is a legacy cache; an empty live advertisement disables that direction.
+    var mintMethodSettings: [AdvertisedPaymentMethod]? = nil
+    var meltMethodSettings: [AdvertisedPaymentMethod]? = nil
+
+    func mintMethods(for unit: String) -> [PaymentMethodKind] {
+        guard let settings = mintMethodSettings else { return supportedMintMethods }
+        return PaymentMethodKind.ordered(settings.filter { $0.unit == unit }.map(\.method))
+    }
+
+    func methodName(_ method: PaymentMethodKind, unit: String, melt: Bool = false) -> String {
+        let settings = melt ? meltMethodSettings : mintMethodSettings
+        return settings?.first { $0.method == method && $0.unit == unit }?.displayName ?? method.friendlyTitle
+    }
+
     /// NUT-04 bolt12 `MintMethodSettings.description`. Default false so records
     /// persisted before this landed, and mints that omit the field, fail closed
     /// (the Description row stays hidden until a live fetch advertises true).
@@ -91,6 +105,7 @@ extension MintInfo {
         case mintUnits
         case supportedMintMethods
         case supportedMeltMethods
+        case mintMethodSettings, meltMethodSettings
         case supportsBolt12MintDescription
         case onchainMintConfirmations
         case lastUpdated
@@ -110,6 +125,8 @@ extension MintInfo {
         mintUnits = try container.decodeIfPresent([String].self, forKey: .mintUnits) ?? units
         supportedMintMethods = try container.decodeIfPresent([PaymentMethodKind].self, forKey: .supportedMintMethods) ?? [.bolt11]
         supportedMeltMethods = try container.decodeIfPresent([PaymentMethodKind].self, forKey: .supportedMeltMethods) ?? [.bolt11]
+        mintMethodSettings = try container.decodeIfPresent([AdvertisedPaymentMethod].self, forKey: .mintMethodSettings)
+        meltMethodSettings = try container.decodeIfPresent([AdvertisedPaymentMethod].self, forKey: .meltMethodSettings)
         supportsBolt12MintDescription = try container.decodeIfPresent(Bool.self, forKey: .supportsBolt12MintDescription) ?? false
         onchainMintConfirmations = try container.decodeIfPresent(Int.self, forKey: .onchainMintConfirmations)
         lastUpdated = try container.decodeIfPresent(Date.self, forKey: .lastUpdated) ?? Date()
@@ -127,6 +144,8 @@ extension MintInfo {
         try container.encode(mintUnits, forKey: .mintUnits)
         try container.encode(supportedMintMethods, forKey: .supportedMintMethods)
         try container.encode(supportedMeltMethods, forKey: .supportedMeltMethods)
+        try container.encodeIfPresent(mintMethodSettings, forKey: .mintMethodSettings)
+        try container.encodeIfPresent(meltMethodSettings, forKey: .meltMethodSettings)
         try container.encode(supportsBolt12MintDescription, forKey: .supportsBolt12MintDescription)
         try container.encodeIfPresent(onchainMintConfirmations, forKey: .onchainMintConfirmations)
         try container.encode(lastUpdated, forKey: .lastUpdated)
@@ -134,3 +153,24 @@ extension MintInfo {
 }
 
 // Extension for notifications
+
+/// A method belongs to one mint, direction, and unit. Names never determine identity.
+struct AdvertisedPaymentMethod: Codable, Equatable, Hashable, Identifiable {
+    let method: PaymentMethodKind
+    let unit: String
+    var name: String? = nil
+    var minAmount: UInt64? = nil
+    var maxAmount: UInt64? = nil
+
+    var id: String { "\(method.rawValue):\(unit)" }
+    var displayName: String {
+        guard method.isCustom else { return method.friendlyTitle }
+        let label = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return !label.isEmpty && label.count <= 30 && label.rangeOfCharacter(from: .controlCharacters) == nil
+            ? label : method.displayName
+    }
+
+    func accepts(_ amount: UInt64) -> Bool {
+        amount > 0 && amount >= (minAmount ?? 0) && amount <= (maxAmount ?? .max)
+    }
+}
