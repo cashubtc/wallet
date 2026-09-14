@@ -299,11 +299,21 @@ struct LightningAddressReceiveView: View {
     let address: String
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
-    @ObservedObject private var npcService = NPCService.shared
-    @ObservedObject private var settings = SettingsManager.shared
-    @State private var openedAt = Date()
+    @ObservedObject private var npcService: NPCService
+    @ObservedObject private var settings: SettingsManager
+    private let announce: (String) -> Void
+    @StateObject private var session: NPCReceiveSession
     @State private var receipt: NPCPaymentReceipt?
     @State private var pendingReceipt: NPCPaymentReceipt?
+
+    init(address: String, npcService: NPCService = .shared, settings: SettingsManager = .shared,
+         announce: @escaping (String) -> Void = { AccessibilityNotification.Announcement($0).post() }) {
+        self.address = address
+        self.npcService = npcService
+        self.settings = settings
+        self.announce = announce
+        _session = StateObject(wrappedValue: NPCReceiveSession(address: address))
+    }
 
     var body: some View {
         LightningAddressReceiveContent(
@@ -311,20 +321,22 @@ struct LightningAddressReceiveView: View {
             receivedAmount: receipt.map { AmountFormatter.sats($0.amount, useBitcoinSymbol: settings.useBitcoinSymbol) },
             statusMessage: statusMessage,
             onRetry: canRetry ? { Task { await npcService.retryPayments() } } : nil,
-            retrying: npcService.paymentCheckInProgress
+            retrying: npcService.paymentCheckInProgress,
+            preparing: settings.checkIncomingInvoices && session.priorPaidQuoteIDs == nil,
+            announce: announce
         )
         .task(id: scenePhase == .active && receipt == nil) {
             guard scenePhase == .active, receipt == nil else { return }
-            await npcService.monitorPayments(address: address, openedAt: openedAt)
+            await npcService.monitorPayments(session)
         }
         .onReceive(NotificationCenter.default.publisher(for: .npcPaymentReceived)) { notification in
             guard receipt == nil, let payment = notification.userInfo?["receipt"] as? NPCPaymentReceipt,
-                  payment.belongsToReceiveSession(address: address, openedAt: openedAt) else { return }
+                  payment.belongsToReceiveSession(session) else { return }
             receipt = payment
         }
         .onReceive(NotificationCenter.default.publisher(for: .npcPaymentPending)) { notification in
             guard let payment = notification.userInfo?["receipt"] as? NPCPaymentReceipt,
-                  payment.belongsToReceiveSession(address: address, openedAt: openedAt) else { return }
+                  payment.belongsToReceiveSession(session) else { return }
             pendingReceipt = payment
         }
         .onChange(of: npcService.isEnabled) { _, enabled in if !enabled { dismiss() } }
@@ -333,7 +345,7 @@ struct LightningAddressReceiveView: View {
 
     private var activeClaim: NPCPaymentClaim? {
         npcService.paymentClaims.values
-            .filter { $0.receipt.belongsToReceiveSession(address: address, openedAt: openedAt) }
+            .filter { $0.receipt.belongsToReceiveSession(session) }
             .sorted { ($0.receipt.paidAt ?? 0) > ($1.receipt.paidAt ?? 0) }
             .first
     }
@@ -368,6 +380,7 @@ struct LightningAddressReceiveContent: View {
     var statusMessage: String? = nil
     var onRetry: (() -> Void)? = nil
     var retrying = false
+    var preparing = false
     var announce: (String) -> Void = { AccessibilityNotification.Announcement($0).post() }
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -414,12 +427,16 @@ struct LightningAddressReceiveContent: View {
         GeometryReader { geometry in
             ScrollView {
                 VStack(spacing: 24) {
-                    QRCodeView(content: address, showControls: false)
-                        .padding()
-                        .frame(width: min(280, geometry.size.width - 48),
-                               height: min(280, geometry.size.width - 48))
-                        .background(Color.white)
-                        .clipShape(.rect(cornerRadius: 16))
+                    if preparing {
+                        ProgressView("Preparing to receive…")
+                    } else {
+                        QRCodeView(content: address, showControls: false)
+                            .padding()
+                            .frame(width: min(280, geometry.size.width - 48),
+                                   height: min(280, geometry.size.width - 48))
+                            .background(Color.white)
+                            .clipShape(.rect(cornerRadius: 16))
+                    }
                     Text(address)
                         .font(.system(.subheadline, design: .monospaced))
                         .foregroundStyle(.secondary)
@@ -452,17 +469,19 @@ struct LightningAddressReceiveContent: View {
             .scrollBounceBehavior(.basedOnSize)
         }
         .safeAreaInset(edge: .bottom) {
-            HStack(spacing: 12) {
-                Button("Copy") {
-                    UIPasteboard.general.string = address
-                    ConfirmationToast.show("Copied lightning address")
+            if !preparing {
+                HStack(spacing: 12) {
+                    Button("Copy") {
+                        UIPasteboard.general.string = address
+                        ConfirmationToast.show("Copied lightning address")
+                    }
+                    .flatSheetSecondaryButton()
+                    ShareLink(item: address) { Text("Share") }
+                        .glassButton(prominent: true)
                 }
-                .flatSheetSecondaryButton()
-                ShareLink(item: address) { Text("Share") }
-                    .glassButton(prominent: true)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 16)
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 16)
         }
     }
 }

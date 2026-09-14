@@ -8,9 +8,24 @@ struct NPCPaymentReceipt: Equatable {
     let amount: UInt64
     let paidAt: UInt64?
 
-    func belongsToReceiveSession(address: String, openedAt: Date) -> Bool {
-        guard amount > 0, self.address == address, let paidAt else { return false }
-        return paidAt >= UInt64(max(0, openedAt.timeIntervalSince1970.rounded(.down)))
+    @MainActor
+    func belongsToReceiveSession(_ session: NPCReceiveSession) -> Bool {
+        guard amount > 0, address == session.address, let prior = session.priorPaidQuoteIDs else { return false }
+        return !prior.contains(quoteID)
+    }
+}
+
+/// Capture before exposing the QR; keep the baseline when the sheet resumes.
+@MainActor
+final class NPCReceiveSession: ObservableObject {
+    let address: String
+    @Published private(set) var priorPaidQuoteIDs: Set<String>?
+
+    init(address: String) { self.address = address }
+
+    func prepare(paidQuoteIDs: Set<String>) {
+        guard priorPaidQuoteIDs == nil else { return }
+        priorPaidQuoteIDs = paidQuoteIDs
     }
 }
 
@@ -98,7 +113,8 @@ class NPCService: ObservableObject {
     private let settingsStore: SettingsStore
     private let refreshInterval: TimeInterval
     private let receiveRefreshInterval: TimeInterval
-    private var receiveSessions: [UUID: Date] = [:]
+    private var receiveSessions: [UUID: NPCReceiveSession] = [:]
+    private var observedPaidQuoteIDs: Set<String> = []
     private var shouldCheckIncomingInvoices: Bool {
         settingsStore.checkIncomingInvoices
     }
@@ -266,6 +282,7 @@ class NPCService: ObservableObject {
     func disconnect() {
         sessionID = UUID()
         receiveSessions.removeAll()
+        observedPaidQuoteIDs.removeAll()
         paymentClaims.removeAll()
         connectionTask?.cancel()
         connectionTask = nil
@@ -335,6 +352,10 @@ class NPCService: ObservableObject {
             lastCheck = Date()
             errorMessage = nil
             
+            observedPaidQuoteIDs.formUnion(quotes.filter { $0.isPaid || $0.state?.uppercased() == "ISSUED" }.map(\.id))
+            // Initialize receivers before starting claims for previously paid invoices.
+            for receiver in receiveSessions.values { receiver.prepare(paidQuoteIDs: observedPaidQuoteIDs) }
+
             // Process paid quotes
             let paidQuotes = quotes
                 .filter { $0.isPaid }
@@ -405,11 +426,12 @@ class NPCService: ObservableObject {
 
     /// Owned by the visible address sheet. Cancellation stops focused checks;
     /// the app-lifetime wallet operation still finishes an already-started claim.
-    func monitorPayments(address: String, openedAt: Date) async {
+    func monitorPayments(_ receiveSession: NPCReceiveSession) async {
+        let address = receiveSession.address
         guard isEnabled, isInitialized, lightningAddress == address else { return }
         let session = sessionID
         let receiver = UUID()
-        receiveSessions[receiver] = openedAt
+        receiveSessions[receiver] = receiveSession
         defer { receiveSessions.removeValue(forKey: receiver) }
         while !Task.isCancelled, isCurrentSession(session), lightningAddress == address {
             await checkAndClaimPayments()
@@ -445,7 +467,7 @@ class NPCService: ObservableObject {
     func publishReceivedPayment(_ receipt: NPCPaymentReceipt) -> Bool {
         guard isEnabled, receipt.address == lightningAddress, receipt.amount > 0 else { return false }
         let inFlow = receiveSessions.values.contains {
-            receipt.belongsToReceiveSession(address: lightningAddress, openedAt: $0)
+            receipt.belongsToReceiveSession($0)
         }
         NotificationCenter.default.post(name: .npcPaymentReceived, object: self,
                                         userInfo: ["receipt": receipt])

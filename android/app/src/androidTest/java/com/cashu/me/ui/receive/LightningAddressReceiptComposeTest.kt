@@ -27,6 +27,25 @@ class LightningAddressReceiptComposeTest {
     private val address = "npub1" + "q".repeat(58) + "@example.com"
 
     @Test
+    fun qrAndShareWaitUntilTheInitialInvoiceSnapshotIsReady() {
+        val preparing = mutableStateOf(true)
+        compose.setCashuContent {
+            LightningAddressModal(onDismiss = {}) {
+                LightningAddressReceiveContent(address = address, onDismiss = {}, preparing = preparing.value)
+            }
+        }
+        compose.onNodeWithText("Preparing to receive…").assertIsDisplayed()
+        compose.onNodeWithText("Copy").assertDoesNotExist()
+        compose.onNodeWithText("Share").assertDoesNotExist()
+        compose.onNodeWithContentDescription("QR code. Long press for copy and share options.").assertDoesNotExist()
+        compose.runOnIdle { preparing.value = false }
+        compose.onNodeWithText("Preparing to receive…").assertDoesNotExist()
+        compose.onNodeWithText("Copy").assertIsDisplayed()
+        compose.onNodeWithText("Share").assertIsDisplayed()
+        compose.onNodeWithContentDescription("QR code. Long press for copy and share options.").assertIsDisplayed()
+    }
+
+    @Test
     fun paymentKeepsModalBoundsAndDoneDismisses() {
         val receivedAmount = mutableStateOf<String?>(null)
         val presented = mutableStateOf(true)

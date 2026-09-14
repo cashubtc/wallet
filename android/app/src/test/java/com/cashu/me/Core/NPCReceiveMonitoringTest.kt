@@ -1,6 +1,7 @@
 package com.cashu.me.Core
 
 import com.cashu.me.Core.Protocols.StorageKeys
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.SupervisorJob
@@ -10,6 +11,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.yield
 import org.junit.Assert.*
 import org.junit.Test
@@ -22,7 +24,7 @@ class NPCReceiveMonitoringTest {
             fixture.service.initializeWithSeed(byteArrayOf(1))
             fixture.service.connect()
             val address = fixture.service.state.value.lightningAddress
-            val monitor = launch { fixture.service.monitorPayments(address, System.currentTimeMillis()) }
+            val monitor = launch { fixture.service.monitorPayments(NPCReceiveSession(address)) }
             delay(70)
             assertTrue("Focused receive must not wait for the two-minute poll", fixture.requests >= 3)
             monitor.cancelAndJoin()
@@ -39,7 +41,7 @@ class NPCReceiveMonitoringTest {
             fixture.service.initializeWithSeed(byteArrayOf(1))
             fixture.service.connect()
             val address = fixture.service.state.value.lightningAddress
-            val monitor = launch { fixture.service.monitorPayments(address, System.currentTimeMillis()) }
+            val monitor = launch { fixture.service.monitorPayments(NPCReceiveSession(address)) }
             delay(40)
             assertEquals(1, fixture.requests) // Connection only, no payment polling.
             fixture.settings.value = fixture.settings.value.copy(checkIncomingInvoices = true)
@@ -66,7 +68,7 @@ class NPCReceiveMonitoringTest {
             }
             fixture.service.initializeWithSeed(byteArrayOf(1))
             fixture.service.connect()
-            val monitor = launch { fixture.service.monitorPayments(fixture.service.state.value.lightningAddress, 100_000) }
+            val monitor = launch { fixture.service.monitorPayments(NPCReceiveSession(fixture.service.state.value.lightningAddress)) }
             delay(40)
             assertEquals(listOf("paid"), fixture.service.state.value.pendingPaidQuotes.map { it.id })
             assertTrue(receipts.isEmpty())
@@ -76,22 +78,71 @@ class NPCReceiveMonitoringTest {
     }
 
     @Test(timeout = 10_000)
-    fun confirmedCreditGivesVisibleSheetHapticOwnershipOnlyForItsPayment() = runBlocking {
-        val fixture = Fixture(this, allowChecks = false)
+    fun baselineRejectsOldCreditsAndAcceptsNewCreditsRegardlessOfClockOrTimestamp() = runBlocking {
+        val fixture = Fixture(this)
+        try {
+            fixture.service.setAutomaticClaim(false)
+            fixture.quotes = listOf(NPCQuote("old", 21, "https://mint.example", state = "PAID",
+                locked = false, createdAtEpochSeconds = 100, paidAtEpochSeconds = 101))
+            fixture.service.initializeWithSeed(byteArrayOf(1))
+            fixture.service.connect()
+            val address = fixture.service.state.value.lightningAddress
+            val session = NPCReceiveSession(address)
+            val payment = NPCPaymentReceipt("new", address, 21, 101)
+            assertFalse(payment.belongsToReceiveSession(session))
+            val monitor = launch { fixture.service.monitorPayments(session) }
+            withTimeout(1_000) { while (session.priorPaidQuoteIds.value == null) yield() }
+            assertEquals(setOf("old"), session.priorPaidQuoteIds.value)
+            for (timestamp in listOf(0L, 100L, 101L, Long.MAX_VALUE, null)) {
+                assertTrue(payment.copy(paidAtEpochSeconds = timestamp).belongsToReceiveSession(session))
+                assertFalse(payment.copy(quoteId = "old", paidAtEpochSeconds = timestamp).belongsToReceiveSession(session))
+            }
+            assertEquals(ReceiveConfirmationOwner.InFlow, fixture.service.publishReceivedPayment(payment))
+            assertEquals(ReceiveConfirmationOwner.Home, fixture.service.publishReceivedPayment(payment.copy(quoteId = "old")))
+            assertFalse(payment.copy(address = "other@example.com").belongsToReceiveSession(session))
+            assertFalse(payment.copy(amount = 0).belongsToReceiveSession(session))
+            monitor.cancelAndJoin()
+            assertEquals(ReceiveConfirmationOwner.Home, fixture.service.publishReceivedPayment(payment))
+
+            // Resuming the same sheet must not absorb payments made while away.
+            fixture.quotes = fixture.quotes + fixture.quotes.single().copy(id = "new")
+            val resumed = launch { fixture.service.monitorPayments(session) }
+            delay(30)
+            assertTrue(payment.belongsToReceiveSession(session))
+            resumed.cancelAndJoin()
+        } finally { fixture.close() }
+    }
+
+    @Test(timeout = 10_000)
+    fun paidInvoiceDoesNotConfirmUntilClaimFinishesAndDismissalDoesNotCancelClaim() = runBlocking {
+        val fixture = Fixture(this)
         try {
             fixture.service.initializeWithSeed(byteArrayOf(1))
             fixture.service.connect()
             val address = fixture.service.state.value.lightningAddress
-            val monitor = launch { fixture.service.monitorPayments(address, 100_750) }
-            yield()
-            val payment = NPCPaymentReceipt("new", address, 21, 101)
-            assertEquals(ReceiveConfirmationOwner.InFlow, fixture.service.publishReceivedPayment(payment))
-            assertEquals(ReceiveConfirmationOwner.Home, fixture.service.publishReceivedPayment(payment.copy(paidAtEpochSeconds = 99)))
-            assertEquals(ReceiveConfirmationOwner.Home, fixture.service.publishReceivedPayment(payment.copy(address = "other@example.com")))
-            assertEquals(ReceiveConfirmationOwner.Home, fixture.service.publishReceivedPayment(payment.copy(amount = 0)))
-            assertFalse(payment.copy(paidAtEpochSeconds = null).belongsToReceiveSession(address, 100_750))
+            val session = NPCReceiveSession(address)
+            val monitor = launch { fixture.service.monitorPayments(session) }
+            withTimeout(1_000) { while (session.priorPaidQuoteIds.value == null) yield() }
+            val claimStarted = CompletableDeferred<Unit>()
+            val creditReady = CompletableDeferred<Unit>()
+            val confirmed = CompletableDeferred<ReceiveConfirmationOwner>()
+            fixture.service.quoteClaimHandler = object : NPCQuoteClaimHandler {
+                override fun isNPCQuoteProcessed(quoteId: String) = confirmed.isCompleted
+                override suspend fun claimNPCQuote(quote: NPCQuote, p2pkPubkey: String?): Boolean {
+                    claimStarted.complete(Unit)
+                    creditReady.await()
+                    confirmed.complete(fixture.service.publishReceivedPayment(
+                        NPCPaymentReceipt(quote.id, address, quote.amount, quote.paidAtEpochSeconds)))
+                    return true
+                }
+            }
+            fixture.quotes = listOf(NPCQuote("new", 21, "https://mint.example", state = "PAID",
+                locked = false, createdAtEpochSeconds = 0, paidAtEpochSeconds = null))
+            claimStarted.await()
+            assertFalse(confirmed.isCompleted)
             monitor.cancelAndJoin()
-            assertEquals(ReceiveConfirmationOwner.Home, fixture.service.publishReceivedPayment(payment))
+            creditReady.complete(Unit)
+            assertEquals(ReceiveConfirmationOwner.Home, confirmed.await())
         } finally { fixture.close() }
     }
 

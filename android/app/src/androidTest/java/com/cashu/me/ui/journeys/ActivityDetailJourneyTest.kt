@@ -80,7 +80,9 @@ class ActivityDetailJourneyTest {
             dateEpochMillis = System.currentTimeMillis(), status = TransactionStatus.Completed,
             mintUrl = FakeWalletGateway.TestMintUrl, quoteId = "activity-offer"))
         runBlocking { fixture.container.walletManager.loadTransactions() }
-        robot.tapText("History").tapText("Reusable Invoice").awaitText("1 payment received")
+        robot.tapText("History").tapText("Reusable Invoice").awaitText("Total received")
+        compose.onNodeWithText("₿2,100").assertIsDisplayed()
+        compose.onNodeWithText("1 payment received").assertDoesNotExist()
         compose.onNodeWithText("Created").performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("Share").assertIsDisplayed()
         compose.onNodeWithText("New Request").assertDoesNotExist()

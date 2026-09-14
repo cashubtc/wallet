@@ -129,6 +129,7 @@ import com.cashu.me.ui.restore.rememberSeedPhraseEntryState
 import com.cashu.me.ui.restore.restoreSeedInstallErrorMessage
 import com.cashu.me.ui.restore.runSeedChecksum
 import com.cashu.me.ui.testing.UiTestTags
+import com.cashu.me.ui.theme.scaledBy
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.rememberAppeared
 import com.cashu.me.ui.theme.rememberReducedMotion
@@ -1462,14 +1463,14 @@ private fun SeedGrid(words: List<String>, revealed: Boolean) {
                         ) {
                             Text(
                                 text = "%02d".format(number),
-                                style = indexStyle.copy(fontSize = indexStyle.fontSize * scale),
+                                style = indexStyle.scaledBy(scale),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f * fade),
                                 textAlign = TextAlign.End,
                                 modifier = Modifier.width(indexWidth * scale),
                             )
                             Text(
                                 text = if (revealed) word else "••••••",
-                                style = wordStyle.copy(fontSize = wordStyle.fontSize * scale),
+                                style = wordStyle.scaledBy(scale),
                                 color = if (revealed) {
                                     MaterialTheme.colorScheme.onSurface
                                 } else {

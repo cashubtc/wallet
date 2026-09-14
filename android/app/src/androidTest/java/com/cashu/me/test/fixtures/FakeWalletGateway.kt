@@ -51,6 +51,7 @@ class FakeWalletGateway(
         private set
     var lastSentAmount: Long? = null
         private set
+    var beforeNPCMint: suspend () -> Unit = {}
     var beforeMeltQuote: suspend () -> Unit = {}
     var beforeMeltPayment: suspend () -> Unit = {}
     var pendingSendClaimed = false
@@ -257,8 +258,13 @@ class FakeWalletGateway(
     }
 
     override suspend fun mintNPCQuote(quote: NPCQuote, p2pkPubkey: String?): Long {
+        beforeNPCMint()
         val mintUrl = normalize(checkNotNull(quote.mintUrl))
         balances[mintUrl] = (balances[mintUrl] ?: 0) + quote.amount
+        addTransaction(WalletTransaction(id = quote.id, quoteId = quote.id, amount = quote.amount,
+            type = TransactionType.Incoming, kind = TransactionKind.Lightning,
+            dateEpochMillis = System.currentTimeMillis(), status = TransactionStatus.Completed,
+            mintUrl = mintUrl))
         return quote.amount
     }
 

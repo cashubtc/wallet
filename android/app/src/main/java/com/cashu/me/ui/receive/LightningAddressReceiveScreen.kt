@@ -22,6 +22,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -66,6 +67,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import com.cashu.me.Core.AmountFormatter
 import com.cashu.me.Core.NPCPaymentReceipt
+import com.cashu.me.Core.NPCReceiveSession
 import com.cashu.me.Core.NPCService
 import com.cashu.me.Core.SettingsManager
 import kotlinx.coroutines.CoroutineStart
@@ -104,7 +106,8 @@ private fun LightningAddressReceiveSession(
     val npc by npcService.state.collectAsState()
     val settings by settingsManager.state.collectAsState()
     val address = remember { npc.lightningAddress }
-    val openedAt = remember { System.currentTimeMillis() }
+    val session = remember(address) { NPCReceiveSession(address) }
+    val priorPaidQuoteIds by session.priorPaidQuoteIds.collectAsState()
     var receipt by remember { mutableStateOf<NPCPaymentReceipt?>(null) }
     val lifecycleOwner = LocalLifecycleOwner.current
     val formatter = remember { AmountFormatter() }
@@ -114,11 +117,11 @@ private fun LightningAddressReceiveSession(
         // Subscribe before the immediate catch-up, including fast local claims.
         launch(start = CoroutineStart.UNDISPATCHED) {
             npcService.receivedPayments.collect { payment ->
-                if (receipt == null && payment.belongsToReceiveSession(address, openedAt)) receipt = payment
+                if (receipt == null && payment.belongsToReceiveSession(session)) receipt = payment
             }
         }
         lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            npcService.monitorPayments(address, openedAt)
+            npcService.monitorPayments(session)
         }
     }
     LaunchedEffect(npc.isEnabled, npc.lightningAddress) {
@@ -126,12 +129,12 @@ private fun LightningAddressReceiveSession(
     }
     val pending = npc.pendingPaidQuotes.lastOrNull { quote ->
         NPCPaymentReceipt(quote.id, address, quote.amount, quote.paidAtEpochSeconds)
-            .belongsToReceiveSession(address, openedAt)
+            .belongsToReceiveSession(session)
     }
     val scope = rememberCoroutineScope()
     val claiming = npc.claimingQuotes.any { quote ->
         NPCPaymentReceipt(quote.id, address, quote.amount, quote.paidAtEpochSeconds)
-            .belongsToReceiveSession(address, openedAt)
+            .belongsToReceiveSession(session)
     }
     val claimFailed = npc.automaticClaim && pending != null
     val statusMessage = when {
@@ -153,6 +156,7 @@ private fun LightningAddressReceiveSession(
             { scope.launch { npcService.retryPayments() }; Unit }
         } else null,
         retrying = npc.isCheckingPayments,
+        preparing = settings.checkIncomingInvoices && priorPaidQuoteIds == null,
     )
 }
 
@@ -165,6 +169,7 @@ internal fun LightningAddressReceiveContent(
     statusMessage: String? = null,
     onRetry: (() -> Unit)? = null,
     retrying: Boolean = false,
+    preparing: Boolean = false,
 ) {
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
@@ -207,7 +212,10 @@ internal fun LightningAddressReceiveContent(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.Center,
                         ) {
-                            QrCard(address, size = qrSize, staticOnly = true,
+                            if (preparing) {
+                                CircularProgressIndicator()
+                                Text("Preparing to receive…", modifier = Modifier.padding(top = 16.dp))
+                            } else QrCard(address, size = qrSize, staticOnly = true,
                                 shareSubject = "Lightning Address", confirmationMessage = "Copied lightning address")
                             Spacer(Modifier.height(CashuTheme.spacing.comfortable))
                             Text(
@@ -231,7 +239,7 @@ internal fun LightningAddressReceiveContent(
                             }
                         }
                     }
-                    Row(
+                    if (!preparing) Row(
                         Modifier.fillMaxWidth().padding(horizontal = CashuTheme.spacing.comfortable)
                             .padding(bottom = CashuTheme.spacing.comfortable),
                         horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),

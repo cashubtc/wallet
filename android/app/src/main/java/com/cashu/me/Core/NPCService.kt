@@ -36,9 +36,19 @@ data class NPCPaymentReceipt(
     val amount: Long,
     val paidAtEpochSeconds: Long?,
 ) {
-    fun belongsToReceiveSession(address: String, openedAtEpochMillis: Long): Boolean =
-        amount > 0 && this.address == address && paidAtEpochSeconds != null &&
-            paidAtEpochSeconds >= openedAtEpochMillis / 1_000
+    fun belongsToReceiveSession(session: NPCReceiveSession): Boolean =
+        amount > 0 && address == session.address &&
+            session.priorPaidQuoteIds.value?.let { quoteId !in it } == true
+}
+
+/** A baseline is captured before exposing the QR and retained across foreground changes. */
+class NPCReceiveSession(val address: String) {
+    private val mutablePriorPaidQuoteIds = MutableStateFlow<Set<String>?>(null)
+    val priorPaidQuoteIds = mutablePriorPaidQuoteIds.asStateFlow()
+
+    internal fun prepare(paidQuoteIds: Set<String>) {
+        if (mutablePriorPaidQuoteIds.value == null) mutablePriorPaidQuoteIds.value = paidQuoteIds.toSet()
+    }
 }
 
 data class NPCQuote(
@@ -106,7 +116,8 @@ class NPCService internal constructor(
 
     private val mutableState = MutableStateFlow(loadInitialState())
     val state: StateFlow<NPCState> = mutableState.asStateFlow()
-    private val receiveSessions = mutableMapOf<UUID, Long>()
+    private val receiveSessions = mutableMapOf<UUID, NPCReceiveSession>()
+    private val observedPaidQuoteIds = mutableSetOf<String>()
     private val mutableReceivedPayments = MutableSharedFlow<NPCPaymentReceipt>(extraBufferCapacity = 16)
     val receivedPayments = mutableReceivedPayments.asSharedFlow()
 
@@ -206,13 +217,14 @@ class NPCService internal constructor(
     }
 
     /** The visible sheet owns this job; an already-started claim keeps its app lifetime. */
-    suspend fun monitorPayments(address: String, openedAtEpochMillis: Long) =
+    suspend fun monitorPayments(receiveSession: NPCReceiveSession) =
         withContext(scope.coroutineContext.minusKey(Job)) {
+            val address = receiveSession.address
             val current = mutableState.value
             if (!current.isEnabled || !current.isInitialized || current.lightningAddress != address) return@withContext
             val session = sessionGeneration
             val receiver = UUID.randomUUID()
-            receiveSessions[receiver] = openedAtEpochMillis
+            receiveSessions[receiver] = receiveSession
             try {
                 while (isActive && isCurrentSession(session) && mutableState.value.lightningAddress == address) {
                     checkAndClaimPayments()
@@ -231,7 +243,7 @@ class NPCService internal constructor(
             return ReceiveConfirmationOwner.Home
         }
         val inFlow = receiveSessions.values.any {
-            receipt.belongsToReceiveSession(current.lightningAddress, it)
+            receipt.belongsToReceiveSession(it)
         }
         mutableReceivedPayments.tryEmit(receipt)
         return if (inFlow) ReceiveConfirmationOwner.InFlow else ReceiveConfirmationOwner.Home
@@ -339,6 +351,7 @@ class NPCService internal constructor(
     private fun disconnect() {
         sessionGeneration += 1
         receiveSessions.clear()
+        observedPaidQuoteIds.clear()
         connectionAttempt?.cancel()
         connectionAttempt = null
         paymentCheckJob?.cancel()
@@ -369,6 +382,9 @@ class NPCService internal constructor(
         val result = runCatching { fetchQuotes() }
         if (!isCurrentSession(session)) return
         result.onSuccess { quotes ->
+            observedPaidQuoteIds += quotes.filter { it.isPaid || it.state.equals("ISSUED", ignoreCase = true) }.map { it.id }
+            // Establish new receivers before issuing any old, unclaimed payments.
+            receiveSessions.values.forEach { it.prepare(observedPaidQuoteIds) }
             val now = System.currentTimeMillis()
             prefs.edit().putLong(StorageKeys.npcLastCheck, now).apply()
             val handler = quoteClaimHandler

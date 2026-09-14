@@ -248,7 +248,7 @@ final class NPCServiceTests: XCTestCase {
         settings.checkIncomingInvoices = true
         settings.periodicallyCheckIncomingInvoices = false
 
-        let monitor = Task { await service.monitorPayments(address: service.lightningAddress, openedAt: Date()) }
+        let monitor = Task { await service.monitorPayments(NPCReceiveSession(address: service.lightningAddress)) }
         try await Task.sleep(for: .milliseconds(60))
         XCTAssertGreaterThanOrEqual(client.requestCount, 3, "The open sheet must not wait for the two-minute poll")
         monitor.cancel()
@@ -269,7 +269,7 @@ final class NPCServiceTests: XCTestCase {
         let connection = Task { await service.connect() }
         client.complete(.success([]))
         await connection.value
-        let monitor = Task { await service.monitorPayments(address: service.lightningAddress, openedAt: Date()) }
+        let monitor = Task { await service.monitorPayments(NPCReceiveSession(address: service.lightningAddress)) }
         try await Task.sleep(for: .milliseconds(40))
         XCTAssertEqual(client.requestCount, 1)
         monitor.cancel()
@@ -277,15 +277,72 @@ final class NPCServiceTests: XCTestCase {
         service.disconnect()
     }
 
-    func testAddressReceiptRejectsOldOtherWalletUnknownTimeAndZeroCredits() {
-        let openedAt = Date(timeIntervalSince1970: 100.75)
-        let fresh = NPCPaymentReceipt(quoteID: "new", address: "test@example.com", amount: 21, paidAt: 101)
-        XCTAssertTrue(fresh.belongsToReceiveSession(address: fresh.address, openedAt: openedAt))
-        XCTAssertFalse(fresh.belongsToReceiveSession(address: "other@example.com", openedAt: openedAt))
-        for (amount, paidAt): (UInt64, UInt64?) in [(21, 99), (21, nil), (0, 101)] {
-            let receipt = NPCPaymentReceipt(quoteID: "old", address: fresh.address, amount: amount, paidAt: paidAt)
-            XCTAssertFalse(receipt.belongsToReceiveSession(address: fresh.address, openedAt: openedAt))
+    func testAddressViewReceivesServiceConfirmationOnlyAfterCredit() async throws {
+        let client = ControlledNPCClient()
+        client.automaticResponsesAfter = 1
+        client.automaticQuotes = [NpubCashQuote(id: "old", amount: 21, unit: "sat", createdAt: 100,
+            paidAt: 101, expiresAt: nil, mintUrl: "https://mint.example", request: nil, state: "PAID", locked: false)]
+        let store = makeSettings(enabled: true)
+        store.periodicallyCheckIncomingInvoices = false
+        let service = NPCService(settingsStore: store, receiveRefreshInterval: 0.01, makeClient: { _, _ in client })
+        service.automaticClaim = false
+        try service.initializeWithSeed(Data(repeating: 1, count: 64))
+        await client.nextRequest()
+        let connection = Task { await service.connect() }
+        client.complete(.success([]))
+        await connection.value
+        store.checkIncomingInvoices = true
+        let settings = SettingsManager(settingsStore: store)
+        var announcements: [String] = []
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let host = UIHostingController(rootView: LightningAddressReceiveView(
+            address: service.lightningAddress, npcService: service, settings: settings,
+            announce: { announcements.append($0) }).environment(\.scenePhase, .active))
+        let window = UIWindow(windowScene: scene)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+            service.disconnect()
         }
+        for _ in 0..<100 where client.requestCount < 2 { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertGreaterThanOrEqual(client.requestCount, 2, "The view must prepare its invoice snapshot")
+        let old = NPCPaymentReceipt(quoteID: "old", address: service.lightningAddress, amount: 21, paidAt: 101)
+        XCTAssertFalse(service.publishReceivedPayment(old))
+        let credit = NPCPaymentReceipt(quoteID: "new", address: service.lightningAddress, amount: 21, paidAt: nil)
+        service.updatePaymentClaim(credit, phase: .failed, session: service.sessionID)
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertTrue(announcements.contains("Payment detected, but it couldn't be added to your wallet."))
+        XCTAssertFalse(announcements.contains { $0.hasPrefix("Payment received.") })
+        service.finishPaymentClaim(quoteID: credit.quoteID, session: service.sessionID)
+        XCTAssertTrue(service.publishReceivedPayment(credit), "The visible flow owns the credited confirmation")
+        try await Task.sleep(for: .milliseconds(150))
+        XCTAssertEqual(announcements.filter { $0.hasPrefix("Payment received.") }.count, 1)
+        XCTAssertFalse(service.publishReceivedPayment(credit), "The completed flow has stopped monitoring")
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(announcements.filter { $0.hasPrefix("Payment received.") }.count, 1)
+    }
+
+    func testAddressReceiptUsesInvoiceBaselineRegardlessOfClockOrMissingTimestamp() {
+        let session = NPCReceiveSession(address: "test@example.com")
+        let fresh = NPCPaymentReceipt(quoteID: "new", address: session.address, amount: 21, paidAt: 101)
+        XCTAssertFalse(fresh.belongsToReceiveSession(session), "The QR must wait for a baseline")
+        session.prepare(paidQuoteIDs: ["old"])
+        for paidAt: UInt64? in [0, 100, 101, UInt64.max, nil] {
+            XCTAssertTrue(NPCPaymentReceipt(quoteID: "new", address: session.address, amount: 21,
+                                            paidAt: paidAt).belongsToReceiveSession(session))
+            XCTAssertFalse(NPCPaymentReceipt(quoteID: "old", address: session.address, amount: 21,
+                                             paidAt: paidAt).belongsToReceiveSession(session))
+        }
+        XCTAssertFalse(NPCPaymentReceipt(quoteID: "new", address: "other@example.com", amount: 21,
+                                         paidAt: 101).belongsToReceiveSession(session))
+        XCTAssertFalse(NPCPaymentReceipt(quoteID: "new", address: session.address, amount: 0,
+                                         paidAt: 101).belongsToReceiveSession(session))
+        session.prepare(paidQuoteIDs: ["old", "new"])
+        XCTAssertTrue(fresh.belongsToReceiveSession(session), "Resume must preserve the initial baseline")
     }
 
     func testSetupRetryRecoversRuntimeAndUsesStoredSeed() async throws {
@@ -520,13 +577,14 @@ final class NPCServiceTests: XCTestCase {
 private final class ControlledNPCClient: NpubCashClientProtocol {
     private(set) var requestCount = 0
     var automaticResponsesAfter: Int?
+    var automaticQuotes: [NpubCashQuote] = []
     private var unobservedRequests = 0
     private var started: CheckedContinuation<Void, Never>?
     private var response: CheckedContinuation<[NpubCashQuote], Error>?
 
     func getQuotes(since: UInt64?) async throws -> [NpubCashQuote] {
         requestCount += 1
-        if let automaticResponsesAfter, requestCount > automaticResponsesAfter { return [] }
+        if let automaticResponsesAfter, requestCount > automaticResponsesAfter { return automaticQuotes }
         return try await withCheckedThrowingContinuation { continuation in
             response = continuation
             if let started {

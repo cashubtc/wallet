@@ -81,6 +81,7 @@ import com.cashu.me.Core.SeedPhraseEntry
 import com.cashu.me.ui.components.InlineNotice
 import com.cashu.me.ui.components.NoticeSeverity
 import com.cashu.me.ui.testing.UiTestTags
+import com.cashu.me.ui.theme.scaledBy
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.atSize
 import com.cashu.me.ui.theme.withSlashedZero
@@ -688,12 +689,12 @@ private fun SeedWordReviewGrid(words: List<String>, onSelect: (Int) -> Unit) {
                 ) {
                     Text(
                         text = "%02d".format(index + 1),
-                        style = indexStyle.copy(fontSize = indexStyle.fontSize * scale),
+                        style = indexStyle.scaledBy(scale),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
                         text = word,
-                        style = wordStyle.copy(fontSize = wordStyle.fontSize * scale),
+                        style = wordStyle.scaledBy(scale),
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
                         softWrap = false,
