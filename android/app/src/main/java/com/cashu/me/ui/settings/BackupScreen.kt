@@ -30,6 +30,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.ClipEntry
@@ -70,6 +72,7 @@ fun BackupSeedSheet(
     } + CashuTheme.spacing.default * 2
     val revealedText = remember(words) { words.joinToString(" ") }
 
+    val haptics = LocalHapticFeedback.current
     val clipboard = LocalClipboard.current
     val clipboardScope = rememberCoroutineScope()
     val confirmationToastController = LocalConfirmationToastController.current
@@ -159,6 +162,7 @@ fun BackupSeedSheet(
                                     clipboard.setClipEntry(
                                         ClipEntry(ClipData.newPlainText("Recovery phrase", revealedText)),
                                     )
+                                    haptics.performHapticFeedback(HapticFeedbackType.Confirm)
                                     confirmationToastController?.show("Copied recovery phrase")
                                 }
                             }

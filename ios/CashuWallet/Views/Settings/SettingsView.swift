@@ -1420,7 +1420,7 @@ struct BackupView: View {
                     revealWords()
                 }
             }
-            .glassButton()
+            .flatSheetSecondaryButton()
             .contentTransition(.opacity)
         }
         .padding(.horizontal, 24)
@@ -1452,6 +1452,7 @@ struct BackupView: View {
             guard await AppLockManager.shared.authenticate(reason: "Copy your seed phrase") else { return }
             let words = walletManager.getMnemonicWords().joined(separator: " ")
             UIPasteboard.general.string = words
+            HapticFeedback.notification(.success)
             ConfirmationToast.show("Copied recovery phrase")
         }
     }
