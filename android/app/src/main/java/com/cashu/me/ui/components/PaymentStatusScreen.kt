@@ -44,6 +44,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalInspectionMode
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -222,13 +223,13 @@ fun PaymentStatusScreen(
                         label = "payment-status-glyph",
                     ) { current ->
                         Box(
-                            modifier = Modifier.size(StatusIconSlotSize),
+                            modifier = Modifier.size(StatusIconSlotSize).testTag("payment-status-icon"),
                             contentAlignment = Alignment.Center,
                         ) {
                             when (current) {
                                 PaymentStatusPhase.Processing -> SpinnerRing(
                                     size = SpinnerSize,
-                                    color = MaterialTheme.colorScheme.primary,
+                                    color = MaterialTheme.colorScheme.onSurface,
                                 )
                                 PaymentStatusPhase.Success -> if (settlementPending) {
                                     // Async settlement isn't the celebration

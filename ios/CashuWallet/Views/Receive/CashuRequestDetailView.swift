@@ -249,7 +249,7 @@ struct CashuRequestDetailView: View {
                         }
                         detailRow(
                             label: "Created",
-                            value: request.createdAt.formatted(date: .abbreviated, time: .shortened)
+                            value: request.createdAt.formatted(date: .abbreviated, time: .omitted)
                         )
                         if request.totalReceived > 0 {
                             detailRow(
@@ -287,25 +287,9 @@ struct CashuRequestDetailView: View {
         }
     }
 
-    private var statusBadge: some View {
-        Group {
-            if paymentCount > 0 {
-                HStack(spacing: 6) {
-                    Image(systemName: "checkmark.circle.fill")
-                    Text(paymentCount == 1 ? "1 payment received" : "\(paymentCount) payments received")
-                }
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(.green)
-            }
-        }
-        .animation(.easeInOut(duration: 0.2), value: paymentCount)
-    }
-
     @ViewBuilder
     private func deliveryStatus(for request: CashuRequest) -> some View {
-        if paymentCount > 0 {
-            statusBadge
-        } else if request.rail == .ecash,
+        if paymentCount == 0, request.rail == .ecash,
                   let notice = CashuRequestNostrReadiness.current().deliveryNotice {
             InlineNotice(
                 message: notice.message,

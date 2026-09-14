@@ -19,6 +19,7 @@ fun CashuRequestReceiptSheet(
     nfcReceiveCoordinator: NfcReceiveCoordinator,
     store: CashuRequestStore,
     onDismissRequest: () -> Unit,
+    onNfcSuccessDone: () -> Unit,
     onBackdropVisibilityChanged: (Boolean) -> Unit = {},
 ) {
     CashuRequestDetailScreen(
@@ -29,6 +30,7 @@ fun CashuRequestReceiptSheet(
         nfcReceiveCoordinator = nfcReceiveCoordinator,
         requestId = request.id,
         onClose = onDismissRequest,
+        onNfcSuccessDone = onNfcSuccessDone,
         asActivitySheet = true,
         onBackdropVisibilityChanged = onBackdropVisibilityChanged,
     )

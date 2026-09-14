@@ -84,6 +84,13 @@ fun CashuNavHost(
     var receiptTransaction by remember { mutableStateOf<WalletTransaction?>(null) }
     var receiptRequest by remember { mutableStateOf<CashuRequest?>(null) }
     var receiptBackdropVisible by remember { mutableStateOf(false) }
+    fun finishNfcReceive() {
+        receiptRequest = null
+        navController.navigate(Routes.HOME) {
+            popUpTo(Routes.HOME)
+            launchSingleTop = true
+        }
+    }
     LaunchedEffect(receiptTransaction, receiptRequest) {
         receiptBackdropVisible = receiptTransaction != null || receiptRequest != null
     }
@@ -154,6 +161,7 @@ fun CashuNavHost(
                 nfcReceiveCoordinator = container.nfcReceiveCoordinator,
                 requestId = requestId,
                 onClose = { navController.popBackStack() },
+                onNfcSuccessDone = ::finishNfcReceive,
             )
         }
 
@@ -282,6 +290,7 @@ fun CashuNavHost(
             nfcReceiveCoordinator = container.nfcReceiveCoordinator,
             store = container.cashuRequestStore,
             onDismissRequest = { receiptRequest = null },
+            onNfcSuccessDone = ::finishNfcReceive,
             onBackdropVisibilityChanged = { receiptBackdropVisible = it },
         )
     }

@@ -24,12 +24,9 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
@@ -61,7 +58,6 @@ import com.cashu.me.Core.NfcReceive.NfcReceiveState
 import com.cashu.me.Models.CashuRequest
 import com.cashu.me.ui.components.PaymentStatusPhase
 import com.cashu.me.ui.components.PaymentStatusScreen
-import com.cashu.me.ui.components.SpinnerRing
 import com.cashu.me.ui.receive.CashuRequestReceiptRows
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.rememberReducedMotion
@@ -279,94 +275,49 @@ internal fun NfcReceiveOverlayContent(
     onSuccessDone: () -> Unit,
     onRetry: () -> Unit,
 ) {
-    // One content key for every status phase keeps a single
-    // PaymentStatusScreen mounted across Validating → … → Success/Failure, so
-    // the spinner morphs into the check/X and the title crossfades in place;
-    // keep-phones-together ↔ status fades through instead of hard-cutting.
-    AnimatedContent(
-        targetState = state.phase,
-        transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(150)) },
-        label = "nfc-receive-terminal",
-        contentKey = { it in NfcStatusPhases },
-    ) { phase ->
-        if (phase in NfcStatusPhases) {
-            PaymentStatusScreen(
-                phase = when (phase) {
-                    NfcReceivePhase.Success -> PaymentStatusPhase.Success
-                    NfcReceivePhase.Failure -> PaymentStatusPhase.Failure
-                    else -> PaymentStatusPhase.Processing
-                },
-                title = when (phase) {
-                    NfcReceivePhase.Success -> "Payment Received!"
-                    NfcReceivePhase.Failure -> "Payment failed"
-                    NfcReceivePhase.Validating -> "Checking payment"
-                    NfcReceivePhase.Redeeming -> "Securing ecash"
-                    else -> "Moving to your default mint"
-                },
-                detail = when (phase) {
-                    NfcReceivePhase.Failure ->
-                        state.message ?: "The payment could not be received."
-                    NfcReceivePhase.Success -> null
-                    else -> "Transfer complete — you can move the phones apart."
-                },
-                successAmount = successAmountLabel,
-                doneLabel = if (phase == NfcReceivePhase.Failure) "Try again" else "Done",
-                onDone = when (phase) {
-                    NfcReceivePhase.Success -> onSuccessDone
-                    NfcReceivePhase.Failure -> onRetry
-                    else -> null
-                },
-                rows = if (phase == NfcReceivePhase.Success) {
-                    {
-                        CashuRequestReceiptRows(
-                            amountLabel = null,
-                            mintName = successMintName,
-                        )
-                    }
-                } else {
-                    null
-                },
-            )
-        } else {
-            NfcTransferScreen()
-        }
-    }
-}
-
-/** Phases rendered on the shared status terminal (the rest is the transfer beat). */
-private val NfcStatusPhases = setOf(
-    NfcReceivePhase.Validating,
-    NfcReceivePhase.Redeeming,
-    NfcReceivePhase.Converting,
-    NfcReceivePhase.Success,
-    NfcReceivePhase.Failure,
-)
-
-@Composable
-private fun NfcTransferScreen() {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Column(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = CashuTheme.spacing.page),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-            ) {
-                SpinnerRing(size = 64.dp, color = CashuTheme.colors.onPendingContainer)
-                Spacer(Modifier.height(CashuTheme.spacing.section))
-                Text(
-                    text = "Keep phones together",
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    textAlign = TextAlign.Center,
-                )
-                Spacer(Modifier.height(CashuTheme.spacing.snug))
-                Text(
-                    text = "Do not move either phone until the transfer finishes.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
+    // Keep one status screen mounted throughout the transfer. The spinner,
+    // title and receipt share the same slots, including the keep-together beat.
+    val phase = state.phase
+    val transferInProgress = phase == NfcReceivePhase.Connected || phase == NfcReceivePhase.Receiving
+    PaymentStatusScreen(
+        phase = when (phase) {
+            NfcReceivePhase.Success -> PaymentStatusPhase.Success
+            NfcReceivePhase.Failure -> PaymentStatusPhase.Failure
+            else -> PaymentStatusPhase.Processing
+        },
+        title = when (phase) {
+            NfcReceivePhase.Connected, NfcReceivePhase.Receiving -> "Keep phones together"
+            NfcReceivePhase.Success -> "Payment Received!"
+            NfcReceivePhase.Failure -> "Payment failed"
+            NfcReceivePhase.Validating -> "Checking payment"
+            NfcReceivePhase.Redeeming -> "Securing ecash"
+            NfcReceivePhase.Converting -> "Moving to your default mint"
+            else -> "Processing…"
+        },
+        detail = when {
+            transferInProgress -> "Do not move either phone until the transfer finishes."
+            phase == NfcReceivePhase.Failure -> state.message ?: "The payment could not be received."
+            phase == NfcReceivePhase.Success -> null
+            else -> "Transfer complete — you can move the phones apart."
+        },
+        successAmount = successAmountLabel,
+        doneLabel = if (phase == NfcReceivePhase.Failure) "Try again" else "Done",
+        onDone = when (phase) {
+            NfcReceivePhase.Success -> onSuccessDone
+            NfcReceivePhase.Failure -> onRetry
+            else -> null
+        },
+        rows = if (phase == NfcReceivePhase.Success) {
+            {
+                CashuRequestReceiptRows(
+                    amountLabel = null,
+                    mintName = successMintName,
                 )
             }
-        }
+        } else {
+            null
+        },
+    )
 }
 
 private tailrec fun Context.findActivity(): Activity? = when (this) {
