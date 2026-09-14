@@ -13,8 +13,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.windowInsetsBottomHeight
@@ -43,6 +45,27 @@ private val KeyGap = 10.dp
 // Grow toward iOS on roomy screens while preserving the 48dp touch target.
 private val PreferredKeyHeight = 64.dp
 private val MinimumKeyHeight = 48.dp
+
+/** Shared mint/melt quote entry: amount above the mint row, keypad, and action. */
+@Composable
+fun QuoteAmountEntry(
+    modifier: Modifier = Modifier,
+    hero: @Composable () -> Unit,
+    details: @Composable () -> Unit,
+    footer: @Composable () -> Unit,
+) {
+    Column(
+        modifier = modifier.fillMaxSize().padding(horizontal = CashuTheme.spacing.comfortable).imePadding(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Spacer(Modifier.height(CashuTheme.spacing.default))
+        Spacer(Modifier.weight(1f))
+        hero()
+        Spacer(Modifier.weight(1f))
+        details()
+        footer()
+    }
+}
 
 /**
  * Minimal numeric keypad for amount entry — no background boxes, just numbers

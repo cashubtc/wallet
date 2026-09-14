@@ -77,7 +77,8 @@ data class MintQuoteInfo(
 
     /** A payment is complete only after ecash issuance catches up. */
     val hasSettledPayment: Boolean
-        get() = amountPaid > 0 && amountIssued >= amountPaid
+        get() = amountPaid > 0 && amountIssued >= amountPaid &&
+            (!paymentMethod.isCustom || amountIssued >= (amount ?: Long.MAX_VALUE))
 }
 
 @Serializable
@@ -98,10 +99,11 @@ data class MeltQuoteInfo(
     val paymentMethod: PaymentMethodKind,
     val state: MeltQuoteState,
     val expiryEpochSeconds: Long?,
+    val unit: String = "sat",
     val request: String? = null,
     val paymentProof: String? = null,
 ) {
-    val totalAmount: Long get() = amount + feeReserve
+    val totalAmount: Long get() = if (amount < 0 || feeReserve < 0 || amount > Long.MAX_VALUE - feeReserve) Long.MAX_VALUE else amount + feeReserve
     val isExpired: Boolean
         get() = expiryEpochSeconds != null &&
             expiryEpochSeconds > 0 &&

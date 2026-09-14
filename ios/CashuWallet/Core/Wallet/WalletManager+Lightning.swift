@@ -89,6 +89,16 @@ extension WalletManager {
         return amount
     }
 
+    func createCustomMeltQuote(
+        method: PaymentMethodKind, request: String, amount: UInt64, mintURL: String, unit: String
+    ) async throws -> MeltQuoteInfo {
+        try await operationCoordinator.perform(kind: .meltQuote, resourceID: mintURL) {
+            try await self.lightningService.createCustomMeltQuote(
+                method: method, request: request, amount: amount, mintURL: mintURL, unit: unit
+            )
+        }
+    }
+
     func createMeltQuote(
         request: String,
         amount: UInt64? = nil,

@@ -139,6 +139,16 @@ class LightningService: ObservableObject {
             }
         }
 
+        if method.isCustom {
+            let mintURL = targetMintURL ?? activeMint.url
+            let mint = getMints().first { $0.url == mintURL } ?? (activeMint.url == mintURL ? activeMint : nil)
+            guard let settings = mint?.mintMethodSettings?.first(where: {
+                $0.method == method && $0.unit == PaymentRequestDecoder.unitDescription(unit)
+            }), let amount, settings.accepts(amount) else {
+                throw WalletError.networkError("This payment method or amount is not supported by the selected mint and unit.")
+            }
+        }
+
         if method == .onchain {
             return try await createOnchainMintQuote(mintURL: targetMintURL ?? activeMint.url)
         }
@@ -384,9 +394,25 @@ class LightningService: ObservableObject {
     
     // MARK: - Melting (NUT-05) - Pay via Lightning
     
-    /// Create a melt quote for paying a Lightning payment request
-    /// - Parameter request: The BOLT11 invoice or BOLT12 offer to pay
-    /// - Returns: Melt quote with fee information
+    /// Quote an opaque request in the selected mint's advertised unit.
+    func createCustomMeltQuote(
+        method: PaymentMethodKind, request: String, amount: UInt64, mintURL: String, unit: String
+    ) async throws -> MeltQuoteInfo {
+        guard method.isCustom,
+              let settings = getMints().first(where: { $0.url == mintURL })?.meltMethodSettings?.first(where: {
+                  $0.method == method && $0.unit == unit
+              }), settings.accepts(amount) else {
+            throw WalletError.networkError("This payment method or amount is not supported by the selected mint and unit.")
+        }
+        guard let repo = walletRepository() else { throw WalletError.notInitialized }
+        let wallet = try await repo.getWallet(mintUrl: MintUrl(url: mintURL), unit: PaymentRequestDecoder.currencyUnit(from: unit))
+        let extra = String(decoding: try JSONEncoder().encode(["amount": amount]), as: UTF8.self)
+        let quote = try await wallet.meltQuote(method: method.cdkMethod, request: request, options: nil, extra: extra)
+        _ = try Self.requiredMeltAmount(amount: quote.amount.value, feeReserve: quote.feeReserve.value)
+        return meltQuoteInfo(from: quote, paymentMethod: method, fallbackMintUrl: mintURL)
+    }
+
+    /// Create a melt quote for paying a BOLT11 invoice or BOLT12 offer.
     func createMeltQuote(
         request: String,
         amount: UInt64? = nil,
@@ -721,7 +747,10 @@ class LightningService: ObservableObject {
             mintUrl: MintUrl(url: context.mintURL),
             unit: context.unit
         )
-        let params = SubscribeParams(kind: paymentMethod.subscriptionKind, filters: [quoteId], id: nil)
+        // CDK 0.18 FFI cannot deliver custom quote notifications. The focused
+        // monitor and durable maintenance already poll these quotes.
+        guard let kind = paymentMethod.subscriptionKind else { return nil }
+        let params = SubscribeParams(kind: kind, filters: [quoteId], id: nil)
         return try await wallet.subscribe(params: params)
     }
 
@@ -938,7 +967,7 @@ class LightningService: ObservableObject {
             throw WalletError.notInitialized
         }
         let mintUrl = MintUrl(url: mintURLString)
-        let wallet = try await repo.getWallet(mintUrl: mintUrl, unit: .sat)
+        let wallet = try await repo.getWallet(mintUrl: mintUrl, unit: storedMeltQuote?.unit ?? .sat)
 
         let preparedMelt: PreparedMelt
         do {
@@ -1261,7 +1290,9 @@ class LightningService: ObservableObject {
             feeReserve: quote.feeReserve.value,
             paymentMethod: paymentMethod,
             state: MeltQuoteState(quote.state),
-            expiry: displayExpiry(quote.expiry)
+            expiry: displayExpiry(quote.expiry),
+            unit: PaymentRequestDecoder.unitDescription(quote.unit),
+            request: quote.request
         )
     }
 
@@ -1380,9 +1411,6 @@ class LightningService: ObservableObject {
         let expiry = quote.expiry == QuoteExpiry.never && existingQuote.expiry != QuoteExpiry.never
             ? existingQuote.expiry
             : quote.expiry
-        let paymentMethod = PaymentMethodKind.from(quote.paymentMethod) == nil
-            ? existingQuote.paymentMethod
-            : quote.paymentMethod
 
         return MintQuote(
             id: quote.id,
@@ -1396,7 +1424,7 @@ class LightningService: ObservableObject {
             amountPaid: quote.amountPaid,
             updatedAt: max(quote.updatedAt, existingQuote.updatedAt),
             estimatedBlocks: quote.estimatedBlocks ?? existingQuote.estimatedBlocks,
-            paymentMethod: paymentMethod,
+            paymentMethod: existingQuote.paymentMethod,
             secretKey: quote.secretKey ?? existingQuote.secretKey,
             usedByOperation: quote.usedByOperation ?? existingQuote.usedByOperation,
             version: quote.version
@@ -1681,7 +1709,7 @@ enum LightningAddressResolverError: LocalizedError {
 }
 
 private extension PaymentMethodKind {
-    var subscriptionKind: SubscriptionKind {
+    var subscriptionKind: SubscriptionKind? {
         switch self {
         case .bolt11:
             return .bolt11MintQuote
@@ -1689,6 +1717,20 @@ private extension PaymentMethodKind {
             return .bolt12MintQuote
         case .onchain:
             return .onchainMintQuote
+        default:
+            return nil
+        }
+    }
+}
+
+// CDK 0.18's unissued query drops custom quotes after their first issuance.
+// Keep partial custom deposits discoverable across app restarts without a second ledger.
+extension WalletSqliteDatabase {
+    func getRecoverableMintQuotes() async throws -> [MintQuote] {
+        try await getMintQuotes().filter { quote in
+            quote.amountIssued.value == 0 || quote.paymentMethod == .bolt12 ||
+                (PaymentMethodKind.from(quote.paymentMethod)?.isCustom == true &&
+                    (quote.amountIssued.value < (quote.amount?.value ?? .max) || quote.amountPaid.value > quote.amountIssued.value))
         }
     }
 }

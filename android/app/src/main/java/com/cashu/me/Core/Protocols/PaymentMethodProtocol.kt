@@ -66,6 +66,7 @@ val PaymentMethodKind.iconName: String
         PaymentMethodKind.Bolt11 -> "bolt"
         PaymentMethodKind.Bolt12 -> "bolt12"
         PaymentMethodKind.Onchain -> "bitcoin"
+        else -> "payment"
     }
 
 val PaymentMethodKind.capabilityLabel: String

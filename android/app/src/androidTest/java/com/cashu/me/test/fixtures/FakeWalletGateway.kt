@@ -204,6 +204,7 @@ class FakeWalletGateway(
                 PaymentMethodKind.Onchain -> "bcrt1qdeterministicuitestaddress"
                 PaymentMethodKind.Bolt11 -> "lnbc${amount ?: 0}n1deterministicuitest"
                 PaymentMethodKind.Bolt12 -> "lno1deterministicuitest"
+                else -> "${method.rawValue}:$id"
             },
             amount = amount,
             paymentMethod = method,

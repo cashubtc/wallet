@@ -113,7 +113,13 @@ internal class WalletTransactionLoader(
         // rows are skipped once CDK owns a transaction for the quote, so a
         // plain id dedupe is sufficient.
         val merged = (remoteWithTokens + pendingQuoteTransactions + retainedQuotes + receiveTokenTransactions)
-            .map { it.restoringDescription(requests) }
+            .map { transaction ->
+                val method = transaction.paymentMethod
+                transaction.restoringDescription(requests).let {
+                    if (method?.isCustom == true) it.copy(paymentMethodLabel = mints.firstOrNull { mint -> mint.url == it.mintUrl }
+                        ?.methodName(method, it.unit, melt = it.type == TransactionType.Outgoing)) else it
+                }
+            }
             .distinctBy { it.id }
             .sortedByDescending { it.dateEpochMillis }
         walletStore.saveTransactions(merged)

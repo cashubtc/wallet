@@ -17,8 +17,7 @@ import org.junit.Test
 
 /**
  * NUT-04/05 rails keep their tri-state through the CDK → domain mapping:
- * reported-empty stays empty (never substituted with BOLT11) and unknown custom
- * rails are dropped, matching iOS `supportedMintPaymentMethods` / `…Melt…`.
+ * Reported-empty stays empty; custom methods retain their unit and identity.
  */
 class CdkMintMethodMappingTest {
 
@@ -87,18 +86,30 @@ class CdkMintMethodMappingTest {
     }
 
     @Test
-    fun unknownCustomMethodsAreDroppedNotRemapped() {
+    fun customMethodsArePreservedWithoutSatoshiFiltering() {
         val nuts = nuts(
             nut04Methods = listOf(
-                mintMethod(CdkPaymentMethod.Custom("unknown"), CdkCurrencyUnit.Sat),
+                mintMethod(CdkPaymentMethod.Custom("branch"), CdkCurrencyUnit.Custom("bux")),
             ),
             nut05Methods = listOf(
-                meltMethod(CdkPaymentMethod.Custom("unknown"), CdkCurrencyUnit.Sat),
+                meltMethod(CdkPaymentMethod.Custom("branch"), CdkCurrencyUnit.Custom("bux")),
             ),
         )
 
-        assertTrue(nuts.reportedMintMethods().isEmpty())
-        assertTrue(nuts.reportedMeltMethods().isEmpty())
+        assertEquals(listOf(PaymentMethodKind.fromRaw("branch")), nuts.reportedMintMethods())
+        assertEquals(listOf(PaymentMethodKind.fromRaw("branch")), nuts.reportedMeltMethods())
+        assertEquals("bux", nuts.reportedMintSettings().single().unit)
+        assertEquals("bux", nuts.reportedMeltSettings().single().unit)
+    }
+
+    @Test
+    fun disabledDirectionsAndInvalidMethodsNeverFallBackToLightning() {
+        val custom = mintMethod(CdkPaymentMethod.Custom("branch"), CdkCurrencyUnit.Custom("bux"))
+        val valid = nuts(nut04Methods = listOf(custom, custom))
+        assertEquals(1, valid.reportedMintSettings().size)
+        assertTrue(valid.copy(nut04 = CdkNut04Settings(listOf(custom), true)).reportedMintSettings().isEmpty())
+        assertTrue(valid.copy(nut05 = CdkNut05Settings(valid.nut05.methods, true)).reportedMeltSettings().isEmpty())
+        assertTrue(nuts(nut04Methods = listOf(custom.copy(method = CdkPaymentMethod.Custom("../branch")))).reportedMintMethods().isEmpty())
     }
 
     @Test

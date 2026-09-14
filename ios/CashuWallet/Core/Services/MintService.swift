@@ -544,15 +544,23 @@ class MintService: ObservableObject {
             mintInfo.units = supportedUnits(from: fetchedInfo.nuts)
             mintInfo.mintUnits = mintableUnits(from: fetchedInfo.nuts)
 
-            let mintMethods = supportedMintPaymentMethods(from: fetchedInfo.nuts.nut04.methods)
-            if !mintMethods.isEmpty {
-                mintInfo.supportedMintMethods = mintMethods
-            }
-
-            let meltMethods = supportedMeltPaymentMethods(from: fetchedInfo.nuts.nut05.methods)
-            if !meltMethods.isEmpty {
-                mintInfo.supportedMeltMethods = meltMethods
-            }
+            var mintIDs = Set<String>()
+            let mintSettings: [AdvertisedPaymentMethod] = fetchedInfo.nuts.nut04.disabled ? [] : fetchedInfo.nuts.nut04.methods.compactMap {
+                guard let method = PaymentMethodKind.from($0.method) else { return nil }
+                return AdvertisedPaymentMethod(method: method, unit: PaymentRequestDecoder.unitDescription($0.unit),
+                                               name: $0.methodName, minAmount: $0.minAmount?.value, maxAmount: $0.maxAmount?.value)
+            }.filter { mintIDs.insert($0.id).inserted }
+            var meltIDs = Set<String>()
+            let meltSettings: [AdvertisedPaymentMethod] = fetchedInfo.nuts.nut05.disabled ? [] : fetchedInfo.nuts.nut05.methods.compactMap {
+                guard let method = PaymentMethodKind.from($0.method) else { return nil }
+                return AdvertisedPaymentMethod(method: method, unit: PaymentRequestDecoder.unitDescription($0.unit),
+                                               name: $0.methodName, minAmount: $0.minAmount?.value, maxAmount: $0.maxAmount?.value)
+            }.filter { meltIDs.insert($0.id).inserted }
+            mintInfo.mintMethodSettings = mintSettings
+            mintInfo.meltMethodSettings = meltSettings
+            mintInfo.supportedMintMethods = PaymentMethodKind.ordered(mintSettings.map(\.method))
+            mintInfo.supportedMeltMethods = PaymentMethodKind.ordered(meltSettings
+                .filter { $0.unit == "sat" || $0.method.isCustom }.map(\.method))
 
             // Live NUT-04 advertisement is authoritative, including false.
             mintInfo.supportsBolt12MintDescription = MintQuoteDomain.reportsBolt12MintDescription(
@@ -564,21 +572,6 @@ class MintService: ObservableObject {
 
         mintInfo.lastUpdated = Date()
         return mintInfo
-    }
-
-    private func supportedMintPaymentMethods(from methods: [Cdk.MintMethodSettings]) -> [PaymentMethodKind] {
-        // No unit filter: a mint that offers bolt11 only in a non-sat unit must
-        // still surface the Lightning mint method (the unit is chosen separately).
-        let mappedMethods = methods
-            .compactMap { PaymentMethodKind.from($0.method) }
-        return PaymentMethodKind.allCases.filter { mappedMethods.contains($0) }
-    }
-
-    private func supportedMeltPaymentMethods(from methods: [Cdk.MeltMethodSettings]) -> [PaymentMethodKind] {
-        let mappedMethods = methods
-            .filter { isSatUnit($0.unit) }
-            .compactMap { PaymentMethodKind.from($0.method) }
-        return PaymentMethodKind.allCases.filter { mappedMethods.contains($0) }
     }
 
     private func supportedUnits(from nuts: Cdk.Nuts) -> [String] {
@@ -594,13 +587,6 @@ class MintService: ObservableObject {
         let units = nuts.mintUnits.map(PaymentRequestDecoder.unitDescription)
         let uniqueUnits = Array(Set(units)).sorted()
         return uniqueUnits.isEmpty ? ["sat"] : uniqueUnits
-    }
-
-    private func isSatUnit(_ unit: Cdk.CurrencyUnit) -> Bool {
-        if case .sat = unit {
-            return true
-        }
-        return false
     }
 
 }
