@@ -105,21 +105,7 @@ class UITestBase: XCTestCase {
         tapWhenReady(addCustom, timeout: 10)
 
         let field = app.textFields["onboarding-custom-mint-field"]
-        tapWhenReady(field)
-        // The row slides in under `withAnimation(.snappy)`, so a tap can land
-        // before the responder chain catches up and `typeText` throws "neither
-        // element nor any descendant has keyboard focus" — hittable is not the
-        // same claim as focused. The keyboard is the observable proof that
-        // focus actually arrived.
-        if !app.keyboards.element.waitForExistence(timeout: 2) {
-            // The first tap can arrive during the row's insertion transition.
-            // Refocus the field rather than typing into an unfocused control.
-            tapWhenReady(field)
-        }
-        XCTAssertTrue(
-            app.keyboards.element.waitForExistence(timeout: 10),
-            "Tapping the mint field should raise the keyboard"
-        )
+        focusTextField(field)
         field.typeText(mintURL)
         let done = app.keyboards.buttons["Done"]
         tapWhenReady(done, message: "URL keyboard should expose a Done button")
@@ -239,6 +225,18 @@ class UITestBase: XCTestCase {
             if attempt < 10 { scrollView.swipeUp() }
         }
         XCTFail("Button must be visible inside the scroll view: \(button.label)", file: file, line: line)
+    }
+
+    /// A field can be hittable before an insertion transition finishes assigning focus.
+    func focusTextField(_ field: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
+        tapWhenReady(field, file: file, line: line)
+        if !app.keyboards.element.waitForExistence(timeout: 2) {
+            tapWhenReady(field, file: file, line: line)
+        }
+        XCTAssertTrue(
+            app.keyboards.element.waitForExistence(timeout: 10),
+            "Tapping the text field should raise the keyboard", file: file, line: line
+        )
     }
 
     func tapWhenReady(

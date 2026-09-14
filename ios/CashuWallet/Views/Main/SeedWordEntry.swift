@@ -603,6 +603,10 @@ private struct SeedWordTextField: UIViewRepresentable {
 
         @objc func editingChanged(_ field: UITextField) {
             parent.text = field.text ?? ""
+            // A space can advance to a new word. Apply the resulting draft
+            // before the next key event, rather than waiting for SwiftUI's
+            // render pass and feeding the previous word into the new slot.
+            if field.text != parent.text { field.text = parent.text }
         }
 
         func textFieldShouldReturn(_ field: UITextField) -> Bool {

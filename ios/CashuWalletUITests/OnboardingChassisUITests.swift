@@ -334,16 +334,25 @@ final class OnboardingChassisUITests: UITestBase {
         tapWhenReady(app.buttons["Use Seed Phrase"], timeout: 10)
         let field = app.textFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.keyboards.element.waitForExistence(timeout: 10), "Seed entry should focus on arrival")
+        // Rapid keyboard input must not replay a committed word before the
+        // next SwiftUI render pass, even while word transitions animate.
         field.typeText(Array(repeating: "abandon", count: 11).joined(separator: " ") + " about ")
         XCTAssertTrue(app.staticTexts["All 12 words verified."].waitForExistence(timeout: 5))
         let rail = app.otherElements["Seed word progress"]
         let top = rail.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.04))
         let bottom = rail.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.96))
         bottom.press(forDuration: 0.6, thenDragTo: top)
-        XCTAssertEqual(rail.value as? String, "Word 1 of 12")
+        let atStart = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == 'Word 1 of 12'"), object: rail
+        )
+        XCTAssertEqual(XCTWaiter().wait(for: [atStart], timeout: 5), .completed)
         XCTAssertEqual(field.value as? String, "abandon")
         top.press(forDuration: 0.6, thenDragTo: bottom)
-        XCTAssertEqual(rail.value as? String, "Word 12 of 12")
+        let atEnd = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == 'Word 12 of 12'"), object: rail
+        )
+        XCTAssertEqual(XCTWaiter().wait(for: [atEnd], timeout: 5), .completed)
         XCTAssertEqual(field.value as? String, "about")
         XCTAssertTrue(app.staticTexts["All 12 words verified."].exists)
     }
@@ -352,8 +361,7 @@ final class OnboardingChassisUITests: UITestBase {
         createWalletThroughSeed()
         tapWhenReady(app.buttons["onboarding-add-custom-mint"])
         let field = app.textFields["onboarding-custom-mint-field"]
-        tapWhenReady(field)
-        XCTAssertTrue(app.keyboards.element.waitForExistence(timeout: 10))
+        focusTextField(field)
         field.typeText(mintURL)
         let action = app.buttons["onboarding-continue"]
         XCTAssertEqual(action.label, "Add mint")
