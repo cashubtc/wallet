@@ -189,11 +189,18 @@ final class SettingsUITests: UITestBase {
     }
 
     func testUnavailableAuthenticationCannotEnableAppLock() {
+        // Reproduce the persisted setting left by the successful-auth test.
+        launchWithAuthentication("allow")
+        navigateToSettings()
+        tapWhenReady(app.buttons["App Lock"])
+        setSwitch(app.switches.firstMatch, toOn: true)
+        XCTAssertEqual(app.switches.firstMatch.value as? String, "1")
+
         launchWithAuthentication("unavailable")
         navigateToSettings()
         tapWhenReady(app.buttons["App Lock"])
         let toggle = app.switches.firstMatch
-        setSwitch(toggle, toOn: false)
+        XCTAssertEqual(toggle.value as? String, "0", "A fresh test wallet must reset App Lock")
         tapSwitchControl(toggle)
         XCTAssertTrue(app.staticTexts["Authentication failed. App Lock was not enabled. Try turning it on again."]
             .waitForExistence(timeout: 5))

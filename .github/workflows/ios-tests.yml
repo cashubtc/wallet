@@ -33,7 +33,7 @@ jobs:
   ios-tests:
     name: iOS Unit, Mint Integration & UI Tests
     runs-on: macos-26
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
     - name: Checkout code
@@ -159,7 +159,7 @@ jobs:
     # doubling runtime and obscuring first-attempt interaction failures.
     - name: Run iOS UI journeys
       id: ui_tests
-      timeout-minutes: 30
+      timeout-minutes: 40
       if: ${{ always() && steps.build.outcome == 'success' && steps.setup_mints.outcome == 'success' && steps.start_mints.outcome == 'success' }}
       continue-on-error: true
       run: |
@@ -175,10 +175,10 @@ jobs:
           -parallel-testing-enabled NO \
           -test-timeouts-enabled YES \
           -default-test-execution-time-allowance 90 \
-          -maximum-test-execution-time-allowance 150 \
+          -maximum-test-execution-time-allowance 180 \
           -resultBundlePath "$RUNNER_TEMP/CashuWalletUITests.xcresult" \
           CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="-" \
-          | tee ios-ui-test-output.log | xcbeautify
+          2>&1 | tee ios-ui-test-output.log
 
     - name: Enforce executed payment coverage
       if: ${{ always() && steps.build.outcome == 'success' }}

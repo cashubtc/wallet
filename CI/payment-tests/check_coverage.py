@@ -26,6 +26,10 @@ def ios_results(bundles):
         for child in node.get('children', []):
             walk(child)
     for bundle in bundles:
+        if not (Path(bundle) / 'Info.plist').is_file():
+            raise ValueError(
+                f'Incomplete iOS test result bundle: {Path(bundle).name}. '
+                'The test run may have timed out or been interrupted; inspect the test log.')
         data = json.loads(subprocess.check_output([
             'xcrun', 'xcresulttool', 'get', 'test-results', 'tests', '--path', bundle, '--format', 'json']))
         for node in data['testNodes']:
@@ -45,7 +49,10 @@ def main():
     parser.add_argument('results', nargs='+')
     args = parser.parse_args()
     manifest = json.loads(Path(__file__).with_name('coverage.json').read_text())
-    results = ios_results(args.results) if args.platform == 'ios' else android_results(args.results[0])
+    try:
+        results = ios_results(args.results) if args.platform == 'ios' else android_results(args.results[0])
+    except ValueError as error:
+        parser.exit(1, f'{error}\n')
     missing = missing_tests(manifest, args.platform, args.tier, results)
     if missing:
         parser.exit(1, 'Required payment tests missing, skipped, or failed:\n' + '\n'.join(missing) + '\n')

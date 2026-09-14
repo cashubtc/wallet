@@ -3,6 +3,14 @@ import XCTest
 /// Full app journeys against the local FakeWallet mint started by CI.
 /// Setup itself follows onboarding; all money-moving operations use real CDK.
 final class WalletLifecycleUITests: UITestBase {
+    override func setUpWithError() throws {
+        // These journeys include onboarding, live mint settlement, and wallet
+        // relaunches. Keep a bound without killing a successful round trip as
+        // it reaches its final balance assertion on slower hosted runners.
+        executionTimeAllowance = 180
+        try super.setUpWithError()
+    }
+
     func testAddDuplicateSwitchAndRefuseMultiUnitRemovalPersists() {
         createWalletWithMint()
         tapTab("Mints")

@@ -199,8 +199,13 @@ the multi-currency UI journey; the historical profile name is used by both apps.
 8. Uploads test results and both mint logs on failure
 
 UI tests run once so first-attempt failures remain visible. The UI step has a
-30-minute bound inside the 45-minute job, leaving time for cleanup and failed
+40-minute bound inside the 60-minute job, leaving time for cleanup and failed
 test diagnostics; duration depends on hosted-runner load and cache state.
+Long wallet lifecycle journeys have a three-minute per-test allowance. UI test
+output is streamed directly so failures remain visible if the job is interrupted.
+Fresh test launches clear App Lock before initialization; persistence relaunches
+keep it. The existing disabled-animation flag also holds animated QR codes on
+their initial frame so accessibility queries can settle during clipboard journeys.
 
 ## Manual Testing
 
