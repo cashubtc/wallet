@@ -528,6 +528,8 @@ class WalletManager(
                 // A live report is authoritative — including a reported-empty
                 // list (the mint dropped a rail); only an unknown (unfetched)
                 // value keeps the previously stored one.
+                mintMethodSettings = fetched.mintMethodSettings ?: mint.mintMethodSettings,
+                meltMethodSettings = fetched.meltMethodSettings ?: mint.meltMethodSettings,
                 supportedMintMethods = fetched.supportedMintMethods ?: mint.supportedMintMethods,
                 supportedMeltMethods = fetched.supportedMeltMethods ?: mint.supportedMeltMethods,
                 // Live NUT-04 advertisement is authoritative, including false
@@ -846,6 +848,9 @@ class WalletManager(
 
     override suspend fun createMeltQuote(request: String, amountSats: Long?, preferredMintURL: String?): MeltQuoteInfo =
         withLoadingResult { gateway.createMeltQuote(request, amountSats, preferredMintURL) }
+
+    suspend fun createCustomMeltQuote(method: PaymentMethodKind, request: String, amount: Long, mintUrl: String, unit: String): MeltQuoteInfo =
+        withLoadingResult { gateway.createCustomMeltQuote(method, request, amount, mintUrl, unit) }
 
     override suspend fun meltTokens(quoteId: String, mintUrl: String?): MeltPaymentResult =
         withLoadingResult {

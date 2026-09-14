@@ -4,7 +4,6 @@ import com.cashu.me.Core.mintQuoteLocalStorageExpiry
 import com.cashu.me.Models.PaymentMethodKind
 import org.cashudevkit.Amount as CdkAmount
 import org.cashudevkit.MintQuote as CdkMintQuote
-import org.cashudevkit.PaymentMethod as CdkPaymentMethod
 
 internal fun CdkMintQuote.withLocalMintQuoteMetadata(
     method: PaymentMethodKind,
@@ -27,17 +26,13 @@ internal fun CdkMintQuote.preservingLocalMetadataFrom(existingQuote: CdkMintQuot
     } else {
         expiry
     }
-    val paymentMethod = if (paymentMethod.isUnknownCustomMethod()) {
-        existingQuote.paymentMethod
-    } else {
-        paymentMethod
-    }
 
     return copy(
         request = request,
         amount = amount,
         expiry = expiry,
-        paymentMethod = paymentMethod,
+        // A quote's method is fixed when it is created, including custom IDs.
+        paymentMethod = existingQuote.paymentMethod,
         estimatedBlocks = estimatedBlocks ?: existingQuote.estimatedBlocks,
         secretKey = secretKey ?: existingQuote.secretKey,
         usedByOperation = usedByOperation ?: existingQuote.usedByOperation,
@@ -63,6 +58,3 @@ private fun CdkMintQuote.localMintQuoteAmount(
 
     return CdkAmount(resolvedAmount)
 }
-
-private fun CdkPaymentMethod.isUnknownCustomMethod(): Boolean =
-    this is CdkPaymentMethod.Custom && PaymentMethodKind.fromRaw(method) == null

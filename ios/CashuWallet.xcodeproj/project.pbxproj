@@ -189,6 +189,7 @@
 		T2B0000000000012 /* AsciiFieldTerrainTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T1B0000000000012 /* AsciiFieldTerrainTests.swift */; };
 		T2B0000000000013 /* AsciiFieldErosionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T1B0000000000013 /* AsciiFieldErosionTests.swift */; };
 		T2B0000000000014 /* MintQuoteDomainTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T1B0000000000014 /* MintQuoteDomainTests.swift */; };
+		T2B0000000000015 /* CustomPaymentMethodTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T1B0000000000015 /* CustomPaymentMethodTests.swift */; };
 		T2B0000000000100 /* ConnectMintContextTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T1B0000000000100 /* ConnectMintContextTests.swift */; };
 		F9B9C2789923138C562B8CBF /* StoredWalletAccount.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DDA5FB4E01D8EAEC9BB97FA /* StoredWalletAccount.swift */; };
 		881794875F3E0162F335D0D7 /* StoredWalletAccountTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9804DC8F57E0384EDE3B390B /* StoredWalletAccountTests.swift */; };
@@ -397,6 +398,7 @@
 		T1B0000000000012 /* AsciiFieldTerrainTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AsciiFieldTerrainTests.swift; path = CashuWalletTests/AsciiFieldTerrainTests.swift; sourceTree = "<group>"; };
 		T1B0000000000013 /* AsciiFieldErosionTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AsciiFieldErosionTests.swift; path = CashuWalletTests/AsciiFieldErosionTests.swift; sourceTree = "<group>"; };
 		T1B0000000000014 /* MintQuoteDomainTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MintQuoteDomainTests.swift; path = CashuWalletTests/MintQuoteDomainTests.swift; sourceTree = "<group>"; };
+		T1B0000000000015 /* CustomPaymentMethodTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CustomPaymentMethodTests.swift; path = CashuWalletTests/CustomPaymentMethodTests.swift; sourceTree = "<group>"; };
 		T1B0000000000100 /* ConnectMintContextTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ConnectMintContextTests.swift; path = CashuWalletTests/ConnectMintContextTests.swift; sourceTree = "<group>"; };
 		5DDA5FB4E01D8EAEC9BB97FA /* StoredWalletAccount.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoredWalletAccount.swift; sourceTree = "<group>"; };
 		9804DC8F57E0384EDE3B390B /* StoredWalletAccountTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CashuWalletTests/StoredWalletAccountTests.swift; sourceTree = "<group>"; };
@@ -449,6 +451,7 @@
 				T1B0000000000002 /* WalletStoreTests.swift */,
 				T1B0000000000003 /* MintServiceTests.swift */,
 				T1B0000000000014 /* MintQuoteDomainTests.swift */,
+				T1B0000000000015 /* CustomPaymentMethodTests.swift */,
 				T1B0000000000004 /* TransactionServiceTests.swift */,
 				T1B0000000000005 /* NIP44Tests.swift */,
 				T1B0000000000006 /* TokenServiceTests.swift */,
@@ -1063,6 +1066,7 @@
 				T2B0000000000002 /* WalletStoreTests.swift in Sources */,
 				T2B0000000000003 /* MintServiceTests.swift in Sources */,
 				T2B0000000000014 /* MintQuoteDomainTests.swift in Sources */,
+				T2B0000000000015 /* CustomPaymentMethodTests.swift in Sources */,
 				T2B0000000000004 /* TransactionServiceTests.swift in Sources */,
 				T2B0000000000005 /* NIP44Tests.swift in Sources */,
 				T2B0000000000006 /* TokenServiceTests.swift in Sources */,

@@ -105,7 +105,8 @@ internal object MintQuoteSchedulePolicy {
         // Deposits seen before an on-chain quote expires can confirm later.
         val expiredInvoice = quote.paymentMethod == PaymentMethodKind.Bolt11 && expired
         val complete = !reusable && (
-            expiredInvoice || quote.state == MintQuoteState.Issued || quote.hasSettledPayment
+            expiredInvoice || quote.hasSettledPayment ||
+                (!quote.paymentMethod.isCustom && quote.state == MintQuoteState.Issued)
         )
         val age = (nowEpochMillis - record.firstObservedAtEpochMillis).coerceAtLeast(0)
         val nextInterval = if (age < RECENT_QUOTE_WINDOW_MS) {

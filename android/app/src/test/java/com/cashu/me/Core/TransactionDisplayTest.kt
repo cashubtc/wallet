@@ -182,10 +182,9 @@ class TransactionDisplayTest {
                     val tx = transaction(kind = kind, type = direction,
                         token = if (kind == TransactionKind.Ecash) "cashu-token" else null,
                         invoice = if (kind == TransactionKind.Ecash) null else "one-shot-request",
-                    ).copy(status = status)
-                    val expected = status == TransactionStatus.Pending &&
-                        if (kind == TransactionKind.Ecash) direction == TransactionType.Outgoing
-                        else true
+                    ).copy(status = status, quoteId = if (kind == TransactionKind.Custom) "quote-id" else null)
+                    val expected = kind == TransactionKind.Custom || (status == TransactionStatus.Pending &&
+                        if (kind == TransactionKind.Ecash) direction == TransactionType.Outgoing else true)
                     assertEquals("$kind $direction $status", expected, TransactionDisplay.showsQr(tx))
                 }
             }

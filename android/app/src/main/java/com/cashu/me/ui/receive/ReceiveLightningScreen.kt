@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Bolt
+import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.CurrencyBitcoin
 import androidx.compose.material.icons.outlined.IosShare
 import androidx.compose.material.icons.outlined.Refresh
@@ -105,6 +106,7 @@ import com.cashu.me.Models.MintQuoteRetryState
 import com.cashu.me.Models.MintQuoteState
 import com.cashu.me.Models.PaymentMethodKind
 import com.cashu.me.ui.components.AmountEntryHero
+import com.cashu.me.ui.components.QuoteAmountEntry
 import com.cashu.me.ui.components.AmountFlipDisplay
 import com.cashu.me.ui.components.AmountText
 import com.cashu.me.ui.components.CashuTextField
@@ -169,12 +171,14 @@ private fun receiveRequestHeaderTitle(method: PaymentMethodKind): String = when 
     PaymentMethodKind.Bolt11 -> "Lightning Invoice"
     PaymentMethodKind.Bolt12 -> "Reusable Invoice"
     PaymentMethodKind.Onchain -> "Bitcoin Address"
+    else -> method.displayName
 }
 
 private fun receiveRequestFailureTitle(method: PaymentMethodKind): String = when (method) {
     PaymentMethodKind.Bolt11,
     PaymentMethodKind.Bolt12 -> "Couldn't Create Invoice"
     PaymentMethodKind.Onchain -> "Couldn't Create Address"
+    else -> "Couldn't Create Request"
 }
 
 /** Defensive cap for the payer-facing BOLT12 offer description. */
@@ -236,8 +240,6 @@ fun ReceiveLightningScreen(
     var methodPickerOpen by remember { mutableStateOf(false) }
 
     val activeMint = walletState.activeMint
-    val supportedMethods = activeMint?.supportedMintMethods?.ifEmpty { listOf(PaymentMethodKind.Bolt11) }
-        ?: listOf(PaymentMethodKind.Bolt11)
     // Fail closed: only mints that advertised NUT-04 bolt12 description=true
     // get a Description row / description minting.
     val mintSupportsBolt12Description = activeMint?.supportsBolt12MintDescription == true
@@ -248,6 +250,7 @@ fun ReceiveLightningScreen(
     } else {
         activeMint?.resolvedMintUnit(selectedReceiveUnit) ?: "sat"
     }
+    val supportedMethods = activeMint?.mintMethods(effectiveUnit) ?: listOf(PaymentMethodKind.Bolt11)
     val currency = CurrencyRegistry.currencyForMintUnit(effectiveUnit)
     val isSatUnit = effectiveUnit.equals("sat", ignoreCase = true)
     val amountEntryContext = ReceiveAmountEntry.context(
@@ -486,10 +489,10 @@ fun ReceiveLightningScreen(
         }
     }
 
-    LaunchedEffect(activeMint) {
-        selectedReceiveUnit = null
+    LaunchedEffect(activeMint?.url) { selectedReceiveUnit = null }
+    LaunchedEffect(supportedMethods) {
         if (method !in supportedMethods) {
-            val fallback = supportedMethods.first()
+            val fallback = supportedMethods.firstOrNull() ?: return@LaunchedEffect
             // BOLT12-only (or on-chain-only) mints must land on the amountless
             // path, not a keypad that can't create without an amount.
             applyMethodOption(fallback)
@@ -591,8 +594,11 @@ fun ReceiveLightningScreen(
         ) {
         SheetHeader(
             title = when (val current = face) {
-                ReceiveLnFace.Input -> "Receive"
-                is ReceiveLnFace.Display -> receiveRequestHeaderTitle(current.quote.paymentMethod)
+                ReceiveLnFace.Input -> if (method.isCustom) activeMint?.methodName(method, effectiveUnit) ?: method.displayName else "Receive"
+                is ReceiveLnFace.Display -> if (current.quote.paymentMethod.isCustom)
+                    walletState.mints.firstOrNull { it.url == current.quote.mintUrl }
+                        ?.methodName(current.quote.paymentMethod, current.quote.unit) ?: current.quote.paymentMethod.displayName
+                    else receiveRequestHeaderTitle(current.quote.paymentMethod)
                 is ReceiveLnFace.Failure -> receiveRequestHeaderTitle(current.retry.method)
             },
             // Input: close X (same as Receive Ecash / Cashu Request). Display:
@@ -674,7 +680,7 @@ fun ReceiveLightningScreen(
                         }
                     } else {
                         IconButton(onClick = {
-                            context.shareText(current.quote.request, subject = "Payment request")
+                            context.shareText(if (current.quote.paymentMethod.isCustom) current.quote.id else current.quote.request, subject = "Payment request")
                         }) {
                             ToolbarIcon(Icons.Outlined.IosShare, contentDescription = "Share")
                         }
@@ -688,7 +694,7 @@ fun ReceiveLightningScreen(
                             // (iOS .contentTransition(.symbolEffect(.replace))).
                             IconSwap(
                                 icon = method.menuIcon,
-                                contentDescription = "Receive method: ${method.friendlyTitle}, ${method.friendlyDescriptor}",
+                                contentDescription = "Receive method: ${activeMint?.methodName(method, effectiveUnit) ?: method.friendlyTitle}, ${method.friendlyDescriptor}",
                                 iconSize = CashuTheme.iconSizes.toolbar,
                             )
                         }
@@ -721,7 +727,9 @@ fun ReceiveLightningScreen(
                     // Amountless rails auto-create (BOLT12 reusable / on-chain).
                     // iOS shows a dedicated "Creating…" overlay instead of the
                     // keypad while that request is in flight.
-                    if (creating && !method.requiresMintAmount) {
+                    if (supportedMethods.isEmpty()) {
+                        InlineNotice(text = "This mint does not offer payments in the selected unit.", severity = NoticeSeverity.Caution)
+                    } else if (creating && !method.requiresMintAmount) {
                         CreatingOverlay(method = method)
                     } else {
                         InputFace(
@@ -791,6 +799,7 @@ fun ReceiveLightningScreen(
                             PaymentMethodKind.Bolt11 -> 5_000L to 15_000L
                             PaymentMethodKind.Bolt12 -> 5_000L to 15_000L
                             PaymentMethodKind.Onchain -> 30_000L to 30_000L
+                            else -> 5_000L to 15_000L
                         }
                         var intervalMs = initialMs
                         while (true) {
@@ -805,7 +814,7 @@ fun ReceiveLightningScreen(
                             // payment (the mint never marks them terminally
                             // paid), so keep polling for the next one.
                             val keepPolling = refreshed.paymentMethod == PaymentMethodKind.Bolt12 ||
-                                (refreshed.paymentMethod == PaymentMethodKind.Onchain && !refreshed.hasSettledPayment) ||
+                                ((refreshed.paymentMethod == PaymentMethodKind.Onchain || refreshed.paymentMethod.isCustom) && !refreshed.hasSettledPayment) ||
                                 shouldPollMintQuote(
                                     state = refreshed.state,
                                     expiryEpochSeconds = refreshed.expiryEpochSeconds,
@@ -1038,7 +1047,7 @@ fun ReceiveLightningScreen(
                         } else {
                             "View transaction in block explorer"
                         },
-                        onCopy = { clipboard.setText(AnnotatedString(liveQuote.request)) },
+                        onCopy = { clipboard.setText(AnnotatedString(if (liveQuote.paymentMethod.isCustom) liveQuote.id else liveQuote.request)) },
                         onRetryPendingMint = { reconcileDisplayedQuote(force = true) },
                         onEditReusableAmount = if (
                             liveQuote.paymentMethod == PaymentMethodKind.Bolt12
@@ -1113,6 +1122,7 @@ fun ReceiveLightningScreen(
         ReceiveMethodPickerSheet(
             methods = supportedMethods,
             selectedMethod = method,
+            methodName = { activeMint?.methodName(it, effectiveUnit) ?: it.friendlyTitle },
             onSelect = { kind ->
                 methodPickerOpen = false
                 applyMethodOption(kind)
@@ -1221,15 +1231,7 @@ internal fun InputFace(
     errorText: String?,
     onCreate: () -> Unit,
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = CashuTheme.spacing.comfortable)
-            .imePadding(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Spacer(Modifier.height(CashuTheme.spacing.default))
-        Spacer(Modifier.weight(1f))
+    QuoteAmountEntry(hero = {
         if (selectedMethod == PaymentMethodKind.Onchain) {
             Text(
                 text = "ON-CHAIN",
@@ -1274,8 +1276,7 @@ internal fun InputFace(
             Spacer(Modifier.height(CashuTheme.spacing.default))
             InlineNotice(text = errorText, severity = NoticeSeverity.Error)
         }
-        Spacer(Modifier.weight(1f))
-        // Under the amount, over the keypad — the same slot the send flows use.
+    }, details = {
         if (mint != null) {
             MintSelectorRow(
                 direction = MintSelectorDirection.Destination,
@@ -1287,6 +1288,7 @@ internal fun InputFace(
             )
             Spacer(Modifier.height(CashuTheme.spacing.snug))
         }
+    }, footer = {
         NumberPadFooter(
             amount = amount,
             onAmountChange = onAmountChange,
@@ -1296,7 +1298,7 @@ internal fun InputFace(
             buttonEnabled = !creating && (!selectedMethod.requiresMintAmount || amountValid),
             buttonLoading = creating,
         )
-    }
+    })
 }
 
 private val PaymentMethodKind.menuIcon
@@ -1304,6 +1306,7 @@ private val PaymentMethodKind.menuIcon
         PaymentMethodKind.Bolt11 -> Icons.Outlined.Bolt
         PaymentMethodKind.Bolt12 -> Icons.Outlined.Repeat
         PaymentMethodKind.Onchain -> Icons.Outlined.CurrencyBitcoin
+        else -> Icons.Outlined.Payments
     }
 
 private val PaymentMethodKind.copyActionTitle: String
@@ -1311,6 +1314,7 @@ private val PaymentMethodKind.copyActionTitle: String
         PaymentMethodKind.Bolt11 -> "Copy invoice"
         PaymentMethodKind.Bolt12 -> "Copy invoice"
         PaymentMethodKind.Onchain -> "Copy address"
+        else -> "Copy quote ID"
     }
 
 @Composable
@@ -1357,7 +1361,7 @@ private fun DisplayFace(
             modifier = Modifier.weight(1f),
             hero = { qrSize ->
                 QrCard(
-                    content = quote.request,
+                    content = if (quote.paymentMethod.isCustom) quote.id else quote.request,
                     size = qrSize,
                     shareSubject = "Payment request",
                     staticOnly = true,
@@ -1369,6 +1373,13 @@ private fun DisplayFace(
                 )
             },
         ) {
+            if (quote.paymentMethod.isCustom) {
+                com.cashu.me.ui.components.QuoteReferenceDetails(quote.id)
+                if (quote.amountPaid > 0) {
+                    InspectorRow(label = "Received", value = com.cashu.me.Core.Protocols.CurrencyAmount(
+                        quote.amountPaid, CurrencyRegistry.currencyForMintUnit(quote.unit)).formatted())
+                }
+            }
             if (amountLabel != null) {
                 GeneratedInvoiceAmount(
                     amount = quote.amount ?: 0L,
@@ -1489,6 +1500,7 @@ internal fun GeneratedInvoiceAmount(
                 PaymentMethodKind.Bolt11 -> "Invoice amount"
                 PaymentMethodKind.Bolt12 -> "Offer amount"
                 PaymentMethodKind.Onchain -> "Amount"
+                else -> "Amount"
             },
         )
     } else {
@@ -1805,6 +1817,7 @@ internal fun ReusableDescriptionEditSheet(
 private fun ReceiveMethodPickerSheet(
     methods: List<PaymentMethodKind>,
     selectedMethod: PaymentMethodKind,
+    methodName: (PaymentMethodKind) -> String,
     onSelect: (PaymentMethodKind) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -1840,7 +1853,7 @@ private fun ReceiveMethodPickerSheet(
                     )
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = kind.friendlyTitle,
+                            text = methodName(kind),
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.Medium,
                         )

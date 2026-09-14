@@ -154,7 +154,7 @@ extension WalletManager {
         var unsettledOnchainQuoteIDs = Set<String>()
         if let db {
             do {
-                let quotes = try await db.getUnissuedMintQuotes()
+                let quotes = try await db.getRecoverableMintQuotes()
                 quoteIDs.formUnion(quotes.map(\.id))
                 unsettledOnchainQuoteIDs.formUnion(quotes.filter {
                     PaymentMethodKind.from($0.paymentMethod) == .onchain && $0.amountIssued.value == 0
