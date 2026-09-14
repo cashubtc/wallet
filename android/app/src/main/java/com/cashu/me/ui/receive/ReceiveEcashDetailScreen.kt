@@ -38,6 +38,7 @@ import androidx.compose.ui.platform.testTag
 import kotlinx.coroutines.launch
 import com.cashu.me.Core.AmountDisplayPrimary
 import com.cashu.me.Core.AmountFormatter
+import com.cashu.me.Core.AmountParts
 import com.cashu.me.Core.PriceService
 import com.cashu.me.Core.Protocols.CurrencyAmount
 import com.cashu.me.Core.Protocols.CurrencyRegistry
@@ -45,7 +46,7 @@ import com.cashu.me.Core.SettingsManager
 import com.cashu.me.Core.WalletManager
 import com.cashu.me.Models.PendingReceiveToken
 import com.cashu.me.ui.components.AmountFlipDisplay
-import com.cashu.me.ui.components.AmountText
+import com.cashu.me.ui.components.AmountHero
 import com.cashu.me.ui.components.GhostButton
 import com.cashu.me.ui.components.InlineNotice
 import com.cashu.me.ui.components.NoticeSeverity
@@ -55,7 +56,7 @@ import com.cashu.me.ui.components.PrimaryButton
 import com.cashu.me.ui.components.TextButtonContext
 import com.cashu.me.ui.components.ToolbarIcon
 import com.cashu.me.ui.theme.CashuTheme
-import com.cashu.me.ui.theme.withMonoDigits
+import com.cashu.me.ui.theme.AmountScale
 import com.cashu.me.ui.testing.UiTestTags
 
 /**
@@ -255,16 +256,21 @@ private fun ConfirmContent(
                     btcPrice = fiatPrice,
                     currencyCode = currencyCode,
                     useBitcoinSymbol = useBitcoinSymbol,
+                    primaryScale = AmountScale.Hero,
+                    modifier = Modifier.padding(horizontal = CashuTheme.spacing.page),
                 )
             } else {
                 // Non-sat units render plainly in their own currency — eur is
                 // already fiat, nothing to flip to (iOS parity).
-                AmountText(
-                    text = CurrencyAmount(
-                        netAmount,
-                        CurrencyRegistry.currencyForMintUnit(info.unit),
-                    ).formatted(),
-                    style = MaterialTheme.typography.displayMedium.withMonoDigits(),
+                AmountHero(
+                    parts = AmountParts.parse(
+                        CurrencyAmount(
+                            netAmount,
+                            CurrencyRegistry.currencyForMintUnit(info.unit),
+                        ).formatted(),
+                    ),
+                    scale = AmountScale.Hero,
+                    modifier = Modifier.padding(horizontal = CashuTheme.spacing.page),
                 )
             }
         }

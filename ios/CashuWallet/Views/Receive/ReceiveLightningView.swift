@@ -471,7 +471,7 @@ struct ReceiveLightningView: View {
             Spacer()
 
             // Under the amount, over the keypad — the same slot the send flows use.
-            if let mint = walletManager.activeMint {
+            if !isCreatingRequest, let mint = walletManager.activeMint {
                 mintSelector(mint: mint)
                     // Aligned to the number pad below, not the CTA.
                     .padding(.horizontal, NumberPadMetrics.gutter)

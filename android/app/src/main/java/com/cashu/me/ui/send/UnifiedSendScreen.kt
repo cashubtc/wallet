@@ -607,6 +607,12 @@ fun UnifiedSendScreen(
     // Amount → Input). Swallow back only while the melt is in flight.
     BackHandler(enabled = status is SendStatus.Sending) {}
 
+    // Quote preparation uses the same full-screen status layout as submission.
+    // Keep operation state separate so cancelling a quote remains safe.
+    val quotePending = step == SendStep.Confirm && locked is LockedRail.Melt &&
+        meltQuote == null && quoteError == null
+    val visibleStatus = status ?: if (quotePending) SendStatus.Sending(SendPaymentDetails(emptyList())) else null
+
     // Compact while the input face is up so Scan/Ecash/Tap sit near the thumb;
     // amount/confirm/status need the full sheet for the keypad and pay scaffold.
     val prefersCompactSheet = status == null && step == SendStep.Input
@@ -627,7 +633,7 @@ fun UnifiedSendScreen(
         // spinner morphs into the check/X in place; the form ↔ terminal swap
         // itself fades through instead of hard-cutting.
         AnimatedContent(
-            targetState = status,
+            targetState = visibleStatus,
             modifier = if (status == null && step == SendStep.Input) {
                 Modifier.fillMaxWidth()
             } else {
@@ -901,7 +907,7 @@ private fun SendStatusTerminal(
             is SendStatus.Failed -> PaymentStatusPhase.Failure
         },
         title = when (status) {
-            is SendStatus.Sending -> "Sending payment…"
+            is SendStatus.Sending -> "Processing…"
             is SendStatus.Sent -> if (settlementPending) "Payment processing" else "Payment sent"
             is SendStatus.Failed -> status.message.title ?: "Payment failed"
         },
@@ -1351,7 +1357,7 @@ private fun ConfirmFace(
                     formatter = formatter,
                 )
             }
-            if (mint != null) {
+            if (!quoteLoading && mint != null) {
                 Spacer(Modifier.height(CashuTheme.spacing.snug))
                 AmountEntryMintSelector(
                     direction = MintSelectorDirection.Source,

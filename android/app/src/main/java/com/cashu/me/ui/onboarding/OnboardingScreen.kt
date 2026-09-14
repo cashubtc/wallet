@@ -22,6 +22,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -77,6 +78,8 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalInspectionMode
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -304,7 +307,7 @@ internal fun OnboardingScreen(
     fun handleFirstMintContinue(mnemonic: String) {
         if (firstMint.customDraft.input.isNotBlank()) {
             firstMint.commitCustomUrl()
-            if (firstMint.customDraft.error != null) return
+            return
         }
         if (firstMint.selected.isEmpty()) return
         finishCreate(mnemonic, firstMint.orderedSelection())
@@ -388,7 +391,7 @@ internal fun OnboardingScreen(
 
         is OnboardingStep.FirstMint -> OnboardingChassisModel(
             primary = ChassisAction(
-                label = "Continue",
+                label = if (firstMint.customDraft.input.isBlank()) "Continue" else "Add mint",
                 onClick = { handleFirstMintContinue(current.mnemonic) },
                 enabled = firstMint.canContinue && !finishing,
                 loading = finishing,
@@ -1404,66 +1407,79 @@ private fun SeedGrid(words: List<String>, revealed: Boolean) {
         fontFamily = CashuTheme.fonts.mono,
         fontWeight = FontWeight.Medium,
     )
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .then(
-                if (revealed) {
-                    Modifier.semantics {
-                        semanticsTestTag = UiTestTags.SeedPhrase
-                        isTraversalGroup = true
-                    }
-                } else {
-                    Modifier.clearAndSetSemantics {
-                        semanticsTestTag = UiTestTags.HiddenSeedPhrase
-                    }
-                },
-            )
-            .then(if (blurRadius > 0.05f) Modifier.blur(blurRadius.dp) else Modifier),
-        verticalArrangement = Arrangement.spacedBy(SeedGridRowGap),
-    ) {
-        words.chunked(3).forEachIndexed { rowIndex, rowWords ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(SeedGridColumnGap),
-            ) {
-                rowWords.forEachIndexed { columnIndex, word ->
-                    val number = rowIndex * 3 + columnIndex + 1
-                    Row(
-                        modifier = Modifier
-                            .weight(1f)
-                            .then(
-                                if (revealed) {
-                                    Modifier.clearAndSetSemantics {
-                                        contentDescription = "$number. $word"
-                                        traversalIndex = number.toFloat()
-                                    }
+    val textMeasurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val indexWidth = with(density) {
+        textMeasurer.measure("00", indexStyle).size.width.toDp()
+    }.coerceAtLeast(SeedIndexWidth)
+    val wordWidth = with(density) {
+        textMeasurer.measure("m".repeat(maxOf(8, words.maxOfOrNull { it.length } ?: 8)), wordStyle).size.width.toDp()
+    }
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val cellWidth = indexWidth + CashuTheme.spacing.micro + wordWidth
+        val columns = ((maxWidth + SeedGridColumnGap) / (cellWidth + SeedGridColumnGap)).toInt().coerceIn(1, 3)
+        val scale = (maxWidth / cellWidth).coerceAtMost(1f)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(
+                    if (revealed) {
+                        Modifier.semantics {
+                            semanticsTestTag = UiTestTags.SeedPhrase
+                            isTraversalGroup = true
+                        }
+                    } else {
+                        Modifier.clearAndSetSemantics {
+                            semanticsTestTag = UiTestTags.HiddenSeedPhrase
+                        }
+                    },
+                )
+                .then(if (blurRadius > 0.05f) Modifier.blur(blurRadius.dp) else Modifier),
+            verticalArrangement = Arrangement.spacedBy(SeedGridRowGap),
+        ) {
+            words.chunked(columns).forEachIndexed { rowIndex, rowWords ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(SeedGridColumnGap),
+                ) {
+                    rowWords.forEachIndexed { columnIndex, word ->
+                        val number = rowIndex * columns + columnIndex + 1
+                        Row(
+                            modifier = Modifier
+                                .weight(1f)
+                                .then(
+                                    if (revealed) {
+                                        Modifier.clearAndSetSemantics {
+                                            contentDescription = "$number. $word"
+                                            traversalIndex = number.toFloat()
+                                        }
+                                    } else {
+                                        Modifier
+                                    },
+                                ),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.micro),
+                        ) {
+                            Text(
+                                text = "%02d".format(number),
+                                style = indexStyle.copy(fontSize = indexStyle.fontSize * scale),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f * fade),
+                                textAlign = TextAlign.End,
+                                modifier = Modifier.width(indexWidth * scale),
+                            )
+                            Text(
+                                text = if (revealed) word else "••••••",
+                                style = wordStyle.copy(fontSize = wordStyle.fontSize * scale),
+                                color = if (revealed) {
+                                    MaterialTheme.colorScheme.onSurface
                                 } else {
-                                    Modifier
+                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f * fade)
                                 },
-                            ),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.micro),
-                    ) {
-                        Text(
-                            text = "%02d".format(number),
-                            style = indexStyle,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f * fade),
-                            textAlign = TextAlign.End,
-                            modifier = Modifier.width(SeedIndexWidth),
-                        )
-                        Text(
-                            text = if (revealed) word else "••••••",
-                            style = wordStyle,
-                            color = if (revealed) {
-                                MaterialTheme.colorScheme.onSurface
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f * fade)
-                            },
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f),
-                        )
+                                maxLines = 1,
+                                softWrap = false,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
                     }
                 }
             }

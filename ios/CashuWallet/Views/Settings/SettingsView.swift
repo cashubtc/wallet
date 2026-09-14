@@ -1391,7 +1391,6 @@ struct BackupView: View {
     @State private var showWords = false
     @State private var contentHeight: CGFloat = 0
 
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 10), count: 3)
 
     var body: some View {
         let words = walletManager.getMnemonicWords()
@@ -1408,29 +1407,7 @@ struct BackupView: View {
 
             if showWords {
                 ScrollView {
-                    LazyVGrid(columns: columns, spacing: 10) {
-                        ForEach(Array(words.enumerated()), id: \.offset) { index, word in
-                            HStack(spacing: 6) {
-                                Text("\(index + 1).")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                                Text(word)
-                                    .font(.caption2.weight(.medium))
-                                    .fixedSize(horizontal: false, vertical: true)
-                                    .multilineTextAlignment(.leading)
-                                Spacer(minLength: 0)
-                            }
-                            .padding(.horizontal, 12)
-                            .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
-                            .background(.quaternary.opacity(0.55), in: RoundedRectangle(cornerRadius: 12))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 12)
-                                    .stroke(Color(uiColor: .separator), lineWidth: 0.5)
-                            )
-                            .accessibilityElement(children: .combine)
-                            .accessibilityLabel("Word \(index + 1), \(word)")
-                        }
-                    }
+                    RecoveryWordGrid(words: words, boxed: true)
                 }
                 .frame(maxHeight: 260)
                 .transition(.opacity.combined(with: .move(edge: .bottom)))

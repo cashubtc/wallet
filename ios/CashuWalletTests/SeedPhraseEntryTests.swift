@@ -1,4 +1,5 @@
 import XCTest
+import SwiftUI
 @testable import CashuWallet
 
 /// The advance rule is the subtle part of word-by-word seed entry, so it is
@@ -12,6 +13,31 @@ final class SeedPhraseEntryTests: XCTestCase {
         var entry = SeedPhraseEntry()
         for word in words { entry.typed("\(word) ") }
         return entry
+    }
+
+    @MainActor
+    func testRecoveryGridFitsNarrowAndAccessibilityWidths() throws {
+        let words = ["abstract", "daughter", "elephant", "festival", "hospital", "illusion",
+                     "keyboard", "language", "material", "negative", "ordinary", "possible"]
+        for size in [DynamicTypeSize.large, .accessibility3] {
+            for scheme in [ColorScheme.light, .dark] {
+                let view = RecoveryWordGrid(words: words)
+                    .padding(20)
+                    .frame(width: 280)
+                    .environment(\.dynamicTypeSize, size)
+                    .environment(\.colorScheme, scheme)
+                    .background(scheme == .dark ? Color.black : Color.white)
+                let renderer = ImageRenderer(content: view)
+                renderer.scale = 2
+                let image = try XCTUnwrap(renderer.uiImage)
+                XCTAssertEqual(image.size.width, 280, accuracy: 0.5)
+                XCTAssertGreaterThan(image.size.height, 160)
+                let attachment = XCTAttachment(image: image)
+                attachment.name = "recovery-words-\(size)-\(scheme)"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
+        }
     }
 
     // MARK: - Committing

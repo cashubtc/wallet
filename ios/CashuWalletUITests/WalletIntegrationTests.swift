@@ -132,6 +132,40 @@ class LivePaymentUITestBase: UITestBase {
 }
 
 final class LiveCdkPaymentUITests: LivePaymentUITestBase {
+    func testQuoteAndPaymentUseSameProcessingLayout() throws {
+        createWalletWithMint()
+        receiveThroughUI()
+        let invoice = try fixtureCall("/sessions/" + fixtureSession + "/invoice", method: "POST", body: ["amount": 21])["invoice"] as! String
+        for path in ["/v1/melt/quote/bolt11", "/v1/melt/bolt11"] {
+            _ = try fixtureCall("/sessions/" + fixtureSession + "/faults", method: "POST", body: [
+                "method": "POST", "path": path, "action": "delay", "seconds": 15, "remaining": 1,
+            ])
+        }
+        tapWhenReady(app.buttons["wallet-action-send"])
+        let field = app.descendants(matching: .any).matching(identifier: "Address, invoice, or Cashu Request").firstMatch
+        tapWhenReady(field)
+        field.typeText(invoice)
+        let processing = app.staticTexts["Processing…"]
+        XCTAssertTrue(processing.waitForExistence(timeout: 10))
+        let quoteTitleTop = processing.frame.minY
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'From '")).firstMatch.exists)
+        let quoteCapture = XCTAttachment(screenshot: app.screenshot())
+        quoteCapture.name = "quote-processing"
+        quoteCapture.lifetime = .keepAlways
+        add(quoteCapture)
+
+        let pay = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Pay 21")).firstMatch
+        tapWhenReady(pay, timeout: 25)
+        XCTAssertTrue(processing.waitForExistence(timeout: 10))
+        XCTAssertEqual(processing.frame.minY, quoteTitleTop, accuracy: 1)
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'From '")).firstMatch.exists)
+        let paymentCapture = XCTAttachment(screenshot: app.screenshot())
+        paymentCapture.name = "payment-processing"
+        paymentCapture.lifetime = .keepAlways
+        add(paymentCapture)
+        XCTAssertTrue(app.staticTexts["Payment Sent!"].waitForExistence(timeout: 30))
+    }
+
     func testReceivePayAndRelaunch() throws { try receiveThenPayAndReopenHistory() }
 }
 

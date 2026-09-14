@@ -712,7 +712,7 @@ private fun InputFace(
         // The selector sits under the amount and over the keypad, not under the
         // toolbar: it qualifies the amount, so it reads as a setting on the way
         // to the action rather than a second header competing with the title.
-        if (activeMint != null) {
+        if (!sending && activeMint != null) {
             AmountEntryMintSelector(
                 direction = MintSelectorDirection.Source,
                 mint = activeMint,

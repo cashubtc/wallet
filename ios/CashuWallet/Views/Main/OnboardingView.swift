@@ -4,7 +4,6 @@ struct OnboardingView: View {
     @EnvironmentObject var walletManager: WalletManager
     @EnvironmentObject var handoff: OnboardingHandoffCoordinator
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ObservedObject private var nostrBackupService = NostrMintBackupService.shared
 
     @State private var currentStep: OnboardingStep = .welcome
@@ -481,7 +480,7 @@ struct OnboardingView: View {
         case .firstMint:
             return OnboardingChassisModel(
                 primary: OnboardingChassisAction(
-                    label: "Continue",
+                    label: customMintInput.isEmpty ? "Continue" : "Add mint",
                     isLoading: isAddingFirstMints,
                     isDisabled: (selectedMintUrls.isEmpty && customMintInput.isEmpty) || isAddingFirstMints,
                     accessibilityIdentifier: "onboarding-continue",
@@ -1213,33 +1212,7 @@ struct OnboardingView: View {
     }
 
     private func mnemonicWordsGrid(words: [String]) -> some View {
-        // Monospaced words with the number in tertiary. The card around the
-        // whole grid carries the containment (see The Seed Card Exception),
-        // so the words themselves stay quiet — no per-word material, no
-        // per-word background.
-        LazyVGrid(
-            columns: Array(
-                repeating: GridItem(.flexible(), spacing: 12),
-                count: dynamicTypeSize >= .accessibility3
-                    ? 1
-                    : (dynamicTypeSize.isAccessibilitySize ? 2 : 3)
-            ),
-            spacing: 14
-        ) {
-            ForEach(Array(words.enumerated()), id: \.offset) { index, word in
-                HStack(spacing: 6) {
-                    Text(String(format: "%02d", index + 1))
-                        .font(.system(.footnote, design: .monospaced))
-                        .foregroundStyle(.tertiary)
-                        .frame(width: 22, alignment: .trailing)
-
-                    Text(word)
-                        .font(.system(.body, design: .monospaced).weight(.medium))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-        }
+        RecoveryWordGrid(words: words)
     }
 
     // MARK: - First Mint Stage
@@ -1397,7 +1370,7 @@ struct OnboardingView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(customMintInput.isEmpty ? "Paste from clipboard" : "Add mint")
-            .accessibilityHint(customMintInput.isEmpty ? "Pastes mint URL from clipboard" : "Adds mint to restore list")
+            .accessibilityHint(customMintInput.isEmpty ? "Pastes mint URL from clipboard" : "Adds mint to the list")
             .accessibilityIdentifier("onboarding-commit-custom-mint")
         }
         .padding(.vertical, 14)
@@ -1434,7 +1407,7 @@ struct OnboardingView: View {
     private func continueFromFirstMint() {
         if !customMintInput.isEmpty {
             commitCustomMintInput()
-            guard customMintInput.isEmpty else { return }
+            return
         }
         guard !selectedMintUrls.isEmpty else { return }
         isAddingFirstMints = true

@@ -5,6 +5,8 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.accessibility.enableAccessibilityChecks
 import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -60,6 +62,20 @@ class MainActivityJourneyTest {
             .tapText("Mints")
             .awaitTag(UiTestTags.MintsScreen)
             .awaitText("Nutshell UI Test Mint")
+    }
+
+    @Test
+    fun addingCustomMintFromFooterDoesNotFinishOnboarding() {
+        launch(FixtureMode.EmptyWallet)
+        robot.completeCreateWalletToFirstMint()
+            .tapTag(UiTestTags.AddCustomMint)
+            .typeIntoTag(UiTestTags.CustomMintUrl, FakeWalletGateway.TestMintUrl)
+        compose.onNodeWithTag(UiTestTags.ContinueWithMint).assertTextEquals("Add mint")
+        robot.tapTag(UiTestTags.ContinueWithMint)
+            .awaitText("Nutshell UI Test Mint")
+        compose.onNodeWithTag(UiTestTags.ContinueWithMint).assertTextEquals("Continue")
+        compose.onNodeWithTag(UiTestTags.WalletScreen).assertDoesNotExist()
+        robot.tapTag(UiTestTags.ContinueWithMint).awaitTag(UiTestTags.WalletScreen)
     }
 
     @Test

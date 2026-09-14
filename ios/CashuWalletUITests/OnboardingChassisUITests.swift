@@ -325,4 +325,45 @@ final class OnboardingChassisUITests: UITestBase {
             "Tapping the top tick should jump back to word 1, got \(String(describing: rail.value))"
         )
     }
+
+    func testVerifiedSeedRemainsScrubbable() {
+        app.terminate()
+        app.launchEnvironment["UITEST_DISABLE_ANIMATIONS"] = "0"
+        app.launch()
+        tapWhenReady(app.buttons["Restore Wallet"], timeout: 30)
+        tapWhenReady(app.buttons["Use Seed Phrase"], timeout: 10)
+        let field = app.textFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        field.typeText(Array(repeating: "abandon", count: 11).joined(separator: " ") + " about ")
+        XCTAssertTrue(app.staticTexts["All 12 words verified."].waitForExistence(timeout: 5))
+        let rail = app.otherElements["Seed word progress"]
+        let top = rail.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.04))
+        let bottom = rail.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.96))
+        bottom.press(forDuration: 0.6, thenDragTo: top)
+        XCTAssertEqual(rail.value as? String, "Word 1 of 12")
+        XCTAssertEqual(field.value as? String, "abandon")
+        top.press(forDuration: 0.6, thenDragTo: bottom)
+        XCTAssertEqual(rail.value as? String, "Word 12 of 12")
+        XCTAssertEqual(field.value as? String, "about")
+        XCTAssertTrue(app.staticTexts["All 12 words verified."].exists)
+    }
+
+    func testAddingCustomMintStaysOnMintSelection() {
+        createWalletThroughSeed()
+        tapWhenReady(app.buttons["onboarding-add-custom-mint"])
+        let field = app.textFields["onboarding-custom-mint-field"]
+        tapWhenReady(field)
+        XCTAssertTrue(app.keyboards.element.waitForExistence(timeout: 10))
+        field.typeText(mintURL)
+        let action = app.buttons["onboarding-continue"]
+        XCTAssertEqual(action.label, "Add mint")
+        tapWhenReady(action)
+        XCTAssertTrue(action.waitForExistence(timeout: 5))
+        XCTAssertEqual(action.label, "Continue")
+        XCTAssertTrue(app.buttons["onboarding-skip-mint"].exists)
+        XCTAssertFalse(app.buttons["Wallet"].exists)
+        tapWhenReady(action)
+        waitForMainTab(timeout: 60)
+    }
+
 }

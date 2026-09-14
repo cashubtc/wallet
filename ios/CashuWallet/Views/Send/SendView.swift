@@ -257,7 +257,7 @@ struct SendView: View {
             // The selector sits under the amount and over the keypad, not under
             // the toolbar: it qualifies the amount, so it reads as a setting on
             // the way to the action rather than a second header.
-            if let mint = displaySendMint {
+            if !isGenerating, let mint = displaySendMint {
                 mintSelector(mint: mint)
                     // Aligned to the number pad below, not the CTA: the pad is
                     // the block this row reads against.
@@ -1327,6 +1327,11 @@ struct UnifiedSendView: View {
         statusPhase == nil && step == .input && connectMintRoute != .discover
     }
 
+    private var isLoadingMeltQuote: Bool {
+        guard step == .confirm, case .melt = locked else { return false }
+        return meltQuote == nil && errorMessage == nil
+    }
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
@@ -1336,7 +1341,7 @@ struct UnifiedSendView: View {
                 // content below it changes. (It used to be re-rendered inside
                 // confirm's header, which read as the row escaping upward and
                 // reappearing lower down.)
-                if let locked, step == .amount || step == .confirm, statusPhase == nil {
+                if let locked, step == .amount || step == .confirm, statusPhase == nil, !isLoadingMeltQuote {
                     toRow(locked)
                         .padding(.horizontal)
                         .padding(.top, 8)
@@ -1349,7 +1354,7 @@ struct UnifiedSendView: View {
                 }
 
                 Group {
-                    if let statusPhase {
+                    if let statusPhase = statusPhase ?? (isLoadingMeltQuote ? .processing : nil) {
                         // Single branch keeps the status screen's identity stable across
                         // processing → sent → failed, so PaymentStatusView owns the morph.
                         statusView(statusPhase)
@@ -1923,7 +1928,9 @@ struct UnifiedSendView: View {
                         SpinnerRing()
                             .transition(.opacity)
                     }
-                    confirmMintSelector(mint: meltQuote.flatMap(mintInfo(for:)) ?? activeMeltMint)
+                    if !quotePending {
+                        confirmMintSelector(mint: meltQuote.flatMap(mintInfo(for:)) ?? activeMeltMint)
+                    }
                 }
             } details: {
                 if let quote = meltQuote, shortQuote == nil {
@@ -3049,9 +3056,11 @@ struct MeltView: View {
                 if let paymentPhase {
                     statusView(paymentPhase)
                         .transition(.opacity)
-                } else if meltQuote != nil || isPreparingInitialQuote {
-                    // One branch for both loading (quote == nil) and confirmed — the fee
-                    // rows fill in place when the mint quote lands, no view swap.
+                } else if isGettingQuote || isPreparingInitialQuote {
+                    PaymentStatusView(details: [], phase: .processing, onDone: {}, onRetry: {})
+                        .transition(.opacity)
+                } else if meltQuote != nil {
+                    // The resolved quote presents the amount and editable choices.
                     quoteConfirmView(quote: meltQuote)
                         .transition(reduceMotion ? .opacity : .asymmetric(
                             insertion: .move(edge: .trailing).combined(with: .opacity),
@@ -3277,7 +3286,7 @@ struct MeltView: View {
 
     private var requestInputView: some View {
         VStack(spacing: 0) {
-            if let mint = displayMeltMint {
+            if !isGettingQuote && !isPaying, let mint = displayMeltMint {
                 AmountEntryMintSelector(
                     direction: .source,
                     mint: mint,
@@ -3478,7 +3487,7 @@ struct MeltView: View {
                     sats: displayAmount,
                     primary: $settings.amountDisplayPrimary
                 )
-                if let mint = selectorMint {
+                if !isLoading && !isPaying, let mint = selectorMint {
                     AmountEntryMintSelector(
                         direction: .source,
                         mint: mint,

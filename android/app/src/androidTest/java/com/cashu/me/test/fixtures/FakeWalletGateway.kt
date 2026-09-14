@@ -51,6 +51,8 @@ class FakeWalletGateway(
         private set
     var lastSentAmount: Long? = null
         private set
+    var beforeMeltQuote: suspend () -> Unit = {}
+    var beforeMeltPayment: suspend () -> Unit = {}
     var pendingSendClaimed = false
     private val transactions = initialTransactions.toMutableList()
     private val mintQuotes = linkedMapOf<String, MutableStateFlow<MintQuoteInfo>>()
@@ -265,6 +267,7 @@ class FakeWalletGateway(
         amountSats: Long?,
         preferredMintURL: String?,
     ): MeltQuoteInfo {
+        beforeMeltQuote()
         failIfRequested()
         val mintUrl = normalize(preferredMintURL ?: walletUrls.first())
         val quote = MeltQuoteInfo(
@@ -288,6 +291,7 @@ class FakeWalletGateway(
     override suspend fun listMeltQuotes(): List<MeltQuoteInfo> = meltQuotes.values.toList()
 
     override suspend fun meltTokens(quoteId: String, mintUrl: String?): MeltConfirmation {
+        beforeMeltPayment()
         failIfRequested()
         val quote = checkNotNull(meltQuotes[quoteId]) { "Unknown fake melt quote $quoteId" }
         val total = quote.amount + quote.feeReserve

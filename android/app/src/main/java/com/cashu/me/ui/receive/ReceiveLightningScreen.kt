@@ -1296,7 +1296,7 @@ internal fun InputFace(
         }
         Spacer(Modifier.weight(1f))
         // Under the amount, over the keypad — the same slot the send flows use.
-        if (mint != null) {
+        if (!creating && mint != null) {
             AmountEntryMintSelector(
                 direction = MintSelectorDirection.Destination,
                 mint = mint,

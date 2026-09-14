@@ -12,6 +12,7 @@ import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -57,6 +58,8 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.CustomAccessibilityAction
@@ -651,38 +654,51 @@ private fun ChipLabel(word: String, modifier: Modifier = Modifier) {
  */
 @Composable
 private fun SeedWordReviewGrid(words: List<String>, onSelect: (Int) -> Unit) {
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(3),
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag(UiTestTags.SeedWordReview)
-            .clip(RoundedCornerShape(CardRadius))
-            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-            .padding(CardPadding),
-        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
-        verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.comfortable),
-    ) {
-        itemsIndexed(words) { index, word ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onSelect(index) }
-                    .semantics { contentDescription = "Word ${index + 1}, $word" },
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.tight),
-            ) {
-                Text(
-                    text = "%02d".format(index + 1),
-                    style = CashuTheme.type.monoCaption,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
-                    text = word,
-                    style = CashuTheme.type.monoBody.withSlashedZero(),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+    val wordStyle = CashuTheme.type.monoBody.withSlashedZero()
+    val indexStyle = CashuTheme.type.monoCaption
+    val measure = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val indexWidth = with(density) { measure.measure("00", indexStyle).size.width.toDp() }
+    val wordWidth = with(density) {
+        measure.measure("m".repeat(maxOf(8, words.maxOfOrNull { it.length } ?: 8)), wordStyle).size.width.toDp()
+    }
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val available = (maxWidth - CardPadding * 2).coerceAtLeast(1.dp)
+        val minimumWidth = indexWidth + CashuTheme.spacing.tight + wordWidth
+        val scale = (available / minimumWidth).coerceAtMost(1f)
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(minimumWidth.coerceAtMost(available)),
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(UiTestTags.SeedWordReview)
+                .clip(RoundedCornerShape(CardRadius))
+                .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                .padding(CardPadding),
+            horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
+            verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.comfortable),
+        ) {
+            itemsIndexed(words) { index, word ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onSelect(index) }
+                        .semantics { contentDescription = "Word ${index + 1}, $word" },
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.tight),
+                ) {
+                    Text(
+                        text = "%02d".format(index + 1),
+                        style = indexStyle.copy(fontSize = indexStyle.fontSize * scale),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        text = word,
+                        style = wordStyle.copy(fontSize = wordStyle.fontSize * scale),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        softWrap = false,
+                    )
+                }
             }
         }
     }

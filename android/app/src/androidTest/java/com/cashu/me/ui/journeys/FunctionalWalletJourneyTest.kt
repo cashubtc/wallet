@@ -1,5 +1,7 @@
 package com.cashu.me.ui.journeys
 
+import androidx.compose.ui.test.*
+import kotlinx.coroutines.CompletableDeferred
 import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.cashu.me.Models.TransactionKind
@@ -192,6 +194,37 @@ class FunctionalWalletJourneyTest {
             .tapText("History")
             .awaitText("Lightning received")
         assertEquals(2L, runBlocking { fake.totalBalance(FakeWalletGateway.TestMintUrl) })
+    }
+
+    @Test
+    fun quoteAndPaymentProcessingShareLayoutWithoutMintSelector() {
+        val fixture = launch(FixtureMode.FundedWithHistory)
+        val fake = checkNotNull(fixture.fakeGateway)
+        val quoteGate = CompletableDeferred<Unit>()
+        val paymentGate = CompletableDeferred<Unit>()
+        fake.beforeMeltQuote = { quoteGate.await() }
+        fake.beforeMeltPayment = { paymentGate.await() }
+        try {
+            robot.awaitTag(UiTestTags.WalletScreen)
+                .tapTag(UiTestTags.WalletSend)
+                .typeIntoTag(UiTestTags.SendDestination, FixedBolt11Invoice)
+                .awaitText("Processing…")
+            val processingTitle = compose.onNodeWithText("Processing…")
+            val quoteTop = processingTitle.fetchSemanticsNode().boundsInRoot.top
+            compose.onNodeWithText("From Nutshell UI Test Mint").assertDoesNotExist()
+            quoteGate.complete(Unit)
+            robot.awaitTag(UiTestTags.SendPaymentSubmit)
+                .awaitText("From Nutshell UI Test Mint")
+                .tapTag(UiTestTags.SendPaymentSubmit)
+                .awaitText("Processing…")
+            compose.onNodeWithText("From Nutshell UI Test Mint").assertDoesNotExist()
+            assertEquals(quoteTop, processingTitle.fetchSemanticsNode().boundsInRoot.top, 1f)
+            paymentGate.complete(Unit)
+            robot.awaitText("Payment sent")
+        } finally {
+            quoteGate.complete(Unit)
+            paymentGate.complete(Unit)
+        }
     }
 
     @Test
