@@ -580,15 +580,13 @@ struct OnboardingView: View {
                     )
                 )
             case .restoring:
-                return OnboardingChassisModel(
-                    primary: OnboardingChassisAction(label: "Open Wallet", isDisabled: true, action: openRestoredWallet)
-                )
+                // No actions while restoring — the stage's spinner carries it.
+                return OnboardingChassisModel()
             case .success:
                 return OnboardingChassisModel(
                     primary: OnboardingChassisAction(
                         label: "Open Wallet",
-                        isDisabled: isCompleting || !restoreAllSettled,
-                        accessibilityIdentifier: "onboarding-icloud-open-wallet",
+                        isDisabled: isCompleting,
                         action: openRestoredWallet
                     ),
                     contentOpacity: isCompleting ? 0 : 1
@@ -829,12 +827,13 @@ struct OnboardingView: View {
             switch iCloudRestorePhase {
             case .preview:
                 iCloudPreviewStage
-            case .restoring, .success:
-                restoreProgressStage
-                    .opacity(isCompleting ? 0 : 1)
+            case .restoring:
+                iCloudRestoringStage
+            case .success:
+                iCloudSuccessStage
             }
         }
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: iCloudRestorePhase)
+        .animation(.easeInOut(duration: 0.3), value: iCloudRestorePhase)
         .task {
             // Detection blocks on a keychain query + KV-store flush. Run it off
             // the main actor so it can't hitch the crossfade into this screen.
@@ -941,33 +940,108 @@ struct OnboardingView: View {
         }
     }
 
+    private var iCloudRestoringStage: some View {
+        let mintCount = detectedICloudBackup?.mintURLs.count ?? 0
+        return VStack(spacing: 0) {
+            OnboardingStepHeader(
+                title: "Restoring wallet.",
+                // A seed-only backup has no mints to scan, so naming a count
+                // of zero here would read as a failure mid-flight.
+                subhead: mintCount == 0
+                    ? "Restoring your seed…"
+                    : "Restoring your funds from \(mintCount) mint\(mintCount == 1 ? "" : "s")…"
+            )
+            .padding(.top, OnboardingMetrics.titleTopInset)
+
+            Spacer()
+            ProgressView()
+                .scaleEffect(1.5)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    /// Three genuinely different outcomes hide behind one success screen, and
+    /// only one of them is "your money is back". A seed-only backup lands in an
+    /// empty wallet with no mints, and a mint-carrying backup can still restore
+    /// to zero — neither may claim the funds are ready.
+    private func iCloudSuccessSubhead(mintCount: Int) -> String {
+        if mintCount == 0 {
+            return "Add your mints in Settings to recover any funds."
+        }
+        if !ICloudRestoreState.pendingMintURLs().isEmpty {
+            return "Your wallet is ready. Some funds may still need to be recovered."
+        }
+        if walletManager.balance > 0 {
+            return "Across \(mintCount) mint\(mintCount == 1 ? "" : "s")."
+        }
+        return "No funds on your \(mintCount) mint\(mintCount == 1 ? "" : "s")."
+    }
+
+    private var iCloudSuccessStage: some View {
+        // A centered terminal "done" moment: the recovered balance is the hero,
+        // rendered identically to the wallet's balance. Everything else recedes
+        // on exit; the ASCII handoff curtain then sweeps down over what's left.
+        let count = detectedICloudBackup?.mintURLs.count ?? 0
+        return VStack(spacing: 16) {
+            OnboardingStepHeader(
+                title: "Wallet restored.",
+                subhead: iCloudSuccessSubhead(mintCount: count)
+            )
+            .padding(.top, OnboardingMetrics.titleTopInset)
+            .opacity(isCompleting ? 0 : 1)
+
+            Spacer()
+
+            // Hero — echoes MainWalletView's balance treatment exactly; the
+            // one element held at full opacity while the chrome recedes,
+            // until the curtain covers it.
+            Text(SettingsManager.shared.formatBalanceWithUnit(walletManager.balance))
+                .font(.system(size: 44, weight: .bold))
+                .monospacedDigit()
+                .minimumScaleFactor(0.5)
+                .lineLimit(1)
+                .contentTransition(.numericText(value: Double(walletManager.balance)))
+                .foregroundStyle(.primary)
+                // Gutter belongs to the elements that need it — the header
+                // carries its own, and stacking a second one indented the
+                // title to 56 pt.
+                .padding(.horizontal, OnboardingMetrics.gutter)
+
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 56))
+                .foregroundStyle(.green)
+                // One hero gesture: the symbol bounce. Scale floor raised to
+                // 0.85 (Emil's "never below 0.9-ish") so it settles rather
+                // than pops. Reduce Motion gets a plain fade, no bounce.
+                .symbolEffect(.bounce, value: reduceMotion ? false : iCloudRestorePhase == .success)
+                .transition(reduceMotion ? .opacity : .scale(scale: 0.85).combined(with: .opacity))
+                .opacity(isCompleting ? 0 : 1)
+
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
+    }
+
     private func runICloudRestore() {
-        guard let backup = detectedICloudBackup, !isRestoring else { return }
-        var seen = Set<String>()
-        restoringMints = backup.mintURLs.map(MintURLIdentity.normalized)
-            .filter { !$0.isEmpty && seen.insert($0).inserted }
-        restorePhases = Dictionary(uniqueKeysWithValues: restoringMints.map { ($0, .pending) })
-        isRestoring = true
-        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.28)) {
+        guard detectedICloudBackup != nil else { return }
+        // This is the one place chassis *occupancy* changes without a step
+        // change — `.restoring` empties the stack entirely. It has to ride the
+        // same transaction `advance`/`retreat` use, or the slot's transition has
+        // nothing to animate against and the button snaps away.
+        withAnimation(.easeInOut(duration: 0.28)) {
             iCloudRestorePhase = .restoring
         }
         errorMessage = nil
         Task { @MainActor in
-            defer { isRestoring = false }
             do {
-                try await walletManager.restoreFromICloudBackup(
-                    onPrepared: { urls in
-                        restoringMints = urls
-                        restorePhases = Dictionary(uniqueKeysWithValues: urls.map { ($0, .pending) })
-                    },
-                    onProgress: { url, phase in
-                        withAnimation(reduceMotion ? nil : .snappy) { restorePhases[url] = phase }
-                    }
-                )
-                iCloudRestorePhase = .success
-                HapticFeedback.notification(restoreFailedCount == 0 ? .success : .warning)
+                try await walletManager.restoreFromICloudBackup()
+                withAnimation(reduceMotion ? .easeOut(duration: 0.25) : .spring(response: 0.45, dampingFraction: 0.85)) {
+                    iCloudRestorePhase = .success
+                }
+                HapticFeedback.notification(.success)
             } catch {
-                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.28)) {
+                withAnimation(.easeInOut(duration: 0.28)) {
                     iCloudRestorePhase = .preview
                 }
                 errorMessage = error.userFacingWalletMessage
@@ -976,7 +1050,7 @@ struct OnboardingView: View {
     }
 
     private func openRestoredWallet() {
-        guard !isCompleting, restoreAllSettled else { return }
+        guard !isCompleting else { return }
         HapticFeedback.selection()
 
         // Reduce Motion: skip the staged exit entirely; the coordinator also
@@ -987,7 +1061,8 @@ struct OnboardingView: View {
             return
         }
 
-        // The results recede before the handoff opens the recovered wallet.
+        // Chrome recedes while the balance hero holds; the curtain sweeps down
+        // over both and the handoff flips `needsOnboarding` at full cover.
         withAnimation(.easeOut(duration: 0.22)) { isCompleting = true }
         handoff.begin(reduceMotion: false) { await walletManager.completeRestore() }
     }
@@ -1788,25 +1863,12 @@ struct OnboardingView: View {
     }
 
     private var restoreAllSettled: Bool {
-        !isRestoring && restoringMints.allSatisfy { url in
-            switch restorePhases[url] {
+        restorePhases.values.allSatisfy { phase in
+            switch phase {
             case .recovered, .failed: return true
-            case .pending, .restoring, nil: return false
+            case .pending, .restoring: return false
             }
         }
-    }
-
-    private var restoreSettledCount: Int {
-        restorePhases.values.count {
-            switch $0 {
-            case .recovered, .failed: true
-            case .pending, .restoring: false
-            }
-        }
-    }
-
-    private var restoreFailedCount: Int {
-        restorePhases.values.count { if case .failed = $0 { true } else { false } }
     }
 
     /// First mint currently restoring — used to keep it scrolled into view.
@@ -1818,45 +1880,23 @@ struct OnboardingView: View {
     }
 
     private var restoreSubhead: String {
-        if !restoreAllSettled {
-            return currentRestoringUrl == nil ? "Preparing your wallet…" : "Checking your mints…"
-        }
-        if restoreFailedCount > 0 {
-            let summary = "\(restoreSettledCount - restoreFailedCount) of \(restoringMints.count) mints restored. Retry the failed mints or continue with the funds recovered so far."
-            return currentStep == .iCloudRestore
-                ? summary + " Failed mints stay in your iCloud backup."
-                : summary
-        }
-        if restoringMints.isEmpty { return "Your seed is restored. Add a mint to recover funds." }
+        if !restoreAllSettled { return "Checking your mints…" }
         if restoreTotalRecovered > 0 { return "Here's what we restored." }
         // Zero back is the outcome the user fears most. Name the one cause
         // they can still act on instead of leaving them to guess.
-        return "No funds found on these mints. You can add other mints after opening your wallet."
+        return "No funds on these mints. If you used others, go back and add them."
     }
 
     private var restoreProgressStage: some View {
         VStack(spacing: 0) {
             stagger(appeared: restoreProgressAppeared, index: 0) {
                 OnboardingStepHeader(
-                    title: !restoreAllSettled ? "Restoring wallet."
-                        : restoreFailedCount > 0 ? "Some mints need attention." : "Wallet restored.",
+                    title: "Restoring wallet.",
                     subhead: restoreSubhead
                 )
             }
             .padding(.top, OnboardingMetrics.titleTopInset)
             .padding(.bottom, 12)
-
-            if !restoringMints.isEmpty {
-                ProgressView(value: Double(restoreSettledCount), total: Double(restoringMints.count)) {
-                    Text("\(restoreSettledCount) of \(restoringMints.count) mints checked")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                .accessibilityValue("\(restoreSettledCount) of \(restoringMints.count) mints checked")
-                .accessibilityIdentifier("onboarding-restore-progress")
-                .padding(.horizontal, OnboardingMetrics.gutter)
-                .padding(.bottom, 12)
-            }
 
             // The recovered total is a money value — it keeps its monospaced
             // digits and numeric content transition (Numbers Are Sacred).
@@ -1891,7 +1931,7 @@ struct OnboardingView: View {
                 }
                 .onChange(of: currentRestoringUrl) { _, active in
                     guard let active else { return }
-                    withAnimation(reduceMotion ? nil : .snappy) { proxy.scrollTo(active, anchor: .center) }
+                    withAnimation(.snappy) { proxy.scrollTo(active, anchor: .center) }
                 }
                 // Both edges here, unlike the staging step: this list
                 // auto-scrolls to whichever mint is working, so rows cross both
@@ -1902,8 +1942,8 @@ struct OnboardingView: View {
             }
         }
         .padding(.top, 8)
-        .animation(reduceMotion ? nil : .snappy, value: restoreTotalRecovered)
-        .animation(reduceMotion ? nil : .snappy, value: restoreAllSettled)
+        .animation(.snappy, value: restoreTotalRecovered)
+        .animation(.snappy, value: restoreAllSettled)
         .onAppear {
             triggerEntrance { restoreProgressAppeared = true }
         }
@@ -1940,14 +1980,9 @@ struct OnboardingView: View {
             Spacer()
 
             switch phase {
-            case .pending:
-                Text("Waiting")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            case .restoring:
+            case .pending, .restoring:
                 ProgressView()
                     .controlSize(.small)
-                    .accessibilityLabel("Restoring \(shortenUrl(url))")
             case .recovered(let result):
                 HStack(spacing: 6) {
                     Image(systemName: result.totalRecovered > 0 ? "checkmark.circle.fill" : "minus.circle")
@@ -1962,8 +1997,6 @@ struct OnboardingView: View {
             case .failed:
                 Button("Retry") { retry(url) }
                     .textLinkButton()
-                    .disabled(isRestoring)
-                    .accessibilityLabel("Retry \(shortenUrl(url))")
             }
         }
         .padding(.horizontal, 4)
@@ -2200,10 +2233,7 @@ struct OnboardingView: View {
     }
 
     private func runRestore() {
-        guard !isRestoring else { return }
-        isRestoring = true
         Task { @MainActor in
-            defer { isRestoring = false }
             for url in restoringMints {
                 if case .recovered = restorePhases[url] { continue }   // keep successes on retry-all
                 withAnimation(.snappy) { restorePhases[url] = .restoring }
@@ -2219,16 +2249,13 @@ struct OnboardingView: View {
     }
 
     private func retry(_ url: String) {
-        guard !isRestoring, case .failed = restorePhases[url] else { return }
-        isRestoring = true
-        withAnimation(reduceMotion ? nil : .snappy) { restorePhases[url] = .restoring }
         Task { @MainActor in
-            defer { isRestoring = false }
+            withAnimation(.snappy) { restorePhases[url] = .restoring }
             do {
                 let result = try await walletManager.restoreFromMint(url: url)
-                withAnimation(reduceMotion ? nil : .snappy) { restorePhases[url] = .recovered(result) }
+                withAnimation(.snappy) { restorePhases[url] = .recovered(result) }
             } catch {
-                withAnimation(reduceMotion ? nil : .snappy) { restorePhases[url] = .failed(error.userFacingWalletMessage) }
+                withAnimation(.snappy) { restorePhases[url] = .failed(error.userFacingWalletMessage) }
                 AppLogger.wallet.error("Retry restore error for \(url): \(error)")
             }
         }
@@ -2246,23 +2273,6 @@ struct OnboardingView: View {
             walletManager.completeOnboarding()
         }
     }
-
-    #if DEBUG
-    /// Render the real restore screen with deterministic states for local
-    /// previews and layout checks, without accessing an iCloud account.
-    static func iCloudRestorePreview(
-        urls: [String], phases: [String: MintRestorePhase], isRunning: Bool
-    ) -> Self {
-        var view = Self()
-        view._currentStep = State(initialValue: .iCloudRestore)
-        view._iCloudRestorePhase = State(initialValue: isRunning ? .restoring : .success)
-        view._restoringMints = State(initialValue: urls)
-        view._restorePhases = State(initialValue: phases)
-        view._isRestoring = State(initialValue: isRunning)
-        view._restoreProgressAppeared = State(initialValue: true)
-        return view
-    }
-    #endif
 }
 
 #Preview {

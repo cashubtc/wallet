@@ -270,10 +270,7 @@ extension WalletManager {
         objectWillChange.send()
     }
 
-    func restoreFromICloudBackup(
-        onPrepared: ([String]) -> Void,
-        onProgress: (String, MintRestorePhase) -> Void
-    ) async throws {
+    func restoreFromICloudBackup() async throws {
         guard let backup = await Self.detectICloudBackupOffMain() else {
             throw WalletError.networkError("No iCloud backup found.")
         }
@@ -295,11 +292,14 @@ extension WalletManager {
         // This preference can be restored now: the incomplete marker defers
         // backup writes until the user explicitly opens the recovered wallet.
         iCloudBackupEnabled = true
-        onPrepared(urls)
         try await MintRestoreBatch.run(
             urls: urls,
             restore: { try await self.restoreFromMint(url: $0) },
-            onProgress: onProgress
+            onProgress: { url, phase in
+                if case .failed(let message) = phase {
+                    AppLogger.wallet.error("iCloud restore failed for \(url): \(message)")
+                }
+            }
         )
         AppLogger.wallet.info("iCloud restore: mint recovery attempts finished")
     }

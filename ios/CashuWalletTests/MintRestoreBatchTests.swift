@@ -1,5 +1,4 @@
 import XCTest
-import SwiftUI
 @testable import CashuWallet
 
 @MainActor
@@ -131,43 +130,4 @@ final class MintRestoreBatchTests: XCTestCase {
         XCTAssertTrue(ICloudRestoreState.pendingMintURLs(defaults: defaults).isEmpty)
     }
 
-    func testRestoreProgressLayouts() async throws {
-        let urls = (1...7).map { "https://mint\($0).example" }
-        let wallet = WalletManager()
-        for running in [true, false] {
-            var phases: [String: MintRestorePhase] = [:]
-            for (index, url) in urls.enumerated() {
-                phases[url] = running && index >= 3 ? .pending : .recovered(recovered(url))
-            }
-            phases[urls[1]] = .failed("This mint is unavailable. Try again later.")
-            if running { phases[urls[3]] = .restoring }
-            let content = OnboardingView.iCloudRestorePreview(urls: urls, phases: phases, isRunning: running)
-                .environmentObject(wallet)
-                .environmentObject(OnboardingHandoffCoordinator())
-                .environment(\.colorScheme, .light)
-                .transaction { $0.disablesAnimations = true }
-                .frame(width: 402, height: 874)
-                .background(Color.white)
-            // The screen contains a native scroll view; capture its hosted
-            // hierarchy so it is included in the layout evidence.
-            let controller = UIHostingController(rootView: content)
-            let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
-            let window = UIWindow(windowScene: scene)
-            window.frame = CGRect(x: 0, y: 0, width: 402, height: 874)
-            window.rootViewController = controller
-            window.isHidden = false
-            defer { window.isHidden = true }
-            controller.view.frame = window.bounds
-            controller.view.layoutIfNeeded()
-            await Task.yield()
-            let renderer = UIGraphicsImageRenderer(size: window.bounds.size)
-            let image = renderer.image { _ in
-                controller.view.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
-            }
-            let attachment = XCTAttachment(image: image)
-            attachment.name = running ? "icloud-restore-progress" : "icloud-restore-partial-result"
-            attachment.lifetime = .keepAlways
-            add(attachment)
-        }
-    }
 }
