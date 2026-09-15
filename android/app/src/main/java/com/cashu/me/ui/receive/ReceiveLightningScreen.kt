@@ -1256,11 +1256,7 @@ internal fun InputFace(
     onCreate: () -> Unit,
     onShowLightningAddress: (() -> Unit)? = null,
 ) {
-    Column(
-        modifier = Modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Spacer(Modifier.height(CashuTheme.spacing.default))
+    QuoteAmountEntry(header = {
         if (onShowLightningAddress != null) {
             androidx.compose.material3.TextButton(
                 onClick = onShowLightningAddress,
@@ -1271,72 +1267,71 @@ internal fun InputFace(
                 Text("Lightning Address", style = MaterialTheme.typography.bodyLarge)
             }
         }
-        QuoteAmountEntry(modifier = Modifier.weight(1f), hero = {
-            if (selectedMethod == PaymentMethodKind.Onchain) {
-                Text(
-                    text = "ON-CHAIN",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier
-                        .background(
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                            shape = CapsuleShape,
-                        )
-                        .padding(
-                            horizontal = CashuTheme.spacing.default,
-                            vertical = CashuTheme.spacing.micro,
-                        ),
-                )
-                Spacer(Modifier.height(CashuTheme.spacing.snug))
-            }
-            // Sat mint unit: iOS CurrencyAmountDisplay entry mode — preferred unit
-            // leads, mint-unit (sats) stays visible/flipable. Non-sat mint units
-            // stay native with no BTC-price conversion.
-            if (isSatUnit) {
-                AmountFlipDisplay(
-                    amountSats = amountSats,
-                    primary = entryPrimary,
-                    onFlip = onFlipEntryPrimary,
-                    btcPrice = btcPrice,
-                    currencyCode = fiatCurrencyCode,
-                    useBitcoinSymbol = useBitcoinSymbol,
-                    entryRaw = amount,
-                    primaryAccessibilityPrefix = "Request amount",
-                )
-            } else {
-                AmountEntryHero(
-                    entryRaw = amount,
-                    isSat = false,
-                    unit = unit,
-                    useBitcoinSymbol = useBitcoinSymbol,
-                    formatter = formatter,
-                )
-            }
-            if (errorText != null) {
-                Spacer(Modifier.height(CashuTheme.spacing.default))
-                InlineNotice(text = errorText, severity = NoticeSeverity.Error)
-            }
-        }, details = {
-            if (!creating && mint != null) {
-                AmountEntryMintSelector(
-                    direction = MintSelectorDirection.Destination,
-                    mint = mint,
-                    onPickMint = onPickMint,
-                )
-                Spacer(Modifier.height(CashuTheme.spacing.snug))
-            }
-        }, footer = {
-            NumberPadFooter(
-                amount = amount,
-                onAmountChange = onAmountChange,
-                decimals = decimals,
-                buttonText = if (creating) "Creating…" else selectedMethod.createActionTitle,
-                onButtonClick = onCreate,
-                buttonEnabled = !creating && (!selectedMethod.requiresMintAmount || amountValid),
-                buttonLoading = creating,
+    }, hero = {
+        if (selectedMethod == PaymentMethodKind.Onchain) {
+            Text(
+                text = "ON-CHAIN",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .background(
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        shape = CapsuleShape,
+                    )
+                    .padding(
+                        horizontal = CashuTheme.spacing.default,
+                        vertical = CashuTheme.spacing.micro,
+                    ),
             )
-        })
-    }
+            Spacer(Modifier.height(CashuTheme.spacing.snug))
+        }
+        // Sat mint unit: iOS CurrencyAmountDisplay entry mode — preferred unit
+        // leads, mint-unit (sats) stays visible/flipable. Non-sat mint units
+        // stay native with no BTC-price conversion.
+        if (isSatUnit) {
+            AmountFlipDisplay(
+                amountSats = amountSats,
+                primary = entryPrimary,
+                onFlip = onFlipEntryPrimary,
+                btcPrice = btcPrice,
+                currencyCode = fiatCurrencyCode,
+                useBitcoinSymbol = useBitcoinSymbol,
+                entryRaw = amount,
+                primaryAccessibilityPrefix = "Request amount",
+            )
+        } else {
+            AmountEntryHero(
+                entryRaw = amount,
+                isSat = false,
+                unit = unit,
+                useBitcoinSymbol = useBitcoinSymbol,
+                formatter = formatter,
+            )
+        }
+        if (errorText != null) {
+            Spacer(Modifier.height(CashuTheme.spacing.default))
+            InlineNotice(text = errorText, severity = NoticeSeverity.Error)
+        }
+    }, details = {
+        if (!creating && mint != null) {
+            AmountEntryMintSelector(
+                direction = MintSelectorDirection.Destination,
+                mint = mint,
+                onPickMint = onPickMint,
+            )
+            Spacer(Modifier.height(CashuTheme.spacing.snug))
+        }
+    }, footer = {
+        NumberPadFooter(
+            amount = amount,
+            onAmountChange = onAmountChange,
+            decimals = decimals,
+            buttonText = if (creating) "Creating…" else selectedMethod.createActionTitle,
+            onButtonClick = onCreate,
+            buttonEnabled = !creating && (!selectedMethod.requiresMintAmount || amountValid),
+            buttonLoading = creating,
+        )
+    })
 }
 
 private val PaymentMethodKind.menuIcon

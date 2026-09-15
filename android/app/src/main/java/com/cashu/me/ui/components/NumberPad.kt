@@ -50,6 +50,7 @@ private val MinimumKeyHeight = 48.dp
 @Composable
 fun QuoteAmountEntry(
     modifier: Modifier = Modifier,
+    header: @Composable () -> Unit = {},
     hero: @Composable () -> Unit,
     details: @Composable () -> Unit,
     footer: @Composable () -> Unit,
@@ -59,6 +60,7 @@ fun QuoteAmountEntry(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Spacer(Modifier.height(CashuTheme.spacing.default))
+        header()
         Spacer(Modifier.weight(1f))
         hero()
         Spacer(Modifier.weight(1f))
