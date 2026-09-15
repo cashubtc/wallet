@@ -54,12 +54,15 @@ extension WalletManager {
                         unit: .sat
                     )
                     _ = try await wallet.restore()
+                    ICloudRestoreState.removePendingMint(url)
                 }
 
                 guard self.mintService.isMintTracked(url: url) else { return }
 
                 await self.refreshBalance()
                 await self.loadTransactions()
+                self.performICloudBackup()
+                await NostrMintBackupService.shared.backupCurrentMintsIfEnabled()
                 SentryService.breadcrumb("Mint restore completed", category: "wallet.mint")
             } catch {
                 AppLogger.wallet.error(
@@ -75,6 +78,7 @@ extension WalletManager {
         do {
             try await operationCoordinator.perform(kind: .removeMint) {
                 try await self.mintService.removeMint(mint)
+                ICloudRestoreState.removePendingMint(mint.url)
             }
         } catch is CancellationError {
             return false

@@ -64,3 +64,10 @@ uninstall and reinstall the app, and verify that onboarding appears on both the
 first launch and a subsequent relaunch. Create Wallet must generate a fresh seed.
 Separately verify that an upgrade preserves a completed wallet and that relaunching
 unfinished onboarding preserves the seed already shown to the user.
+
+iCloud restore publishes each mint's status and recovered amount as it finishes.
+If a mint fails, the remaining mints are still attempted. The results screen
+offers a retry for each failed mint and lets the user open the recovered wallet
+after all attempts settle. Failed mint URLs remain in future iCloud backups;
+Nostr mint backup replacement is deferred until those mints are recovered or
+explicitly removed. Adding a failed mint later also retries its fund recovery.

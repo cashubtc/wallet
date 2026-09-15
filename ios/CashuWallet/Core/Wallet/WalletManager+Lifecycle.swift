@@ -732,6 +732,7 @@ extension WalletManager {
             // Refresh balance while this restore still owns the repository.
             await self.refreshBalanceAssumingWalletOperationLease()
 
+            ICloudRestoreState.removePendingMint(normalizedUrl)
             SentryService.breadcrumb("Wallet restore from mint completed", category: "wallet.lifecycle")
             return RestoreMintResult(
                 mintUrl: normalizedUrl,
@@ -747,7 +748,7 @@ extension WalletManager {
     /// Restore wallet from mnemonic - Phase 3: Complete restore and dismiss onboarding
     func completeRestore() async {
         completeOnboarding()
-        // The restored mint list is final now — refresh the Nostr backup with it.
+        // Refresh the Nostr backup only if there are no unresolved iCloud mints.
         // (Must not run earlier: publishing while the repository is still empty
         // would replace the addressable backup event with an empty list.)
         Task { await NostrMintBackupService.shared.backupCurrentMintsIfEnabled() }
@@ -757,9 +758,8 @@ extension WalletManager {
         transactionService.loadCachedState()
         OnboardingCompletionState.setCompleted(true)
         if hasIncompleteICloudRestore {
-            // Choosing a different onboarding path after an interrupted iCloud
-            // restore is also a valid completion. Release the write barrier only
-            // once that replacement wallet and its mint list are final.
+            // The user can accept a partial recovery. Pending mint URLs remain
+            // wallet-scoped and are included in subsequent iCloud backups.
             setICloudRestoreIncomplete(false)
             if iCloudBackupEnabled {
                 performICloudBackup()

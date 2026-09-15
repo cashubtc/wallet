@@ -137,6 +137,7 @@
 		D200000000000208 /* WalletTransaction.swift in Sources */ = {isa = PBXBuildFile; fileRef = D100000000000208 /* WalletTransaction.swift */; };
 		D200000000000209 /* TokenTransferModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = D100000000000209 /* TokenTransferModels.swift */; };
 		D200000000000210 /* RestoreMintResult.swift in Sources */ = {isa = PBXBuildFile; fileRef = D100000000000210 /* RestoreMintResult.swift */; };
+		E36800000000000000000002 /* MintRestoreBatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36800000000000000000001 /* MintRestoreBatch.swift */; };
 		D200000000000211 /* TokenInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = D100000000000211 /* TokenInfo.swift */; };
 		D200000000000212 /* Data+Hashing.swift in Sources */ = {isa = PBXBuildFile; fileRef = D100000000000212 /* Data+Hashing.swift */; };
 		DD00000000000001 /* AppLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD00000000000011 /* AppLogger.swift */; };
@@ -171,6 +172,7 @@
 		T2A0000000000009 /* OnboardingChassisUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T1A0000000000009 /* OnboardingChassisUITests.swift */; };
 		T2B0000000000001 /* InMemoryStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = T1B0000000000001 /* InMemoryStorage.swift */; };
 		T2B0000000000002 /* WalletStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T1B0000000000002 /* WalletStoreTests.swift */; };
+		E36800000000000000000004 /* MintRestoreBatchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36800000000000000000003 /* MintRestoreBatchTests.swift */; };
 		T2B0000000000003 /* MintServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T1B0000000000003 /* MintServiceTests.swift */; };
 		T2B0000000000004 /* TransactionServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T1B0000000000004 /* TransactionServiceTests.swift */; };
 		T2B0000000000005 /* NIP44Tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T1B0000000000005 /* NIP44Tests.swift */; };
@@ -343,6 +345,7 @@
 		D100000000000208 /* WalletTransaction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WalletTransaction.swift; sourceTree = "<group>"; };
 		D100000000000209 /* TokenTransferModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TokenTransferModels.swift; sourceTree = "<group>"; };
 		D100000000000210 /* RestoreMintResult.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RestoreMintResult.swift; sourceTree = "<group>"; };
+		E36800000000000000000001 /* MintRestoreBatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MintRestoreBatch.swift; sourceTree = "<group>"; };
 		D100000000000211 /* TokenInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TokenInfo.swift; sourceTree = "<group>"; };
 		D100000000000212 /* Data+Hashing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Data+Hashing.swift"; sourceTree = "<group>"; };
 		D524F7B6EDC481010F7CDA63 /* CashuTextRole.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CashuTextRole.swift; sourceTree = "<group>"; };
@@ -379,6 +382,7 @@
 		T1A0000000000009 /* OnboardingChassisUITests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OnboardingChassisUITests.swift; path = CashuWalletUITests/OnboardingChassisUITests.swift; sourceTree = "<group>"; };
 		T1B0000000000001 /* InMemoryStorage.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = InMemoryStorage.swift; path = CashuWalletTests/InMemoryStorage.swift; sourceTree = "<group>"; };
 		T1B0000000000002 /* WalletStoreTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = WalletStoreTests.swift; path = CashuWalletTests/WalletStoreTests.swift; sourceTree = "<group>"; };
+		E36800000000000000000003 /* MintRestoreBatchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CashuWalletTests/MintRestoreBatchTests.swift; sourceTree = "<group>"; };
 		T1B0000000000003 /* MintServiceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MintServiceTests.swift; path = CashuWalletTests/MintServiceTests.swift; sourceTree = "<group>"; };
 		T1B0000000000004 /* TransactionServiceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TransactionServiceTests.swift; path = CashuWalletTests/TransactionServiceTests.swift; sourceTree = "<group>"; };
 		T1B0000000000005 /* NIP44Tests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NIP44Tests.swift; path = CashuWalletTests/NIP44Tests.swift; sourceTree = "<group>"; };
@@ -447,6 +451,7 @@
 				72DD529F60A8D9D1A81E3FBB /* NutshellIntegrationTests.swift */,
 				T1B0000000000001 /* InMemoryStorage.swift */,
 				T1B0000000000002 /* WalletStoreTests.swift */,
+				E36800000000000000000003 /* MintRestoreBatchTests.swift */,
 				T1B0000000000003 /* MintServiceTests.swift */,
 				T1B0000000000014 /* MintQuoteDomainTests.swift */,
 				T1B0000000000004 /* TransactionServiceTests.swift */,
@@ -871,6 +876,7 @@
 			isa = PBXGroup;
 			children = (
 				D100000000000210 /* RestoreMintResult.swift */,
+				E36800000000000000000001 /* MintRestoreBatch.swift */,
 			);
 			path = WalletSupport;
 			sourceTree = "<group>";
@@ -1061,6 +1067,7 @@
 				349E3802577110813AC1A9E3 /* NutshellIntegrationTests.swift in Sources */,
 				T2B0000000000001 /* InMemoryStorage.swift in Sources */,
 				T2B0000000000002 /* WalletStoreTests.swift in Sources */,
+				E36800000000000000000004 /* MintRestoreBatchTests.swift in Sources */,
 				T2B0000000000003 /* MintServiceTests.swift in Sources */,
 				T2B0000000000014 /* MintQuoteDomainTests.swift in Sources */,
 				T2B0000000000004 /* TransactionServiceTests.swift in Sources */,
@@ -1136,6 +1143,7 @@
 				D200000000000208 /* WalletTransaction.swift in Sources */,
 				D200000000000209 /* TokenTransferModels.swift in Sources */,
 				D200000000000210 /* RestoreMintResult.swift in Sources */,
+				E36800000000000000000002 /* MintRestoreBatch.swift in Sources */,
 				D200000000000211 /* TokenInfo.swift in Sources */,
 				D200000000000212 /* Data+Hashing.swift in Sources */,
 				1100000000000005 /* KeychainService.swift in Sources */,

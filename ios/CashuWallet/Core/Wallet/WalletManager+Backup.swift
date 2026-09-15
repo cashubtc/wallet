@@ -36,6 +36,30 @@ enum ICloudRestoreState {
             defaults.removeObject(forKey: incompleteKey)
         }
     }
+
+    static func pendingMintURLs(defaults: UserDefaults = .standard) -> [String] {
+        defaults.stringArray(forKey: StorageKeys.pendingICloudRestoreMintURLs) ?? []
+    }
+
+    static func setPendingMintURLs(_ urls: [String], defaults: UserDefaults = .standard) {
+        defaults.set(uniqueMintURLs(urls), forKey: StorageKeys.pendingICloudRestoreMintURLs)
+    }
+
+    static func removePendingMint(_ url: String, defaults: UserDefaults = .standard) {
+        let identity = MintURLIdentity.normalized(url)
+        setPendingMintURLs(pendingMintURLs(defaults: defaults).filter { $0 != identity }, defaults: defaults)
+    }
+
+    /// Completing a partial restore releases the onboarding barrier, but must
+    /// never replace the backup with only the mints that happened to respond.
+    static func mintURLsForBackup(current: [String], defaults: UserDefaults = .standard) -> [String] {
+        uniqueMintURLs(current + pendingMintURLs(defaults: defaults))
+    }
+
+    private static func uniqueMintURLs(_ urls: [String]) -> [String] {
+        var seen = Set<String>()
+        return urls.map(MintURLIdentity.normalized).filter { !$0.isEmpty && seen.insert($0).inserted }
+    }
 }
 
 enum ICloudRestorePolicy {
@@ -220,13 +244,14 @@ extension WalletManager {
         do {
             try keychainService.saveSynchronizableMnemonic(currentMnemonic)
             let store = NSUbiquitousKeyValueStore.default
-            store.set(mints.map(\.url), forKey: ICloudKVKey.mintURLs)
+            let backupURLs = ICloudRestoreState.mintURLsForBackup(current: mints.map(\.url))
+            store.set(backupURLs, forKey: ICloudKVKey.mintURLs)
             store.set(Date().timeIntervalSince1970, forKey: ICloudKVKey.timestamp)
             store.synchronize()
             objectWillChange.send()
             AppLogger.wallet.info("iCloud backup ok: \(self.mints.count) mint(s)")
-            lastICloudBackupOutcome = .success(mintCount: mints.count)
-            return .success(mintCount: mints.count)
+            lastICloudBackupOutcome = .success(mintCount: backupURLs.count)
+            return .success(mintCount: backupURLs.count)
         } catch {
             AppLogger.wallet.error("iCloud backup failed: \(error)")
             let message = error.userFacingWalletMessage
@@ -245,11 +270,17 @@ extension WalletManager {
         objectWillChange.send()
     }
 
-    func restoreFromICloudBackup() async throws {
-        guard let backup = detectICloudBackup() else {
+    func restoreFromICloudBackup(
+        onPrepared: ([String]) -> Void,
+        onProgress: (String, MintRestorePhase) -> Void
+    ) async throws {
+        guard let backup = await Self.detectICloudBackupOffMain() else {
             throw WalletError.networkError("No iCloud backup found.")
         }
-        guard let recoveredMnemonic = try keychainService.loadSynchronizableMnemonic() else {
+        let recoveredMnemonic = try await Task.detached(priority: .userInitiated) {
+            try KeychainService().loadSynchronizableMnemonic()
+        }.value
+        guard let recoveredMnemonic else {
             throw WalletError.networkError("iCloud Keychain item is missing.")
         }
         AppLogger.wallet.info("iCloud restore: starting, \(backup.mintURLs.count) mint(s) to restore")
@@ -257,32 +288,19 @@ extension WalletManager {
         // Keep the user's backup preference intact while independently
         // suppressing writes. Persist the marker so an interruption cannot make
         // a partial wallet look complete on the next launch.
+        try Task.checkCancellation()
         try await initializeRestoredWallet(mnemonic: recoveredMnemonic)
-
-        var failedMintCount = 0
-        for url in backup.mintURLs {
-            do {
-                _ = try await restoreFromMint(url: url)
-            } catch {
-                if error is CancellationError {
-                    throw error
-                }
-                failedMintCount += 1
-                AppLogger.wallet.error("iCloud restore: mint recovery failed for \(url): \(error)")
-            }
-        }
-
-        guard failedMintCount == 0 else {
-            AppLogger.wallet.error("iCloud restore: \(failedMintCount) mint(s) failed; preserving existing backup")
-            throw WalletError.networkError(
-                "Could not restore \(failedMintCount) of \(backup.mintURLs.count) mints. "
-                    + "Your iCloud backup was preserved. Try again when all mints are reachable."
-            )
-        }
-
-        // Only a complete restore may replace the backed-up mint list.
-        setICloudRestoreIncomplete(false)
+        ICloudRestoreState.setPendingMintURLs(backup.mintURLs)
+        let urls = ICloudRestoreState.pendingMintURLs()
+        // This preference can be restored now: the incomplete marker defers
+        // backup writes until the user explicitly opens the recovered wallet.
         iCloudBackupEnabled = true
-        AppLogger.wallet.info("iCloud restore: complete, balance \(self.balance)")
+        onPrepared(urls)
+        try await MintRestoreBatch.run(
+            urls: urls,
+            restore: { try await self.restoreFromMint(url: $0) },
+            onProgress: onProgress
+        )
+        AppLogger.wallet.info("iCloud restore: mint recovery attempts finished")
     }
 }
