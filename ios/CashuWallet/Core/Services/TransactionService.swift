@@ -28,6 +28,7 @@ class TransactionService: ObservableObject {
     private let walletDatabase: () -> WalletSqliteDatabase?
     private let getTrackedMintUrls: () -> [String]
     private let walletStore: WalletStore
+    private let getMints: () -> [MintInfo]
 
     // MARK: - Initialization
 
@@ -35,12 +36,14 @@ class TransactionService: ObservableObject {
         walletRepository: @escaping () -> WalletRepository?,
         walletDatabase: @escaping () -> WalletSqliteDatabase?,
         getTrackedMintUrls: @escaping () -> [String],
-        walletStore: WalletStore = WalletStore()
+        walletStore: WalletStore = WalletStore(),
+        getMints: @escaping () -> [MintInfo] = { [] }
     ) {
         self.walletRepository = walletRepository
         self.walletDatabase = walletDatabase
         self.getTrackedMintUrls = getTrackedMintUrls
         self.walletStore = walletStore
+        self.getMints = getMints
     }
 
     // MARK: - Transaction Loading
@@ -101,6 +104,8 @@ class TransactionService: ObservableObject {
                             kind = .onchain
                         case .bolt11, .bolt12:
                             kind = .lightning
+                        case .some:
+                            kind = .custom
                         case nil:
                             kind = tx.paymentRequest != nil ? .lightning : .ecash
                         }
@@ -124,6 +129,10 @@ class TransactionService: ObservableObject {
                         walletTransaction.fee = tx.fee.value
                         walletTransaction.quoteId = tx.quoteId
                         walletTransaction.sagaId = tx.sagaId
+                        walletTransaction.paymentMethod = paymentMethod
+                        walletTransaction.paymentMethodLabel = getMints().first { $0.url == mintUrlString }?.methodName(
+                            paymentMethod ?? .bolt11, unit: unitString, melt: tx.direction == .outgoing
+                        )
                         walletTransaction.unit = PaymentRequestDecoder.unitDescription(tx.unit)
                         return walletTransaction
                     }
@@ -161,8 +170,8 @@ class TransactionService: ObservableObject {
                 // A Lightning invoice / on-chain quote exists before CDK creates
                 // any transaction for it (that happens once minting starts), so
                 // unpaid and paid-not-yet-minted quotes still get synthesized
-                // rows. Quotes that already have a transaction are skipped.
-                let pendingMintQuotes = try await walletDatabase.getUnissuedMintQuotes()
+                // rows. Unfinished custom requests also survive installment receipts.
+                let pendingMintQuotes = try await walletDatabase.getRecoverableMintQuotes()
                 let pendingQuoteTransactions = await pendingTransactions(
                     from: pendingMintQuotes,
                     trackedMintUrls: trackedMintUrls,
@@ -176,7 +185,9 @@ class TransactionService: ObservableObject {
                 return
             } catch {
                 allTransactions.append(contentsOf: previous.filter {
-                    $0.id == $0.quoteId && !quoteIdsWithTransactions.contains($0.id)
+                    $0.id == $0.quoteId &&
+                        (!quoteIdsWithTransactions.contains($0.id) ||
+                            ($0.kind == .custom && $0.status == .pending))
                 })
                 AppLogger.wallet.error("Failed to load stored payment quotes: \(error)")
             }
@@ -348,12 +359,12 @@ class TransactionService: ObservableObject {
                 continue
             }
 
-            // Once CDK has a transaction for this quote — pending while a mint
-            // is in flight, completed afterwards — the CDK row is authoritative
-            // and the quote-backed row would only duplicate it. (BOLT12 offers
-            // always stay in `getUnissuedMintQuotes()` because the SQL filter is
-            // `amount_issued = 0 OR payment_method = 'bolt12'`.)
-            if quoteIdsWithTransactions.contains(quote.id) {
+            // A custom quote can still need payment or issuance after CDK records
+            // an installment. Keep its pending request alongside the money receipts.
+            let unfinishedCustom = paymentMethod.isCustom && !(quote.amountPaid.value > 0 &&
+                quote.amountIssued.value >= quote.amountPaid.value &&
+                quote.amountIssued.value >= (quote.amount?.value ?? .max))
+            if quoteIdsWithTransactions.contains(quote.id) && !unfinishedCustom {
                 continue
             }
 
@@ -396,8 +407,10 @@ class TransactionService: ObservableObject {
             let isExpiredUnpaidInvoice = isUnpaidBolt11
                 && quote.expiry > 0
                 && Date().timeIntervalSince1970 > Double(quote.expiry)
-            let status: WalletTransaction.TransactionStatus =
-                quote.state == .issued || quote.amountIssued.value >= amount ? .completed
+            let isIssued = paymentMethod.isCustom
+                ? quote.amountPaid.value > 0 && quote.amountIssued.value >= amount && quote.amountIssued.value >= quote.amountPaid.value
+                : quote.state == .issued || quote.amountIssued.value >= amount
+            let status: WalletTransaction.TransactionStatus = isIssued ? .completed
                 : isExpiredUnpaidInvoice ? .expired
                 : .pending
 
@@ -427,7 +440,7 @@ class TransactionService: ObservableObject {
                 id: quote.id,
                 amount: amount,
                 type: .incoming,
-                kind: paymentMethod == .onchain ? .onchain : .lightning,
+                kind: paymentMethod.isCustom ? .custom : paymentMethod == .onchain ? .onchain : .lightning,
                 date: createdAt,
                 memo: nil,
                 status: status,
@@ -438,7 +451,12 @@ class TransactionService: ObservableObject {
                 invoice: quote.request,
                 quoteId: quote.id
             )
+            transaction.paymentMethod = paymentMethod
+            transaction.mintQuoteAmountPaid = unfinishedCustom ? quote.amountPaid.value : nil
             transaction.unit = PaymentRequestDecoder.unitDescription(quote.unit)
+            transaction.paymentMethodLabel = getMints().first { $0.url == quote.mintUrl.url }?.methodName(
+                paymentMethod, unit: transaction.unit
+            )
             transaction.isUnpaidInvoice = isUnpaidBolt11
             transactions.append(transaction)
         }

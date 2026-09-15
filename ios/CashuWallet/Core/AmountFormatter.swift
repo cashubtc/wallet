@@ -326,6 +326,13 @@ enum AmountFormatter {
 
     /// The integer base-unit value of a typed string for a unit with `decimals`
     /// fraction digits ("21", 2 -> 2100; "21.5", 2 -> 2150; "500", 0 -> 500).
+    /// Text-field input must not silently discard a custom unit's fractional part.
+    static func validatedEntryBaseUnits(raw: String, decimals: Int) -> UInt64? {
+        let pattern = decimals == 0 ? "[0-9]{1,12}" : "[0-9]{1,12}(\\.[0-9]{1,\(decimals)})?"
+        guard let range = raw.range(of: pattern, options: .regularExpression), range == raw.startIndex..<raw.endIndex else { return nil }
+        return entryBaseUnits(raw: raw, decimals: decimals)
+    }
+
     static func entryBaseUnits(raw: String, decimals: Int) -> UInt64 {
         guard !raw.isEmpty else { return 0 }
         let places = clampDecimals(decimals)

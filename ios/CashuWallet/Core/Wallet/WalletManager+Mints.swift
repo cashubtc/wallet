@@ -155,9 +155,7 @@ extension WalletManager {
                 }
                 let mintMethods = info.nuts.nut04.methods.compactMap { PaymentMethodKind.from($0.method) }
                 let meltMethods = info.nuts.nut05.methods.compactMap { PaymentMethodKind.from($0.method) }
-                let methods = PaymentMethodKind.allCases.filter {
-                    mintMethods.contains($0) || meltMethods.contains($0)
-                }
+                let methods = PaymentMethodKind.ordered(mintMethods + meltMethods)
                 return MintPreviewInfo(name: info.name, iconUrl: info.iconUrl, methods: methods)
             }
         } catch {

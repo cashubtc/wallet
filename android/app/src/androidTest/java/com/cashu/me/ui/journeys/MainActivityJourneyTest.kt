@@ -184,6 +184,30 @@ class MainActivityJourneyTest {
     }
 
     @Test
+    fun receiveWithoutMethodsCanSwitchToAnotherMint() {
+        val fixture = AppTestFixture.launch(FixtureMode.SeededWithMint, supportedMintMethods = emptyList())
+            .also { launched = it }
+        val receivingMint = com.cashu.me.Models.MintInfo(
+            url = "https://receiving.example", name = "Receiving Mint",
+            supportedMintMethods = listOf(com.cashu.me.Models.PaymentMethodKind.Bolt11),
+        )
+        requireNotNull(fixture.fakeGateway).setMintInfo(receivingMint)
+        kotlinx.coroutines.runBlocking { fixture.container.walletManager.addMint(receivingMint.url) }
+
+        robot.awaitTag(UiTestTags.WalletScreen)
+            .tapText("Receive")
+            .awaitTag(UiTestTags.ReceiveSheet)
+            .tapDescription("Bitcoin. Receive over Lightning or on-chain")
+            .awaitTag(UiTestTags.ReceiveLightningScreen)
+            .awaitText("This mint does not offer payments in the selected unit.")
+            .tapText("To Nutshell UI Test Mint")
+            .awaitText("Choose mint")
+            .tapText("Receiving Mint")
+            .awaitText("Create invoice")
+        assertEquals(receivingMint.url, fixture.container.walletManager.state.value.activeMint?.url)
+    }
+
+    @Test
     fun settingsSubscreenRoundTripReturnsToSelectedWalletTab() {
         launch(FixtureMode.SeededWithoutMint)
 

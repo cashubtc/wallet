@@ -17,11 +17,10 @@ internal fun pendingMintQuoteTransactions(
 ): List<WalletTransaction> =
     quotes.mapNotNull { quote ->
         val mintUrl = quote.mintUrl?.takeIf { it in trackedMintUrls } ?: return@mapNotNull null
-        // Once CDK has a transaction for this quote — pending while a mint is
-        // in flight, completed afterwards — the CDK row is authoritative and
-        // the quote-backed row would only duplicate it. (BOLT12 offers always
-        // stay in the unissued list: `amount_issued = 0 OR method = 'bolt12'`.)
-        if (quote.id in quoteIdsWithTransactions) {
+        // A custom quote can still need payment or issuance after CDK records
+        // an installment. Keep its pending request alongside the money receipts.
+        val unfinishedCustom = quote.paymentMethod.isCustom && !quote.hasSettledPayment
+        if (quote.id in quoteIdsWithTransactions && !unfinishedCustom) {
             return@mapNotNull null
         }
 
@@ -51,14 +50,17 @@ internal fun pendingMintQuoteTransactions(
             id = quote.id,
             amount = amount,
             type = TransactionType.Incoming,
-            kind = if (quote.paymentMethod == PaymentMethodKind.Onchain) {
+            kind = if (quote.paymentMethod.isCustom) {
+                TransactionKind.Custom
+            } else if (quote.paymentMethod == PaymentMethodKind.Onchain) {
                 TransactionKind.Onchain
             } else {
                 TransactionKind.Lightning
             },
             dateEpochMillis = timestamp,
             status = when {
-                quote.state == MintQuoteState.Issued || quote.amountIssued >= amount ->
+                (if (quote.paymentMethod.isCustom) quote.hasSettledPayment
+                 else quote.state == MintQuoteState.Issued || quote.amountIssued >= amount) ->
                     TransactionStatus.Completed
                 isExpiredUnpaidInvoice -> TransactionStatus.Expired
                 else -> TransactionStatus.Pending
@@ -67,6 +69,8 @@ internal fun pendingMintQuoteTransactions(
             invoice = quote.request,
             quoteId = quote.id,
             unit = quote.unit,
+            paymentMethod = quote.paymentMethod,
+            mintQuoteAmountPaid = quote.amountPaid.takeIf { unfinishedCustom },
             isUnpaidInvoice = isUnpaidBolt11,
         )
     }
@@ -78,7 +82,7 @@ internal fun pruneMintQuoteTimestamps(
     val quoteIds = transactions
         .filter { transaction ->
             transaction.invoice != null &&
-                (transaction.kind == TransactionKind.Lightning || transaction.kind == TransactionKind.Onchain)
+                (transaction.kind == TransactionKind.Lightning || transaction.kind == TransactionKind.Onchain || transaction.kind == TransactionKind.Custom)
         }
         .map { it.quoteId ?: it.id }
         .toSet()
@@ -89,4 +93,4 @@ internal fun isPendingMintQuoteTransaction(transaction: WalletTransaction): Bool
     transaction.type == TransactionType.Incoming &&
         transaction.status == TransactionStatus.Pending &&
         transaction.invoice != null &&
-        (transaction.kind == TransactionKind.Lightning || transaction.kind == TransactionKind.Onchain)
+        (transaction.kind == TransactionKind.Lightning || transaction.kind == TransactionKind.Onchain || transaction.kind == TransactionKind.Custom)

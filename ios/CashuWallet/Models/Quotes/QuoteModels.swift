@@ -35,7 +35,8 @@ struct MintQuoteInfo: Identifiable {
     }
 
     var hasSettledPayment: Bool {
-        amountPaid > 0 && amountIssued >= amountPaid
+        amountPaid > 0 && amountIssued >= amountPaid &&
+            (!paymentMethod.isCustom || amountIssued >= (amount ?? .max))
     }
     /// Payer-facing description embedded in a BOLT12 offer. CDK never returns
     /// it (write-only on `mintQuote`), so this is populated from the locally
@@ -196,7 +197,8 @@ enum MintQuoteSchedulePolicy {
         // On-chain expiry stops new deposits, not confirmation of deposits
         // already seen by the mint. Zero paid counters cannot prove completion.
         let expiredInvoice = quote.paymentMethod == .bolt11 && expired
-        let complete = !reusable && (expiredInvoice || quote.state == .issued || quote.hasSettledPayment)
+        let complete = !reusable && (expiredInvoice || quote.hasSettledPayment ||
+            (!quote.paymentMethod.isCustom && quote.state == .issued))
         let age = max(0, nowValue - record.firstObservedAt)
         let interval = age < recentQuoteWindow ? recentQuoteInterval : idleQuoteInterval
 
@@ -299,6 +301,8 @@ struct MeltQuoteInfo: Identifiable {
     let paymentMethod: PaymentMethodKind
     var state: MeltQuoteState
     let expiry: UInt64?
+    var unit: String = "sat"
+    var request: String = ""
     
     var totalAmount: UInt64 {
         let total = amount.addingReportingOverflow(feeReserve)

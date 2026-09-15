@@ -20,6 +20,10 @@ data class WalletTransaction(
     val fee: Long = 0,
     /** Mint account unit for [amount] and [fee] (sat, usd, eur, or custom). */
     val unit: String = "sat",
+    val paymentMethod: PaymentMethodKind? = null,
+    val paymentMethodLabel: String? = null,
+    /** Paid progress for a pending custom deposit request, separate from its CDK receipts. */
+    val mintQuoteAmountPaid: Long? = null,
     /**
      * CDK wallet-saga (operation) id backing this transaction, when the row
      * came from CDK. Pending sent tokens use it for claim checks / revoke;
@@ -34,6 +38,9 @@ data class WalletTransaction(
     /** BOLT11 mint quote still awaiting payment — titles the row "Lightning invoice". */
     val isUnpaidInvoice: Boolean = false,
 ) {
+    val mintQuoteAmountRemaining: Long?
+        get() = mintQuoteAmountPaid?.let { (amount - it).coerceAtLeast(0) }
+
     val displayDescription: String?
         get() = memo?.takeIf(String::isNotBlank) ?: PaymentRequestDecoder.description(invoice)
 
@@ -64,6 +71,7 @@ data class WalletTransaction(
     val mintQuoteIdForStatusRefresh: String?
         get() {
             if (type != TransactionType.Incoming) return null
+            if (kind == TransactionKind.Custom) return quoteId
             if (kind != TransactionKind.Lightning && kind != TransactionKind.Onchain) return null
             if (invoice == null) return null
             val reusableOffer = kind == TransactionKind.Lightning &&
@@ -83,13 +91,15 @@ enum class TransactionType {
 enum class TransactionKind {
     Ecash,
     Lightning,
-    Onchain;
+    Onchain,
+    Custom;
 
     val displayName: String
         get() = when (this) {
             Ecash -> "Ecash"
             Lightning -> "Lightning"
             Onchain -> "On-chain"
+            Custom -> "Payment"
         }
 }
 

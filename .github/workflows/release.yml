@@ -49,6 +49,9 @@ jobs:
 
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
+      with:
+        # Command-line tools are installed by the action; the legacy tools package is unavailable.
+        packages: platform-tools
 
     - name: Prepare Android signing key
       env:

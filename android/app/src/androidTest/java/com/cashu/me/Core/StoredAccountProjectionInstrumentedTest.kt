@@ -24,6 +24,53 @@ import org.junit.Test
 class StoredAccountProjectionInstrumentedTest {
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
 
+    @Test fun partialCustomRequestSurvivesReceiptsRelaunchAndTemporaryReadFailure() = runBlocking {
+        val fake = FakeWalletGateway()
+        fake.openWalletRepository("fixture", "unused")
+        val mint = "https://offline.example"
+        val branch = requireNotNull(PaymentMethodKind.fromRaw("branch"))
+        fake.ensureWallet(mint, "bux")
+        var quote = MintQuoteInfo("partial", "opaque request", 100, paymentMethod = branch,
+            state = MintQuoteState.Issued, expiryEpochSeconds = 1, mintUrl = mint,
+            amountPaid = 40, amountIssued = 40, unit = "bux")
+        val receipt = WalletTransaction("installment-1", 40, TransactionType.Incoming, TransactionKind.Custom,
+            dateEpochMillis = 2, status = AppTransactionStatus.Completed, mintUrl = mint, unit = "bux",
+            quoteId = quote.id, invoice = quote.request, paymentMethod = branch)
+        fake.addTransaction(receipt)
+        var failQuotes = false
+        val gateway = object : CdkWalletGateway by fake {
+            override suspend fun listUnissuedMintQuotes(): List<MintQuoteInfo> {
+                if (failQuotes) error("Temporary quote read failure")
+                return if (quote.hasSettledPayment) emptyList() else listOf(quote)
+            }
+        }
+        val storeName = "partial_custom_" + UUID.randomUUID()
+        val mints = listOf(MintInfo(mint))
+        val initial = WalletTransactionLoader(WalletStore(context, storeName), gateway).load(mints, false).transactions
+        assertEquals(2, initial.size)
+        assertEquals(receipt, initial.single { it.id == receipt.id }.copy(paymentMethodLabel = null))
+        assertEquals(60L, initial.single { it.id == quote.id }.mintQuoteAmountRemaining)
+
+        val relaunched = WalletTransactionLoader(WalletStore(context, storeName), gateway)
+        failQuotes = true
+        val retained = relaunched.load(mints, false).transactions
+        assertEquals(2, retained.size)
+        assertEquals(40L, retained.single { it.id == quote.id }.mintQuoteAmountPaid)
+        failQuotes = false
+        quote = quote.copy(amountPaid = 100)
+        val awaitingIssuance = relaunched.load(mints, false).transactions.single { it.id == quote.id }
+        assertEquals(AppTransactionStatus.Pending, awaitingIssuance.status)
+        assertEquals(0L, awaitingIssuance.mintQuoteAmountRemaining)
+        quote = quote.copy(amountIssued = 100)
+        fake.addTransaction(receipt.copy(id = "installment-2", amount = 60, dateEpochMillis = 3))
+        repeat(2) {
+            val completed = relaunched.load(mints, false).transactions
+            assertEquals(2, completed.size)
+            assertTrue(completed.all { it.status == AppTransactionStatus.Completed })
+            assertEquals(100L, completed.sumOf { it.amount })
+        }
+    }
+
     @Test fun discontinuedCurrencyHistorySurvivesDatabaseReopenWithoutAnAdvertisedWallet() = runBlocking {
         val directory = File(context.cacheDir, UUID.randomUUID().toString()).apply { mkdirs() }
         val path = File(directory, "wallet.db").path

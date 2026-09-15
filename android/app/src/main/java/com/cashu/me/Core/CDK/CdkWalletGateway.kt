@@ -67,6 +67,8 @@ interface CdkWalletGateway {
     suspend fun mintTokens(quoteId: String): Long
     suspend fun mintNPCQuote(quote: NPCQuote, p2pkPubkey: String?): Long
     suspend fun createMeltQuote(request: String, amountSats: Long? = null, preferredMintURL: String? = null): MeltQuoteInfo
+    suspend fun createCustomMeltQuote(method: PaymentMethodKind, request: String, amount: Long, mintUrl: String, unit: String): MeltQuoteInfo =
+        error("Custom payments are unavailable.")
     suspend fun listMeltQuotes(): List<MeltQuoteInfo>
     suspend fun meltTokens(quoteId: String, mintUrl: String? = null): MeltConfirmation
 

@@ -20,6 +20,14 @@ object TransactionDisplay {
     // Kind-first, capitalized kind, lowercase verb — single source of truth for
     // rows AND the detail title, so a row and the sheet it opens read identically.
     fun title(transaction: WalletTransaction): String = if (transaction.isPendingReceiveToken) "Ecash to claim" else when (transaction.kind) {
+        TransactionKind.Custom -> {
+            val label = transaction.paymentMethodLabel ?: transaction.paymentMethod?.displayName ?: "Payment"
+            val action = if (transaction.status == TransactionStatus.Pending) "pending"
+                else if (transaction.status == TransactionStatus.Failed) "failed"
+                else if (transaction.status == TransactionStatus.Expired) "expired"
+                else if (transaction.type == TransactionType.Incoming) "received" else "paid"
+            "$label $action"
+        }
         TransactionKind.Lightning -> when {
             transaction.type != TransactionType.Incoming -> "Lightning paid"
             // Nothing has been received while the invoice awaits payment.
@@ -44,6 +52,7 @@ object TransactionDisplay {
             TransactionKind.Ecash -> "Claimed"
             TransactionKind.Lightning -> "Paid"
             TransactionKind.Onchain -> "Confirmed"
+            TransactionKind.Custom -> "Paid"
         }
         TransactionStatus.Pending -> "Pending"
         TransactionStatus.Failed -> "Failed"
@@ -51,10 +60,11 @@ object TransactionDisplay {
     }
 
     fun qrContent(transaction: WalletTransaction): String? =
-        transaction.token ?: transaction.invoice
+        if (transaction.kind == TransactionKind.Custom) transaction.quoteId else transaction.token ?: transaction.invoice
 
     /** Pending artifacts retain their QR. Settled offers live in request details, not receipts. */
     fun showsQr(transaction: WalletTransaction): Boolean = when (transaction.kind) {
+        TransactionKind.Custom -> transaction.quoteId != null
         TransactionKind.Ecash ->
             !transaction.token.isNullOrEmpty() &&
                 transaction.type == TransactionType.Outgoing &&
@@ -82,6 +92,7 @@ object TransactionDisplay {
         TransactionKind.Ecash -> "Ecash token"
         TransactionKind.Lightning -> "Payment request"
         TransactionKind.Onchain -> "Bitcoin address"
+        TransactionKind.Custom -> "Quote ID"
     }
 
     // Detail rows follow the iOS canon: Status first (monochrome), Date, then
@@ -92,6 +103,10 @@ object TransactionDisplay {
         buildList {
             add(TransactionDetailField("Status", statusText(transaction)))
             add(TransactionDetailField("Date", formatDetailDate(transaction.dateEpochMillis)))
+            transaction.mintQuoteAmountPaid?.let { paid ->
+                add(TransactionDetailField("Received", formatNativeAmount(paid, transaction.unit)))
+                add(TransactionDetailField("Remaining", formatNativeAmount(requireNotNull(transaction.mintQuoteAmountRemaining), transaction.unit)))
+            }
             if (transaction.fee > 0) add(TransactionDetailField("Fee", formatNativeAmount(transaction.fee, transaction.unit)))
             transaction.mintUrl?.let { add(TransactionDetailField("Mint", mintHost(it))) }
             val descriptionHash = transaction.descriptionHash

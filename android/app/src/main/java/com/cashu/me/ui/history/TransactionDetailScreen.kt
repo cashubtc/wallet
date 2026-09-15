@@ -208,6 +208,9 @@ fun TransactionReceiptSheet(
         }
     }
     val details: @Composable () -> Unit = {
+        if (current.kind == TransactionKind.Custom) {
+            current.quoteId?.let { com.cashu.me.ui.components.QuoteReferenceDetails(it, current.invoice.orEmpty()) }
+        }
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.section),

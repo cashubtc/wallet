@@ -85,6 +85,10 @@ class FakeWalletGateway(
         transactions += transaction
     }
 
+    fun setMintInfo(mint: MintInfo) {
+        mintInfo[normalize(mint.url)] = mint
+    }
+
     fun markMintQuotePaid(quoteId: String, amountPaid: Long? = null) {
         val flow = checkNotNull(mintQuotes[quoteId]) { "Unknown fake quote $quoteId" }
         val current = flow.value
@@ -204,6 +208,7 @@ class FakeWalletGateway(
                 PaymentMethodKind.Onchain -> "bcrt1qdeterministicuitestaddress"
                 PaymentMethodKind.Bolt11 -> "lnbc${amount ?: 0}n1deterministicuitest"
                 PaymentMethodKind.Bolt12 -> "lno1deterministicuitest"
+                else -> "${method.rawValue}:$id"
             },
             amount = amount,
             paymentMethod = method,
