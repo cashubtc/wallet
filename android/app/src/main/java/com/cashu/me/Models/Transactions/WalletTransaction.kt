@@ -22,6 +22,8 @@ data class WalletTransaction(
     val unit: String = "sat",
     val paymentMethod: PaymentMethodKind? = null,
     val paymentMethodLabel: String? = null,
+    /** Paid progress for a pending custom deposit request, separate from its CDK receipts. */
+    val mintQuoteAmountPaid: Long? = null,
     /**
      * CDK wallet-saga (operation) id backing this transaction, when the row
      * came from CDK. Pending sent tokens use it for claim checks / revoke;
@@ -36,6 +38,9 @@ data class WalletTransaction(
     /** BOLT11 mint quote still awaiting payment — titles the row "Lightning invoice". */
     val isUnpaidInvoice: Boolean = false,
 ) {
+    val mintQuoteAmountRemaining: Long?
+        get() = mintQuoteAmountPaid?.let { (amount - it).coerceAtLeast(0) }
+
     val displayDescription: String?
         get() = memo?.takeIf(String::isNotBlank) ?: PaymentRequestDecoder.description(invoice)
 

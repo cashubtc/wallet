@@ -247,9 +247,14 @@ keypad. Custom withdrawals appear in the existing method list, with the optional
 request or memo in the toolbar. Mint and melt quotes share the adaptive QR
 layout and show one copyable quote ID, with its final six characters emphasized.
 Custom requests remain plain text in history. History retains the method and
-unit. CDK still owns signing
-keys, proofs, payment execution and recovery; there is no SDK upgrade or new
-payment ledger.
+unit. An unfinished custom deposit keeps a pending request with Received and
+Remaining amounts alongside its installment receipts, including after a reload.
+The pending request disappears once the requested amount and all paid credit
+have been issued; completed receipts remain the money ledger. QR, Copy, and
+Share use the same quote ID. Receive keeps its mint selector available when the
+selected mint has no receive methods, so another connected mint can be chosen.
+CDK still owns signing keys, proofs, payment execution and recovery; there is no
+SDK upgrade or new payment ledger.
 
 Validation performed:
 

@@ -103,6 +103,10 @@ object TransactionDisplay {
         buildList {
             add(TransactionDetailField("Status", statusText(transaction)))
             add(TransactionDetailField("Date", formatDetailDate(transaction.dateEpochMillis)))
+            transaction.mintQuoteAmountPaid?.let { paid ->
+                add(TransactionDetailField("Received", formatNativeAmount(paid, transaction.unit)))
+                add(TransactionDetailField("Remaining", formatNativeAmount(requireNotNull(transaction.mintQuoteAmountRemaining), transaction.unit)))
+            }
             if (transaction.fee > 0) add(TransactionDetailField("Fee", formatNativeAmount(transaction.fee, transaction.unit)))
             transaction.mintUrl?.let { add(TransactionDetailField("Mint", mintHost(it))) }
             val descriptionHash = transaction.descriptionHash

@@ -34,10 +34,7 @@ struct TransactionDetailView: View {
 
     /// Returns the content to display as a QR code.
     private var qrContent: String? {
-        if transaction.kind == .custom { return transaction.quoteId }
-        if let token = transaction.token { return token }
-        if let invoice = transaction.invoice { return invoice }
-        return nil
+        transaction.paymentCode
     }
 
     /// Content for the bottom Copy button. Unlike `qrContent`, this also covers a
@@ -128,10 +125,10 @@ struct TransactionDetailView: View {
                 }
             }
             .sheet(isPresented: $showShareSheet) {
-                if let token = transaction.token {
+                if transaction.kind == .ecash, let token = transaction.token {
                     CashuTokenShareSheet(token: token)
-                } else if let invoice = transaction.invoice {
-                    ShareSheet(items: [invoice])
+                } else if let content = qrContent {
+                    ShareSheet(items: [content])
                 }
             }
             .onDisappear {
@@ -347,8 +344,12 @@ struct TransactionDetailView: View {
             ("Status", statusFieldValue, nil),
             ("Date", transaction.date.formatted(date: .abbreviated, time: .shortened), nil),
         ]
+        if let paid = transaction.mintQuoteAmountPaid, let remaining = transaction.mintQuoteAmountRemaining {
+            rows.append(("Received", formattedNativeAmount(paid), nil))
+            rows.append(("Remaining", formattedNativeAmount(remaining), nil))
+        }
         if transaction.fee > 0 {
-            rows.append(("Fee", formattedNativeFee, nil))
+            rows.append(("Fee", formattedNativeAmount(transaction.fee), nil))
         }
         if transaction.kind == .onchain {
             if let mintUrl = transaction.mintUrl {
@@ -380,10 +381,10 @@ struct TransactionDetailView: View {
         CurrencyRegistry.isSatoshiUnit(transaction.unit)
     }
 
-    private var formattedNativeFee: String {
-        if isSatUnit { return "\(transaction.fee) sat" }
+    private func formattedNativeAmount(_ amount: UInt64) -> String {
+        if isSatUnit { return "\(amount) sat" }
         return CurrencyAmount(
-            value: transaction.fee,
+            value: amount,
             currency: CurrencyRegistry.currency(forMintUnit: transaction.unit)
         ).formatted()
     }

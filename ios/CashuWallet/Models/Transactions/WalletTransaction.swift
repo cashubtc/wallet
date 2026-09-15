@@ -48,6 +48,18 @@ struct WalletTransaction: Identifiable {
     var unit: String = "sat"
     var paymentMethod: PaymentMethodKind? = nil
     var paymentMethodLabel: String? = nil
+    /// Paid progress for a pending custom deposit request, separate from its CDK receipts.
+    var mintQuoteAmountPaid: UInt64? = nil
+
+    var mintQuoteAmountRemaining: UInt64? {
+        mintQuoteAmountPaid.map { amount - min(amount, $0) }
+    }
+
+    /// QR, Copy, and Share must identify the same payment artifact.
+    var paymentCode: String? {
+        if kind == .custom { return quoteId }
+        return token ?? invoice
+    }
 
     /// CDK wallet-saga (operation) id backing this transaction, when the row
     /// came from CDK. Pending sent tokens use it for `checkSendStatus` /

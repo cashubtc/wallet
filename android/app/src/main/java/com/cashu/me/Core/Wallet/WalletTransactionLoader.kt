@@ -92,7 +92,9 @@ internal class WalletTransactionLoader(
         quoteRead.exceptionOrNull()?.let { if (it is kotlinx.coroutines.CancellationException) throw it }
         val unissuedMintQuotes = quoteRead.getOrDefault(emptyList())
         val retainedQuotes = if (quoteRead.isFailure) previous.filter {
-            it.id == it.quoteId && it.id !in quoteIdsWithTransactions && it.mintUrl in trackedMintUrls
+            it.id == it.quoteId && it.mintUrl in trackedMintUrls &&
+                (it.id !in quoteIdsWithTransactions ||
+                    (it.kind == TransactionKind.Custom && it.status == TransactionStatus.Pending))
         } else emptyList()
         val pendingQuotes = pendingMintQuoteTransactions(
             quotes = unissuedMintQuotes,
@@ -110,8 +112,8 @@ internal class WalletTransactionLoader(
         val receiveTokenTransactions = pendingReceiveTokenTransactions(pendingReceiveTokens)
         // Row id spaces are disjoint by construction (saga-derived tx ids,
         // mint-issued quote ids, random pending-receive ids) and quote-backed
-        // rows are skipped once CDK owns a transaction for the quote, so a
-        // plain id dedupe is sufficient.
+        // rows represent unfinished requests; custom installments keep their
+        // own CDK receipt ids. A plain id dedupe preserves both.
         val merged = (remoteWithTokens + pendingQuoteTransactions + retainedQuotes + receiveTokenTransactions)
             .map { transaction ->
                 val method = transaction.paymentMethod

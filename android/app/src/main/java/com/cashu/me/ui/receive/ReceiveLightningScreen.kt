@@ -12,6 +12,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -733,7 +734,21 @@ fun ReceiveLightningScreen(
                     // iOS shows a dedicated "Creating…" overlay instead of the
                     // keypad while that request is in flight.
                     if (supportedMethods.isEmpty()) {
-                        InlineNotice(text = "This mint does not offer payments in the selected unit.", severity = NoticeSeverity.Caution)
+                        Column(
+                            modifier = Modifier.fillMaxSize().padding(CashuTheme.spacing.comfortable),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                                InlineNotice(text = "This mint does not offer payments in the selected unit.", severity = NoticeSeverity.Caution)
+                            }
+                            activeMint?.let { mint ->
+                                AmountEntryMintSelector(
+                                    direction = MintSelectorDirection.Destination,
+                                    mint = mint,
+                                    onPickMint = { mintPickerOpen = true }.takeIf { walletState.mints.size > 1 },
+                                )
+                            }
+                        }
                     } else if (creating && !method.requiresMintAmount) {
                         CreatingOverlay(method = method)
                     } else {

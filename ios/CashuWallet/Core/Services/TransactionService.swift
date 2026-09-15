@@ -170,7 +170,7 @@ class TransactionService: ObservableObject {
                 // A Lightning invoice / on-chain quote exists before CDK creates
                 // any transaction for it (that happens once minting starts), so
                 // unpaid and paid-not-yet-minted quotes still get synthesized
-                // rows. Quotes that already have a transaction are skipped.
+                // rows. Unfinished custom requests also survive installment receipts.
                 let pendingMintQuotes = try await walletDatabase.getRecoverableMintQuotes()
                 let pendingQuoteTransactions = await pendingTransactions(
                     from: pendingMintQuotes,
@@ -185,7 +185,9 @@ class TransactionService: ObservableObject {
                 return
             } catch {
                 allTransactions.append(contentsOf: previous.filter {
-                    $0.id == $0.quoteId && !quoteIdsWithTransactions.contains($0.id)
+                    $0.id == $0.quoteId &&
+                        (!quoteIdsWithTransactions.contains($0.id) ||
+                            ($0.kind == .custom && $0.status == .pending))
                 })
                 AppLogger.wallet.error("Failed to load stored payment quotes: \(error)")
             }
@@ -357,12 +359,12 @@ class TransactionService: ObservableObject {
                 continue
             }
 
-            // Once CDK has a transaction for this quote — pending while a mint
-            // is in flight, completed afterwards — the CDK row is authoritative
-            // and the quote-backed row would only duplicate it. (BOLT12 offers
-            // always stay in `getUnissuedMintQuotes()` because the SQL filter is
-            // `amount_issued = 0 OR payment_method = 'bolt12'`.)
-            if quoteIdsWithTransactions.contains(quote.id) {
+            // A custom quote can still need payment or issuance after CDK records
+            // an installment. Keep its pending request alongside the money receipts.
+            let unfinishedCustom = paymentMethod.isCustom && !(quote.amountPaid.value > 0 &&
+                quote.amountIssued.value >= quote.amountPaid.value &&
+                quote.amountIssued.value >= (quote.amount?.value ?? .max))
+            if quoteIdsWithTransactions.contains(quote.id) && !unfinishedCustom {
                 continue
             }
 
@@ -450,6 +452,7 @@ class TransactionService: ObservableObject {
                 quoteId: quote.id
             )
             transaction.paymentMethod = paymentMethod
+            transaction.mintQuoteAmountPaid = unfinishedCustom ? quote.amountPaid.value : nil
             transaction.unit = PaymentRequestDecoder.unitDescription(quote.unit)
             transaction.paymentMethodLabel = getMints().first { $0.url == quote.mintUrl.url }?.methodName(
                 paymentMethod, unit: transaction.unit

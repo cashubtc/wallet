@@ -75,4 +75,29 @@ class CustomPaymentMethodTest {
         assertEquals(2, checks)
         assertTrue(MintQuoteSchedulePolicy.observed(null, partial.copy(amountPaid = 100, amountIssued = 100), 2_000).isComplete)
     }
+
+    @Test
+    fun partialRequestSurvivesItsReceiptUntilAllPaidCreditIsIssued() {
+        val partial = MintQuoteInfo("quote", "opaque request", 100, paymentMethod = branch,
+            state = MintQuoteState.Issued, expiryEpochSeconds = 1, mintUrl = "https://mint.example",
+            amountPaid = 40, amountIssued = 40, unit = "bux")
+        fun pending(quote: MintQuoteInfo) = pendingMintQuoteTransactions(
+            listOf(quote), setOf("https://mint.example"), setOf(quote.id), mutableMapOf(), 2_000)
+
+        val request = pending(partial).single()
+        assertEquals(TransactionStatus.Pending, request.status)
+        assertEquals(100L, request.amount)
+        assertEquals(40L, request.mintQuoteAmountPaid)
+        assertEquals(60L, request.mintQuoteAmountRemaining)
+        assertEquals(request, Json.decodeFromString<WalletTransaction>(Json.encodeToString(request)))
+        val fields = TransactionDisplay.detailFields(request).associate { it.label to it.value }
+        assertEquals("40 BUX", fields["Received"])
+        assertEquals("60 BUX", fields["Remaining"])
+
+        val awaitingIssuance = pending(partial.copy(amountPaid = 100, amountIssued = 40)).single()
+        assertEquals(TransactionStatus.Pending, awaitingIssuance.status)
+        assertEquals(0L, awaitingIssuance.mintQuoteAmountRemaining)
+        assertTrue(pending(partial.copy(amountPaid = 100, amountIssued = 100)).isEmpty())
+        assertTrue(pending(partial.copy(paymentMethod = PaymentMethodKind.Bolt11)).isEmpty())
+    }
 }

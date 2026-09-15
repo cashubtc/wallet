@@ -17,11 +17,10 @@ internal fun pendingMintQuoteTransactions(
 ): List<WalletTransaction> =
     quotes.mapNotNull { quote ->
         val mintUrl = quote.mintUrl?.takeIf { it in trackedMintUrls } ?: return@mapNotNull null
-        // Once CDK has a transaction for this quote — pending while a mint is
-        // in flight, completed afterwards — the CDK row is authoritative and
-        // the quote-backed row would only duplicate it. (BOLT12 offers always
-        // stay in the unissued list: `amount_issued = 0 OR method = 'bolt12'`.)
-        if (quote.id in quoteIdsWithTransactions) {
+        // A custom quote can still need payment or issuance after CDK records
+        // an installment. Keep its pending request alongside the money receipts.
+        val unfinishedCustom = quote.paymentMethod.isCustom && !quote.hasSettledPayment
+        if (quote.id in quoteIdsWithTransactions && !unfinishedCustom) {
             return@mapNotNull null
         }
 
@@ -71,6 +70,7 @@ internal fun pendingMintQuoteTransactions(
             quoteId = quote.id,
             unit = quote.unit,
             paymentMethod = quote.paymentMethod,
+            mintQuoteAmountPaid = quote.amountPaid.takeIf { unfinishedCustom },
             isUnpaidInvoice = isUnpaidBolt11,
         )
     }

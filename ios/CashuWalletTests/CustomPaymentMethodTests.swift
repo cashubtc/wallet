@@ -82,23 +82,69 @@ final class CustomPaymentMethodTests: XCTestCase {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let database = try LifecycleSafeWalletDatabase(filePath: directory.appendingPathComponent("wallet.sqlite").path)
-        let quote = Cdk.MintQuote(id: "partial", amount: Amount(value: 100), unit: .custom(unit: "bux"),
-            request: "opaque", state: .issued, expiry: 1, mintUrl: MintUrl(url: "https://mint.example"),
-            amountIssued: Amount(value: 40), amountPaid: Amount(value: 40), updatedAt: 1, estimatedBlocks: nil,
-            paymentMethod: branch.cdkMethod, secretKey: nil, usedByOperation: nil, version: 0)
+        func storedQuote(paid: UInt64, issued: UInt64, version: UInt32 = 0) -> Cdk.MintQuote {
+            Cdk.MintQuote(id: "partial", amount: Amount(value: 100), unit: .custom(unit: "bux"),
+                request: "opaque", state: .issued, expiry: 1, mintUrl: MintUrl(url: "https://mint.example"),
+                amountIssued: Amount(value: issued), amountPaid: Amount(value: paid), updatedAt: 1, estimatedBlocks: nil,
+                paymentMethod: branch.cdkMethod, secretKey: nil, usedByOperation: nil, version: version)
+        }
+        let quote = storedQuote(paid: 40, issued: 40)
         try await database.addMintQuote(quote: quote)
         let cdkCandidates = try await database.getUnissuedMintQuotes()
         XCTAssertFalse(cdkCandidates.contains { $0.id == quote.id })
         let candidates = try await database.getRecoverableMintQuotes()
         XCTAssertEqual(candidates.map(\.id), [quote.id])
+        try await database.addTransaction(transaction: Cdk.Transaction(
+            id: TransactionId(hex: String(repeating: "a", count: 64)), mintUrl: quote.mintUrl,
+            direction: .incoming, amount: Amount(value: 40), fee: Amount(value: 0), unit: quote.unit,
+            ys: [], timestamp: 2, memo: nil, metadata: [:], quoteId: quote.id,
+            paymentRequest: quote.request, paymentProof: nil, paymentMethod: branch.cdkMethod,
+            sagaId: UUID().uuidString, status: .completed
+        ))
         let repository = try WalletRepository(mnemonic: generateMnemonic(), store: customWalletStore(db: database))
         let service = TransactionService(walletRepository: { repository }, walletDatabase: { database },
             getTrackedMintUrls: { ["https://mint.example"] }, walletStore: WalletStore(storage: InMemoryStorage()))
         await service.loadTransactions(includeRemoteObservations: false)
-        let transaction = try XCTUnwrap(service.transactions.first)
+        let transaction = try XCTUnwrap(service.transactions.first { $0.id == quote.id })
         XCTAssertEqual(transaction.kind, .custom)
         XCTAssertEqual(transaction.status, .pending)
         XCTAssertEqual(transaction.unit, "bux")
+        XCTAssertEqual(transaction.amount, 100)
+        XCTAssertEqual(transaction.mintQuoteAmountPaid, 40)
+        XCTAssertEqual(transaction.mintQuoteAmountRemaining, 60)
+        XCTAssertEqual(service.transactions.count, 2)
+        XCTAssertEqual(HomeActivity.recentTransactions(from: service.transactions, limit: 10).map(\.amount), [40])
+
+        // A fresh database connection and service must rebuild the pending request
+        // from CDK, even though its first installment already has a receipt.
+        let reopened = try LifecycleSafeWalletDatabase(filePath: directory.appendingPathComponent("wallet.sqlite").path)
+        let reloaded = TransactionService(walletRepository: { repository }, walletDatabase: { reopened },
+            getTrackedMintUrls: { ["https://mint.example"] }, walletStore: WalletStore(storage: InMemoryStorage()))
+        await reloaded.loadTransactions(includeRemoteObservations: false)
+        XCTAssertEqual(reloaded.transactions.first { $0.id == quote.id }?.mintQuoteAmountRemaining, 60)
+        XCTAssertEqual(reloaded.transactions.count, 2)
+
+        let partialVersion = try await reopened.getMintQuote(quoteId: quote.id)?.version
+        try await reopened.addMintQuote(quote: storedQuote(paid: 100, issued: 40, version: XCTUnwrap(partialVersion)))
+        await reloaded.loadTransactions(includeRemoteObservations: false)
+        XCTAssertEqual(reloaded.transactions.first { $0.id == quote.id }?.status, .pending)
+        XCTAssertEqual(reloaded.transactions.first { $0.id == quote.id }?.mintQuoteAmountRemaining, 0)
+
+        let paidVersion = try await reopened.getMintQuote(quoteId: quote.id)?.version
+        try await reopened.addMintQuote(quote: storedQuote(paid: 100, issued: 100, version: XCTUnwrap(paidVersion)))
+        try await reopened.addTransaction(transaction: Cdk.Transaction(
+            id: TransactionId(hex: String(repeating: "b", count: 64)), mintUrl: quote.mintUrl,
+            direction: .incoming, amount: Amount(value: 60), fee: Amount(value: 0), unit: quote.unit,
+            ys: [], timestamp: 3, memo: nil, metadata: [:], quoteId: quote.id,
+            paymentRequest: quote.request, paymentProof: nil, paymentMethod: branch.cdkMethod,
+            sagaId: UUID().uuidString, status: .completed
+        ))
+        await reloaded.loadTransactions(includeRemoteObservations: false)
+        XCTAssertFalse(reloaded.transactions.contains { $0.id == quote.id })
+        XCTAssertEqual(reloaded.transactions.count, 2)
+        XCTAssertEqual(reloaded.transactions.reduce(0) { $0 + $1.amount }, 100)
+        await reloaded.loadTransactions(includeRemoteObservations: false)
+        XCTAssertEqual(reloaded.transactions.count, 2)
     }
 
     /// Opt in with a loopback CDK 0.18 fakewallet mint advertising branch/bux.

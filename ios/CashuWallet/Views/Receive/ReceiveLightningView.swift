@@ -105,8 +105,15 @@ struct ReceiveLightningView: View {
                     creatingOverlay
                         .transition(.opacity)
                 } else if availableMintMethods.isEmpty {
-                    ContentUnavailableView("No receive methods", systemImage: "creditcard",
-                        description: Text("This mint does not offer payments in the selected unit."))
+                    VStack(spacing: 0) {
+                        ContentUnavailableView("No receive methods", systemImage: "creditcard",
+                            description: Text("This mint does not offer payments in the selected unit."))
+                        if let mint = walletManager.activeMint {
+                            mintSelector(mint: mint)
+                                .padding(.horizontal, NumberPadMetrics.gutter)
+                                .padding(.bottom, 16)
+                        }
+                    }
                 } else {
                     amountInputView
                         .transition(reduceMotion ? .opacity : .asymmetric(

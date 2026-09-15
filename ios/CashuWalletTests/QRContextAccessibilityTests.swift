@@ -2,6 +2,23 @@ import XCTest
 @testable import CashuWallet
 
 final class QRContextAccessibilityTests: XCTestCase {
+    func testCustomHistoryPaymentCodeUsesQuoteIDInsteadOfMemoForBothDirections() {
+        for direction in [WalletTransaction.TransactionType.incoming, .outgoing] {
+            for request in ["", "Cash payout memo", "https://mint.example/payment"] {
+                var transaction = WalletTransaction(id: "receipt", amount: 21, type: direction,
+                    kind: .custom, date: .now, status: .pending, invoice: request, quoteId: "custom-quote")
+                XCTAssertEqual(transaction.paymentCode, "custom-quote")
+                transaction.status = .completed
+                XCTAssertEqual(transaction.paymentCode, "custom-quote")
+                transaction.quoteId = nil
+                XCTAssertNil(transaction.paymentCode)
+            }
+        }
+        let invoice = WalletTransaction(id: "invoice", amount: 21, type: .incoming,
+            kind: .lightning, date: .now, status: .pending, invoice: "lnbc-request", quoteId: "invoice-quote")
+        XCTAssertEqual(invoice.paymentCode, "lnbc-request")
+    }
+
     func testActionNamesMatchContextMenuEntries() {
         XCTAssertEqual(QRContextAccessibility.copyActionName, "Copy")
         XCTAssertEqual(QRContextAccessibility.shareActionName, "Share")
