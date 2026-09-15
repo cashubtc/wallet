@@ -56,9 +56,25 @@ enum ICloudRestorePolicy {
 /// screen via Continue or Skip; restore path: restore finished). The seed is
 /// persisted the moment a wallet is installed, so its presence alone cannot
 /// distinguish "wallet ready" from "killed mid-onboarding" — this marker can.
-/// Absent on installs that predate it; those are grandfathered to completed at
-/// launch, before any routing decision.
+/// Absent on both older installs and reinstalls. Only an existing local database
+/// proves that an unmarked seed belongs to an older install.
 enum OnboardingCompletionState {
+    /// Keychain secrets can survive uninstall while the app's database and
+    /// defaults do not. Never activate a seed left behind by itself, or write a
+    /// marker that would activate it on the next launch. Keep it in Keychain
+    /// until the user explicitly creates or restores a wallet.
+    static func shouldLoadStoredWallet(
+        hasStoredMnemonic: Bool,
+        hasLocalDatabase: Bool,
+        defaults: UserDefaults = .standard
+    ) -> Bool {
+        guard hasStoredMnemonic else { return false }
+        if hasMarker(defaults: defaults) { return true }
+        guard hasLocalDatabase else { return false }
+        setCompleted(true, defaults: defaults)
+        return true
+    }
+
     static func isCompleted(defaults: UserDefaults = .standard) -> Bool {
         defaults.bool(forKey: StorageKeys.onboardingCompleted)
     }

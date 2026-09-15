@@ -49,3 +49,18 @@ xcodebuild -project CashuWallet.xcodeproj \
 - `CashuWallet/Core` — services (wallet, mints, NFC, Nostr, keychain), navigation, settings
 - `CashuWallet/Views` — SwiftUI views grouped by flow (Send, Receive, Mints, History, Settings)
 - `CashuWallet/Models` — data types and protocols
+
+## Reinstall and onboarding
+
+An iOS Keychain seed can survive deleting the app while its local database and
+preferences are removed. A seed alone must not activate a wallet on reinstall:
+show onboarding and wait for an explicit create or restore choice. Keep the
+surviving secret in Keychain until that choice replaces it. Existing installs
+retain their onboarding marker; older installs without the marker migrate only
+when the current or legacy wallet database is present.
+
+For regression testing, use a disposable simulator wallet: complete onboarding,
+uninstall and reinstall the app, and verify that onboarding appears on both the
+first launch and a subsequent relaunch. Create Wallet must generate a fresh seed.
+Separately verify that an upgrade preserves a completed wallet and that relaunching
+unfinished onboarding preserves the seed already shown to the user.

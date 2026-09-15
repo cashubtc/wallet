@@ -101,7 +101,7 @@ enum StorageKeys {
 
     // Onboarding completion marker. Written `false` when a wallet is installed
     // and `true` only when onboarding is fully passed; absent on installs that
-    // predate the marker (treated as completed at launch).
+    // predate the marker (migrated only when a local database still exists).
     static let onboardingCompleted = "cashu.local.onboardingCompleted"
 
     // Cashu Requests (receive intents shown in History). Key names predate the

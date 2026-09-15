@@ -708,6 +708,66 @@ final class WalletStoreTests: XCTestCase {
         XCTAssertFalse(OnboardingCompletionState.hasMarker(defaults: defaults))
     }
 
+    func testReinstallWithSurvivingSeedKeepsOnboardingAcrossLaunches() throws {
+        let suiteName = "ReinstallOnboardingTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        // Uninstall removed both app-local stores, but Keychain kept the seed.
+        // A second launch must not mistake the first launch for wallet setup.
+        for _ in 0..<2 {
+            XCTAssertFalse(OnboardingCompletionState.shouldLoadStoredWallet(
+                hasStoredMnemonic: true, hasLocalDatabase: false, defaults: defaults
+            ))
+            XCTAssertFalse(OnboardingCompletionState.hasMarker(defaults: defaults))
+        }
+    }
+
+    func testLegacyWalletWithLocalDatabaseMigratesWithoutOnboarding() throws {
+        let suiteName = "LegacyOnboardingTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        // An upgrade retains the database, even for a zero-balance wallet
+        // whose user skipped adding a mint.
+        XCTAssertTrue(OnboardingCompletionState.shouldLoadStoredWallet(
+            hasStoredMnemonic: true, hasLocalDatabase: true, defaults: defaults
+        ))
+        XCTAssertTrue(OnboardingCompletionState.isCompleted(defaults: defaults))
+    }
+
+    func testInterruptedOnboardingKeepsItsSeedAndIncompleteMarker() throws {
+        let suiteName = "InterruptedOnboardingTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        OnboardingCompletionState.setCompleted(false, defaults: defaults)
+
+        XCTAssertTrue(OnboardingCompletionState.shouldLoadStoredWallet(
+            hasStoredMnemonic: true, hasLocalDatabase: true, defaults: defaults
+        ))
+        XCTAssertFalse(OnboardingCompletionState.isCompleted(defaults: defaults))
+        XCTAssertTrue(WalletStartupPolicy.needsOnboardingAfterRuntimeFailure(
+            cachedWalletPublished: true, onboardingCompleted: false
+        ))
+    }
+
+    func testCurrentWalletDoesNotDependOnDatabaseExistenceForOnboarding() throws {
+        let suiteName = "CurrentOnboardingTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        OnboardingCompletionState.setCompleted(true, defaults: defaults)
+
+        // A database failure inside an existing installation must still reach
+        // the existing startup/recovery path, without replacing its seed.
+        XCTAssertTrue(OnboardingCompletionState.shouldLoadStoredWallet(
+            hasStoredMnemonic: true, hasLocalDatabase: false, defaults: defaults
+        ))
+        XCTAssertTrue(OnboardingCompletionState.isCompleted(defaults: defaults))
+        XCTAssertFalse(OnboardingCompletionState.shouldLoadStoredWallet(
+            hasStoredMnemonic: false, hasLocalDatabase: true, defaults: defaults
+        ))
+    }
+
     func testIncompleteICloudRestoreOverridesPublishedCacheAfterRuntimeFailure() {
         XCTAssertTrue(WalletStartupPolicy.needsOnboardingAfterRuntimeFailure(
             cachedWalletPublished: true,
