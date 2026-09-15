@@ -98,10 +98,11 @@ enum StorageKeys {
     static let mintKeysetRefreshTimestamps = "wallet.mintKeysetRefreshTimestamps"
     static let processedNPCQuotes = "wallet.processedNPCQuotes"
     static let nostrMintBackupLastBackupDate = "wallet.nostrMintBackup.lastBackupDate"
+    static let pendingICloudRestoreMintURLs = "wallet.pendingICloudRestoreMintURLs"
 
     // Onboarding completion marker. Written `false` when a wallet is installed
     // and `true` only when onboarding is fully passed; absent on installs that
-    // predate the marker (treated as completed at launch).
+    // predate the marker (migrated only when a local database still exists).
     static let onboardingCompleted = "cashu.local.onboardingCompleted"
 
     // Cashu Requests (receive intents shown in History). Key names predate the
@@ -232,6 +233,7 @@ enum StorageKeys {
         mintKeysetRefreshTimestamps,
         processedNPCQuotes,
         nostrMintBackupLastBackupDate,
+        pendingICloudRestoreMintURLs,
         cashuRequests,
         cashuRequestsCurrentId,
         cashuRequestsProcessedNIP17Ids,

@@ -969,6 +969,9 @@ struct OnboardingView: View {
         if mintCount == 0 {
             return "Add your mints in Settings to recover any funds."
         }
+        if !ICloudRestoreState.pendingMintURLs().isEmpty {
+            return "Your wallet is ready. Some funds may still need to be recovered."
+        }
         if walletManager.balance > 0 {
             return "Across \(mintCount) mint\(mintCount == 1 ? "" : "s")."
         }

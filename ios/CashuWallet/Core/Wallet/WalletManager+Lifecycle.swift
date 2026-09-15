@@ -436,9 +436,10 @@ enum WalletStartupPolicy {
     /// complete, so it must return to recovery even when partial cache exists.
     static func needsOnboardingAfterRuntimeFailure(
         cachedWalletPublished: Bool,
-        iCloudRestoreIncomplete: Bool = false
+        iCloudRestoreIncomplete: Bool = false,
+        onboardingCompleted: Bool = true
     ) -> Bool {
-        iCloudRestoreIncomplete || !cachedWalletPublished
+        iCloudRestoreIncomplete || !onboardingCompleted || !cachedWalletPublished
     }
 }
 
@@ -552,15 +553,20 @@ extension WalletManager {
                 try KeychainService().loadMnemonic()
             }.value
 
-            if let storedMnemonic {
+            // Inspect both database locations before opening CDK, which would
+            // create an empty database and hide evidence of a reinstall.
+            let databaseURLs = [
+                try walletDirectoryURL(create: false).appendingPathComponent(walletDatabaseFilename),
+                legacyWalletDatabaseURL()
+            ]
+            let shouldLoadStoredWallet = OnboardingCompletionState.shouldLoadStoredWallet(
+                hasStoredMnemonic: storedMnemonic != nil,
+                hasLocalDatabase: databaseURLs.contains { FileManager.default.fileExists(atPath: $0.path) }
+            )
+
+            if let storedMnemonic, shouldLoadStoredWallet {
                 mnemonic = storedMnemonic
                 loadCachedWalletState()
-                // Wallets installed before the completion marker existed are
-                // treated as fully onboarded; only installs from this version
-                // on can be incomplete.
-                if !OnboardingCompletionState.hasMarker() {
-                    OnboardingCompletionState.setCompleted(true)
-                }
                 needsOnboarding = ICloudRestorePolicy.needsOnboarding(
                     hasStoredMnemonic: true,
                     restoreIncomplete: hasIncompleteICloudRestore,
@@ -603,6 +609,10 @@ extension WalletManager {
                 startDeferredStartupMaintenance()
                 SentryService.breadcrumb("Wallet loaded", category: "wallet.lifecycle")
             } else {
+                // A surviving Keychain seed is not an in-progress onboarding
+                // wallet. Leaving the runtime mnemonic empty makes Create
+                // Wallet generate a fresh seed instead of reusing that secret.
+                mnemonic = nil
                 OnboardingCompletionState.clear()
                 needsOnboarding = ICloudRestorePolicy.needsOnboarding(
                     hasStoredMnemonic: false,
@@ -628,7 +638,8 @@ extension WalletManager {
             // and history or incorrectly send an existing wallet to onboarding.
             needsOnboarding = WalletStartupPolicy.needsOnboardingAfterRuntimeFailure(
                 cachedWalletPublished: publishedCachedWallet,
-                iCloudRestoreIncomplete: hasIncompleteICloudRestore
+                iCloudRestoreIncomplete: hasIncompleteICloudRestore,
+                onboardingCompleted: OnboardingCompletionState.isCompleted()
             )
         }
     }
@@ -721,6 +732,7 @@ extension WalletManager {
             // Refresh balance while this restore still owns the repository.
             await self.refreshBalanceAssumingWalletOperationLease()
 
+            ICloudRestoreState.removePendingMint(normalizedUrl)
             SentryService.breadcrumb("Wallet restore from mint completed", category: "wallet.lifecycle")
             return RestoreMintResult(
                 mintUrl: normalizedUrl,
@@ -736,7 +748,7 @@ extension WalletManager {
     /// Restore wallet from mnemonic - Phase 3: Complete restore and dismiss onboarding
     func completeRestore() async {
         completeOnboarding()
-        // The restored mint list is final now — refresh the Nostr backup with it.
+        // Refresh the Nostr backup only if there are no unresolved iCloud mints.
         // (Must not run earlier: publishing while the repository is still empty
         // would replace the addressable backup event with an empty list.)
         Task { await NostrMintBackupService.shared.backupCurrentMintsIfEnabled() }
@@ -746,9 +758,8 @@ extension WalletManager {
         transactionService.loadCachedState()
         OnboardingCompletionState.setCompleted(true)
         if hasIncompleteICloudRestore {
-            // Choosing a different onboarding path after an interrupted iCloud
-            // restore is also a valid completion. Release the write barrier only
-            // once that replacement wallet and its mint list are final.
+            // The user can accept a partial recovery. Pending mint URLs remain
+            // wallet-scoped and are included in subsequent iCloud backups.
             setICloudRestoreIncomplete(false)
             if iCloudBackupEnabled {
                 performICloudBackup()
