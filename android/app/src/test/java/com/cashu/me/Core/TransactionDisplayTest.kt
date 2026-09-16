@@ -5,6 +5,7 @@ import com.cashu.me.Models.TransactionStatus
 import com.cashu.me.Models.TransactionType
 import com.cashu.me.Models.WalletTransaction
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -37,6 +38,46 @@ class TransactionDisplayTest {
                     it.copyValue == paymentProof
             },
         )
+    }
+
+    @Test
+    fun signedPayerProofReplacesHexOnThePaymentProofRow() {
+        val hex = "0123456789abcdef0123456789abcdef"
+        val lnp1 = "lnp1pgd9xatswphhyapqgf85c4p3xgsxgetkv4kx7urdv4h8gys0we5kucm9deax7urpd3sh57n0"
+        val transaction = transaction(
+            kind = TransactionKind.Lightning,
+            type = TransactionType.Outgoing,
+            invoice = "lno1test",
+            preimage = hex,
+        ).copy(payerProof = lnp1)
+
+        val fields = TransactionDisplay.detailFields(transaction)
+        assertTrue(
+            fields.any {
+                it.label == "Payment Proof" &&
+                    it.value == "${lnp1.take(8)}…${lnp1.takeLast(6)}" &&
+                    it.copyValue == lnp1
+            },
+        )
+        assertTrue(fields.none { it.copyValue == hex })
+        assertTrue(Bolt12PayerProof.isSigned(lnp1))
+        assertEquals(Bolt12PayerProof.verifyUrl(lnp1), TransactionDisplay.detailFields(transaction)
+            .single { it.label == "Payment Proof" }.copyValue?.let(Bolt12PayerProof::verifyUrl))
+        assertTrue(Bolt12PayerProof.verifyUrl(lnp1)!!.startsWith("https://lnproof.space/lnp1"))
+        assertNull(Bolt12PayerProof.verifyUrl(hex))
+    }
+
+    @Test
+    fun hexPreimageDoesNotOfferVerify() {
+        val hex = "0123456789abcdef0123456789abcdef"
+        val transaction = transaction(
+            kind = TransactionKind.Lightning,
+            type = TransactionType.Outgoing,
+            preimage = hex,
+        )
+        val fields = TransactionDisplay.detailFields(transaction)
+        assertEquals(hex, fields.single { it.label == "Payment Proof" }.copyValue)
+        assertNull(Bolt12PayerProof.verifyUrl(hex))
     }
 
     @Test
@@ -208,6 +249,7 @@ class TransactionDisplayTest {
         token: String? = null,
         invoice: String? = null,
         preimage: String? = null,
+        payerProof: String? = null,
         fee: Long = 0,
         memo: String? = null,
     ) = WalletTransaction(
@@ -219,6 +261,7 @@ class TransactionDisplayTest {
         status = TransactionStatus.Completed,
         mintUrl = "https://mint.example.com",
         preimage = preimage,
+        payerProof = payerProof,
         token = token,
         invoice = invoice,
         fee = fee,

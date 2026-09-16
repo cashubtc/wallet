@@ -379,6 +379,11 @@ values receive a trailing affordance. Remaining rows are conditional essentials 
 row stay dropped (`unitLabel` is always BTC/SAT; the live request is the QR/Copy).
 Opaque reference values, including **Payment Proof**, render as
 `prefix(8)…suffix(6)` while their Copy action preserves the full value.
+A Lightning send may carry a signed BOLT12 payer proof (`lnp1…`) separately
+from the hex preimage. When `lnp1` is present it occupies the Payment Proof
+row (same truncation/copy rule) and the receipt adds **Verify payment proof**
+(opens lnproof.space) and **Share payment proof**. Hex-only preimages stay
+copy-only — no verify, no share. Unavailable proofs are silent.
 On-chain keeps **Address** / **Transaction ID** and its address QR. The **Type**
 row stays omitted (the nav title names kind/direction).
 
@@ -579,6 +584,11 @@ values receive a trailing affordance. Remaining rows are conditional essentials 
 row stay dropped (`unitLabel` is always BTC/SAT; the live request is the QR/Copy).
 Opaque reference values, including **Payment Proof**, render as
 `prefix(8)…suffix(6)` while their Copy action preserves the full value.
+A Lightning send may carry a signed BOLT12 payer proof (`lnp1…`) separately
+from the hex preimage. When `lnp1` is present it occupies the Payment Proof
+row (same truncation/copy rule) and the receipt adds **Verify payment proof**
+(opens lnproof.space) and **Share payment proof**. Hex-only preimages stay
+copy-only — no verify, no share. Unavailable proofs are silent.
 On-chain keeps **Address** / **Transaction ID** and its address QR. The **Type**
 row stays omitted (the nav title names kind/direction).
 

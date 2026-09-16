@@ -854,6 +854,9 @@ class WalletManager(
     override suspend fun createMeltQuote(request: String, amountSats: Long?, preferredMintURL: String?): MeltQuoteInfo =
         withLoadingResult { gateway.createMeltQuote(request, amountSats, preferredMintURL) }
 
+    suspend fun fetchBolt12PayerProof(quoteId: String, mintUrl: String? = null): String? =
+        gateway.fetchBolt12PayerProof(quoteId, mintUrl)
+
     override suspend fun meltTokens(quoteId: String, mintUrl: String?): MeltPaymentResult =
         withLoadingResult {
             val confirmation = try {

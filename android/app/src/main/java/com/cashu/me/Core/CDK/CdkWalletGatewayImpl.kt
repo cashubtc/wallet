@@ -9,6 +9,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import com.cashu.me.Core.Bolt12PayerProof
 import com.cashu.me.Core.LightningRequestParser
 import com.cashu.me.Core.NPCQuote
 import com.cashu.me.Core.mintQuoteAmountForDomain
@@ -526,7 +527,7 @@ class CdkWalletGatewayImpl : WalletGateway {
                     val finalized = outcome.finalized
                     MeltConfirmation(
                         result = MeltPaymentResult(
-                            preimage = finalized.preimage,
+                            preimage = Bolt12PayerProof.split(finalized.preimage).preimage,
                             amount = finalized.amount.value.toLong(),
                             feePaid = finalized.feePaid.value.toLong(),
                             mintUrl = wallet.mintUrl().url,
@@ -555,7 +556,7 @@ class CdkWalletGatewayImpl : WalletGateway {
                             (finalized.state == CdkQuoteState.PAID || finalized.state == CdkQuoteState.ISSUED) ->
                             MeltConfirmation(
                                 result = MeltPaymentResult(
-                                    preimage = finalized.preimage,
+                                    preimage = Bolt12PayerProof.split(finalized.preimage).preimage,
                                     amount = finalized.amount.value.toLong(),
                                     feePaid = finalized.feePaid.value.toLong(),
                                     mintUrl = wallet.mintUrl().url,
@@ -616,7 +617,9 @@ class CdkWalletGatewayImpl : WalletGateway {
         }.getOrNull() else null
         return MeltConfirmation(
             result = MeltPaymentResult(
-                preimage = transaction?.paymentProof ?: checked.paymentProof,
+                preimage = Bolt12PayerProof.split(
+                    transaction?.paymentProof ?: checked.paymentProof,
+                ).preimage,
                 amount = transaction?.amount?.value?.toLong() ?: checked.amount.value.toLong(),
                 feePaid = transaction?.fee?.value?.toLong() ?: checked.feeReserve.value.toLong(),
                 mintUrl = wallet.mintUrl().url,
@@ -626,6 +629,12 @@ class CdkWalletGatewayImpl : WalletGateway {
             ),
             pendingMelt = null,
         )
+    }
+
+    override suspend fun fetchBolt12PayerProof(quoteId: String, mintUrl: String?): String? {
+        // CDK 0.18 FFI has no create_bolt12_payer_proof. Bind it here when
+        // cdk-android exposes the mint method or a dedicated transaction field.
+        return null
     }
 
     override suspend fun checkMeltQuoteStatus(quoteId: String, mintUrl: String?): MeltQuoteInfo = cdkCall {
@@ -1133,22 +1142,29 @@ class CdkWalletGatewayImpl : WalletGateway {
     private fun CdkTransaction.toDomain(unit: String): WalletTransaction {
         val direction = if (direction == CdkTransactionDirection.INCOMING) TransactionType.Incoming else TransactionType.Outgoing
         val method = paymentMethod?.toDomain()
+        val kind = when (method) {
+            PaymentMethodKind.Onchain -> TransactionKind.Onchain
+            PaymentMethodKind.Bolt11, PaymentMethodKind.Bolt12 -> TransactionKind.Lightning
+            null -> TransactionKind.Ecash
+        }
+        val proof = if (kind == TransactionKind.Lightning) {
+            Bolt12PayerProof.split(paymentProof)
+        } else {
+            Bolt12PayerProof.Split(preimage = paymentProof, payerProof = null)
+        }
         return WalletTransaction(
             id = id.hex,
             amount = amount.value.toLong(),
             type = direction,
-            kind = when (method) {
-                PaymentMethodKind.Onchain -> TransactionKind.Onchain
-                PaymentMethodKind.Bolt11, PaymentMethodKind.Bolt12 -> TransactionKind.Lightning
-                null -> TransactionKind.Ecash
-            },
+            kind = kind,
             dateEpochMillis = timestamp.toLong() * 1000,
             memo = memo,
             // CDK 0.18 owns the lifecycle: pending while a send is unclaimed /
             // a mint or melt is in flight, failed when failed or revoked.
             status = status.toDomain(),
             mintUrl = mintUrl.url,
-            preimage = paymentProof,
+            preimage = proof.preimage,
+            payerProof = proof.payerProof,
             invoice = paymentRequest,
             fee = fee.value.toLong(),
             unit = unit,
