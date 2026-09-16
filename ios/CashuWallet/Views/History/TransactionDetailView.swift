@@ -17,6 +17,8 @@ struct TransactionDetailView: View {
     @State private var isCheckingClaim = false
     @State private var manualClaimCheckResult: PendingTokenClaimCheckResult?
     @State private var manualClaimCheckTask: Task<Void, Never>?
+    @State private var fetchedPayerProof: String?
+    @State private var showPayerProofShareSheet = false
 
     init(transaction: WalletTransaction) {
         self.seed = transaction
@@ -62,6 +64,16 @@ struct TransactionDetailView: View {
     }
 
     private var showsQR: Bool { transaction.hasActionablePaymentCode }
+
+    /// Signed `lnp1…` from CDK when present, else a receipt-open FFI fetch.
+    private var displayedPayerProof: String? {
+        fetchedPayerProof ?? transaction.payerProof
+    }
+
+    private var payerProofVerifyURL: URL? {
+        guard let proof = displayedPayerProof else { return nil }
+        return Bolt12PayerProof.verifyURL(for: proof)
+    }
 
     // Keep the opening identity through settlement so a row update cannot
     // cancel balance/history reconciliation midway through its final tick.
@@ -131,6 +143,11 @@ struct TransactionDetailView: View {
                     ShareSheet(items: [invoice])
                 }
             }
+            .sheet(isPresented: $showPayerProofShareSheet) {
+                if let proof = displayedPayerProof, Bolt12PayerProof.isSigned(proof) {
+                    ShareSheet(items: [proof])
+                }
+            }
             .onDisappear {
                 manualClaimCheckTask?.cancel()
             }
@@ -143,6 +160,9 @@ struct TransactionDetailView: View {
                 // Expired receipts still get a final late-payment recovery check.
                 await walletManager.refreshPendingMintQuote(quoteId: quoteID)
             }
+        }
+        .task(id: "\(transaction.id)-\(transaction.status)") {
+            await refreshBolt12PayerProof()
         }
         .fullScreenCover(item: $claimReceiveToken) { pending in
             ReceiveTokenDetailView(
@@ -195,6 +215,30 @@ struct TransactionDetailView: View {
                 }
                 if let explorerURL = onchainExplorerURL {
                     explorerLinkRow(label: "View in block explorer", url: explorerURL)
+                }
+                if let verifyURL = payerProofVerifyURL {
+                    explorerLinkRow(
+                        label: "Verify payment proof",
+                        url: verifyURL,
+                        accessibilityHint: "Opens lnproof.space to verify the signed payment proof"
+                    )
+                    Button {
+                        showPayerProofShareSheet = true
+                    } label: {
+                        HStack {
+                            Text("Share payment proof")
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Image(systemName: "square.and.arrow.up")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                        }
+                        .paymentDetailRow(layout: .history, isInteractive: true)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Share payment proof")
+                    .accessibilityHint("Opens the share sheet with the signed payment proof")
                 }
             }
             .padding(.horizontal, 4)
@@ -362,8 +406,11 @@ struct TransactionDetailView: View {
             if let hash = transaction.descriptionHash {
                 rows.append(("Hash", PaymentRequestDecoder.middleTruncated(hash), hash))
             }
-            if let preimage = transaction.preimage {
-                rows.append(("Payment Proof", PaymentRequestDecoder.middleTruncated(preimage), preimage))
+            if let proof = Bolt12PayerProof.displayedProof(
+                payerProof: displayedPayerProof,
+                preimage: transaction.preimage
+            ) {
+                rows.append(("Payment Proof", PaymentRequestDecoder.middleTruncated(proof), proof))
             }
         }
         return rows
@@ -440,7 +487,11 @@ struct TransactionDetailView: View {
     /// Same shape as `detailRow` but opens an external URL, with the trailing
     /// arrow-up-right glyph settings uses for outbound links — the on-chain
     /// block explorer row (matches the receive screen's row).
-    private func explorerLinkRow(label: String, url: URL) -> some View {
+    private func explorerLinkRow(
+        label: String,
+        url: URL,
+        accessibilityHint: String = "Opens the block explorer in your browser"
+    ) -> some View {
         Link(destination: url) {
             HStack {
                 Text(label)
@@ -455,7 +506,21 @@ struct TransactionDetailView: View {
         }
         .buttonStyle(.plain)
         .simultaneousGesture(TapGesture().onEnded { HapticFeedback.selection() })
-        .accessibilityHint("Opens the block explorer in your browser")
+        .accessibilityHint(accessibilityHint)
+    }
+
+    private func refreshBolt12PayerProof() async {
+        guard transaction.kind == .lightning,
+              transaction.type == .outgoing,
+              transaction.status == .completed else { return }
+        if Bolt12PayerProof.isSigned(displayedPayerProof) { return }
+        let quoteId = transaction.quoteId ?? transaction.id
+        let proof = await walletManager.fetchBolt12PayerProof(
+            quoteId: quoteId,
+            mintUrl: transaction.mintUrl
+        )
+        guard Bolt12PayerProof.isSigned(proof) else { return }
+        fetchedPayerProof = proof
     }
 
     // MARK: - Helpers

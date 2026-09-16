@@ -218,4 +218,11 @@ extension WalletManager {
         await loadTransactions()
         return result
     }
+
+    /// Signed BOLT12 payer proof (`lnp1…`) for a settled melt quote.
+    /// CDK 0.18 FFI has no `create_bolt12_payer_proof`; bind it in
+    /// `LightningService.fetchBolt12PayerProof` when cdk-swift exposes it.
+    func fetchBolt12PayerProof(quoteId: String, mintUrl: String? = nil) async -> String? {
+        await lightningService.fetchBolt12PayerProof(quoteId: quoteId, mintUrl: mintUrl)
+    }
 }

@@ -15,6 +15,12 @@ data class WalletTransaction(
     val statusNote: String? = null,
     val mintUrl: String? = null,
     val preimage: String? = null,
+    /**
+     * Signed BOLT12 payer proof (`lnp1…`) when the mint can construct one.
+     * Distinct from [preimage]: CDK keeps the Lightning preimage in
+     * `payment_proof` / NUT-25, and the signed proof is a later FFI bind.
+     */
+    val payerProof: String? = null,
     val token: String? = null,
     val invoice: String? = null,
     val fee: Long = 0,
