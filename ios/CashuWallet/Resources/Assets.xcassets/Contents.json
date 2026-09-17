@@ -1,18 +1,22 @@
 {
-  "colors" : [
+  "colors": [
     {
-      "idiom" : "universal",
-      "filename" : "AccentColor.colorset"
+      "idiom": "universal",
+      "filename": "AccentColor.colorset"
     }
   ],
-  "images" : [
+  "images": [
     {
-      "idiom" : "universal",
-      "filename" : "AppIcon.appiconset"
+      "idiom": "universal",
+      "filename": "AppIcon.appiconset"
+    },
+    {
+      "idiom": "universal",
+      "filename": "MenuBarCashu.imageset"
     }
   ],
-  "info" : {
-    "author" : "xcode",
-    "version" : 1
+  "info": {
+    "author": "xcode",
+    "version": 1
   }
 }

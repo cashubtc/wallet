@@ -27,6 +27,10 @@
 		323A00000000000000000001 /* PriceServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 323A00000000000000000002 /* PriceServiceTests.swift */; };
 		1100000000000001 /* CashuWalletApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2100000000000001 /* CashuWalletApp.swift */; };
 		1100000000000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2100000000000002 /* ContentView.swift */; };
+		297000000000000000000011 /* MacUIKitCompat.swift in Sources */ = {isa = PBXBuildFile; fileRef = 297000000000000000000001 /* MacUIKitCompat.swift */; };
+		297000000000000000000012 /* MacSwiftUICompat.swift in Sources */ = {isa = PBXBuildFile; fileRef = 297000000000000000000002 /* MacSwiftUICompat.swift */; };
+		297000000000000000000013 /* ContactlessPayments.swift in Sources */ = {isa = PBXBuildFile; fileRef = 297000000000000000000003 /* ContactlessPayments.swift */; };
+		297000000000000000000014 /* MacMenuBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 297000000000000000000004 /* MacMenuBarController.swift */; };
 		1100000000000004 /* WalletManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2100000000000004 /* WalletManager.swift */; };
 		1100000000000005 /* KeychainService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2100000000000005 /* KeychainService.swift */; };
 		1100000000000007 /* MainWalletView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2100000000000007 /* MainWalletView.swift */; };
@@ -238,6 +242,11 @@
 		0100000000000001 /* CashuWallet.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CashuWallet.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		2100000000000001 /* CashuWalletApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CashuWalletApp.swift; sourceTree = "<group>"; };
 		2100000000000002 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		297000000000000000000001 /* MacUIKitCompat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacUIKitCompat.swift; sourceTree = "<group>"; };
+		297000000000000000000002 /* MacSwiftUICompat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSwiftUICompat.swift; sourceTree = "<group>"; };
+		297000000000000000000003 /* ContactlessPayments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactlessPayments.swift; sourceTree = "<group>"; };
+		297000000000000000000004 /* MacMenuBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacMenuBarController.swift; sourceTree = "<group>"; };
+		297000000000000000000005 /* CashuWalletMac.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CashuWalletMac.entitlements; sourceTree = "<group>"; };
 		2100000000000004 /* WalletManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WalletManager.swift; sourceTree = "<group>"; };
 		2100000000000005 /* KeychainService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainService.swift; sourceTree = "<group>"; };
 		2100000000000007 /* MainWalletView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainWalletView.swift; sourceTree = "<group>"; };
@@ -510,6 +519,7 @@
 				4200000000000004 /* Views */,
 				4200000000000005 /* Resources */,
 				F200000000000005 /* CashuWallet.entitlements */,
+				297000000000000000000005 /* CashuWalletMac.entitlements */,
 			);
 			path = CashuWallet;
 			sourceTree = "<group>";
@@ -529,13 +539,25 @@
 			children = (
 				2100000000000001 /* CashuWalletApp.swift */,
 				2100000000000002 /* ContentView.swift */,
+				297000000000000000000004 /* MacMenuBarController.swift */,
 			);
 			path = App;
+			sourceTree = "<group>";
+		};
+		297000000000000000000006 /* Platform */ = {
+			isa = PBXGroup;
+			children = (
+				297000000000000000000001 /* MacUIKitCompat.swift */,
+				297000000000000000000002 /* MacSwiftUICompat.swift */,
+				297000000000000000000003 /* ContactlessPayments.swift */,
+			);
+			path = Platform;
 			sourceTree = "<group>";
 		};
 		4200000000000002 /* Core */ = {
 			isa = PBXGroup;
 			children = (
+				297000000000000000000006 /* Platform */,
 				72AF0EF42FEF2300001AD6AC /* SentryService.swift */,
 				AA00000000000020 /* Protocols */,
 				AA00000000000021 /* Navigation */,
@@ -1106,6 +1128,10 @@
 				1100000000000001 /* CashuWalletApp.swift in Sources */,
 				6A8EC9342F244BD80058C21B /* ScannerWrapperView.swift in Sources */,
 				1100000000000002 /* ContentView.swift in Sources */,
+				297000000000000000000011 /* MacUIKitCompat.swift in Sources */,
+				297000000000000000000012 /* MacSwiftUICompat.swift in Sources */,
+				297000000000000000000013 /* ContactlessPayments.swift in Sources */,
+				297000000000000000000014 /* MacMenuBarController.swift in Sources */,
 				6A8EC9362F244C8C0058C21B /* TransactionDetailView.swift in Sources */,
 				1100000000000004 /* WalletManager.swift in Sources */,
 				F9B9C2789923138C562B8CBF /* StoredWalletAccount.swift in Sources */,
@@ -1416,6 +1442,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = CashuWallet/CashuWallet.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = CashuWallet/CashuWalletMac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = D7AHD3GLH6;
@@ -1435,6 +1462,11 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				MARKETING_VERSION = 1.0;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
@@ -1443,6 +1475,8 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.cashu.me;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -1455,6 +1489,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = CashuWallet/CashuWallet.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = CashuWallet/CashuWalletMac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = D7AHD3GLH6;
@@ -1474,6 +1509,11 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				MARKETING_VERSION = 1.0;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
@@ -1482,6 +1522,8 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.cashu.me;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
