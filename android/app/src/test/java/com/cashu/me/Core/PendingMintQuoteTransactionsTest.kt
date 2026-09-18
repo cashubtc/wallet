@@ -14,6 +14,23 @@ import org.junit.Test
 
 class PendingMintQuoteTransactionsTest {
     @Test
+    fun creditedOnchainDepositMatchesEquivalentTrackedMintUrl() {
+        val rows = pendingMintQuoteTransactions(
+            quotes = listOf(quote(amount = null, method = PaymentMethodKind.Onchain,
+                state = MintQuoteState.Paid, amountPaid = 2_100).copy(mintUrl = "https://mint.example.com:443/")),
+            trackedMintUrls = setOf("https://mint.example.com"),
+            quoteIdsWithTransactions = emptySet(),
+            timestamps = mutableMapOf(),
+            nowEpochMillis = 1,
+        )
+        assertEquals(1, rows.size)
+        assertEquals(2_100L, rows.single().amount)
+        assertEquals(TransactionKind.Onchain, rows.single().kind)
+        assertEquals(TransactionStatus.Pending, rows.single().status)
+        assertEquals("https://mint.example.com:443/", rows.single().mintUrl)
+    }
+
+    @Test
     fun buildsPendingLightningRowsWithStableTimestamp() {
         val timestamps = mutableMapOf<String, Long>()
 

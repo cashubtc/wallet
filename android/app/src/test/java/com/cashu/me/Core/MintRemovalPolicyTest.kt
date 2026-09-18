@@ -15,6 +15,15 @@ import org.junit.Test
 
 class MintRemovalPolicyTest {
     @Test
+    fun mintIdentityMatchesDefaultPortsWithoutMergingDistinctEndpoints() {
+        assertTrue(mintRemovalUrlsMatch("https://mint.example:443/", "https://mint.example"))
+        assertTrue(mintRemovalUrlsMatch("http://mint.example:80", "http://mint.example/"))
+        assertFalse(mintRemovalUrlsMatch("https://mint.example:8443", "https://mint.example"))
+        assertFalse(mintRemovalUrlsMatch("http://mint.example:80", "https://mint.example:443"))
+        assertFalse(mintRemovalUrlsMatch("https://mint.example/other", "https://mint.example"))
+    }
+
+    @Test
     fun registeredUnitsAreNormalizedAndDeduplicated() {
         assertEquals(
             listOf("eur"),

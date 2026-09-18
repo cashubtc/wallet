@@ -179,6 +179,135 @@ final class StoredWalletAccountTests: XCTestCase {
             getTrackedMintUrls: { ["https://offline.example"] }, walletStore: store)
         try await body(reader, repo, service, store)
     }
+
+    func testOnchainHistoryPreservesDirectionsStatesAndLegacyMethodAfterRelaunch() async throws {
+        try await withHistoryService { db, repo, service, store in
+            let mint = MintUrl(url: "https://offline.example")
+            let address = "bc1qhistoryfixture"
+            let txid = String(repeating: "b", count: 64)
+            for (index, status) in [Cdk.TransactionStatus.pending, .completed, .failed].enumerated() {
+                for direction in [Cdk.TransactionDirection.incoming, .outgoing] {
+                    try await db.addTransaction(transaction: Cdk.Transaction(
+                        id: TransactionId(hex: String(repeating: "a", count: 64)),
+                        mintUrl: mint, direction: direction, amount: Amount(value: 2_100),
+                        fee: Amount(value: 10), unit: .sat, ys: [], timestamp: UInt64(index + 1),
+                        memo: nil, metadata: [:], quoteId: UUID().uuidString,
+                        paymentRequest: address, paymentProof: txid,
+                        paymentMethod: index == 0 ? .custom(method: "onchain") : .onchain,
+                        sagaId: UUID().uuidString, status: status
+                    ))
+                }
+            }
+            for reader in [service, TransactionService(walletRepository: { repo }, walletDatabase: { db },
+                getTrackedMintUrls: { [mint.url] }, walletStore: store)] {
+                await reader.loadTransactions(includeRemoteObservations: false)
+                XCTAssertEqual(reader.transactions.count, 6)
+                XCTAssertEqual(Set(reader.transactions.map(\.id)).count, 6)
+                for row in reader.transactions {
+                    XCTAssertEqual(row.kind, .onchain)
+                    XCTAssertEqual(row.amount, 2_100)
+                    XCTAssertEqual(row.invoice, address)
+                    XCTAssertEqual(row.preimage, txid)
+                    XCTAssertEqual(row.displayTitle, row.type == .incoming ? "Bitcoin received" : "Bitcoin sent")
+                    XCTAssertTrue(HistorySearch.matches(query: "bitcoin", transaction: row))
+                }
+                for status in [WalletTransaction.TransactionStatus.pending, .completed, .failed] {
+                    XCTAssertEqual(reader.transactions.filter { $0.status == status }.count, 2)
+                }
+            }
+        }
+    }
+
+    func testFulfilledOnchainPaymentsRemainInHistoryWithEquivalentMintURLs() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let path = directory.appendingPathComponent("wallet.sqlite").path
+        let mint = MintUrl(url: "https://offline.example:443")
+        let mnemonic = try generateMnemonic()
+        do {
+            let db = try LifecycleSafeWalletDatabase(filePath: path)
+            for direction in [Cdk.TransactionDirection.incoming, .outgoing] {
+                try await db.addTransaction(transaction: Cdk.Transaction(
+                    id: TransactionId(hex: String(repeating: "a", count: 64)), mintUrl: mint,
+                    direction: direction, amount: Amount(value: 2_100), fee: Amount(value: 10),
+                    unit: .sat, ys: [], timestamp: 1, memo: nil, metadata: [:], quoteId: UUID().uuidString,
+                    paymentRequest: "bc1qfulfilledfixture", paymentProof: String(repeating: "b", count: 64),
+                    paymentMethod: .onchain, sagaId: UUID().uuidString, status: .completed
+                ))
+            }
+        }
+        for _ in 0..<2 {
+            let db = try LifecycleSafeWalletDatabase(filePath: path)
+            let stored = try await db.listTransactions(mintUrl: nil, direction: nil, unit: nil)
+            XCTAssertEqual(stored.count, 2)
+            XCTAssertTrue(stored.allSatisfy { $0.status == .completed && $0.mintUrl.url == mint.url })
+            let pendingQuotes = try await db.getUnissuedMintQuotes()
+            XCTAssertTrue(pendingQuotes.isEmpty)
+            let repo = try WalletRepository(mnemonic: mnemonic, store: customWalletStore(db: db))
+            let reader = TransactionService(walletRepository: { repo }, walletDatabase: { db },
+                getTrackedMintUrls: { ["https://offline.example/"] },
+                walletStore: WalletStore(storage: InMemoryStorage()))
+            await reader.loadTransactions(includeRemoteObservations: false)
+            XCTAssertEqual(Set(reader.transactions.map(\.id)), Set(stored.map { $0.id.hex }))
+            XCTAssertEqual(reader.transactions.count, 2)
+            for row in reader.transactions {
+                XCTAssertEqual(row.status, .completed)
+                XCTAssertEqual(row.kind, .onchain)
+                XCTAssertEqual(row.amount, 2_100)
+                XCTAssertEqual(row.preimage, String(repeating: "b", count: 64))
+                XCTAssertEqual(row.displayTitle, row.type == .incoming ? "Bitcoin received" : "Bitcoin sent")
+                XCTAssertTrue(HistorySearch.matches(query: "bitcoin", transaction: row))
+            }
+        }
+    }
+
+    func testOnchainDepositTransitionsFromPaidQuoteToSingleCompletedReceipt() async throws {
+        try await withHistoryService { db, _, service, _ in
+            let mint = MintUrl(url: "https://offline.example:443")
+            let quote = MintQuote(
+                id: "onchain-deposit", amount: nil, unit: .sat, request: "bc1qhistoryfixture",
+                state: .paid, expiry: 1, mintUrl: mint,
+                amountIssued: Amount(value: 0), amountPaid: Amount(value: 2_100), updatedAt: 1,
+                estimatedBlocks: nil, paymentMethod: .onchain, secretKey: nil, usedByOperation: nil, version: 0
+            )
+            try await db.addMintQuote(quote: quote)
+            await service.loadTransactions(includeRemoteObservations: false)
+            let pending = try XCTUnwrap(service.transactions.first)
+            XCTAssertEqual(service.transactions.count, 1)
+            XCTAssertEqual(pending.kind, .onchain)
+            XCTAssertEqual(pending.amount, 2_100)
+            XCTAssertEqual(pending.status, .pending)
+            XCTAssertFalse(pending.isUnpaidInvoice)
+
+            let sagaID = UUID().uuidString
+            func transaction(status: Cdk.TransactionStatus) -> Cdk.Transaction { Cdk.Transaction(
+                id: TransactionId(hex: String(repeating: "a", count: 64)), mintUrl: mint,
+                direction: .incoming, amount: Amount(value: 2_100), fee: Amount(value: 0),
+                unit: .sat, ys: [], timestamp: 2, memo: nil, metadata: [:], quoteId: quote.id,
+                paymentRequest: quote.request, paymentProof: nil, paymentMethod: .onchain,
+                sagaId: sagaID, status: status
+            ) }
+            try await db.addTransaction(transaction: transaction(status: .pending))
+            await service.loadTransactions(includeRemoteObservations: false)
+            XCTAssertEqual(service.transactions.count, 1)
+            let id = try XCTUnwrap(service.transactions.first?.id)
+            XCTAssertNotEqual(id, quote.id)
+            XCTAssertEqual(service.transactions.liveDetail(openId: pending.id, openQuoteId: quote.id)?.id, id)
+
+            try await db.addTransaction(transaction: transaction(status: .completed))
+            try await db.addMintQuote(quote: MintQuote(
+                id: quote.id, amount: nil, unit: .sat, request: quote.request,
+                state: .issued, expiry: 1, mintUrl: mint,
+                amountIssued: Amount(value: 2_100), amountPaid: Amount(value: 2_100), updatedAt: 2,
+                estimatedBlocks: nil, paymentMethod: .onchain, secretKey: nil, usedByOperation: nil, version: quote.version
+            ))
+            await service.loadTransactions(includeRemoteObservations: false)
+            XCTAssertEqual(service.transactions.count, 1)
+            XCTAssertEqual(service.transactions.first?.id, id)
+            XCTAssertEqual(service.transactions.first?.status, .completed)
+        }
+    }
 }
 
 private final class FailingAccountHistoryDatabase: WalletSqliteDatabase, @unchecked Sendable {
