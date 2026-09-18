@@ -73,7 +73,7 @@ import com.cashu.me.Core.TransactionDisplay
 import com.cashu.me.Core.WalletHaptic
 import com.cashu.me.Core.WalletManager
 import com.cashu.me.Core.displayText
-import com.cashu.me.Core.recentCompletedTransactions
+import com.cashu.me.Core.recentPaymentTransactions
 import com.cashu.me.Core.rememberWalletHaptics
 import com.cashu.me.Models.WalletTransaction
 import com.cashu.me.ui.components.BalanceDisplay
@@ -177,7 +177,7 @@ fun HomeScreen(
     }
 
     val recentTransactions = remember(walletState.transactions) {
-        recentCompletedTransactions(walletState.transactions, RECENT_LIMIT)
+        recentPaymentTransactions(walletState.transactions, RECENT_LIMIT)
     }
 
     // Received-payment beat (iOS MainWalletView notification parity): collect

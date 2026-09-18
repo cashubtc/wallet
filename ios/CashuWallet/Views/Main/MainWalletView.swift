@@ -523,7 +523,7 @@ struct MainWalletView: View {
             .padding(.bottom, 14)
     }
 
-    // MARK: - Recent completed payments
+    // MARK: - Recent payments
 
     private var recentItems: [WalletTransaction] {
         HomeActivity.recentTransactions(

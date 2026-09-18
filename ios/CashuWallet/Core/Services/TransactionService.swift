@@ -28,6 +28,7 @@ class TransactionService: ObservableObject {
     private let walletDatabase: () -> WalletSqliteDatabase?
     private let getTrackedMintUrls: () -> [String]
     private let walletStore: WalletStore
+    private let observeOnchainPayment: (String, String?, UInt64, Date) async -> OnchainPaymentObservation?
 
     // MARK: - Initialization
 
@@ -35,12 +36,16 @@ class TransactionService: ObservableObject {
         walletRepository: @escaping () -> WalletRepository?,
         walletDatabase: @escaping () -> WalletSqliteDatabase?,
         getTrackedMintUrls: @escaping () -> [String],
-        walletStore: WalletStore = WalletStore()
+        walletStore: WalletStore = WalletStore(),
+        observeOnchainPayment: @escaping (String, String?, UInt64, Date) async -> OnchainPaymentObservation? = {
+            await OnchainExplorer.observePayment(for: $0, mintURL: $1, expectedAmount: $2, createdAfter: $3)
+        }
     ) {
         self.walletRepository = walletRepository
         self.walletDatabase = walletDatabase
         self.getTrackedMintUrls = getTrackedMintUrls
         self.walletStore = walletStore
+        self.observeOnchainPayment = observeOnchainPayment
     }
 
     // MARK: - Transaction Loading
@@ -328,13 +333,13 @@ class TransactionService: ObservableObject {
         persistPendingReceiveTokens()
     }
 
-    private func pendingTransactions(
+    func pendingTransactions(
         from quotes: [MintQuote],
         trackedMintUrls: Set<String>,
         quoteIdsWithTransactions: Set<String>,
         timestamps: inout [String: TimeInterval],
         includeRemoteObservations: Bool,
-        observingQuoteID: String?
+        observingQuoteID: String? = nil
     ) async -> [WalletTransaction] {
         var transactions: [WalletTransaction] = []
 
@@ -357,26 +362,6 @@ class TransactionService: ObservableObject {
                 continue
             }
 
-            // BOLT12 offers are reusable and long-lived, so a created-but-unpaid
-            // offer must stay out of history entirely. Surface a BOLT12 quote
-            // only once a payment has actually arrived (amountPaid/amountIssued),
-            // ignoring the offer's nominal amount. Other methods keep showing
-            // their pending quote (e.g. an unpaid BOLT11 invoice you generated).
-            let amount: UInt64?
-            if paymentMethod == .bolt12 {
-                amount = quote.amountPaid.value > 0
-                    ? quote.amountPaid.value
-                    : (quote.amountIssued.value > 0 ? quote.amountIssued.value : nil)
-            } else {
-                amount = quote.amount?.value
-                    ?? (quote.amountPaid.value > 0 ? quote.amountPaid.value : nil)
-                    ?? (quote.amountIssued.value > 0 ? quote.amountIssued.value : nil)
-            }
-
-            guard let amount, amount > 0 else {
-                continue
-            }
-
             // CDK 0.18 quotes carry `updatedAt` (creation time for an untouched
             // quote). The local first-seen map only backfills legacy rows that
             // predate the column.
@@ -389,6 +374,45 @@ class TransactionService: ObservableObject {
                 timestamp = firstSeen
             }
             let createdAt = Date(timeIntervalSince1970: timestamp)
+            let previousOnchainPayment = self.transactions.first {
+                $0.quoteId == quote.id && $0.kind == .onchain && $0.preimage != nil
+            }
+            // Inspect amountless addresses before requiring a mint-reported
+            // amount, which can remain zero until enough confirmations arrive.
+            let observation: OnchainPaymentObservation?
+            if includeRemoteObservations, paymentMethod == .onchain,
+               observingQuoteID == nil || observingQuoteID == quote.id {
+                observation = await observeOnchainPayment(quote.request, quote.mintUrl.url, 1, createdAt)
+            } else {
+                observation = nil
+            }
+
+            // BOLT12 offers are reusable and long-lived, so a created-but-unpaid
+            // offer must stay out of history entirely. Surface a BOLT12 quote
+            // only once a payment has actually arrived (amountPaid/amountIssued),
+            // ignoring the offer's nominal amount. Other methods keep showing
+            // their pending quote (e.g. an unpaid BOLT11 invoice you generated).
+            let amount: UInt64?
+            if paymentMethod == .onchain {
+                // A requested amount is not evidence that an address was funded.
+                amount = (quote.amountPaid.value > 0 ? quote.amountPaid.value : nil)
+                    ?? (quote.amountIssued.value > 0 ? quote.amountIssued.value : nil)
+                    ?? observation?.amount
+                    ?? previousOnchainPayment?.amount
+            } else if paymentMethod == .bolt12 {
+                amount = quote.amountPaid.value > 0
+                    ? quote.amountPaid.value
+                    : (quote.amountIssued.value > 0 ? quote.amountIssued.value : nil)
+            } else {
+                amount = quote.amount.flatMap { $0.value > 0 ? $0.value : nil }
+                    ?? (quote.amountPaid.value > 0 ? quote.amountPaid.value : nil)
+                    ?? (quote.amountIssued.value > 0 ? quote.amountIssued.value : nil)
+            }
+
+            guard let amount, amount > 0 else {
+                continue
+            }
+
             // A paid-but-unissued quote stays Pending even past expiry: the
             // invoice settled, and NUT-04 lets the wallet mint it afterwards.
             let isPaid = quote.state == .paid || quote.state == .issued || quote.amountPaid.value > 0
@@ -404,15 +428,7 @@ class TransactionService: ObservableObject {
             var storedPaymentProof = getPreimage(quoteId: quote.id)
             var statusNote: String?
 
-            if includeRemoteObservations,
-               observingQuoteID == nil || observingQuoteID == quote.id,
-               paymentMethod == .onchain,
-               let observation = await OnchainExplorer.observePayment(
-                for: quote.request,
-                mintURL: quote.mintUrl.url,
-                expectedAmount: amount,
-                createdAfter: createdAt
-               ) {
+            if let observation {
                 storedPaymentProof = observation.txid
                 statusNote = observation.statusText
 
