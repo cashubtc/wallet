@@ -101,7 +101,7 @@ class PendingMintQuoteTransactionsTest {
         assertEquals(TransactionStatus.Pending, rowFor(quote(expiryEpochSeconds = 0)).status)
 
         // Only the BOLT11 rail expires; addresses stay fundable.
-        val onchain = rowFor(quote(method = PaymentMethodKind.Onchain, expiryEpochSeconds = nowSeconds - 1))
+        val onchain = rowFor(quote(method = PaymentMethodKind.Onchain, amountPaid = 10, expiryEpochSeconds = nowSeconds - 1))
         assertEquals(TransactionStatus.Pending, onchain.status)
         assertFalse(onchain.isUnpaidInvoice)
     }
@@ -198,6 +198,39 @@ class PendingMintQuoteTransactionsTest {
         val timestamps = mapOf("quote-kept" to 10L, "old" to 20L)
 
         assertEquals(mapOf("quote-kept" to 10L), pruneMintQuoteTimestamps(listOf(kept), timestamps))
+    }
+
+    @Test
+    fun amountlessOnchainDepositAppearsAtZeroConfirmationsAndStaysPendingUntilIssued() {
+        val deposit = quote(amount = null, method = PaymentMethodKind.Onchain)
+        val observation = OnchainPaymentObservation("txid", 42, false, null)
+        fun rows(q: MintQuoteInfo = deposit, observed: Boolean = true, owned: Boolean = false) =
+            pendingMintQuoteTransactions(
+                quotes = listOf(q), trackedMintUrls = setOf(MintUrl),
+                quoteIdsWithTransactions = if (owned) setOf(q.id) else emptySet(),
+                timestamps = mutableMapOf(), nowEpochMillis = 1,
+                onchainObservations = if (observed) mapOf(q.id to observation) else emptyMap(),
+            )
+
+        assertTrue(rows(observed = false).isEmpty())
+        assertTrue(rows(deposit.copy(amount = 100), observed = false).isEmpty())
+        val pending = rows().single()
+        assertEquals(42L, pending.amount)
+        assertEquals(TransactionStatus.Pending, pending.status)
+        assertEquals("txid", pending.preimage)
+        assertEquals("Payment seen in mempool", pending.statusNote)
+        assertEquals(listOf(pending), recentPaymentTransactions(rows(), 5))
+        val cached = pendingMintQuoteTransactions(
+            quotes = listOf(deposit), trackedMintUrls = setOf(MintUrl),
+            quoteIdsWithTransactions = emptySet(), timestamps = mutableMapOf(), nowEpochMillis = 1,
+            previousTransactions = listOf(pending),
+        ).single()
+        assertEquals(42L, cached.amount)
+        assertEquals("txid", cached.preimage)
+        assertEquals(TransactionStatus.Pending, cached.status)
+        assertEquals(42L, rows(deposit.copy(amount = 0)).single().amount)
+        assertEquals(TransactionStatus.Completed, rows(deposit.copy(amountPaid = 42, amountIssued = 42)).single().status)
+        assertTrue(rows(owned = true).isEmpty())
     }
 
     private fun quote(

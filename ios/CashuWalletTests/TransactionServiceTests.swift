@@ -61,6 +61,70 @@ final class TransactionServiceTests: XCTestCase {
         )
     }
 
+    func testRecentIncludesPendingOnchainInBothDirections() {
+        let deposit = WalletTransaction(id: "deposit", amount: 42, type: .incoming, kind: .onchain,
+                                        date: Date(), memo: nil, status: .pending)
+        let send = WalletTransaction(id: "send", amount: 21, type: .outgoing, kind: .onchain,
+                                     date: Date().addingTimeInterval(-10), memo: nil, status: .pending)
+        var failed = send
+        failed.status = .failed
+        XCTAssertEqual(HomeActivity.recentTransactions(from: [send, deposit], limit: 5).map(\.id), ["deposit", "send"])
+        XCTAssertTrue(HomeActivity.recentTransactions(from: [failed], limit: 5).isEmpty)
+        XCTAssertTrue(HomeActivity.recentTransactions(from: [deposit], limit: 0).isEmpty)
+    }
+
+    func testAmountlessOnchainDepositAppearsBeforeMintReportsPayment() async {
+        let mintURL = "https://mint.example.com"
+        var observation: OnchainPaymentObservation? = nil
+        service = TransactionService(
+            walletRepository: { nil }, walletDatabase: { nil }, getTrackedMintUrls: { [mintURL] },
+            walletStore: WalletStore(storage: InMemoryStorage()),
+            observeOnchainPayment: { _, _, expected, _ in
+                XCTAssertEqual(expected, 1)
+                return observation
+            }
+        )
+        func makeQuote(amount: UInt64? = nil, issued: UInt64 = 0) -> MintQuote {
+            MintQuote(
+                id: "deposit", amount: amount.map { Amount(value: $0) }, unit: .sat,
+                request: "bc1qdeposit", state: .unpaid, expiry: 0, mintUrl: MintUrl(url: mintURL),
+                amountIssued: Amount(value: issued), amountPaid: Amount(value: issued),
+                updatedAt: 1, estimatedBlocks: nil, paymentMethod: .onchain,
+                secretKey: nil, usedByOperation: nil, version: 0
+            )
+        }
+        var quote = makeQuote()
+        var timestamps: [String: TimeInterval] = [:]
+        func rows(owned: Bool = false, remote: Bool = true) async -> [WalletTransaction] {
+            await service.pendingTransactions(
+                from: [quote], trackedMintUrls: [mintURL],
+                quoteIdsWithTransactions: owned ? [quote.id] : [], timestamps: &timestamps,
+                includeRemoteObservations: remote
+            )
+        }
+        let unfunded = await rows()
+        XCTAssertTrue(unfunded.isEmpty)
+        quote = makeQuote(amount: 100)
+        let requestedOnly = await rows()
+        XCTAssertTrue(requestedOnly.isEmpty)
+        quote = makeQuote()
+        observation = OnchainPaymentObservation(txid: "txid", amount: 42, confirmed: false, confirmations: nil)
+        let pending = await rows()
+        XCTAssertEqual(pending.first?.amount, 42)
+        XCTAssertEqual(pending.first?.status, .pending)
+        XCTAssertEqual(pending.first?.preimage, "txid")
+        XCTAssertEqual(pending.first?.statusNote, "Payment seen in mempool")
+        XCTAssertEqual(HomeActivity.recentTransactions(from: pending, limit: 5).map(\.id), ["deposit"])
+        service.transactions = pending
+        let local = await rows(remote: false)
+        XCTAssertEqual(local.first?.amount, 42)
+        quote = makeQuote(issued: 42)
+        let completed = await rows()
+        XCTAssertEqual(completed.first?.status, .completed)
+        let owned = await rows(owned: true)
+        XCTAssertTrue(owned.isEmpty)
+    }
+
     // MARK: - Saved token (txId ↔ encoded token)
 
     func testGetTokenNilByDefault() {
