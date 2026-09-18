@@ -49,6 +49,9 @@ jobs:
 
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
+      with:
+        # The default includes the retired SDK package "tools".
+        packages: platform-tools
 
     - name: Prepare Android signing key
       env:

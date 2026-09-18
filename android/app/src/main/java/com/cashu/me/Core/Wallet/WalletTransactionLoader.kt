@@ -2,6 +2,7 @@ package com.cashu.me.Core
 
 import com.cashu.me.Core.CDK.CdkWalletGateway
 import com.cashu.me.Models.MintInfo
+import com.cashu.me.Models.PaymentMethodKind
 import com.cashu.me.Models.PendingReceiveToken
 import com.cashu.me.Models.TransactionKind
 import com.cashu.me.Models.TransactionStatus
@@ -94,18 +95,43 @@ internal class WalletTransactionLoader(
         val retainedQuotes = if (quoteRead.isFailure) previous.filter {
             it.id == it.quoteId && it.id !in quoteIdsWithTransactions && it.mintUrl in trackedMintUrls
         } else emptyList()
-        val pendingQuotes = pendingMintQuoteTransactions(
+        // Observe addresses before building rows: amountless quotes have no
+        // paid amount until the mint's confirmation threshold is reached.
+        val observations = mutableMapOf<String, OnchainPaymentObservation>()
+        for (quote in unissuedMintQuotes) {
+            if (!includeRemoteObservations ||
+                (observingQuoteId != null && observingQuoteId != quote.id) ||
+                quote.paymentMethod != PaymentMethodKind.Onchain ||
+                quote.mintUrl !in trackedMintUrls || quote.id in quoteIdsWithTransactions
+            ) continue
+            val createdAt = if (quote.updatedAtEpochSeconds > 0) {
+                quote.updatedAtEpochSeconds * 1000
+            } else {
+                mintQuoteTimestamps.getOrPut(quote.id) { System.currentTimeMillis() }
+            }
+            val observation = OnchainExplorer.observePayment(
+                address = quote.request,
+                mintUrl = quote.mintUrl,
+                expectedAmount = 1,
+                createdAfterEpochMillis = createdAt,
+            )
+            if (observation != null) {
+                observations[quote.id] = observation
+                val preimages = walletStore.loadPaymentPreimages()
+                if (preimages[quote.id] != observation.txid) {
+                    walletStore.savePaymentPreimages(preimages + (quote.id to observation.txid))
+                }
+            }
+        }
+        val pendingQuoteTransactions = pendingMintQuoteTransactions(
             quotes = unissuedMintQuotes,
             trackedMintUrls = trackedMintUrls,
             quoteIdsWithTransactions = quoteIdsWithTransactions,
             timestamps = mintQuoteTimestamps,
             nowEpochMillis = System.currentTimeMillis(),
+            onchainObservations = observations,
+            previousTransactions = previous,
         )
-        val pendingQuoteTransactions = if (includeRemoteObservations) {
-            observePendingOnchainMintQuotes(pendingQuotes, observingQuoteId)
-        } else {
-            pendingQuotes
-        }
         val requests = walletStore.loadCashuRequests()
         val receiveTokenTransactions = pendingReceiveTokenTransactions(pendingReceiveTokens)
         // Row id spaces are disjoint by construction (saga-derived tx ids,
@@ -123,44 +149,6 @@ internal class WalletTransactionLoader(
             pendingReceiveTokens = pendingReceiveTokens,
         )
     }
-
-    private suspend fun observePendingOnchainMintQuotes(
-        transactions: List<WalletTransaction>,
-        observingQuoteId: String?,
-    ): List<WalletTransaction> =
-        transactions.map { transaction ->
-            if (
-                transaction.type != TransactionType.Incoming ||
-                (observingQuoteId != null && observingQuoteId != transaction.quoteId) ||
-                transaction.kind != TransactionKind.Onchain ||
-                transaction.invoice == null
-            ) {
-                return@map transaction
-            }
-
-            val observation = OnchainExplorer.observePayment(
-                address = transaction.invoice,
-                mintUrl = transaction.mintUrl,
-                expectedAmount = transaction.amount,
-                createdAfterEpochMillis = transaction.dateEpochMillis,
-            )
-
-            if (observation != null) {
-                val key = transaction.quoteId ?: transaction.id
-                val currentPreimages = walletStore.loadPaymentPreimages()
-                if (currentPreimages[key] != observation.txid) {
-                    walletStore.savePaymentPreimages(currentPreimages + (key to observation.txid))
-                }
-                transaction.copy(
-                    preimage = observation.txid,
-                    statusNote = observation.statusText,
-                )
-            } else if (transaction.preimage != null) {
-                transaction.copy(statusNote = transaction.statusNote ?: "Payment detected on-chain")
-            } else {
-                transaction
-            }
-        }
 }
 
 /** CDK stores an independent wallet per (mint, unit), including transaction history. */

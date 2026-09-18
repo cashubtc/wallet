@@ -188,15 +188,14 @@ extension Array where Element == WalletTransaction {
     }
 }
 
-/// Home is a compact settled-ledger view, not an operational queue. Generated
-/// receive artifacts and every non-completed state remain available in History.
+/// Recent includes completed payments and on-chain payments awaiting settlement.
 enum HomeActivity {
     static func recentTransactions(
         from transactions: [WalletTransaction],
         limit: Int
     ) -> [WalletTransaction] {
         transactions
-            .filter { $0.status == .completed }
+            .filter { $0.status == .completed || ($0.kind == .onchain && $0.status == .pending) }
             .sorted { $0.date > $1.date }
             .prefix(max(0, limit))
             .map { $0 }

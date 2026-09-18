@@ -14,6 +14,8 @@ internal fun pendingMintQuoteTransactions(
     quoteIdsWithTransactions: Set<String>,
     timestamps: MutableMap<String, Long>,
     nowEpochMillis: Long,
+    onchainObservations: Map<String, OnchainPaymentObservation> = emptyMap(),
+    previousTransactions: List<WalletTransaction> = emptyList(),
 ): List<WalletTransaction> =
     quotes.mapNotNull { quote ->
         val mintUrl = quote.mintUrl?.takeIf { it in trackedMintUrls } ?: return@mapNotNull null
@@ -25,10 +27,22 @@ internal fun pendingMintQuoteTransactions(
             return@mapNotNull null
         }
 
-        val amount = quote.amount
-            ?: quote.amountPaid.takeIf { it > 0 }
-            ?: quote.amountIssued.takeIf { it > 0 }
-            ?: return@mapNotNull null
+        val observation = onchainObservations[quote.id]
+            .takeIf { quote.paymentMethod == PaymentMethodKind.Onchain }
+        val previous = previousTransactions.firstOrNull {
+            it.quoteId == quote.id && it.kind == TransactionKind.Onchain && it.preimage != null
+        }.takeIf { quote.paymentMethod == PaymentMethodKind.Onchain }
+        // A requested amount is not evidence that an address was funded.
+        val amount = (if (quote.paymentMethod == PaymentMethodKind.Onchain) {
+            quote.amountPaid.takeIf { it > 0 }
+                ?: quote.amountIssued.takeIf { it > 0 }
+                ?: observation?.amount
+                ?: previous?.amount
+        } else {
+            quote.amount?.takeIf { it > 0 }
+                ?: quote.amountPaid.takeIf { it > 0 }
+                ?: quote.amountIssued.takeIf { it > 0 }
+        }) ?: return@mapNotNull null
         if (amount <= 0) return@mapNotNull null
 
         // CDK 0.18 quotes carry `updatedAt` (creation time for an untouched
@@ -63,6 +77,8 @@ internal fun pendingMintQuoteTransactions(
                 isExpiredUnpaidInvoice -> TransactionStatus.Expired
                 else -> TransactionStatus.Pending
             },
+            statusNote = observation?.statusText ?: previous?.let { "Payment detected on-chain" },
+            preimage = observation?.txid ?: previous?.preimage,
             mintUrl = mintUrl,
             invoice = quote.request,
             quoteId = quote.id,
