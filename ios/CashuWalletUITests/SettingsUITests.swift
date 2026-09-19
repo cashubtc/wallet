@@ -410,16 +410,26 @@ final class SettingsUITests: UITestBase {
     }
 
     private func setSwitch(_ element: XCUIElement, toOn: Bool) {
+        XCTAssertTrue(element.waitUntilEnabledAndHittable(timeout: 10))
         let isOn = (element.value as? String) == "1"
         if isOn != toOn {
             tapSwitchControl(element)
         }
+        let expectedValue = toOn ? "1" : "0"
+        let changed = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", expectedValue),
+            object: element
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [changed], timeout: 5), .completed,
+                       "Switch must reach the requested state before continuing")
     }
 
-    /// SwiftUI Toggle outside a List only responds on the switch control at the
-    /// trailing edge; a center tap lands on the label and does nothing.
+    /// SwiftUI exposes both the labelled row and its native switch. Target the
+    /// switch itself after navigation settles instead of a row-relative point.
     private func tapSwitchControl(_ element: XCUIElement) {
-        element.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+        XCTAssertTrue(element.waitUntilEnabledAndHittable(timeout: 10))
+        let control = element.switches.firstMatch
+        tapWhenReady(control.exists ? control : element, timeout: 10)
     }
 
     func testWebSocketsToggleStaysEnabledWhenPollingDisabled() throws {
