@@ -1154,6 +1154,7 @@ class CdkWalletGatewayImpl : WalletGateway {
             unit = unit,
             sagaId = sagaId,
             quoteId = quoteId,
+            paymentMethod = method,
         )
     }
 

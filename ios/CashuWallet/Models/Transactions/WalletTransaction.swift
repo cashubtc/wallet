@@ -52,6 +52,9 @@ struct WalletTransaction: Identifiable {
     /// `revokeSend`; nil for app-synthesized rows (quotes, held receives).
     var sagaId: String? = nil
 
+    /// Explicit CDK method; do not infer one-time invoices from an amount.
+    var paymentMethod: PaymentMethodKind? = nil
+
     /// Incoming ecash the user hasn't claimed yet (a "Receive Later" token or
     /// a NUT-18 payment held for approval). Its receipt offers the claim flow.
     var isPendingReceiveToken: Bool = false
@@ -246,5 +249,42 @@ extension WalletTransaction {
         var transaction = self
         transaction.memo = displayDescription ?? request?.displayDescription
         return transaction
+    }
+}
+
+/// A BOLT11 receipt represents one quote, while CDK stores every mint attempt.
+/// Project retries only; the database and recovery operations remain untouched.
+enum MintReceiptProjection {
+    private struct Key: Hashable {
+        let mint: String
+        let unit: String
+        let quote: String
+    }
+
+    static func project(_ transactions: [WalletTransaction]) -> [WalletTransaction] {
+        var groups: [Key: [Int]] = [:]
+        for (index, tx) in transactions.enumerated() {
+            guard tx.type == .incoming, tx.kind == .lightning,
+                  tx.paymentMethod == .bolt11, tx.sagaId != nil,
+                  let mint = tx.mintUrl, !mint.isEmpty,
+                  let quote = tx.quoteId, !quote.isEmpty else { continue }
+            groups[Key(mint: mint, unit: tx.unit.lowercased(), quote: quote), default: []].append(index)
+        }
+        var hidden = Set<Int>()
+        for indices in groups.values where indices.count > 1 {
+            let completed = indices.filter { transactions[$0].status == .completed }
+            // Conflicting settlements or payloads need investigation, not concealment.
+            let invoices = Set(indices.compactMap { transactions[$0].invoice?.lowercased() })
+            guard completed.count <= 1, invoices.count <= 1,
+                  Set(indices.map { transactions[$0].amount }).count == 1 else { continue }
+            let pending = indices.filter { transactions[$0].status == .pending }
+            let candidates = !completed.isEmpty ? completed : (!pending.isEmpty ? pending : indices)
+            let winner = candidates.max {
+                let lhs = transactions[$0], rhs = transactions[$1]
+                return lhs.date == rhs.date ? lhs.id < rhs.id : lhs.date < rhs.date
+            }!
+            hidden.formUnion(indices.filter { $0 != winner })
+        }
+        return transactions.enumerated().filter { !hidden.contains($0.offset) }.map(\.element)
     }
 }

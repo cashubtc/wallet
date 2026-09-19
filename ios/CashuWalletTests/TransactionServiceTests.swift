@@ -125,6 +125,67 @@ final class TransactionServiceTests: XCTestCase {
         XCTAssertTrue(owned.isEmpty)
     }
 
+    func testMintReceiptProjectionKeepsSettlementOrActiveAttemptWithoutSumming() {
+        let failed = mintAttempt("failed", status: .failed, time: 30)
+        let pending = mintAttempt("pending", status: .pending, time: 20)
+        let completed = mintAttempt("completed", status: .completed, time: 10)
+        for input in [[failed, pending, completed], [completed, pending, failed]] {
+            let rows = MintReceiptProjection.project(input)
+            XCTAssertEqual(rows.map(\.id), ["completed"])
+            XCTAssertEqual(rows.first?.amount, 64)
+            XCTAssertEqual(MintReceiptProjection.project(rows).map(\.id), rows.map(\.id))
+        }
+        XCTAssertEqual(MintReceiptProjection.project([failed, pending]).map(\.id), ["pending"])
+        XCTAssertEqual(MintReceiptProjection.project([
+            mintAttempt("older", status: .failed, time: 10), failed
+        ]).map(\.id), ["failed"])
+        XCTAssertEqual(MintReceiptProjection.project([
+            mintAttempt("a", status: .failed, time: 30), failed
+        ]).map(\.id), ["failed"])
+    }
+
+    func testMintReceiptProjectionPreservesDistinctPaymentsAndUncertainRecords() {
+        let first = mintAttempt("first", status: .failed, time: 1)
+        let second = mintAttempt("second", status: .completed, time: 2)
+        var differentQuote = second; differentQuote.quoteId = "another-quote"
+        var differentMint = second; differentMint.mintUrl = "https://another.example"
+        var differentUnit = second; differentUnit.unit = "usd"
+        var differentInvoice = second; differentInvoice.invoice = "another-invoice"
+        var missingQuote = second; missingQuote.quoteId = nil
+        var missingMint = second; missingMint.mintUrl = nil
+        var missingSaga = second; missingSaga.sagaId = nil
+        var missingMethod = second; missingMethod.paymentMethod = nil
+        for other in [differentQuote, differentMint, differentUnit, differentInvoice,
+                      missingQuote, missingMint, missingSaga, missingMethod] {
+            XCTAssertEqual(MintReceiptProjection.project([first, other]).count, 2)
+        }
+        for method: PaymentMethodKind in [.bolt12, .onchain] {
+            var a = first; a.paymentMethod = method
+            var b = second; b.paymentMethod = method
+            XCTAssertEqual(MintReceiptProjection.project([a, b]).count, 2)
+        }
+        let outgoingA = WalletTransaction(id: "out-a", amount: 64, type: .outgoing, kind: .lightning,
+            date: Date(), status: .failed, mintUrl: first.mintUrl, sagaId: "out-a",
+            paymentMethod: .bolt11, quoteId: first.quoteId)
+        let outgoingB = WalletTransaction(id: "out-b", amount: 64, type: .outgoing, kind: .lightning,
+            date: Date(), status: .completed, mintUrl: first.mintUrl, sagaId: "out-b",
+            paymentMethod: .bolt11, quoteId: first.quoteId)
+        XCTAssertEqual(MintReceiptProjection.project([outgoingA, outgoingB]).count, 2)
+        let changedAmount = WalletTransaction(id: "amount", amount: 65, type: .incoming, kind: .lightning,
+            date: Date(), status: .completed, mintUrl: first.mintUrl, sagaId: "amount",
+            paymentMethod: .bolt11, quoteId: first.quoteId)
+        XCTAssertEqual(MintReceiptProjection.project([first, changedAmount]).count, 2)
+        var alsoCompleted = first; alsoCompleted.status = .completed
+        XCTAssertEqual(MintReceiptProjection.project([alsoCompleted, second]).count, 2)
+    }
+
+    private func mintAttempt(_ id: String, status: WalletTransaction.TransactionStatus, time: TimeInterval) -> WalletTransaction {
+        WalletTransaction(id: id, amount: 64, type: .incoming, kind: .lightning,
+            date: Date(timeIntervalSince1970: time), status: status,
+            mintUrl: "https://mint.example", invoice: "lnbc-fixture", sagaId: id,
+            paymentMethod: .bolt11, quoteId: "quote")
+    }
+
     // MARK: - Saved token (txId ↔ encoded token)
 
     func testGetTokenNilByDefault() {

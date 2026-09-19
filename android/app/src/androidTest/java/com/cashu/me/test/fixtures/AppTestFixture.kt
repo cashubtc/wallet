@@ -60,6 +60,7 @@ object AppTestFixture {
         authenticate: (suspend (String) -> Boolean)? = null,
         supportedUnits: List<String> = listOf("sat"),
         npcQuotes: () -> List<NPCQuote> = { emptyList() },
+        mnemonic: String? = null,
     ): LaunchedFixture {
         val application = ApplicationProvider.getApplicationContext<UiTestApplication>()
         val usesLiveGateway = mode == FixtureMode.LiveLocalMint ||
@@ -151,10 +152,10 @@ object AppTestFixture {
         runBlocking {
             container.walletManager.initialize()
             if (mode != FixtureMode.EmptyWallet) {
-                val mnemonic = if (mode == FixtureMode.LivePayments) {
+                val walletMnemonic = mnemonic ?: if (mode == FixtureMode.LivePayments) {
                     CdkWalletGatewayImpl().generateMnemonic()
                 } else FakeWalletGateway.FixedMnemonic
-                container.walletManager.createNewWalletFromMnemonic(mnemonic)
+                container.walletManager.createNewWalletFromMnemonic(walletMnemonic)
             }
             if (mode == FixtureMode.SeededWithMint ||
                 mode == FixtureMode.FundedWithHistory ||

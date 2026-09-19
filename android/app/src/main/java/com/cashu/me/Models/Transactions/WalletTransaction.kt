@@ -33,6 +33,8 @@ data class WalletTransaction(
     val isPendingReceiveToken: Boolean = false,
     /** BOLT11 mint quote still awaiting payment — titles the row "Lightning invoice". */
     val isUnpaidInvoice: Boolean = false,
+    /** Explicit CDK method; absent in older cached history. */
+    val paymentMethod: PaymentMethodKind? = null,
 ) {
     val displayDescription: String?
         get() = memo?.takeIf(String::isNotBlank) ?: PaymentRequestDecoder.description(invoice)
