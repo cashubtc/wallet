@@ -52,6 +52,19 @@ class LivePaymentUITestBase: UITestBase {
     }
 
     override func tearDownWithError() throws {
+        if fixtureSession != nil, testRun?.hasSucceeded == false {
+            // Preserve transport outcomes before deleting the isolated session.
+            // The fixture records methods/statuses, never invoices or proofs.
+            if let state = try? fixtureCall("/sessions/" + fixtureSession),
+               let requests = state["requests"],
+               let data = try? JSONSerialization.data(withJSONObject: requests, options: [.prettyPrinted]),
+               let text = String(data: data, encoding: .utf8) {
+                let attachment = XCTAttachment(string: text)
+                attachment.name = "Payment fixture request outcomes"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
+        }
         try super.tearDownWithError()
         if fixtureSession != nil { _ = try fixtureCall("/sessions/" + fixtureSession, method: "DELETE") }
     }
@@ -93,7 +106,11 @@ class LivePaymentUITestBase: UITestBase {
         XCTAssertTrue(screen("receive-lightning-screen").waitForExistence(timeout: 15))
         for digit in ["1", "0", "0"] { tapWhenReady(app.buttons[digit]) }
         tapWhenReady(app.buttons["receive-lightning-create-request"])
-        XCTAssertTrue(app.staticTexts["Payment Received!"].waitForExistence(timeout: 30))
+        // The fixture permits 30 seconds per upstream request. Quote creation,
+        // status polling and issuance are separate operations, so a 30-second
+        // end-to-end deadline can expire while a valid status check is running.
+        XCTAssertTrue(app.staticTexts["Payment Received!"].waitForExistence(timeout: 90),
+                      "The live invoice must settle and issue ecash before continuing")
         tapWhenReady(app.buttons["Done"])
         waitForMainTab()
     }
