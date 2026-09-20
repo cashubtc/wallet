@@ -45,6 +45,9 @@ class LivePaymentUITestBase: UITestBase {
     override var mintURL: String { fixtureURL + "/sessions/" + fixtureSession + "/mint/" + backend }
 
     override func setUpWithError() throws {
+        // These journeys include onboarding, real receive/send requests and
+        // relaunch. Each transport can consume its own bounded deadline.
+        executionTimeAllowance = 360
         fixtureURL = ProcessInfo.processInfo.environment["PAYMENT_FIXTURE_URL"]
         try XCTSkipIf(fixtureURL == nil, "Local payment fixtures are required")
         fixtureSession = try fixtureCall("/sessions", method: "POST")["id"] as? String
@@ -172,7 +175,9 @@ final class LiveCdkPaymentUITests: LivePaymentUITestBase {
         add(quoteCapture)
 
         let pay = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Pay 21")).firstMatch
-        tapWhenReady(pay, timeout: 25)
+        // 15 seconds of intentional delay plus the fixture's 30-second
+        // upstream deadline, with room for the UI to publish the response.
+        tapWhenReady(pay, timeout: 60)
         XCTAssertTrue(processing.waitForExistence(timeout: 10))
         XCTAssertEqual(processing.frame.minY, quoteTitleTop, accuracy: 1)
         XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'From '")).firstMatch.exists)
@@ -180,7 +185,7 @@ final class LiveCdkPaymentUITests: LivePaymentUITestBase {
         paymentCapture.name = "payment-processing"
         paymentCapture.lifetime = .keepAlways
         add(paymentCapture)
-        XCTAssertTrue(app.staticTexts["Payment Sent!"].waitForExistence(timeout: 30))
+        XCTAssertTrue(app.staticTexts["Payment Sent!"].waitForExistence(timeout: 60))
     }
 
     func testReceivePayAndRelaunch() throws { try receiveThenPayAndReopenHistory() }
