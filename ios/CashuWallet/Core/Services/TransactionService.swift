@@ -344,6 +344,13 @@ class TransactionService: ObservableObject {
         observingQuoteID: String? = nil
     ) async -> [WalletTransaction] {
         var transactions: [WalletTransaction] = []
+        let savedObservations = walletStore.loadOnchainPaymentObservations()
+        let onchainQuoteIDs = Set(quotes.filter {
+            PaymentMethodKind.from($0.paymentMethod) == .onchain
+        }.map(\.id))
+        // The quote read succeeded, so evidence for quotes no longer awaiting
+        // issuance can be discarded. CDK remains authoritative after settlement.
+        var retainedObservations = savedObservations.filter { onchainQuoteIDs.contains($0.key) }
 
         for quote in quotes {
             guard trackedMintUrls.contains(MintURLIdentity.normalized(quote.mintUrl.url)) else {
@@ -376,9 +383,6 @@ class TransactionService: ObservableObject {
                 timestamp = firstSeen
             }
             let createdAt = Date(timeIntervalSince1970: timestamp)
-            let previousOnchainPayment = self.transactions.first {
-                $0.quoteId == quote.id && $0.kind == .onchain && $0.preimage != nil
-            }
             // Inspect amountless addresses before requiring a mint-reported
             // amount, which can remain zero until enough confirmations arrive.
             let observation: OnchainPaymentObservation?
@@ -388,6 +392,12 @@ class TransactionService: ObservableObject {
             } else {
                 observation = nil
             }
+            if let observation {
+                retainedObservations[quote.id] = observation
+            }
+            // Persist both the observed amount and txid: a txid alone cannot
+            // reconstruct an amountless deposit after relaunch while offline.
+            let lastOnchainObservation = retainedObservations[quote.id]
 
             // BOLT12 offers are reusable and long-lived, so a created-but-unpaid
             // offer must stay out of history entirely. Surface a BOLT12 quote
@@ -399,8 +409,7 @@ class TransactionService: ObservableObject {
                 // A requested amount is not evidence that an address was funded.
                 amount = (quote.amountPaid.value > 0 ? quote.amountPaid.value : nil)
                     ?? (quote.amountIssued.value > 0 ? quote.amountIssued.value : nil)
-                    ?? observation?.amount
-                    ?? previousOnchainPayment?.amount
+                    ?? lastOnchainObservation?.amount
             } else if paymentMethod == .bolt12 {
                 amount = quote.amountPaid.value > 0
                     ? quote.amountPaid.value
@@ -427,7 +436,7 @@ class TransactionService: ObservableObject {
                 : isExpiredUnpaidInvoice ? .expired
                 : .pending
 
-            var storedPaymentProof = getPreimage(quoteId: quote.id)
+            var storedPaymentProof = lastOnchainObservation?.txid ?? getPreimage(quoteId: quote.id)
             var statusNote: String?
 
             if let observation {
@@ -461,6 +470,9 @@ class TransactionService: ObservableObject {
             transactions.append(transaction)
         }
 
+        if retainedObservations != savedObservations {
+            walletStore.saveOnchainPaymentObservations(retainedObservations)
+        }
         return transactions
     }
 
