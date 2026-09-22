@@ -28,6 +28,8 @@ internal data class WalletTransactionLoadResult(
 internal class WalletTransactionLoader(
     private val walletStore: WalletStore,
     private val gateway: CdkWalletGateway,
+    private val observeOnchainPayment: suspend (String, String?, Long, Long) -> OnchainPaymentObservation? =
+        OnchainExplorer::observePayment,
 ) {
     suspend fun load(
         mints: List<MintInfo>,
@@ -103,18 +105,19 @@ internal class WalletTransactionLoader(
             if (!includeRemoteObservations ||
                 (observingQuoteId != null && observingQuoteId != quote.id) ||
                 quote.paymentMethod != PaymentMethodKind.Onchain ||
-                quote.mintUrl !in trackedMintUrls || quote.id in quoteIdsWithTransactions
+                trackedMintUrls.none { com.cashu.me.Core.CDK.mintRemovalUrlsMatch(it, quote.mintUrl.orEmpty()) } ||
+                quote.id in quoteIdsWithTransactions
             ) continue
             val createdAt = if (quote.updatedAtEpochSeconds > 0) {
                 quote.updatedAtEpochSeconds * 1000
             } else {
                 mintQuoteTimestamps.getOrPut(quote.id) { System.currentTimeMillis() }
             }
-            val observation = OnchainExplorer.observePayment(
-                address = quote.request,
-                mintUrl = quote.mintUrl,
-                expectedAmount = 1,
-                createdAfterEpochMillis = createdAt,
+            val observation = observeOnchainPayment(
+                quote.request,
+                quote.mintUrl,
+                1,
+                createdAt,
             )
             if (observation != null) {
                 observations[quote.id] = observation

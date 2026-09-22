@@ -24,6 +24,65 @@ import org.junit.Test
 class StoredAccountProjectionInstrumentedTest {
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
 
+    @Test fun unconfirmedOnchainDepositsObserveEquivalentMintUrlsAfterReopen() = runBlocking {
+        val directory = File(context.cacheDir, UUID.randomUUID().toString()).apply { mkdirs() }
+        val path = File(directory, "wallet.db").path
+        val storedMint = MintUrl("https://offline.example:443/")
+        val gateway = CdkWalletGatewayImpl()
+        val quote = MintQuote(
+            id = "unconfirmed-deposit", amount = null, unit = CurrencyUnit.Sat, request = "bc1qhistoryfixture",
+            state = QuoteState.UNPAID, expiry = 0u, mintUrl = storedMint, amountIssued = Amount(0u),
+            amountPaid = Amount(0u), updatedAt = 1u, estimatedBlocks = null,
+            paymentMethod = PaymentMethod.Onchain, secretKey = null, usedByOperation = null, version = 0u,
+        )
+        try {
+            val mnemonic = gateway.generateMnemonic()
+            val databaseMintUrl = WalletSqliteDatabase(path).use { database ->
+                database.addMintQuote(quote)
+                requireNotNull(database.getMintQuote(quote.id)).mintUrl.url
+            }
+            for (trackedUrl in listOf(databaseMintUrl, "https://offline.example", "HTTPS://OFFLINE.EXAMPLE:443/")) {
+                gateway.openWalletRepository(mnemonic, path)
+                val store = WalletStore(context, "unconfirmed_onchain_" + UUID.randomUUID())
+                var observations = 0
+                val loader = WalletTransactionLoader(store, gateway) { address, mintUrl, expectedAmount, createdAt ->
+                    observations++
+                    assertEquals(quote.request, address)
+                    assertEquals(databaseMintUrl, mintUrl)
+                    assertEquals(1L, expectedAmount)
+                    assertEquals(1_000L, createdAt)
+                    OnchainPaymentObservation("b".repeat(64), 2_100, false, null)
+                }
+                val mints = listOf(MintInfo(trackedUrl))
+                // Disabled observation and unrelated endpoints must not query the explorer.
+                assertTrue(loader.load(mints, false).transactions.isEmpty())
+                assertTrue(loader.load(mints, observingQuoteId = "another-quote").transactions.isEmpty())
+                for (otherUrl in listOf("https://offline.example/other", "https://offline.example:8443")) {
+                    assertTrue(loader.load(listOf(MintInfo(otherUrl))).transactions.isEmpty())
+                }
+                assertEquals(0, observations)
+
+                val rows = loader.load(mints).transactions
+                assertEquals(1, observations)
+                val pending = rows.single()
+                assertEquals(quote.id, pending.id)
+                assertEquals(databaseMintUrl, pending.mintUrl)
+                assertEquals(2_100L, pending.amount)
+                assertEquals(AppTransactionStatus.Pending, pending.status)
+                assertEquals("Payment seen in mempool", pending.statusNote)
+                assertEquals("b".repeat(64), pending.preimage)
+                assertEquals(rows, recentPaymentTransactions(rows, 5))
+                assertEquals(listOf("tx:${quote.id}"), com.cashu.me.ui.history.unifiedFiltered(
+                    rows, emptyList(), HistoryFilter.Pending, "bitcoin"
+                ).map { it.key })
+                gateway.closeWalletRepository()
+            }
+        } finally {
+            gateway.closeWalletRepository()
+            directory.deleteRecursively()
+        }
+    }
+
     @Test fun fulfilledOnchainPaymentsRemainInHistoryWithEquivalentMintUrls() = runBlocking {
         val directory = File(context.cacheDir, UUID.randomUUID().toString()).apply { mkdirs() }
         val path = File(directory, "wallet.db").path
