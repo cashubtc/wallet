@@ -24,6 +24,160 @@ import org.junit.Test
 class StoredAccountProjectionInstrumentedTest {
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
 
+    @Test fun fulfilledOnchainPaymentsRemainInHistoryWithEquivalentMintUrls() = runBlocking {
+        val directory = File(context.cacheDir, UUID.randomUUID().toString()).apply { mkdirs() }
+        val path = File(directory, "wallet.db").path
+        val storedMint = MintUrl("https://offline.example:443")
+        val gateway = CdkWalletGatewayImpl()
+        try {
+            val mnemonic = gateway.generateMnemonic()
+            WalletSqliteDatabase(path).use { db ->
+                for (direction in listOf(TransactionDirection.INCOMING, TransactionDirection.OUTGOING)) {
+                    db.addTransaction(Transaction(
+                        id = TransactionId("a".repeat(64)), mintUrl = storedMint, direction = direction,
+                        amount = Amount(2_100u), fee = Amount(10u), unit = CurrencyUnit.Sat,
+                        ys = emptyList(), timestamp = 1u, memo = null, metadata = emptyMap(),
+                        quoteId = UUID.randomUUID().toString(), paymentRequest = "bc1qfulfilledfixture",
+                        paymentProof = "b".repeat(64), paymentMethod = PaymentMethod.Onchain,
+                        sagaId = UUID.randomUUID().toString(), status = TransactionStatus.COMPLETED,
+                    ))
+                }
+            }
+            repeat(2) {
+                // Prove fulfillment is durably recorded before asking the UI loader for history.
+                val storedIds = WalletSqliteDatabase(path).use { db ->
+                    val records = db.listTransactions(null, null, null)
+                    assertEquals(2, records.size)
+                    assertTrue(records.all { it.status == TransactionStatus.COMPLETED })
+                    assertTrue(records.all { it.mintUrl.url == storedMint.url })
+                    assertTrue(db.getUnissuedMintQuotes().isEmpty())
+                    records.map { it.id.hex }.toSet()
+                }
+                gateway.openWalletRepository(mnemonic, path)
+                // An empty cache prevents a previous in-memory receipt from masking data loss.
+                val store = WalletStore(context, "fulfilled_onchain_" + UUID.randomUUID())
+                val loader = WalletTransactionLoader(store, gateway)
+                val canonical = loader.load(listOf(MintInfo(storedMint.url)), false).transactions
+                assertEquals(storedIds, canonical.map { it.id }.toSet())
+                store.saveTransactions(emptyList())
+                val rows = loader.load(listOf(MintInfo("https://offline.example/")), false).transactions
+                assertEquals("Fulfilled payments must survive equivalent mint URL spelling", storedIds, rows.map { it.id }.toSet())
+                assertTrue(rows.all { it.status == AppTransactionStatus.Completed && it.kind == TransactionKind.Onchain })
+                assertTrue(rows.all { it.amount == 2_100L && it.preimage == "b".repeat(64) })
+                for (filter in listOf(HistoryFilter.All, HistoryFilter.Completed)) {
+                    val visible = com.cashu.me.ui.history.unifiedFiltered(rows, emptyList(), filter, "bitcoin")
+                    assertEquals(2, visible.size)
+                }
+                gateway.closeWalletRepository()
+            }
+        } finally {
+            gateway.closeWalletRepository()
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test fun onchainDirectionsStatesAndLegacyMethodSurviveDatabaseReopen() = runBlocking {
+        val directory = File(context.cacheDir, UUID.randomUUID().toString()).apply { mkdirs() }
+        val path = File(directory, "wallet.db").path
+        val mint = MintUrl("https://offline.example")
+        val gateway = CdkWalletGatewayImpl()
+        try {
+            val mnemonic = gateway.generateMnemonic()
+            WalletSqliteDatabase(path).use { db ->
+                for ((index, status) in listOf(TransactionStatus.PENDING, TransactionStatus.COMPLETED, TransactionStatus.FAILED).withIndex()) {
+                    for (direction in listOf(TransactionDirection.INCOMING, TransactionDirection.OUTGOING)) {
+                        db.addTransaction(Transaction(
+                            id = TransactionId("a".repeat(64)), mintUrl = mint, direction = direction,
+                            amount = Amount(2_100u), fee = Amount(10u), unit = CurrencyUnit.Sat,
+                            ys = emptyList(), timestamp = (index + 1).toULong(), memo = null,
+                            metadata = emptyMap(), quoteId = UUID.randomUUID().toString(),
+                            paymentRequest = "bc1qhistoryfixture", paymentProof = "b".repeat(64),
+                            paymentMethod = if (index == 0) PaymentMethod.Custom("onchain") else PaymentMethod.Onchain,
+                            sagaId = UUID.randomUUID().toString(), status = status,
+                        ))
+                    }
+                }
+            }
+            val store = WalletStore(context, "onchain_history_" + UUID.randomUUID())
+            repeat(2) {
+                gateway.openWalletRepository(mnemonic, path)
+                val rows = WalletTransactionLoader(store, gateway)
+                    .load(listOf(MintInfo(mint.url)), false).transactions
+                assertEquals(6, rows.size)
+                assertEquals(6, rows.map { it.id }.toSet().size)
+                rows.forEach { row ->
+                    assertEquals(TransactionKind.Onchain, row.kind)
+                    assertEquals(2_100L, row.amount)
+                    assertEquals("bc1qhistoryfixture", row.invoice)
+                    assertEquals("b".repeat(64), row.preimage)
+                    assertEquals(if (row.type == TransactionType.Incoming) "Bitcoin received" else "Bitcoin sent", TransactionDisplay.title(row))
+                }
+                for (status in listOf(AppTransactionStatus.Pending, AppTransactionStatus.Completed, AppTransactionStatus.Failed)) {
+                    assertEquals(2, rows.count { it.status == status })
+                }
+                val timeline = com.cashu.me.ui.history.unifiedFiltered(rows, emptyList(), HistoryFilter.All, "bitcoin")
+                assertEquals(6, timeline.size)
+                assertEquals(2, com.cashu.me.ui.history.unifiedFiltered(rows, emptyList(), HistoryFilter.Pending, "").size)
+                assertEquals(2, com.cashu.me.ui.history.unifiedFiltered(rows, emptyList(), HistoryFilter.Completed, "").size)
+                gateway.closeWalletRepository()
+            }
+        } finally {
+            gateway.closeWalletRepository()
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test fun onchainDepositTransitionsFromPaidQuoteToSingleCompletedReceipt() = runBlocking {
+        val directory = File(context.cacheDir, UUID.randomUUID().toString()).apply { mkdirs() }
+        val path = File(directory, "wallet.db").path
+        val mint = MintUrl("https://offline.example:443")
+        val gateway = CdkWalletGatewayImpl()
+        try {
+            val mnemonic = gateway.generateMnemonic()
+            val quote = MintQuote(
+                id = "onchain-deposit", amount = null, unit = CurrencyUnit.Sat, request = "bc1qhistoryfixture",
+                state = QuoteState.PAID, expiry = 1u, mintUrl = mint, amountIssued = Amount(0u),
+                amountPaid = Amount(2_100u), updatedAt = 1u, estimatedBlocks = null,
+                paymentMethod = PaymentMethod.Onchain, secretKey = null, usedByOperation = null, version = 0u,
+            )
+            WalletSqliteDatabase(path).use { it.addMintQuote(quote) }
+            val store = WalletStore(context, "onchain_transition_" + UUID.randomUUID())
+            val mints = listOf(MintInfo("https://offline.example"))
+            suspend fun load(): List<WalletTransaction> {
+                gateway.openWalletRepository(mnemonic, path)
+                return try { WalletTransactionLoader(store, gateway).load(mints, false).transactions }
+                finally { gateway.closeWalletRepository() }
+            }
+            val pending = load().single()
+            assertEquals(TransactionKind.Onchain, pending.kind)
+            assertEquals(2_100L, pending.amount)
+            assertEquals(AppTransactionStatus.Pending, pending.status)
+            assertFalse(pending.isUnpaidInvoice)
+
+            val transaction = Transaction(
+                id = TransactionId("a".repeat(64)), mintUrl = mint, direction = TransactionDirection.INCOMING,
+                amount = Amount(2_100u), fee = Amount(0u), unit = CurrencyUnit.Sat, ys = emptyList(),
+                timestamp = 2u, memo = null, metadata = emptyMap(), quoteId = quote.id,
+                paymentRequest = quote.request, paymentProof = null, paymentMethod = PaymentMethod.Onchain,
+                sagaId = UUID.randomUUID().toString(), status = TransactionStatus.PENDING,
+            )
+            WalletSqliteDatabase(path).use { it.addTransaction(transaction) }
+            val minting = load().single()
+            assertNotEquals(quote.id, minting.id)
+            assertEquals(AppTransactionStatus.Pending, minting.status)
+            WalletSqliteDatabase(path).use {
+                it.addTransaction(transaction.copy(status = TransactionStatus.COMPLETED))
+                it.addMintQuote(quote.copy(state = QuoteState.ISSUED, amountIssued = Amount(2_100u)))
+            }
+            val completed = load().single()
+            assertEquals(minting.id, completed.id)
+            assertEquals(AppTransactionStatus.Completed, completed.status)
+        } finally {
+            gateway.closeWalletRepository()
+            directory.deleteRecursively()
+        }
+    }
+
     @Test fun discontinuedCurrencyHistorySurvivesDatabaseReopenWithoutAnAdvertisedWallet() = runBlocking {
         val directory = File(context.cacheDir, UUID.randomUUID().toString()).apply { mkdirs() }
         val path = File(directory, "wallet.db").path
@@ -91,12 +245,12 @@ class StoredAccountProjectionInstrumentedTest {
         val quote = MintQuoteInfo(
             id = "invoice", request = "invoice-request", amount = 8,
             paymentMethod = PaymentMethodKind.Bolt11, state = MintQuoteState.Unpaid,
-            expiryEpochSeconds = 1, mintUrl = mint,
+            expiryEpochSeconds = 1, mintUrl = "$mint:443/",
         )
         val staleInvoice = WalletTransaction(
             id = quote.id, quoteId = quote.id, amount = 8, type = TransactionType.Incoming,
             kind = TransactionKind.Lightning, dateEpochMillis = 1,
-            status = AppTransactionStatus.Pending, mintUrl = mint,
+            status = AppTransactionStatus.Pending, mintUrl = quote.mintUrl,
         )
         val completed = staleInvoice.copy(
             id = "cdk-transaction", quoteId = "settled-quote", status = AppTransactionStatus.Completed,

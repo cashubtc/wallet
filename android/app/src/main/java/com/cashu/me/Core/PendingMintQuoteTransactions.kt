@@ -1,5 +1,6 @@
 package com.cashu.me.Core
 
+import com.cashu.me.Core.CDK.mintRemovalUrlsMatch
 import com.cashu.me.Models.MintQuoteInfo
 import com.cashu.me.Models.MintQuoteState
 import com.cashu.me.Models.PaymentMethodKind
@@ -16,7 +17,9 @@ internal fun pendingMintQuoteTransactions(
     nowEpochMillis: Long,
 ): List<WalletTransaction> =
     quotes.mapNotNull { quote ->
-        val mintUrl = quote.mintUrl?.takeIf { it in trackedMintUrls } ?: return@mapNotNull null
+        val mintUrl = quote.mintUrl?.takeIf { stored ->
+            trackedMintUrls.any { mintRemovalUrlsMatch(it, stored) }
+        } ?: return@mapNotNull null
         // Once CDK has a transaction for this quote — pending while a mint is
         // in flight, completed afterwards — the CDK row is authoritative and
         // the quote-backed row would only duplicate it. (BOLT12 offers always

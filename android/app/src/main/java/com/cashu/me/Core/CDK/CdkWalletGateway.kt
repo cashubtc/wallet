@@ -152,7 +152,11 @@ internal fun mintRemovalUrlsMatch(lhs: String, rhs: String): Boolean {
     fun identity(raw: String): List<Any?>? = runCatching {
         val uri = URI(raw.trim())
         val scheme = uri.scheme?.lowercase() ?: return@runCatching null
-        val authority = uri.rawAuthority?.lowercase() ?: return@runCatching null
+        var authority = uri.rawAuthority?.lowercase() ?: return@runCatching null
+        // Match iOS mint identity while preserving the original URL for DB reads.
+        if ((scheme == "https" && uri.port == 443) || (scheme == "http" && uri.port == 80)) {
+            authority = authority.substringBeforeLast(':')
+        }
         var path = uri.rawPath.orEmpty()
         while (path.length > 1 && path.endsWith('/')) path = path.dropLast(1)
         if (path == "/") path = ""

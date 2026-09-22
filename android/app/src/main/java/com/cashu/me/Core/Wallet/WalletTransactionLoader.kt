@@ -92,7 +92,8 @@ internal class WalletTransactionLoader(
         quoteRead.exceptionOrNull()?.let { if (it is kotlinx.coroutines.CancellationException) throw it }
         val unissuedMintQuotes = quoteRead.getOrDefault(emptyList())
         val retainedQuotes = if (quoteRead.isFailure) previous.filter {
-            it.id == it.quoteId && it.id !in quoteIdsWithTransactions && it.mintUrl in trackedMintUrls
+            it.id == it.quoteId && it.id !in quoteIdsWithTransactions &&
+                trackedMintUrls.any { tracked -> com.cashu.me.Core.CDK.mintRemovalUrlsMatch(tracked, it.mintUrl.orEmpty()) }
         } else emptyList()
         val pendingQuotes = pendingMintQuoteTransactions(
             quotes = unissuedMintQuotes,
