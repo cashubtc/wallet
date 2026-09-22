@@ -62,7 +62,8 @@ class TransactionService: ObservableObject {
 
         // Get transactions from tracked wallets. CDK persists every send,
         // receive, mint, and melt with a stable saga-derived id and a native
-        // lifecycle status, so rows map one-to-one without local merging.
+        // lifecycle status. BOLT11 retries project to one receipt below;
+        // CDK retains the individual attempts for recovery and diagnostics.
         var allTransactions: [WalletTransaction] = []
         var quoteIdsWithTransactions: Set<String> = []
         let trackedMintUrls = Set(getTrackedMintUrls().filter { !$0.isEmpty }.map(MintURLIdentity.normalized))
@@ -129,6 +130,7 @@ class TransactionService: ObservableObject {
                         walletTransaction.fee = tx.fee.value
                         walletTransaction.quoteId = tx.quoteId
                         walletTransaction.sagaId = tx.sagaId
+                        walletTransaction.paymentMethod = paymentMethod
                         walletTransaction.unit = PaymentRequestDecoder.unitDescription(tx.unit)
                         return walletTransaction
                     }
@@ -215,7 +217,7 @@ class TransactionService: ObservableObject {
 
         // Restore from durable request metadata each load, even after payment/relaunch.
         let requests = walletStore.loadCashuRequests()
-        transactions = allTransactions.map { $0.restoringDescription(from: requests) }
+        transactions = MintReceiptProjection.project(allTransactions).map { $0.restoringDescription(from: requests) }
             .sorted { $0.date > $1.date }
 
         // Post notification that transactions were updated

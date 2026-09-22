@@ -165,6 +165,115 @@ final class StoredWalletAccountTests: XCTestCase {
         }
     }
 
+    func testBolt11RetriesBecomeOneReceiptWithoutDeletingStoredAttempts() async throws {
+        try await withHistoryService { db, repo, service, store in
+            let mint = MintUrl(url: "https://offline.example")
+            let quoteID = "retry-quote"
+            for index in 0..<6 {
+                try await db.addTransaction(transaction: Cdk.Transaction(
+                    id: TransactionId(hex: String(repeating: "a", count: 64)), mintUrl: mint,
+                    direction: .incoming, amount: Amount(value: 64), fee: Amount(value: 0),
+                    unit: .sat, ys: [], timestamp: UInt64(index + 1), memo: nil, metadata: [:],
+                    quoteId: quoteID, paymentRequest: "lnbc-fixture", paymentProof: nil,
+                    paymentMethod: .bolt11, sagaId: UUID().uuidString,
+                    status: index == 5 ? .completed : .failed
+                ))
+            }
+            let stored = try await db.listTransactions(mintUrl: nil, direction: nil, unit: nil)
+            XCTAssertEqual(stored.count, 6)
+            let completed = try XCTUnwrap(stored.first { $0.status == .completed })
+            for reader in [service, TransactionService(walletRepository: { repo }, walletDatabase: { db },
+                getTrackedMintUrls: { [mint.url] }, walletStore: store)] {
+                await reader.loadTransactions(includeRemoteObservations: false)
+                XCTAssertEqual(reader.transactions.map(\.id), [completed.id.hex])
+                XCTAssertEqual(reader.transactions.first?.amount, 64)
+                XCTAssertEqual(reader.transactions.first?.status, .completed)
+                XCTAssertEqual(reader.transactions.liveDetail(openId: stored[0].id.hex, openQuoteId: quoteID)?.id,
+                    completed.id.hex)
+            }
+            let retained = try await db.listTransactions(mintUrl: nil, direction: nil, unit: nil)
+            XCTAssertEqual(retained.count, 6)
+            let balance = try await db.getBalance(mintUrl: mint, unit: .sat, state: [.unspent])
+            XCTAssertEqual(balance, 0, "History projection must not create proofs")
+        }
+    }
+
+    func testLiveBolt11RetriesThroughLightningServiceProduceOneReceipt() async throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["CASHU_LIVE_MINT_HISTORY"] == "1",
+            "Start the local mint and CI/mint-history-retry-proxy.py, then opt in")
+        let mintURL = "http://127.0.0.1:3344"
+        let mint = MintUrl(url: mintURL)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let path = directory.appendingPathComponent("wallet.sqlite").path
+        let mnemonic = try generateMnemonic()
+        let db = try LifecycleSafeWalletDatabase(filePath: path)
+        let repo = try WalletRepository(mnemonic: mnemonic, store: customWalletStore(db: db))
+        try await repo.createWallet(mintUrl: mint, unit: .sat, targetProofCount: nil)
+        let active = MintInfo(url: mintURL, name: "Local test mint", isActive: true, balance: 0)
+        let lightning = LightningService(walletRepository: { repo }, walletDatabase: { db }, getActiveMint: { active })
+        let history = TransactionService(walletRepository: { repo }, walletDatabase: { db },
+            getTrackedMintUrls: { [mintURL] }, walletStore: WalletStore(storage: InMemoryStorage()))
+        var quote = try await lightning.createMintQuote(amount: 64)
+        _ = try await mintHistoryControl("reject", quote: quote.id)
+        for _ in 0..<50 where quote.state != .paid {
+            quote = try await lightning.checkMintQuote(quoteId: quote.id)
+            if quote.state != .paid { try await Task.sleep(for: .milliseconds(100)) }
+        }
+        XCTAssertEqual(quote.state, .paid)
+        for _ in 0..<5 {
+            do {
+                _ = try await lightning.mintTokens(quoteId: quote.id)
+                XCTFail("The proxy must reject the actual mint request")
+            } catch { /* Assert the five exact rejections at the HTTP boundary below. */ }
+        }
+        let wallet = try await repo.getWallet(mintUrl: mint, unit: .sat)
+        let failures = try await db.listTransactions(mintUrl: mint, direction: nil, unit: .sat)
+        XCTAssertEqual(failures.count, 5)
+        XCTAssertTrue(failures.allSatisfy { $0.status == .failed && $0.quoteId == quote.id })
+        let beforeBalance = try await wallet.totalBalance().value
+        XCTAssertEqual(beforeBalance, 0)
+        _ = try await mintHistoryControl("accept", quote: quote.id)
+        let minted = try await lightning.mintTokens(quoteId: quote.id)
+        XCTAssertEqual(minted, 64)
+        let stored = try await db.listTransactions(mintUrl: mint, direction: nil, unit: .sat)
+        XCTAssertEqual(stored.count, 6)
+        XCTAssertEqual(Set(stored.map { $0.id.hex }).count, 6)
+        XCTAssertTrue(stored.allSatisfy { $0.quoteId == quote.id && $0.paymentRequest == quote.request })
+        XCTAssertEqual(stored.filter { $0.status == .completed }.count, 1)
+        let completed = try XCTUnwrap(stored.first { $0.status == .completed })
+        let balance = try await wallet.totalBalance().value
+        XCTAssertEqual(balance, 64)
+        let stats = try await mintHistoryControl("stats", quote: quote.id)
+        XCTAssertEqual(stats["rejected"] as? Int, 5)
+        XCTAssertEqual(stats["successful"] as? Int, 1)
+        await history.loadTransactions(includeRemoteObservations: false)
+        XCTAssertEqual(history.transactions.map(\.id), [completed.id.hex])
+        XCTAssertEqual(history.transactions.first?.status, .completed)
+        // A new database handle/repository must project durable real receipts too.
+        let reopenedDB = try LifecycleSafeWalletDatabase(filePath: path)
+        let reopenedRepo = try WalletRepository(mnemonic: mnemonic, store: customWalletStore(db: reopenedDB))
+        let reopenedHistory = TransactionService(walletRepository: { reopenedRepo }, walletDatabase: { reopenedDB },
+            getTrackedMintUrls: { [mintURL] }, walletStore: WalletStore(storage: InMemoryStorage()))
+        await reopenedHistory.loadTransactions(includeRemoteObservations: false)
+        XCTAssertEqual(reopenedHistory.transactions.map(\.id), [completed.id.hex])
+        let retained = try await reopenedDB.listTransactions(mintUrl: mint, direction: nil, unit: .sat)
+        XCTAssertEqual(retained.count, 6)
+        let reopenedBalance = try await reopenedDB.getBalance(mintUrl: mint, unit: .sat, state: [.unspent])
+        XCTAssertEqual(reopenedBalance, 64)
+    }
+
+    private func mintHistoryControl(_ action: String, quote: String) async throws -> [String: Any] {
+        var request = URLRequest(url: URL(string: "http://127.0.0.1:3344/__mint_history/" + action)!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["quote": quote])
+        let (data, response) = try await URLSession.shared.data(for: request)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+        return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    }
+
     private func withHistoryService(
         _ body: (FailingAccountHistoryDatabase, WalletRepository, TransactionService, CashuWallet.WalletStore) async throws -> Void
     ) async throws {

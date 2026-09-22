@@ -178,6 +178,46 @@ class StoredAccountProjectionInstrumentedTest {
         }
     }
 
+    @Test fun bolt11RetriesBecomeOneReceiptWithoutDeletingStoredAttempts() = runBlocking {
+        val directory = File(context.cacheDir, UUID.randomUUID().toString()).apply { mkdirs() }
+        val path = File(directory, "wallet.db").path
+        val mint = MintUrl("https://offline.example")
+        val gateway = CdkWalletGatewayImpl()
+        try {
+            val mnemonic = gateway.generateMnemonic()
+            WalletSqliteDatabase(path).use { db ->
+                repeat(6) { index ->
+                    db.addTransaction(Transaction(
+                        id = TransactionId("a".repeat(64)), mintUrl = mint,
+                        direction = TransactionDirection.INCOMING, amount = Amount(64u), fee = Amount(0u),
+                        unit = CurrencyUnit.Sat, ys = emptyList(), timestamp = (index + 1).toULong(),
+                        memo = null, metadata = emptyMap(), quoteId = "retry-quote",
+                        paymentRequest = "lnbc-fixture", paymentProof = null, paymentMethod = PaymentMethod.Bolt11,
+                        sagaId = UUID.randomUUID().toString(),
+                        status = if (index == 5) TransactionStatus.COMPLETED else TransactionStatus.FAILED,
+                    ))
+                }
+            }
+            repeat(2) {
+                val stored = WalletSqliteDatabase(path).use { it.listTransactions(null, null, null) }
+                assertEquals(6, stored.size)
+                val completed = stored.single { it.status == TransactionStatus.COMPLETED }
+                gateway.openWalletRepository(mnemonic, path)
+                val store = WalletStore(context, "retry_history_" + UUID.randomUUID())
+                val rows = WalletTransactionLoader(store, gateway).load(listOf(MintInfo(mint.url)), false).transactions
+                assertEquals(listOf(completed.id.hex), rows.map { it.id })
+                assertEquals(64L, rows.single().amount)
+                assertEquals(AppTransactionStatus.Completed, rows.single().status)
+                assertEquals(0L, gateway.unitBalance(mint.url, "sat"))
+                gateway.closeWalletRepository()
+            }
+            WalletSqliteDatabase(path).use { assertEquals(6, it.listTransactions(null, null, null).size) }
+        } finally {
+            gateway.closeWalletRepository()
+            directory.deleteRecursively()
+        }
+    }
+
     @Test fun discontinuedCurrencyHistorySurvivesDatabaseReopenWithoutAnAdvertisedWallet() = runBlocking {
         val directory = File(context.cacheDir, UUID.randomUUID().toString()).apply { mkdirs() }
         val path = File(directory, "wallet.db").path

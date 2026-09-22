@@ -45,6 +45,9 @@ class LivePaymentUITestBase: UITestBase {
     override var mintURL: String { fixtureURL + "/sessions/" + fixtureSession + "/mint/" + backend }
 
     override func setUpWithError() throws {
+        // These journeys include onboarding, real receive/send requests and
+        // relaunch. Each transport can consume its own bounded deadline.
+        executionTimeAllowance = 360
         fixtureURL = ProcessInfo.processInfo.environment["PAYMENT_FIXTURE_URL"]
         try XCTSkipIf(fixtureURL == nil, "Local payment fixtures are required")
         fixtureSession = try fixtureCall("/sessions", method: "POST")["id"] as? String
@@ -52,6 +55,19 @@ class LivePaymentUITestBase: UITestBase {
     }
 
     override func tearDownWithError() throws {
+        if fixtureSession != nil, testRun?.hasSucceeded == false {
+            // Preserve transport outcomes before deleting the isolated session.
+            // The fixture records methods/statuses, never invoices or proofs.
+            if let state = try? fixtureCall("/sessions/" + fixtureSession),
+               let requests = state["requests"],
+               let data = try? JSONSerialization.data(withJSONObject: requests, options: [.prettyPrinted]),
+               let text = String(data: data, encoding: .utf8) {
+                let attachment = XCTAttachment(string: text)
+                attachment.name = "Payment fixture request outcomes"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
+        }
         try super.tearDownWithError()
         if fixtureSession != nil { _ = try fixtureCall("/sessions/" + fixtureSession, method: "DELETE") }
     }
@@ -93,7 +109,11 @@ class LivePaymentUITestBase: UITestBase {
         XCTAssertTrue(screen("receive-lightning-screen").waitForExistence(timeout: 15))
         for digit in ["1", "0", "0"] { tapWhenReady(app.buttons[digit]) }
         tapWhenReady(app.buttons["receive-lightning-create-request"])
-        XCTAssertTrue(app.staticTexts["Payment Received!"].waitForExistence(timeout: 30))
+        // The fixture permits 30 seconds per upstream request. Quote creation,
+        // status polling and issuance are separate operations, so a 30-second
+        // end-to-end deadline can expire while a valid status check is running.
+        XCTAssertTrue(app.staticTexts["Payment Received!"].waitForExistence(timeout: 90),
+                      "The live invoice must settle and issue ecash before continuing")
         tapWhenReady(app.buttons["Done"])
         waitForMainTab()
     }
@@ -155,7 +175,9 @@ final class LiveCdkPaymentUITests: LivePaymentUITestBase {
         add(quoteCapture)
 
         let pay = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Pay 21")).firstMatch
-        tapWhenReady(pay, timeout: 25)
+        // 15 seconds of intentional delay plus the fixture's 30-second
+        // upstream deadline, with room for the UI to publish the response.
+        tapWhenReady(pay, timeout: 60)
         XCTAssertTrue(processing.waitForExistence(timeout: 10))
         XCTAssertEqual(processing.frame.minY, quoteTitleTop, accuracy: 1)
         XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'From '")).firstMatch.exists)
@@ -163,7 +185,7 @@ final class LiveCdkPaymentUITests: LivePaymentUITestBase {
         paymentCapture.name = "payment-processing"
         paymentCapture.lifetime = .keepAlways
         add(paymentCapture)
-        XCTAssertTrue(app.staticTexts["Payment Sent!"].waitForExistence(timeout: 30))
+        XCTAssertTrue(app.staticTexts["Payment Sent!"].waitForExistence(timeout: 60))
     }
 
     func testReceivePayAndRelaunch() throws { try receiveThenPayAndReopenHistory() }

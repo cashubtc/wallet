@@ -137,11 +137,13 @@ internal class WalletTransactionLoader(
         val receiveTokenTransactions = pendingReceiveTokenTransactions(pendingReceiveTokens)
         // Row id spaces are disjoint by construction (saga-derived tx ids,
         // mint-issued quote ids, random pending-receive ids) and quote-backed
-        // rows are skipped once CDK owns a transaction for the quote, so a
-        // plain id dedupe is sufficient.
+        // rows are skipped once CDK owns a transaction for the quote.
+        // ID dedupe removes repeated reads. BOLT11 attempts additionally project
+        // to one receipt without modifying CDK records.
         val merged = (remoteWithTokens + pendingQuoteTransactions + retainedQuotes + receiveTokenTransactions)
             .map { it.restoringDescription(requests) }
             .distinctBy { it.id }
+            .let(MintReceiptProjection::project)
             .sortedByDescending { it.dateEpochMillis }
         walletStore.saveTransactions(merged)
         walletStore.saveMintQuoteTimestamps(pruneMintQuoteTimestamps(merged, mintQuoteTimestamps))
