@@ -424,12 +424,34 @@ final class SettingsUITests: UITestBase {
                        "Switch must reach the requested state before continuing")
     }
 
-    /// SwiftUI exposes both the labelled row and its native switch. Target the
-    /// switch itself after navigation settles instead of a row-relative point.
+    /// SwiftUI can replace the nested native switch while the settings page
+    /// settles. Wait for its geometry to stabilize before delivering a touch.
     private func tapSwitchControl(_ element: XCUIElement) {
         XCTAssertTrue(element.waitUntilEnabledAndHittable(timeout: 10))
         let control = element.switches.firstMatch
-        tapWhenReady(control.exists ? control : element, timeout: 10)
+        let target = control.exists ? control : element
+        XCTAssertTrue(target.waitUntilEnabledAndHittable(timeout: 10))
+        var previousFrame = CGRect.null
+        var stableSince = Date()
+        let settled = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            guard target.exists, target.isEnabled, target.isHittable else {
+                previousFrame = .null
+                stableSince = Date()
+                return false
+            }
+            let frame = target.frame
+            guard !frame.isEmpty, !frame.isInfinite, frame == previousFrame else {
+                previousFrame = frame
+                stableSince = Date()
+                return false
+            }
+            return Date().timeIntervalSince(stableSince) >= 0.5
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [settled], timeout: 10), .completed,
+                       "Switch must settle before interaction")
+        // A short press gives the enclosing scroll view time to deliver the
+        // touch to the switch. Never retry: a second touch could toggle it back.
+        target.press(forDuration: 0.1)
     }
 
     func testWebSocketsToggleStaysEnabledWhenPollingDisabled() throws {
