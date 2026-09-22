@@ -1,6 +1,6 @@
 import Foundation
 
-struct OnchainPaymentObservation: Equatable {
+struct OnchainPaymentObservation: Codable, Equatable {
     let txid: String
     let amount: UInt64
     let confirmed: Bool

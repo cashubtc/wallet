@@ -79,6 +79,15 @@ final class WalletStore {
         set(preimages, forKey: StorageKeys.paymentPreimages)
     }
 
+    /// Explorer evidence for pending deposits, kept separately from CDK's ledger.
+    func loadOnchainPaymentObservations() -> [String: OnchainPaymentObservation] {
+        value(forKey: StorageKeys.onchainPaymentObservations) ?? [:]
+    }
+
+    func saveOnchainPaymentObservations(_ observations: [String: OnchainPaymentObservation]) {
+        set(observations, forKey: StorageKeys.onchainPaymentObservations)
+    }
+
     func loadMintQuoteTimestamps() -> [String: TimeInterval] {
         value(
             forKey: StorageKeys.mintQuoteTimestamps,

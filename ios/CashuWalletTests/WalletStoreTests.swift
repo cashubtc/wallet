@@ -843,6 +843,20 @@ final class WalletStoreTests: XCTestCase {
         XCTAssertTrue(storage.exists(forKey: StorageKeys.savedTokens))
     }
 
+    func testOnchainObservationsAreRestoredAndClearedAtWalletBoundary() {
+        let storage = InMemoryStorage()
+        let original = WalletStore(storage: storage)
+        let observation = OnchainPaymentObservation(txid: "deposit-txid", amount: 42, confirmed: false, confirmations: nil)
+        original.saveOnchainPaymentObservations(["quote": observation])
+
+        let reopened = WalletStore(storage: storage)
+        XCTAssertEqual(reopened.loadOnchainPaymentObservations(), ["quote": observation])
+        XCTAssertTrue(StorageKeys.walletBoundaryKeys.contains(StorageKeys.onchainPaymentObservations))
+        reopened.removeAllWalletData()
+        XCTAssertTrue(WalletStore(storage: storage).loadOnchainPaymentObservations().isEmpty)
+        XCTAssertFalse(storage.exists(forKey: StorageKeys.onchainPaymentObservations))
+    }
+
     func testRemoveAllWalletDataClearsPreimages() {
         store.savePaymentPreimages(["q": "pre"])
         store.removeAllWalletData()

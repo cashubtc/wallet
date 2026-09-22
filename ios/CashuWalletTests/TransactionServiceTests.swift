@@ -125,6 +125,78 @@ final class TransactionServiceTests: XCTestCase {
         XCTAssertTrue(owned.isEmpty)
     }
 
+    func testObservedOnchainDepositsSurviveRelaunchWithoutExplorerAccess() async throws {
+        for requestedAmount: UInt64? in [nil, 100] {
+            let suiteName = "OnchainObservationTests.\(UUID().uuidString)"
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+            defer { defaults.removePersistentDomain(forName: suiteName) }
+            let mintURL = "https://mint.example.com"
+            let quote = MintQuote(
+                id: "deposit", amount: requestedAmount.map { Amount(value: $0) }, unit: .sat,
+                request: "bc1qdeposit", state: .unpaid, expiry: 0, mintUrl: MintUrl(url: mintURL),
+                amountIssued: Amount(value: 0), amountPaid: Amount(value: 0), updatedAt: 1,
+                estimatedBlocks: nil, paymentMethod: .onchain, secretKey: nil,
+                usedByOperation: nil, version: 0
+            )
+            var observation: OnchainPaymentObservation?
+            var observerCalls = 0
+            func reopenedService() throws -> TransactionService {
+                let reopenedDefaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+                return TransactionService(
+                    walletRepository: { nil }, walletDatabase: { nil }, getTrackedMintUrls: { [mintURL] },
+                    walletStore: WalletStore(storage: UserDefaultsStorage(defaults: reopenedDefaults)),
+                    observeOnchainPayment: { _, _, _, _ in
+                        observerCalls += 1
+                        return observation
+                    }
+                )
+            }
+            func rows(_ service: TransactionService, remote: Bool, quotes: [MintQuote]? = nil) async -> [WalletTransaction] {
+                var timestamps: [String: TimeInterval] = [:]
+                return await service.pendingTransactions(
+                    from: quotes ?? [quote], trackedMintUrls: [mintURL], quoteIdsWithTransactions: [],
+                    timestamps: &timestamps, includeRemoteObservations: remote
+                )
+            }
+
+            let unfunded = await rows(try reopenedService(), remote: true)
+            XCTAssertTrue(unfunded.isEmpty, "A requested amount alone must not create a payment")
+            observation = OnchainPaymentObservation(txid: "first-txid", amount: 42, confirmed: false, confirmations: nil)
+            let detected = await rows(try reopenedService(), remote: true)
+            XCTAssertEqual(detected.first?.amount, 42)
+            XCTAssertEqual(detected.first?.statusNote, "Payment seen in mempool")
+
+            observation = nil
+            for remote in [false, true] {
+                let callsBeforeLoad = observerCalls
+                let reopened = try reopenedService()
+                XCTAssertTrue(reopened.transactions.isEmpty)
+                let restored = await rows(reopened, remote: remote)
+                XCTAssertEqual(observerCalls - callsBeforeLoad, remote ? 1 : 0)
+                XCTAssertEqual(restored.count, 1)
+                XCTAssertEqual(restored.first?.amount, 42)
+                XCTAssertEqual(restored.first?.preimage, "first-txid")
+                XCTAssertEqual(restored.first?.status, .pending)
+                XCTAssertEqual(restored.first?.statusNote, "Payment detected on-chain")
+                XCTAssertEqual(HomeActivity.recentTransactions(from: restored, limit: 5).map(\.id), [quote.id])
+            }
+
+            observation = OnchainPaymentObservation(txid: "replacement-txid", amount: 64, confirmed: true, confirmations: 2)
+            let refreshed = await rows(try reopenedService(), remote: true)
+            XCTAssertEqual(refreshed.first?.amount, 64)
+            XCTAssertEqual(refreshed.first?.status, .pending, "Explorer confirmation does not prove ecash issuance")
+            observation = nil
+            let latest = await rows(try reopenedService(), remote: false)
+            XCTAssertEqual(latest.first?.amount, 64)
+            XCTAssertEqual(latest.first?.preimage, "replacement-txid")
+
+            // A successful empty quote read means CDK no longer needs a synthetic receipt.
+            let settled = await rows(try reopenedService(), remote: false, quotes: [])
+            XCTAssertTrue(settled.isEmpty)
+            XCTAssertTrue(WalletStore(storage: UserDefaultsStorage(defaults: defaults)).loadOnchainPaymentObservations().isEmpty)
+        }
+    }
+
     func testMintReceiptProjectionKeepsSettlementOrActiveAttemptWithoutSumming() {
         let failed = mintAttempt("failed", status: .failed, time: 30)
         let pending = mintAttempt("pending", status: .pending, time: 20)
