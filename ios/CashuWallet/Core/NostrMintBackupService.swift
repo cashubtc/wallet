@@ -24,7 +24,7 @@ final class NostrMintBackupService: ObservableObject {
     /// `performICloudBackup()`. Failures only log; the mint operation that
     /// triggered the backup must not surface a relay error.
     func backupCurrentMintsIfEnabled() async {
-        guard !ICloudRestoreState.isIncomplete() else { return }
+        guard !ICloudRestoreState.isIncomplete(), ICloudRestoreState.pendingMintURLs().isEmpty else { return }
         guard SettingsManager.shared.nostrMintBackupEnabled else { return }
         do {
             try await backupMints()
@@ -36,8 +36,8 @@ final class NostrMintBackupService: ObservableObject {
     }
 
     func backupMints() async throws {
-        guard !ICloudRestoreState.isIncomplete() else {
-            throw WalletError.networkError("Finish restoring the wallet before replacing its backup.")
+        guard !ICloudRestoreState.isIncomplete(), ICloudRestoreState.pendingMintURLs().isEmpty else {
+            throw WalletError.networkError("Recover the remaining mints before replacing the Nostr mint backup.")
         }
         guard SettingsManager.shared.useWebsockets else {
             throw NostrMintBackupError.webSocketsDisabled
