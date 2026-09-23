@@ -1,5 +1,9 @@
 import SwiftUI
+#if canImport(UIKit)
 import UIKit
+#else
+import AppKit
+#endif
 
 // MARK: - Liquid Glass Adaptive Modifiers
 // iOS 26+ Liquid Glass with graceful fallbacks for earlier versions.
@@ -278,7 +282,7 @@ private struct AdaptiveGlassSurface<S: InsettableShape>: ViewModifier {
             content.background(CompactSheetPalette.control(for: colorScheme), in: shape)
         } else if bottomSheetSurfaceStyle == .flat {
             content.background(Color.primary.opacity(0.11), in: shape)
-        } else if #available(iOS 26, *) {
+        } else if #available(iOS 26, macOS 26, *) {
             content.glassEffect(interactive ? .regular.interactive() : .regular, in: shape)
         } else if let fallbackMaterial {
             content.background(fallbackMaterial, in: shape)
@@ -509,14 +513,29 @@ private struct WalletCanvasBackground: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
+        canvasColor
+            .ignoresSafeArea()
+    }
+
+    #if os(iOS)
+    /// Resolved against `.base` rather than the ambient level, which is the
+    /// whole point: inside a sheet the ambient level is `.elevated`, and that is
+    /// exactly the grey this modifier exists to defeat.
+    private var canvasColor: Color {
         Color(uiColor: UIColor.systemBackground.resolvedColor(
             with: UITraitCollection(traitsFrom: [
                 UITraitCollection(userInterfaceStyle: colorScheme == .dark ? .dark : .light),
                 UITraitCollection(userInterfaceLevel: .base),
             ])
         ))
-        .ignoresSafeArea()
     }
+    #else
+    /// macOS has no elevated-vs-base trait, so there is no elevation to undo —
+    /// the window background is already the flat canvas colour.
+    private var canvasColor: Color {
+        Color(nsColor: .windowBackgroundColor)
+    }
+    #endif
 }
 
 // MARK: - Content-Fit Sheet Measurement
@@ -697,6 +716,22 @@ private struct ContentFitDetent: ViewModifier {
     }
 
     func body(content: Content) -> some View {
+        #if os(macOS)
+        // No detents to race on macOS: the sheet is a window that simply
+        // takes the measured height.
+        content.macSheetFrame(height: enabled
+            ? ContentFitSheetMetrics.detentHeight(
+                for: contentHeight,
+                estimate: estimate,
+                hasNavigationBar: navigationBar
+            )
+            : MacSheetMetrics.large)
+        #else
+        iOSBody(content: content)
+        #endif
+    }
+
+    private func iOSBody(content: Content) -> some View {
         content
             .presentationDetents(detents, selection: $selection)
             .onAppear { apply(detent) }
@@ -734,6 +769,56 @@ private extension Duration {
     /// `Animation` still speaks in seconds.
     var seconds: Double {
         Double(components.seconds) + Double(components.attoseconds) / 1e18
+    }
+}
+
+extension View {
+    /// `interactiveDismissDisabled` on iOS, unchanged. On macOS it disables the
+    /// sheet's esc-to-close instead, which is the only interactive dismissal
+    /// a Mac sheet has.
+    func sheetDismissDisabled(_ disabled: Bool) -> some View {
+        #if os(macOS)
+        preference(key: SheetDismissDisabledKey.self, value: disabled)
+        #else
+        interactiveDismissDisabled(disabled)
+        #endif
+    }
+}
+
+extension View {
+    /// For a sheet that sets no detents. iOS already presents those full
+    /// height, so this does nothing there; macOS would hug the content and
+    /// skip the esc-to-close chrome, so there it gets the large frame.
+    func macLargeSheet() -> some View {
+        #if os(macOS)
+        macSheetFrame(height: MacSheetMetrics.large)
+        #else
+        self
+        #endif
+    }
+}
+
+/// Platform-neutral spelling of the `PresentationDetent`s the app uses.
+enum SheetDetent: Hashable {
+    case medium, large
+    case height(CGFloat)
+}
+
+extension View {
+    /// `presentationDetents` on iOS, unchanged. macOS ignores detents, so there
+    /// the sheet gets an explicit frame instead (see MacSwiftUICompat.swift).
+    func sheetDetents(_ detents: Set<SheetDetent>) -> some View {
+        #if os(macOS)
+        macSheetFrame(height: MacSheetMetrics.height(for: detents))
+        #else
+        presentationDetents(Set(detents.map { detent -> PresentationDetent in
+            switch detent {
+            case .medium: .medium
+            case .large: .large
+            case .height(let height): .height(height)
+            }
+        }))
+        #endif
     }
 }
 
@@ -778,6 +863,7 @@ enum ContentFitSheetMetrics {
         hasNavigationBar: Bool = true
     ) -> CGFloat {
         let body = contentHeight > 0 ? contentHeight : estimate
+        #if os(iOS)
         let window = activeWindow
         let bottomInset: CGFloat
         if #available(iOS 26, *) {
@@ -789,19 +875,39 @@ enum ContentFitSheetMetrics {
         } else {
             bottomInset = window?.safeAreaInsets.bottom ?? 0
         }
+        #else
+        let bottomInset = bottomSafeAreaInset
+        #endif
         let wanted = body + chrome(hasNavigationBar: hasNavigationBar) + bottomInset
         // Read the ceiling from the *screen*, never from the sheet's own
         // geometry — the latter would reintroduce the feedback loop this whole
         // mechanism exists to avoid.
-        guard let screenHeight = window?.screen.bounds.height, screenHeight > 0 else { return wanted }
+        guard let screenHeight, screenHeight > 0 else { return wanted }
         return min(wanted, screenHeight * maxScreenFraction)
     }
 
+    #if os(iOS)
     private static var activeWindow: UIWindow? {
         let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
         let scene = scenes.first { $0.activationState == .foregroundActive } ?? scenes.first
         return scene?.keyWindow ?? scene?.windows.first
     }
+
+    private static var screenHeight: CGFloat? { activeWindow?.screen.bounds.height }
+    #else
+    /// macOS has no home indicator to clear.
+    private static var bottomSafeAreaInset: CGFloat { 0 }
+
+    /// The ceiling is the menu bar panel, not the display: a sheet presented in
+    /// a 700pt panel cannot use the height of a 1200pt screen. A sheet is its
+    /// own key window, so walk up to the panel rather than measure the sheet
+    /// itself. Falling back to the screen covers the panel not being up yet.
+    private static var screenHeight: CGFloat? {
+        var window = NSApp?.keyWindow
+        while let parent = window?.sheetParent { window = parent }
+        return window?.frame.height ?? NSScreen.main?.visibleFrame.height
+    }
+    #endif
 }
 
 // MARK: - Settings Row Icon
@@ -925,7 +1031,7 @@ struct FullWidthCapsuleButtonStyle: ButtonStyle {
                 label
                     .background(ink, in: Capsule())
                     .scaleEffect(!reduceMotion && configuration.isPressed ? 0.97 : 1)
-            } else if #available(iOS 26, *) {
+            } else if #available(iOS 26, macOS 26, *) {
                 if reduceMotion {
                     label.glassEffect(
                         .regular.tint(Color.primary.opacity(0.15)),

@@ -1,5 +1,7 @@
 import SwiftUI
+#if canImport(UIKit)
 import UIKit
+#endif
 
 struct CashuRequestDetailView: View {
     @Environment(\.dismiss) private var dismiss
@@ -103,7 +105,7 @@ struct CashuRequestDetailView: View {
                 }
             )
             .environmentObject(walletManager)
-            .presentationDetents([.medium])
+            .sheetDetents([.medium])
         }
         .sheet(isPresented: $showAmountPicker) {
             CashuRequestAmountPickerSheet(
@@ -121,7 +123,7 @@ struct CashuRequestDetailView: View {
                     currentUnit: request.unit,
                     onSelect: { unit in regenerate(unit: unit) }
                 )
-                .presentationDetents([.medium])
+                .sheetDetents([.medium])
             }
         }
         .onChange(of: request?.receivedPayments) {

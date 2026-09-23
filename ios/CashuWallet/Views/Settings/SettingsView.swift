@@ -94,7 +94,7 @@ struct SettingsView: View {
         .accessibilityIdentifier("settings-screen")
         .backdropSheet(isPresented: $showCurrencySheet) {
             CurrencyPickerSheet()
-                .presentationDetents([.medium, .large])
+                .sheetDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
         .backdropSheet(isPresented: $showDeleteConfirm) {
@@ -1643,7 +1643,7 @@ struct MintPickerSheet: View {
             .navigationBarTitleDisplayMode(.inline)
         }
         .compactBottomSheetSurface()
-        .presentationDetents([.medium, .large])
+        .sheetDetents([.medium, .large])
     }
 }
 

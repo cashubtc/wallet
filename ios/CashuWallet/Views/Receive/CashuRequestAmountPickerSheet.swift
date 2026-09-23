@@ -101,7 +101,7 @@ struct CashuRequestAmountPickerSheet: View {
                 }
             }
         }
-        .presentationDetents([.large])
+        .sheetDetents([.large])
         .presentationDragIndicator(.visible)
         .walletSheetSurface(fillsScreen: true)
         .onChange(of: entryUnit) { oldUnit, newUnit in

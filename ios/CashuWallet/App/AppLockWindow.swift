@@ -1,3 +1,7 @@
+// UIWindow, UIScene and window levels are UIKit-only. The Mac build is a single
+// NSPanel with no scene above it to hang a protection window off, so the whole
+// file compiles out there and AppRootView keeps the in-tree lock overlay.
+#if os(iOS)
 import Combine
 import SwiftUI
 import UIKit
@@ -101,3 +105,4 @@ private struct AppLockWindowContent: View {
         .transaction { $0.disablesAnimations = true }
     }
 }
+#endif
