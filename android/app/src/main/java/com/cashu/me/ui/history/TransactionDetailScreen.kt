@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.IosShare
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Icon
@@ -54,6 +55,7 @@ import com.cashu.me.Core.ReceiveConfirmationOwner
 import com.cashu.me.Core.runPendingTokenClaimCheck
 import com.cashu.me.Core.SettingsManager
 import com.cashu.me.Core.shouldOfferManualClaimCheck
+import com.cashu.me.Core.Bolt12PayerProof
 import com.cashu.me.Core.TransactionDisplay
 import com.cashu.me.Core.WalletManager
 import com.cashu.me.Core.displayMintUnitAmount
@@ -135,12 +137,25 @@ fun TransactionReceiptSheet(
     }
     val current = resolved ?: openSnapshot
 
+    var fetchedPayerProof by remember(transaction.id) { mutableStateOf<String?>(null) }
+    val displayedPayerProof = fetchedPayerProof ?: current.payerProof
+    val payerProofVerifyUrl = displayedPayerProof?.let(Bolt12PayerProof::verifyUrl)
     var checkingClaim by remember(transaction.id) { mutableStateOf(false) }
     var manualCheckResult: PendingTokenClaimCheckResult? by remember(transaction.id) {
         mutableStateOf(null)
     }
     // Keep the opening identity through settlement so the final balance and
     // history refresh cannot be cancelled by its own Pending → Completed update.
+    LaunchedEffect(current.id, current.quoteId, current.status, current.payerProof, walletState.isRuntimeReady) {
+        if (!walletState.isRuntimeReady) return@LaunchedEffect
+        if (current.kind != TransactionKind.Lightning) return@LaunchedEffect
+        if (current.type != TransactionType.Outgoing) return@LaunchedEffect
+        if (current.status != TransactionStatus.Completed) return@LaunchedEffect
+        if (Bolt12PayerProof.isSigned(displayedPayerProof)) return@LaunchedEffect
+        val quoteId = current.quoteId ?: current.id
+        val proof = walletManager.fetchBolt12PayerProof(quoteId, current.mintUrl)
+        if (Bolt12PayerProof.isSigned(proof)) fetchedPayerProof = proof
+    }
     LaunchedEffect(transaction.id, lifecycleOwner, walletState.isRuntimeReady) {
         if (!walletState.isRuntimeReady) return@LaunchedEffect
         val quoteId = transaction.mintQuoteIdForStatusRefresh ?: return@LaunchedEffect
@@ -162,8 +177,9 @@ fun TransactionReceiptSheet(
     val copyableContent = TransactionDisplay.copyableContent(current)
     val title = TransactionDisplay.title(current)
     val description = current.displayDescription?.takeIf { current.descriptionHash == null }
-    val fields = remember(current, walletState.mints) {
-        TransactionDisplay.detailFields(current).filterNot { it.label == "Memo" }.map { field ->
+    val fields = remember(current, displayedPayerProof, walletState.mints) {
+        TransactionDisplay.detailFields(current.copy(payerProof = displayedPayerProof))
+            .filterNot { it.label == "Memo" }.map { field ->
             if (field.label == "Mint") {
                 field.copy(value = current.mintUrl?.let {
                     com.cashu.me.Core.mintDisplayName(it, walletState.mints)
@@ -256,6 +272,21 @@ fun TransactionReceiptSheet(
                 // it's reference material, not an action.
                 if (explorerUrl != null) {
                     ExplorerLinkRow(onClick = { context.openInBrowser(explorerUrl) }, style = InspectorRowStyle.History)
+                }
+                if (payerProofVerifyUrl != null) {
+                    ExplorerLinkRow(
+                        onClick = { context.openInBrowser(payerProofVerifyUrl) },
+                        label = "Verify payment proof",
+                        style = InspectorRowStyle.History,
+                    )
+                    ExplorerLinkRow(
+                        onClick = {
+                            displayedPayerProof?.let { context.shareText(it, subject = "Payment proof") }
+                        },
+                        label = "Share payment proof",
+                        icon = Icons.Outlined.IosShare,
+                        style = InspectorRowStyle.History,
+                    )
                 }
             }
 

@@ -112,7 +112,7 @@ object TransactionDisplay {
                     add(TransactionDetailField("Transaction ID", middleTruncated(it), copyValue = it))
                 }
             } else {
-                transaction.preimage?.let {
+                Bolt12PayerProof.displayedProof(transaction.payerProof, transaction.preimage)?.let {
                     add(TransactionDetailField("Payment Proof", middleTruncated(it), copyValue = it))
                 }
             }

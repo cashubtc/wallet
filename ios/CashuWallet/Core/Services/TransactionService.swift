@@ -112,6 +112,9 @@ class TransactionService: ObservableObject {
                         }
 
                         let storedToken = kind == .ecash ? self.getToken(txId: tx.id.hex) : nil
+                        let paymentProof = kind == .lightning
+                            ? Bolt12PayerProof.split(tx.paymentProof)
+                            : Bolt12PayerProof.Split(preimage: tx.paymentProof, payerProof: nil)
 
                         var walletTransaction = WalletTransaction(
                             id: tx.id.hex,
@@ -122,7 +125,8 @@ class TransactionService: ObservableObject {
                             memo: tx.memo,
                             status: WalletTransaction.TransactionStatus(tx.status),
                             mintUrl: tx.mintUrl.url,
-                            preimage: tx.paymentProof,
+                            preimage: paymentProof.preimage,
+                            payerProof: paymentProof.payerProof,
                             token: storedToken,
                             invoice: tx.paymentRequest
                         )

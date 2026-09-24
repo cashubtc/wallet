@@ -893,7 +893,7 @@ class LightningService: ObservableObject {
     ) -> MeltConfirmation {
         MeltConfirmation(
             result: MeltPaymentResult(
-                preimage: finalized.preimage,
+                preimage: Bolt12PayerProof.split(finalized.preimage).preimage,
                 amount: finalized.amount.value,
                 feePaid: finalized.feePaid.value,
                 mintUrl: mintURLString,
@@ -1110,7 +1110,9 @@ class LightningService: ObservableObject {
                 .last(where: { $0.quoteId == quoteId })
             return MeltConfirmation(
                 result: MeltPaymentResult(
-                    preimage: transaction?.paymentProof ?? checkedQuote.paymentProof,
+                    preimage: Bolt12PayerProof.split(
+                        transaction?.paymentProof ?? checkedQuote.paymentProof
+                    ).preimage,
                     amount: transaction?.amount.value
                         ?? (checkedQuote.amount.value > 0 ? checkedQuote.amount.value : fallbackQuote?.amount.value ?? 0),
                     feePaid: transaction?.fee.value
@@ -1401,6 +1403,13 @@ class LightningService: ObservableObject {
             usedByOperation: quote.usedByOperation ?? existingQuote.usedByOperation,
             version: quote.version
         )
+    }
+
+    /// Signed BOLT12 payer proof (`lnp1…`) for a settled melt quote.
+    /// CDK 0.18 FFI has no `create_bolt12_payer_proof`; bind it here when
+    /// cdk-swift exposes the mint method or a dedicated transaction field.
+    func fetchBolt12PayerProof(quoteId _: String, mintUrl _: String? = nil) async -> String? {
+        nil
     }
 
     func replaceStoredMintQuote(

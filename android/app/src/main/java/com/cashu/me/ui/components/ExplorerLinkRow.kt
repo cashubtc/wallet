@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -34,6 +35,7 @@ fun ExplorerLinkRow(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     label: String = "View in block explorer",
+    icon: ImageVector = Icons.AutoMirrored.Outlined.OpenInNew,
     style: InspectorRowStyle = InspectorRowStyle.Payment,
 ) {
     Row(
@@ -48,7 +50,7 @@ fun ExplorerLinkRow(
         horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
     ) {
         Icon(
-            imageVector = Icons.AutoMirrored.Outlined.OpenInNew,
+            imageVector = icon,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(EXPLORER_GLYPH_SIZE),
@@ -60,7 +62,7 @@ fun ExplorerLinkRow(
             modifier = Modifier.weight(1f),
         )
         Icon(
-            imageVector = Icons.AutoMirrored.Outlined.OpenInNew,
+            imageVector = icon,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(EXPLORER_GLYPH_SIZE),

@@ -74,6 +74,13 @@ interface CdkWalletGateway {
     suspend fun checkMeltQuoteStatus(quoteId: String, mintUrl: String? = null): MeltQuoteInfo
 
     /**
+     * Fetch a signed BOLT12 payer proof (`lnp1…`) for a settled melt quote.
+     * Returns null until CDK FFI exposes `create_bolt12_payer_proof` (or a
+     * dedicated transaction field). Never throws for an unsupported mint.
+     */
+    suspend fun fetchBolt12PayerProof(quoteId: String, mintUrl: String? = null): String? = null
+
+    /**
      * Ask CDK to complete or compensate interrupted wallet sagas for a mint
      * (e.g. a melt the process never saw the outcome of). iOS startup
      * maintenance parity.

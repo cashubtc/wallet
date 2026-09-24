@@ -34,7 +34,12 @@ struct WalletTransaction: Identifiable {
     
     /// Payment proof (preimage for Lightning, txid for on-chain when exposed)
     var preimage: String?
-    
+
+    /// Signed BOLT12 payer proof (`lnp1…`) when the mint can construct one.
+    /// Distinct from `preimage`: CDK keeps the Lightning preimage in
+    /// `payment_proof` / NUT-25, and the signed proof is a later FFI bind.
+    var payerProof: String? = nil
+
     /// Ecash token string (for outgoing pending transactions)
     var token: String?
     

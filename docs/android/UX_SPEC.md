@@ -435,8 +435,8 @@ Body, top-to-bottom:
 1. **QR card** if the transaction has a shareable payload (token / invoice / address); else a centered 64dp status glyph.
 2. **Amount** (large, monospaced, colored per status rules).
 3. **Status row** — plain monochrome label/value.
-4. **Inspector rows**: plain two-column labels and values with no leading field icons. Copyable reference values use a static trailing Copy affordance. Opaque values, including Payment Proof, display as `prefix(8)…suffix(6)` while copying the full value.
-5. **External link row** — "View in block explorer" for on-chain.
+4. **Inspector rows**: plain two-column labels and values with no leading field icons. Copyable reference values use a static trailing Copy affordance. Opaque values, including Payment Proof, display as `prefix(8)…suffix(6)` while copying the full value. A signed BOLT12 `lnp1…` payer proof uses that same Payment Proof row; hex preimages stay copy-only.
+5. **External link row** — "View in block explorer" for on-chain. Settled Lightning sends with an `lnp1` proof add **Verify payment proof** (lnproof.space) and **Share payment proof** here; hex-only proofs omit both.
 6. **Copy `FilledTonalButton`** if there is a copyable payload (quiet secondary footer action), separated from the final metadata row by deliberate breathing room. Copy feedback uses the shared top toast.
 
 Long-press on QR opens `DropdownMenu` (Copy, Share).
