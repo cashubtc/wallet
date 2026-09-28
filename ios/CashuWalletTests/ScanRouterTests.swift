@@ -12,6 +12,16 @@ final class ScanRouterTests: XCTestCase {
         ScanRouter.route(content) { summary, _ in .payWithEcash(summary) }
     }
 
+    /// Scans open Send's own payment steps (Android `onSend` parity), never a
+    /// separate payment screen.
+    private func sendRoute(
+        _ route: ScannedPayloadRoute
+    ) -> (destination: SendAmountDestination, request: String, mode: MeltMode, explanation: CashuRequestRouteExplanation?)? {
+        guard case .send(let destination, let explanation) = route,
+              case .melt(let request, let mode, _) = destination else { return nil }
+        return (destination, request, mode, explanation)
+    }
+
     func testBearerTokenRoutesToClaimPage() {
         guard case .receiveToken(let token) = route("  cashuAexampletoken  ") else {
             return XCTFail("expected .receiveToken")
@@ -25,36 +35,33 @@ final class ScanRouterTests: XCTestCase {
         }
     }
 
-    func testLightningAddressRoutesToMeltWithoutAutoQuote() {
-        guard case .melt(let request, let mode, let autoQuote, let explanation) =
-            route("user@example.com") else {
-            return XCTFail("expected .melt")
+    func testLightningAddressOpensSendAmountEntry() {
+        guard let send = sendRoute(route("user@example.com")) else {
+            return XCTFail("expected .send")
         }
-        XCTAssertEqual(request, "user@example.com")
-        XCTAssertEqual(mode, .lightning)
-        XCTAssertFalse(autoQuote, "an address carries no amount — no quote to prefetch")
-        XCTAssertNil(explanation)
+        XCTAssertEqual(send.request, "user@example.com")
+        XCTAssertEqual(send.mode, .lightning)
+        XCTAssertFalse(send.destination.carriesAmount, "an address carries no amount — amount entry first")
+        XCTAssertNil(send.explanation)
     }
 
     func testAmountlessBolt12OfferRoutesToAmountEntry() {
-        guard case .melt(let request, let mode, let autoQuote, let explanation) =
-            route(amountlessBolt12Offer) else {
-            return XCTFail("expected .melt")
+        guard let send = sendRoute(route(amountlessBolt12Offer)) else {
+            return XCTFail("expected .send")
         }
 
-        XCTAssertEqual(request, amountlessBolt12Offer)
-        XCTAssertEqual(mode, .lightning)
-        XCTAssertFalse(autoQuote, "an amountless offer needs sender amount entry before quoting")
-        XCTAssertNil(explanation)
+        XCTAssertEqual(send.request, amountlessBolt12Offer)
+        XCTAssertEqual(send.mode, .lightning)
+        XCTAssertFalse(send.destination.carriesAmount, "an amountless offer needs sender amount entry before quoting")
+        XCTAssertNil(send.explanation)
     }
 
     func testOnchainAddressRoutesToOnchainMelt() {
-        guard case .melt(_, let mode, let autoQuote, _) =
-            route("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4") else {
-            return XCTFail("expected .melt")
+        guard let send = sendRoute(route("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4")) else {
+            return XCTFail("expected .send")
         }
-        XCTAssertEqual(mode, .onchain)
-        XCTAssertFalse(autoQuote)
+        XCTAssertEqual(send.mode, .onchain)
+        XCTAssertFalse(send.destination.carriesAmount)
     }
 
     func testMintLikeURLIsCopiedNotRouted() {
@@ -75,15 +82,14 @@ final class ScanRouterTests: XCTestCase {
         let invoice = "lnbc1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdpl2pkx2ctnv5sxxmmwwd5kgetjypeh2ursdae8g6twvus8g6rfwvs8qun0dfjkxaq9qrsgq357wnc5r2ueh7ck6q93dj32dlqnls087fxdwk8qakdyafkq3yap9us6v52vjjsrvywa6rt52cm9r9zqt8r2t7mlcwspyetp5h2tztugp9lfyql"
         XCTAssertTrue(PaymentRequestDecoder.decode(invoice).isAmountlessBolt11)
 
-        guard case .melt(let request, let mode, let autoQuote, let explanation) =
-            route("lightning:\(invoice)") else {
-            return XCTFail("expected .melt")
+        guard let send = sendRoute(route("lightning:\(invoice)")) else {
+            return XCTFail("expected .send")
         }
 
-        XCTAssertEqual(request, invoice)
-        XCTAssertEqual(mode, .lightning)
-        XCTAssertFalse(autoQuote, "an amountless invoice needs sender amount entry before quoting")
-        XCTAssertNil(explanation)
+        XCTAssertEqual(send.request, invoice)
+        XCTAssertEqual(send.mode, .lightning)
+        XCTAssertFalse(send.destination.carriesAmount, "an amountless invoice needs sender amount entry before quoting")
+        XCTAssertNil(send.explanation)
     }
 
     func testCashuRequestBolt11FallbackRoutesToMeltWithExplanation() throws {
@@ -96,12 +102,11 @@ final class ScanRouterTests: XCTestCase {
             throw XCTSkip("fixture does not decode as a Cashu request in this build")
         }
         let routed = ScanRouter.route(creq) { _, _ in .payBolt11Fallback("lnbcfallback") }
-        guard case .melt(let request, let mode, let autoQuote, let explanation) = routed else {
-            return XCTFail("expected .melt fallback")
+        guard let send = sendRoute(routed) else {
+            return XCTFail("expected .send fallback")
         }
-        XCTAssertEqual(request, "lnbcfallback")
-        XCTAssertEqual(mode, .lightning)
-        XCTAssertTrue(autoQuote)
-        XCTAssertEqual(explanation, CashuRequestRouteExplanation(state: .lightningFallback))
+        XCTAssertEqual(send.request, "lnbcfallback")
+        XCTAssertEqual(send.mode, .lightning)
+        XCTAssertEqual(send.explanation, CashuRequestRouteExplanation(state: .lightningFallback))
     }
 }

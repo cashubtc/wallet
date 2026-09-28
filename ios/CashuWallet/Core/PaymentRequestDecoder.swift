@@ -278,17 +278,6 @@ enum PaymentRequestDecoder {
         amountMsat / 1000 + (amountMsat % 1000 == 0 ? 0 : 1)
     }
 
-    /// True if the request carries an enforceable amount the user can't change
-    /// (BOLT11 with amount, amountful BOLT12). Triggers auto-quote on tap.
-    static func amountLocked(_ result: PaymentRequestDecodeResult) -> Bool {
-        switch result {
-        case .bolt11(let amount, _), .bolt12(let amount, _):
-            return amount != nil
-        case .lightningAddress, .onchain, .cashuPaymentRequest, .unrecognized:
-            return false
-        }
-    }
-
     /// SF Symbol for the result type. Used by chip + live feedback.
     static func iconName(_ result: PaymentRequestDecodeResult) -> String {
         switch result {
@@ -338,16 +327,6 @@ enum PaymentRequestDecoder {
         return "\(amount) \(summary.unit ?? "sat")"
     }
 
-    static func suggestedMode(_ result: PaymentRequestDecodeResult) -> MeltView.MeltMode? {
-        switch result {
-        case .bolt11, .bolt12, .lightningAddress:
-            return .lightning
-        case .onchain:
-            return .onchain
-        case .cashuPaymentRequest, .unrecognized:
-            return nil
-        }
-    }
 
     static func unitDescription(_ unit: Cdk.CurrencyUnit) -> String {
         switch unit {
