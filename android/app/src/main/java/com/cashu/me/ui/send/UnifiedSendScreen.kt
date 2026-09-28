@@ -778,6 +778,9 @@ fun UnifiedSendScreen(
                                         return@onUseMax
                                     }
                                     val entryBeforeMax = amount
+                                    // State reads, not the composition's captured values:
+                                    // the coroutine must see a later edit or mint switch.
+                                    val selectionBeforeMax = selectedMintUrl
                                     maxJob = scope.launch {
                                         findingMax = true
                                         try {
@@ -790,7 +793,7 @@ fun UnifiedSendScreen(
                                             }
                                             // Typing or switching mints meanwhile wins over a late result.
                                             if (step == SendStep.Amount && amount == entryBeforeMax &&
-                                                activeMint?.url == mint.url
+                                                selectedMintUrl == selectionBeforeMax
                                             ) {
                                                 if (payable != null) {
                                                     amount = UnifiedSendAmountEntry.maxRawForBalance(payable, entryContext)
