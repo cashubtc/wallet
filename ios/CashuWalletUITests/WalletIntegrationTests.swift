@@ -159,6 +159,10 @@ final class LiveCdkPaymentUITests: LivePaymentUITestBase {
     func testPastedHintsStayVisible() throws {
         createWalletWithMint()
         receiveThroughUI()
+        // Send offers Paste only when the pasteboard already holds text as the
+        // sheet opens. Start empty, as CI simulators do, then fill it first.
+        UIPasteboard.general.items = []
+        UIPasteboard.general.string = Self.amountlessInvoice
         tapWhenReady(app.buttons["wallet-action-send"])
 
         paste(Self.amountlessInvoice)
