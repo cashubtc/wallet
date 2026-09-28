@@ -152,6 +152,50 @@ class LivePaymentUITestBase: UITestBase {
 }
 
 final class LiveCdkPaymentUITests: LivePaymentUITestBase {
+    /// cashubtc/wallet#381: the hint Paste leaves must survive the field's own
+    /// change event. This CDK FakeWallet mint doesn't advertise NUT-05
+    /// `amountless`, so an amountless invoice lands on the caution instead of
+    /// the amount keypad. Android twin: `AmountlessInvoiceJourneyTest`.
+    func testPastedHintsStayVisible() throws {
+        createWalletWithMint()
+        receiveThroughUI()
+        tapWhenReady(app.buttons["wallet-action-send"])
+
+        paste(Self.amountlessInvoice)
+        let caution = app.staticTexts["None of your mints can pay invoices without an amount. Ask for one with the amount set."]
+        XCTAssertTrue(caution.waitForExistence(timeout: 10), "An amountless invoice no mint can pay must explain why")
+        assertStillShownAfterDebounce(caution)
+        let capture = XCTAttachment(screenshot: app.screenshot())
+        capture.name = "amountless-invoice-caution"
+        capture.lifetime = .keepAlways
+        add(capture)
+
+        tapWhenReady(app.buttons["Clear"])
+        paste("hello world")
+        let unrecognized = app.staticTexts["Unrecognized — try a Lightning address, invoice, Bitcoin address, or Cashu Request"]
+        XCTAssertTrue(unrecognized.waitForExistence(timeout: 10))
+        assertStillShownAfterDebounce(unrecognized)
+    }
+
+    /// Paste through the field's own button, as a user would. Reading another
+    /// app's pasteboard content raises the system paste prompt.
+    private func paste(_ text: String) {
+        UIPasteboard.general.string = text
+        tapWhenReady(app.buttons["Paste from clipboard"])
+        let allow = XCUIApplication(bundleIdentifier: "com.apple.springboard").buttons["Allow Paste"]
+        if allow.waitForExistence(timeout: 3) { allow.tap() }
+    }
+
+    /// Typing detection re-runs 400 ms after the field changes; a paste's hint
+    /// must still be there afterwards.
+    private func assertStillShownAfterDebounce(_ hint: XCUIElement) {
+        Thread.sleep(forTimeInterval: 1.2)
+        XCTAssertTrue(hint.exists, "The hint was cleared by the field's change event")
+    }
+
+    // BOLT #11 example: donation invoice with no amount in the HRP.
+    private static let amountlessInvoice = "lnbc1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdpl2pkx2ctnv5sxxmmwwd5kgetjypeh2ursdae8g6twvus8g6rfwvs8qun0dfjkxaq9qrsgq357wnc5r2ueh7ck6q93dj32dlqnls087fxdwk8qakdyafkq3yap9us6v52vjjsrvywa6rt52cm9r9zqt8r2t7mlcwspyetp5h2tztugp9lfyql"
+
     func testQuoteAndPaymentUseSameProcessingLayout() throws {
         createWalletWithMint()
         receiveThroughUI()

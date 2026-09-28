@@ -1661,13 +1661,13 @@ struct UnifiedSendView: View {
 
     private func handleDestinationChange() {
         autoAdvanceTask?.cancel()
+        let trimmed = destination.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Paste, scan, and pill-edit already advanced this exact value and may
+        // have left a hint; this is only their echo, so keep it and don't bounce.
+        if step == .input, let suppressed = suppressedValue, trimmed == suppressed { return }
         inputHint = nil
         guard step == .input else { return }
-        let trimmed = destination.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let suppressed = suppressedValue {
-            if trimmed == suppressed { return }   // unchanged after a pill-edit — don't bounce
-            suppressedValue = nil                  // text genuinely changed — resume
-        }
+        suppressedValue = nil                      // text genuinely changed — resume
         guard !trimmed.isEmpty else { return }
         autoAdvanceTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 400_000_000)
@@ -1701,9 +1701,9 @@ struct UnifiedSendView: View {
     ) {
         switch result {
         case .bolt11, .bolt12:
-            if let notice = result.amountlessMeltCaution {
-                // Keep unsupported amountless request types on input with a
-                // clean caution instead of leaking raw mint jargon.
+            if let notice = result.amountlessMeltCaution(payableBy: availableMeltMints) {
+                // No held mint can pay an amountless invoice: stay on input with
+                // a clean caution instead of an amount step that can't quote.
                 inputHint = notice
                 return
             }
@@ -2029,7 +2029,7 @@ struct UnifiedSendView: View {
     }
 
     private var meltCompatibleMints: [MintInfo] {
-        availableMeltMints.filter { $0.supportedMeltMethods.contains(meltPaymentMethod) }
+        availableMeltMints.filter { $0.canMelt(meltPaymentMethod, amountless: meltIsAmountlessBolt11) }
     }
 
     /// Read-only summary rows: the on-chain destination (where the row truncates), the
@@ -2302,6 +2302,12 @@ struct UnifiedSendView: View {
         return .bolt11
     }
 
+    /// An amountless BOLT11 can only go to mints advertising NUT-05 `amountless`.
+    private var meltIsAmountlessBolt11: Bool {
+        guard case let .melt(_, _, decoded) = locked else { return false }
+        return decoded.isAmountlessBolt11
+    }
+
     private var meltMinAmount: UInt64? { amountSats > 0 ? amountSats : nil }
 
     /// Amount known before the mint quote returns — from the invoice (bolt11/bolt12) or,
@@ -2318,15 +2324,15 @@ struct UnifiedSendView: View {
     }
 
     private var activeMeltMint: MintInfo? {
-        let compatible = availableMeltMints.filter { $0.supportedMeltMethods.contains(meltPaymentMethod) }
+        let compatible = meltCompatibleMints
         if let selectedMint, let match = compatible.first(where: { $0.id == selectedMint.id }) {
             return match
         }
-        return recommendedMeltMint(for: meltPaymentMethod, minimumAmount: meltMinAmount)
+        return recommendedMeltMint(minimumAmount: meltMinAmount)
     }
 
-    private func recommendedMeltMint(for paymentMethod: PaymentMethodKind, minimumAmount: UInt64?) -> MintInfo? {
-        let compatible = availableMeltMints.filter { $0.supportedMeltMethods.contains(paymentMethod) }
+    private func recommendedMeltMint(minimumAmount: UInt64?) -> MintInfo? {
+        let compatible = meltCompatibleMints
         guard !compatible.isEmpty else { return nil }
         let affordable = compatible.filter { mint in
             guard let minimumAmount else { return true }
@@ -2382,6 +2388,7 @@ struct UnifiedSendView: View {
             MintSelectorSheet(
                 selectedMint: $selectedMint,
                 paymentMethod: meltPaymentMethod,
+                amountlessBolt11: meltIsAmountlessBolt11,
                 minimumAmount: meltMinAmount,
                 onSelect: { mint in
                     selectedMint = mint
@@ -3096,6 +3103,7 @@ struct MeltView: View {
                 MintSelectorSheet(
                     selectedMint: meltMintSelection,
                     paymentMethod: selectedMeltPaymentMethod,
+                    amountlessBolt11: requestIsAmountlessBolt11,
                     minimumAmount: knownPaymentAmount,
                     onSelect: selectMeltMint
                 )
@@ -3131,13 +3139,9 @@ struct MeltView: View {
             }
             .onChange(of: requestInput) {
                 syncSelectedMeltMint()
-                // Surface unsupported amountless request types immediately.
-                // BOLT12 instead reveals the amount keypad below.
-                if let notice = PaymentRequestDecoder.decode(requestInput).amountlessMeltCaution {
-                    presentError(notice, severity: .caution)
-                } else {
-                    errorMessage = nil
-                }
+                // Amountless requests reveal the amount keypad below; the
+                // no-compatible-mint notice covers one no held mint can pay.
+                errorMessage = nil
             }
             .onChange(of: entryUnit) { oldUnit, newUnit in
                 amountString = AmountFormatter.entryConverted(raw: amountString, from: oldUnit, to: newUnit)
@@ -3206,7 +3210,7 @@ struct MeltView: View {
 
     private var displayMeltMint: MintInfo? {
         if let mint = resolvedSelectedMeltMint,
-           mint.supportedMeltMethods.contains(selectedMeltPaymentMethod) {
+           mint.canMelt(selectedMeltPaymentMethod, amountless: requestIsAmountlessBolt11) {
             return mint
         }
 
@@ -3241,14 +3245,21 @@ struct MeltView: View {
         PaymentRequestParser.isBitcoinAddress(requestInput)
     }
 
+    /// An amountless BOLT11 can only go to mints advertising NUT-05 `amountless`.
+    private var requestIsAmountlessBolt11: Bool {
+        meltMode == .lightning && PaymentRequestDecoder.decode(requestInput).isAmountlessBolt11
+    }
+
     private var amountRequired: Bool {
         if meltMode == .onchain || isHumanReadableAddress {
             return true
         }
-        if case .bolt12(let amount, _) = PaymentRequestDecoder.decode(requestInput) {
+        switch PaymentRequestDecoder.decode(requestInput) {
+        case .bolt11(let amount, _), .bolt12(let amount, _):
             return amount == nil
+        default:
+            return false
         }
-        return false
     }
 
     private var canGetQuote: Bool {
@@ -3349,7 +3360,9 @@ struct MeltView: View {
 
             if displayMeltMint == nil, !availableMeltMints.isEmpty {
                 InlineNotice(
-                    message: "No mint supports \(selectedMeltPaymentMethod.displayName) payments.",
+                    message: PaymentRequestDecoder.decode(requestInput)
+                        .amountlessMeltCaution(payableBy: availableMeltMints)
+                        ?? "No mint supports \(selectedMeltPaymentMethod.displayName) payments.",
                     severity: .caution
                 )
                 .padding(.top, 12)
@@ -3625,7 +3638,7 @@ struct MeltView: View {
 
     private func syncSelectedMeltMint() {
         if let mint = resolvedSelectedMeltMint,
-           mint.supportedMeltMethods.contains(selectedMeltPaymentMethod) {
+           mint.canMelt(selectedMeltPaymentMethod, amountless: requestIsAmountlessBolt11) {
             return
         }
 
@@ -3640,7 +3653,7 @@ struct MeltView: View {
         minimumAmount: UInt64?
     ) -> MintInfo? {
         let compatible = availableMeltMints.filter {
-            $0.supportedMeltMethods.contains(paymentMethod)
+            $0.canMelt(paymentMethod, amountless: requestIsAmountlessBolt11)
         }
 
         guard !compatible.isEmpty else {
@@ -3763,13 +3776,6 @@ struct MeltView: View {
             syncSelectedMeltMint()
             presentError("Switched to On-chain. Enter an amount to continue.", severity: .info)
             requestInput = PaymentRequestParser.normalizeBitcoinRequest(trimmedInput)
-            return
-        }
-
-        if let notice = PaymentRequestDecoder.decode(trimmedInput).amountlessMeltCaution {
-            // Surface unsupported amountless request types before a raw mint error.
-            isPreparingInitialQuote = false
-            presentError(notice, severity: .caution)
             return
         }
 
@@ -4024,6 +4030,7 @@ struct MintSelectorSheet: View {
     @Binding private var selectedMint: MintInfo?
     private let mints: [MintInfo]?
     private let paymentMethod: PaymentMethodKind?
+    private let amountlessBolt11: Bool
     private let minimumAmount: UInt64?
     private let onSelect: ((MintInfo) -> Void)?
 
@@ -4035,12 +4042,14 @@ struct MintSelectorSheet: View {
         selectedMint: Binding<MintInfo?>,
         mints: [MintInfo]? = nil,
         paymentMethod: PaymentMethodKind? = nil,
+        amountlessBolt11: Bool = false,
         minimumAmount: UInt64? = nil,
         onSelect: ((MintInfo) -> Void)? = nil
     ) {
         _selectedMint = selectedMint
         self.mints = mints
         self.paymentMethod = paymentMethod
+        self.amountlessBolt11 = amountlessBolt11
         self.minimumAmount = minimumAmount
         self.onSelect = onSelect
     }
@@ -4076,7 +4085,9 @@ struct MintSelectorSheet: View {
         NativeEmptyState(
             title: "No Compatible Mints",
             systemImage: "exclamationmark.triangle",
-            description: paymentMethod.map { "None of your mints support \($0.displayName) payments." }
+            description: amountlessBolt11
+                ? "None of your mints can pay invoices without an amount."
+                : paymentMethod.map { "None of your mints support \($0.displayName) payments." }
         )
     }
 
@@ -4084,7 +4095,7 @@ struct MintSelectorSheet: View {
         let filteredMints: [MintInfo]
         if let paymentMethod {
             filteredMints = sourceMints.filter {
-                $0.supportedMeltMethods.contains(paymentMethod)
+                $0.canMelt(paymentMethod, amountless: amountlessBolt11)
             }
         } else {
             filteredMints = sourceMints

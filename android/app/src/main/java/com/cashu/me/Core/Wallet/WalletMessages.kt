@@ -153,6 +153,12 @@ object WalletErrorMessages {
             has("no key for amount", "amount key", "no active keyset") ->
                 error("This mint can't issue ecash for that amount right now. Try another mint.")
 
+            // The mint refused NUT-05 amountless for this invoice. cdk-common renders the
+            // decoded response as "Amount Less Invoice is not allowed"; its wallet-side
+            // twin is "Amountless invoices are not supported for unit … and method …".
+            has("amount less invoice is not allowed", "amountless invoices are not supported") ->
+                caution("This mint can't pay invoices without an amount. Choose another mint.")
+
             has(
                 "invoice has no amount", "has no amount", "amountless invoice",
                 "invoice amount undefined", "amount is required",
