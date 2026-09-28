@@ -201,7 +201,12 @@ struct AmountEntryMintSelector: View {
     let mint: MintInfo
     var balanceText: String? = nil
     var onUseMax: (() -> Void)? = nil
+    /// Max is asking the mint what fits (Lightning and on-chain fee reserve).
+    var isFindingMax = false
+    var maxHint = AmountEntryMintSelector.grossMaxHint
     var onChooseMint: (() -> Void)? = nil
+
+    static let grossMaxHint = "Fill the amount with your full mint balance"
 
     var body: some View {
         VStack(spacing: 0) {
@@ -258,14 +263,22 @@ struct AmountEntryMintSelector: View {
     private var maxAction: some View {
         if let onUseMax {
             Button(action: onUseMax) {
-                Text("Max")
-                    .font(.subheadline.weight(.medium))
-                    .frame(minWidth: 44, minHeight: 44)
-                    .contentShape(Rectangle())
+                ZStack {
+                    // Keeps the button's width while the spinner stands in.
+                    Text("Max").opacity(isFindingMax ? 0 : 1)
+                    if isFindingMax {
+                        ProgressView().controlSize(.small)
+                    }
+                }
+                .font(.subheadline.weight(.medium))
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .disabled(isFindingMax)
             .accessibilityLabel("Send maximum")
-            .accessibilityHint("Fill the amount with your full mint balance")
+            .accessibilityValue(isFindingMax ? "Checking the network fee" : "")
+            .accessibilityHint(maxHint)
         }
     }
 }
