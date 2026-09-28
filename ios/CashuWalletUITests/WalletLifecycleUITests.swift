@@ -105,17 +105,21 @@ final class WalletLifecycleUITests: UITestBase {
     func testAmountClearAndInsufficientBalanceCannotSpend() {
         createWalletWithMint()
         receive(sats: "100")
+        // Send Ecash checks the amount against the mint's cached balance, so
+        // let the received sats settle before typing against them.
+        assertBalance("100")
         openSendEcash()
-        XCTAssertFalse(app.buttons["cashu.send.ecash.submit"].isEnabled)
+        let submit = app.buttons["cashu.send.ecash.submit"]
+        XCTAssertFalse(submit.isEnabled)
         tapWhenReady(app.buttons["2"])
         tapWhenReady(app.buttons["5"])
         tapWhenReady(app.buttons["Delete"])
-        XCTAssertTrue(app.buttons["cashu.send.ecash.submit"].isEnabled)
+        XCTAssertTrue(submit.waitUntilEnabled(true, timeout: 5), "2 sat fits the balance")
         app.buttons["Delete"].press(forDuration: 0.6)
-        XCTAssertFalse(app.buttons["cashu.send.ecash.submit"].isEnabled)
+        XCTAssertTrue(submit.waitUntilEnabled(false, timeout: 5), "A cleared amount can't be sent")
         for _ in 0..<3 { tapWhenReady(app.buttons["9"]) }
         XCTAssertTrue(app.staticTexts["Insufficient balance"].waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["cashu.send.ecash.submit"].isEnabled)
+        XCTAssertFalse(submit.isEnabled)
         tapWhenReady(app.buttons["Close"])
         assertBalance("100")
     }
@@ -146,7 +150,9 @@ final class WalletLifecycleUITests: UITestBase {
         tapWhenReady(app.buttons["Copy"])
         tapWhenReady(app.buttons["Close"])
         assertBalance("75")
-        tapWhenReady(app.buttons["wallet-action-receive"])
+        // The balance reads through the closing sheet; Receive is tappable only
+        // once the sheet has gone, which can take longer than 5 s on CI.
+        tapWhenReady(app.buttons["wallet-action-receive"], timeout: 15)
         tapWhenReady(app.buttons["Paste from clipboard"])
         let receive = app.buttons["receive-token-confirm"]
         tapWhenReady(receive)
