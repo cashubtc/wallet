@@ -65,10 +65,12 @@ final class MainTabUITests: UITestBase {
         )
         XCTAssertTrue(app.textFields["mints-add-url-field"].waitForExistence(timeout: 5))
 
-        app.navigationBars["Add by URL"].buttons.element(boundBy: 0).tap()
+        // Tap back once the push has settled: a bare tap mid-transition can
+        // land on nothing and leave the sheet on "Add by URL".
+        tapWhenReady(app.navigationBars["Add by URL"].buttons.element(boundBy: 0))
 
         XCTAssertTrue(
-            app.staticTexts["Add a mint first"].waitForExistence(timeout: 5),
+            app.staticTexts["Add a mint first"].waitForExistence(timeout: 10),
             "Back should return to the picker, not dismiss the sheet"
         )
     }
