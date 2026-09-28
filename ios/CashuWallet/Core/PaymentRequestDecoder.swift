@@ -314,6 +314,27 @@ enum PaymentRequestDecoder {
         return "\(trimmed.prefix(8))…\(trimmed.suffix(6))"
     }
 
+    /// The whole request as a person reads it in the Send "To" row, which
+    /// middle-truncates to its own width. BOLT11, BOLT12 and bech32 addresses
+    /// are case-insensitive and QR codes carry them uppercase, so they show
+    /// lowercase; case-sensitive formats (base58 addresses, Cashu requests)
+    /// keep their case.
+    static func displayRequest(_ raw: String, result: PaymentRequestDecodeResult) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        switch result {
+        case .lightningAddress(let address):
+            return address
+        case .bolt11, .bolt12:
+            return trimmed.lowercased()
+        case .onchain:
+            let lowered = trimmed.lowercased()
+            let isBech32 = ["bc1", "tb1", "bcrt1"].contains { lowered.hasPrefix($0) }
+            return isBech32 ? lowered : trimmed
+        case .cashuPaymentRequest, .unrecognized:
+            return trimmed
+        }
+    }
+
     /// Short representation for invoices and addresses; human-readable addresses are
     /// returned in full.
     static func shortRepresentation(_ raw: String, result: PaymentRequestDecodeResult) -> String {

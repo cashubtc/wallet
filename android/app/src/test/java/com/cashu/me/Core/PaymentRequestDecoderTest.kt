@@ -164,4 +164,58 @@ class PaymentRequestDecoderTest {
         const val AmountlessBolt12Offer =
             "lno1pgqpvggr25nht4nyqrgtnhxltctkdsfrf3myhj008f6fyulf4tplmarx8hxq"
     }
+
+    // iOS parity: `PaymentRequestDisplayTests` in ScanRouterTests.swift.
+    @Test
+    fun caseInsensitiveRequestsFromUppercaseQrCodesShowLowercase() {
+        assertEquals(
+            "lnbc1p4t40c2pp5arhng9c7qpu02s3t",
+            PaymentRequestDecoder.displayRequest(
+                " LNBC1P4T40C2PP5ARHNG9C7QPU02S3T ",
+                PaymentRequestDecodeResult.Bolt11(amountSats = null, description = null),
+            ),
+        )
+        assertEquals(
+            "lno1pgqpvggr",
+            PaymentRequestDecoder.displayRequest(
+                "LNO1PGQPVGGR",
+                PaymentRequestDecodeResult.Bolt12(amountSats = null, description = null),
+            ),
+        )
+        val address = "BC1QW508D6QEJXTDG4Y5R3ZARVARY0C5XW7KV8F3T4"
+        assertEquals(
+            "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
+            PaymentRequestDecoder.displayRequest(address, PaymentRequestDecodeResult.Onchain(address)),
+        )
+    }
+
+    @Test
+    fun caseSensitiveRequestsKeepTheirCase() {
+        val base58 = "1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2"
+        assertEquals(base58, PaymentRequestDecoder.displayRequest(base58, PaymentRequestDecodeResult.Onchain(base58)))
+        assertEquals(
+            "Alice@Example.com",
+            PaymentRequestDecoder.displayRequest(
+                "Alice@Example.com",
+                PaymentRequestDecodeResult.LightningAddress("Alice@Example.com"),
+            ),
+        )
+        assertEquals(
+            "creqApAyloAD",
+            PaymentRequestDecoder.displayRequest("creqApAyloAD", PaymentRequestDecodeResult.Unrecognized),
+        )
+    }
+
+    @Test
+    fun spokenRecipientIsShortExceptForAddresses() {
+        val invoice = "lnbc1p4t40c2pp5arhng9c7qpu02s3t"
+        assertEquals("lnbc1p4t…u02s3t", PaymentRequestDecoder.spokenRequest(invoice, null))
+        assertEquals(
+            "alice@example.com",
+            PaymentRequestDecoder.spokenRequest(
+                "alice@example.com",
+                PaymentRequestDecodeResult.LightningAddress("alice@example.com"),
+            ),
+        )
+    }
 }

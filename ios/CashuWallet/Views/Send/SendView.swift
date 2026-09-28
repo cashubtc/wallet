@@ -1597,10 +1597,12 @@ struct UnifiedSendView: View {
                     .cashuText(.textLink)
                     .foregroundStyle(.secondary)
                 Text(recipientValue(locked))
-                    .cashuText(.body)
-                    .fontWeight(.medium)
+                    // Inside `cashuText`: a role applies its own line limit next
+                    // to the text, which would win over one added after it.
                     .lineLimit(1)
                     .truncationMode(.middle)
+                    .cashuText(.body)
+                    .fontWeight(.medium)
                 Spacer(minLength: 0)
             }
             .padding(.vertical, FlowRowMetrics.verticalPadding)
@@ -1610,7 +1612,7 @@ struct UnifiedSendView: View {
         }
         .buttonStyle(.plain)
         .disabled(statusPhase != nil)
-        .accessibilityLabel("Recipient \(recipientValue(locked))")
+        .accessibilityLabel("Recipient \(recipientSpokenValue(locked))")
         .accessibilityHint("Double-tap to change the recipient")
     }
 
@@ -1630,16 +1632,23 @@ struct UnifiedSendView: View {
         }
     }
 
+    /// The whole recipient; the row middle-truncates it to its width (Android
+    /// parity) instead of a fixed 8…6 cut.
     private func recipientValue(_ locked: SendAmountDestination) -> String {
         switch locked {
         case .melt(let request, _, let decoded):
-            if case .lightningAddress(let addr) = decoded { return addr }
-            return PaymentRequestDecoder.shortRepresentation(request, result: decoded)
+            return PaymentRequestDecoder.displayRequest(request, result: decoded)
         case .cashuRequest(let summary):
-            // Mirror the Lightning row: show the opaque request string, truncated. The
-            // memo still surfaces in the confirm's dedicated Memo detail row.
-            return PaymentRequestDecoder.middleTruncated(summary.encoded)
+            // Mirror the Lightning row: show the opaque request string. The memo
+            // still surfaces in the confirm's dedicated Memo detail row.
+            return summary.encoded
         }
+    }
+
+    /// VoiceOver hears a short form; reading out a whole invoice helps no one.
+    private func recipientSpokenValue(_ locked: SendAmountDestination) -> String {
+        if case .melt(_, _, .lightningAddress(let address)) = locked { return address }
+        return PaymentRequestDecoder.middleTruncated(recipientValue(locked))
     }
 
     private func editRecipient() {
