@@ -90,14 +90,14 @@ final class ScanRouterTests: XCTestCase {
     }
 }
 
-/// How a locked destination reads in Send's "To" row: the whole request, which
-/// the row middle-truncates to its width. Mirrors Android's
-/// `PaymentRequestDecoderTest` display cases.
+/// How a locked destination reads in Send's "To" row: a fixed 8…6 cut, with
+/// Lightning addresses whole. Mirrors Android's `PaymentRequestDecoderTest`
+/// display cases.
 final class PaymentRequestDisplayTests: XCTestCase {
     func testCaseInsensitiveRequestsFromUppercaseQRCodesShowLowercase() {
         XCTAssertEqual(
             PaymentRequestDecoder.displayRequest(" LNBC1P4T40C2PP5ARHNG9C7QPU02S3T ", result: .bolt11(amountSats: nil, description: nil)),
-            "lnbc1p4t40c2pp5arhng9c7qpu02s3t"
+            "lnbc1p4t…u02s3t"
         )
         XCTAssertEqual(
             PaymentRequestDecoder.displayRequest("LNO1PGQPVGGR", result: .bolt12(amountSats: nil, description: nil)),
@@ -105,25 +105,21 @@ final class PaymentRequestDisplayTests: XCTestCase {
         )
         XCTAssertEqual(
             PaymentRequestDecoder.displayRequest("BC1QW508D6QEJXTDG4Y5R3ZARVARY0C5XW7KV8F3T4", result: .onchain("BC1QW508D6QEJXTDG4Y5R3ZARVARY0C5XW7KV8F3T4")),
-            "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4"
+            "bc1qw508…v8f3t4"
         )
     }
 
     func testCaseSensitiveRequestsKeepTheirCase() {
         let base58 = "1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2"
-        XCTAssertEqual(PaymentRequestDecoder.displayRequest(base58, result: .onchain(base58)), base58)
+        XCTAssertEqual(PaymentRequestDecoder.displayRequest(base58, result: .onchain(base58)), "1BvBMSEY…JaNVN2")
         XCTAssertEqual(
-            PaymentRequestDecoder.displayRequest("Alice@Example.com", result: .lightningAddress("Alice@Example.com")),
-            "Alice@Example.com"
+            PaymentRequestDecoder.displayRequest("creqApAyloADebbdfhZHRyYW5zcG9ydHOB", result: .unrecognized),
+            "creqApAy…9ydHOB"
         )
-        XCTAssertEqual(PaymentRequestDecoder.displayRequest("creqApAyloAD", result: .unrecognized), "creqApAyloAD")
     }
 
-    func testWholeRequestIsKeptForTheRowToTruncate() {
-        let invoice = "lnbc" + String(repeating: "q", count: 200)
-        XCTAssertEqual(
-            PaymentRequestDecoder.displayRequest(invoice, result: .bolt11(amountSats: nil, description: nil)).count,
-            invoice.count
-        )
+    func testLightningAddressesStayWhole() {
+        let address = "Satoshi.Nakamoto@lightning.example.com"
+        XCTAssertEqual(PaymentRequestDecoder.displayRequest(address, result: .lightningAddress(address)), address)
     }
 }

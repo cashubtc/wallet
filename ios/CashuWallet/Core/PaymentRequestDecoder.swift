@@ -314,8 +314,8 @@ enum PaymentRequestDecoder {
         return "\(trimmed.prefix(8))…\(trimmed.suffix(6))"
     }
 
-    /// The whole request as a person reads it in the Send "To" row, which
-    /// middle-truncates to its own width. BOLT11, BOLT12 and bech32 addresses
+    /// How a request reads in the Send "To" row: the fixed `prefix(8)…suffix(6)`
+    /// cut, with Lightning addresses whole. BOLT11, BOLT12 and bech32 addresses
     /// are case-insensitive and QR codes carry them uppercase, so they show
     /// lowercase; case-sensitive formats (base58 addresses, Cashu requests)
     /// keep their case.
@@ -325,13 +325,13 @@ enum PaymentRequestDecoder {
         case .lightningAddress(let address):
             return address
         case .bolt11, .bolt12:
-            return trimmed.lowercased()
+            return middleTruncated(trimmed.lowercased())
         case .onchain:
             let lowered = trimmed.lowercased()
             let isBech32 = ["bc1", "tb1", "bcrt1"].contains { lowered.hasPrefix($0) }
-            return isBech32 ? lowered : trimmed
+            return middleTruncated(isBech32 ? lowered : trimmed)
         case .cashuPaymentRequest, .unrecognized:
-            return trimmed
+            return middleTruncated(trimmed)
         }
     }
 

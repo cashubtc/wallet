@@ -1597,8 +1597,9 @@ struct UnifiedSendView: View {
                     .cashuText(.textLink)
                     .foregroundStyle(.secondary)
                 Text(recipientValue(locked))
-                    // Inside `cashuText`: a role applies its own line limit next
-                    // to the text, which would win over one added after it.
+                    // Keeps a long Lightning address on one line. Inside
+                    // `cashuText`: a role applies its own line limit next to the
+                    // text, which would win over one added after it.
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .cashuText(.body)
@@ -1612,7 +1613,7 @@ struct UnifiedSendView: View {
         }
         .buttonStyle(.plain)
         .disabled(statusPhase != nil)
-        .accessibilityLabel("Recipient \(recipientSpokenValue(locked))")
+        .accessibilityLabel("Recipient \(recipientValue(locked))")
         .accessibilityHint("Double-tap to change the recipient")
     }
 
@@ -1632,23 +1633,17 @@ struct UnifiedSendView: View {
         }
     }
 
-    /// The whole recipient; the row middle-truncates it to its width (Android
-    /// parity) instead of a fixed 8…6 cut.
+    /// The recipient as a fixed 8…6 cut, or a Lightning address whole (Android
+    /// parity).
     private func recipientValue(_ locked: SendAmountDestination) -> String {
         switch locked {
         case .melt(let request, _, let decoded):
             return PaymentRequestDecoder.displayRequest(request, result: decoded)
         case .cashuRequest(let summary):
-            // Mirror the Lightning row: show the opaque request string. The memo
-            // still surfaces in the confirm's dedicated Memo detail row.
-            return summary.encoded
+            // Mirror the Lightning row: show the opaque request string, truncated. The
+            // memo still surfaces in the confirm's dedicated Memo detail row.
+            return PaymentRequestDecoder.middleTruncated(summary.encoded)
         }
-    }
-
-    /// VoiceOver hears a short form; reading out a whole invoice helps no one.
-    private func recipientSpokenValue(_ locked: SendAmountDestination) -> String {
-        if case .melt(_, _, .lightningAddress(let address)) = locked { return address }
-        return PaymentRequestDecoder.middleTruncated(recipientValue(locked))
     }
 
     private func editRecipient() {

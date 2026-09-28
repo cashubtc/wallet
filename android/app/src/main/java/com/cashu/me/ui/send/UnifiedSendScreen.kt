@@ -699,21 +699,14 @@ fun UnifiedSendScreen(
                     // swap's fixed anchor — it never slides with the faces
                     // (iOS parity).
                     if (step != SendStep.Input && !creqFromScan) {
-                        val rail = locked
-                        val decoded = when (rail) {
-                            is LockedRail.Melt -> rail.decoded
-                            is LockedRail.Creq -> rail.decoded
-                            null -> null
-                        }
-                        val recipient = if (rail != null && decoded != null) {
-                            PaymentRequestDecoder.displayRequest(rail.raw, decoded)
-                        } else {
-                            destination.trim()
+                        val recipient = when (val rail = locked) {
+                            is LockedRail.Melt -> PaymentRequestDecoder.displayRequest(rail.raw, rail.decoded)
+                            is LockedRail.Creq -> PaymentRequestDecoder.displayRequest(rail.raw, rail.decoded)
+                            null -> PaymentRequestDecoder.middleTruncated(destination)
                         }
                         if (recipient.isNotBlank()) {
                             ToRow(
                                 destination = recipient,
-                                spokenDestination = PaymentRequestDecoder.spokenRequest(recipient, decoded),
                                 modifier = Modifier.padding(horizontal = CashuTheme.spacing.comfortable),
                             )
                         }
@@ -1115,14 +1108,14 @@ private fun InputFace(
  * pinned between the amount and confirm faces (iOS `toRow` parity).
  */
 @Composable
-private fun ToRow(destination: String, spokenDestination: String, modifier: Modifier = Modifier) {
+private fun ToRow(destination: String, modifier: Modifier = Modifier) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = 48.dp)
-            // TalkBack hears a short form (iOS parity), not a whole invoice.
-            .clearAndSetSemantics { contentDescription = "Recipient $spokenDestination" },
+            // One "Recipient …" announcement (iOS parity), not "To" then the value.
+            .clearAndSetSemantics { contentDescription = "Recipient $destination" },
     ) {
         Text(
             text = "To",

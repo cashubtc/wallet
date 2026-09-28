@@ -196,33 +196,32 @@ object PaymentRequestDecoder {
     }
 
     /**
-     * The whole request as a person reads it in the Send "To" row, which
-     * middle-truncates to its own width. BOLT11, BOLT12 and bech32 addresses are
-     * case-insensitive and QR codes carry them uppercase, so they show lowercase;
-     * case-sensitive formats (base58 addresses, Cashu requests) keep their case.
+     * How a request reads in the Send "To" row: a fixed `take(8)…takeLast(6)` cut,
+     * with Lightning addresses whole (iOS parity). BOLT11, BOLT12 and bech32
+     * addresses are case-insensitive and QR codes carry them uppercase, so they
+     * show lowercase; case-sensitive formats (base58 addresses, Cashu requests)
+     * keep their case.
      */
     fun displayRequest(raw: String, result: PaymentRequestDecodeResult): String {
         val trimmed = raw.trim()
         return when (result) {
             is PaymentRequestDecodeResult.LightningAddress -> result.address
             is PaymentRequestDecodeResult.Bolt11,
-            is PaymentRequestDecodeResult.Bolt12 -> trimmed.lowercase()
+            is PaymentRequestDecodeResult.Bolt12 -> middleTruncated(trimmed.lowercase())
             is PaymentRequestDecodeResult.Onchain -> {
                 val lowered = trimmed.lowercase()
-                if (listOf("bc1", "tb1", "bcrt1").any { lowered.startsWith(it) }) lowered else trimmed
+                middleTruncated(if (listOf("bc1", "tb1", "bcrt1").any { lowered.startsWith(it) }) lowered else trimmed)
             }
             is PaymentRequestDecodeResult.CashuPaymentRequest,
-            PaymentRequestDecodeResult.Unrecognized -> trimmed
+            PaymentRequestDecodeResult.Unrecognized -> middleTruncated(trimmed)
         }
     }
 
-    /** VoiceOver/TalkBack form of a request: short, since reading a whole invoice helps no one. */
-    fun spokenRequest(display: String, result: PaymentRequestDecodeResult?): String =
-        if (result is PaymentRequestDecodeResult.LightningAddress || display.length <= 16) {
-            display
-        } else {
-            "${display.take(8)}…${display.takeLast(6)}"
-        }
+    /** `take(8)…takeLast(6)` for opaque request strings; short ones are returned whole (iOS parity). */
+    fun middleTruncated(raw: String): String {
+        val trimmed = raw.trim()
+        return if (trimmed.length > 16) "${trimmed.take(8)}…${trimmed.takeLast(6)}" else trimmed
+    }
 
     fun shortRepresentation(raw: String, result: PaymentRequestDecodeResult): String = when (result) {
         is PaymentRequestDecodeResult.LightningAddress -> result.address

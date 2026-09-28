@@ -169,7 +169,7 @@ class PaymentRequestDecoderTest {
     @Test
     fun caseInsensitiveRequestsFromUppercaseQrCodesShowLowercase() {
         assertEquals(
-            "lnbc1p4t40c2pp5arhng9c7qpu02s3t",
+            "lnbc1p4t…u02s3t",
             PaymentRequestDecoder.displayRequest(
                 " LNBC1P4T40C2PP5ARHNG9C7QPU02S3T ",
                 PaymentRequestDecodeResult.Bolt11(amountSats = null, description = null),
@@ -184,7 +184,7 @@ class PaymentRequestDecoderTest {
         )
         val address = "BC1QW508D6QEJXTDG4Y5R3ZARVARY0C5XW7KV8F3T4"
         assertEquals(
-            "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
+            "bc1qw508…v8f3t4",
             PaymentRequestDecoder.displayRequest(address, PaymentRequestDecodeResult.Onchain(address)),
         )
     }
@@ -192,30 +192,25 @@ class PaymentRequestDecoderTest {
     @Test
     fun caseSensitiveRequestsKeepTheirCase() {
         val base58 = "1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2"
-        assertEquals(base58, PaymentRequestDecoder.displayRequest(base58, PaymentRequestDecodeResult.Onchain(base58)))
         assertEquals(
-            "Alice@Example.com",
-            PaymentRequestDecoder.displayRequest(
-                "Alice@Example.com",
-                PaymentRequestDecodeResult.LightningAddress("Alice@Example.com"),
-            ),
+            "1BvBMSEY…JaNVN2",
+            PaymentRequestDecoder.displayRequest(base58, PaymentRequestDecodeResult.Onchain(base58)),
         )
         assertEquals(
-            "creqApAyloAD",
-            PaymentRequestDecoder.displayRequest("creqApAyloAD", PaymentRequestDecodeResult.Unrecognized),
+            "creqApAy…9ydHOB",
+            PaymentRequestDecoder.displayRequest(
+                "creqApAyloADebbdfhZHRyYW5zcG9ydHOB",
+                PaymentRequestDecodeResult.Unrecognized,
+            ),
         )
     }
 
     @Test
-    fun spokenRecipientIsShortExceptForAddresses() {
-        val invoice = "lnbc1p4t40c2pp5arhng9c7qpu02s3t"
-        assertEquals("lnbc1p4t…u02s3t", PaymentRequestDecoder.spokenRequest(invoice, null))
+    fun lightningAddressesStayWhole() {
+        val address = "Satoshi.Nakamoto@lightning.example.com"
         assertEquals(
-            "alice@example.com",
-            PaymentRequestDecoder.spokenRequest(
-                "alice@example.com",
-                PaymentRequestDecodeResult.LightningAddress("alice@example.com"),
-            ),
+            address,
+            PaymentRequestDecoder.displayRequest(address, PaymentRequestDecodeResult.LightningAddress(address)),
         )
     }
 }
