@@ -473,6 +473,49 @@ final class SendMaxMeltAmountTests: XCTestCase {
         XCTAssertNil(payable)
     }
 
+    func testRecipientMaximumIsAppliedBeforeCalculatingFees() async throws {
+        var candidates: [UInt64] = []
+        let result = try await largestPayableMeltAmount(balance: 500) { amount in
+            candidates.append(amount)
+            if amount > 300 {
+                throw LightningAddressResolverError.amountOutOfRange(requestedMsat: amount * 1_000, minMsat: 1_000, maxMsat: 300_999)
+            }
+            return amount + 2
+        }
+        XCTAssertEqual(result, 300)
+        XCTAssertEqual(candidates, [500, 300])
+    }
+
+    func testRecipientCapStillLeavesRoomForFees() async throws {
+        let result = try await largestPayableMeltAmount(balance: 500) { amount in
+            if amount > 499 {
+                throw LightningAddressResolverError.amountOutOfRange(requestedMsat: amount * 1_000, minMsat: 1_000, maxMsat: 499_000)
+            }
+            return amount + 2
+        }
+        XCTAssertEqual(result, 498)
+    }
+
+    func testRecipientMinimumDoesNotCauseAnUpwardRetry() async {
+        do {
+            _ = try await largestPayableMeltAmount(balance: 100) { amount in
+                throw LightningAddressResolverError.amountOutOfRange(requestedMsat: amount * 1_000, minMsat: 200_000, maxMsat: 500_000)
+            }
+            XCTFail("Expected the recipient minimum error")
+        } catch LightningAddressResolverError.amountOutOfRange { } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testInconclusiveQuotesDoNotReportAnEmptyBalance() async {
+        do {
+            _ = try await largestPayableMeltAmount(balance: 100, rounds: 1) { $0 + 2 }
+            XCTFail("Expected an inconclusive calculation error")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("Try again or enter an amount"))
+        }
+    }
+
     func testQuoteFailuresReachTheCaller() async {
         struct MintDown: Error {}
         do {

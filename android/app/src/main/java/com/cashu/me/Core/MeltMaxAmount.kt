@@ -1,5 +1,9 @@
 package com.cashu.me.Core
 
+import com.cashu.me.Core.CDK.LightningAddressResolutionException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+
 /**
  * What Max means for a Lightning or on-chain send: the largest amount a mint
  * can pay from [balance] once its melt fee reserve is added. [requiredTotal]
@@ -17,9 +21,19 @@ suspend fun largestPayableMeltAmount(
     var amount = balance
     repeat(rounds) {
         if (amount <= 0L) return null
-        val total = requiredTotal(amount)
+        currentCoroutineContext().ensureActive()
+        val total = try {
+            requiredTotal(amount)
+        } catch (limit: LightningAddressResolutionException.AmountOutOfRange) {
+            val maximum = limit.maxMsat / 1_000
+            if (maximum <= 0 || maximum >= amount) throw limit
+            amount = maximum
+            return@repeat
+        }
+        currentCoroutineContext().ensureActive()
         if (total <= balance) return amount
         amount = (amount - (total - balance)).coerceAtLeast(0L)
     }
-    return null
+    if (amount <= 0L) return null
+    error("Couldn’t calculate the maximum amount. Try again or enter an amount.")
 }

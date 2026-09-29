@@ -1,5 +1,6 @@
 package com.cashu.me.Core
 
+import com.cashu.me.Core.CDK.LightningAddressResolutionException
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -44,6 +45,41 @@ class MeltMaxAmountTest {
     @Test
     fun balanceBelowTheReserveFloorPaysNothing() {
         assertNull(largest(1) { 2 }.first)
+    }
+
+    @Test
+    fun recipientMaximumIsAppliedBeforeCalculatingFees() = runBlocking {
+        val candidates = mutableListOf<Long>()
+        val result = largestPayableMeltAmount(500) { amount ->
+            candidates += amount
+            if (amount > 300) throw LightningAddressResolutionException.AmountOutOfRange(1_000, 300_999)
+            amount + 2
+        }
+        assertEquals(300L, result)
+        assertEquals(listOf(500L, 300L), candidates)
+    }
+
+    @Test
+    fun recipientCapStillLeavesRoomForFees() = runBlocking {
+        val result = largestPayableMeltAmount(500) { amount ->
+            if (amount > 499) throw LightningAddressResolutionException.AmountOutOfRange(1_000, 499_000)
+            amount + 2
+        }
+        assertEquals(498L, result)
+    }
+
+    @Test(expected = LightningAddressResolutionException.AmountOutOfRange::class)
+    fun recipientMinimumDoesNotCauseAnUpwardRetry() {
+        runBlocking {
+            largestPayableMeltAmount(100) {
+                throw LightningAddressResolutionException.AmountOutOfRange(200_000, 500_000)
+            }
+        }
+    }
+
+    @Test(expected = IllegalStateException::class)
+    fun inconclusiveQuotesDoNotReportAnEmptyBalance() {
+        runBlocking { largestPayableMeltAmount(100, rounds = 1) { it + 2 } }
     }
 
     @Test(expected = IllegalStateException::class)

@@ -8,6 +8,21 @@ import org.junit.Test
 
 class LightningAddressResolverTest {
     @Test
+    fun preservesRecipientLimitsWithoutRequestingAnInvoice() = runBlocking {
+        val transport = RecordingTransport(LnurlHttpResponse(200,
+            payRequestJson(callback = "https://example.com/lnurl/callback")))
+        val error = runCatching {
+            resolver(transport, decodedAmountMsat = InvoiceAmountMsat)
+                .resolveBolt11Invoice("alice@example.com", 1_000_000_001)
+        }.exceptionOrNull()
+        assertTrue(error is LightningAddressResolutionException.AmountOutOfRange)
+        val limits = error as LightningAddressResolutionException.AmountOutOfRange
+        assertEquals(1L, limits.minMsat)
+        assertEquals(1_000_000_000L, limits.maxMsat)
+        assertEquals(1, transport.requestedUrls.size)
+    }
+
+    @Test
     fun acceptsAmountMatchedInvoiceWhenLnurlMetadataHashDoesNotMatch() = runBlocking {
         val transport = RecordingTransport(
             LnurlHttpResponse(
