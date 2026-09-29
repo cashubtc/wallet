@@ -1,6 +1,12 @@
 package com.cashu.me.ui.journeys
 
 import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.onNodeWithText
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.cashu.me.test.UiFailureArtifactsRule
 import com.cashu.me.test.WalletJourneyRobot
@@ -28,6 +34,42 @@ class SendMaxJourneyTest {
 
     private val robot by lazy { WalletJourneyRobot(compose) }
     private var launched: LaunchedFixture? = null
+
+    @Test
+    fun editingCancelsMaxAndDiscardsItsLateFailure() {
+        val fixture = AppTestFixture.launch(FixtureMode.FundedWithHistory).also { launched = it }
+        val fake = checkNotNull(fixture.fakeGateway)
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val finished = CompletableDeferred<Unit>()
+        fake.beforeMeltQuote = {
+            withContext(NonCancellable) {
+                started.complete(Unit)
+                release.await()
+                finished.complete(Unit)
+                error("Old Max request failed")
+            }
+        }
+
+        robot.awaitTag(UiTestTags.WalletScreen)
+            .tapTag(UiTestTags.WalletSend)
+            .awaitTag(UiTestTags.SendSheet)
+            .typeIntoTag(UiTestTags.SendDestination, "alice@example.com")
+            .awaitText("Continue")
+            .tapText("1")
+            .tapDescription("Send maximum")
+        compose.waitUntil(WalletJourneyRobot.DefaultTimeout) { started.isCompleted }
+        compose.onNodeWithText("Continue").assertIsNotEnabled()
+
+        robot.tapText("2")
+        compose.onNodeWithText("Continue").assertIsEnabled()
+        release.complete(Unit)
+        compose.waitUntil(WalletJourneyRobot.DefaultTimeout) { finished.isCompleted }
+        robot.assertTextDoesNotExist("Old Max request failed")
+        fake.beforeMeltQuote = {}
+        robot.tapText("Continue").awaitTag(UiTestTags.SendPaymentSubmit)
+        assertEquals(12L, fake.lastMeltQuoteAmountSats)
+    }
 
     @Test
     fun maxOnALightningAddressLeavesRoomForTheFeeReserve() {

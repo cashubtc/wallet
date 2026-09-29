@@ -47,6 +47,11 @@ class MeltMaxAmountTest {
     }
 
     @Test(expected = IllegalStateException::class)
+    fun inconclusiveQuotesDoNotReportAnEmptyBalance() {
+        runBlocking { largestPayableMeltAmount(100, rounds = 1) { it + 2 } }
+    }
+
+    @Test(expected = IllegalStateException::class)
     fun quoteFailuresReachTheCaller() {
         runBlocking { largestPayableMeltAmount(100) { error("mint down") } }
     }

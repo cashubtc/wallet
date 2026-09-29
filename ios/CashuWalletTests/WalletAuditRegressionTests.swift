@@ -955,6 +955,15 @@ final class SendMaxMeltAmountTests: XCTestCase {
         XCTAssertNil(payable)
     }
 
+    func testInconclusiveQuotesDoNotReportAnEmptyBalance() async {
+        do {
+            _ = try await largestPayableMeltAmount(balance: 100, rounds: 1) { $0 + 2 }
+            XCTFail("Expected an inconclusive calculation error")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("Try again or enter an amount"))
+        }
+    }
+
     func testQuoteFailuresReachTheCaller() async {
         struct MintDown: Error {}
         do {

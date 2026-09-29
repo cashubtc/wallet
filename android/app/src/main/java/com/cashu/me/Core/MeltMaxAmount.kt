@@ -1,5 +1,8 @@
 package com.cashu.me.Core
 
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+
 /**
  * What Max means for a Lightning or on-chain send: the largest amount a mint
  * can pay from [balance] once its melt fee reserve is added. [requiredTotal]
@@ -17,9 +20,12 @@ suspend fun largestPayableMeltAmount(
     var amount = balance
     repeat(rounds) {
         if (amount <= 0L) return null
+        currentCoroutineContext().ensureActive()
         val total = requiredTotal(amount)
+        currentCoroutineContext().ensureActive()
         if (total <= balance) return amount
         amount = (amount - (total - balance)).coerceAtLeast(0L)
     }
-    return null
+    if (amount <= 0L) return null
+    error("Couldn’t calculate the maximum amount. Try again or enter an amount.")
 }
