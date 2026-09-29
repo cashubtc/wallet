@@ -76,12 +76,15 @@ func largestPayableMeltAmount(
     var amount = balance
     for _ in 0..<rounds {
         guard amount > 0 else { return nil }
+        try Task.checkCancellation()
         let total = try await requiredTotal(amount)
+        try Task.checkCancellation()
         if total <= balance { return amount }
         let overshoot = total - balance
         amount = amount > overshoot ? amount - overshoot : 0
     }
-    return nil
+    guard amount > 0 else { return nil }
+    throw WalletError.networkError("Couldn’t calculate the maximum amount. Try again or enter an amount.")
 }
 
 // MARK: - Lightning Service

@@ -233,6 +233,8 @@ fun UnifiedSendScreen(
     var maxJob by remember { mutableStateOf<Job?>(null) }
     var findingMax by remember { mutableStateOf(false) }
     var maxNotice by remember { mutableStateOf<String?>(null) }
+    var maxFeedback by remember { mutableStateOf<String?>(null) }
+    var maxGeneration by remember { mutableStateOf(0) }
     var selectedMintUrl by remember { mutableStateOf<String?>(null) }
     var mintPickerOpen by remember { mutableStateOf(false) }
     var cashuTargetPickerOpen by remember { mutableStateOf(false) }
@@ -327,7 +329,17 @@ fun UnifiedSendScreen(
     // "To" pill like iOS's UnifiedSendView.
     val creqFromScan = (locked as? LockedRail.Creq)?.fromScan == true
 
+    fun cancelMax() {
+        maxGeneration += 1
+        maxJob?.cancel()
+        maxJob = null
+        findingMax = false
+        maxNotice = null
+        maxFeedback = null
+    }
+
     fun reset(toInput: Boolean = true) {
+        cancelMax()
         locked = null
         amount = ""
         meltQuote = null
@@ -555,6 +567,10 @@ fun UnifiedSendScreen(
     }
 
     // Confirm entry prefetches the melt quote (iOS shows fee/total skeleton).
+    LaunchedEffect(step, activeMintUrl) {
+        cancelMax()
+    }
+
     LaunchedEffect(step, locked, confirmAmount, activeMintUrl) {
         if (step != SendStep.Confirm) return@LaunchedEffect
         val rail = locked as? LockedRail.Melt ?: return@LaunchedEffect
@@ -787,8 +803,8 @@ fun UnifiedSendScreen(
                             SendStep.Amount -> AmountFace(
                                 amount = amount,
                                 onAmountChange = {
+                                    cancelMax()
                                     amount = it
-                                    maxNotice = null
                                 },
                                 mint = activeMint,
                                 balanceText = activeMint?.let {
@@ -804,8 +820,8 @@ fun UnifiedSendScreen(
                                 // reject. Cashu requests pay ecash: gross (iOS parity).
                                 onUseMax = onUseMax@{
                                     val mint = activeMint?.takeIf { it.balance > 0 } ?: return@onUseMax
-                                    maxJob?.cancel()
-                                    maxNotice = null
+                                    cancelMax()
+                                    val generation = maxGeneration
                                     val rail = locked as? LockedRail.Melt
                                     if (rail == null) {
                                         amount = UnifiedSendAmountEntry.maxRawForBalance(mint.balance, entryContext)
@@ -815,8 +831,8 @@ fun UnifiedSendScreen(
                                     // State reads, not the composition's captured values:
                                     // the coroutine must see a later edit or mint switch.
                                     val selectionBeforeMax = selectedMintUrl
+                                    findingMax = true
                                     maxJob = scope.launch {
-                                        findingMax = true
                                         try {
                                             val payable = largestPayableMeltAmount(mint.balance) { candidate ->
                                                 walletManager.createMeltQuote(
@@ -826,29 +842,37 @@ fun UnifiedSendScreen(
                                                 ).totalAmount
                                             }
                                             // Typing or switching mints meanwhile wins over a late result.
-                                            if (step == SendStep.Amount && amount == entryBeforeMax &&
+                                            if (generation == maxGeneration && step == SendStep.Amount && amount == entryBeforeMax &&
                                                 selectedMintUrl == selectionBeforeMax
                                             ) {
                                                 if (payable != null) {
                                                     amount = UnifiedSendAmountEntry.maxRawForBalance(payable, entryContext)
+                                                    if (payable < mint.balance) {
+                                                        maxFeedback = "Amount adjusted for fees and the recipient’s payment limits."
+                                                    }
                                                 } else {
-                                                    maxNotice = "This mint's balance can't cover the network fee for this payment."
+                                                    maxNotice = "This mint's balance can't cover the network fee for this payment." +
+                                                        if (paymentMintChoices.size > 1) " Choose another mint." else ""
                                                 }
                                             }
                                         } catch (cancellation: CancellationException) {
                                             throw cancellation
                                         } catch (failure: Throwable) {
-                                            maxNotice = failure.userFacingWalletMessage
+                                            if (generation == maxGeneration && step == SendStep.Amount &&
+                                                amount == entryBeforeMax && selectedMintUrl == selectionBeforeMax
+                                            ) maxNotice = failure.userFacingWalletMessage
                                         } finally {
-                                            findingMax = false
+                                            if (generation == maxGeneration) findingMax = false
                                         }
                                     }
                                 },
                                 isFindingMax = findingMax,
                                 notice = maxNotice,
+                                maxFeedback = maxFeedback,
                                 amountSats = enteredAmount,
                                 entryPrimary = entryContext.primary,
                                 onFlipEntryPrimary = {
+                                    cancelMax()
                                     settingsManager.setAmountDisplayPrimary(it.rawValue)
                                 },
                                 btcPrice = entryFiatPrice,
@@ -862,9 +886,9 @@ fun UnifiedSendScreen(
                                         formatter.formatWalletSats(fee, settings.useBitcoinSymbol)
                                     }
                                 },
-                                onContinue = {
-                                    maxJob?.cancel()
-                                    maxNotice = null
+                                onContinue = onContinue@{
+                                    if (findingMax) return@onContinue
+                                    cancelMax()
                                     cameFromAmount = true
                                     step = SendStep.Confirm
                                 },
@@ -919,6 +943,7 @@ fun UnifiedSendScreen(
             mints = paymentMintChoices,
             activeMintUrl = activeMintUrl,
             onSelect = { mint ->
+                cancelMax()
                 mint?.let { selectedMintUrl = it.url }
                 mintPickerOpen = false
             },
@@ -1251,6 +1276,7 @@ private fun AmountFace(
     onUseMax: () -> Unit,
     isFindingMax: Boolean,
     notice: String?,
+    maxFeedback: String?,
     amountSats: Long,
     entryPrimary: AmountDisplayPrimary,
     onFlipEntryPrimary: (AmountDisplayPrimary) -> Unit,
@@ -1265,11 +1291,13 @@ private fun AmountFace(
     val validation = UnifiedSendAmountEntry.validation(amountSats, mintBalance)
     val insufficient = validation == UnifiedSendAmountValidation.InsufficientBalance
     // A Max that couldn't settle explains why; otherwise the balance check.
-    val noticeText = notice ?: "Insufficient balance".takeIf { insufficient }
+    val noticeText = notice ?: "Insufficient balance".takeIf { insufficient } ?: maxFeedback
     val isFiatEntry = entryPrimary == AmountDisplayPrimary.Fiat
     // The mint selector states the available balance, so repeating it in the
     // note would add visual noise.
-    val note = noticeText?.let { AmountNote(it, NoticeSeverity.Caution) }
+    val note = noticeText?.let {
+        AmountNote(it, if (notice == null && !insufficient) NoticeSeverity.Info else NoticeSeverity.Caution)
+    }
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val noteRoom = entryNoteRoom(note, maxWidth - CashuTheme.spacing.comfortable * 2)
         Column(

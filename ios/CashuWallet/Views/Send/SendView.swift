@@ -1107,6 +1107,7 @@ struct UnifiedSendView: View {
     /// Fee-aware Max for melts quotes the mint before filling the keypad.
     @State private var maxTask: Task<Void, Never>?
     @State private var isFindingMax = false
+    @State private var maxFeedback: String?
     @State private var selectedMint: MintInfo?
     /// True when the mint accepted the melt for asynchronous (NUT-05) settlement —
     /// typical for on-chain — so the success screen says "processing", not "sent".
@@ -1391,7 +1392,19 @@ struct UnifiedSendView: View {
                 .flatBottomSheetSurface()
             }
             .onChange(of: destination) { handleDestinationChange() }
+            .onChange(of: currentAmountMint?.id) { _, _ in
+                cancelMax()
+                maxFeedback = nil
+                if step == .amount { errorMessage = nil }
+            }
+            .onChange(of: step) { _, _ in
+                cancelMax()
+                maxFeedback = nil
+            }
             .onChange(of: entryUnit) { oldUnit, newUnit in
+                cancelMax()
+                maxFeedback = nil
+                errorMessage = nil
                 amountString = AmountFormatter.entryConverted(raw: amountString, from: oldUnit, to: newUnit)
             }
             .onAppear {
@@ -1752,7 +1765,8 @@ struct UnifiedSendView: View {
                         sats: amountSats,
                         primary: $settings.amountDisplayPrimary,
                         entryRaw: amountString,
-                        note: errorMessage.map { AmountNote(text: $0, severity: errorSeverity) },
+                        note: errorMessage.map { AmountNote(text: $0, severity: errorSeverity) }
+                            ?? maxFeedback.map { AmountNote(text: $0, severity: .info) },
                         holdsNoteLine: true
                     )
                     .animation(reduceMotion ? .easeInOut(duration: 0.2) : .snappy(duration: 0.25), value: errorMessage)
@@ -1767,7 +1781,15 @@ struct UnifiedSendView: View {
                             .padding(.bottom, 8)
                     }
 
-                    NumberPadAmountInput(amountString: $amountString, unit: entryUnit)
+                    NumberPadAmountInput(amountString: Binding(
+                        get: { amountString },
+                        set: { value in
+                            cancelMax()
+                            errorMessage = nil
+                            maxFeedback = nil
+                            amountString = value
+                        }
+                    ), unit: entryUnit)
                         .padding(.horizontal, NumberPadMetrics.gutter)
 
                     Button(action: continueFromAmount) {
@@ -1776,7 +1798,7 @@ struct UnifiedSendView: View {
                     // Quiet tonal fill, matching Android's gray keypad CTA —
                     // the white ink stays reserved for the pay-confirm commit.
                     .flatSheetSecondaryButton()
-                    .disabled(amountSats == 0)
+                    .disabled(amountSats == 0 || isFindingMax)
                     .padding(.horizontal)
                     .padding(.top, 12)
                     .padding(.bottom, 16)
@@ -1823,6 +1845,7 @@ struct UnifiedSendView: View {
             return
         }
         errorMessage = nil
+        maxFeedback = nil
         isFindingMax = true
         let entryBeforeMax = amountString
         maxTask = Task { @MainActor in
@@ -1844,14 +1867,24 @@ struct UnifiedSendView: View {
                       currentAmountMint?.id == mint.id else { return }
                 if let payable {
                     fillAmount(sats: payable)
+                    if payable < mint.balance {
+                        maxFeedback = "Amount adjusted for fees and the recipient’s payment limits."
+                    }
                 } else {
-                    presentError("This mint's balance can't cover the network fee for this payment.", severity: .caution)
+                    presentError("This mint's balance can't cover the network fee for this payment." + (canChangeMint ? " Choose another mint." : ""), severity: .caution)
                 }
             } catch {
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled, step == .amount, amountString == entryBeforeMax,
+                      currentAmountMint?.id == mint.id else { return }
                 presentError(from: error)
             }
         }
+    }
+
+    private func cancelMax() {
+        maxTask?.cancel()
+        maxTask = nil
+        isFindingMax = false
     }
 
     private func fillAmount(sats: UInt64) {
@@ -1859,7 +1892,7 @@ struct UnifiedSendView: View {
     }
 
     private func continueFromAmount() {
-        guard amountSats > 0 else { return }
+        guard amountSats > 0, !isFindingMax else { return }
         maxTask?.cancel()
         isFindingMax = false
         HapticFeedback.selection()
