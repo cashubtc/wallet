@@ -66,6 +66,7 @@ import com.cashu.me.Views.Components.ScannerDefaultPrompt
 import com.cashu.me.Views.Send.ContactlessPayView
 import com.cashu.me.ui.mints.ConnectMintContext
 import com.cashu.me.ui.mints.ConnectMintSheetContent
+import com.cashu.me.ui.mints.MintTransferScreen
 import com.cashu.me.ui.onboarding.OnboardingHandoffController
 import com.cashu.me.ui.onboarding.OnboardingHandoffHost
 import com.cashu.me.ui.onboarding.OnboardingScreen
@@ -306,7 +307,7 @@ private fun AuthenticatedShell(container: AppContainer) {
     var activeFlow by remember { mutableStateOf<WalletFlow?>(null) }
     var flowDismissLocked by remember { mutableStateOf(false) }
     var flowUsesCompactSheet by remember(activeFlow) {
-        mutableStateOf(activeFlow != WalletFlow.ReceiveLightning && activeFlow != WalletFlow.SendEcash)
+        mutableStateOf(activeFlow?.wrapsContent != false)
     }
     var isFlowBackdropVisible by remember { mutableStateOf(false) }
     val flowHandoff = remember { WalletFlowHandoffCoordinator() }
@@ -475,6 +476,7 @@ private fun AuthenticatedShell(container: AppContainer) {
             onReceiveLightning = { openPaymentFlow(WalletFlow.ReceiveLightning) },
             onSend = { openPaymentFlow(WalletFlow.Send) },
             onAddMint = { openPaymentFlow(WalletFlow.ConnectMint) },
+            onTransfer = { fromMintUrl -> openPaymentFlow(WalletFlow.Transfer(fromMintUrl)) },
             pendingMintScan = pendingMintScan,
             onPendingMintScanConsumed = { pendingMintScan = null },
             // Pending "Receive later" tokens claim on the full-screen page.
@@ -714,6 +716,15 @@ private fun AuthenticatedShell(container: AppContainer) {
                     pendingSendScan = invoice
                     activeFlow = WalletFlow.Send
                 },
+                onDismissLockChanged = { flowDismissLocked = it },
+            )
+
+            is WalletFlow.Transfer -> MintTransferScreen(
+                walletManager = container.walletManager,
+                settingsManager = container.settingsManager,
+                priceService = container.priceService,
+                onClose = close,
+                openedFromMintUrl = flow.openedFromMintUrl,
                 onDismissLockChanged = { flowDismissLocked = it },
             )
 

@@ -131,6 +131,15 @@ like a port, make the Android-native choice instead.
   and no gesture momentum preceded it.
 - Lists animate placement (`Modifier.animateItem()` — History, Home recent,
   Mint discovery), reveals expand/shrink, page dots stretch into pills.
+- **Route swap (Transfer, 2026-09-30)**: the arrow between the From and To
+  mints makes the two identities (avatar + name) travel to each other's slot on
+  `defaultSpatialSpec`; the balance lines belong to the slots and change in
+  place, and the arrow turns once and lands pointing down again. It is the one
+  place two elements exchange positions, so the travel is what says which mint
+  went where. A mint picked from the list has no old place to travel from and
+  fades in. Reduced motion cross-fades the identities where they sit.
+  Transfer rows use avatar rows instead of the pay screens' centered From/To
+  line (`MintTransferRouteBlock.kt`; see `docs/product/DESIGN.md`).
 - **Numbers are quiet**: `AmountText` cross-fades the whole string on change
   (`Spring.StiffnessMedium`, no per-digit slide) — the same restrained
   transition every other amount swap uses (`AmountFlipDisplay`, `BalanceDisplay`).

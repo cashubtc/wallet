@@ -38,6 +38,11 @@ data class WalletTransaction(
     val isUnfundedAddress: Boolean = false,
     /** Explicit CDK method; absent in older cached history. */
     val paymentMethod: PaymentMethodKind? = null,
+    /**
+     * Set when this row stands for a whole transfer between two held mints
+     * rather than for the Lightning payment that carried it.
+     */
+    val transfer: MintTransferLeg? = null,
 ) {
     val displayDescription: String?
         get() = memo?.takeIf(String::isNotBlank) ?: PaymentRequestDecoder.description(invoice)
@@ -68,6 +73,10 @@ data class WalletTransaction(
      */
     val mintQuoteIdForStatusRefresh: String?
         get() {
+            // A transfer still arriving is waiting on its destination quote.
+            if (transfer != null) {
+                return if (status == TransactionStatus.Pending) transfer.destinationQuoteId else null
+            }
             if (type != TransactionType.Incoming) return null
             if (kind != TransactionKind.Lightning && kind != TransactionKind.Onchain) return null
             if (invoice == null) return null
@@ -77,6 +86,19 @@ data class WalletTransaction(
             return quoteId ?: id
         }
 }
+
+/**
+ * The two ends of a transfer between held mints, carried by the one row that
+ * represents it.
+ */
+@Serializable
+data class MintTransferLeg(
+    val recordId: String,
+    val sourceMintUrl: String,
+    val destinationMintUrl: String,
+    /** Re-checked from the row's detail while the transfer is still arriving. */
+    val destinationQuoteId: String,
+)
 
 @Serializable
 enum class TransactionType {

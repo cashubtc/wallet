@@ -243,3 +243,83 @@ final class LiveNutshellPaymentUITests: LivePaymentUITestBase {
     override var backend: String { "nutshell" }
     func testReceivePayAndRelaunch() throws { try receiveThenPayAndReopenHistory() }
 }
+
+/// A transfer between two held mints through the real UI and real CDK: the
+/// source melts, the destination issues, and History keeps one row for it.
+final class LiveMintTransferUITests: LivePaymentUITestBase {
+    // Funded through Receive, so it has to settle its own invoices.
+    override var backend: String { "nutshell" }
+    private var destinationURL: String { fixtureURL + "/sessions/" + fixtureSession + "/mint/cdk" }
+
+    private func row(titled title: String) -> XCUIElementQuery {
+        app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", title))
+    }
+
+    func testTransferBetweenMintsLeavesOneHistoryRowAfterRelaunch() throws {
+        createWalletWithMint()
+        receiveThroughUI()
+
+        tapTab("Mints")
+        XCTAssertFalse(app.buttons["mints-transfer-button"].exists, "A transfer needs two mints")
+        tapWhenReady(app.buttons["mints-add-button"])
+        let field = app.textFields["mints-add-url-field"]
+        tapWhenReady(field)
+        field.typeText(destinationURL)
+        tapWhenReady(app.buttons["mints-add-submit-button"])
+        let destination = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", destinationURL)).firstMatch
+        XCTAssertTrue(destination.waitForExistence(timeout: 30))
+
+        tapWhenReady(app.buttons["mints-transfer-button"], timeout: 10)
+        XCTAssertTrue(app.buttons["Swap direction"].waitForExistence(timeout: 10))
+        for digit in ["4", "0"] { tapWhenReady(app.buttons[digit]) }
+        let entry = XCTAttachment(screenshot: app.screenshot())
+        entry.name = "transfer-entry"
+        entry.lifetime = .keepAlways
+        add(entry)
+        tapWhenReady(app.buttons["mints-transfer-continue"])
+
+        let commit = app.buttons["mints-transfer-commit"]
+        XCTAssertTrue(commit.waitForExistence(timeout: 30), "Both mints must quote before the transfer can be reviewed")
+        XCTAssertTrue(app.staticTexts["Network fee"].exists)
+        XCTAssertTrue(app.staticTexts["Total"].exists)
+        let review = XCTAttachment(screenshot: app.screenshot())
+        review.name = "transfer-review"
+        review.lifetime = .keepAlways
+        add(review)
+        // Nutshell 0.20.1 returns PENDING before its background melt task
+        // persists that state; pace the first status read past that race.
+        _ = try fixtureCall("/sessions/" + fixtureSession + "/faults", method: "POST", body: [
+            "method": "GET", "path": "/v1/melt/quote/bolt11/",
+            "action": "delay", "seconds": 1, "remaining": 1,
+        ])
+        tapWhenReady(commit)
+        XCTAssertTrue(app.staticTexts["Transfer Complete"].waitForExistence(timeout: 90),
+                      "The source must pay and the destination must issue before the transfer completes")
+        // The title is in the tree a frame before the face has drawn.
+        XCTAssertTrue(app.buttons["Done"].waitUntilEnabledAndHittable(timeout: 10))
+        let complete = XCTAttachment(screenshot: app.screenshot())
+        complete.name = "transfer-complete"
+        complete.lifetime = .keepAlways
+        add(complete)
+        tapWhenReady(app.buttons["Done"])
+
+        tapTab("History")
+        XCTAssertTrue(row(titled: "Transfer").firstMatch.waitForExistence(timeout: 10))
+        // One row for the transfer: neither leg shows as a Lightning payment,
+        // and the destination's invoice never shows as awaiting payment.
+        XCTAssertFalse(row(titled: "Lightning paid").firstMatch.exists)
+        XCTAssertFalse(row(titled: "Lightning invoice").firstMatch.exists)
+        let history = XCTAttachment(screenshot: app.screenshot())
+        history.name = "transfer-history"
+        history.lifetime = .keepAlways
+        add(history)
+
+        app.terminate()
+        app.launchEnvironment["RESET_WALLET"] = "0"
+        app.launch()
+        waitForMainTab(timeout: 30)
+        tapTab("History")
+        XCTAssertTrue(row(titled: "Transfer").firstMatch.waitForExistence(timeout: 10))
+        XCTAssertFalse(row(titled: "Lightning paid").firstMatch.exists)
+    }
+}

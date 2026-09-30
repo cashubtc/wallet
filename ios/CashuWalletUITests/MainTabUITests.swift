@@ -396,6 +396,131 @@ final class ActivityDetailUITests: XCTestCase {
         XCTAssertTrue(payment.waitForExistence(timeout: 5))
     }
 
+    /// A transfer is one receipt naming both mints, not a Lightning payment
+    /// with a proof to copy.
+    func testTransferReceiptNamesBothMints() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchEnvironment = ["SHOW_COMPONENT_CATALOG": "activity", "CI_INTEGRATION_TEST": "1"]
+        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launch()
+        defer { app.terminate() }
+
+        for (id, status) in [("transfer", "Completed"), ("arriving-transfer", "Arriving at other.example")] {
+            let row = app.buttons[id]
+            XCTAssertTrue(row.waitForExistence(timeout: 10))
+            row.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            XCTAssertTrue(app.staticTexts["From"].waitForExistence(timeout: 5))
+            XCTAssertTrue(app.staticTexts["To"].exists)
+            XCTAssertTrue(app.staticTexts[status].exists)
+            XCTAssertFalse(app.staticTexts["Mint"].exists)
+            XCTAssertFalse(app.staticTexts["Payment Proof"].exists)
+            XCTAssertFalse(app.descendants(matching: .any)["cashu.history.payment-code"].firstMatch.exists)
+            let attachment = XCTAttachment(screenshot: app.screenshot())
+            attachment.name = id
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            let title = app.navigationBars.firstMatch
+            title.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+                .press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.98)))
+            XCTAssertTrue(title.waitForNonExistence(timeout: 5))
+        }
+    }
+}
+
+/// The transfer sheet over deterministic catalog mints, without a live mint.
+final class MintTransferUITests: XCTestCase {
+    private func launch(contentSize: String? = nil) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchEnvironment = ["SHOW_COMPONENT_CATALOG": "transfer", "CI_INTEGRATION_TEST": "1"]
+        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        if let contentSize {
+            app.launchArguments += ["-UIPreferredContentSizeCategoryName", contentSize]
+        }
+        app.launch()
+        return app
+    }
+
+    private func capture(_ app: XCUIApplication, _ name: String) {
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    func testAmountSurvivesASwapAndIsCheckedAgainstTheNewSource() {
+        continueAfterFailure = false
+        let app = launch()
+        defer { app.terminate() }
+
+        let proceed = app.buttons["mints-transfer-continue"]
+        XCTAssertTrue(proceed.waitForExistence(timeout: 10))
+        XCTAssertFalse(proceed.isEnabled)
+        // The largest balance leaves first; the arrow is one tap from the other way.
+        XCTAssertTrue(app.buttons["From Alpine Mint"].exists)
+        XCTAssertTrue(app.buttons["To Harbor Mint"].exists)
+        XCTAssertTrue(app.buttons["Transfer maximum"].exists)
+        capture(app, "transfer-empty")
+
+        for key in ["5", "0", "0", "0"] { app.buttons[key].tap() }
+        XCTAssertTrue(proceed.isEnabled)
+        capture(app, "transfer-amount")
+
+        app.buttons["Swap direction"].tap()
+        XCTAssertTrue(app.buttons["From Harbor Mint"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["To Alpine Mint"].exists)
+        // 5,000 typed, 2,100 held: the amount is kept and now exceeds the source.
+        XCTAssertTrue(app.staticTexts["Insufficient balance"].waitForExistence(timeout: 5))
+        XCTAssertFalse(proceed.isEnabled)
+        capture(app, "transfer-swapped-over-balance")
+
+        app.buttons["Swap direction"].tap()
+        XCTAssertTrue(app.buttons["From Alpine Mint"].waitForExistence(timeout: 5))
+        XCTAssertTrue(proceed.isEnabled)
+    }
+
+    func testChoosingTheOtherEndsMintSwapsAndAnEmptyMintOffersNoMaximum() {
+        continueAfterFailure = false
+        let app = launch()
+        defer { app.terminate() }
+
+        let source = app.buttons["From Alpine Mint"]
+        XCTAssertTrue(source.waitForExistence(timeout: 10))
+        source.tap()
+        XCTAssertTrue(app.navigationBars["Transfer from"].waitForExistence(timeout: 5))
+        capture(app, "transfer-source-picker")
+        app.buttons["Harbor Mint"].tap()
+        XCTAssertTrue(app.buttons["From Harbor Mint"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["To Alpine Mint"].exists)
+
+        app.buttons["From Harbor Mint"].tap()
+        XCTAssertTrue(app.navigationBars["Transfer from"].waitForExistence(timeout: 5))
+        app.buttons["Meadow Mint"].tap()
+        XCTAssertTrue(app.buttons["From Meadow Mint"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["Transfer maximum"].exists)
+        capture(app, "transfer-empty-source")
+    }
+
+    func testLargeTextKeepsTheRouteAndThePadReachable() {
+        continueAfterFailure = false
+        let app = launch(contentSize: "UICTContentSizeCategoryAccessibilityL")
+        defer { app.terminate() }
+
+        let proceed = app.buttons["mints-transfer-continue"]
+        XCTAssertTrue(proceed.waitForExistence(timeout: 10))
+        // The pad takes most of the screen at this size, so the mints scroll
+        // above it. Nothing may overlap, and the pad stays put.
+        let source = app.buttons["From Alpine Mint"]
+        let swap = app.buttons["Swap direction"]
+        let destination = app.buttons["To Harbor Mint"]
+        XCTAssertTrue(source.isHittable)
+        XCTAssertTrue(app.buttons["Transfer maximum"].exists)
+        XCTAssertGreaterThanOrEqual(swap.frame.minY, source.frame.maxY)
+        XCTAssertGreaterThanOrEqual(destination.frame.minY, swap.frame.maxY - 1)
+        XCTAssertTrue(app.buttons["5"].isHittable)
+        XCTAssertTrue(proceed.isHittable)
+        capture(app, "transfer-large-text")
+    }
 }
 
 

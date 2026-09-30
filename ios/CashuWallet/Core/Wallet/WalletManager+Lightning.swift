@@ -181,7 +181,11 @@ extension WalletManager {
         }
     }
 
-    func meltTokens(quoteId: String, mintUrl: String? = nil) async throws -> MeltPaymentResult {
+    func meltTokens(
+        quoteId: String,
+        mintUrl: String? = nil,
+        selection: MeltProofSelection = .automatic
+    ) async throws -> MeltPaymentResult {
         let confirmation: LightningService.MeltConfirmation
         do {
             confirmation = try await operationCoordinator.perform(
@@ -191,7 +195,11 @@ extension WalletManager {
                 defaultFailureOutcome: .ambiguousFailure
             ) {
                 do {
-                    return try await self.lightningService.meltTokens(quoteId: quoteId, mintUrl: mintUrl)
+                    return try await self.lightningService.meltTokens(
+                        quoteId: quoteId,
+                        mintUrl: mintUrl,
+                        selection: selection
+                    )
                 } catch {
                     await self.captureWalletFailureDiagnostics(
                         kind: .melt,

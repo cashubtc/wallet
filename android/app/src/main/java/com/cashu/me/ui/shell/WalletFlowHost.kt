@@ -46,6 +46,17 @@ sealed interface WalletFlow {
      * dialog window, so the sheet has to close first.
      */
     data object ConnectMint : WalletFlow
+
+    /**
+     * Move ecash between two held mints (iOS `WalletFlow.transfer`). Fills the
+     * sheet like Send Ecash: the keypad needs the height. [openedFromMintUrl]
+     * is the mint whose row it was opened from, when it was.
+     */
+    data class Transfer(val openedFromMintUrl: String? = null) : WalletFlow
+
+    /** Whether the sheet wraps this flow's content rather than filling the screen. */
+    val wrapsContent: Boolean
+        get() = this != ReceiveLightning && this != SendEcash && this !is Transfer
 }
 
 /**
@@ -105,7 +116,7 @@ fun WalletFlowSheetHost(
     onBackdropVisibilityChanged: (Boolean) -> Unit,
     onDismissed: () -> Unit,
     snackbarHostState: SnackbarHostState,
-    compactContent: Boolean = flow != WalletFlow.ReceiveLightning && flow != WalletFlow.SendEcash,
+    compactContent: Boolean = flow?.wrapsContent != false,
     content: @Composable (flow: WalletFlow, close: () -> Unit) -> Unit,
 ) {
     if (flow == null) return

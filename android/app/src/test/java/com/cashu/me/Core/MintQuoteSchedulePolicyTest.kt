@@ -27,7 +27,7 @@ class MintQuoteSchedulePolicyTest {
         val oldRecord = record.copy(isComplete = true, nextAttemptAtEpochMillis = Long.MAX_VALUE)
         val restored = MintQuoteSchedulePolicy.select(
             listOf(pending.id), mapOf(pending.id to oldRecord), 700_000, false,
-            unsettledOnchainQuoteIds = setOf(pending.id),
+            reopenedQuoteIds = setOf(pending.id),
         )
         assertEquals(listOf(pending.id), restored.quoteIds)
     }

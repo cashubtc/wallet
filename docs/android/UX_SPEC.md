@@ -225,9 +225,10 @@ Pushed top-level destination from the Mints tab. `CenterAlignedTopAppBar(title =
 
 `LazyColumn` with:
 1. **Mints section** — each mint as a row (see anatomy below).
-2. **"Discover mints"** `ListItem` with leading `Icons.Outlined.Search` → pushes `MintDiscoveryScreen`.
-3. **Add mint inline form** — two `OutlinedTextField`s (URL, optional nickname) + `TextButton("Paste URL from clipboard")` + `FilledTonalButton("Add")` (disabled until URL non-empty and adding-in-progress is false).
-4. **Inline error** below the Add button on failure: `bodyMedium`, `error` color.
+2. **"Transfer"** `ListEntryRow` (leading `Icons.Outlined.SwapHoriz`), above "Add mint" and shown only when the wallet holds two or more mints → opens the full-height `WalletFlow.Transfer` sheet. The same action is in a mint row's long-press menu and starts the transfer on that mint (as the source when it holds a balance, otherwise as the destination). The sheet runs Entry (amount hero, From / To route block with Max and a swap arrow, number pad, "Continue") → Review (amount, From, To, Network fee, Total, "Transfer") → Status ("Transferring…" → "Transfer Complete"). The typed amount is what arrives; the fee is added at the source.
+3. **"Discover mints"** `ListItem` with leading `Icons.Outlined.Search` → pushes `MintDiscoveryScreen`.
+4. **Add mint inline form** — two `OutlinedTextField`s (URL, optional nickname) + `TextButton("Paste URL from clipboard")` + `FilledTonalButton("Add")` (disabled until URL non-empty and adding-in-progress is false).
+5. **Inline error** below the Add button on failure: `bodyMedium`, `error` color.
 
 **Mint row anatomy:**
 

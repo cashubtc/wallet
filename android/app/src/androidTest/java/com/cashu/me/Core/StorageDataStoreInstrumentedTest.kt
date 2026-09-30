@@ -14,6 +14,7 @@ import com.cashu.me.Core.Protocols.StorageKeys
 import com.cashu.me.Models.CashuRequest
 import com.cashu.me.Models.MintInfo
 import com.cashu.me.Models.MintQuoteScheduleRecord
+import com.cashu.me.Models.MintTransferRecord
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -47,6 +48,40 @@ class StorageDataStoreInstrumentedTest {
         reloaded.restoreWalletScopedData(snapshot)
         assertTrue(reloaded.isMintRemoved(mint.url))
         assertTrue(reloaded.loadMints().isEmpty())
+        reloaded.removeAllWalletData()
+    }
+
+    /** iOS parity: `testRecordsSurvivePersistenceAndAreWipedWithTheWallet`. */
+    @Test
+    fun mintTransfersSurviveReloadAndAreWipedWithTheWallet() {
+        val storeName = uniqueStoreName("mint_transfers")
+        val committed = MintTransferRecord(
+            id = "b",
+            sourceMintUrl = "https://source.example",
+            destinationMintUrl = "https://destination.example",
+            mintQuoteId = "mint-b",
+            meltQuoteId = "melt-b",
+            amount = 40,
+            createdAtEpochMillis = 0,
+            state = MintTransferRecord.State.Committed,
+        )
+        val halfQuoted = committed.copy(
+            id = "a",
+            mintQuoteId = "mint-a",
+            meltQuoteId = null,
+            state = MintTransferRecord.State.Draft,
+        )
+        WalletStore(context, storeName).saveMintTransfers(listOf(halfQuoted, committed))
+
+        val reloaded = WalletStore(context, storeName)
+        assertEquals(listOf(halfQuoted, committed), reloaded.loadMintTransfers())
+        // A wallet replacement that rolls back must bring in-flight transfers
+        // back with the wallet they belong to.
+        val snapshot = reloaded.snapshotWalletScopedData()
+        reloaded.removeAllWalletData()
+        assertTrue(reloaded.loadMintTransfers().isEmpty())
+        reloaded.restoreWalletScopedData(snapshot)
+        assertEquals(listOf(halfQuoted, committed), reloaded.loadMintTransfers())
         reloaded.removeAllWalletData()
     }
 

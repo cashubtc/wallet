@@ -27,6 +27,7 @@ import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -85,6 +86,7 @@ fun MintsScreen(
     settingsManager: SettingsManager,
     mintDiscoveryManager: MintDiscoveryManager,
     onOpenMint: (MintInfo) -> Unit,
+    onTransfer: (fromMintUrl: String?) -> Unit,
     onScan: () -> Unit,
     contentPadding: PaddingValues,
     allowCleartextLocalTestMints: Boolean = false,
@@ -117,6 +119,11 @@ fun MintsScreen(
     LaunchedEffect(Unit) {
         walletManager.refreshMintInfo()
     }
+
+    // A transfer needs two ends.
+    val canTransfer = walletState.mints.size >= 2
+    val actionCount = if (canTransfer) 3 else 2
+    val actionOffset = if (canTransfer) 1 else 0
 
     val topBarState = rememberTopAppBarState()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(state = topBarState)
@@ -169,6 +176,7 @@ fun MintsScreen(
                                 }
                             },
                             onRequestRemove = { pendingRemoval = mint },
+                            onTransfer = { onTransfer(mint.url) }.takeIf { canTransfer },
                         )
                     }
                 }
@@ -178,9 +186,30 @@ fun MintsScreen(
                 }
             }
 
+            if (canTransfer) {
+                item("transfer-row") {
+                    ListEntryRow(
+                        shape = groupItemShape(0, actionCount, MaterialTheme.shapes.medium),
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Outlined.SwapHoriz,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(CashuTheme.spacing.loose),
+                            )
+                        },
+                        title = "Transfer",
+                        onClick = { onTransfer(null) },
+                        modifier = Modifier
+                            .testTag(UiTestTags.MintsTransfer)
+                            .semantics { contentDescription = "Transfer between mints" },
+                    )
+                }
+            }
+
             item("add-row") {
                 ListEntryRow(
-                    shape = groupItemShape(0, 2, MaterialTheme.shapes.medium),
+                    shape = groupItemShape(actionOffset, actionCount, MaterialTheme.shapes.medium),
                     leadingIcon = {
                         Icon(
                             imageVector = Icons.Outlined.Add,
@@ -201,7 +230,7 @@ fun MintsScreen(
             item("discover-row") {
                 // Quiet nav-row weight: plain monochrome glyph, no filled circle.
                 ListEntryRow(
-                    shape = groupItemShape(1, 2, MaterialTheme.shapes.medium),
+                    shape = groupItemShape(actionOffset + 1, actionCount, MaterialTheme.shapes.medium),
                     leadingIcon = {
                         Icon(
                             imageVector = Icons.Outlined.Search,
@@ -286,6 +315,7 @@ private fun SwipeableMintRow(
     onOpen: () -> Unit,
     onSetActive: () -> Unit,
     onRequestRemove: () -> Unit,
+    onTransfer: (() -> Unit)? = null,
 ) {
     val dismissState = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
@@ -364,6 +394,7 @@ private fun SwipeableMintRow(
             onClick = onOpen,
             onSetActiveLongPress = onSetActive,
             onRemoveLongPress = onRequestRemove,
+            onTransferLongPress = onTransfer,
         )
     }
 }
@@ -377,6 +408,7 @@ private fun MintRow(
     onClick: () -> Unit,
     onSetActiveLongPress: () -> Unit = {},
     onRemoveLongPress: () -> Unit = {},
+    onTransferLongPress: (() -> Unit)? = null,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     Box(
@@ -468,6 +500,15 @@ private fun MintRow(
                 },
                 enabled = !isActive,
             )
+            if (onTransferLongPress != null) {
+                DropdownMenuItem(
+                    text = { Text("Transfer") },
+                    onClick = {
+                        menuOpen = false
+                        onTransferLongPress()
+                    },
+                )
+            }
             DropdownMenuItem(
                 text = {
                     Text("Remove", color = MaterialTheme.colorScheme.error)

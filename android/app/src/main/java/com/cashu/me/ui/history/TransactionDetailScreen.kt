@@ -168,13 +168,8 @@ fun TransactionReceiptSheet(
     val title = TransactionDisplay.title(current)
     val description = current.displayDescription?.takeIf { current.descriptionHash == null }
     val fields = remember(current, walletState.mints) {
-        TransactionDisplay.detailFields(current).filterNot { it.label == "Memo" }.map { field ->
-            if (field.label == "Mint") {
-                field.copy(value = current.mintUrl?.let {
-                    com.cashu.me.Core.mintDisplayName(it, walletState.mints)
-                } ?: field.value)
-            } else field
-        }
+        TransactionDisplay.detailFields(current) { com.cashu.me.Core.mintDisplayName(it, walletState.mints) }
+            .filterNot { it.label == "Memo" }
     }
     val explorerUrl = remember(current) { current.explorerUrl() }
     val pendingReceiveToken = current.token?.takeIf {
@@ -235,7 +230,7 @@ fun TransactionReceiptSheet(
                         style = InspectorRowStyle.History,
                         label = field.label,
                         value = field.value,
-                        valueMonospaced = field.label != "Mint" &&
+                        valueMonospaced = field.label !in MintNameLabels &&
                             (field.value.length > 24 || field.label in MonospacedLabels),
                         onClick = field.copyValue?.let { full ->
                             {
@@ -414,6 +409,8 @@ fun TransactionReceiptSheet(
 private val COMPLETED_RECEIPT_GLYPH_SIZE = 64.dp
 private val FAILED_GLYPH_SIZE = 64.dp
 
+// A mint's name reads as prose however long it is.
+private val MintNameLabels = setOf("Mint", "From", "To")
 private val MonospacedLabels = setOf("Request", "Address", "Hash", "Payment Proof", "Transaction ID", "Quote ID", "Mint")
 
 private fun copyConfirmationMessage(label: String): String = when (label) {

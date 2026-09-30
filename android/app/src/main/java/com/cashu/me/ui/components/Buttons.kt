@@ -55,7 +55,7 @@ import com.cashu.me.ui.theme.rememberReducedMotion
 
 // Full-width CTAs (incl. home Receive/Send). +10% over the original 58/16
 // iOS-large glass capsule sizing for a taller Android press target.
-private val ButtonMinHeight = 64.dp
+internal val ButtonMinHeight = 64.dp
 private val ButtonContentVertical = 18.dp
 private val ButtonProgressSize = 24.dp
 // Chevron-scale glyph inside GhostButton labels.

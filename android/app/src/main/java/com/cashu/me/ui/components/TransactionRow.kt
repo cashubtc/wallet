@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -60,6 +61,7 @@ fun TransactionRow(
 ) {
     val tx = model.transaction
     val incoming = tx.type == TransactionType.Incoming
+    val isTransfer = tx.transfer != null
     val unsettled = tx.isUnsettled
     val amountColor = when {
         unsettled -> MaterialTheme.colorScheme.onSurfaceVariant
@@ -74,7 +76,8 @@ fun TransactionRow(
     val semanticAmount = amountText.takeIf { showsAmount }
     val semanticParts = listOfNotNull(
         model.title,
-        if (incoming) "Incoming" else "Outgoing",
+        // A transfer is neither; its title already says what it is.
+        if (isTransfer) null else if (incoming) "Incoming" else "Outgoing",
         tx.displayStatusText,
         semanticAmount,
         model.secondaryAmount?.takeIf { showsAmount },
@@ -97,7 +100,7 @@ fun TransactionRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
     ) {
-        DirectionIcon(incoming = incoming)
+        DirectionIcon(incoming = incoming, isTransfer = isTransfer)
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = model.title,
@@ -135,9 +138,18 @@ fun TransactionRow(
     }
 }
 
-/** Always-muted directional arrow on a soft neutral circle (iOS TransactionIcon). */
+/**
+ * Always-muted directional arrow on a soft neutral circle (iOS TransactionIcon).
+ * A transfer between the user's own mints is neither received nor sent, so it
+ * takes a two-way arrow.
+ */
 @Composable
-internal fun DirectionIcon(incoming: Boolean) {
+internal fun DirectionIcon(incoming: Boolean, isTransfer: Boolean = false) {
+    val (glyph, description) = when {
+        isTransfer -> Icons.Filled.SwapHoriz to "Transfer"
+        incoming -> Icons.Filled.ArrowDownward to "Incoming"
+        else -> Icons.Filled.ArrowUpward to "Outgoing"
+    }
     Box(
         modifier = Modifier
             .size(DirectionIconCircle)
@@ -148,8 +160,8 @@ internal fun DirectionIcon(incoming: Boolean) {
         contentAlignment = Alignment.Center,
     ) {
         Icon(
-            imageVector = if (incoming) Icons.Filled.ArrowDownward else Icons.Filled.ArrowUpward,
-            contentDescription = if (incoming) "Incoming" else "Outgoing",
+            imageVector = glyph,
+            contentDescription = description,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(DirectionIconSize),
         )

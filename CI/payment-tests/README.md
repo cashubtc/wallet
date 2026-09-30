@@ -22,8 +22,11 @@ other units, so both platforms can use the sat+USD CDK fixture profile.
 
 ## Added required coverage
 
-`coverage.json` lists individual executable tests, not feature labels. Both
-platforms require 14 cases on PRs (12 native + 2 UI) and 19 on full/nightly runs.
+`coverage.json` lists individual executable tests, not feature labels. On PRs iOS
+requires 24 cases (21 native + 3 UI) and Android 21 (19 native + 2 UI); full/nightly
+runs add 5 more on each. iOS carries two extra cross-mint cases because its
+CDK-level tests import only `Cdk`, so the app's Lightning service is exercised
+separately; Android's cases already run through the production gateway.
 `check_coverage.py` reads JUnit XML or Xcode test-result trees and fails for any
 missing, skipped, or unsuccessful required case. The existing suites still run.
 
@@ -41,6 +44,12 @@ missing, skipped, or unsuccessful required case. The existing suites still run.
 | Nonzero input fees | Send-max at 1000 ppk, real redemption fee and net balances | PR |
 | P2PK on both mint implementations | Wrong key cannot credit; correct key subsequently succeeds | PR |
 | Concurrent redemption | Two separate receivers race; exactly one succeeds and total credit equals token value | PR |
+| Transfer between two held mints | Melt at one controlled mint pays the other's invoice; issuance only after that invoice is paid; one receipt per leg; source debit equals amount plus fee paid | PR |
+| Maximum transfer from a fee-charging mint | CDK's max quote pair at 1000 ppk; melting every proof without a swap costs the planned input fee, settles, and returns the unused reserve as change | PR |
+| Lost melt response during a transfer | Both melt paths recover to a paid quote with one receipt and no second debit; the destination issues once | PR |
+| Transfer interrupted between legs | Reopen SQLite after the melt; the persisted destination quote issues once, second sweep zero | PR |
+| Abandoned transfer quotes | Removing an unused pair leaves no unissued quote and the full balance spendable; once the melt has started the destination quote is kept | PR |
+| Changed input fee before a maximum transfer | A proof set that no longer costs the planned fee is released unspent, and the same quote still settles | PR |
 | Real native UI on both mints | Receive 100, pay 21, history survives relaunch (iOS) / activity recreation (Android) | PR |
 | Cashu Request HTTP | Fixed and amountless request, matching request ID, actual recipient redemption, exact sender debit on the zero-fee mint | Full |
 | Cashu Request delivery failure | Failed HTTP delivery leaves a reclaimable operation; revoke restores balance | Full |

@@ -184,10 +184,10 @@ What this system explicitly rejects, pulled verbatim from docs/product/PRODUCT.m
   detail needs separation. Home and History activity rows use spacing alone.
   No card stacks, no nested containers — with one narrow, documented exception
   for the seed cards (The Seed Card Exception, §5).
-- Motion is exponential ease-out, in the 180–350ms range. Seven named animations
+- Motion is exponential ease-out, in the 180–350ms range. Eight named animations
   carry the full vocabulary: row stagger, badge symbol-replace, chooser cascade,
   press feedback, sheet cross-fade (in-sheet flow swap), payment-received
-  celebration, and active progress. Nothing decorative beyond that.
+  celebration, active progress, and route swap. Nothing decorative beyond that.
 - One inspector pattern for editable detail rows (Cashu Request → Mint, Amount):
   secondary label + trailing value (regular weight, adaptive wrapping) + trailing
   `pencil` hint glyph. Tap opens a `.medium`-detent sub-sheet rather than pushing
@@ -209,6 +209,15 @@ What this system explicitly rejects, pulled verbatim from docs/product/PRODUCT.m
   amount context across entry and confirmation routes. Outgoing entry retains
   a separate available-balance line and Max. Single-mint wallets have no picker
   chevron. The identity and Max retain native touch targets.
+- *Transfer is the exception (2026-09-30).* Moving ecash between two held mints
+  has no outside party: both ends are the user's own mints and choosing between
+  them is the point of the screen. The amount hero stays on top; beneath it a
+  route block stacks a From row and a To row, each with the mint's avatar, name
+  and balance, split by one hairline that carries the swap control. Top is always
+  From. The available line and Max belong to the From slot, not to a mint, so
+  they stay put when the mints trade places. No fill, card or pill. With exactly
+  two mints the rows have no chevron and the swap control is the only way to
+  change the pair. `MintTransferRouteView` (iOS) / `MintTransferRoute` (Android).
 - Payment facts use regular footnote/bodyMedium type, secondary labels, primary
   values, 8pt/dp vertical padding, and a centered 320pt/dp maximum column width.
   Editable rows retain at least 44pt/48dp touch height. At accessibility sizes,
@@ -947,6 +956,15 @@ The canonical list pattern. Defined in
   only once the invoice is paid. "Received" must never assert money that hasn't
   arrived; this also covers the expired state, which keeps the invoice title.
   Mirrors the request-row precedent `CashuRequest.displayTitle`.)*
+  *(2026-09-30: a transfer between two held mints is one row titled
+  **"Transfer"** with a two-way `arrow.left.arrow.right` in the leading circle.
+  It is neither received nor sent: the amount is unsigned `.primary`, never
+  green, and no received beat plays. CDK records the transfer as a Lightning
+  payment at one mint and a Lightning receipt at the other;
+  `MintTransferProjection` folds the pair into the payment's row when the wallet
+  holds a record linking them, and leaves both rows as they are when it does
+  not. While the destination has yet to issue, the row is pending and its detail
+  says which leg is outstanding. The detail names both mints as From and To.)*
   *(2026-10-02: the on-chain counterpart — a deposit address nothing has reached
   yet titles as **"Bitcoin address"** — `isUnfundedAddress` — with no trailing
   amount (the any-amount request-row precedent), flipping to "Bitcoin received"
@@ -1440,8 +1458,8 @@ artifact-display sheet makes it a learnable habit, not a per-screen guess.
 
 ## 6. Motion Vocabulary
 
-Seven named animations carry the entire system. New custom motion must justify
-why none of these fit before it earns its own name. All seven honor
+Eight named animations carry the entire system. New custom motion must justify
+why none of these fit before it earns its own name. All eight honor
 `accessibilityReduceMotion` (existing code is not yet uniformly compliant; new
 code must be).
 
@@ -1508,6 +1526,15 @@ code must be).
    not user-visible work and never shows a spinner or "Checking…" (removed
    2026-10-02: it flickered on every poll and jumped the layout). Reduce Motion retains clear state changes
    with opacity and removes decorative spatial movement.
+8. **Route swap** *(added 2026-09-30 — Transfer)* — tapping the arrow between
+   the From and To mints makes the two identities (avatar + name) travel to each
+   other's slot on `.snappy(0.28)`, while the arrow makes one full turn and
+   lands pointing down again: the mints trade places, the direction does not.
+   The balance lines belong to the slots and change in place with a numeric
+   content transition. None of the seven fit: this is the one place two elements
+   exchange positions, and the travel is what tells the user which mint went
+   where. Reduce Motion replaces the travel with an opacity cross-fade in place.
+   Android runs the same exchange on its spatial spring.
 
 **Allowed easings.** `.smooth(duration:)` for entrances and reflows.
 `.snappy(duration:)` for state flips and presses (.09 / .18 / .25 / .28 / .35
@@ -1779,7 +1806,7 @@ drags still scroll, so it adds nothing to either path's cost.
   regardless of the phone clock or an absent server timestamp. Other payment
   flows retain their existing native presentation host.
 - **Don't** add bounce, elastic, or new `.spring` parameters outside the
-  named seven (see § Motion Vocabulary). The single allowed spring is the
+  named eight (see § Motion Vocabulary). The single allowed spring is the
   payment-received celebration at `(0.5, 0.7)`; everything else lives in
   `.smooth(0.32)`, `.snappy(0.09–0.35)`, or `.easeInOut(0.2–0.3)`.
 - **Don't** push a sub-view inside a sheet when the inner state is just

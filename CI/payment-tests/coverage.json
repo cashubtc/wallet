@@ -13,8 +13,18 @@
       "PaymentSafetyIntegrationTests/testFeeChargingMintMaxSendAndReceiveConserveValue",
       "PaymentSafetyIntegrationTests/testP2PKWrongKeyThenCorrectKeyOnBothMints",
       "PaymentSafetyIntegrationTests/testConcurrentReceiversCannotDoubleCredit",
+      "PaymentSafetyIntegrationTests/testCrossMintTransferExactConservesValue",
+      "PaymentSafetyIntegrationTests/testCrossMintMaxOnFeeMintIsAcceptedByMint",
+      "PaymentSafetyIntegrationTests/testCrossMintTransferLostMeltResponseDoesNotDoubleDebit",
+      "PaymentSafetyIntegrationTests/testCrossMintMaxLostMeltResponseRecoversChange",
+      "PaymentSafetyIntegrationTests/testCrossMintTransferReopenBetweenMeltAndMintIssuesExactlyOnce",
+      "PaymentSafetyIntegrationTests/testAbandonedCrossMintPlanLeavesNoUnissuedQuote",
+      "CrossMintServiceIntegrationTests/testMaxQuoteThenSkipSwapMeltSettlesAndKeepsTheChange",
+      "CrossMintServiceIntegrationTests/testChangedInputFeeCancelsBeforeAnythingIsSpent",
+      "CrossMintServiceIntegrationTests/testUnusedQuotesAreRemovedOnlyBeforeTheMeltStarts",
       "LiveCdkPaymentUITests/testReceivePayAndRelaunch",
-      "LiveNutshellPaymentUITests/testReceivePayAndRelaunch"
+      "LiveNutshellPaymentUITests/testReceivePayAndRelaunch",
+      "LiveMintTransferUITests/testTransferBetweenMintsLeavesOneHistoryRowAfterRelaunch"
     ],
     "full": [
       "PaymentExtendedIntegrationTests/testCashuRequestFixedAndAmountlessHttpDelivery",
@@ -38,6 +48,13 @@
       "PaymentSafetyLocalMintTest/feeChargingMintMaxSendAndReceiveConserveValue",
       "PaymentSafetyLocalMintTest/p2pkWrongKeyThenCorrectKeyOnBothMints",
       "PaymentSafetyLocalMintTest/concurrentReceiversCannotDoubleCredit",
+      "PaymentSafetyLocalMintTest/crossMintTransferExactConservesValue",
+      "PaymentSafetyLocalMintTest/crossMintMaxOnFeeMintIsAcceptedByMint",
+      "PaymentSafetyLocalMintTest/crossMintTransferLostMeltResponseDoesNotDoubleDebit",
+      "PaymentSafetyLocalMintTest/crossMintMaxLostMeltResponseRecoversChange",
+      "PaymentSafetyLocalMintTest/crossMintTransferReopenBetweenMeltAndMintIssuesExactlyOnce",
+      "PaymentSafetyLocalMintTest/abandonedCrossMintPlanLeavesNoUnissuedQuote",
+      "PaymentSafetyLocalMintTest/crossMintMaxChangedInputFeeCancelsBeforeAnythingIsSpent",
       "LivePaymentJourneyTest/cdkReceivePayAndReopenHistory",
       "LivePaymentJourneyTest/nutshellReceivePayAndReopenHistory"
     ],

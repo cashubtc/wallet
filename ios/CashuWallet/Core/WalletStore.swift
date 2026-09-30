@@ -107,6 +107,15 @@ final class WalletStore {
         set(schedules, forKey: StorageKeys.mintQuoteSchedules)
     }
 
+    /// Links between the two quotes of each transfer between held mints.
+    func loadMintTransfers() -> [MintTransferRecord] {
+        value(forKey: StorageKeys.mintTransfers) ?? []
+    }
+
+    func saveMintTransfers(_ records: [MintTransferRecord]) {
+        set(records, forKey: StorageKeys.mintTransfers)
+    }
+
     /// Last successful online keyset refresh per mint. Startup uses this to
     /// avoid contacting every configured mint on every app launch.
     func loadMintKeysetRefreshTimestamps() -> [String: TimeInterval] {

@@ -61,6 +61,9 @@ fun AmountFlipDisplay(
     useBitcoinSymbol: Boolean,
     modifier: Modifier = Modifier,
     entryRaw: String? = null,
+    // The rung the live entry is set at. Screens that share the amount's
+    // space with other content step it down rather than crowd them.
+    entryScale: AmountScale = AmountScale.Hero,
     primaryTextStyle: TextStyle? = null,
     primaryScale: AmountScale? = null,
     primaryAccessibilityPrefix: String? = null,
@@ -139,7 +142,7 @@ fun AmountFlipDisplay(
             // opposite unit would briefly mint-unit-misread fiat digits as sats.
             AmountHero(
                 parts = display.primaryParts,
-                scale = AmountScale.Hero,
+                scale = entryScale,
                 color = color,
                 accessibilityPrefix = primaryAccessibilityPrefix,
             )

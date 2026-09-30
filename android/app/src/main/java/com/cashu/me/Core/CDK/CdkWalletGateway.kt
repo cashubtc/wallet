@@ -1,6 +1,7 @@
 package com.cashu.me.Core.CDK
 
 import java.net.URI
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.flow.Flow
 import org.cashudevkit.PendingMelt
 import com.cashu.me.Core.NPCQuote
@@ -138,7 +139,59 @@ interface CdkWalletGateway {
     /** Extract the encoded token a send saga persists until the token is
      * claimed; null for non-send or already-finalized operations. */
     suspend fun pendingSendTokenFromSaga(operationId: String): String?
+
+    /**
+     * Quote the largest amount [sourceMintUrl] can move to [destinationMintUrl]
+     * in one Lightning payment: a BOLT11 mint quote at the destination and the
+     * melt quote at the source that pays it.
+     *
+     * CDK probes to find that amount, and every probe leaves a quote at both
+     * mints that cannot be cancelled. Call this once for an explicit request,
+     * never speculatively. CDK keeps only the returned pair locally.
+     */
+    suspend fun createMaxCrossMintQuotes(sourceMintUrl: String, destinationMintUrl: String): CrossMintQuotes
+
+    /**
+     * Melt every unspent sat proof at [mintUrl] directly, with no pre-melt swap.
+     * A max cross-mint quote sizes its amount on the input fee of exactly this
+     * proof set, so a swap would charge a second fee the balance no longer
+     * covers. Throws [MeltInputFeeChangedException], having spent nothing, when
+     * the proofs on hand no longer cost [expectedInputFee].
+     */
+    suspend fun meltAllUnspentSkippingSwap(quoteId: String, mintUrl: String, expectedInputFee: Long): MeltConfirmation
+
+    /**
+     * Forget a quote pair the user backed out of, so the destination quote
+     * stops reading as an invoice awaiting payment. Returns false, and removes
+     * nothing, once there is any local evidence the melt started: from then on
+     * the destination quote is the only handle on money that may be in flight.
+     * A failed or compensated melt still counts as started — the wallet can
+     * believe a payment failed that the mint went on to make.
+     */
+    suspend fun removeUnusedQuotes(mintQuoteId: String, meltQuoteId: String? = null): Boolean
+
+    /**
+     * Whether local state shows a melt is over and did not pay: the quote is
+     * unpaid, no operation holds it, and no attempt is still pending. False
+     * whenever that cannot be established.
+     */
+    suspend fun meltEndedUnpaid(meltQuoteId: String?): Boolean
 }
+
+/** A destination mint quote and the source melt quote that pays it. */
+data class CrossMintQuotes(
+    val mintQuote: MintQuoteInfo,
+    val meltQuote: MeltQuoteInfo,
+    /** Input fee for spending every unspent source proof. Zero on most mints. */
+    val inputFee: Long,
+)
+
+/**
+ * The proofs on hand no longer cost what the quote was sized for, so melting
+ * them would not leave the amount the quote promised. Nothing was sent.
+ */
+class MeltInputFeeChangedException(val expected: Long, val actual: Long) :
+    IllegalStateException("Melt input fee changed from $expected to $actual.")
 
 class MultiUnitWalletRemovalException(
     val registeredUnits: List<String>,
@@ -194,6 +247,12 @@ data class ForeignNfcSettlement(
 data class MeltConfirmation(
     val result: MeltPaymentResult,
     val pendingMelt: PendingMelt?,
+    /**
+     * Set when a confirmation that cannot answer asynchronously outlived the
+     * cap: the still-running native call. It is never cancelled mid-payment;
+     * the manager observes it to refresh the moment settlement lands.
+     */
+    val residualSettlement: Deferred<*>? = null,
 )
 
 /** Counts from CDK's `recoverIncompleteSagas()` for one mint. */

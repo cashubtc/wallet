@@ -48,6 +48,10 @@ struct PaymentStatusView: View {
     /// still happening.
     var settlementPending: Bool = false
 
+    /// What is still happening while `settlementPending`, when it is something
+    /// other than a payment the mint is settling.
+    var settlementMessage: String? = nil
+
     /// Optional custom failure CTA (overrides the default Done / Try Again button).
     var failureCTA: FailureCTA? = nil
 
@@ -77,6 +81,7 @@ struct PaymentStatusView: View {
         successTitle: String = "Payment Sent!",
         failureTitle: String = "Payment Failed",
         settlementPending: Bool = false,
+        settlementMessage: String? = nil,
         failureCTA: FailureCTA? = nil,
         onDone: @escaping () -> Void,
         onRetry: @escaping () -> Void
@@ -87,6 +92,7 @@ struct PaymentStatusView: View {
         self.successTitle = successTitle
         self.failureTitle = failureTitle
         self.settlementPending = settlementPending
+        self.settlementMessage = settlementMessage
         self.failureCTA = failureCTA
         self.onDone = onDone
         self.onRetry = onRetry
@@ -117,7 +123,8 @@ struct PaymentStatusView: View {
     private var statusMessage: String? {
         if case .failure(let message, _, _) = phase, !message.isEmpty { return message }
         if case .success = phase, settlementPending {
-            return "The mint accepted this payment and is settling it. Your balance will update automatically."
+            return settlementMessage
+                ?? "The mint accepted this payment and is settling it. Your balance will update automatically."
         }
         return nil
     }

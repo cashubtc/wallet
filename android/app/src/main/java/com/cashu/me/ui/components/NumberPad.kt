@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -32,6 +33,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.cashu.me.Core.AmountFormatter
 import com.cashu.me.Core.UnitAmountEntry
@@ -139,6 +141,16 @@ fun NumberPad(
  * and a bottom spacer sized to the real navigation-bar/gesture-bar inset.
  * Centralizing this stops each screen from hand-deriving its own spacing.
  */
+/**
+ * The least height [NumberPadFooter] takes at ordinary text sizes: the pad at
+ * its minimum key height, the button, the gaps around it and the navigation
+ * inset. For screens that have to decide what else fits above the pad.
+ */
+@Composable
+internal fun numberPadFooterMinimumHeight(): Dp =
+    MinimumKeyHeight * 4 + KeyGap * 3 + CashuTheme.spacing.comfortable * 2 + ButtonMinHeight +
+        WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+
 @Composable
 fun NumberPadFooter(
     amount: String,

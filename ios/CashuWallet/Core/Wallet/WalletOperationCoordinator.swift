@@ -31,6 +31,7 @@ actor WalletOperationCoordinator {
         case restore
         case send
         case tokenStatus
+        case transferQuote
     }
 
     enum Priority: Int, Sendable {

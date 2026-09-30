@@ -1,5 +1,8 @@
 package com.cashu.me.Core.Wallet
 
+import com.cashu.me.Core.MintTransferEligibility
+import com.cashu.me.Models.MintTransferException
+
 /** Severity tier the UI should render a wallet message at (iOS ErrorSeverity). */
 enum class WalletMessageSeverity { Error, Caution, Info }
 
@@ -43,11 +46,14 @@ object WalletErrorMessages {
         "The wallet couldn't finish that action. Try again in a moment."
 
     fun classify(error: Throwable): WalletMessage {
-        // This is an application safety policy, not a transport failure. Its
+        // These are application safety policies, not transport failures. Their
         // guidance contains "connected", which the raw network matcher catches.
-        if (error is com.cashu.me.Core.CDK.MultiUnitWalletRemovalException) {
+        if (error is com.cashu.me.Core.CDK.MultiUnitWalletRemovalException ||
+            error is com.cashu.me.Core.MintTransferInProgressException
+        ) {
             return WalletMessage(checkNotNull(error.message))
         }
+        if (error is MintTransferException) return transferMessage(error)
         if (error is com.cashu.me.Core.CDK.MeltPaymentRecoveryException) {
             return WalletMessage(
                 text = checkNotNull(error.message),
@@ -78,6 +84,29 @@ object WalletErrorMessages {
             return WalletMessage(extracted)
         }
         return WalletMessage(GENERIC_FALLBACK)
+    }
+
+    private fun transferMessage(failure: MintTransferException): WalletMessage = when (failure) {
+        is MintTransferException.NotEligible -> when (failure.blocker) {
+            MintTransferEligibility.Blocker.SameMint ->
+                caution("Choose two different mints.")
+            MintTransferEligibility.Blocker.SourceCannotSend ->
+                caution("This mint can't send over Lightning. Choose another mint.")
+            MintTransferEligibility.Blocker.DestinationCannotReceive ->
+                caution("This mint can't receive over Lightning. Choose another mint.")
+        }
+        is MintTransferException.InsufficientBalance ->
+            error("Not enough balance.")
+        is MintTransferException.NothingToTransfer ->
+            caution("Nothing left to transfer after fees.")
+        is MintTransferException.QuoteMismatch ->
+            error("The mint returned an unexpected quote. Try again or use another mint.")
+        is MintTransferException.PlanExpired ->
+            caution("This quote expired. Review the transfer again.")
+        is MintTransferException.PlanStale ->
+            caution("The transfer changed. Review it again.")
+        is MintTransferException.PaymentReturned ->
+            error("The transfer didn't go through. Your funds were not moved.")
     }
 
     // Substring table ported from iOS WalletErrors.swift `classified(forRawMessage:)`.
@@ -174,10 +203,11 @@ object WalletErrorMessages {
             has("amount out", "outside of allowed", "amount is outside", "amount must be between") ->
                 caution("This amount is outside the mint's limits. Try a different amount.")
 
-            has("minting disabled") ->
+            // CDK words these "Minting is disabled" / "Melting is disabled".
+            has("minting disabled", "minting is disabled") ->
                 caution("This mint has paused deposits. Choose another mint.")
 
-            has("melting disabled") ->
+            has("melting disabled", "melting is disabled") ->
                 caution("This mint has paused payments. Choose another mint.")
 
             has("clear auth required") ->

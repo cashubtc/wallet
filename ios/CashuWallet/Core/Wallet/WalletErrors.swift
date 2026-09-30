@@ -47,6 +47,29 @@ enum WalletErrorMessage {
             }
         }
 
+        if let transferError = error as? MintTransferError {
+            switch transferError {
+            case .notEligible(.sameMint):
+                return .caution("Choose two different mints.")
+            case .notEligible(.sourceCannotSend):
+                return .caution("This mint can't send over Lightning. Choose another mint.")
+            case .notEligible(.destinationCannotReceive):
+                return .caution("This mint can't receive over Lightning. Choose another mint.")
+            case .insufficientBalance:
+                return .error("Not enough balance.")
+            case .nothingToTransfer:
+                return .caution("Nothing left to transfer after fees.")
+            case .quoteMismatch:
+                return .error("The mint returned an unexpected quote. Try again or use another mint.")
+            case .planExpired:
+                return .caution("This quote expired. Review the transfer again.")
+            case .planStale:
+                return .caution("The transfer changed. Review it again.")
+            case .paymentReturned:
+                return .error("The transfer didn't go through. Your funds were not moved.")
+            }
+        }
+
         if error is KeychainError {
             return .error("Couldn't access the wallet's secure storage. Restart the app and try again.")
         }
@@ -306,11 +329,12 @@ enum WalletErrorMessage {
             return .caution("This amount is outside the mint's limits. Try a different amount.")
         }
 
-        if normalized.contains("minting disabled") {
+        // CDK words these "Minting is disabled" / "Melting is disabled".
+        if normalized.contains("minting disabled") || normalized.contains("minting is disabled") {
             return .caution("This mint has paused deposits. Choose another mint.")
         }
 
-        if normalized.contains("melting disabled") {
+        if normalized.contains("melting disabled") || normalized.contains("melting is disabled") {
             return .caution("This mint has paused payments. Choose another mint.")
         }
 

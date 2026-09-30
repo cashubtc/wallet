@@ -8,9 +8,16 @@ import SwiftUI
 /// carried solely by the trailing amount. See DESIGN.md — History Rows.
 struct TransactionIcon: View {
     let direction: WalletTransaction.TransactionType
+    /// A transfer between the user's own mints is neither received nor sent.
+    var isTransfer = false
+
+    private var glyph: String {
+        if isTransfer { return "arrow.left.arrow.right" }
+        return direction == .incoming ? "arrow.down" : "arrow.up"
+    }
 
     var body: some View {
-        Image(systemName: direction == .incoming ? "arrow.down" : "arrow.up")
+        Image(systemName: glyph)
             .font(.system(size: 16, weight: .medium))
             .foregroundStyle(.secondary)
             .frame(width: 36, height: 36)
@@ -23,6 +30,7 @@ struct TransactionIcon: View {
     VStack(spacing: 20) {
         Label { Text("Received") } icon: { TransactionIcon(direction: .incoming) }
         Label { Text("Sent") } icon: { TransactionIcon(direction: .outgoing) }
+        Label { Text("Transfer") } icon: { TransactionIcon(direction: .outgoing, isTransfer: true) }
     }
     .padding()
 }

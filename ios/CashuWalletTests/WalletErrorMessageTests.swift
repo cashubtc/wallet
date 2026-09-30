@@ -108,6 +108,31 @@ final class WalletErrorMessageTests: XCTestCase {
         XCTAssertFalse(text.contains("`0`"))
         XCTAssertFalse(text.lowercased().contains("must be between"))
     }
+
+    /// A mint that pauses a direction answers with CDK's "Minting is disabled" /
+    /// "Melting is disabled". The rule used to match only the wording without
+    /// "is", so the raw sentence was what the user read.
+    func testCDKPausedMintWordingMapsToPausedCopy() {
+        let deposits = RawMintError(description: "Minting is disabled").walletMessage
+        XCTAssertEqual(deposits.text, "This mint has paused deposits. Choose another mint.")
+        XCTAssertEqual(deposits.severity, .caution)
+
+        let payments = RawMintError(description: "Melting is disabled").walletMessage
+        XCTAssertEqual(payments.text, "This mint has paused payments. Choose another mint.")
+        XCTAssertEqual(payments.severity, .caution)
+    }
+
+    func testLegacyPausedMintWordingsStillMapToPausedCopy() {
+        XCTAssertEqual(
+            RawMintError(description: "Minting disabled").userFacingWalletMessage,
+            "This mint has paused deposits. Choose another mint."
+        )
+        XCTAssertEqual(
+            RawMintError(description: "Melting disabled").userFacingWalletMessage,
+            "This mint has paused payments. Choose another mint."
+        )
+    }
+
     func testLightningDNSFailureNamesTheServiceWithoutRawDetails() {
         let error = RawMintError(description: "errorMessage=HTTP request failed: failed to lookup address information: No address associated with hostname")
         XCTAssertEqual(

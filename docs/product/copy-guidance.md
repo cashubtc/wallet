@@ -74,6 +74,13 @@ Cashu Request payment, and NFC receive (Android-only surface).
   `successTitle: "Payment Received!"`; Android `PaymentStatusScreen` terminals in
   `ReceiveLightningScreen`, `ReceiveTokenReview`, `CashuRequestDetailScreen`,
   and `NfcReceiveUi` use the same title.
+- **Not a transfer.** Moving ecash between two of the user's own mints ends on
+  the same status screen but is not a payment received: nothing new landed in
+  the wallet. Its terminal says "Transfer Complete" on iOS and "Transfer
+  complete" on Android (each platform's send-terminal casing), "Transfer
+  Processing" / "Transfer processing" while a leg is still settling, and
+  "Transfer Failed" / "Transfer failed" otherwise. The received celebration
+  never plays for a transfer, including when a later sweep finishes it.
 
 ### 2. History row / transaction detail title (factual record)
 
@@ -87,6 +94,11 @@ receipt.
   counterparts). Single source of truth per platform (iOS
   `WalletTransaction.displayTitle`, Android `TransactionDisplay.title`) so a
   row and the detail it opens read identically.
+- **Transfers:** moving ecash between two of the user's own mints is titled
+  **"Transfer"** with no verb — nothing was received and nothing was sent. The
+  detail names the mints as "From" and "To". While the destination has yet to
+  issue the ecash the status reads "Arriving at {mint}"; while the payment is
+  still settling, "Payment in progress".
 
 ### 3. Transient live confirmation (brief signal)
 

@@ -141,10 +141,10 @@ private const val CASHU_FEE_DEBOUNCE_MS = 250L
 // band (amount / quote spinner / caution face) lands at the same Y as the
 // status terminal's glyph — the pay transition then keeps the spinner still
 // instead of jumping.
-private const val ConfirmTopFraction = 0.16f
-private val ConfirmHeroMinHeight = 220.dp
+internal const val ConfirmTopFraction = 0.16f
+internal val ConfirmHeroMinHeight = 220.dp
 private val ConfirmGlyphSlotSize = 72.dp
-private val ConfirmGlyphSize = 64.dp
+internal val ConfirmGlyphSize = 64.dp
 
 private enum class SendStep { Input, Amount, Confirm }
 
@@ -1585,7 +1585,7 @@ private fun ConfirmFace(
  * lives in the pinned bottom slot.
  */
 @Composable
-private fun ConfirmCautionFace(message: String, detail: String? = null) {
+internal fun ConfirmCautionFace(message: String, detail: String? = null) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.comfortable),

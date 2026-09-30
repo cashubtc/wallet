@@ -569,7 +569,7 @@ struct MainWalletView: View {
 
     @ViewBuilder
     private func rowIcon(for transaction: WalletTransaction) -> some View {
-        TransactionIcon(direction: transaction.type)
+        TransactionIcon(direction: transaction.type, isTransfer: transaction.transfer != nil)
     }
 
     private func rowTitle(for transaction: WalletTransaction) -> String {

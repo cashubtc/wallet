@@ -77,6 +77,10 @@ struct WalletTransaction: Identifiable {
     /// "Bitcoin address" and carries no amount until a deposit is seen.
     var isUnfundedAddress: Bool = false
 
+    /// Set when this row stands for a whole transfer between two held mints
+    /// rather than for the Lightning payment that carried it.
+    var transfer: MintTransferLeg? = nil
+
     /// The Quiet Pending treatment (bare, muted amount) covers expired too:
     /// an expired invoice never credited the balance.
     var isUnsettled: Bool {
@@ -88,6 +92,8 @@ struct WalletTransaction: Identifiable {
     /// Expired unpaid invoices are included so a late-paid NUT-04
     /// quote can still mint after the invoice timer.
     var mintQuoteIdForStatusRefresh: String? {
+        // A transfer still arriving is waiting on its destination quote.
+        if let transfer { return status == .pending ? transfer.destinationQuoteID : nil }
         guard type == .incoming else { return nil }
         guard kind == .lightning || kind == .onchain else { return nil }
         guard !isPendingReceiveToken else { return nil }
@@ -135,6 +141,7 @@ struct WalletTransaction: Identifiable {
     /// paid"). Single source of truth for the History/Home rows and the
     /// transaction detail nav title.
     var displayTitle: String {
+        if transfer != nil { return "Transfer" }
         if isPendingReceiveToken { return "Ecash to claim" }
         // Nothing has been received while the invoice awaits payment.
         if isUnpaidInvoice { return "Lightning invoice" }
@@ -191,6 +198,16 @@ struct WalletTransaction: Identifiable {
             }
         }
     }
+}
+
+/// The two ends of a transfer between held mints, carried by the one row that
+/// represents it.
+struct MintTransferLeg: Equatable {
+    let recordID: String
+    let sourceMintURL: String
+    let destinationMintURL: String
+    /// Re-checked from the row's detail while the transfer is still arriving.
+    let destinationQuoteID: String
 }
 
 extension Array where Element == WalletTransaction {
@@ -306,5 +323,72 @@ enum MintReceiptProjection {
             hidden.formUnion(indices.filter { $0 != winner })
         }
         return transactions.enumerated().filter { !hidden.contains($0.offset) }.map(\.element)
+    }
+}
+
+/// A transfer between two held mints is one event to the user, but CDK records
+/// it as a Lightning payment at the source and a Lightning receipt at the
+/// destination, with nothing connecting them. Given the wallet's own record of
+/// the pair, show one row: the source payment, retitled, with the destination
+/// receipt folded into its status. Without a record, or without the source
+/// payment to anchor on, the CDK rows are left exactly as they are.
+enum MintTransferProjection {
+    static func project(
+        _ transactions: [WalletTransaction],
+        records: [MintTransferRecord],
+        mintName: (String) -> String
+    ) -> [WalletTransaction] {
+        guard !records.isEmpty else { return transactions }
+        var rows = transactions
+        var hidden = Set<Int>()
+
+        for record in records where record.state != .draft {
+            guard let meltQuoteID = record.meltQuoteID,
+                  let anchor = rows.firstIndex(where: {
+                      $0.type == .outgoing && $0.quoteId == meltQuoteID
+                          && sameMint($0.mintUrl, record.sourceMintURL)
+                  }) else { continue }
+            // A row retained from a failed read was folded on an earlier load.
+            // Its status is already the transfer's, not the payment's, so it
+            // is only ever moved forward to completed.
+            let alreadyFolded = rows[anchor].transfer != nil
+            let arrivals = rows.indices.filter {
+                rows[$0].type == .incoming && rows[$0].quoteId == record.mintQuoteID
+                    && sameMint(rows[$0].mintUrl, record.destinationMintURL)
+            }
+            let issued = record.state == .completed || arrivals.contains { rows[$0].status == .completed }
+
+            var row = rows[anchor]
+            row.transfer = MintTransferLeg(
+                recordID: record.id,
+                sourceMintURL: record.sourceMintURL,
+                destinationMintURL: record.destinationMintURL,
+                destinationQuoteID: record.mintQuoteID
+            )
+            // The invoice was the wallet's own: not a code to show or pay, and
+            // its description is the destination mint's boilerplate.
+            row.invoice = nil
+            row.memo = nil
+            if issued {
+                row.status = .completed
+                row.statusNote = nil
+            } else if !alreadyFolded {
+                row.statusNote = nil
+                if row.status == .completed {
+                    // Paid at the source, not yet issued at the destination.
+                    row.status = .pending
+                    row.statusNote = "Arriving at \(mintName(record.destinationMintURL))"
+                } else if row.status == .pending {
+                    row.statusNote = "Payment in progress"
+                }
+            }
+            rows[anchor] = row
+            hidden.formUnion(arrivals)
+        }
+        return rows.enumerated().filter { !hidden.contains($0.offset) }.map(\.element)
+    }
+
+    private static func sameMint(_ url: String?, _ other: String) -> Bool {
+        url.map(MintURLIdentity.normalized) == MintURLIdentity.normalized(other)
     }
 }

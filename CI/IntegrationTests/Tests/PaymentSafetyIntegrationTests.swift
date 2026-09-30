@@ -81,6 +81,26 @@ class PaymentFixtureTestCase: XCTestCase {
         return additionalWallet
     }
 
+    /// A second mint held by the repository that already holds `wallet` — the
+    /// shape a transfer between two of the user's mints runs in.
+    func makeWallet(_ mint: String, inSameRepositoryAs wallet: Wallet) async throws -> Wallet {
+        let index = try XCTUnwrap(storeByWallet[ObjectIdentifier(wallet)])
+        let repo = stores[index].0
+        let url = MintUrl(url: mintURL(mint))
+        try await repo.createWallet(mintUrl: url, unit: .sat, targetProofCount: nil)
+        let additionalWallet = try await repo.getWallet(mintUrl: url, unit: .sat)
+        walletHandles.append(additionalWallet)
+        storeByWallet[ObjectIdentifier(additionalWallet)] = index
+        return additionalWallet
+    }
+
+    /// A second handle on the wallet's store, for the local-only reads and
+    /// quote removals the app performs through its own database handle.
+    func database(of wallet: Wallet) throws -> WalletSqliteDatabase {
+        let index = try XCTUnwrap(storeByWallet[ObjectIdentifier(wallet)])
+        return try WalletSqliteDatabase(filePath: stores[index].1)
+    }
+
     func reopen(_ wallet: Wallet) async throws -> Wallet {
         let index = try XCTUnwrap(storeByWallet[ObjectIdentifier(wallet)])
         let entry = stores[index]
@@ -394,6 +414,183 @@ final class PaymentSafetyIntegrationTests: PaymentFixtureTestCase {
 
     private func attemptReceive(_ wallet: Wallet, token: Token) async -> Bool {
         do { _ = try await receive(wallet, token: token); return true } catch { return false }
+    }
+
+    // MARK: - Transfers between two held mints
+
+    // The two controlled mints are separate Lightning backends: a melt at one
+    // settles there but does not credit the other's invoice. Each test pays the
+    // destination invoice explicitly, which also proves issuance follows payment
+    // rather than the melt.
+    private func settleIncoming(_ wallet: Wallet, mint: String, quote: MintQuote) async throws {
+        _ = try await call(root + "/pay/" + mint, method: "POST", body: ["invoice": quote.request])
+        _ = try await awaitPaid(wallet, id: quote.id)
+    }
+
+    /// The max plan spends every unspent proof directly, so the input fee is the
+    /// one the quote planned.
+    private func meltAllUnspentSkippingSwap(_ wallet: Wallet, quoteID: String) async throws -> PreparedMelt {
+        let proofs = try await wallet.getProofsByStates(states: [.unspent])
+        return try await wallet.prepareMeltProofs(quoteId: quoteID, proofs: proofs)
+    }
+
+    func testCrossMintTransferExactConservesValue() async throws {
+        let source = try await makeWallet("controlled")
+        let destination = try await makeWallet("fees", inSameRepositoryAs: source)
+        try await fund(source, controlled: "controlled")
+        let incoming = try await destination.mintQuote(paymentMethod: .bolt11, amount: Amount(value: 40), description: nil, extra: nil)
+        let outgoing = try await source.meltQuote(method: .bolt11, request: incoming.request, options: nil, extra: nil)
+        XCTAssertEqual(outgoing.amount.value, 40)
+        try await arm("/v1/melt/quote/bolt11/", action: "delay", method: "GET")
+        let result = try await melt(source, quoteID: outgoing.id)
+        XCTAssertEqual(result.state, .paid)
+        let beforePayment = try await destination.checkMintQuote(quoteId: incoming.id)
+        XCTAssertEqual(beforePayment.state, .unpaid)
+        try await settleIncoming(destination, mint: "fees", quote: incoming)
+        let minted = try await destination.mint(quoteId: incoming.id, amountSplitTarget: .none, spendingConditions: nil)
+        XCTAssertEqual(minted.reduce(0) { $0 + $1.amount.value }, 40)
+        let left = try await balance(source)
+        let arrived = try await balance(destination)
+        XCTAssertEqual(left, 100 - 40 - result.feePaid.value)
+        XCTAssertEqual(arrived, 40)
+        let debits = try await source.listTransactions(direction: .outgoing).filter { $0.quoteId == outgoing.id }
+        let credits = try await destination.listTransactions(direction: .incoming).filter { $0.quoteId == incoming.id }
+        XCTAssertEqual(debits.count, 1)
+        XCTAssertEqual(credits.count, 1)
+    }
+
+    func testCrossMintMaxOnFeeMintIsAcceptedByMint() async throws {
+        let source = try await makeWallet("fees")
+        let destination = try await makeWallet("controlled", inSameRepositoryAs: source)
+        try await fund(source, controlled: "fees")
+        let plan = try await source.crossMintTransferQuoteMax(targetWallet: destination)
+        let amount = try XCTUnwrap(plan.mintQuote.amount?.value)
+        XCTAssertEqual(plan.meltQuote.amount.value, amount)
+        XCTAssertGreaterThan(plan.inputFee.value, 0, "1000 ppk charges one unit per input proof")
+        XCTAssertLessThanOrEqual(amount + plan.meltQuote.feeReserve.value + plan.inputFee.value, 100)
+        // Only the returned pair is kept locally, however many probes the search made.
+        let store = try database(of: source)
+        let unissued = try await store.getUnissuedMintQuotes()
+        XCTAssertEqual(unissued.map(\.id), [plan.mintQuote.id])
+        let prepared = try await meltAllUnspentSkippingSwap(source, quoteID: plan.meltQuote.id)
+        XCTAssertEqual(prepared.inputFeeWithoutSwap().value, plan.inputFee.value)
+        try await arm("/v1/melt/quote/bolt11/", action: "delay", method: "GET")
+        let result = try await prepared.confirmWithOptions(options: MeltConfirmOptions(skipSwap: true))
+        XCTAssertEqual(result.state, .paid)
+        try await settleIncoming(destination, mint: "controlled", quote: plan.mintQuote)
+        _ = try await destination.mint(quoteId: plan.mintQuote.id, amountSplitTarget: .none, spendingConditions: nil)
+        let left = try await balance(source)
+        let arrived = try await balance(destination)
+        XCTAssertEqual(arrived, amount)
+        // CDK reports the input fee inside `feePaid`, and the unused part of
+        // the reserve comes back as change rather than being lost.
+        XCTAssertEqual(left + amount + result.feePaid.value, 100)
+        XCTAssertGreaterThanOrEqual(result.feePaid.value, plan.inputFee.value)
+        XCTAssertLessThanOrEqual(result.feePaid.value, plan.inputFee.value + plan.meltQuote.feeReserve.value)
+    }
+
+    func testCrossMintTransferLostMeltResponseDoesNotDoubleDebit() async throws {
+        let source = try await makeWallet("controlled")
+        let destination = try await makeWallet("fees", inSameRepositoryAs: source)
+        try await fund(source, controlled: "controlled")
+        let incoming = try await destination.mintQuote(paymentMethod: .bolt11, amount: Amount(value: 40), description: nil, extra: nil)
+        let outgoing = try await source.meltQuote(method: .bolt11, request: incoming.request, options: nil, extra: nil)
+        try await arm("/v1/melt/bolt11", action: "lose_response")
+        // Nutshell 0.20.1 can answer an immediate status read before its
+        // background task has persisted the payment. Pace the recovery read
+        // past that fixture race, as the other Nutshell melts here do.
+        try await arm("/v1/melt/quote/bolt11/", action: "delay", method: "GET")
+        let prepared = try await source.prepareMelt(quoteId: outgoing.id)
+        do { _ = try await prepared.confirm() } catch { }
+        _ = try await source.recoverIncompleteSagas()
+        let status = try await source.checkMeltQuoteStatus(quoteId: outgoing.id)
+        XCTAssertEqual(status.state, .paid)
+        try await settleIncoming(destination, mint: "fees", quote: incoming)
+        let first = try await destination.mintUnissuedQuotes()
+        let second = try await destination.mintUnissuedQuotes()
+        XCTAssertEqual(first.value, 40)
+        XCTAssertEqual(second.value, 0)
+        let debits = try await source.listTransactions(direction: .outgoing).filter { $0.quoteId == outgoing.id }
+        XCTAssertEqual(debits.count, 1)
+        let left = try await balance(source)
+        XCTAssertEqual(left + 40 + (debits.first?.fee.value ?? 0), 100)
+    }
+
+    func testCrossMintMaxLostMeltResponseRecoversChange() async throws {
+        let source = try await makeWallet("fees")
+        let destination = try await makeWallet("controlled", inSameRepositoryAs: source)
+        try await fund(source, controlled: "fees")
+        let plan = try await source.crossMintTransferQuoteMax(targetWallet: destination)
+        let amount = try XCTUnwrap(plan.mintQuote.amount?.value)
+        let prepared = try await meltAllUnspentSkippingSwap(source, quoteID: plan.meltQuote.id)
+        try await arm("/v1/melt/bolt11", action: "lose_response")
+        try await arm("/v1/melt/quote/bolt11/", action: "delay", method: "GET")
+        do { _ = try await prepared.confirmWithOptions(options: MeltConfirmOptions(skipSwap: true)) } catch { }
+        _ = try await source.recoverIncompleteSagas()
+        let status = try await source.checkMeltQuoteStatus(quoteId: plan.meltQuote.id)
+        XCTAssertEqual(status.state, .paid)
+        let debits = try await source.listTransactions(direction: .outgoing).filter { $0.quoteId == plan.meltQuote.id }
+        XCTAssertEqual(debits.count, 1)
+        // Every proof went in as an input, so whatever the payment did not use
+        // has to come back through recovery or the wallet lost it.
+        let left = try await balance(source)
+        let reserved = try await source.totalReservedBalance()
+        let pending = try await source.totalPendingBalance()
+        XCTAssertEqual(reserved.value, 0)
+        XCTAssertEqual(pending.value, 0)
+        XCTAssertEqual(left + amount + (debits.first?.fee.value ?? 0), 100)
+    }
+
+    func testCrossMintTransferReopenBetweenMeltAndMintIssuesExactlyOnce() async throws {
+        let source = try await makeWallet("fees")
+        let destination = try await makeWallet("controlled", inSameRepositoryAs: source)
+        try await fund(source, controlled: "fees")
+        let plan = try await source.crossMintTransferQuoteMax(targetWallet: destination)
+        let amount = try XCTUnwrap(plan.mintQuote.amount?.value)
+        let prepared = try await meltAllUnspentSkippingSwap(source, quoteID: plan.meltQuote.id)
+        try await arm("/v1/melt/quote/bolt11/", action: "delay", method: "GET")
+        _ = try await prepared.confirmWithOptions(options: MeltConfirmOptions(skipSwap: true))
+        _ = try await call(root + "/pay/controlled", method: "POST", body: ["invoice": plan.mintQuote.request])
+        // The app was killed after paying and before issuing. Only what CDK
+        // persisted for the returned pair can finish the transfer.
+        let recovered = try await reopen(destination)
+        _ = try await awaitPaid(recovered, id: plan.mintQuote.id)
+        let first = try await recovered.mintUnissuedQuotes()
+        let second = try await recovered.mintUnissuedQuotes()
+        XCTAssertEqual(first.value, amount)
+        XCTAssertEqual(second.value, 0)
+        let credits = try await recovered.listTransactions(direction: .incoming).filter { $0.quoteId == plan.mintQuote.id }
+        XCTAssertEqual(credits.count, 1)
+    }
+
+    func testAbandonedCrossMintPlanLeavesNoUnissuedQuote() async throws {
+        let source = try await makeWallet("fees")
+        let destination = try await makeWallet("controlled", inSameRepositoryAs: source)
+        try await fund(source, controlled: "fees")
+        let store = try database(of: source)
+
+        let incoming = try await destination.mintQuote(paymentMethod: .bolt11, amount: Amount(value: 40), description: nil, extra: nil)
+        let outgoing = try await source.meltQuote(method: .bolt11, request: incoming.request, options: nil, extra: nil)
+        try await store.removeMintQuote(quoteId: incoming.id)
+        try await store.removeMeltQuote(quoteId: outgoing.id)
+
+        let plan = try await source.crossMintTransferQuoteMax(targetWallet: destination)
+        try await store.removeMintQuote(quoteId: plan.mintQuote.id)
+        try await store.removeMeltQuote(quoteId: plan.meltQuote.id)
+
+        let unissued = try await store.getUnissuedMintQuotes()
+        XCTAssertTrue(unissued.isEmpty)
+        let swept = try await destination.mintUnissuedQuotes()
+        XCTAssertEqual(swept.value, 0)
+        let spendable = try await balance(source)
+        let reserved = try await source.totalReservedBalance()
+        XCTAssertEqual(spendable, 100)
+        XCTAssertEqual(reserved.value, 0)
+        // Quoting reserved nothing: the whole balance still leaves in one send.
+        let receiver = try await makeWallet("fees")
+        let token = try await send(source, amount: 100).confirm(memo: nil)
+        let received = try await receive(receiver, token: token)
+        XCTAssertGreaterThan(received, 0)
     }
 }
 
