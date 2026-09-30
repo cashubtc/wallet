@@ -1,0 +1,4 @@
+interface:
+  display_name: "Cashu Promo Video"
+  short_description: "Make Cashu.me promo films in the house style"
+  default_prompt: "Use $cashu-promo-video to pitch, capture, cut and QA a new Cashu.me promo film."

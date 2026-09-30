@@ -1,0 +1,12 @@
+.DS_Store
+.build/
+DerivedData/
+takes/
+renders/
+out/
+tokens/
+mint/work/
+__pycache__/
+*.mov
+*.mp4
+*.log
