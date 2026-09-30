@@ -17,6 +17,15 @@ import Foundation
 
 let args = Array(CommandLine.arguments.dropFirst())
 
+/// EDLs point at local takes, so `edl/` is gitignored and may not exist yet.
+func writeEDL(_ edl: EDL, to path: String) throws {
+    let url = URL(fileURLWithPath: path, relativeTo: Paths.root)
+    try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+    let enc = JSONEncoder()
+    enc.outputFormatting = [.prettyPrinted, .sortedKeys]
+    try enc.encode(edl).write(to: url)
+}
+
 func run() throws {
     try Fonts.register()
     guard let command = args.first else {
@@ -36,9 +45,7 @@ func run() throws {
         points.merge(try Analyze.share(url("share"))) { $1 }
         points.merge(try Analyze.claim(url("claim"))) { $1 }
         points.merge(try Analyze.claimConfirm(url("claim"), screen: points["claim.screen"]!)) { $1 }
-        let enc = JSONEncoder()
-        enc.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try enc.encode(EDL(takes: takes, points: points)).write(to: URL(fileURLWithPath: args[1], relativeTo: Paths.root))
+        try writeEDL(EDL(takes: takes, points: points), to: args[1])
         for k in points.keys.sorted() { print(String(format: "%-20@ %8.3f", k as NSString, points[k]!)) }
     case "render-message":
         // promo render-message <edl.json> <from> <to> <out.mp4> [light|dark] [prores.mov]
@@ -78,9 +85,7 @@ func run() throws {
         // and tap answers on the video clock.
         let kv = args[2].split(separator: "=", maxSplits: 1).map(String.init)
         let points = try Analyze.sequence(URL(fileURLWithPath: kv[1], relativeTo: Paths.root))
-        let enc = JSONEncoder()
-        enc.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try enc.encode(EDL(takes: [kv[0]: kv[1]], points: points)).write(to: URL(fileURLWithPath: args[1], relativeTo: Paths.root))
+        try writeEDL(EDL(takes: [kv[0]: kv[1]], points: points), to: args[1])
         for (k, v) in points.sorted(by: { $0.value < $1.value }) { print(String(format: "%8.3f  %@", v, k)) }
     case "qa":
         // promo qa <export.mp4> <expect s> <send|restore|message> <edl.json>

@@ -141,11 +141,10 @@ takes. Then clean up (`capture.md` → Cleanup).
 | `tool/Sources/Promo/Analyze.swift` | Frame analysis for in-points and launch offsets |
 | `tool/Sources/Promo/QA.swift` | Automated checks |
 | `tool/capture/` | `PromoTakes.swift` (the XCTest takes), `take.sh`, sessions, sim/mint/worktree setup |
-| `tool/edl/` | The reference films' EDLs (worked examples; their takes are local) |
 | `scripts/` | `contact_sheet.sh` and `region_luma.py` for authoring cuts |
 | `references/` | `style.md`, `films.md`, `capture.md`, `cutting.md`, `qa.md` |
 
-The generated folders (`.build/`, `DerivedData/`, `takes/`, `out/`,
+The generated folders (`.build/`, `DerivedData/`, `takes/`, `edl/`, `out/`,
 `mint/work/`) are gitignored. The iOS app is the only platform filmed. There's
 no Android capture path yet, which is a known parity gap for the films, not
 for the app.

@@ -11,9 +11,9 @@ Cashu.me end card.
 | **restore**: back up, delete, restore | 36.6 s | 1 | `testRestoreFlow` | Copy your recovery phrase. · Delete the wallet. · Restore from the phrase. · Find your mints. · Your balance comes back. |
 
 Their cuts live in code (`tool/Sources/Promo/Films.swift` and
-`MessageFilm.swift`), and their in-points in `tool/edl/*-dark.json`. Those
-EDLs point at take folders that exist only on the machine that shot them, so
-they are worked examples, not something you can re-render. A retake means
+`MessageFilm.swift`). Their takes and EDLs exist only on the machine that
+shot them, so treat the cuts as worked examples, not something you can
+re-render. A retake means
 re-cutting.
 
 ## Copy deck

@@ -15,7 +15,7 @@ an EDL of take paths and in-points. Render → look → adjust → render.
 ## EDLs and marks
 
 An EDL (`tool/edl/<film>-dark.json`) names the take folders and a set of
-points in take seconds:
+points in take seconds. It points at local takes, so `edl/` is gitignored:
 
 ```sh
 .build/release/promo edl-seq edl/<film>-dark.json <take>=takes/<test>-dark/<stamp>

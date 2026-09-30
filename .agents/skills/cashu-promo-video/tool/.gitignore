@@ -5,6 +5,7 @@ takes/
 renders/
 out/
 tokens/
+edl/
 mint/work/
 __pycache__/
 *.mov

@@ -127,9 +127,6 @@ A session chains the unrecorded setup and the recorded take(s) for one film:
 All three default to dark and accept `DRY=1`. Write a new session script for
 a new film, rather than running takes by hand, so a retake is one command.
 
-`capture/render.sh` re-renders and QAs the three reference films. It only
-works on a machine that has their takes, after a re-shoot and re-cut.
-
 ## Simulator facts and traps
 
 **Messages**

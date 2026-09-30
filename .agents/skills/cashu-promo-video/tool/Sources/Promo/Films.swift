@@ -1,8 +1,8 @@
 import Foundation
 
 /// The single-feature films cut from one take each. Spans are take-60 times,
-/// authored by eye from timestamped contact sheets of these exact takes
-/// (edl/send-dark.json, edl/restore-dark.json): a retake needs re-cutting.
+/// authored by eye from timestamped contact sheets of the takes they were
+/// cut from (shot 2026-09-30; not in the repo): a retake needs re-cutting.
 /// Every span trims idle holds; cuts between two frames of the same still
 /// screen are invisible, so most cuts only compress time.
 enum Films {
