@@ -95,9 +95,6 @@ The faint ASCII landscape behind the phones is the app's own onboarding field
   badge. They're centred at y 640, trimmed to their ink, both 88 px tall and
   26 px apart (at least a quarter of their height, per Apple's guidelines).
   The files are in `tool/assets/badges/`.
-- Before any public release, confirm that both store listings are live. The
-  App Store listing couldn't be found on 2026-09-29, while Google Play's
-  `com.cashu.me` listing was public.
 
 ## Color
 

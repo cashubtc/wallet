@@ -160,7 +160,7 @@ works on a machine that has their takes, after a re-shoot and re-cut.
 - **The Send sheet's Tap row reads "Unavailable"** (dimmed), because the
   Simulator has no NFC reader. A phone shows it enabled. It's real
   Simulator UI, so it can't be painted over; keep the Send sheet's time on
-  screen short. The send film shows it for about 1–2 s.
+  screen short.
 - **Tap-to-pay and QR scanning can't be filmed at all.** Their UI is the
   system NFC sheet and the camera. Pick features the Simulator can really
   run.

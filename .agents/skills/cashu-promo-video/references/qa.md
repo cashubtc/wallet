@@ -45,7 +45,6 @@ Paste the `qa` output (including the cut frames) into your review message.
 - **Files:** `out/<film>-1x1-dark.mp4` (the master to post) and
   `out/<film>-1x1-dark.mov` (ProRes, for any further editing). Both are
   gitignored; hand them over directly, and never commit them.
-- **Before a public release:** confirm both store listings are live (the end
-  card shows both badges), and that every claim still matches the current app
-  copy.
+- **Before a public release:** confirm that every claim still matches the
+  current app copy.
 - **Clean up:** see `capture.md` → Cleanup.
