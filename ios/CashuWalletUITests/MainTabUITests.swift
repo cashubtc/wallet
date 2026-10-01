@@ -459,7 +459,7 @@ final class MintTransferUITests: XCTestCase {
         // The largest balance leaves first; the arrow is one tap from the other way.
         XCTAssertTrue(app.buttons["From Alpine Mint"].exists)
         XCTAssertTrue(app.buttons["To Harbor Mint"].exists)
-        XCTAssertTrue(app.buttons["Transfer maximum"].exists)
+        XCTAssertTrue(app.buttons["mints-transfer-max"].exists)
         capture(app, "transfer-empty")
 
         for key in ["5", "0", "0", "0"] { app.buttons[key].tap() }
@@ -497,7 +497,7 @@ final class MintTransferUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Transfer from"].waitForExistence(timeout: 5))
         app.buttons["Meadow Mint"].tap()
         XCTAssertTrue(app.buttons["From Meadow Mint"].waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["Transfer maximum"].exists)
+        XCTAssertFalse(app.buttons["mints-transfer-max"].exists)
         capture(app, "transfer-empty-source")
     }
 
@@ -514,7 +514,7 @@ final class MintTransferUITests: XCTestCase {
         let swap = app.buttons["Swap mints"]
         let destination = app.buttons["To Harbor Mint"]
         XCTAssertTrue(source.isHittable)
-        XCTAssertTrue(app.buttons["Transfer maximum"].exists)
+        XCTAssertTrue(app.buttons["mints-transfer-max"].exists)
         XCTAssertGreaterThanOrEqual(swap.frame.minY, source.frame.maxY)
         XCTAssertGreaterThanOrEqual(destination.frame.minY, swap.frame.maxY - 1)
         XCTAssertTrue(app.buttons["5"].isHittable)

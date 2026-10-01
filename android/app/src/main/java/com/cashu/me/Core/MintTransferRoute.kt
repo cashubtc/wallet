@@ -101,14 +101,6 @@ internal sealed interface MintTransferEntry {
         }
 
         /**
-         * What the destination will hold once [amount] arrives, or null while
-         * there is nothing ready to send. The amount is what arrives, so the
-         * sum is exact.
-         */
-        fun destinationBalanceAfter(entry: MintTransferEntry, amount: Long, destination: MintInfo): Long? =
-            if (entry == Ready && amount > 0) destination.balance + amount else null
-
-        /**
          * True when the whole source balance is typed in by hand. The fee comes
          * on top of the amount, so that much can never leave; a Max quote has
          * already allowed for it.

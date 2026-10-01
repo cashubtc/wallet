@@ -134,23 +134,6 @@ class MintTransferRouteTest {
         )
     }
 
-    /** The typed amount is what arrives, so the destination's new balance is exact. */
-    @Test
-    fun destinationBalanceAfterIsShownOnlyForAnAmountReadyToSend() {
-        val destination = mint(B, 250)
-
-        assertEquals(290L, MintTransferEntry.destinationBalanceAfter(MintTransferEntry.Ready, 40, destination))
-        assertNull(MintTransferEntry.destinationBalanceAfter(MintTransferEntry.Empty, 0, destination))
-        assertNull(MintTransferEntry.destinationBalanceAfter(MintTransferEntry.OverBalance, 900, destination))
-        assertNull(
-            MintTransferEntry.destinationBalanceAfter(
-                MintTransferEntry.Blocked(Blocker.DestinationCannotReceive),
-                40,
-                destination,
-            ),
-        )
-    }
-
     /** The fee comes on top, so a typed whole balance is flagged; a Max quote never is. */
     @Test
     fun wholeBalanceIsFlaggedOnlyWhenTypedByHand() {

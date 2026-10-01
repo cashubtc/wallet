@@ -215,15 +215,18 @@ What this system explicitly rejects, pulled verbatim from docs/product/PRODUCT.m
   route block stacks a From row and a To row, each with the mint's avatar, name
   and balance, split by one hairline that carries the swap control. Top is always
   From. The available line and Max belong to the From slot, not to a mint, so
-  they stay put when the mints trade places. No fill, card or pill. With exactly
+  they stay put when the mints trade places. *(2026-10-01: Transfer drops the
+  Max button; the source's balance is the control, and tapping it fills the
+  maximum. Both balances are bare secondary numbers, no "available" or
+  "Balance"; screen readers hear the words. Send keeps its Max.)* No
+  fill, card or pill. With exactly
   two mints the rows have no chevron and the swap control is the only way to
   change the pair. `MintTransferRouteView` (iOS) / `MintTransferRoute` (Android).
   *(2026-10-01: each slot carries a visible footnote / labelMedium caption,
   "From" and "To", that stays with the slot when the mints trade places, so the
   direction is read from words rather than from the glyph. The destination's
-  line reads "Balance 1 sat", and once a valid amount is typed
-  "Balance 1 sat → 3 sat" with the new balance in primary ink: the typed amount
-  is what arrives, so the new balance is exact. A problem with a mint (it
+  line is its balance alone, with no preview of the balance after the
+  transfer. A problem with a mint (it
   can't send or receive over Lightning, or its balance can't cover the fee) is
   said on that mint's line behind the caution glyph, with the words kept
   secondary for contrast; the note under the amount is for the amount only.

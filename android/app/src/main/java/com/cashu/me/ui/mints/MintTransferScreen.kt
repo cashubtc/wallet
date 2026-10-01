@@ -327,7 +327,8 @@ fun MintTransferScreen(
                 throw cancelled
             } catch (shortfall: MintTransferException.NothingToTransfer) {
                 // The fee alone outweighs this mint's balance: a fact about the
-                // mint, said on its line, where Max no longer offers itself.
+                // mint, said on its line, where the balance stops offering a
+                // maximum.
                 mint(current.sourceMintUrl)?.let { feeShortfall = it.url to it.balance }
                 haptics.performHapticFeedback(HapticFeedbackType.Reject)
             } catch (error: Throwable) {
@@ -556,7 +557,8 @@ fun MintTransferScreen(
                         useBitcoinSymbol = settings.useBitcoinSymbol,
                         entryState = entryState,
                         notice = entryNotice,
-                        // "Use Max" would be wrong advice for a mint Max can't help.
+                        // "Tap the balance" would be wrong advice for a mint whose
+                        // balance offers no maximum.
                         isWholeBalance = sourceProblem(sourceMint) == null &&
                             MintTransferEntry.isWholeBalance(
                                 entry = entryState,
@@ -566,9 +568,6 @@ fun MintTransferScreen(
                             ),
                         sourceBalanceText = sats(sourceMint.balance),
                         destinationBalanceText = sats(destinationMint.balance),
-                        destinationAfterText = MintTransferEntry
-                            .destinationBalanceAfter(entryState, amountSats, destinationMint)
-                            ?.let(::sats),
                         sourceProblem = sourceProblem(sourceMint),
                         destinationProblem = destinationProblem,
                         isFindingMax = isFindingMax,
@@ -669,7 +668,6 @@ private fun EntryFace(
     isWholeBalance: Boolean,
     sourceBalanceText: String,
     destinationBalanceText: String,
-    destinationAfterText: String?,
     sourceProblem: String?,
     destinationProblem: String?,
     isFindingMax: Boolean,
@@ -691,7 +689,8 @@ private fun EntryFace(
         // The fee comes on top of the amount, so the whole balance cannot
         // arrive. Said here, not after a quote has been asked for.
         isWholeBalance -> {
-            noticeText = "Fees are added on top. Use Max to move everything."
+            // It also teaches the gesture: the balance is the maximum.
+            noticeText = "Fees are added on top. Tap the balance to move everything."
             noticeSeverity = NoticeSeverity.Info
         }
         else -> { noticeText = null; noticeSeverity = NoticeSeverity.Info }
@@ -736,7 +735,6 @@ private fun EntryFace(
             destination = destination,
             sourceBalanceText = sourceBalanceText,
             destinationBalanceText = destinationBalanceText,
-            destinationAfterText = destinationAfterText,
             sourceProblem = sourceProblem,
             destinationProblem = destinationProblem,
             showsDestinationBalance = showsDestinationBalance,

@@ -12,8 +12,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
@@ -29,7 +27,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.Warning
@@ -63,6 +60,7 @@ import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalInspectionMode
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -76,11 +74,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
-import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
@@ -94,6 +90,7 @@ import com.cashu.me.ui.components.FlowSheetTitle
 import com.cashu.me.ui.components.MintAvatar
 import com.cashu.me.ui.components.bitcoinAmountText
 import com.cashu.me.ui.components.rememberSheetDismissAction
+import com.cashu.me.ui.testing.UiTestTags
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.rememberReducedMotion
 import com.cashu.me.ui.theme.withMonoDigits
@@ -140,9 +137,6 @@ internal fun MintTransferRouteBlock(
     sourceBalanceText: String,
     destinationBalanceText: String,
     modifier: Modifier = Modifier,
-    // What the destination will hold once the amount arrives; null while there
-    // is no amount ready to send.
-    destinationAfterText: String? = null,
     // Why an end can't take part as it stands ("too little to cover the fee").
     // Said on that mint's own line, not under the amount: the problem is the
     // mint, not the number.
@@ -211,7 +205,8 @@ internal fun MintTransferRouteBlock(
         }
         Box(modifier = Modifier.trimTop(supportLift)) {
             if (sourceProblem != null) {
-                // Max can't help a mint with a problem, so the line is the reason.
+                // A mint with a problem has no maximum to offer, so the line
+                // is the reason.
                 ProblemLine(
                     balanceText = sourceBalanceText,
                     problem = sourceProblem,
@@ -248,12 +243,18 @@ internal fun MintTransferRouteBlock(
             Box(modifier = Modifier.trimTop(supportLift)) {
                 if (destinationProblem != null) {
                     ProblemLine(
-                        balanceText = "Balance $destinationBalanceText",
+                        balanceText = destinationBalanceText,
                         problem = destinationProblem,
                         description = "Balance $destinationBalanceText, $destinationProblem",
                     )
                 } else {
-                    DestinationSupport(balanceText = destinationBalanceText, afterText = destinationAfterText)
+                    SupportText(
+                        text = destinationBalanceText,
+                        modifier = Modifier
+                            .padding(start = RouteAvatarSize + CashuTheme.spacing.default)
+                            .heightIn(min = SupportMinHeight)
+                            .clearAndSetSemantics { contentDescription = "Balance $destinationBalanceText" },
+                    )
                 }
             }
         }
@@ -367,62 +368,51 @@ private fun IdentityRow(mint: MintInfo, showsChevron: Boolean) {
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SourceSupport(
     balanceText: String,
     isFindingMax: Boolean,
     onUseMax: (() -> Unit)?,
 ) {
-    val supportInset = Modifier
-        .fillMaxWidth()
-        .padding(start = RouteAvatarSize + CashuTheme.spacing.default)
-    val balance: @Composable () -> Unit = {
-        SupportText(
-            text = "$balanceText available",
-            modifier = Modifier.heightIn(min = SupportMinHeight),
-        )
-    }
-    // Side by side at ordinary text sizes; at large text Max drops under the
-    // balance rather than truncating it.
-    if (LocalDensity.current.fontScale >= LargeTextScale) {
-        Column(modifier = supportInset) {
-            balance()
-            if (onUseMax != null) MaxControl(isFindingMax, onUseMax, Alignment.CenterStart)
-        }
-    } else {
-        FlowRow(
+    val supportInset = Modifier.padding(start = RouteAvatarSize + CashuTheme.spacing.default)
+    if (onUseMax != null) {
+        AvailableBalance(
+            balanceText = balanceText,
+            isFindingMax = isFindingMax,
+            onUseMax = onUseMax,
             modifier = supportInset,
-            horizontalArrangement = Arrangement.SpaceBetween,
-            itemVerticalAlignment = Alignment.CenterVertically,
-        ) {
-            balance()
-            if (onUseMax != null) {
-                MaxControl(
-                    isFindingMax = isFindingMax,
-                    onUseMax = onUseMax,
-                    alignment = Alignment.CenterEnd,
-                    // The 48dp target must not grow the line it shares.
-                    modifier = Modifier.trimVertical((MinimumTouchTarget - SupportMinHeight) / 2),
-                )
-            }
-        }
+        )
+    } else {
+        // An empty mint has nothing to take: its balance only informs.
+        SupportText(
+            text = balanceText,
+            modifier = supportInset
+                .heightIn(min = SupportMinHeight)
+                .clearAndSetSemantics { contentDescription = "$balanceText available" },
+        )
     }
 }
 
+/**
+ * The balance is the maximum: tapping it fills the largest amount this mint
+ * can transfer after fees (iOS parity). It reads as the plain balance; the
+ * whole-balance hint is what teaches the tap. The 48dp target overhangs the
+ * line rather than growing it.
+ */
 @Composable
-private fun MaxControl(
+private fun AvailableBalance(
+    balanceText: String,
     isFindingMax: Boolean,
     onUseMax: () -> Unit,
-    alignment: Alignment,
     modifier: Modifier = Modifier,
 ) {
-    Box(
+    Row(
         modifier = modifier
-            .defaultMinSize(minWidth = MinimumTouchTarget, minHeight = MinimumTouchTarget)
+            .trimVertical((MinimumTouchTarget - SupportMinHeight) / 2)
+            .defaultMinSize(minHeight = MinimumTouchTarget)
             .clickable(enabled = !isFindingMax, role = Role.Button, onClick = onUseMax)
             .clearAndSetSemantics {
-                contentDescription = "Transfer maximum"
+                contentDescription = "$balanceText available"
                 role = Role.Button
                 if (isFindingMax) {
                     stateDescription = "Checking the network fee"
@@ -433,16 +423,15 @@ private fun MaxControl(
                         true
                     }
                 }
-            },
-        contentAlignment = alignment,
+            }
+            .testTag(UiTestTags.MintTransferMax),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.tight),
     ) {
-        // The word keeps its place under the spinner, so the line never shifts.
         Text(
-            text = "Max",
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.alpha(if (isFindingMax) 0f else 1f),
+            text = bitcoinAmountText(balanceText),
+            style = MaterialTheme.typography.bodyMedium.withMonoDigits(),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         if (isFindingMax) {
             CircularProgressIndicator(
@@ -467,58 +456,6 @@ private fun SupportText(text: String, modifier: Modifier = Modifier) {
     }
 }
 
-/**
- * What the destination holds, and what it will hold once the amount arrives:
- * the transfer read as a change in place, not a separate sum.
- */
-@Composable
-private fun DestinationSupport(balanceText: String, afterText: String?) {
-    val secondary = MaterialTheme.colorScheme.onSurfaceVariant
-    val line = buildAnnotatedString {
-        append(bitcoinAmountText("Balance $balanceText"))
-        if (afterText != null) {
-            append(' ')
-            appendInlineContent(AfterArrowId, "→")
-            append(' ')
-            withStyle(SpanStyle(color = MaterialTheme.colorScheme.onSurface)) {
-                append(bitcoinAmountText(afterText))
-            }
-        }
-    }
-    val arrow = mapOf(
-        AfterArrowId to InlineTextContent(
-            Placeholder(width = 1.em, height = 1.em, placeholderVerticalAlign = PlaceholderVerticalAlign.TextCenter),
-        ) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                contentDescription = null,
-                tint = secondary,
-            )
-        },
-    )
-    Box(
-        modifier = Modifier
-            .padding(start = RouteAvatarSize + CashuTheme.spacing.default)
-            .heightIn(min = SupportMinHeight)
-            .clearAndSetSemantics {
-                contentDescription = if (afterText == null) {
-                    "Balance $balanceText"
-                } else {
-                    "Balance $balanceText, $afterText after transfer"
-                }
-            },
-        contentAlignment = Alignment.CenterStart,
-    ) {
-        Text(
-            text = line,
-            inlineContent = arrow,
-            style = MaterialTheme.typography.bodyMedium.withMonoDigits(),
-            color = secondary,
-        )
-    }
-}
-
-private const val AfterArrowId = "after-arrow"
 
 /**
  * An inline notice moved into the row: the caution glyph carries the colour

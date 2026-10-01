@@ -268,10 +268,6 @@ struct MintTransferView: View {
             destination: destination,
             sourceBalanceText: formatSats(source.balance),
             destinationBalanceText: formatSats(destination.balance),
-            // The typed amount is what arrives, so the new balance is exact.
-            destinationAfterText: entryState == .ready && amountSats > 0
-                ? formatSats(destination.balance + amountSats)
-                : nil,
             sourceProblem: sourceProblem,
             destinationProblem: destinationProblem,
             showsDestinationBalance: showsDestinationBalance,
@@ -317,7 +313,8 @@ struct MintTransferView: View {
         } else if isWholeBalance {
             // The fee comes on top of the amount, so the whole balance cannot
             // arrive. Said here, not after a quote has been asked for.
-            notice("Fees are added on top. Use Max to move everything.", severity: .info)
+            // It also teaches the gesture: the balance is the maximum.
+            notice("Fees are added on top. Tap the balance to move everything.", severity: .info)
         }
     }
 
@@ -447,7 +444,8 @@ struct MintTransferView: View {
             } catch MintTransferError.nothingToTransfer {
                 guard !Task.isCancelled, let source = mint(route.sourceMintURL) else { return }
                 // The fee alone outweighs this mint's balance: a fact about the
-                // mint, said on its line, where Max no longer offers itself.
+                // mint, said on its line, where the balance stops offering a
+                // maximum.
                 withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : .snappy(duration: 0.25)) {
                     feeShortfall = FeeShortfall(mintURL: source.url, balance: source.balance)
                 }

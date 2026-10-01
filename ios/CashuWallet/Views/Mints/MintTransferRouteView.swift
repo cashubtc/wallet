@@ -11,9 +11,6 @@ struct MintTransferRouteView: View {
     let destination: MintInfo
     let sourceBalanceText: String
     let destinationBalanceText: String
-    /// The destination's balance once the typed amount arrives, while there is
-    /// an amount that can.
-    var destinationAfterText: String?
     /// Why an end can't take part as it stands ("too little to cover the
     /// fee"). Said on that mint's own line, not under the amount: the problem
     /// is the mint, not the number.
@@ -186,79 +183,55 @@ struct MintTransferRouteView: View {
     @ViewBuilder
     private var sourceSupport: some View {
         if let sourceProblem {
-            // Max can't help a mint with a problem, so the line is the reason.
+            // A mint with a problem has no maximum to offer, so the line is
+            // the reason.
             supportText(problemLine(sourceBalanceText, sourceProblem))
                 .frame(minHeight: Metrics.supportHeight, alignment: .leading)
                 .accessibilityLabel("\(sourceBalanceText) available, \(sourceProblem)")
+        } else if let onUseMax {
+            availableBalance(onUseMax)
         } else {
-            sourceBalanceAndMax
+            // An empty mint has nothing to take: its balance only informs.
+            supportText(sourceBalanceText)
+                .frame(minHeight: Metrics.supportHeight, alignment: .leading)
+                .accessibilityLabel("\(sourceBalanceText) available")
         }
     }
 
-    private var sourceBalanceAndMax: some View {
-        // Side by side while both fit; at large text Max drops under the
-        // balance rather than truncating it.
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 12) {
-                supportText("\(sourceBalanceText) available")
-                Spacer(minLength: 8)
-                maxControl
-                    // The 44pt target must not grow the line it shares.
-                    .padding(.vertical, (Metrics.supportHeight - 44) / 2)
-            }
-            VStack(alignment: .leading, spacing: 0) {
-                supportText("\(sourceBalanceText) available")
-                maxControl
-            }
-        }
-        .frame(minHeight: Metrics.supportHeight)
-    }
-
-    @ViewBuilder
-    private var maxControl: some View {
-        if let onUseMax {
-            Button(action: onUseMax) {
-                ZStack {
-                    Text("Max")
-                        .font(.subheadline.weight(.medium))
-                        .opacity(isFindingMax ? 0 : 1)
-                    if isFindingMax {
-                        ProgressView().controlSize(.small)
-                    }
+    /// The balance is the maximum: tapping it fills the largest amount this
+    /// mint can transfer after fees. It reads as the plain balance; the
+    /// whole-balance hint is what teaches the tap.
+    private func availableBalance(_ onUseMax: @escaping () -> Void) -> some View {
+        Button(action: onUseMax) {
+            HStack(spacing: 6) {
+                supportText(sourceBalanceText)
+                if isFindingMax {
+                    ProgressView().controlSize(.mini)
                 }
-                .frame(minWidth: 44, minHeight: 44)
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .disabled(isFindingMax)
-            .accessibilityLabel("Transfer maximum")
-            .accessibilityHint("Fill the largest amount this mint can transfer after fees")
-            .accessibilityValue(isFindingMax ? "Checking the network fee" : "")
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        // The 44pt target must not grow the line it sits on.
+        .padding(.vertical, (Metrics.supportHeight - 44) / 2)
+        .disabled(isFindingMax)
+        .accessibilityLabel("\(sourceBalanceText) available")
+        .accessibilityHint("Fills the largest amount this mint can transfer after fees")
+        .accessibilityValue(isFindingMax ? "Checking the network fee" : "")
+        .accessibilityIdentifier("mints-transfer-max")
     }
 
-    /// What the destination holds, and what it will hold once the typed amount
-    /// arrives: the transfer read as a change in place, not a separate sum.
+    /// What the destination holds. The plain number reads as its balance;
+    /// VoiceOver, without the layout, hears the word.
     private var destinationSupport: some View {
-        let label = if let destinationProblem {
-            "Balance \(destinationBalanceText), \(destinationProblem)"
-        } else if let destinationAfterText {
-            "Balance \(destinationBalanceText), \(destinationAfterText) after transfer"
-        } else {
-            "Balance \(destinationBalanceText)"
-        }
-        return supportText(destinationLine)
+        let line = destinationProblem.map { problemLine(destinationBalanceText, $0) }
+            ?? Text(destinationBalanceText)
+        let label = destinationProblem.map { "Balance \(destinationBalanceText), \($0)" }
+            ?? "Balance \(destinationBalanceText)"
+        return supportText(line)
             .frame(minHeight: Metrics.supportHeight, alignment: .leading)
             .accessibilityLabel(label)
-    }
-
-    private var destinationLine: Text {
-        if let destinationProblem {
-            return problemLine("Balance \(destinationBalanceText)", destinationProblem)
-        }
-        guard let destinationAfterText else { return Text("Balance \(destinationBalanceText)") }
-        let after = Text(destinationAfterText).foregroundStyle(.primary)
-        return Text("Balance \(destinationBalanceText) \(Image(systemName: "arrow.forward")) \(after)")
     }
 
     /// An inline notice moved into the row: the caution glyph carries the

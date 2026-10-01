@@ -86,14 +86,18 @@ Cashu Request payment, and NFC receive (Android-only surface).
   says which leg is outstanding in the same words, never "payment":
   "{destination} is still issuing your ecash. It will arrive automatically."
   or "Still leaving {source}. Your funds are safe."
-- **Transfer entry and review.** A problem with a mint is said on that mint's
-  line in the route, after its balance and behind the caution glyph, never
-  under the amount: "2 sat · too little to cover the fee" (Max found the fee
-  outweighs the whole balance; Max then hides), "2 sat · can't send over
-  Lightning", "Balance 1 sat · can't receive over Lightning". The note under
-  the amount is for the amount only. Typing a source's whole balance shows the
-  info hint "Fees are added on top. Use Max to move everything." before any
-  quote is asked for. When the quotes lapse on the review screen and are
+- **Transfer entry and review.** Each mint's balance is a bare number under
+  its name, with no "available" or "Balance" (screen readers hear "2 sat
+  available" and "Balance 1 sat"). There is no "Max" button: the source's
+  balance is the control, and tapping it fills the largest amount the mint can
+  transfer after fees. A problem with a mint is said on that mint's line in
+  the route, after its balance and behind the caution glyph, never under the
+  amount: "2 sat · too little to cover the fee" (the maximum came out at
+  nothing after fees; the line then stops acting), "2 sat · can't send over
+  Lightning", "1 sat · can't receive over Lightning".
+  The note under the amount is for the amount only. Typing a source's whole
+  balance shows the info hint "Fees are added on top. Tap the balance to move
+  everything." before any quote is asked for; it also teaches the gesture. When the quotes lapse on the review screen and are
   replaced, the review says "The fee was updated. Check it and transfer
   again." The commit names the amount that arrives: "Transfer 21 sat".
 
