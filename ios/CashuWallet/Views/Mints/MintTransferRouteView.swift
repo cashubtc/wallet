@@ -5,7 +5,7 @@ import SwiftUI
 ///
 /// Unlike the centered From/To line on the pay screens, both ends here are the
 /// user's own mints and the choice between them is the point of the screen, so
-/// each gets its avatar, name and balance. No fill or card: one hairline.
+/// each gets its name and balance. No avatar, fill or card: one hairline.
 struct MintTransferRouteView: View {
     let source: MintInfo
     let destination: MintInfo
@@ -26,78 +26,37 @@ struct MintTransferRouteView: View {
     /// Nil when the two mints cannot trade places.
     var onSwap: (() -> Void)?
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @Namespace private var slots
-    @State private var swapCount = 0
+    /// The name's line at the current text size.
+    @ScaledMetric(relativeTo: .body) private var nameLineHeight: CGFloat = 22
 
     private enum Metrics {
-        static let avatar: CGFloat = 32
-        static let gap: CGFloat = 12
         static let identityHeight: CGFloat = 44
         static let supportHeight: CGFloat = 24
         static let swapDiameter: CGFloat = 36
         static let captionGap: CGFloat = 4
-        /// The empty band under a name centred on the taller avatar, which
-        /// the balance line rises into.
-        static let supportLift: CGFloat = 6
+        static let gap: CGFloat = 12
     }
 
-    /// The part of an identity's 44pt target that rises over its caption
-    /// rather than sitting under the name, so the balance line reads as the
-    /// name's own second line. Until accessibility sizes the avatar sets the
-    /// row's height; past them the name fills the target itself.
+    /// The part of the name row's 44pt target that rises over its caption
+    /// rather than sitting between the name and its balance, so the balance
+    /// reads as the name's second line. As text grows the name fills more of
+    /// the target, until it fills it.
     private var touchOverhang: CGFloat {
-        dynamicTypeSize.isAccessibilitySize ? 0 : Metrics.identityHeight - Metrics.avatar
-    }
-
-    /// The balance line tucks under the name, as a two-line row's second line
-    /// does, while the avatar is what makes the row taller than its name.
-    private var supportLift: CGFloat {
-        dynamicTypeSize.isAccessibilitySize ? 0 : Metrics.supportLift
-    }
-
-    /// VoiceOver reads the route top to bottom. The travelling identities are
-    /// drawn in an overlay, which would otherwise be read after the lines
-    /// beneath them.
-    private enum ReadingOrder {
-        static let sourceIdentity: Double = 5
-        static let sourceSupport: Double = 4
-        static let swap: Double = 3
-        static let destinationIdentity: Double = 2
-        static let destinationSupport: Double = 1
+        max(0, Metrics.identityHeight - nameLineHeight)
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            slot(source, direction: .source, onChoose: onChooseSource) {
-                sourceSupport.accessibilitySortPriority(ReadingOrder.sourceSupport)
-            }
-            swapDivider.accessibilitySortPriority(ReadingOrder.swap)
+            slot(source, direction: .source, onChoose: onChooseSource) { sourceSupport }
+            swapDivider
             slot(destination, direction: .destination, onChoose: onChooseDestination) {
                 // A short screen drops the balance, never the reason it can't
                 // receive.
                 if showsDestinationBalance || destinationProblem != nil {
-                    destinationSupport.accessibilitySortPriority(ReadingOrder.destinationSupport)
+                    destinationSupport
                 }
             }
         }
-        // Each mint's identity is drawn once, above the slots, and follows the
-        // placeholder that carries its id. When the mints trade slots the
-        // identities travel to their new places instead of being redrawn.
-        .overlay {
-            if !reduceMotion {
-                ForEach([source, destination]) { mint in
-                    let direction: MintSelectorDirection = mint.id == source.id ? .source : .destination
-                    identity(mint, direction: direction, onChoose: direction == .source ? onChooseSource : onChooseDestination)
-                        .matchedGeometryEffect(id: mint.id, in: slots, isSource: false)
-                        .accessibilitySortPriority(
-                            direction == .source ? ReadingOrder.sourceIdentity : ReadingOrder.destinationIdentity
-                        )
-                }
-            }
-        }
-        .accessibilityElement(children: .contain)
     }
 
     private func slot<Support: View>(
@@ -114,23 +73,10 @@ struct MintTransferRouteView: View {
                 .foregroundStyle(.secondary)
                 .padding(.bottom, Metrics.captionGap)
                 .accessibilityHidden(true)
-            if reduceMotion {
-                // No travel: the identity is replaced in place with a fade.
-                identity(mint, direction: direction, onChoose: onChoose)
-                    .id(mint.id)
-                    .transition(.opacity)
-                    .accessibilitySortPriority(
-                        direction == .source ? ReadingOrder.sourceIdentity : ReadingOrder.destinationIdentity
-                    )
-            } else {
-                identity(mint, direction: direction, onChoose: onChoose)
-                    .hidden()
-                    .accessibilityHidden(true)
-                    .matchedGeometryEffect(id: mint.id, in: slots)
-            }
+            // The mints change places without motion (DESIGN.md §6,
+            // animation 8): the press and the haptic answer the tap.
+            identity(mint, direction: direction, onChoose: onChoose)
             support()
-                .padding(.leading, Metrics.avatar + Metrics.gap)
-                .padding(.top, -supportLift)
         }
     }
 
@@ -152,7 +98,6 @@ struct MintTransferRouteView: View {
         onChoose: (() -> Void)?
     ) -> some View {
         let content = HStack(spacing: Metrics.gap) {
-            MintAvatarView(iconUrl: mint.iconUrl, name: mint.name, size: Metrics.avatar)
             Text(mint.name)
                 .font(.body.weight(.medium))
                 .lineLimit(1)
@@ -254,23 +199,20 @@ struct MintTransferRouteView: View {
             // A balance is a money value: it wraps at large text rather than
             // truncating or running past the row.
             .fixedSize(horizontal: false, vertical: true)
-            .contentTransition(.numericText())
     }
 
     private var swapDivider: some View {
         HStack(spacing: Metrics.gap) {
             hairline
             Button {
-                swapCount += 1
                 onSwap?()
             } label: {
+                // The captions carry the direction, so the glyph is symmetric
+                // and holds still: the mints moving is the answer to the tap,
+                // the press and the haptic are its feedback.
                 Image(systemName: "arrow.up.arrow.down")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.primary)
-                    // The captions carry the direction, so the glyph is
-                    // symmetric and a half turn reads as the flip it is.
-                    .rotationEffect(.degrees(reduceMotion ? 0 : Double(swapCount) * 180))
-                    .animation(.snappy(duration: 0.28), value: swapCount)
                     .frame(width: Metrics.swapDiameter, height: Metrics.swapDiameter)
                     .liquidGlass(in: Circle(), interactive: true)
                     .frame(width: 44, height: 44)

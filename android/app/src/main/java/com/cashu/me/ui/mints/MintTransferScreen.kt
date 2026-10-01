@@ -77,7 +77,6 @@ import com.cashu.me.ui.components.NoticeSeverity
 import com.cashu.me.ui.components.NumberPadFooter
 import com.cashu.me.ui.components.PaymentStatusPhase
 import com.cashu.me.ui.components.PaymentStatusScreen
-import com.cashu.me.ui.components.PrimaryButton
 import com.cashu.me.ui.components.SecondaryButton
 import com.cashu.me.ui.components.SheetHeader
 import com.cashu.me.ui.components.SpinnerRing
@@ -587,7 +586,6 @@ fun MintTransferScreen(
                     plan = plan,
                     failure = reviewFailure,
                     requoted = requoted,
-                    mint = ::mint,
                     mintName = ::mintName,
                     formatter = formatter,
                     useBitcoinSymbol = settings.useBitcoinSymbol,
@@ -748,19 +746,19 @@ private fun EntryFace(
     val accessibilityText = LocalDensity.current.fontScale >= AccessibilityTextScale
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         // The pad and the two mints are fixed; the amount takes what is left.
-        // The mints need 178dp: two 16dp captions with their 4dp gaps, two
-        // 32dp identity rows (each 48dp target overhangs its caption), the
-        // source balance (24dp, 6dp of it tucked under the name), the 48dp
-        // swap row and the 8dp gap above the pad. The destination's balance
-        // adds 18dp and is kept only while the amount can still sit at Hero
-        // beside it (196 + 160 = 356). On a shorter screen it goes first, then
-        // the amount steps down a rung, so none of them crowd each other.
-        // From large text the targets stop overhanging and the balances stop
-        // tucking: 22dp more per slot.
-        val room = maxHeight - numberPadFooterMinimumHeight() -
-            if (LocalDensity.current.fontScale >= LargeTextScale) 44.dp else 0.dp
-        val showsDestinationBalance = room >= 356.dp
-        val heroRoom = room - if (showsDestinationBalance) 196.dp else 178.dp
+        // The mints need two 16dp captions with their 4dp gaps, two name lines
+        // (each 48dp target overhangs its caption, so a row claims only its
+        // line), the 24dp source balance, the 48dp swap row and the 8dp gap
+        // above the pad: 120dp plus the name lines, 168dp at ordinary text.
+        // The destination's balance adds 24dp and is kept only while the
+        // amount can still sit at Hero beside it. On a shorter screen it goes
+        // first, then the amount steps down a rung, so none of them crowd
+        // each other.
+        val nameLine = with(LocalDensity.current) { MaterialTheme.typography.bodyLarge.lineHeight.toDp() }
+        val mintsHeight = 120.dp + nameLine * 2
+        val room = maxHeight - numberPadFooterMinimumHeight()
+        val showsDestinationBalance = room >= mintsHeight + 24.dp + 160.dp
+        val heroRoom = room - if (showsDestinationBalance) mintsHeight + 24.dp else mintsHeight
         val heroScale = when {
             heroRoom >= 160.dp -> AmountScale.Hero
             heroRoom >= 110.dp -> AmountScale.Confirm
@@ -826,7 +824,6 @@ private fun ReviewFace(
     plan: MintTransferPlan?,
     failure: ReviewFailure?,
     requoted: Boolean,
-    mint: (String) -> MintInfo?,
     mintName: (String) -> String,
     formatter: AmountFormatter,
     useBitcoinSymbol: Boolean,
@@ -889,18 +886,8 @@ private fun ReviewFace(
                             .fillMaxWidth()
                             .padding(top = CashuTheme.spacing.comfortable),
                     ) {
-                        // The avatars travel with the names, so the review reads
-                        // as the same two mints the route showed.
-                        TransferDetailRow(
-                            label = "From",
-                            value = mintName(plan.sourceMintUrl),
-                            mint = mint(plan.sourceMintUrl),
-                        )
-                        TransferDetailRow(
-                            label = "To",
-                            value = mintName(plan.destinationMintUrl),
-                            mint = mint(plan.destinationMintUrl),
-                        )
+                        TransferDetailRow(label = "From", value = mintName(plan.sourceMintUrl))
+                        TransferDetailRow(label = "To", value = mintName(plan.destinationMintUrl))
                         TransferDetailRow(
                             label = "Network fee",
                             value = formatter.formatWalletSats(plan.feeUpperBound, useBitcoinSymbol),
@@ -935,16 +922,16 @@ private fun ReviewFace(
                     onClick = onChangeAmount,
                 )
                 failure != null -> SecondaryButton(text = "Retry Quote", onClick = onRetryQuote)
-                // The one tap that moves money: the primary, naming the amount
-                // that arrives, as Send's "Pay N sat" does.
-                plan != null -> PrimaryButton(
+                // Names the amount that arrives. Tonal, like Continue: moving
+                // between your own mints is no payment (iOS parity).
+                plan != null -> SecondaryButton(
                     text = "Transfer ${formatter.formatWalletSats(plan.amount, useBitcoinSymbol)}",
                     onClick = onTransfer,
                     modifier = Modifier.testTag(UiTestTags.MintTransferSubmit),
                 )
                 // The hero spinner owns the wait; the button's footprint is
                 // reserved so nothing moves when the quote lands.
-                else -> PrimaryButton(
+                else -> SecondaryButton(
                     text = " ",
                     onClick = {},
                     enabled = false,
@@ -1057,13 +1044,11 @@ private fun TransferDetailRow(
     label: String,
     value: String,
     valueMonospaced: Boolean = false,
-    mint: MintInfo? = null,
 ) {
     InspectorRow(
         label = label,
         value = value,
         valueMonospaced = valueMonospaced,
-        valueAvatar = mint,
         modifier = Modifier.semantics(mergeDescendants = true) {},
     )
 }

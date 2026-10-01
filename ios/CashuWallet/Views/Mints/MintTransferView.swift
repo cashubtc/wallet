@@ -250,8 +250,8 @@ struct MintTransferView: View {
                 Button(action: review) {
                     Text("Continue")
                 }
-                // Quiet tonal fill: the inverse-ink primary is reserved for
-                // the commit on the review step.
+                // Quiet tonal fill, as the review's Transfer is: nothing on
+                // this sheet is a payment to someone else.
                 .flatSheetSecondaryButton()
                 .disabled(entryState != .ready || isFindingMax)
                 .accessibilityIdentifier("mints-transfer-continue")
@@ -375,9 +375,8 @@ struct MintTransferView: View {
             amountString = ""
         }
         entryNotice = nil
-        withAnimation(reduceMotion ? .easeOut(duration: 0.2) : .snappy(duration: 0.28)) {
-            route = newRoute
-        }
+        // No motion: the mints simply change places.
+        route = newRoute
     }
 
     private func dropMaxPlan() {
@@ -592,10 +591,10 @@ struct MintTransferView: View {
                             .flatSheetSecondaryButton()
                     }
                 } else if let plan {
-                    // The one tap that moves money: the primary, naming the
-                    // amount that arrives, as Send's "Pay N sat" does.
+                    // Names the amount that arrives. Quiet tonal fill, like
+                    // Continue: moving between your own mints is no payment.
                     Button(action: transfer) { Text("Transfer \(formatSats(plan.amount))") }
-                        .glassButton()
+                        .flatSheetSecondaryButton()
                         .accessibilityIdentifier("mints-transfer-commit")
                 }
             }
@@ -643,14 +642,9 @@ struct MintTransferView: View {
         .padding(.horizontal)
     }
 
-    /// The mint's avatar travels with its name, as on Send's confirm, so the
-    /// review reads as the same two mints the route showed.
     private func mintRow(label: String, mintURL: String) -> some View {
         let name = MintInfo.displayName(for: mintURL, in: walletManager.mints)
         return PaymentDetailPair(label: label) {
-            if let mint = mint(mintURL) {
-                MintAvatarView(iconUrl: mint.iconUrl, name: mint.name, size: 22)
-            }
             Text(name)
                 .fontWeight(.regular)
                 .truncationMode(.middle)

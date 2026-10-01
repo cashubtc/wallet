@@ -212,8 +212,9 @@ What this system explicitly rejects, pulled verbatim from docs/product/PRODUCT.m
 - *Transfer is the exception (2026-09-30).* Moving ecash between two held mints
   has no outside party: both ends are the user's own mints and choosing between
   them is the point of the screen. The amount hero stays on top; beneath it a
-  route block stacks a From row and a To row, each with the mint's avatar, name
-  and balance, split by one hairline that carries the swap control. Top is always
+  route block stacks a From row and a To row, each with the mint's name and
+  balance (2026-10-01: no avatar; the slot reads as three left-aligned lines,
+  caption, name, balance), split by one hairline that carries the swap control. Top is always
   From. The available line and Max belong to the From slot, not to a mint, so
   they stay put when the mints trade places. *(2026-10-01: Transfer drops the
   Max button; the source's balance is the control, and tapping it fills the
@@ -230,9 +231,9 @@ What this system explicitly rejects, pulled verbatim from docs/product/PRODUCT.m
   can't send or receive over Lightning, or its balance can't cover the fee) is
   said on that mint's line behind the caution glyph, with the words kept
   secondary for contrast; the note under the amount is for the amount only.
-  The review's From and To rows
-  carry the mint avatars, as Send's confirm does, and the commit is the primary
-  "Transfer 21 sat". While the transfer runs the status screen keeps its rows up
+  The review names the mints in its From and To rows, without avatars, and the
+  commit is the tonal "Transfer 21 sat", like Continue: moving between your own
+  mints is no payment. While the transfer runs the status screen keeps its rows up
   and a secondary line names the leg in flight, "Leaving {source}" then
   "Arriving at {destination}", announced as it changes.)*
 - Payment facts use regular footnote/bodyMedium type, secondary labels, primary
@@ -1556,6 +1557,15 @@ code must be).
    is the symmetric `arrow.up.arrow.down` in a Liquid Glass circle and makes a
    half turn on the same `.snappy(0.28)`. No bounce: bounce stays the
    celebration's.)*
+   *(2026-10-01, retired: the route swap no longer animates. The mints, their
+   names and their balances change places instantly, and a pick from the list
+   lands the same way. The cross-slot travel read as a trading-app flourish,
+   the digit roll made a different mint's balance look like a changed value,
+   and every replacement tried (a directional cross-fade, a fade-through, a
+   clipped per-slot push) read as either two names at once, a blink, or too
+   much. The glyph holds still; the press scale and the selection haptic are
+   the whole answer to the tap. Revisit only with a reason the user would
+   notice missing.)*
    The balance lines belong to the slots and change in place with a numeric
    content transition. None of the seven fit: this is the one place two elements
    exchange positions, and the travel is what tells the user which mint went

@@ -146,6 +146,10 @@ like a port, make the Android-native choice instead.
   spatial springs overshoot a half turn visibly. The identity rows keep the standard bounded
   ripple. On Review, predictive back previews and then returns to the amount
   face instead of closing the sheet, as UX_SPEC.md's two-face rule asks.)*
+  *(2026-10-01, retired: the swap no longer animates. The mints change places
+  instantly; the press morph and the tick are the feedback. The slots show
+  the mint's name and balance only, no avatar. iOS parity: DESIGN.md §6
+  animation 8.)*
 - **Numbers are quiet**: `AmountText` cross-fades the whole string on change
   (`Spring.StiffnessMedium`, no per-digit slide) — the same restrained
   transition every other amount swap uses (`AmountFlipDisplay`, `BalanceDisplay`).
