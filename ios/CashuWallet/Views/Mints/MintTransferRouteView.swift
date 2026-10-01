@@ -29,6 +29,10 @@ struct MintTransferRouteView: View {
     /// The name's line at the current text size.
     @ScaledMetric(relativeTo: .body) private var nameLineHeight: CGFloat = 22
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Each swap turns the glyph another half turn.
+    @State private var swapCount = 0
+
     private enum Metrics {
         static let identityHeight: CGFloat = 44
         static let supportHeight: CGFloat = 24
@@ -73,11 +77,25 @@ struct MintTransferRouteView: View {
                 .foregroundStyle(.secondary)
                 .padding(.bottom, Metrics.captionGap)
                 .accessibilityHidden(true)
-            // The mints change places without motion (DESIGN.md §6,
-            // animation 8): the press and the haptic answer the tap.
             identity(mint, direction: direction, onChoose: onChoose)
-            support()
+            // The balance line belongs to the mint, so it changes with the
+            // name. Stacked, so the line on its way out never pushes the new
+            // one down.
+            ZStack(alignment: .leading) {
+                support()
+                    .id(mint.id)
+                    .transition(mintChange)
+            }
         }
+        // A different mint taking the slot is the only change that morphs
+        // (DESIGN.md §6, animation 8); the caption and chevron stay put.
+        .animation(reduceMotion ? .easeInOut(duration: 0.2) : .snappy(duration: 0.28), value: mint.id)
+    }
+
+    /// The old mint's lines go out of focus as the new one's come into it, in
+    /// place: nothing travels between the slots.
+    private var mintChange: AnyTransition {
+        reduceMotion ? .opacity : AnyTransition(.blurReplace)
     }
 
     private func identity(
@@ -98,10 +116,15 @@ struct MintTransferRouteView: View {
         onChoose: (() -> Void)?
     ) -> some View {
         let content = HStack(spacing: Metrics.gap) {
-            Text(mint.name)
-                .font(.body.weight(.medium))
-                .lineLimit(1)
-                .truncationMode(.tail)
+            // The name belongs to the mint, the chevron to the slot.
+            ZStack(alignment: .leading) {
+                Text(mint.name)
+                    .font(.body.weight(.medium))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .id(mint.id)
+                    .transition(mintChange)
+            }
             Spacer(minLength: 8)
             if onChoose != nil {
                 Image(systemName: "chevron.down")
@@ -205,14 +228,17 @@ struct MintTransferRouteView: View {
         HStack(spacing: Metrics.gap) {
             hairline
             Button {
+                swapCount += 1
                 onSwap?()
             } label: {
                 // The captions carry the direction, so the glyph is symmetric
-                // and holds still: the mints moving is the answer to the tap,
-                // the press and the haptic are its feedback.
+                // and a half turn lands it on itself: it reads as the flip
+                // the tap makes. The glass stays still; only the arrows turn.
                 Image(systemName: "arrow.up.arrow.down")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.primary)
+                    .rotationEffect(.degrees(reduceMotion ? 0 : Double(swapCount) * 180))
+                    .animation(.smooth(duration: 0.4), value: swapCount)
                     .frame(width: Metrics.swapDiameter, height: Metrics.swapDiameter)
                     .liquidGlass(in: Circle(), interactive: true)
                     .frame(width: 44, height: 44)

@@ -1566,6 +1566,26 @@ code must be).
    much. The glyph holds still; the press scale and the selection haptic are
    the whole answer to the tap. Revisit only with a reason the user would
    notice missing.)*
+   *(2026-10-01, reinstated at the user's request, in place and native: when
+   a different mint takes a slot, that slot's name and balance line go through
+   SwiftUI's own `.blurReplace` on `.snappy(0.28)`, keyed to the mint, so the
+   outgoing mint blurs out as the incoming one comes into focus where it
+   stands. Nothing travels between the slots and nothing is directional; the
+   caption and chevron belong to the slot and stay still. A pick from the list
+   lands the same way. The glyph makes a half turn on `.smooth(duration:
+   0.4)` (user-picked from a side-by-side of the options): symmetric, it lands
+   on itself, and with no overshoot it settles square. Only the arrows turn,
+   not the glass. The SF Symbols effects were compared and passed over: Rotate
+   is a full spin on this glyph, Wiggle barely moves it, Draw breaks the arrows
+   apart, and Bounce stays the celebration's. The balance is blurred for the
+   length of the morph, a deliberate exception to "never on a money value":
+   the number is not changing, the mint is. Reduce Motion: an opacity
+   cross-fade on `.easeInOut(0.2)`, glyph still. Android: the same morph on
+   `fadeIn(defaultEffectsSpec) togetherWith fadeOut(fastEffectsSpec)` with a
+   4dp `morphBlur` mask, and the same half turn on a critically damped
+   `Spring.StiffnessLow` spring, whose response matches `.smooth(0.4)`; the
+   motion scheme's effects specs are faster and its spatial specs
+   overshoot.)*
    The balance lines belong to the slots and change in place with a numeric
    content transition. None of the seven fit: this is the one place two elements
    exchange positions, and the travel is what tells the user which mint went

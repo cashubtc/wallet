@@ -150,6 +150,17 @@ like a port, make the Android-native choice instead.
   instantly; the press morph and the tick are the feedback. The slots show
   the mint's name and balance only, no avatar. iOS parity: DESIGN.md §6
   animation 8.)*
+  *(2026-10-01, reinstated at the user's request: when a different mint
+  takes a slot, its name and balance line morph in place through
+  `AnimatedContent` keyed to the mint URL: `fadeIn(defaultEffectsSpec)
+  togetherWith fadeOut(fastEffectsSpec)`, unclipped, with a 4dp `morphBlur`
+  mask, so the outgoing mint blurs out as the incoming one comes into focus
+  (iOS `.blurReplace`). Nothing travels between the slots. Beside the press
+  morph, the `SwapVert` glyph makes a half turn on
+  `spring(DampingRatioNoBouncy, StiffnessLow)`, matched to iOS
+  `.smooth(duration: 0.4)`: the motion scheme's effects specs run faster and
+  its Expressive spatial specs overshoot a half turn visibly. Reduce motion
+  holds the glyph still; it and API 26–30 drop the blur and keep the fade.)*
 - **Numbers are quiet**: `AmountText` cross-fades the whole string on change
   (`Spring.StiffnessMedium`, no per-digit slide) — the same restrained
   transition every other amount swap uses (`AmountFlipDisplay`, `BalanceDisplay`).

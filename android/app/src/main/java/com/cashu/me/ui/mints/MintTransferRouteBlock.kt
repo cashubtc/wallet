@@ -1,5 +1,13 @@
 package com.cashu.me.ui.mints
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -34,9 +42,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
@@ -69,9 +82,11 @@ import com.cashu.me.ui.components.CompactSheetContent
 import com.cashu.me.ui.components.FlowSheetTitle
 import com.cashu.me.ui.components.MintAvatar
 import com.cashu.me.ui.components.bitcoinAmountText
+import com.cashu.me.ui.components.morphBlur
 import com.cashu.me.ui.components.rememberSheetDismissAction
 import com.cashu.me.ui.testing.UiTestTags
 import com.cashu.me.ui.theme.CashuTheme
+import com.cashu.me.ui.theme.rememberReducedMotion
 import com.cashu.me.ui.theme.withMonoDigits
 
 private val IdentityMinHeight = 48.dp
@@ -82,6 +97,19 @@ private val MinimumTouchTarget = 48.dp
 private val MaxProgressSize = 16.dp
 private val HairlineThickness = 0.5.dp
 private const val DisabledContentAlpha = 0.38f
+
+// A different mint taking a slot: its lines blur out as the new mint's come
+// into focus (iOS `.blurReplace` parity).
+private val SlotMorphBlur = 4.dp
+
+// Each swap turns the glyph a half turn on a critically damped spring whose
+// response matches iOS `.smooth(duration: 0.4)`: no overshoot, so the
+// symmetric glyph lands squarely on itself.
+private const val SwapHalfTurnDegrees = 180f
+private val SwapTurnSpec = spring<Float>(
+    dampingRatio = Spring.DampingRatioNoBouncy,
+    stiffness = Spring.StiffnessLow,
+)
 
 // The transfer picker keeps the pay flows' viewport: the title and roughly
 // four rows. A longer list opens half-height instead and drags to full, so it
@@ -97,9 +125,10 @@ private const val PickerFixedRows = 4
  *
  * Unlike the centered From/To line on the pay screens, both ends here are the
  * user's own mints and the choice between them is the point of the screen, so
- * each gets its name and balance. No avatar, fill or card: one hairline. The
- * mints change places without motion (DESIGN.md §6, animation 8): the press
- * and the haptic answer the tap.
+ * each gets its name and balance. No avatar, fill or card: one hairline. When
+ * the mints change places each slot's lines morph in place to the new mint's
+ * and the glyph makes a half turn (DESIGN.md §6, animation 8); nothing travels
+ * between the slots.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -136,20 +165,26 @@ internal fun MintTransferRouteBlock(
         Box(modifier = Modifier.trimTop(touchOverhang)) {
             RouteIdentitySlot(mint = source, slot = Slot.Source, onChoose = onChooseSource)
         }
-        if (sourceProblem != null) {
-            // A mint with a problem has no maximum to offer, so the line is
-            // the reason.
-            ProblemLine(
-                balanceText = sourceBalanceText,
-                problem = sourceProblem,
-                description = "$sourceBalanceText available, $sourceProblem",
-            )
-        } else {
-            SourceSupport(
-                balanceText = sourceBalanceText,
-                isFindingMax = isFindingMax,
-                onUseMax = onUseMax,
-            )
+        // The balance line belongs to the mint, so it changes with the name.
+        SlotMorph(
+            state = SlotLine(source.url, sourceBalanceText, sourceProblem),
+            key = SlotLine::mintUrl,
+        ) { line ->
+            if (line.problem != null) {
+                // A mint with a problem has no maximum to offer, so the line
+                // is the reason.
+                ProblemLine(
+                    balanceText = line.balanceText,
+                    problem = line.problem,
+                    description = "${line.balanceText} available, ${line.problem}",
+                )
+            } else {
+                SourceSupport(
+                    balanceText = line.balanceText,
+                    isFindingMax = isFindingMax,
+                    onUseMax = onUseMax,
+                )
+            }
         }
         SwapDivider(destination = destination, source = source, onSwap = onSwap)
         SlotCaption("To")
@@ -157,19 +192,66 @@ internal fun MintTransferRouteBlock(
             RouteIdentitySlot(mint = destination, slot = Slot.Destination, onChoose = onChooseDestination)
         }
         // A short screen drops the balance, never the reason it can't receive.
-        if (destinationProblem != null) {
-            ProblemLine(
-                balanceText = destinationBalanceText,
-                problem = destinationProblem,
-                description = "Balance $destinationBalanceText, $destinationProblem",
-            )
-        } else if (showsDestinationBalance) {
-            SupportText(
-                text = destinationBalanceText,
-                modifier = Modifier
-                    .heightIn(min = SupportMinHeight)
-                    .clearAndSetSemantics { contentDescription = "Balance $destinationBalanceText" },
-            )
+        if (destinationProblem != null || showsDestinationBalance) {
+            SlotMorph(
+                state = SlotLine(destination.url, destinationBalanceText, destinationProblem),
+                key = SlotLine::mintUrl,
+            ) { line ->
+                if (line.problem != null) {
+                    ProblemLine(
+                        balanceText = line.balanceText,
+                        problem = line.problem,
+                        description = "Balance ${line.balanceText}, ${line.problem}",
+                    )
+                } else {
+                    SupportText(
+                        text = line.balanceText,
+                        modifier = Modifier
+                            .heightIn(min = SupportMinHeight)
+                            .clearAndSetSemantics { contentDescription = "Balance ${line.balanceText}" },
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** What a slot's second line shows for the mint in it. */
+private data class SlotLine(
+    val mintUrl: String,
+    val balanceText: String,
+    val problem: String?,
+)
+
+/**
+ * A slot's lines, morphing when a different mint takes the slot: the outgoing
+ * mint's blur out as the incoming mint's come into focus, in place (iOS
+ * `.blurReplace` parity). Anything else about the same mint (its balance, a
+ * problem, the fee check) changes in place without it. `morphBlur` drops the
+ * blur under reduce motion and below API 31, leaving the fade.
+ */
+@Composable
+private fun <T> SlotMorph(
+    state: T,
+    key: (T) -> Any,
+    modifier: Modifier = Modifier,
+    content: @Composable (T) -> Unit,
+) {
+    val enter = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
+    val exit = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
+    AnimatedContent(
+        targetState = state,
+        contentKey = key,
+        transitionSpec = {
+            // Unclipped: the lines' touch targets overhang them.
+            (fadeIn(enter) togetherWith fadeOut(exit)).using(SizeTransform(clip = false))
+        },
+        contentAlignment = Alignment.CenterStart,
+        modifier = modifier,
+        label = "transfer-slot-morph",
+    ) { current ->
+        Box(modifier = morphBlur(SlotMorphBlur, enterSpec = enter, exitSpec = exit)) {
+            content(current)
         }
     }
 }
@@ -252,15 +334,17 @@ private fun IdentityRow(mint: MintInfo, showsChevron: Boolean) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
     ) {
-        Text(
-            text = mint.name,
-            style = MaterialTheme.typography.bodyLarge,
-            fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
+        // The name belongs to the mint, the chevron to the slot.
+        SlotMorph(state = mint, key = MintInfo::url, modifier = Modifier.weight(1f)) { current ->
+            Text(
+                text = current.name,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
         if (showsChevron) {
             Icon(
                 imageVector = Icons.Outlined.KeyboardArrowDown,
@@ -410,10 +494,24 @@ private fun SwapDivider(
     source: MintInfo,
     onSwap: (() -> Unit)?,
 ) {
-    // The captions carry the direction, so the glyph is symmetric and holds
-    // still: the mints moving is the answer to the tap; the press morph and
-    // the haptic are its feedback.
-    val swap = { onSwap?.invoke() }
+    // The captions carry the direction, so the glyph is symmetric and a half
+    // turn lands it on itself: beside the press morph, it reads as the flip
+    // the tap makes (iOS parity). The container stays still; only the arrows
+    // turn.
+    val reducedMotion = rememberReducedMotion()
+    var turns by remember { mutableIntStateOf(0) }
+    // A second tap mid-turn retargets from wherever the glyph is.
+    val rotation by animateFloatAsState(
+        targetValue = turns * SwapHalfTurnDegrees,
+        animationSpec = SwapTurnSpec,
+        label = "transfer-swap-turn",
+    )
+    val swap = {
+        if (onSwap != null) {
+            onSwap()
+            if (!reducedMotion) turns += 1
+        }
+    }
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -441,7 +539,9 @@ private fun SwapDivider(
             Icon(
                 imageVector = Icons.Filled.SwapVert,
                 contentDescription = null,
-                modifier = Modifier.size(SwapGlyphSize),
+                modifier = Modifier
+                    .size(SwapGlyphSize)
+                    .graphicsLayer { rotationZ = rotation },
             )
         }
         Hairline(Modifier.weight(1f))

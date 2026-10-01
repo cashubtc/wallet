@@ -375,7 +375,7 @@ struct MintTransferView: View {
             amountString = ""
         }
         entryNotice = nil
-        // No motion: the mints simply change places.
+        // The route's slots morph to their new mints themselves.
         route = newRoute
     }
 
