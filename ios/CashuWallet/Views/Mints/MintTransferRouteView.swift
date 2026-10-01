@@ -14,6 +14,11 @@ struct MintTransferRouteView: View {
     /// The destination's balance once the typed amount arrives, while there is
     /// an amount that can.
     var destinationAfterText: String?
+    /// Why an end can't take part as it stands ("too little to cover the
+    /// fee"). Said on that mint's own line, not under the amount: the problem
+    /// is the mint, not the number.
+    var sourceProblem: String?
+    var destinationProblem: String?
     /// Short screens keep the destination to its identity line.
     var showsDestinationBalance = true
     var isFindingMax = false
@@ -54,7 +59,9 @@ struct MintTransferRouteView: View {
             }
             swapDivider.accessibilitySortPriority(ReadingOrder.swap)
             slot(destination, direction: .destination, onChoose: onChooseDestination) {
-                if showsDestinationBalance {
+                // A short screen drops the balance, never the reason it can't
+                // receive.
+                if showsDestinationBalance || destinationProblem != nil {
                     destinationSupport.accessibilitySortPriority(ReadingOrder.destinationSupport)
                 }
             }
@@ -144,7 +151,19 @@ struct MintTransferRouteView: View {
         }
     }
 
+    @ViewBuilder
     private var sourceSupport: some View {
+        if let sourceProblem {
+            // Max can't help a mint with a problem, so the line is the reason.
+            supportText(problemLine(sourceBalanceText, sourceProblem))
+                .frame(minHeight: Metrics.supportHeight, alignment: .leading)
+                .accessibilityLabel("\(sourceBalanceText) available, \(sourceProblem)")
+        } else {
+            sourceBalanceAndMax
+        }
+    }
+
+    private var sourceBalanceAndMax: some View {
         // Side by side while both fit; at large text Max drops under the
         // balance rather than truncating it.
         ViewThatFits(in: .horizontal) {
@@ -189,18 +208,33 @@ struct MintTransferRouteView: View {
     /// What the destination holds, and what it will hold once the typed amount
     /// arrives: the transfer read as a change in place, not a separate sum.
     private var destinationSupport: some View {
-        let label = destinationAfterText.map {
-            "Balance \(destinationBalanceText), \($0) after transfer"
-        } ?? "Balance \(destinationBalanceText)"
+        let label = if let destinationProblem {
+            "Balance \(destinationBalanceText), \(destinationProblem)"
+        } else if let destinationAfterText {
+            "Balance \(destinationBalanceText), \(destinationAfterText) after transfer"
+        } else {
+            "Balance \(destinationBalanceText)"
+        }
         return supportText(destinationLine)
             .frame(minHeight: Metrics.supportHeight, alignment: .leading)
             .accessibilityLabel(label)
     }
 
     private var destinationLine: Text {
+        if let destinationProblem {
+            return problemLine("Balance \(destinationBalanceText)", destinationProblem)
+        }
         guard let destinationAfterText else { return Text("Balance \(destinationBalanceText)") }
         let after = Text(destinationAfterText).foregroundStyle(.primary)
         return Text("Balance \(destinationBalanceText) \(Image(systemName: "arrow.forward")) \(after)")
+    }
+
+    /// An inline notice moved into the row: the caution glyph carries the
+    /// colour and the words stay secondary, so the line keeps its contrast.
+    private func problemLine(_ balance: String, _ problem: String) -> Text {
+        let glyph = Text(Image(systemName: ErrorSeverity.caution.icon))
+            .foregroundStyle(ErrorSeverity.caution.foreground)
+        return Text("\(glyph) \(balance) · \(problem)")
     }
 
     private func supportText(_ text: String) -> some View {

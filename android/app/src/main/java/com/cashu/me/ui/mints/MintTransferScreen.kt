@@ -106,6 +106,9 @@ private enum class TransferStep { Entry, Review, Status }
 // pad alone takes most of the screen, so everything above it scrolls instead.
 private const val AccessibilityTextScale = 1.5f
 
+// Said on the source's line when Max finds its whole balance would not pay the fee.
+private const val FeeShortfallText = "too little to cover the fee"
+
 // How far a held back gesture pulls the review toward the swipe, and how far
 // it dims, before it lets go to the amount.
 private val BackPreviewLean = 24.dp
@@ -162,6 +165,9 @@ fun MintTransferScreen(
     // cannot clear the spinner of the one that replaced it.
     var maxRequest by remember { mutableIntStateOf(0) }
     var entryNotice by remember { mutableStateOf<EntryNotice?>(null) }
+    // A source Max found too small to pay any fee (its url and the balance it
+    // held then). It stays said on that mint's line until its balance changes.
+    var feeShortfall by remember { mutableStateOf<Pair<String, Long>?>(null) }
 
     var plan by remember { mutableStateOf<MintTransferPlan?>(null) }
     var reviewFailure by remember { mutableStateOf<ReviewFailure?>(null) }
@@ -223,6 +229,24 @@ fun MintTransferScreen(
         MintTransferEligibility.eligible(source = destinationMint, destination = sourceMint)
 
     fun sats(value: Long) = formatter.formatWalletSats(value, settings.useBitcoinSymbol)
+
+    // A problem with a mint is said on that mint's line in the route; the
+    // notice under the amount is kept for the amount (iOS parity).
+    fun sourceProblem(source: MintInfo): String? = when {
+        entryState == MintTransferEntry.Blocked(MintTransferEligibility.Blocker.SourceCannotSend) ->
+            "can't send over Lightning"
+        feeShortfall?.let { (url, balance) ->
+            mintRemovalUrlsMatch(url, source.url) && balance == source.balance
+        } == true -> FeeShortfallText
+        else -> null
+    }
+    val destinationProblem = if (
+        entryState == MintTransferEntry.Blocked(MintTransferEligibility.Blocker.DestinationCannotReceive)
+    ) {
+        "can't receive over Lightning"
+    } else {
+        null
+    }
 
     // Quotes that were never executed exist at both mints; tell the wallet to
     // forget them. Committed plans are untouched by a discard. Runs on a scope
@@ -301,6 +325,11 @@ fun MintTransferScreen(
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
+            } catch (shortfall: MintTransferException.NothingToTransfer) {
+                // The fee alone outweighs this mint's balance: a fact about the
+                // mint, said on its line, where Max no longer offers itself.
+                mint(current.sourceMintUrl)?.let { feeShortfall = it.url to it.balance }
+                haptics.performHapticFeedback(HapticFeedbackType.Reject)
             } catch (error: Throwable) {
                 val message = error.walletMessage
                 entryNotice = EntryNotice(message.text, message.severity.toNoticeSeverity())
@@ -527,17 +556,21 @@ fun MintTransferScreen(
                         useBitcoinSymbol = settings.useBitcoinSymbol,
                         entryState = entryState,
                         notice = entryNotice,
-                        isWholeBalance = MintTransferEntry.isWholeBalance(
-                            entry = entryState,
-                            amount = amountSats,
-                            source = sourceMint,
-                            holdsMaxQuote = maxPlan != null,
-                        ),
+                        // "Use Max" would be wrong advice for a mint Max can't help.
+                        isWholeBalance = sourceProblem(sourceMint) == null &&
+                            MintTransferEntry.isWholeBalance(
+                                entry = entryState,
+                                amount = amountSats,
+                                source = sourceMint,
+                                holdsMaxQuote = maxPlan != null,
+                            ),
                         sourceBalanceText = sats(sourceMint.balance),
                         destinationBalanceText = sats(destinationMint.balance),
                         destinationAfterText = MintTransferEntry
                             .destinationBalanceAfter(entryState, amountSats, destinationMint)
                             ?.let(::sats),
+                        sourceProblem = sourceProblem(sourceMint),
+                        destinationProblem = destinationProblem,
                         isFindingMax = isFindingMax,
                         // Gated on a spendable balance: an empty mint has no maximum.
                         onUseMax = ::useMax.takeIf {
@@ -637,6 +670,8 @@ private fun EntryFace(
     sourceBalanceText: String,
     destinationBalanceText: String,
     destinationAfterText: String?,
+    sourceProblem: String?,
+    destinationProblem: String?,
     isFindingMax: Boolean,
     onUseMax: (() -> Unit)?,
     onChooseSource: (() -> Unit)?,
@@ -645,20 +680,13 @@ private fun EntryFace(
     onContinue: () -> Unit,
 ) {
     val overBalance = entryState == MintTransferEntry.OverBalance
-    val blockerText = (entryState as? MintTransferEntry.Blocked)?.let {
-        when (it.blocker) {
-            MintTransferEligibility.Blocker.SameMint -> null
-            MintTransferEligibility.Blocker.SourceCannotSend -> "${source.name} can't send over Lightning."
-            MintTransferEligibility.Blocker.DestinationCannotReceive ->
-                "${destination.name} can't receive over Lightning."
-        }
-    }
+    // Notes about the amount only. A problem with a mint is said on that
+    // mint's line in the route.
     val noticeText: String?
     val noticeSeverity: NoticeSeverity
     when {
         // The source row states what is available, so the notice does not repeat it.
         overBalance -> { noticeText = "Insufficient balance"; noticeSeverity = NoticeSeverity.Caution }
-        blockerText != null -> { noticeText = blockerText; noticeSeverity = NoticeSeverity.Caution }
         notice != null -> { noticeText = notice.text; noticeSeverity = notice.severity }
         // The fee comes on top of the amount, so the whole balance cannot
         // arrive. Said here, not after a quote has been asked for.
@@ -709,6 +737,8 @@ private fun EntryFace(
             sourceBalanceText = sourceBalanceText,
             destinationBalanceText = destinationBalanceText,
             destinationAfterText = destinationAfterText,
+            sourceProblem = sourceProblem,
+            destinationProblem = destinationProblem,
             showsDestinationBalance = showsDestinationBalance,
             isFindingMax = isFindingMax,
             onUseMax = onUseMax,

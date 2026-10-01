@@ -223,7 +223,11 @@ What this system explicitly rejects, pulled verbatim from docs/product/PRODUCT.m
   direction is read from words rather than from the glyph. The destination's
   line reads "Balance 1 sat", and once a valid amount is typed
   "Balance 1 sat → 3 sat" with the new balance in primary ink: the typed amount
-  is what arrives, so the new balance is exact. The review's From and To rows
+  is what arrives, so the new balance is exact. A problem with a mint (it
+  can't send or receive over Lightning, or its balance can't cover the fee) is
+  said on that mint's line behind the caution glyph, with the words kept
+  secondary for contrast; the note under the amount is for the amount only.
+  The review's From and To rows
   carry the mint avatars, as Send's confirm does, and the commit is the primary
   "Transfer 21 sat". While the transfer runs the status screen keeps its rows up
   and a secondary line names the leg in flight, "Leaving {source}" then

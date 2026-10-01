@@ -32,6 +32,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.SwapVert
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -141,6 +142,11 @@ internal fun MintTransferRouteBlock(
     // What the destination will hold once the amount arrives; null while there
     // is no amount ready to send.
     destinationAfterText: String? = null,
+    // Why an end can't take part as it stands ("too little to cover the fee").
+    // Said on that mint's own line, not under the amount: the problem is the
+    // mint, not the number.
+    sourceProblem: String? = null,
+    destinationProblem: String? = null,
     // Short screens keep the destination to its identity line.
     showsDestinationBalance: Boolean = true,
     isFindingMax: Boolean = false,
@@ -191,11 +197,20 @@ internal fun MintTransferRouteBlock(
                 },
             )
         }
-        SourceSupport(
-            balanceText = sourceBalanceText,
-            isFindingMax = isFindingMax,
-            onUseMax = onUseMax,
-        )
+        if (sourceProblem != null) {
+            // Max can't help a mint with a problem, so the line is the reason.
+            ProblemLine(
+                balanceText = sourceBalanceText,
+                problem = sourceProblem,
+                description = "$sourceBalanceText available, $sourceProblem",
+            )
+        } else {
+            SourceSupport(
+                balanceText = sourceBalanceText,
+                isFindingMax = isFindingMax,
+                onUseMax = onUseMax,
+            )
+        }
         SwapDivider(destination = destination, source = source, animates = travels, onSwap = onSwap)
         SlotCaption("To")
         Box(
@@ -213,7 +228,14 @@ internal fun MintTransferRouteBlock(
                 },
             )
         }
-        if (showsDestinationBalance) {
+        // A short screen drops the balance, never the reason it can't receive.
+        if (destinationProblem != null) {
+            ProblemLine(
+                balanceText = "Balance $destinationBalanceText",
+                problem = destinationProblem,
+                description = "Balance $destinationBalanceText, $destinationProblem",
+            )
+        } else if (showsDestinationBalance) {
             DestinationSupport(balanceText = destinationBalanceText, afterText = destinationAfterText)
         }
     }
@@ -465,6 +487,51 @@ private fun DestinationSupport(balanceText: String, afterText: String?) {
 }
 
 private const val AfterArrowId = "after-arrow"
+
+/**
+ * An inline notice moved into the row: the caution glyph carries the colour
+ * and the words stay secondary, so the line keeps its contrast. Announced
+ * politely when it appears, as `InlineNotice` is.
+ */
+@Composable
+private fun ProblemLine(balanceText: String, problem: String, description: String) {
+    val secondary = MaterialTheme.colorScheme.onSurfaceVariant
+    val line = buildAnnotatedString {
+        appendInlineContent(CautionGlyphId, "!")
+        append(' ')
+        append(bitcoinAmountText("$balanceText · $problem"))
+    }
+    val glyph = mapOf(
+        CautionGlyphId to InlineTextContent(
+            Placeholder(width = 1.em, height = 1.em, placeholderVerticalAlign = PlaceholderVerticalAlign.TextCenter),
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Warning,
+                contentDescription = null,
+                tint = CashuTheme.colors.pending,
+            )
+        },
+    )
+    Box(
+        modifier = Modifier
+            .padding(start = RouteAvatarSize + CashuTheme.spacing.default)
+            .heightIn(min = SupportMinHeight)
+            .clearAndSetSemantics {
+                contentDescription = description
+                liveRegion = LiveRegionMode.Polite
+            },
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Text(
+            text = line,
+            inlineContent = glyph,
+            style = MaterialTheme.typography.bodyMedium.withMonoDigits(),
+            color = secondary,
+        )
+    }
+}
+
+private const val CautionGlyphId = "caution-glyph"
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable

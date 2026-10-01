@@ -86,7 +86,12 @@ Cashu Request payment, and NFC receive (Android-only surface).
   says which leg is outstanding in the same words, never "payment":
   "{destination} is still issuing your ecash. It will arrive automatically."
   or "Still leaving {source}. Your funds are safe."
-- **Transfer entry and review.** Typing a source's whole balance shows the
+- **Transfer entry and review.** A problem with a mint is said on that mint's
+  line in the route, after its balance and behind the caution glyph, never
+  under the amount: "2 sat · too little to cover the fee" (Max found the fee
+  outweighs the whole balance; Max then hides), "2 sat · can't send over
+  Lightning", "Balance 1 sat · can't receive over Lightning". The note under
+  the amount is for the amount only. Typing a source's whole balance shows the
   info hint "Fees are added on top. Use Max to move everything." before any
   quote is asked for. When the quotes lapse on the review screen and are
   replaced, the review says "The fee was updated. Check it and transfer

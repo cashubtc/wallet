@@ -46,6 +46,14 @@ struct MintTransferView: View {
     /// cannot clear the spinner of the one that replaced it.
     @State private var maxRequest = 0
     @State private var entryNotice: EntryNotice?
+    /// A source Max found too small to pay any fee, at the balance it held
+    /// then. It stays said on that mint's line until its balance changes.
+    @State private var feeShortfall: FeeShortfall?
+
+    private struct FeeShortfall: Equatable {
+        let mintURL: String
+        let balance: UInt64
+    }
 
     @State private var plan: MintTransferPlan?
     @State private var reviewFailure: ReviewFailure?
@@ -264,6 +272,8 @@ struct MintTransferView: View {
             destinationAfterText: entryState == .ready && amountSats > 0
                 ? formatSats(destination.balance + amountSats)
                 : nil,
+            sourceProblem: sourceProblem,
+            destinationProblem: destinationProblem,
             showsDestinationBalance: showsDestinationBalance,
             isFindingMax: isFindingMax,
             // Gated on a spendable balance: an empty mint has no maximum.
@@ -294,14 +304,14 @@ struct MintTransferView: View {
         )
     }
 
+    /// Notes about the amount only. A problem with a mint is said on that
+    /// mint's line in the route (`sourceProblem` / `destinationProblem`).
     @ViewBuilder
     private var entryNoticeView: some View {
         if entryState == .overBalance {
             // The source row states what is available, so the notice does not
             // repeat it.
             notice("Insufficient balance", severity: .caution)
-        } else if case .blocked(let blocker) = entryState, let text = blockerText(blocker) {
-            notice(text, severity: .caution)
         } else if let entryNotice {
             notice(entryNotice.text, severity: entryNotice.severity)
         } else if isWholeBalance {
@@ -312,26 +322,30 @@ struct MintTransferView: View {
     }
 
     private var isWholeBalance: Bool {
-        guard entryState == .ready, maxPlan == nil, let sourceMint else { return false }
+        guard entryState == .ready, maxPlan == nil, sourceProblem == nil, let sourceMint else { return false }
         return amountSats == sourceMint.balance
     }
+
+    private var sourceProblem: String? {
+        if entryState == .blocked(.sourceCannotSend) { return "can't send over Lightning" }
+        guard let sourceMint, let feeShortfall,
+              MintURLIdentity.normalized(feeShortfall.mintURL) == MintURLIdentity.normalized(sourceMint.url),
+              feeShortfall.balance == sourceMint.balance
+        else { return nil }
+        return Self.feeShortfallText
+    }
+
+    private var destinationProblem: String? {
+        entryState == .blocked(.destinationCannotReceive) ? "can't receive over Lightning" : nil
+    }
+
+    private static let feeShortfallText = "too little to cover the fee"
 
     private func notice(_ text: String, severity: ErrorSeverity) -> some View {
         InlineNotice(message: text, severity: severity, isCentered: true)
             .padding(.horizontal)
             .padding(.bottom, 8)
             .transition(.opacity)
-    }
-
-    private func blockerText(_ blocker: MintTransferEligibility.Blocker) -> String? {
-        switch blocker {
-        case .sameMint:
-            return nil
-        case .sourceCannotSend:
-            return sourceMint.map { "\($0.name) can't send over Lightning." }
-        case .destinationCannotReceive:
-            return destinationMint.map { "\($0.name) can't receive over Lightning." }
-        }
     }
 
     // MARK: - Entry actions
@@ -430,6 +444,17 @@ struct MintTransferView: View {
                 }
             } catch is CancellationError {
                 return
+            } catch MintTransferError.nothingToTransfer {
+                guard !Task.isCancelled, let source = mint(route.sourceMintURL) else { return }
+                // The fee alone outweighs this mint's balance: a fact about the
+                // mint, said on its line, where Max no longer offers itself.
+                withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : .snappy(duration: 0.25)) {
+                    feeShortfall = FeeShortfall(mintURL: source.url, balance: source.balance)
+                }
+                HapticFeedback.notification(.warning)
+                AccessibilityNotification.Announcement(
+                    "\(source.name): \(Self.feeShortfallText)"
+                ).post()
             } catch {
                 guard !Task.isCancelled else { return }
                 let message = error.walletMessage
