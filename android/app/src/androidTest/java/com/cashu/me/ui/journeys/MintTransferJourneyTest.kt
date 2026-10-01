@@ -43,7 +43,7 @@ class MintTransferJourneyTest {
             .tapTag(UiTestTags.MintTransferContinue)
             .awaitText("Network fee").awaitText("Total")
             .tapTag(UiTestTags.MintTransferSubmit)
-            .awaitText("Transfer Complete")
+            .awaitText("Transfer complete")
     }
 
     private fun addSecondMint() {

@@ -11,6 +11,9 @@ struct MintTransferRouteView: View {
     let destination: MintInfo
     let sourceBalanceText: String
     let destinationBalanceText: String
+    /// The destination's balance once the typed amount arrives, while there is
+    /// an amount that can.
+    var destinationAfterText: String?
     /// Short screens keep the destination to its identity line.
     var showsDestinationBalance = true
     var isFindingMax = false
@@ -33,12 +36,27 @@ struct MintTransferRouteView: View {
         static let swapDiameter: CGFloat = 36
     }
 
+    /// VoiceOver reads the route top to bottom. The travelling identities are
+    /// drawn in an overlay, which would otherwise be read after the lines
+    /// beneath them.
+    private enum ReadingOrder {
+        static let sourceIdentity: Double = 5
+        static let sourceSupport: Double = 4
+        static let swap: Double = 3
+        static let destinationIdentity: Double = 2
+        static let destinationSupport: Double = 1
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            slot(source, direction: .source, onChoose: onChooseSource) { sourceSupport }
-            swapDivider
+            slot(source, direction: .source, onChoose: onChooseSource) {
+                sourceSupport.accessibilitySortPriority(ReadingOrder.sourceSupport)
+            }
+            swapDivider.accessibilitySortPriority(ReadingOrder.swap)
             slot(destination, direction: .destination, onChoose: onChooseDestination) {
-                if showsDestinationBalance { destinationSupport }
+                if showsDestinationBalance {
+                    destinationSupport.accessibilitySortPriority(ReadingOrder.destinationSupport)
+                }
             }
         }
         // Each mint's identity is drawn once, above the slots, and follows the
@@ -50,9 +68,13 @@ struct MintTransferRouteView: View {
                     let direction: MintSelectorDirection = mint.id == source.id ? .source : .destination
                     identity(mint, direction: direction, onChoose: direction == .source ? onChooseSource : onChooseDestination)
                         .matchedGeometryEffect(id: mint.id, in: slots, isSource: false)
+                        .accessibilitySortPriority(
+                            direction == .source ? ReadingOrder.sourceIdentity : ReadingOrder.destinationIdentity
+                        )
                 }
             }
         }
+        .accessibilityElement(children: .contain)
     }
 
     private func slot<Support: View>(
@@ -62,11 +84,20 @@ struct MintTransferRouteView: View {
         @ViewBuilder support: () -> Support
     ) -> some View {
         VStack(alignment: .leading, spacing: 0) {
+            // The slot carries the direction, so the caption stays put while
+            // the mints trade places. VoiceOver hears it in the row's label.
+            Text(direction.label)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
             if reduceMotion {
                 // No travel: the identity is replaced in place with a fade.
                 identity(mint, direction: direction, onChoose: onChoose)
                     .id(mint.id)
                     .transition(.opacity)
+                    .accessibilitySortPriority(
+                        direction == .source ? ReadingOrder.sourceIdentity : ReadingOrder.destinationIdentity
+                    )
             } else {
                 identity(mint, direction: direction, onChoose: onChoose)
                     .hidden()
@@ -155,20 +186,35 @@ struct MintTransferRouteView: View {
         }
     }
 
+    /// What the destination holds, and what it will hold once the typed amount
+    /// arrives: the transfer read as a change in place, not a separate sum.
     private var destinationSupport: some View {
-        supportText(destinationBalanceText)
+        let label = destinationAfterText.map {
+            "Balance \(destinationBalanceText), \($0) after transfer"
+        } ?? "Balance \(destinationBalanceText)"
+        return supportText(destinationLine)
             .frame(minHeight: Metrics.supportHeight, alignment: .leading)
-            .accessibilityLabel("Balance \(destinationBalanceText)")
+            .accessibilityLabel(label)
+    }
+
+    private var destinationLine: Text {
+        guard let destinationAfterText else { return Text("Balance \(destinationBalanceText)") }
+        let after = Text(destinationAfterText).foregroundStyle(.primary)
+        return Text("Balance \(destinationBalanceText) \(Image(systemName: "arrow.forward")) \(after)")
     }
 
     private func supportText(_ text: String) -> some View {
-        Text(text)
+        supportText(Text(text))
+    }
+
+    private func supportText(_ text: Text) -> some View {
+        text
             .font(.subheadline)
             .monospacedDigit()
             .foregroundStyle(.secondary)
-            .lineLimit(1)
-            // A balance is a money value: it never truncates to fit.
-            .fixedSize(horizontal: true, vertical: false)
+            // A balance is a money value: it wraps at large text rather than
+            // truncating or running past the row.
+            .fixedSize(horizontal: false, vertical: true)
             .contentTransition(.numericText())
     }
 
@@ -179,21 +225,22 @@ struct MintTransferRouteView: View {
                 swapCount += 1
                 onSwap?()
             } label: {
-                Image(systemName: "arrow.down")
+                Image(systemName: "arrow.up.arrow.down")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.primary)
-                    // A full turn: the mints trade places, the direction does not.
-                    .rotationEffect(.degrees(reduceMotion ? 0 : Double(swapCount) * 360))
+                    // The captions carry the direction, so the glyph is
+                    // symmetric and a half turn reads as the flip it is.
+                    .rotationEffect(.degrees(reduceMotion ? 0 : Double(swapCount) * 180))
                     .animation(.snappy(duration: 0.28), value: swapCount)
                     .frame(width: Metrics.swapDiameter, height: Metrics.swapDiameter)
-                    .background(Color(.secondarySystemFill), in: Circle())
+                    .liquidGlass(in: Circle(), interactive: true)
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
             .buttonStyle(PressableButtonStyle())
             .disabled(onSwap == nil)
             .opacity(onSwap == nil ? DisabledControlOpacity.content : 1)
-            .accessibilityLabel("Swap direction")
+            .accessibilityLabel("Swap mints")
             .accessibilityHint("Transfer from \(destination.name) to \(source.name) instead")
             hairline
         }
@@ -228,6 +275,13 @@ struct MintTransferMintPicker: View {
     /// The same viewport as the pay flows' mint picker: the title and roughly
     /// four rows, scrolling beyond that.
     private static let pickerHeight: CGFloat = 368
+    private static let rowsInViewport = 4
+
+    /// Beyond the viewport's four rows the sheet can also be pulled up to
+    /// show them all; with four or fewer there is nothing more to reveal.
+    private var detents: Set<PresentationDetent> {
+        options.count > Self.rowsInViewport ? [.height(Self.pickerHeight), .large] : [.height(Self.pickerHeight)]
+    }
 
     var body: some View {
         NavigationStack {
@@ -242,7 +296,7 @@ struct MintTransferMintPicker: View {
             .navigationTitle(direction == .source ? "Transfer from" : "Transfer to")
             .navigationBarTitleDisplayMode(.inline)
         }
-        .presentationDetents([.height(Self.pickerHeight)])
+        .presentationDetents(detents)
         .presentationDragIndicator(.visible)
         .compactBottomSheetSurface()
     }

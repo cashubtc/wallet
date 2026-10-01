@@ -9,7 +9,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +17,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -26,9 +26,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.InlineTextContent
+import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -52,24 +55,34 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalInspectionMode
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.Placeholder
+import androidx.compose.ui.text.PlaceholderVerticalAlign
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.zIndex
 import com.cashu.me.Core.CDK.mintRemovalUrlsMatch
 import com.cashu.me.Core.MintTransferRoute.Slot
@@ -97,9 +110,11 @@ private const val DisabledContentAlpha = 0.38f
 private const val LargeTextScale = 1.3f
 
 // The transfer picker keeps the pay flows' viewport: the title and roughly
-// four rows, scrolling beyond that.
+// four rows. A longer list opens half-height instead and drags to full, so it
+// is not read through a four-row slot.
 private val PickerAvatarSize = 40.dp
 private val PickerSheetHeight = 360.dp
+private const val PickerFixedRows = 4
 
 /**
  * The two ends of a transfer, stacked: the mint the ecash leaves, the control
@@ -111,8 +126,9 @@ private val PickerSheetHeight = 360.dp
  * each gets its avatar, name and balance. No fill or card: one hairline.
  *
  * When the mints trade slots the two identities travel to each other's place
- * on the spatial spring, while the balance lines stay with their slots and
- * change in place. Reduced motion cross-fades the identities where they sit.
+ * on the spatial spring, while the From/To captions and the balance lines stay
+ * with their slots and change in place. Reduced motion cross-fades the
+ * identities where they sit.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -122,6 +138,9 @@ internal fun MintTransferRouteBlock(
     sourceBalanceText: String,
     destinationBalanceText: String,
     modifier: Modifier = Modifier,
+    // What the destination will hold once the amount arrives; null while there
+    // is no amount ready to send.
+    destinationAfterText: String? = null,
     // Short screens keep the destination to its identity line.
     showsDestinationBalance: Boolean = true,
     isFindingMax: Boolean = false,
@@ -156,6 +175,7 @@ internal fun MintTransferRouteBlock(
     val identityZ = if (travel.isRunning) 1f else 0f
 
     Column(modifier = modifier.fillMaxWidth()) {
+        SlotCaption("From")
         Box(
             modifier = Modifier
                 .zIndex(identityZ)
@@ -177,6 +197,7 @@ internal fun MintTransferRouteBlock(
             onUseMax = onUseMax,
         )
         SwapDivider(destination = destination, source = source, animates = travels, onSwap = onSwap)
+        SlotCaption("To")
         Box(
             modifier = Modifier
                 .zIndex(identityZ)
@@ -193,18 +214,35 @@ internal fun MintTransferRouteBlock(
             )
         }
         if (showsDestinationBalance) {
-            SupportText(
-                text = destinationBalanceText,
-                modifier = Modifier
-                    .padding(start = RouteAvatarSize + CashuTheme.spacing.default)
-                    .heightIn(min = SupportMinHeight)
-                    .semantics { contentDescription = "Balance $destinationBalanceText" },
-            )
+            DestinationSupport(balanceText = destinationBalanceText, afterText = destinationAfterText)
         }
     }
 }
 
-/** One slot's identity, keyed on the mint so a new name or logo updates in place. */
+/**
+ * Which end a slot is. It belongs to the slot, not the mint, so it stays put
+ * while the identities trade places. TalkBack hears it in the identity's own
+ * description.
+ */
+@Composable
+private fun SlotCaption(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clearAndSetSemantics {},
+    )
+}
+
+/**
+ * One slot's identity, keyed on the mint so a new name or logo updates in place.
+ *
+ * The slot, not the faded content, carries the semantics: it outlives the swap,
+ * so a new mint reaches TalkBack as this node's description changing, which its
+ * polite live region announces ("To Y"). A node that faded in fresh would not be.
+ */
 @Composable
 private fun RouteIdentitySlot(
     mint: MintInfo,
@@ -213,50 +251,42 @@ private fun RouteIdentitySlot(
     onChoose: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
+    val description = "${if (slot == Slot.Source) "From" else "To"} ${mint.name}"
     AnimatedContent(
         targetState = mint,
-        modifier = modifier,
+        modifier = modifier.clearAndSetSemantics {
+            contentDescription = description
+            liveRegion = LiveRegionMode.Polite
+            if (onChoose != null) {
+                role = Role.Button
+                onClick(label = "Choose a different mint") {
+                    onChoose()
+                    true
+                }
+            }
+        },
         transitionSpec = { fadeIn(fade) togetherWith fadeOut(fade) },
         contentKey = { it.url },
         label = "transfer-route-identity",
     ) { current ->
-        RouteIdentity(mint = current, slot = slot, onChoose = onChoose)
+        RouteIdentity(mint = current, onChoose = onChoose)
     }
 }
 
 @Composable
 private fun RouteIdentity(
     mint: MintInfo,
-    slot: Slot,
     onChoose: (() -> Unit)?,
 ) {
-    val description = "${if (slot == Slot.Source) "From" else "To"} ${mint.name}"
-    val interaction = remember { MutableInteractionSource() }
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = IdentityMinHeight)
             .then(
                 if (onChoose != null) {
-                    Modifier
-                        // Opening the picker is the feedback; a ripple would
-                        // flash a filled card around a deliberately unboxed row.
-                        .clickable(
-                            interactionSource = interaction,
-                            indication = null,
-                            role = Role.Button,
-                            onClick = onChoose,
-                        )
-                        .clearAndSetSemantics {
-                            contentDescription = description
-                            role = Role.Button
-                            onClick(label = "Choose a different mint") {
-                                onChoose()
-                                true
-                            }
-                        }
+                    Modifier.clickable(role = Role.Button, onClick = onChoose)
                 } else {
-                    Modifier.clearAndSetSemantics { contentDescription = description }
+                    Modifier
                 },
             ),
         verticalAlignment = Alignment.CenterVertically,
@@ -375,14 +405,66 @@ private fun SupportText(text: String, modifier: Modifier = Modifier) {
     Box(modifier = modifier, contentAlignment = Alignment.CenterStart) {
         Text(
             text = bitcoinAmountText(text),
+            // A balance is a money value: at large text it wraps rather than
+            // truncating or being clipped at the edge.
             style = MaterialTheme.typography.bodyMedium.withMonoDigits(),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            // A balance is a money value: it never truncates to fit.
-            maxLines = 1,
-            softWrap = false,
         )
     }
 }
+
+/**
+ * What the destination holds, and what it will hold once the amount arrives:
+ * the transfer read as a change in place, not a separate sum.
+ */
+@Composable
+private fun DestinationSupport(balanceText: String, afterText: String?) {
+    val secondary = MaterialTheme.colorScheme.onSurfaceVariant
+    val line = buildAnnotatedString {
+        append(bitcoinAmountText("Balance $balanceText"))
+        if (afterText != null) {
+            append(' ')
+            appendInlineContent(AfterArrowId, "→")
+            append(' ')
+            withStyle(SpanStyle(color = MaterialTheme.colorScheme.onSurface)) {
+                append(bitcoinAmountText(afterText))
+            }
+        }
+    }
+    val arrow = mapOf(
+        AfterArrowId to InlineTextContent(
+            Placeholder(width = 1.em, height = 1.em, placeholderVerticalAlign = PlaceholderVerticalAlign.TextCenter),
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                contentDescription = null,
+                tint = secondary,
+            )
+        },
+    )
+    Box(
+        modifier = Modifier
+            .padding(start = RouteAvatarSize + CashuTheme.spacing.default)
+            .heightIn(min = SupportMinHeight)
+            .clearAndSetSemantics {
+                contentDescription = if (afterText == null) {
+                    "Balance $balanceText"
+                } else {
+                    "Balance $balanceText, $afterText after transfer"
+                }
+            },
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Text(
+            text = line,
+            inlineContent = arrow,
+            style = MaterialTheme.typography.bodyMedium.withMonoDigits(),
+            color = secondary,
+        )
+    }
+}
+
+private const val AfterArrowId = "after-arrow"
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -393,10 +475,13 @@ private fun SwapDivider(
     onSwap: (() -> Unit)?,
 ) {
     var turns by remember { mutableIntStateOf(0) }
-    // A full turn: the mints trade places, the direction does not.
+    // A half turn per tap: the captions carry the direction, so the glyph is
+    // symmetric and half a turn reads as the flip it is. Fast-spatial stiffness
+    // on the critically damped effects spring: Expressive's spatial springs
+    // overshoot, and the glyph has to land square.
     val rotation by animateFloatAsState(
-        targetValue = turns * 360f,
-        animationSpec = if (animates) MaterialTheme.motionScheme.defaultSpatialSpec() else snap(),
+        targetValue = turns * 180f,
+        animationSpec = if (animates) MaterialTheme.motionScheme.slowEffectsSpec() else snap(),
         label = "transfer-route-swap-turn",
     )
     val swap = {
@@ -411,9 +496,10 @@ private fun SwapDivider(
         Hairline(Modifier.weight(1f))
         FilledTonalIconButton(
             onClick = { swap() },
+            shapes = IconButtonDefaults.shapes(),
             enabled = onSwap != null,
             modifier = Modifier.semantics {
-                contentDescription = "Swap direction"
+                contentDescription = "Swap mints"
                 if (onSwap != null) {
                     onClick(label = "Transfer from ${destination.name} to ${source.name} instead") {
                         swap()
@@ -427,7 +513,7 @@ private fun SwapDivider(
             ),
         ) {
             Icon(
-                imageVector = Icons.Filled.ArrowDownward,
+                imageVector = Icons.Filled.SwapVert,
                 contentDescription = null,
                 modifier = Modifier
                     .size(SwapGlyphSize)
@@ -482,8 +568,10 @@ internal fun MintTransferMintPicker(
     onSelect: (MintInfo) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val tall = options.size > PickerFixedRows
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = !tall)
     val dismiss = rememberSheetDismissAction(sheetState)
+    val haptics = LocalHapticFeedback.current
     CashuModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -494,7 +582,7 @@ internal fun MintTransferMintPicker(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(PickerSheetHeight)
+                    .then(if (tall) Modifier.fillMaxHeight() else Modifier.height(PickerSheetHeight))
                     .padding(horizontal = CashuTheme.spacing.comfortable)
                     .navigationBarsPadding(),
             ) {
@@ -504,7 +592,10 @@ internal fun MintTransferMintPicker(
                         PickerRow(
                             option = option,
                             selected = mintRemovalUrlsMatch(option.mint.url, selectedMintUrl),
-                            onClick = { dismiss { onSelect(option.mint) } },
+                            onClick = {
+                                haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                                dismiss { onSelect(option.mint) }
+                            },
                         )
                     }
                 }
@@ -551,9 +642,10 @@ private fun PickerRow(
             )
         }
         if (selected) {
+            // The row's selected state already says it.
             Icon(
                 imageVector = Icons.Filled.Check,
-                contentDescription = "Selected",
+                contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.size(CashuTheme.spacing.loose),
             )

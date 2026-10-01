@@ -46,7 +46,10 @@ internal fun shortenMintUrl(url: String): String =
         .trimEnd('/')
 
 internal fun mintDisplayName(url: String, mints: List<MintInfo>): String =
+    heldMintName(url, mints) ?: shortenMintUrl(url.trim())
+
+/** The name the wallet holds [url] under, or null when it holds no such mint. */
+internal fun heldMintName(url: String, mints: List<MintInfo>): String? =
     mints.firstOrNull {
         normalizedMintUrlForSelection(it.url) == normalizedMintUrlForSelection(url)
     }?.name?.trim()?.takeIf { it.isNotEmpty() }
-        ?: shortenMintUrl(url.trim())

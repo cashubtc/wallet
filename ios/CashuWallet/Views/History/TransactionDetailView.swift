@@ -95,7 +95,7 @@ struct TransactionDetailView: View {
 
     var body: some View {
         ActivityDetailSheet(
-            title: transaction.displayTitle,
+            title: transaction.displayTitle(mints: walletManager.mints),
             contentHeight: contentHeight,
             fitsContent: !usesAdaptiveQR,
             onShare: showsQR ? { showShareSheet = true } : nil

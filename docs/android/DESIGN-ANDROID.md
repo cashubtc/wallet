@@ -140,6 +140,12 @@ like a port, make the Android-native choice instead.
   fades in. Reduced motion cross-fades the identities where they sit.
   Transfer rows use avatar rows instead of the pay screens' centered From/To
   line (`MintTransferRouteBlock.kt`; see `docs/product/DESIGN.md`).
+  *(2026-10-01: each slot carries a `labelMedium` "From" / "To" caption that
+  stays with the slot, so the control is now the symmetric `SwapVert` and makes
+  a half turn on `slowEffectsSpec`, which is critically damped: the Expressive
+  spatial springs overshoot a half turn visibly. The identity rows keep the standard bounded
+  ripple. On Review, predictive back previews and then returns to the amount
+  face instead of closing the sheet, as UX_SPEC.md's two-face rule asks.)*
 - **Numbers are quiet**: `AmountText` cross-fades the whole string on change
   (`Spring.StiffnessMedium`, no per-digit slide) — the same restrained
   transition every other amount swap uses (`AmountFlipDisplay`, `BalanceDisplay`).

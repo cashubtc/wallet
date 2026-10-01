@@ -156,6 +156,15 @@ struct WalletTransaction: Identifiable {
         }
     }
 
+    /// `displayTitle` with a transfer's destination named, so transfers can be
+    /// told apart in a list ("Transfer to macadamia Mint"). Naming a mint needs
+    /// the wallet's mints; rows and the detail title both use this, so they
+    /// still read identically.
+    func displayTitle(mints: [MintInfo]) -> String {
+        guard let transfer else { return displayTitle }
+        return "Transfer to \(MintInfo.displayName(for: transfer.destinationMintURL, in: mints))"
+    }
+
     enum TransactionType {
         case incoming   // Mint or receive
         case outgoing   // Send or melt

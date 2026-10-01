@@ -81,6 +81,16 @@ Cashu Request payment, and NFC receive (Android-only surface).
   Processing" / "Transfer processing" while a leg is still settling, and
   "Transfer Failed" / "Transfer failed" otherwise. The received celebration
   never plays for a transfer, including when a later sweep finishes it.
+  While it runs, the line under "Transferring…" names where the ecash is:
+  "Leaving {source}", then "Arriving at {destination}". A settling terminal
+  says which leg is outstanding in the same words, never "payment":
+  "{destination} is still issuing your ecash. It will arrive automatically."
+  or "Still leaving {source}. Your funds are safe."
+- **Transfer entry and review.** Typing a source's whole balance shows the
+  info hint "Fees are added on top. Use Max to move everything." before any
+  quote is asked for. When the quotes lapse on the review screen and are
+  replaced, the review says "The fee was updated. Check it and transfer
+  again." The commit names the amount that arrives: "Transfer 21 sat".
 
 ### 2. History row / transaction detail title (factual record)
 
@@ -95,10 +105,13 @@ receipt.
   `WalletTransaction.displayTitle`, Android `TransactionDisplay.title`) so a
   row and the detail it opens read identically.
 - **Transfers:** moving ecash between two of the user's own mints is titled
-  **"Transfer"** with no verb — nothing was received and nothing was sent. The
-  detail names the mints as "From" and "To". While the destination has yet to
-  issue the ecash the status reads "Arriving at {mint}"; while the payment is
-  still settling, "Payment in progress".
+  **"Transfer to {destination}"** — kind first, then where the ecash went, and
+  no verb: nothing was received and nothing was sent. Naming the destination is
+  what lets a list of transfers be told apart; a destination the wallet no
+  longer holds is named by its host. The detail names the mints as "From" and
+  "To". While the destination has yet to issue the ecash the status reads
+  "Arriving at {mint}"; while the payment is still settling, "Payment in
+  progress".
 
 ### 3. Transient live confirmation (brief signal)
 

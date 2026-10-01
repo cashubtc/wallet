@@ -129,6 +129,32 @@ final class MintTransferProjectionTests: XCTestCase {
         XCTAssertTrue(HistorySearch.matches(query: "transfer", transaction: row))
     }
 
+    /// Rows and the detail title name where the ecash went, so a list of
+    /// transfers can be told apart.
+    func testTransferTitleNamesTheDestination() {
+        let row = project([payment(), receipt()], [record(.completed)])[0]
+        let mints = [
+            MintInfo(url: source, name: "antifiat mint", isActive: true, balance: 0),
+            MintInfo(url: destination, name: "macadamia Mint", isActive: true, balance: 40),
+        ]
+
+        XCTAssertEqual(row.displayTitle(mints: mints), "Transfer to macadamia Mint")
+        XCTAssertTrue(HistorySearch.matches(query: "macadamia", transaction: row, mints: mints))
+    }
+
+    /// A destination the wallet no longer holds is still named, by its host.
+    func testTransferTitleFallsBackToTheDestinationHost() {
+        let row = project([payment(), receipt()], [record(.completed)])[0]
+
+        XCTAssertEqual(row.displayTitle(mints: []), "Transfer to destination.example")
+    }
+
+    func testOtherRowsKeepTheirTitleWhenMintsAreKnown() {
+        let rows = project([payment(), receipt()], [])
+
+        XCTAssertEqual(rows.map { $0.displayTitle(mints: []) }, ["Lightning paid", "Lightning received"])
+    }
+
     // MARK: - Fixtures
 
     private func project(_ rows: [WalletTransaction], _ records: [MintTransferRecord]) -> [WalletTransaction] {

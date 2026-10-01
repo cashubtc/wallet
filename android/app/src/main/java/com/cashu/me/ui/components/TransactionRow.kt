@@ -146,7 +146,8 @@ fun TransactionRow(
 @Composable
 internal fun DirectionIcon(incoming: Boolean, isTransfer: Boolean = false) {
     val (glyph, description) = when {
-        isTransfer -> Icons.Filled.SwapHoriz to "Transfer"
+        // The title already opens with "Transfer"; the glyph adds nothing to hear.
+        isTransfer -> Icons.Filled.SwapHoriz to null
         incoming -> Icons.Filled.ArrowDownward to "Incoming"
         else -> Icons.Filled.ArrowUpward to "Outgoing"
     }

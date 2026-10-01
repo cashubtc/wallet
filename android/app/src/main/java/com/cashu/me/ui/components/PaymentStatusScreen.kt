@@ -102,6 +102,10 @@ fun PaymentStatusScreen(
     // check, with no celebration bounce (iOS parity).
     settlementPending: Boolean = false,
     successAmount: String? = null,
+    // For a caller that narrates its stages in [detail] while processing: each
+    // new line fades in with the amount slot's fade instead of replacing the
+    // last in place.
+    fadesProcessingDetail: Boolean = false,
 ) {
     val haptics = LocalHapticFeedback.current
     val inspectionMode = LocalInspectionMode.current
@@ -336,14 +340,22 @@ fun PaymentStatusScreen(
                             )
                         }
                         AnimatedContent(
-                            targetState = successAmount?.takeIf {
-                                phase == PaymentStatusPhase.Success && !settlementPending && it.isNotBlank()
-                            },
+                            targetState = StatusSubline(
+                                amount = successAmount?.takeIf {
+                                    phase == PaymentStatusPhase.Success && !settlementPending && it.isNotBlank()
+                                },
+                                processingDetail = detail.takeIf {
+                                    fadesProcessingDetail && phase == PaymentStatusPhase.Processing
+                                },
+                            ),
                             transitionSpec = {
                                 (fadeIn(tween(200)) togetherWith fadeOut(tween(150))).using(null)
                             },
                             label = "payment-status-amount",
-                        ) { amount ->
+                        ) { subline ->
+                            val amount = subline.amount
+                            // The outgoing stage line keeps its own words while it fades.
+                            val shownDetail = subline.processingDetail ?: detail
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 if (amount != null) {
                                     Spacer(Modifier.height(CashuTheme.spacing.comfortable))
@@ -358,7 +370,7 @@ fun PaymentStatusScreen(
                                 } else {
                                     Spacer(Modifier.height(CashuTheme.spacing.snug))
                                     Text(
-                                        text = detail ?: " ",
+                                        text = shownDetail ?: " ",
                                         style = MaterialTheme.typography.bodyLarge,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         textAlign = TextAlign.Center,
@@ -367,7 +379,7 @@ fun PaymentStatusScreen(
                                             .fillMaxWidth()
                                             .heightIn(min = StatusDescriptionMinHeight)
                                             .padding(horizontal = StatusDescriptionHorizontalPadding)
-                                            .graphicsLayer { alpha = if (detail == null) 0f else 1f },
+                                            .graphicsLayer { alpha = if (shownDetail == null) 0f else 1f },
                                     )
                                 }
                             }
@@ -412,6 +424,13 @@ fun PaymentStatusScreen(
         }
     }
 }
+
+/**
+ * What sits under the title: the settled amount, or a detail line. A
+ * processing detail is carried only when the caller opts into fading it, so it
+ * keys the transition; otherwise the line reads the current detail as before.
+ */
+private data class StatusSubline(val amount: String?, val processingDetail: String?)
 
 private enum class StatusGlyphKind { Success, Failure, Pending }
 

@@ -1,5 +1,6 @@
 package com.cashu.me.Core
 
+import com.cashu.me.Models.MintInfo
 import com.cashu.me.Models.MintTransferRecord
 import com.cashu.me.Models.MintTransferRecord.State
 import com.cashu.me.Models.PaymentMethodKind
@@ -22,7 +23,7 @@ class MintTransferProjectionTest {
 
         assertEquals(listOf("payment"), rows.map { it.id })
         val row = rows.single()
-        assertEquals("Transfer", TransactionDisplay.title(row))
+        assertEquals("Transfer to Destination", TransactionDisplay.title(row, MINTS))
         assertEquals(TransactionStatus.Completed, row.status)
         // An outgoing row is unsigned and never green.
         assertEquals(TransactionType.Outgoing, row.type)
@@ -69,7 +70,7 @@ class MintTransferProjectionTest {
     fun failedPaymentReadsAsAFailedTransfer() {
         val row = project(listOf(payment(TransactionStatus.Failed)), listOf(record(State.Failed))).single()
 
-        assertEquals("Transfer", TransactionDisplay.title(row))
+        assertEquals("Transfer to Destination", TransactionDisplay.title(row, MINTS))
         assertEquals(TransactionStatus.Failed, row.status)
         assertNull(row.mintQuoteIdForStatusRefresh)
     }
@@ -114,7 +115,10 @@ class MintTransferProjectionTest {
 
         val rows = project(listOf(payment(), stranger), listOf(record(State.Completed)))
 
-        assertEquals(listOf("Transfer", "Lightning received"), rows.map(TransactionDisplay::title))
+        assertEquals(
+            listOf("Transfer to Destination", "Lightning received"),
+            rows.map { TransactionDisplay.title(it, MINTS) },
+        )
     }
 
     @Test
@@ -129,7 +133,10 @@ class MintTransferProjectionTest {
     fun homeRecentShowsACompletedTransferOnce() {
         val rows = project(listOf(payment(), receipt()), listOf(record(State.Completed)))
 
-        assertEquals(listOf("Transfer"), recentPaymentTransactions(rows, limit = 5).map(TransactionDisplay::title))
+        assertEquals(
+            listOf("Transfer to Destination"),
+            recentPaymentTransactions(rows, limit = 5).map { TransactionDisplay.title(it, MINTS) },
+        )
     }
 
     @Test
@@ -137,6 +144,15 @@ class MintTransferProjectionTest {
         val rows = project(listOf(payment(), receipt()), listOf(record(State.Completed)))
 
         assertEquals(1, unifiedFiltered(rows, emptyList(), HistoryFilter.All, "transfer").size)
+    }
+
+    /** Search matches the title the row shows, so the destination's name finds it. */
+    @Test
+    fun transferIsFoundBySearchingItsDestinationName() {
+        val rows = project(listOf(payment(), receipt()), listOf(record(State.Completed)))
+
+        assertEquals(1, unifiedFiltered(rows, emptyList(), HistoryFilter.All, "to destination", MINTS).size)
+        assertEquals(0, unifiedFiltered(rows, emptyList(), HistoryFilter.All, "to source", MINTS).size)
     }
 
     /** CDK and the record can spell the same mint differently. */
@@ -150,7 +166,7 @@ class MintTransferProjectionTest {
             listOf(record(State.Completed)),
         )
 
-        assertEquals(listOf("Transfer"), rows.map(TransactionDisplay::title))
+        assertEquals(listOf("Transfer to Destination"), rows.map { TransactionDisplay.title(it, MINTS) })
     }
 
     /**
@@ -198,5 +214,6 @@ class MintTransferProjectionTest {
     private companion object {
         const val SOURCE = "https://source.example"
         const val DESTINATION = "https://destination.example"
+        val MINTS = listOf(MintInfo(url = SOURCE, name = "Source"), MintInfo(url = DESTINATION, name = "Destination"))
     }
 }

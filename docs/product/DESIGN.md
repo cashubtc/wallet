@@ -218,6 +218,16 @@ What this system explicitly rejects, pulled verbatim from docs/product/PRODUCT.m
   they stay put when the mints trade places. No fill, card or pill. With exactly
   two mints the rows have no chevron and the swap control is the only way to
   change the pair. `MintTransferRouteView` (iOS) / `MintTransferRoute` (Android).
+  *(2026-10-01: each slot carries a visible footnote / labelMedium caption,
+  "From" and "To", that stays with the slot when the mints trade places, so the
+  direction is read from words rather than from the glyph. The destination's
+  line reads "Balance 1 sat", and once a valid amount is typed
+  "Balance 1 sat → 3 sat" with the new balance in primary ink: the typed amount
+  is what arrives, so the new balance is exact. The review's From and To rows
+  carry the mint avatars, as Send's confirm does, and the commit is the primary
+  "Transfer 21 sat". While the transfer runs the status screen keeps its rows up
+  and a secondary line names the leg in flight, "Leaving {source}" then
+  "Arriving at {destination}", announced as it changes.)*
 - Payment facts use regular footnote/bodyMedium type, secondary labels, primary
   values, 8pt/dp vertical padding, and a centered 320pt/dp maximum column width.
   Editable rows retain at least 44pt/48dp touch height. At accessibility sizes,
@@ -965,6 +975,11 @@ The canonical list pattern. Defined in
   holds a record linking them, and leaves both rows as they are when it does
   not. While the destination has yet to issue, the row is pending and its detail
   says which leg is outstanding. The detail names both mints as From and To.)*
+  *(2026-10-01: the title names where the ecash went, "Transfer to macadamia
+  Mint", so a list of transfers can be told apart; a destination no longer held
+  is named by its host. `WalletTransaction.displayTitle(mints:)` /
+  `TransactionDisplay.title` stay the single source for the row, the detail
+  title and search.)*
   *(2026-10-02: the on-chain counterpart — a deposit address nothing has reached
   yet titles as **"Bitcoin address"** — `isUnfundedAddress` — with no trailing
   amount (the any-amount request-row precedent), flipping to "Bitcoin received"
@@ -1530,6 +1545,10 @@ code must be).
    the From and To mints makes the two identities (avatar + name) travel to each
    other's slot on `.snappy(0.28)`, while the arrow makes one full turn and
    lands pointing down again: the mints trade places, the direction does not.
+   *(2026-10-01: the From/To captions now carry the direction, so the control
+   is the symmetric `arrow.up.arrow.down` in a Liquid Glass circle and makes a
+   half turn on the same `.snappy(0.28)`. No bounce: bounce stays the
+   celebration's.)*
    The balance lines belong to the slots and change in place with a numeric
    content transition. None of the seven fit: this is the one place two elements
    exchange positions, and the travel is what tells the user which mint went

@@ -200,9 +200,7 @@ fun MintsScreen(
                         },
                         title = "Transfer",
                         onClick = { onTransfer(null) },
-                        modifier = Modifier
-                            .testTag(UiTestTags.MintsTransfer)
-                            .semantics { contentDescription = "Transfer between mints" },
+                        modifier = Modifier.testTag(UiTestTags.MintsTransfer),
                     )
                 }
             }
@@ -492,14 +490,7 @@ private fun MintRow(
             onDismissRequest = { menuOpen = false },
             shape = MaterialTheme.shapes.large,
         ) {
-            DropdownMenuItem(
-                text = { Text("Set as Default") },
-                onClick = {
-                    menuOpen = false
-                    onSetActiveLongPress()
-                },
-                enabled = !isActive,
-            )
+            // Transfer leads, matching the iOS context menu.
             if (onTransferLongPress != null) {
                 DropdownMenuItem(
                     text = { Text("Transfer") },
@@ -509,6 +500,14 @@ private fun MintRow(
                     },
                 )
             }
+            DropdownMenuItem(
+                text = { Text("Set as Default") },
+                onClick = {
+                    menuOpen = false
+                    onSetActiveLongPress()
+                },
+                enabled = !isActive,
+            )
             DropdownMenuItem(
                 text = {
                     Text("Remove", color = MaterialTheme.colorScheme.error)

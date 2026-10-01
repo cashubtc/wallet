@@ -270,7 +270,7 @@ final class LiveMintTransferUITests: LivePaymentUITestBase {
         XCTAssertTrue(destination.waitForExistence(timeout: 30))
 
         tapWhenReady(app.buttons["mints-transfer-button"], timeout: 10)
-        XCTAssertTrue(app.buttons["Swap direction"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["Swap mints"].waitForExistence(timeout: 10))
         for digit in ["4", "0"] { tapWhenReady(app.buttons[digit]) }
         let entry = XCTAttachment(screenshot: app.screenshot())
         entry.name = "transfer-entry"

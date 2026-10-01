@@ -52,6 +52,14 @@ struct PaymentStatusView: View {
     /// other than a payment the mint is settling.
     var settlementMessage: String? = nil
 
+    /// What is happening right now while `.processing`, for a flow with more
+    /// than one step to report. Changes are announced.
+    var processingMessage: String? = nil
+
+    /// Keep the detail rows up while `.processing`, for a flow whose facts
+    /// (which mints, how much) are what the user is waiting on.
+    var showsDetailsWhileProcessing: Bool = false
+
     /// Optional custom failure CTA (overrides the default Done / Try Again button).
     var failureCTA: FailureCTA? = nil
 
@@ -82,6 +90,8 @@ struct PaymentStatusView: View {
         failureTitle: String = "Payment Failed",
         settlementPending: Bool = false,
         settlementMessage: String? = nil,
+        processingMessage: String? = nil,
+        showsDetailsWhileProcessing: Bool = false,
         failureCTA: FailureCTA? = nil,
         onDone: @escaping () -> Void,
         onRetry: @escaping () -> Void
@@ -93,6 +103,8 @@ struct PaymentStatusView: View {
         self.failureTitle = failureTitle
         self.settlementPending = settlementPending
         self.settlementMessage = settlementMessage
+        self.processingMessage = processingMessage
+        self.showsDetailsWhileProcessing = showsDetailsWhileProcessing
         self.failureCTA = failureCTA
         self.onDone = onDone
         self.onRetry = onRetry
@@ -176,6 +188,22 @@ struct PaymentStatusView: View {
                         )
                         .padding(.horizontal, 24)
                         .padding(.top, 16)
+                    } else if phase == .processing, let processingMessage {
+                        // Same slot as the message below. Each step replaces
+                        // the last with a cross-fade in place.
+                        ZStack {
+                            Text(processingMessage)
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                                .lineLimit(3)
+                                .frame(maxWidth: .infinity)
+                                .id(processingMessage)
+                                .transition(.opacity)
+                        }
+                        .padding(.horizontal, 32)
+                        .frame(minHeight: 44)
+                        .animation(.smooth(duration: 0.3), value: processingMessage)
                     } else {
                         // Reserved slot so success ↔ failure never nudges the icon above it.
                         Text(statusMessage ?? " ")
@@ -194,9 +222,10 @@ struct PaymentStatusView: View {
             }
             .frame(minHeight: 220, alignment: .top)
         } details: {
-            // Payment facts are terminal-only: processing shows just the spinner
-            // and title, matching the claiming screen.
-            if !receiptDetails.isEmpty, phase != .processing {
+            // Payment facts are terminal-only unless the caller opts in:
+            // processing shows just the spinner and title, matching the
+            // claiming screen.
+            if !receiptDetails.isEmpty, phase != .processing || showsDetailsWhileProcessing {
                 VStack(spacing: 0) {
                     ForEach(receiptDetails) { row in
                         detailRow(row)
@@ -223,6 +252,10 @@ struct PaymentStatusView: View {
         .animation(.smooth(duration: 0.3), value: phaseKey)
         .onChange(of: phase) { _, newPhase in
             handlePhase(newPhase, announce: true)
+        }
+        .onChange(of: processingMessage) { _, message in
+            guard phase == .processing, let message else { return }
+            AccessibilityNotification.Announcement(message).post()
         }
         .onAppear { handlePhase(phase, announce: false) }
         .task {

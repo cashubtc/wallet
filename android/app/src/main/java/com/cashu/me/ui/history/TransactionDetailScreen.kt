@@ -165,7 +165,7 @@ fun TransactionReceiptSheet(
     val showsQr = TransactionDisplay.showsQr(current)
     val qrContent = TransactionDisplay.qrContent(current)
     val copyableContent = TransactionDisplay.copyableContent(current)
-    val title = TransactionDisplay.title(current)
+    val title = TransactionDisplay.title(current, walletState.mints)
     val description = current.displayDescription?.takeIf { current.descriptionHash == null }
     val fields = remember(current, walletState.mints) {
         TransactionDisplay.detailFields(current) { com.cashu.me.Core.mintDisplayName(it, walletState.mints) }

@@ -573,7 +573,7 @@ struct MainWalletView: View {
     }
 
     private func rowTitle(for transaction: WalletTransaction) -> String {
-        transaction.displayTitle
+        transaction.displayTitle(mints: walletManager.mints)
     }
 
     private func rowAccessibilityLabel(for transaction: WalletTransaction) -> String {

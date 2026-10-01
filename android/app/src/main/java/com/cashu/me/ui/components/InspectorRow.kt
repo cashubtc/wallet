@@ -39,11 +39,13 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.cashu.me.Models.MintInfo
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.withMonoDigits
 
@@ -51,6 +53,8 @@ import com.cashu.me.ui.theme.withMonoDigits
 // so the inspector reads as denser metadata, not list-row chrome.
 private val InspectorLeadingIconSize = 18.dp
 private val InspectorEditHintSize = 16.dp
+// iOS draws the transfer review's mint avatars at 22pt beside the name.
+private val InspectorValueAvatarSize = 22.dp
 
 /** Payment flows share an inset column; compact History receipts use the full sheet width. */
 internal val PaymentDetailMaxWidth = 320.dp
@@ -73,6 +77,9 @@ internal fun Modifier.paymentDetailWidth(): Modifier = fillMaxWidth()
  *   real value crossfades in place when it lands.
  * @param secondaryValue optional caption beneath the value (iOS mint detail's
  *   fiat conversion under the sat balance), always quiet onSurfaceVariant.
+ * @param valueAvatar a mint whose avatar leads the value, for rows that name one
+ *   of the user's own mints (iOS `MintTransferView` mint rows). Decorative: the
+ *   value already names the mint.
  */
 @Composable
 fun InspectorRow(
@@ -89,6 +96,7 @@ fun InspectorRow(
     secondaryValue: String? = null,
     loading: Boolean = false,
     style: InspectorRowStyle = InspectorRowStyle.Payment,
+    valueAvatar: MintInfo? = null,
 ) {
     val paymentDetails = style == InspectorRowStyle.Payment
     val rowStyle = if (style == InspectorRowStyle.Standard) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.bodyMedium
@@ -103,7 +111,8 @@ fun InspectorRow(
         val gapCount = 1 + (if (leadingIcon != null) 1 else 0) + (if (editable || trailingIcon != null) 1 else 0)
         val decorationWidth = CashuTheme.spacing.default * gapCount +
             (if (leadingIcon != null) InspectorLeadingIconSize else 0.dp) +
-            (if (editable || trailingIcon != null) InspectorEditHintSize else 0.dp)
+            (if (editable || trailingIcon != null) InspectorEditHintSize else 0.dp) +
+            (if (valueAvatar != null) InspectorValueAvatarSize + CashuTheme.spacing.snug else 0.dp)
         val availableWidth = with(density) {
             (maxWidth - CashuTheme.spacing.comfortable * 2 - decorationWidth).roundToPx()
         }
@@ -152,17 +161,34 @@ fun InspectorRow(
                 Box(modifier = Modifier.weight(1f), contentAlignment = if (stacked) Alignment.CenterStart else Alignment.CenterEnd) {
                     SkeletonValue(loading = loading) {
                         Column(horizontalAlignment = if (stacked) Alignment.Start else Alignment.End) {
-                            Text(
-                                text = value,
-                                modifier = if (stacked) Modifier.fillMaxWidth() else Modifier,
-                                style = if (valueMonospaced) {
-                                    rowStyle.withMonoDigits()
-                                } else rowStyle,
-                                color = valueColor ?: MaterialTheme.colorScheme.onSurface,
-                                maxLines = if (stacked) Int.MAX_VALUE else if (style == InspectorRowStyle.Standard) 1 else 2,
-                                overflow = if (stacked) TextOverflow.Clip else TextOverflow.MiddleEllipsis,
-                                textAlign = if (stacked) TextAlign.Start else TextAlign.End,
-                            )
+                            val valueText: @Composable (Modifier) -> Unit = { textModifier ->
+                                Text(
+                                    text = value,
+                                    modifier = textModifier,
+                                    style = if (valueMonospaced) {
+                                        rowStyle.withMonoDigits()
+                                    } else rowStyle,
+                                    color = valueColor ?: MaterialTheme.colorScheme.onSurface,
+                                    maxLines = if (stacked) Int.MAX_VALUE else if (style == InspectorRowStyle.Standard) 1 else 2,
+                                    overflow = if (stacked) TextOverflow.Clip else TextOverflow.MiddleEllipsis,
+                                    textAlign = if (stacked) TextAlign.Start else TextAlign.End,
+                                )
+                            }
+                            if (valueAvatar == null) {
+                                valueText(if (stacked) Modifier.fillMaxWidth() else Modifier)
+                            } else {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
+                                ) {
+                                    MintAvatar(
+                                        mint = valueAvatar,
+                                        size = InspectorValueAvatarSize,
+                                        modifier = Modifier.clearAndSetSemantics {},
+                                    )
+                                    valueText(Modifier.weight(1f, fill = stacked))
+                                }
+                            }
                             if (secondaryValue != null) {
                                 Text(
                                     text = secondaryValue,

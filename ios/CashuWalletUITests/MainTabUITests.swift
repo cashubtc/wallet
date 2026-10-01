@@ -466,7 +466,7 @@ final class MintTransferUITests: XCTestCase {
         XCTAssertTrue(proceed.isEnabled)
         capture(app, "transfer-amount")
 
-        app.buttons["Swap direction"].tap()
+        app.buttons["Swap mints"].tap()
         XCTAssertTrue(app.buttons["From Harbor Mint"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["To Alpine Mint"].exists)
         // 5,000 typed, 2,100 held: the amount is kept and now exceeds the source.
@@ -474,7 +474,7 @@ final class MintTransferUITests: XCTestCase {
         XCTAssertFalse(proceed.isEnabled)
         capture(app, "transfer-swapped-over-balance")
 
-        app.buttons["Swap direction"].tap()
+        app.buttons["Swap mints"].tap()
         XCTAssertTrue(app.buttons["From Alpine Mint"].waitForExistence(timeout: 5))
         XCTAssertTrue(proceed.isEnabled)
     }
@@ -511,7 +511,7 @@ final class MintTransferUITests: XCTestCase {
         // The pad takes most of the screen at this size, so the mints scroll
         // above it. Nothing may overlap, and the pad stays put.
         let source = app.buttons["From Alpine Mint"]
-        let swap = app.buttons["Swap direction"]
+        let swap = app.buttons["Swap mints"]
         let destination = app.buttons["To Harbor Mint"]
         XCTAssertTrue(source.isHittable)
         XCTAssertTrue(app.buttons["Transfer maximum"].exists)

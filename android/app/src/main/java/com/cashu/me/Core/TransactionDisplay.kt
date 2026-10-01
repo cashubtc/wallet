@@ -1,6 +1,7 @@
 package com.cashu.me.Core
 
 import java.net.URI
+import com.cashu.me.Models.MintInfo
 import com.cashu.me.Models.TransactionKind
 import com.cashu.me.Models.TransactionStatus
 import com.cashu.me.Models.TransactionType
@@ -18,10 +19,15 @@ data class TransactionDetailField(
 
 object TransactionDisplay {
     // Kind-first, capitalized kind, lowercase verb — single source of truth for
-    // rows AND the detail title, so a row and the sheet it opens read identically.
-    fun title(transaction: WalletTransaction): String = when {
-        // Neither received nor sent: both ends are the user's own mints.
-        transaction.transfer != null -> "Transfer"
+    // rows, the detail title AND title search, so a row and the sheet it opens
+    // read identically. [mints] names a transfer's destination; a mint the
+    // wallet no longer holds is named by its host (iOS `displayTitle(mints:)`).
+    fun title(transaction: WalletTransaction, mints: List<MintInfo> = emptyList()): String = when {
+        // Neither received nor sent: both ends are the user's own mints, so
+        // the row says where the ecash went.
+        transaction.transfer != null -> transaction.transfer.destinationMintUrl.let { url ->
+            "Transfer to ${heldMintName(url, mints) ?: mintHost(url.trim())}"
+        }
         transaction.isPendingReceiveToken -> "Ecash to claim"
         else -> when (transaction.kind) {
             TransactionKind.Lightning -> when {

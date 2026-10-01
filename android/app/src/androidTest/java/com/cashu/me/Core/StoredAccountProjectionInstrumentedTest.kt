@@ -379,16 +379,16 @@ class StoredAccountProjectionInstrumentedTest {
         val mints = listOf(MintInfo(source), MintInfo(destination))
         val loader = WalletTransactionLoader(store, fake)
 
-        assertEquals(listOf("Transfer"), loader.load(mints, false).transactions.map(TransactionDisplay::title))
+        assertEquals(listOf("Transfer to b.example"), loader.load(mints, false).transactions.map(TransactionDisplay::title))
         assertEquals(setOf("payment", "receipt"), store.loadTransactions().map { it.id }.toSet())
-        assertEquals(listOf("Transfer"), loader.cached(mints).map(TransactionDisplay::title))
+        assertEquals(listOf("Transfer to b.example"), loader.cached(mints).map(TransactionDisplay::title))
 
         val failing = object : CdkWalletGateway by fake {
             override suspend fun listTransactions(unitsByMint: Map<String, List<String>>): List<WalletTransaction> =
                 error("Storage unavailable")
         }
         val fallback = WalletTransactionLoader(store, failing).load(mints, false).transactions
-        assertEquals(listOf("Transfer"), fallback.map(TransactionDisplay::title))
+        assertEquals(listOf("Transfer to b.example"), fallback.map(TransactionDisplay::title))
         assertEquals(setOf("payment", "receipt"), store.loadTransactions().map { it.id }.toSet())
     }
 

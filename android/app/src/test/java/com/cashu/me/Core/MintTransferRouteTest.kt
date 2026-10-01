@@ -5,7 +5,9 @@ import com.cashu.me.Core.MintTransferRoute.Slot
 import com.cashu.me.Models.Bolt11SatCapability
 import com.cashu.me.Models.MintInfo
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** iOS parity: `MintTransferRouteTests` in `MintTransferEligibilityTests.swift`. */
@@ -130,6 +132,34 @@ class MintTransferRouteTest {
             MintTransferEntry.Blocked(Blocker.DestinationCannotReceive),
             MintTransferEntry.validation(0, mint(A, 100), sendOnly),
         )
+    }
+
+    /** The typed amount is what arrives, so the destination's new balance is exact. */
+    @Test
+    fun destinationBalanceAfterIsShownOnlyForAnAmountReadyToSend() {
+        val destination = mint(B, 250)
+
+        assertEquals(290L, MintTransferEntry.destinationBalanceAfter(MintTransferEntry.Ready, 40, destination))
+        assertNull(MintTransferEntry.destinationBalanceAfter(MintTransferEntry.Empty, 0, destination))
+        assertNull(MintTransferEntry.destinationBalanceAfter(MintTransferEntry.OverBalance, 900, destination))
+        assertNull(
+            MintTransferEntry.destinationBalanceAfter(
+                MintTransferEntry.Blocked(Blocker.DestinationCannotReceive),
+                40,
+                destination,
+            ),
+        )
+    }
+
+    /** The fee comes on top, so a typed whole balance is flagged; a Max quote never is. */
+    @Test
+    fun wholeBalanceIsFlaggedOnlyWhenTypedByHand() {
+        val source = mint(A, 100)
+
+        assertTrue(MintTransferEntry.isWholeBalance(MintTransferEntry.Ready, 100, source, holdsMaxQuote = false))
+        assertFalse(MintTransferEntry.isWholeBalance(MintTransferEntry.Ready, 100, source, holdsMaxQuote = true))
+        assertFalse(MintTransferEntry.isWholeBalance(MintTransferEntry.Ready, 99, source, holdsMaxQuote = false))
+        assertFalse(MintTransferEntry.isWholeBalance(MintTransferEntry.OverBalance, 100, source, holdsMaxQuote = false))
     }
 
     private fun mint(url: String, balance: Long) = MintInfo(url = url, name = url, isActive = true, balance = balance)
