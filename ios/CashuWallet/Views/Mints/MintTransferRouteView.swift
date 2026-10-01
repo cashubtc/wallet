@@ -30,6 +30,7 @@ struct MintTransferRouteView: View {
     var onSwap: (() -> Void)?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Namespace private var slots
     @State private var swapCount = 0
 
@@ -39,6 +40,24 @@ struct MintTransferRouteView: View {
         static let identityHeight: CGFloat = 44
         static let supportHeight: CGFloat = 24
         static let swapDiameter: CGFloat = 36
+        static let captionGap: CGFloat = 4
+        /// The empty band under a name centred on the taller avatar, which
+        /// the balance line rises into.
+        static let supportLift: CGFloat = 6
+    }
+
+    /// The part of an identity's 44pt target that rises over its caption
+    /// rather than sitting under the name, so the balance line reads as the
+    /// name's own second line. Until accessibility sizes the avatar sets the
+    /// row's height; past them the name fills the target itself.
+    private var touchOverhang: CGFloat {
+        dynamicTypeSize.isAccessibilitySize ? 0 : Metrics.identityHeight - Metrics.avatar
+    }
+
+    /// The balance line tucks under the name, as a two-line row's second line
+    /// does, while the avatar is what makes the row taller than its name.
+    private var supportLift: CGFloat {
+        dynamicTypeSize.isAccessibilitySize ? 0 : Metrics.supportLift
     }
 
     /// VoiceOver reads the route top to bottom. The travelling identities are
@@ -96,6 +115,7 @@ struct MintTransferRouteView: View {
             Text(direction.label)
                 .font(.footnote)
                 .foregroundStyle(.secondary)
+                .padding(.bottom, Metrics.captionGap)
                 .accessibilityHidden(true)
             if reduceMotion {
                 // No travel: the identity is replaced in place with a fade.
@@ -113,11 +133,23 @@ struct MintTransferRouteView: View {
             }
             support()
                 .padding(.leading, Metrics.avatar + Metrics.gap)
+                .padding(.top, -supportLift)
         }
     }
 
-    @ViewBuilder
     private func identity(
+        _ mint: MintInfo,
+        direction: MintSelectorDirection,
+        onChoose: (() -> Void)?
+    ) -> some View {
+        // The target keeps its full height but claims only the row's: the
+        // spare height overhangs the caption, which takes no taps.
+        identityControl(mint, direction: direction, onChoose: onChoose)
+            .padding(.top, -touchOverhang)
+    }
+
+    @ViewBuilder
+    private func identityControl(
         _ mint: MintInfo,
         direction: MintSelectorDirection,
         onChoose: (() -> Void)?
@@ -136,7 +168,7 @@ struct MintTransferRouteView: View {
                     .accessibilityHidden(true)
             }
         }
-        .frame(minHeight: Metrics.identityHeight)
+        .frame(minHeight: Metrics.identityHeight, alignment: .bottom)
         .contentShape(Rectangle())
 
         if let onChoose {

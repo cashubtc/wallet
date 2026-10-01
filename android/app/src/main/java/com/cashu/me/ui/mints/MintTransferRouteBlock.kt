@@ -101,6 +101,7 @@ import com.cashu.me.ui.theme.withMonoDigits
 private val RouteAvatarSize = 32.dp
 private val IdentityMinHeight = 48.dp
 private val SupportMinHeight = 24.dp
+private val SupportLift = 6.dp
 private val ChevronSize = 18.dp
 private val SwapGlyphSize = 20.dp
 private val MinimumTouchTarget = 48.dp
@@ -108,7 +109,7 @@ private val MaxProgressSize = 16.dp
 private val HairlineThickness = 0.5.dp
 private const val DisabledContentAlpha = 0.38f
 // Where the app's other rows switch to their stacked, large-text layout.
-private const val LargeTextScale = 1.3f
+internal const val LargeTextScale = 1.3f
 
 // The transfer picker keeps the pay flows' viewport: the title and roughly
 // four rows. A longer list opens half-height instead and drags to full, so it
@@ -180,11 +181,22 @@ internal fun MintTransferRouteBlock(
     // below, so Max keeps the part of its touch target that overhangs them.
     val identityZ = if (travel.isRunning) 1f else 0f
 
+    // The part of an identity's 48dp target that rises over its caption rather
+    // than sitting under the name, so the balance line reads as the name's own
+    // second line. Below large text the avatar sets the row's height; from
+    // there the name fills the target itself (iOS parity).
+    val ordinaryText = LocalDensity.current.fontScale < LargeTextScale
+    val touchOverhang = if (ordinaryText) IdentityMinHeight - RouteAvatarSize else 0.dp
+    // The balance line tucks under the name, as a two-line row's second line
+    // does, into the empty band under a name centred on the taller avatar.
+    val supportLift = if (ordinaryText) SupportLift else 0.dp
+
     Column(modifier = modifier.fillMaxWidth()) {
         SlotCaption("From")
         Box(
             modifier = Modifier
                 .zIndex(identityZ)
+                .trimTop(touchOverhang)
                 .onGloballyPositioned { sourceIdentityY = it.positionInParent().y },
         ) {
             RouteIdentitySlot(
@@ -197,25 +209,28 @@ internal fun MintTransferRouteBlock(
                 },
             )
         }
-        if (sourceProblem != null) {
-            // Max can't help a mint with a problem, so the line is the reason.
-            ProblemLine(
-                balanceText = sourceBalanceText,
-                problem = sourceProblem,
-                description = "$sourceBalanceText available, $sourceProblem",
-            )
-        } else {
-            SourceSupport(
-                balanceText = sourceBalanceText,
-                isFindingMax = isFindingMax,
-                onUseMax = onUseMax,
-            )
+        Box(modifier = Modifier.trimTop(supportLift)) {
+            if (sourceProblem != null) {
+                // Max can't help a mint with a problem, so the line is the reason.
+                ProblemLine(
+                    balanceText = sourceBalanceText,
+                    problem = sourceProblem,
+                    description = "$sourceBalanceText available, $sourceProblem",
+                )
+            } else {
+                SourceSupport(
+                    balanceText = sourceBalanceText,
+                    isFindingMax = isFindingMax,
+                    onUseMax = onUseMax,
+                )
+            }
         }
         SwapDivider(destination = destination, source = source, animates = travels, onSwap = onSwap)
         SlotCaption("To")
         Box(
             modifier = Modifier
                 .zIndex(identityZ)
+                .trimTop(touchOverhang)
                 .onGloballyPositioned { destinationIdentityY = it.positionInParent().y },
         ) {
             RouteIdentitySlot(
@@ -229,14 +244,18 @@ internal fun MintTransferRouteBlock(
             )
         }
         // A short screen drops the balance, never the reason it can't receive.
-        if (destinationProblem != null) {
-            ProblemLine(
-                balanceText = "Balance $destinationBalanceText",
-                problem = destinationProblem,
-                description = "Balance $destinationBalanceText, $destinationProblem",
-            )
-        } else if (showsDestinationBalance) {
-            DestinationSupport(balanceText = destinationBalanceText, afterText = destinationAfterText)
+        if (destinationProblem != null || showsDestinationBalance) {
+            Box(modifier = Modifier.trimTop(supportLift)) {
+                if (destinationProblem != null) {
+                    ProblemLine(
+                        balanceText = "Balance $destinationBalanceText",
+                        problem = destinationProblem,
+                        description = "Balance $destinationBalanceText, $destinationProblem",
+                    )
+                } else {
+                    DestinationSupport(balanceText = destinationBalanceText, afterText = destinationAfterText)
+                }
+            }
         }
     }
 }
@@ -254,6 +273,7 @@ private fun SlotCaption(text: String) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier
             .fillMaxWidth()
+            .padding(bottom = CashuTheme.spacing.micro)
             .clearAndSetSemantics {},
     )
 }
@@ -300,7 +320,9 @@ private fun RouteIdentity(
     mint: MintInfo,
     onChoose: (() -> Unit)?,
 ) {
-    Row(
+    // The row sits at the bottom of its 48dp target; the spare height is the
+    // part that overhangs the caption (see `trimTop`).
+    Box(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = IdentityMinHeight)
@@ -311,6 +333,16 @@ private fun RouteIdentity(
                     Modifier
                 },
             ),
+        contentAlignment = Alignment.BottomStart,
+    ) {
+        IdentityRow(mint = mint, showsChevron = onChoose != null)
+    }
+}
+
+@Composable
+private fun IdentityRow(mint: MintInfo, showsChevron: Boolean) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
     ) {
@@ -324,7 +356,7 @@ private fun RouteIdentity(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )
-        if (onChoose != null) {
+        if (showsChevron) {
             Icon(
                 imageVector = Icons.Outlined.KeyboardArrowDown,
                 contentDescription = null,
@@ -598,6 +630,18 @@ private fun Hairline(modifier: Modifier = Modifier) {
         thickness = HairlineThickness,
         color = CashuTheme.colors.canvasDivider,
     )
+}
+
+/**
+ * Report a box shorter by [trim] at the top, placing the content so its top
+ * overhangs the line above. The touch target keeps its full size; only the
+ * height it claims in the column shrinks.
+ */
+private fun Modifier.trimTop(trim: Dp) = this.layout { measurable, constraints ->
+    val placeable = measurable.measure(constraints)
+    val trimPx = trim.roundToPx()
+    val height = (placeable.height - trimPx).coerceAtLeast(0)
+    layout(placeable.width, height) { placeable.place(0, -trimPx) }
 }
 
 /**

@@ -750,15 +750,19 @@ private fun EntryFace(
     val accessibilityText = LocalDensity.current.fontScale >= AccessibilityTextScale
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         // The pad and the two mints are fixed; the amount takes what is left.
-        // The mints need 208dp: two 16dp captions, two 48dp identities, the
-        // 24dp source balance, the 48dp swap row and the 8dp gap above the pad.
-        // The destination's balance adds 24dp and is kept only while the
-        // amount can still sit at Hero beside it (232 + 160 = 392). On a
-        // shorter screen it goes first, then the amount steps down a rung, so
-        // none of them crowd each other.
-        val room = maxHeight - numberPadFooterMinimumHeight()
-        val showsDestinationBalance = room >= 392.dp
-        val heroRoom = room - if (showsDestinationBalance) 232.dp else 208.dp
+        // The mints need 178dp: two 16dp captions with their 4dp gaps, two
+        // 32dp identity rows (each 48dp target overhangs its caption), the
+        // source balance (24dp, 6dp of it tucked under the name), the 48dp
+        // swap row and the 8dp gap above the pad. The destination's balance
+        // adds 18dp and is kept only while the amount can still sit at Hero
+        // beside it (196 + 160 = 356). On a shorter screen it goes first, then
+        // the amount steps down a rung, so none of them crowd each other.
+        // From large text the targets stop overhanging and the balances stop
+        // tucking: 22dp more per slot.
+        val room = maxHeight - numberPadFooterMinimumHeight() -
+            if (LocalDensity.current.fontScale >= LargeTextScale) 44.dp else 0.dp
+        val showsDestinationBalance = room >= 356.dp
+        val heroRoom = room - if (showsDestinationBalance) 196.dp else 178.dp
         val heroScale = when {
             heroRoom >= 160.dp -> AmountScale.Hero
             heroRoom >= 110.dp -> AmountScale.Confirm
