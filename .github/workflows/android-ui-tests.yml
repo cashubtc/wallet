@@ -304,9 +304,11 @@ jobs:
         df -h
 
     - name: Provision compatibility managed device
+      if: matrix.device != 'compactApi26'
       run: ./gradlew --no-daemon :app:${{ matrix.device }}Setup
 
     - name: Run compatibility behavior pack
+      if: matrix.device != 'compactApi26'
       env:
         MAX_ATTEMPTS: '4'
         RESET_MANAGED_DEVICES: 'true'
@@ -314,6 +316,25 @@ jobs:
         bash ../CI/retry-android-ui-test.sh \
           ./gradlew --no-daemon :app:${{ matrix.device }}DebugAndroidTest \
           -Pandroid.testInstrumentationRunnerArguments.annotation=com.cashu.me.test.Compatibility \
+          -Pandroid.testInstrumentationRunnerArguments.timeout_msec=600000
+
+    # Gradle managed devices require API 27+. Preserve minSdk 26 coverage
+    # with a regular emulator and the same annotated compatibility pack.
+    - name: Run API 26 compatibility behavior pack
+      if: matrix.device == 'compactApi26'
+      uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
+      with:
+        api-level: 26
+        target: default
+        arch: x86_64
+        profile: pixel_2
+        avd-name: compactApi26
+        working-directory: android
+        disable-animations: true
+        emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
+        script: >-
+          ./gradlew --no-daemon --stacktrace :app:connectedDebugAndroidTest
+          -Pandroid.testInstrumentationRunnerArguments.annotation=com.cashu.me.test.Compatibility
           -Pandroid.testInstrumentationRunnerArguments.timeout_msec=600000
 
     - name: Upload compatibility diagnostics
@@ -326,5 +347,8 @@ jobs:
         path: |
           android/app/build/outputs/androidTest-results/managedDevice/**
           android/app/build/reports/androidTests/managedDevice/**
+          android/app/build/outputs/androidTest-results/connected/**
+          android/app/build/reports/androidTests/connected/**
+          android/app/build/outputs/connected_android_test_additional_output/**
           android/app/build/outputs/managed_device_android_test_additional_output/**
           android/app/build/intermediates/managed_device_android_test_additional_output/**

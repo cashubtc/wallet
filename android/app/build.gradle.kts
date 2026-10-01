@@ -97,12 +97,6 @@ android {
                     // long managed-device run less prone to losing ADB.
                     systemImageSource = "aosp-atd"
                 }
-                create("compactApi26") {
-                    device = "Pixel 2"
-                    apiLevel = 26
-                    // ATD images are not published for API 26.
-                    systemImageSource = "aosp"
-                }
                 create("modernApi36") {
                     device = "Pixel 6"
                     apiLevel = 36
