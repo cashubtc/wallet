@@ -86,6 +86,10 @@ import com.cashu.me.ui.theme.LeadingLabel
 import com.cashu.me.ui.theme.atSize
 import com.cashu.me.ui.theme.withMonoDigits
 import com.cashu.me.ui.testing.UiTestTags
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material3.Text
 
 /**
  * Content-fitting bottom sheet for any transaction, settled or live. Every
@@ -262,12 +266,8 @@ fun TransactionReceiptSheet(
                 // Last row: the identifiers behind the payment (quote ID,
                 // request, proof) open in a nested full-height sheet, like the
                 // description reader (iOS parity).
-                InspectorRow(
-                    style = InspectorRowStyle.History,
-                    label = "Details",
-                    value = "",
+                DetailsLinkRow(
                     onClick = { showTechnicalDetails = true },
-                    trailingIcon = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
                     modifier = Modifier.testTag(UiTestTags.HistoryTransactionDetails),
                 )
             }
@@ -425,6 +425,39 @@ private fun copyConfirmationMessage(label: String): String = when (label) {
 // Static receipt amount pair — direction already lives in the sheet title, so
 // historical details keep the settled sat amount quiet and unsigned. Fiat is a
 // subordinate live reference, never an interactive display-mode control.
+
+/**
+ * The receipt's last row, opening the Details sheet. A link row has no value
+ * to stack under its label, so unlike `InspectorRow` it stays on one line at
+ * every font scale — the chevron never drops onto a line of its own (iOS
+ * keeps "Details ›" on one line at accessibility sizes too).
+ */
+@Composable
+private fun DetailsLinkRow(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .clickable(onClickLabel = "Show details", onClick = onClick)
+            .padding(horizontal = CashuTheme.spacing.comfortable, vertical = CashuTheme.spacing.default),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
+    ) {
+        Text(
+            text = "Details",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+        )
+        Icon(
+            imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(16.dp),
+        )
+    }
+}
+
 @Composable
 private fun HeroAmount(
     transaction: WalletTransaction,
