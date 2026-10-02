@@ -363,12 +363,40 @@ final class OnboardingChassisUITests: UITestBase {
         XCTAssertTrue(app.staticTexts["All 12 words verified."].exists)
     }
 
-    func testAddingCustomMintStaysOnMintSelection() {
+    func testCustomMintKeyboardSubmitCompletesInterruptedURL() {
         createWalletThroughSeed()
         tapWhenReady(app.buttons["onboarding-add-custom-mint"])
         let field = app.textFields["onboarding-custom-mint-field"]
         focusTextField(field)
-        field.typeText(mintURL)
+        field.typeText("ht")
+        XCTAssertEqual(field.value as? String, "ht")
+
+        // Preserve a partial edit across an interruption rather than starting
+        // a new wallet. The entry helper must append only the missing suffix.
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        XCTAssertEqual(field.value as? String, "ht")
+        enterMintURL(mintURL, into: field)
+        XCTAssertEqual(field.value as? String, mintURL)
+
+        // Retain explicit coverage of the keyboard's submit action even though
+        // the shared lifecycle setup now uses the app's Add mint button.
+        focusTextField(field)
+        tapWhenReady(app.keyboards.buttons["Done"], timeout: 10)
+        XCTAssertTrue(field.waitForNonExistence(timeout: 5))
+        let action = app.buttons["onboarding-continue"]
+        XCTAssertTrue(action.waitForExistence(timeout: 5))
+        XCTAssertEqual(action.label, "Continue")
+        XCTAssertTrue(action.isEnabled)
+        XCTAssertFalse(app.buttons["Wallet"].exists)
+    }
+
+    func testAddingCustomMintStaysOnMintSelection() {
+        createWalletThroughSeed()
+        tapWhenReady(app.buttons["onboarding-add-custom-mint"])
+        let field = app.textFields["onboarding-custom-mint-field"]
+        enterMintURL(mintURL, into: field)
         let action = app.buttons["onboarding-continue"]
         XCTAssertEqual(action.label, "Add mint")
         tapWhenReady(action)

@@ -109,7 +109,7 @@ jobs:
         path: |
           CI/.nutshell-venv
           CI/.cdk-bin
-        key: ios-test-mints-macos-26-arm64-python-3.11-${{ hashFiles('CI/setup-nutshell.sh', 'CI/setup-cdk.sh') }}
+        key: ios-test-mints-v2-macos-26-arm64-python-3.11-${{ hashFiles('CI/setup-nutshell.sh', 'CI/setup-cdk.sh') }}
     - uses: actions/download-artifact@v4
       with:
         name: ios-test-products
@@ -136,7 +136,9 @@ jobs:
         set -euo pipefail
         chmod +x CI/setup-nutshell.sh CI/setup-cdk.sh
 
-        ./CI/setup-nutshell.sh &
+        # Match setup-python and the mint cache key; do not prefer a different
+        # preinstalled Python version on the runner image.
+        PYTHON="$pythonLocation/bin/python" ./CI/setup-nutshell.sh &
         NUTSHELL_SETUP_PID=$!
         # The shared multi-unit profile enables the USD UI payment journey.
         ./CI/setup-cdk.sh 3339 android &
@@ -192,7 +194,7 @@ jobs:
           echo '```'
         } >> "$GITHUB_STEP_SUMMARY"
     - name: Upload test reports
-      if: always()
+      if: ${{ always() && steps.tests.outcome != 'skipped' }}
       uses: actions/upload-artifact@v4
       with:
         name: ios-reports-${{ matrix.shard }}

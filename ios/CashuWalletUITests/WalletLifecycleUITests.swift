@@ -23,12 +23,18 @@ final class WalletLifecycleUITests: UITestBase {
         let second = mintRow(url: cdkMintURL)
         tapWhenReady(second, timeout: 30)
         scrollTo("Set as Default")
-        tapWhenReady(app.buttons["Set as Default"])
+        let setDefault = app.buttons["Set as Default"]
+        tapWhenReady(setDefault)
+        // The update queues behind mint loading. A successful tap can leave
+        // this button showing a spinner; wait for the active mint to change
+        // before leaving the detail screen or relaunching the wallet.
+        XCTAssertTrue(setDefault.waitForNonExistence(timeout: 30),
+                      "Setting the default mint should finish before navigating back")
         tapWhenReady(app.navigationBars.buttons.element(boundBy: 0))
-        XCTAssertEqual(second.value as? String, "Default mint")
+        assertDefaultMint(second)
         relaunchPreservingWallet()
         tapTab("Mints")
-        XCTAssertEqual(second.value as? String, "Default mint")
+        assertDefaultMint(second)
         tapWhenReady(second)
         scrollTo("Remove mint")
         tapWhenReady(app.buttons["Remove mint"])
@@ -41,8 +47,21 @@ final class WalletLifecycleUITests: UITestBase {
         relaunchPreservingWallet()
         tapTab("Mints")
         XCTAssertTrue(second.waitForExistence(timeout: 10))
-        XCTAssertEqual(second.value as? String, "Default mint")
+        assertDefaultMint(second)
         XCTAssertTrue(mintRow(url: mintURL).waitForExistence(timeout: 10))
+    }
+
+    private func assertDefaultMint(
+        _ row: XCUIElement,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let updated = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == true AND value == %@", "Default mint"),
+            object: row
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [updated], timeout: 10), .completed,
+                       "The mint row should identify the persisted default mint", file: file, line: line)
     }
 
     func testRemovingLastMintReturnsToEmptyWalletAfterRelaunch() {
