@@ -3,9 +3,12 @@ package com.cashu.me.ui.journeys
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.performSemanticsAction
@@ -16,6 +19,8 @@ import org.junit.Assert.assertTrue
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.core.graphics.writeToTestStorage
+import com.cashu.me.Models.MintQuoteState
+import com.cashu.me.Models.PaymentMethodKind
 import com.cashu.me.Models.TransactionKind
 import com.cashu.me.Models.TransactionStatus
 import com.cashu.me.Models.TransactionType
@@ -158,6 +163,28 @@ class ActivityDetailJourneyTest {
         compose.onNodeWithText("Failed").assertIsDisplayed()
     }
 
+    @Test fun receiptDetailsRowOpensTechnicalDetails() {
+        launched = AppTestFixture.launch(FixtureMode.SeededWithMint)
+        val fixture = launched!!
+        robot.awaitTag(UiTestTags.WalletScreen)
+        fixture.fakeGateway!!.addTransaction(WalletTransaction(
+            id = "c".repeat(64), amount = 2100, type = TransactionType.Outgoing,
+            kind = TransactionKind.Lightning, dateEpochMillis = System.currentTimeMillis(),
+            status = TransactionStatus.Completed, mintUrl = FakeWalletGateway.TestMintUrl,
+            preimage = "d".repeat(64), invoice = "lnbc21u1pjourneyfixtureinvoice", fee = 2,
+            quoteId = "melt-quote-journey-fixture"))
+        runBlocking { fixture.container.walletManager.loadTransactions() }
+        robot.tapText("History").tapText("Lightning paid").awaitTag(UiTestTags.TransactionReceiptSheet)
+        compose.onNodeWithTag(UiTestTags.HistoryTransactionDetails).performScrollTo().performClick()
+        robot.awaitTag(UiTestTags.TransactionDetailsSheet)
+        for (label in listOf("Method", "Type", "Quote ID", "Request")) {
+            compose.onNodeWithText(label).performScrollTo().assertIsDisplayed()
+        }
+        compose.onNodeWithText("Lightning (BOLT11)").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag(UiTestTags.HistoryTransactionDetailsCopyAll).performScrollTo().assertIsDisplayed()
+        robot.pressSystemBack().awaitTag(UiTestTags.TransactionReceiptSheet)
+    }
+
     @Test fun requestTotalsAndEditableAmountRespectTheirCurrency() {
         launched = AppTestFixture.launch(FixtureMode.SeededWithMint)
         val fixture = launched!!
@@ -284,4 +311,61 @@ class ActivityDetailJourneyTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         checkNotNull(instrumentation.uiAutomation.takeScreenshot()).writeToTestStorage(name)
     }
+    @Test fun detailsRefreshWhenSamePaymentCompletes() {
+        launched = AppTestFixture.launch(FixtureMode.SeededWithMint)
+        val fixture = launched!!
+        robot.awaitTag(UiTestTags.WalletScreen)
+        val tx = WalletTransaction(id = "updating-payment", amount = 21, type = TransactionType.Outgoing,
+            kind = TransactionKind.Lightning, dateEpochMillis = System.currentTimeMillis(),
+            status = TransactionStatus.Pending, mintUrl = FakeWalletGateway.TestMintUrl)
+        fixture.fakeGateway!!.addTransaction(tx)
+        runBlocking { fixture.container.walletManager.loadTransactions() }
+        robot.tapText("History").tapText("Lightning paid")
+        compose.onNodeWithTag(UiTestTags.HistoryTransactionDetails).performScrollTo().performClick()
+        robot.awaitTag(UiTestTags.TransactionDetailsSheet)
+        compose.onNode(hasText("Pending") and hasAnyAncestor(hasTestTag(UiTestTags.TransactionDetailsSheet))).assertIsDisplayed()
+        fixture.fakeGateway!!.addTransaction(tx.copy(status = TransactionStatus.Completed, fee = 2, preimage = "b".repeat(64)))
+        runBlocking { fixture.container.walletManager.loadTransactions() }
+        val completed = hasText("Completed") and hasAnyAncestor(hasTestTag(UiTestTags.TransactionDetailsSheet))
+        compose.waitUntil(timeoutMillis = 5_000) { compose.onAllNodes(completed).fetchSemanticsNodes().size == 1 }
+        compose.onNode(completed).assertIsDisplayed()
+        compose.onNode(hasText("2 sat") and hasAnyAncestor(hasTestTag(UiTestTags.TransactionDetailsSheet)))
+            .performScrollTo().assertIsDisplayed()
+        compose.onNode(hasText("Payment Proof") and hasAnyAncestor(hasTestTag(UiTestTags.TransactionDetailsSheet)))
+            .performScrollTo().assertIsDisplayed()
+    }
+
+    @Test fun reusableInvoiceDetailsExposeQuoteAndLinkedPayment() {
+        launched = AppTestFixture.launch(FixtureMode.SeededWithMint)
+        val fixture = launched!!
+        robot.awaitTag(UiTestTags.WalletScreen)
+        val gateway = fixture.fakeGateway!!
+        val quote = runBlocking { gateway.createMintQuote(null, PaymentMethodKind.Bolt12, FakeWalletGateway.TestMintUrl, "sat", null) }
+        gateway.addStoredMintQuote(quote.copy(state = MintQuoteState.Issued, amountPaid = 2100, amountIssued = 2100))
+        fixture.container.cashuRequestStore.upsertQuoteIntent(quoteId = quote.id, quoteKind = "bolt12", amount = null,
+            mints = listOf(FakeWalletGateway.TestMintUrl), encoded = quote.request)
+        gateway.addTransaction(WalletTransaction(id = "offer-payment", amount = 2100, type = TransactionType.Incoming,
+            kind = TransactionKind.Lightning, dateEpochMillis = System.currentTimeMillis(),
+            status = TransactionStatus.Completed, mintUrl = FakeWalletGateway.TestMintUrl,
+            invoice = quote.request, paymentMethod = PaymentMethodKind.Bolt12, quoteId = quote.id))
+        runBlocking { fixture.container.walletManager.loadTransactions() }
+        robot.tapText("History").tapText("Reusable Invoice").awaitText("Total received")
+        compose.onNodeWithTag(UiTestTags.HistoryTransactionDetails).performScrollTo().performClick()
+        robot.awaitTag(UiTestTags.RequestDetailsSheet)
+        compose.onNodeWithText("Amount paid").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Amount issued").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("cashu.history.details.payment.offer-payment").performScrollTo().performClick()
+        robot.awaitTag(UiTestTags.TransactionDetailsSheet)
+        compose.onNode(hasText("Lightning (BOLT12)") and hasAnyAncestor(hasTestTag(UiTestTags.TransactionDetailsSheet)))
+            .performScrollTo().assertIsDisplayed()
+        compose.onNode(hasText("offer-payment") and hasAnyAncestor(hasTestTag(UiTestTags.TransactionDetailsSheet)))
+            .performScrollTo().assertIsDisplayed()
+        robot.pressSystemBack()
+        compose.onNodeWithTag("cashu.history.details.payment.offer-payment").performScrollTo().assertIsDisplayed()
+        robot.pressSystemBack().awaitText("Total received")
+        robot.pressSystemBack().awaitTag(UiTestTags.HistoryScreen)
+        // Attached transaction remains represented by the offer's history row.
+        compose.onNodeWithText("Lightning received").assertDoesNotExist()
+    }
+
 }

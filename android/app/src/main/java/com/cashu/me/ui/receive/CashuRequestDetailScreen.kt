@@ -45,6 +45,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.testTag
+import com.cashu.me.ui.testing.UiTestTags
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -77,6 +79,8 @@ import com.cashu.me.ui.components.InlineNotice
 import com.cashu.me.ui.components.InlineNoticeHost
 import com.cashu.me.ui.components.LocalConfirmationToastController
 import com.cashu.me.ui.components.DescriptionDetailRow
+import com.cashu.me.ui.history.RequestTechnicalDetailsSheet
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import com.cashu.me.ui.components.InspectorRow
 import com.cashu.me.ui.components.MintPickerSheet
 import com.cashu.me.ui.components.NumberPadFooter
@@ -126,6 +130,10 @@ fun CashuRequestDetailScreen(
     val request = storeState.requests.firstOrNull { it.id == displayedRequestId }
     val requestReadiness = remember(settings, nostrState) {
         CashuRequestNostrReadiness.current(nostrService, settingsManager)
+    }
+    var technicalDetailsOpen by remember(displayedRequestId) { mutableStateOf(false) }
+    if (technicalDetailsOpen && request != null) {
+        RequestTechnicalDetailsSheet(request, walletManager, onDismissRequest = { technicalDetailsOpen = false })
     }
     var mintPickerOpen by remember { mutableStateOf(false) }
     var amountPickerOpen by remember { mutableStateOf(false) }
@@ -407,6 +415,12 @@ fun CashuRequestDetailScreen(
                             )
                         }
 
+                        InspectorRow(
+                            label = "Details", value = "",
+                            onClick = { technicalDetailsOpen = true },
+                            trailingIcon = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                            modifier = Modifier.testTag(UiTestTags.HistoryTransactionDetails),
+                        )
                     }
 
                     InlineNoticeHost(

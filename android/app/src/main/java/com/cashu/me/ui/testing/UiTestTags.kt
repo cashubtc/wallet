@@ -35,6 +35,8 @@ object UiTestTags {
     const val WalletSend = "cashu.wallet.send"
     const val HistoryScreen = "cashu.screen.history"
     const val TransactionReceiptSheet = "cashu.sheet.transaction-receipt"
+    const val RequestDetailsSheet = "cashu.sheet.request-details"
+    const val TransactionDetailsSheet = "cashu.sheet.transaction-details"
     const val MintsScreen = "cashu.screen.mints"
     const val MintDetailScreen = "cashu.screen.mint-detail"
     const val MintDetailContent = "cashu.mint-detail.content"
@@ -62,6 +64,8 @@ const val P2pkRecipientConfirmation = "cashu.send.ecash.p2pk-recipient"
     const val ConnectMintDiscover = "cashu.connect-mint.discover"
     const val HistorySearch = "cashu.history.search"
     const val HistoryCheckTokenStatus = "cashu.history.check-token-status"
+    const val HistoryTransactionDetails = "cashu.history.details"
+    const val HistoryTransactionDetailsCopyAll = "cashu.history.details.copy-all"
 
     fun seedSuggestion(index: Int): String = "cashu.restore.seed.suggestion.$index"
 

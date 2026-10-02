@@ -15,6 +15,7 @@ struct CashuRequestDetailView: View {
     let showsNavigationHeader: Bool
 
     @State private var requestId: String
+    @State private var showTechnicalDetails = false
     @State private var showMintPicker = false
     @State private var showAmountPicker = false
     @State private var showUnitPicker = false
@@ -92,6 +93,12 @@ struct CashuRequestDetailView: View {
                         .accessibilityLabel("Share request")
                     }
                 }
+            }
+        }
+        .sheet(isPresented: $showTechnicalDetails) {
+            if let request {
+                RequestTechnicalDetailsView(request: request)
+                    .presentationDetents([.large])
             }
         }
         .sheet(isPresented: $showMintPicker) {
@@ -257,6 +264,18 @@ struct CashuRequestDetailView: View {
                                 value: formatAmount(request.totalReceived, unit: request.unit)
                             )
                         }
+                        Button { showTechnicalDetails = true } label: {
+                            HStack {
+                                Text("Details").foregroundStyle(.secondary)
+                                Spacer()
+                                Image(systemName: "chevron.right").foregroundStyle(.tertiary)
+                            }
+                            // Same inset column as the rows above it.
+                            .paymentDetailRow(isInteractive: true)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("cashu.history.details")
                     }
                     .padding(.horizontal, 4)
                 }

@@ -85,6 +85,8 @@ class FakeWalletGateway(
         transactions += transaction
     }
 
+    fun addStoredMintQuote(quote: MintQuoteInfo) { mintQuotes[quote.id] = MutableStateFlow(quote) }
+
     fun markMintQuotePaid(quoteId: String, amountPaid: Long? = null) {
         val flow = checkNotNull(mintQuotes[quoteId]) { "Unknown fake quote $quoteId" }
         val current = flow.value
@@ -216,6 +218,8 @@ class FakeWalletGateway(
         mintQuotes[id] = MutableStateFlow(quote)
         return quote
     }
+
+    override suspend fun storedMintQuote(quoteId: String): MintQuoteInfo? = mintQuotes[quoteId]?.value
 
     override suspend fun checkMintQuote(quoteId: String): MintQuoteInfo =
         checkNotNull(mintQuotes[quoteId]) { "Unknown fake quote $quoteId" }.value

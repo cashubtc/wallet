@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.ContentCopy
@@ -69,6 +70,7 @@ import com.cashu.me.ui.components.AmountText
 import com.cashu.me.ui.components.AmountHero
 import com.cashu.me.ui.components.ExplorerLinkRow
 import com.cashu.me.ui.components.DescriptionDetailRow
+import com.cashu.me.ui.components.DisclosureRow
 import com.cashu.me.ui.components.InspectorRow
 import com.cashu.me.ui.components.InspectorRowStyle
 import com.cashu.me.ui.components.InlineNotice
@@ -85,6 +87,8 @@ import com.cashu.me.ui.theme.LeadingLabel
 import com.cashu.me.ui.theme.atSize
 import com.cashu.me.ui.theme.withMonoDigits
 import com.cashu.me.ui.testing.UiTestTags
+import androidx.compose.foundation.layout.Row
+import androidx.compose.material3.Text
 
 /**
  * Content-fitting bottom sheet for any transaction, settled or live. Every
@@ -136,6 +140,7 @@ fun TransactionReceiptSheet(
     val current = resolved ?: openSnapshot
 
     var checkingClaim by remember(transaction.id) { mutableStateOf(false) }
+    var showTechnicalDetails by remember(transaction.id) { mutableStateOf(false) }
     var manualCheckResult: PendingTokenClaimCheckResult? by remember(transaction.id) {
         mutableStateOf(null)
     }
@@ -257,6 +262,14 @@ fun TransactionReceiptSheet(
                 if (explorerUrl != null) {
                     ExplorerLinkRow(onClick = { context.openInBrowser(explorerUrl) }, style = InspectorRowStyle.History)
                 }
+                // Last row: the identifiers behind the payment (quote ID,
+                // request, proof) open in a nested full-height sheet, like the
+                // description reader (iOS parity).
+                DisclosureRow(
+                    label = "Details",
+                    onClick = { showTechnicalDetails = true },
+                    modifier = Modifier.testTag(UiTestTags.HistoryTransactionDetails),
+                )
             }
 
             if (offersManualClaimCheck) {
@@ -360,6 +373,13 @@ fun TransactionReceiptSheet(
         } else null,
         modifier = Modifier.testTag(UiTestTags.TransactionReceiptSheet),
     ) {
+        if (showTechnicalDetails) {
+            TransactionTechnicalDetailsSheet(
+                transaction = current,
+                walletManager = walletManager,
+                onDismissRequest = { showTechnicalDetails = false },
+            )
+        }
         if (showsQr && description != null) {
             PaymentDetailContent(
                 modifier = Modifier.weight(1f, fill = false),
@@ -405,6 +425,8 @@ private fun copyConfirmationMessage(label: String): String = when (label) {
 // Static receipt amount pair — direction already lives in the sheet title, so
 // historical details keep the settled sat amount quiet and unsigned. Fiat is a
 // subordinate live reference, never an interactive display-mode control.
+
+
 @Composable
 private fun HeroAmount(
     transaction: WalletTransaction,
@@ -466,7 +488,7 @@ internal fun transactionReceiptAmountDisplay(
     useBitcoinSymbol = useBitcoinSymbol,
 )
 
-private fun WalletTransaction.explorerUrl(): String? {
+internal fun WalletTransaction.explorerUrl(): String? {
     if (kind != TransactionKind.Onchain) return null
     return preimage?.let {
         OnchainExplorer.transactionWebUrl(txid = it, address = invoice, mintUrl = mintUrl)

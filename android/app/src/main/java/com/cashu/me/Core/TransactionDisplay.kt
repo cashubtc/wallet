@@ -120,10 +120,10 @@ object TransactionDisplay {
 
     /** `prefix(8)…suffix(6)` middle-truncation, the decoder's convention for
      *  opaque destination blobs; short strings pass through untouched. */
-    private fun middleTruncated(value: String): String =
+    internal fun middleTruncated(value: String): String =
         if (value.length > 16) "${value.take(8)}…${value.takeLast(6)}" else value
 
-    private fun formatNativeAmount(amount: Long, unit: String): String =
+    internal fun formatNativeAmount(amount: Long, unit: String): String =
         if (CurrencyRegistry.isSatoshiUnit(unit)) {
             "$amount sat"
         } else {

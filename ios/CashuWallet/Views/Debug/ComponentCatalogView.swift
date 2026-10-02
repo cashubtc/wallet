@@ -154,6 +154,7 @@ private struct ActivityDetailCatalog: View {
     @EnvironmentObject private var walletManager: WalletManager
     @State private var selectedTransaction: WalletTransaction?
     @State private var selectedRequest: CashuRequest?
+    @State private var showUpdatingDetails = false
     private let date = Date(timeIntervalSince1970: 1_788_768_000)
 
     private var transactions: [WalletTransaction] {
@@ -166,7 +167,9 @@ private struct ActivityDetailCatalog: View {
                   mintUrl: "https://mint.example", invoice: "lnbc1test"),
             .init(id: "sent-lightning", amount: 2100, type: .outgoing, kind: .lightning,
                   date: date, status: .completed, mintUrl: "https://mint.example",
-                  preimage: "0123456789abcdef0123456789abcdef", fee: 2),
+                  preimage: "0123456789abcdef0123456789abcdef", invoice: "lnbc21u1pcatalogfixtureinvoice",
+                  fee: 2, sagaId: "6f2d3c4b-1a2b-4c3d-8e9f-0a1b2c3d4e5f", paymentMethod: .bolt11,
+                  quoteId: "melt-quote-catalog-fixture"),
             .init(id: "failed-lightning", amount: 2100, type: .outgoing, kind: .lightning,
                   date: date, status: .failed, mintUrl: "https://mint.example"),
             .init(id: "pending-ecash", amount: 2100, type: .outgoing, kind: .ecash,
@@ -182,6 +185,10 @@ private struct ActivityDetailCatalog: View {
     var body: some View {
         VStack(spacing: 16) {
             Text("Activity details").font(.title)
+            if ProcessInfo.processInfo.environment["UITEST_DETAILS_UPDATES"] == "1" {
+                Button("Updating payment") { showUpdatingDetails = true }
+                    .accessibilityIdentifier("updating-payment")
+            }
             ForEach(transactions) { transaction in
                 Button(transaction.displayTitle) { selectedTransaction = transaction }
                     .accessibilityIdentifier(transaction.id)
@@ -195,6 +202,7 @@ private struct ActivityDetailCatalog: View {
             Button("Cashu Request · USD") { openRequest(rail: .ecash, paid: true, unit: "usd") }
                 .accessibilityIdentifier("cashu-request-usd")
         }
+        .sheet(isPresented: $showUpdatingDetails) { TechnicalDetailsUpdateCatalog() }
         .sheet(item: $selectedTransaction) { TransactionDetailView(transaction: $0) }
         .sheet(item: $selectedRequest) { CashuRequestReceiptView(request: $0) }
         .onAppear {
@@ -219,9 +227,15 @@ private struct ActivityDetailCatalog: View {
         store.delete(id: id)
         let request = store.create(
             id: id, rail: rail, encoded: rail == .ecash ? "creqAfixture" : "lno1fixture",
-            unit: unit, mints: ["https://mint.example"], memo: "Coffee tips", reusable: true
+            unit: unit, mints: ["https://mint.example"], memo: "Coffee tips",
+            quoteId: rail == .bolt12 ? "catalog-offer-quote" : nil, reusable: true
         )
         if rail == .bolt12 {
+            walletManager.transactionService.transactions = [
+                .init(id: "fixture-payment", amount: 2100, type: .incoming, kind: .lightning,
+                      date: date, status: .completed, mintUrl: "https://mint.example",
+                      invoice: "lno1fixture", paymentMethod: .bolt12, quoteId: "catalog-offer-quote")
+            ]
             store.attachPayment(requestId: id, transactionId: "fixture-payment", amount: 2100)
         } else if paid {
             store.attachPayment(requestId: id, transactionId: "fixture-payment-1", amount: 1200)
@@ -230,6 +244,24 @@ private struct ActivityDetailCatalog: View {
         selectedRequest = store.request(withId: id) ?? request
     }
 
+}
+
+/// Explicit UI-test-only scenario: the same receipt updates while Details stays open.
+private struct TechnicalDetailsUpdateCatalog: View {
+    @State private var transaction = WalletTransaction(
+        id: "updating-payment", amount: 21, type: .outgoing, kind: .lightning,
+        date: Date(timeIntervalSince1970: 1_788_768_000), status: .pending, mintUrl: "https://mint.example"
+    )
+    var body: some View {
+        VStack {
+            Button("Complete payment") {
+                transaction.status = .completed
+                transaction.fee = 2
+                transaction.preimage = String(repeating: "b", count: 64)
+            }
+            TransactionTechnicalDetailsView(transaction: transaction)
+        }
+    }
 }
 
 #Preview("Inline error catalog — matrix") {
