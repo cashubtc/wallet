@@ -431,6 +431,106 @@ final class WalletAuditRegressionTests: XCTestCase {
         )
     }
 
+    func testOnchainStatusCheckAdoptsCdkStoredQuote() async throws {
+        let database = try WalletSqliteDatabase.newInMemory()
+        let address = "bc1qexampledepositaddress"
+        try await database.addMintQuote(quote: onchainQuote(request: address, paid: 0, version: 0))
+        let beforeCheckRow = try await database.getMintQuote(quoteId: "onchain-quote")
+        let beforeCheck = try XCTUnwrap(beforeCheckRow)
+        // CDK's status check stores the mint's counters, then returns its
+        // pre-write copy, which is one version behind the stored row.
+        let checked = onchainQuote(request: address, paid: 300_000, version: beforeCheck.version)
+        try await database.addMintQuote(quote: checked)
+        let service = LightningService(walletRepository: { nil }, walletDatabase: { database }, getActiveMint: { nil })
+
+        do {
+            try await service.replaceStoredMintQuote(checked, in: database)
+            XCTFail("The stale copy must still be rejected by the version guard")
+        } catch { }
+
+        let refreshed = try await service.storedMintQuoteAfterStatusCheck(
+            quoteId: checked.id, paymentMethod: .onchain, fallbackAmount: nil
+        )
+        XCTAssertEqual(refreshed.amountPaid.value, 300_000)
+        XCTAssertEqual(refreshed.amountIssued.value, 0)
+        XCTAssertEqual(refreshed.amount?.value, 300_000)
+        XCTAssertEqual(refreshed.request, address)
+        let storedRow = try await database.getMintQuote(quoteId: "onchain-quote")
+        let stored = try XCTUnwrap(storedRow)
+        XCTAssertEqual(stored.amountPaid.value, 300_000)
+        XCTAssertEqual(stored.amount?.value, 300_000)
+        XCTAssertGreaterThan(stored.version, checked.version)
+    }
+
+    func testStatusCheckWithoutLocalNormalizationLeavesCdkRowUntouched() async throws {
+        let database = try WalletSqliteDatabase.newInMemory()
+        try await database.addMintQuote(quote: onchainQuote(request: "bc1qexample", paid: 0, version: 0))
+        let beforeCheckRow = try await database.getMintQuote(quoteId: "onchain-quote")
+        let beforeCheck = try XCTUnwrap(beforeCheckRow)
+        let service = LightningService(walletRepository: { nil }, walletDatabase: { database }, getActiveMint: { nil })
+
+        let refreshed = try await service.storedMintQuoteAfterStatusCheck(
+            quoteId: beforeCheck.id, paymentMethod: .onchain, fallbackAmount: nil
+        )
+        XCTAssertNil(refreshed.amount)
+        let storedRow = try await database.getMintQuote(quoteId: "onchain-quote")
+        let stored = try XCTUnwrap(storedRow)
+        XCTAssertEqual(stored.version, beforeCheck.version)
+    }
+
+    func testLightningStatusCheckDoesNotRewriteCurrentBolt11Quote() async throws {
+        let database = try WalletSqliteDatabase.newInMemory()
+        let checked = MintQuote(
+            id: "bolt11-status", amount: Amount(value: 21), unit: .sat, request: "invoice",
+            state: .paid, expiry: 1_900_000_000, mintUrl: MintUrl(url: "https://mint.example"),
+            amountIssued: Amount(value: 0), amountPaid: Amount(value: 21), updatedAt: 1,
+            estimatedBlocks: nil, paymentMethod: .bolt11, secretKey: nil,
+            usedByOperation: nil, version: 0
+        )
+        try await database.addMintQuote(quote: checked)
+        try await database.addMintQuote(quote: checked)
+        let before = try await database.getMintQuote(quoteId: checked.id)!
+        let service = LightningService(walletRepository: { nil }, walletDatabase: { database }, getActiveMint: { nil })
+        let refreshed = try await service.storedMintQuoteAfterStatusCheck(
+            quoteId: checked.id, paymentMethod: .bolt11, fallbackAmount: 21
+        )
+        let after = try await database.getMintQuote(quoteId: checked.id)!
+        XCTAssertEqual(refreshed.version, before.version)
+        XCTAssertEqual(after.version, before.version)
+        XCTAssertEqual(refreshed.amountPaid.value, 21)
+    }
+
+    func testLightningStatusCheckNormalizesBolt12ExpiryOnlyOnce() async throws {
+        let database = try WalletSqliteDatabase.newInMemory()
+        let checked = quote(reservation: nil)
+        try await database.addMintQuote(quote: checked)
+        try await database.addMintQuote(quote: checked)
+        let before = try await database.getMintQuote(quoteId: checked.id)!
+        let service = LightningService(walletRepository: { nil }, walletDatabase: { database }, getActiveMint: { nil })
+        let refreshed = try await service.storedMintQuoteAfterStatusCheck(
+            quoteId: checked.id, paymentMethod: .bolt12, fallbackAmount: nil
+        )
+        XCTAssertEqual(refreshed.expiry, 253_402_300_799)
+        XCTAssertEqual(refreshed.version, before.version + 1)
+        let repeated = try await service.storedMintQuoteAfterStatusCheck(
+            quoteId: checked.id, paymentMethod: .bolt12, fallbackAmount: nil
+        )
+        XCTAssertEqual(repeated.version, refreshed.version)
+        XCTAssertEqual(repeated.amountPaid, refreshed.amountPaid)
+        XCTAssertEqual(repeated.usedByOperation, refreshed.usedByOperation)
+    }
+
+    func testLightningStatusCheckRejectsMissingStoredQuote() async throws {
+        let database = try WalletSqliteDatabase.newInMemory()
+        let service = LightningService(walletRepository: { nil }, walletDatabase: { database }, getActiveMint: { nil })
+        do {
+            _ = try await service.storedMintQuoteAfterStatusCheck(
+                quoteId: "missing", paymentMethod: .bolt11, fallbackAmount: 21
+            )
+            XCTFail("Must not continue with a stale status result")
+        } catch { }
+    }
+
     func testNWCRejectsLimitThatWouldOverflowMillisatoshis() throws {
         XCTAssertNil(try NWCManager.paymentLimitMsat(nil))
         XCTAssertEqual(try NWCManager.paymentLimitMsat(100), 100_000)
@@ -499,6 +599,15 @@ final class WalletAuditRegressionTests: XCTestCase {
             amountIssued: Amount(value: issued), amountPaid: Amount(value: 12), updatedAt: 0,
             estimatedBlocks: nil, paymentMethod: .bolt12, secretKey: nil,
             usedByOperation: reservation, version: 0
+        )
+    }
+    private func onchainQuote(request: String, paid: UInt64, version: UInt32) -> MintQuote {
+        MintQuote(
+            id: "onchain-quote", amount: nil, unit: .sat, request: request, state: .unpaid,
+            expiry: 0, mintUrl: MintUrl(url: "https://mint.example"),
+            amountIssued: Amount(value: 0), amountPaid: Amount(value: paid), updatedAt: 0,
+            estimatedBlocks: nil, paymentMethod: .onchain, secretKey: nil,
+            usedByOperation: nil, version: version
         )
     }
 }
