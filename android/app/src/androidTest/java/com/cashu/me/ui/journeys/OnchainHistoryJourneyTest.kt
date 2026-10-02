@@ -131,6 +131,7 @@ class OnchainHistoryJourneyTest {
                 .awaitText("Pending").awaitText("Address")
             compose.onAllNodesWithText("0 sat").assertCountEquals(0)
             robot.pressSystemBack()
+                .assertTagDoesNotExist(UiTestTags.TransactionReceiptSheet)
 
             gateway.markMintQuotePaid(quote.id, amountPaid = 2_100)
             runBlocking { fixture.container.walletManager.loadTransactions(includeRemoteObservations = false) }
