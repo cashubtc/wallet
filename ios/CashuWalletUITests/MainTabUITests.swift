@@ -116,6 +116,13 @@ final class MainTabUITests: UITestBase {
 
 /// Actual receipt sheets with deterministic catalog records, without a live mint.
 final class ActivityDetailUITests: XCTestCase {
+    override func setUp() {
+        super.setUp()
+        // Include cold simulator launch and termination in the budget for
+        // receipt journeys. Individual UI waits stay short and bounded.
+        executionTimeAllowance = 180
+    }
+
     func testCurrencyAndMintEditsShowNewRequestWithoutRelabelingOldPayments() {
         continueAfterFailure = false
         let app = XCUIApplication()
