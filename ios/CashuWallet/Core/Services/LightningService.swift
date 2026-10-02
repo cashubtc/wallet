@@ -1407,9 +1407,8 @@ class LightningService: ObservableObject {
         _ quote: MintQuote,
         in walletDatabase: WalletSqliteDatabase
     ) async throws {
-        // The FFI upsert accepts a stale record, including its reservation.
         // While the repository lease is held, reject stale app projections
-        // instead of overwriting CDK's newer recovery state.
+        // and reservation changes instead of overwriting CDK's recovery state.
         if let current = try await walletDatabase.getMintQuote(quoteId: quote.id) {
             guard quote.version >= current.version,
                   quote.usedByOperation == current.usedByOperation else {
@@ -1423,24 +1422,29 @@ class LightningService: ObservableObject {
         _ existingQuote: MintQuote,
         fallbackAmount: UInt64?
     ) async throws -> MintQuote {
-        guard let repo = walletRepository() else {
+        guard let repo = walletRepository(), let database = walletDatabase() else {
             throw WalletError.notInitialized
         }
 
-        let wallet = try await repo.getWallet(mintUrl: existingQuote.mintUrl, unit: .sat)
-        let checkedQuote = try await wallet.checkMintQuoteStatus(quoteId: existingQuote.id)
+        let wallet = try await repo.getWallet(mintUrl: existingQuote.mintUrl, unit: existingQuote.unit)
+        let storedQuote = try await MintQuoteRecovery.refresh(
+            check: { try await wallet.checkMintQuoteStatus(quoteId: existingQuote.id) },
+            reload: { try await database.getMintQuote(quoteId: existingQuote.id) }
+        )
         let refreshedQuote = mintQuoteForLocalStorage(
-            mintQuotePreservingLocalMetadata(checkedQuote, from: existingQuote),
+            storedQuote,
             paymentMethod: .onchain,
             fallbackAmount: fallbackAmount
         )
 
-        guard let walletDatabase = walletDatabase() else {
-            return refreshedQuote
+        if refreshedQuote.amount != storedQuote.amount || refreshedQuote.expiry != storedQuote.expiry {
+            try await replaceStoredMintQuote(refreshedQuote, in: database)
+            guard let persisted = try await database.getMintQuote(quoteId: existingQuote.id) else {
+                throw WalletError.networkError("This receive request is no longer available.")
+            }
+            return persisted
         }
-
-        try await replaceStoredMintQuote(refreshedQuote, in: walletDatabase)
-        return refreshedQuote
+        return storedQuote
     }
 
     private func createOnchainMintQuote(mintURL: String) async throws -> MintQuoteInfo {

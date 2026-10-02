@@ -318,15 +318,14 @@ class CdkWalletGatewayImpl : WalletGateway {
         val wallet = walletFor(quote.mintUrl.url, quote.unit)
         val method = quote.paymentMethod.toDomain()
         val fallbackAmount = quote.amount?.value?.toLong()
-        val checkedQuote = if (method == PaymentMethodKind.Onchain) {
-            wallet.checkMintQuoteStatus(quoteId)
-        } else {
-            wallet.checkMintQuote(quoteId)
-        }
-        val refreshed = checkedQuote
-            .preservingLocalMetadataFrom(quote)
-            .withLocalMintQuoteMetadata(method, fallbackAmount)
-            .let { persistMintQuoteLocalMetadataIfNeeded(it, method, fallbackAmount = fallbackAmount) }
+        val checkedQuote = refreshPersistedMintQuote(
+            check = {
+                if (method == PaymentMethodKind.Onchain) wallet.checkMintQuoteStatus(quoteId)
+                else wallet.checkMintQuote(quoteId)
+            },
+            reload = { database?.getMintQuote(quoteId) },
+        )
+        val refreshed = persistMintQuoteLocalMetadataIfNeeded(checkedQuote, method, fallbackAmount)
         refreshed.toDomain(
             fallbackAmount = fallbackAmount,
             fallbackMethod = method,
@@ -387,14 +386,15 @@ class CdkWalletGatewayImpl : WalletGateway {
         val method = quote.paymentMethod.toDomain()
         val fallbackAmount = quote.amount?.value?.toLong()
         val currentQuote = if (method == PaymentMethodKind.Onchain) {
-            walletFor(quote.mintUrl.url, quote.unit)
-                .checkMintQuoteStatus(quoteId)
-                .preservingLocalMetadataFrom(quote)
+            refreshPersistedMintQuote(
+                check = { walletFor(quote.mintUrl.url, quote.unit).checkMintQuoteStatus(quoteId) },
+                reload = { database?.getMintQuote(quoteId) },
+            )
         } else {
             quote
         }
         val normalizedQuote = persistMintQuoteLocalMetadataIfNeeded(
-            quote = currentQuote.withLocalMintQuoteMetadata(method, fallbackAmount),
+            quote = currentQuote,
             method = method,
             fallbackAmount = fallbackAmount,
         )
@@ -427,7 +427,11 @@ class CdkWalletGatewayImpl : WalletGateway {
         val mintUrl = quote.mintUrl?.let(::normalizeMintUrl)
             ?: throw CdkGatewayUnavailable("npub.cash quote ${quote.id} has no mint URL.")
         ensureWalletUnlocked(mintUrl)
-        replaceStoredMintQuote(quote.toCdkMintQuote(mintUrl))
+        // Import only once. A retry must retain CDK's newer counters and saga
+        // reservation instead of replacing them with an external quote snapshot.
+        if (database?.getMintQuote(quote.id) == null) {
+            replaceStoredMintQuote(quote.toCdkMintQuote(mintUrl))
+        }
         val proofs = walletFor(mintUrl).mintUnified(
             quoteId = quote.id,
             amountSplitTarget = CdkSplitTarget.None,
@@ -1083,39 +1087,25 @@ class CdkWalletGatewayImpl : WalletGateway {
         else -> CdkQuoteState.UNPAID
     }
 
-    private suspend fun CdkMintQuote.clearingOrphanedReservationIfNeeded(): CdkMintQuote {
-        val operationId = usedByOperation ?: return this
-        val saga = runCatching { database?.getSaga(operationId) }.getOrNull()
-        if (saga != null) return this
-        return clearingReservation()
-    }
-
     private suspend fun replaceStoredMintQuote(quote: CdkMintQuote) {
-        val db = database ?: return
-        try {
-            db.addMintQuote(quote)
-        } catch (cancellation: CancellationException) {
-            throw cancellation
-        } catch (_: Throwable) {
-            db.removeMintQuote(quote.id)
-            db.addMintQuote(quote)
+        val db = database ?: throw CdkGatewayUnavailable("Wallet database is unavailable.")
+        val current = db.getMintQuote(quote.id)
+        if (current != null && (quote.version < current.version || quote.usedByOperation != current.usedByOperation)) {
+            throw CdkGatewayUnavailable("This receive request changed. Refresh it and try again.")
         }
+        db.addMintQuote(quote)
     }
 
     private suspend fun persistMintQuoteLocalMetadataIfNeeded(
         quote: CdkMintQuote,
         method: PaymentMethodKind,
         fallbackAmount: Long? = null,
-        clearOrphanedReservation: Boolean = true,
     ): CdkMintQuote {
-        val withLocalMetadata = quote.withLocalMintQuoteMetadata(method, fallbackAmount)
-        val normalized = if (clearOrphanedReservation) {
-            withLocalMetadata.clearingOrphanedReservationIfNeeded()
-        } else {
-            withLocalMetadata
-        }
-        if (normalized != quote) runCatching { replaceStoredMintQuote(normalized) }
-        return normalized
+        return persistMintQuoteMetadata(
+            quote, method, fallbackAmount,
+            save = ::replaceStoredMintQuote,
+            reload = { database?.getMintQuote(quote.id) },
+        )
     }
 
     private fun CdkMeltQuote.toDomain(fallbackMethod: PaymentMethodKind): MeltQuoteInfo = MeltQuoteInfo(
