@@ -112,10 +112,11 @@ class UITestBase: XCTestCase {
         tapWhenReady(addCustom, timeout: 10)
 
         let field = app.textFields["onboarding-custom-mint-field"]
-        focusTextField(field)
-        field.typeText(mintURL)
-        let done = app.keyboards.buttons["Done"]
-        tapWhenReady(done, message: "URL keyboard should expose a Done button")
+        enterMintURL(mintURL, into: field)
+        // Mint setup is not a keyboard-return-key test. Submit through the
+        // app's stable control after verifying the complete URL was entered.
+        tapWhenReady(app.buttons["onboarding-commit-custom-mint"])
+        XCTAssertTrue(field.waitForNonExistence(timeout: 5), "Adding the mint should close URL entry")
 
         let cont = app.buttons["onboarding-continue"]
         XCTAssertTrue(cont.waitForExistence(timeout: 5))
@@ -127,6 +128,45 @@ class UITestBase: XCTestCase {
         tapWhenReady(cont)
 
         waitForMainTab(timeout: 60)
+    }
+
+    /// CI has returned from typeText with only a URL prefix and no keyboard,
+    /// without XCTest reporting an input error. Verify the value, and allow
+    /// one refocus to complete a verified prefix; never submit partial input
+    /// or append to unexpected text. This does not retry the test or payment.
+    func enterMintURL(
+        _ url: String,
+        into field: XCUIElement,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        guard field.waitForExistence(timeout: 10) else {
+            XCTFail("Mint URL field should appear", file: file, line: line)
+            return
+        }
+        for attempt in 1...2 {
+            let value = field.value as? String ?? ""
+            let prefix = value == field.placeholderValue ? "" : value
+            if prefix == url { return }
+            guard url.hasPrefix(prefix) else {
+                XCTFail("Mint URL field contains unexpected text", file: file, line: line)
+                return
+            }
+
+            XCTContext.runActivity(named: "Enter complete mint URL (attempt \(attempt))") { _ in
+                focusTextField(field, file: file, line: line)
+                field.typeText(String(url.dropFirst(prefix.count)))
+            }
+            let complete = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "value == %@", url), object: field
+            )
+            if XCTWaiter.wait(for: [complete], timeout: 3) == .completed { return }
+        }
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        XCTAssertEqual(field.value as? String, url,
+                       "The complete mint URL must be entered before submission", file: file, line: line)
     }
 
     func waitForMainTab(timeout: TimeInterval = 20) {
