@@ -49,6 +49,8 @@ import com.cashu.me.Models.PendingReceiveToken
 import com.cashu.me.Models.RestoreMintResult
 import com.cashu.me.Models.SagaTransactionId
 import com.cashu.me.Models.SendTokenResult
+import com.cashu.me.Models.TransactionKind
+import com.cashu.me.Models.TransactionType
 import com.cashu.me.Models.WalletTransaction
 import org.bouncycastle.crypto.digests.SHA512Digest
 import org.bouncycastle.crypto.generators.PKCS5S2ParametersGenerator
@@ -1216,6 +1218,34 @@ class WalletManager(
             }
             claimed
         }
+
+    /**
+     * The receipt's Details sheet. Reads the stored quote behind the row from
+     * the CDK database only — no mint or explorer traffic — so it opens offline
+     * and never changes wallet state. Incoming rows carry a mint quote; outgoing
+     * Lightning and on-chain rows a melt quote (iOS parity).
+     */
+    suspend fun transactionTechnicalDetails(transaction: WalletTransaction): List<TechnicalDetailSection> {
+        val quoteId = transaction.quoteId
+        if (quoteId == null || transaction.kind == TransactionKind.Ecash) {
+            return TransactionTechnicalDetails.sections(transaction)
+        }
+        return try {
+            if (transaction.type == TransactionType.Incoming) {
+                TransactionTechnicalDetails.sections(transaction, mintQuote = gateway.storedMintQuote(quoteId))
+            } else {
+                TransactionTechnicalDetails.sections(
+                    transaction,
+                    meltQuote = gateway.listMeltQuotes().firstOrNull { it.id == quoteId },
+                )
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            AppLogger.wallet.error("Transaction details quote read failed", error)
+            TransactionTechnicalDetails.sections(transaction)
+        }
+    }
 
     private suspend fun checkPendingSendClaimInternal(transaction: WalletTransaction): Boolean {
         val mintUrl = transaction.mintUrl ?: return false

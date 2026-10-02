@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.ContentCopy
@@ -136,6 +137,7 @@ fun TransactionReceiptSheet(
     val current = resolved ?: openSnapshot
 
     var checkingClaim by remember(transaction.id) { mutableStateOf(false) }
+    var showTechnicalDetails by remember(transaction.id) { mutableStateOf(false) }
     var manualCheckResult: PendingTokenClaimCheckResult? by remember(transaction.id) {
         mutableStateOf(null)
     }
@@ -257,6 +259,17 @@ fun TransactionReceiptSheet(
                 if (explorerUrl != null) {
                     ExplorerLinkRow(onClick = { context.openInBrowser(explorerUrl) }, style = InspectorRowStyle.History)
                 }
+                // Last row: the identifiers behind the payment (quote ID,
+                // request, proof) open in a nested full-height sheet, like the
+                // description reader (iOS parity).
+                InspectorRow(
+                    style = InspectorRowStyle.History,
+                    label = "Details",
+                    value = "",
+                    onClick = { showTechnicalDetails = true },
+                    trailingIcon = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                    modifier = Modifier.testTag(UiTestTags.HistoryTransactionDetails),
+                )
             }
 
             if (offersManualClaimCheck) {
@@ -360,6 +373,13 @@ fun TransactionReceiptSheet(
         } else null,
         modifier = Modifier.testTag(UiTestTags.TransactionReceiptSheet),
     ) {
+        if (showTechnicalDetails) {
+            TransactionTechnicalDetailsSheet(
+                transaction = current,
+                walletManager = walletManager,
+                onDismissRequest = { showTechnicalDetails = false },
+            )
+        }
         if (showsQr && description != null) {
             PaymentDetailContent(
                 modifier = Modifier.weight(1f, fill = false),
@@ -466,7 +486,7 @@ internal fun transactionReceiptAmountDisplay(
     useBitcoinSymbol = useBitcoinSymbol,
 )
 
-private fun WalletTransaction.explorerUrl(): String? {
+internal fun WalletTransaction.explorerUrl(): String? {
     if (kind != TransactionKind.Onchain) return null
     return preimage?.let {
         OnchainExplorer.transactionWebUrl(txid = it, address = invoice, mintUrl = mintUrl)

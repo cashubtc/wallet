@@ -14,6 +14,7 @@ struct TransactionDetailView: View {
     @State private var contentHeight: CGFloat = 0
     @State private var claimReceiveToken: PendingReceiveToken?
     @State private var showShareSheet = false
+    @State private var showTechnicalDetails = false
     @State private var isCheckingClaim = false
     @State private var manualClaimCheckResult: PendingTokenClaimCheckResult?
     @State private var manualClaimCheckTask: Task<Void, Never>?
@@ -131,6 +132,11 @@ struct TransactionDetailView: View {
                     ShareSheet(items: [invoice])
                 }
             }
+            .sheet(isPresented: $showTechnicalDetails) {
+                TransactionTechnicalDetailsView(transaction: transaction)
+                    .environmentObject(walletManager)
+                    .presentationDetents([.large])
+            }
             .onDisappear {
                 manualClaimCheckTask?.cancel()
             }
@@ -196,6 +202,7 @@ struct TransactionDetailView: View {
                 if let explorerURL = onchainExplorerURL {
                     explorerLinkRow(label: "View in block explorer", url: explorerURL)
                 }
+                technicalDetailsRow
             }
             .padding(.horizontal, 4)
 
@@ -435,6 +442,29 @@ struct TransactionDetailView: View {
         .accessibilityLabel(label)
         .accessibilityValue(value)
         .accessibilityHint("Copies the \(label.lowercased()) to clipboard")
+    }
+
+    /// Last receipt row: the identifiers behind the payment (quote ID, request,
+    /// proof) open in a nested `.large` sheet, like the description reader.
+    private var technicalDetailsRow: some View {
+        Button {
+            HapticFeedback.selection()
+            showTechnicalDetails = true
+        } label: {
+            HStack {
+                Text("Details")
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .paymentDetailRow(layout: .history, isInteractive: true)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Shows quote, request and proof identifiers")
+        .accessibilityIdentifier("cashu.history.details")
     }
 
     /// Same shape as `detailRow` but opens an external URL, with the trailing

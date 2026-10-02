@@ -3,6 +3,7 @@ package com.cashu.me.ui.journeys
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performClick
@@ -156,6 +157,28 @@ class ActivityDetailJourneyTest {
         robot.tapText("History").tapText("Lightning paid").awaitTag(UiTestTags.TransactionReceiptSheet)
         compose.onNodeWithContentDescription("Failed").assertIsDisplayed()
         compose.onNodeWithText("Failed").assertIsDisplayed()
+    }
+
+    @Test fun receiptDetailsRowOpensTechnicalDetails() {
+        launched = AppTestFixture.launch(FixtureMode.SeededWithMint)
+        val fixture = launched!!
+        robot.awaitTag(UiTestTags.WalletScreen)
+        fixture.fakeGateway!!.addTransaction(WalletTransaction(
+            id = "c".repeat(64), amount = 2100, type = TransactionType.Outgoing,
+            kind = TransactionKind.Lightning, dateEpochMillis = System.currentTimeMillis(),
+            status = TransactionStatus.Completed, mintUrl = FakeWalletGateway.TestMintUrl,
+            preimage = "d".repeat(64), invoice = "lnbc21u1pjourneyfixtureinvoice", fee = 2,
+            quoteId = "melt-quote-journey-fixture"))
+        runBlocking { fixture.container.walletManager.loadTransactions() }
+        robot.tapText("History").tapText("Lightning paid").awaitTag(UiTestTags.TransactionReceiptSheet)
+        compose.onNodeWithTag(UiTestTags.HistoryTransactionDetails).performScrollTo().performClick()
+        robot.awaitTag(UiTestTags.TransactionDetailsSheet)
+        for (label in listOf("Method", "Type", "Quote ID", "Request")) {
+            compose.onNodeWithText(label).performScrollTo().assertIsDisplayed()
+        }
+        compose.onNodeWithText("Lightning (BOLT11)").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag(UiTestTags.HistoryTransactionDetailsCopyAll).performScrollTo().assertIsDisplayed()
+        robot.pressSystemBack().awaitTag(UiTestTags.TransactionReceiptSheet)
     }
 
     @Test fun requestTotalsAndEditableAmountRespectTheirCurrency() {

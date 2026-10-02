@@ -245,6 +245,23 @@ Android, while retaining the existing payment-specific content and actions.
   Settled one-shot codes retire as before.
 - Unclaimed incoming ecash opens the shared sheet with Receive to enter the
   claim flow. Keep action footers visible while long detail content scrolls.
+- **Details sheet** *(added 2026-10-02)*. Every transaction receipt ends with a
+  quiet **Details ›** row (secondary label, trailing chevron, no value) that
+  opens a nested full-height sheet — the Description "Read more" precedent, so
+  the content-fit receipt never pushes. It holds the identifiers support and
+  developers need, in fixed sections: **Transaction** (ID, Method, Direction,
+  Status, Status detail while pending, Date with seconds, Amount, Fee, Mint URL,
+  Saga ID), **Quote** when the row has one (Quote ID, Type, Request, State, then
+  paid/issued amounts for a mint quote or amount/fee reserve for a melt quote,
+  Expiry, Last updated), and **Payment** (Payment Proof, or the on-chain
+  Transaction ID plus the block explorer row). Rows follow the receipt canon:
+  opaque references cut `prefix(8)…suffix(6)` with tap-to-copy of the full value;
+  the Mint URL wraps instead. App-synthesized rows (an unpaid quote, a held token)
+  omit the CDK ID. **Copy all** copies the sections as plain `Label: value` text
+  with untruncated values and ISO 8601 UTC dates, for pasting into a support
+  request. Details read local CDK snapshots only (no network), and never show a
+  quote's NUT-20 secret key or a spendable token. iOS closes with Done in the
+  navigation bar; Android with a bottom Done, like its description reader.
 
 ## 2. Colors: The Inverted-Ink Palette
 

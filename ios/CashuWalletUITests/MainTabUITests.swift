@@ -228,6 +228,40 @@ final class ActivityDetailUITests: XCTestCase {
             XCTAssertTrue(title.waitForNonExistence(timeout: 5))
         }
     }
+
+    func testReceiptDetailsRowOpensTechnicalDetails() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchEnvironment = ["SHOW_COMPONENT_CATALOG": "activity", "CI_INTEGRATION_TEST": "1"]
+        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launch()
+        defer { app.terminate() }
+
+        let row = app.buttons["sent-lightning"]
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        row.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let details = app.buttons["cashu.history.details"]
+        XCTAssertTrue(details.waitForExistence(timeout: 5))
+        let receipt = XCTAttachment(screenshot: app.screenshot())
+        receipt.name = "receipt-with-details-row"
+        receipt.lifetime = .keepAlways
+        add(receipt)
+
+        details.tap()
+        XCTAssertTrue(app.navigationBars["Details"].waitForExistence(timeout: 5))
+        for label in ["Method", "Quote ID", "Request", "Payment Proof"] {
+            XCTAssertTrue(app.descendants(matching: .any)[label].firstMatch.exists, label)
+        }
+        XCTAssertTrue(app.buttons["cashu.history.details.copy-all"].exists)
+        let sheet = XCTAttachment(screenshot: app.screenshot())
+        sheet.name = "transaction-details-sheet"
+        sheet.lifetime = .keepAlways
+        add(sheet)
+
+        app.navigationBars["Details"].buttons["Done"].tap()
+        XCTAssertTrue(app.navigationBars["Details"].waitForNonExistence(timeout: 5))
+        XCTAssertTrue(details.exists)
+    }
 }
 
 
