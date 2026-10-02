@@ -124,24 +124,28 @@ final class OnboardingChassisUITests: UITestBase {
         // `showMnemonicStage` (and Android's `SeedGrid`) — a UI test is
         // black-box, so it cannot share the app's constant.
         let mask = app.staticTexts["••••••"]
-        let reveal = app.staticTexts["Tap to reveal"]
+        let reveal = app.buttons["Reveal seed phrase"]
 
         XCTAssertTrue(reveal.waitForExistence(timeout: 10), "Seed should start hidden")
         XCTAssertTrue(
             mask.exists,
             "A hidden phrase must publish masks, not the real words, to the accessibility tree"
         )
-        reveal.tap()
+        tapWhenReady(reveal, timeout: 10)
 
-        let firstIndex = app.staticTexts["01"]
+        // Word numbers exist in the masked grid too, so waiting for "01"
+        // does not establish that the tap revealed the phrase. Wait for both
+        // hidden-state elements to leave the accessibility tree instead.
         XCTAssertTrue(
-            firstIndex.waitForExistence(timeout: 5),
-            "Tapping the card should reveal the numbered words"
+            reveal.waitForNonExistence(timeout: 5),
+            "The reveal control should go away once revealed"
         )
-        XCTAssertFalse(reveal.exists, "The reveal prompt should go away once revealed")
-        XCTAssertFalse(mask.exists, "Revealing should swap the masks for the real words")
-
-        firstIndex.tap()
+        XCTAssertTrue(
+            mask.waitForNonExistence(timeout: 5),
+            "Revealing should swap the masks for the real words"
+        )
+        let firstIndex = app.staticTexts["01"]
+        tapWhenReady(firstIndex, timeout: 5)
 
         XCTAssertTrue(
             reveal.waitForExistence(timeout: 5),
@@ -166,9 +170,9 @@ final class OnboardingChassisUITests: UITestBase {
         let saved = app.buttons["onboarding-saved-seed"]
         XCTAssertTrue(saved.waitForExistence(timeout: 15), "Seed step should appear")
 
-        let reveal = app.staticTexts["Tap to reveal"]
+        let reveal = app.buttons["Reveal seed phrase"]
         XCTAssertTrue(reveal.waitForExistence(timeout: 10), "Seed should start hidden")
-        reveal.tap()
+        tapWhenReady(reveal, timeout: 10)
         XCTAssertTrue(
             reveal.waitForNonExistence(timeout: 5),
             "Tapping the card should reveal the phrase"
