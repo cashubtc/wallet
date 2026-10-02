@@ -11,9 +11,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberBottomSheetState
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -27,7 +29,10 @@ import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import kotlinx.coroutines.launch
+import com.cashu.me.Core.TechnicalDetailSection
 import com.cashu.me.Core.TransactionTechnicalDetails
+import com.cashu.me.Models.CashuRequest
+import com.cashu.me.Models.MintQuoteInfo
 import com.cashu.me.Core.WalletManager
 import com.cashu.me.Models.WalletTransaction
 import com.cashu.me.ui.components.CashuModalBottomSheet
@@ -56,21 +61,49 @@ fun TransactionTechnicalDetailsSheet(
     walletManager: WalletManager,
     onDismissRequest: () -> Unit,
 ) {
+    val walletState by walletManager.state.collectAsState()
+    val current = walletState.transactions.firstOrNull { it.id == transaction.id } ?: transaction
+    var sections by remember(current) { mutableStateOf(TransactionTechnicalDetails.sections(current)) }
+    LaunchedEffect(current) {
+        sections = walletManager.transactionTechnicalDetails(current)
+    }
+    TechnicalDetailsContent(sections, TransactionTechnicalDetails.explorerUrl(current, sections), walletManager, onDismissRequest)
+}
+
+@Composable
+fun RequestTechnicalDetailsSheet(
+    request: CashuRequest,
+    walletManager: WalletManager,
+    onDismissRequest: () -> Unit,
+) {
+    val walletState by walletManager.state.collectAsState()
+    var quote by remember(request.id, request.quoteId) { mutableStateOf<MintQuoteInfo?>(null) }
+    LaunchedEffect(request) { quote = walletManager.requestMintQuoteSnapshot(request) }
+    val payments = request.receivedPayments.mapIndexedNotNull { index, payment ->
+        walletState.transactions.firstOrNull { it.id == payment.transactionId }?.let { index + 1 to it }
+    }
+    TechnicalDetailsContent(TransactionTechnicalDetails.requestSections(request, quote), null, walletManager, onDismissRequest, payments, UiTestTags.RequestDetailsSheet)
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TechnicalDetailsContent(
+    sections: List<TechnicalDetailSection>,
+    explorerUrl: String?,
+    walletManager: WalletManager,
+    onDismissRequest: () -> Unit,
+    payments: List<Pair<Int, WalletTransaction>> = emptyList(),
+    testTag: String = UiTestTags.TransactionDetailsSheet,
+) {
     val context = LocalContext.current
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
     val confirmationToastController = LocalConfirmationToastController.current
+    var selectedPayment by remember { mutableStateOf<WalletTransaction?>(null) }
     val sheetState = rememberBottomSheetState(
         initialValue = SheetValue.Hidden,
         enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
     )
-    // Row-derived sections render at once; the stored quote fills in after its
-    // local read.
-    var sections by remember(transaction) { mutableStateOf(TransactionTechnicalDetails.sections(transaction)) }
-    LaunchedEffect(transaction) {
-        sections = walletManager.transactionTechnicalDetails(transaction)
-    }
-    val explorerUrl = remember(transaction) { transaction.explorerUrl() }
 
     fun copy(label: String, value: String, confirmation: String) {
         scope.launch {
@@ -83,7 +116,7 @@ fun TransactionTechnicalDetailsSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .testTag(UiTestTags.TransactionDetailsSheet)
+                .testTag(testTag)
                 .verticalScroll(rememberScrollState())
                 .navigationBarsPadding()
                 .padding(horizontal = CashuTheme.spacing.comfortable)
@@ -123,6 +156,20 @@ fun TransactionTechnicalDetailsSheet(
                     }
                 }
             }
+            if (payments.isNotEmpty()) {
+                Column {
+                    SectionHeader(text = "Payment details")
+                    payments.forEach { (number, payment) ->
+                        InspectorRow(
+                            style = InspectorRowStyle.History,
+                            label = "Payment $number", value = "",
+                            onClick = { selectedPayment = payment },
+                            trailingIcon = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                            modifier = Modifier.testTag("cashu.history.details.payment.${payment.id}"),
+                        )
+                    }
+                }
+            }
             Column(verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default)) {
                 SecondaryButton(
                     text = "Copy all",
@@ -140,5 +187,8 @@ fun TransactionTechnicalDetailsSheet(
                 )
             }
         }
+    }
+    selectedPayment?.let { payment ->
+        TransactionTechnicalDetailsSheet(payment, walletManager, onDismissRequest = { selectedPayment = null })
     }
 }

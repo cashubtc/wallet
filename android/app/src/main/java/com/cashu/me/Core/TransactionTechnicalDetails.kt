@@ -3,6 +3,7 @@ package com.cashu.me.Core
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import com.cashu.me.Core.Protocols.CurrencyRegistry
+import com.cashu.me.Models.CashuRequest
 import com.cashu.me.Models.MeltQuoteInfo
 import com.cashu.me.Models.MintQuoteInfo
 import com.cashu.me.Models.PaymentMethodKind
@@ -55,13 +56,7 @@ object TransactionTechnicalDetails {
                     ?.takeIf { it.isNotEmpty() }
                     ?.let { add(reference("Request", it)) }
                 if (mintQuote != null) {
-                    add(plain("State", mintQuote.state.name))
-                    add(plain("Amount paid", nativeAmount(mintQuote.amountPaid, unit)))
-                    add(plain("Amount issued", nativeAmount(mintQuote.amountIssued, unit)))
-                    add(expiryRow(mintQuote.expiryEpochSeconds))
-                    if (mintQuote.updatedAtEpochSeconds > 0) {
-                        add(dateRow("Last updated", mintQuote.updatedAtEpochSeconds * 1000))
-                    }
+                    addAll(mintQuoteRows(mintQuote, unit))
                 } else if (meltQuote != null) {
                     add(plain("State", meltQuote.state.name))
                     add(plain("Quote amount", nativeAmount(meltQuote.amount, unit)))
@@ -72,7 +67,8 @@ object TransactionTechnicalDetails {
             add(TechnicalDetailSection("Quote", rows))
         }
 
-        val proof = transaction.preimage ?: meltQuote?.paymentProof
+        val proof = transaction.preimage?.takeIf { it.isNotEmpty() }
+            ?: meltQuote?.paymentProof?.takeIf { it.isNotEmpty() }
         if (proof != null) {
             when (transaction.kind) {
                 TransactionKind.Lightning ->
@@ -82,6 +78,62 @@ object TransactionTechnicalDetails {
                 TransactionKind.Ecash -> Unit
             }
         }
+    }
+
+    /** Receive-artifact details retain the offer's identity and payment breakdown. */
+    fun requestSections(request: CashuRequest, mintQuote: MintQuoteInfo? = null): List<TechnicalDetailSection> = buildList {
+        val method = when (request.quoteKind?.lowercase()) {
+            "bolt11" -> "Lightning (BOLT11)"
+            "bolt12" -> "Lightning (BOLT12)"
+            "onchain" -> "On-chain"
+            else -> "Ecash"
+        }
+        add(TechnicalDetailSection("Request", buildList {
+            add(reference("ID", request.id))
+            add(plain("Method", method))
+            add(dateRow("Created", request.createdAtEpochMillis))
+            add(plain("Amount", request.amount?.let { nativeAmount(it, request.unit) } ?: "Any"))
+            add(plain("Total received", nativeAmount(request.totalReceived, request.unit)))
+            request.mints.forEachIndexed { index, mint ->
+                add(TechnicalDetailRow(if (request.mints.size == 1) "Mint" else "Mint ${index + 1}", mint, copyable = true))
+            }
+            if (request.quoteId == null) add(reference("Request", request.encoded))
+        }))
+        request.quoteId?.let { quoteID ->
+            add(TechnicalDetailSection("Quote", buildList {
+                add(reference("Quote ID", quoteID))
+                add(plain("Type", "Mint quote"))
+                add(reference("Request", mintQuote?.request ?: request.encoded))
+                if (mintQuote != null) addAll(mintQuoteRows(mintQuote, request.unit))
+            }))
+        }
+        request.receivedPayments.forEachIndexed { index, payment ->
+            add(TechnicalDetailSection("Payment ${index + 1}", listOf(
+                reference("Transaction ID", payment.transactionId),
+                plain("Amount", nativeAmount(payment.amount, request.unit)),
+                dateRow("Date", payment.receivedAtEpochMillis),
+            )))
+        }
+    }
+
+    /** Navigate to the same resolved txid that the Payment section displays. */
+    fun explorerUrl(transaction: WalletTransaction, sections: List<TechnicalDetailSection>): String? {
+        if (transaction.kind != TransactionKind.Onchain) return null
+        val txid = sections.firstOrNull { it.title == "Payment" }?.rows
+            ?.firstOrNull { it.label == "Transaction ID" }?.fullValue?.takeIf { it.isNotEmpty() }
+        return if (txid != null) {
+            OnchainExplorer.transactionWebUrl(txid, transaction.invoice, transaction.mintUrl)
+        } else {
+            transaction.invoice?.let { OnchainExplorer.addressWebUrl(it, transaction.mintUrl) }
+        }
+    }
+
+    private fun mintQuoteRows(quote: MintQuoteInfo, unit: String): List<TechnicalDetailRow> = buildList {
+        add(plain("State", quote.state.name))
+        add(plain("Amount paid", nativeAmount(quote.amountPaid, unit)))
+        add(plain("Amount issued", nativeAmount(quote.amountIssued, unit)))
+        add(expiryRow(quote.expiryEpochSeconds))
+        if (quote.updatedAtEpochSeconds > 0) add(dateRow("Last updated", quote.updatedAtEpochSeconds * 1000))
     }
 
     /** Plain-text dump for bug reports: each section title, then its

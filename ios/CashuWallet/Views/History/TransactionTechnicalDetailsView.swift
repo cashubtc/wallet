@@ -6,27 +6,61 @@ import SwiftUI
 struct TransactionTechnicalDetailsView: View {
     let transaction: WalletTransaction
     @EnvironmentObject private var walletManager: WalletManager
-    @Environment(\.dismiss) private var dismiss
-    @State private var loaded: TransactionTechnicalDetails?
+    @State private var quote = TransactionTechnicalDetails.QuoteSnapshot()
+    @State private var loadedQuoteID: String?
 
-    /// Row-derived sections render at once; the stored quote fills in after
-    /// its local read.
-    private var details: TransactionTechnicalDetails {
-        loaded ?? TransactionTechnicalDetails(transaction: transaction)
+    private var current: WalletTransaction {
+        walletManager.transactions.first { $0.id == transaction.id } ?? transaction
     }
 
-    private var explorerURL: URL? {
-        guard transaction.kind == .onchain else { return nil }
-        if let txid = transaction.preimage {
-            return OnchainExplorer.transactionWebURL(
-                for: txid,
-                address: transaction.invoice,
-                mintURL: transaction.mintUrl
-            )
+    var body: some View {
+        TechnicalDetailsContent(details: (loadedQuoteID == current.quoteId ? quote : .init()).details(for: current))
+            .task(id: TransactionTechnicalDetails(transaction: current)) {
+                let snapshot = await walletManager.transactionQuoteSnapshot(for: current)
+                guard !Task.isCancelled else { return }
+                quote = snapshot
+                loadedQuoteID = current.quoteId
+            }
+    }
+}
+
+struct RequestTechnicalDetailsView: View {
+    let request: CashuRequest
+    @EnvironmentObject private var walletManager: WalletManager
+    @ObservedObject private var store = CashuRequestStore.shared
+    @State private var quote: TransactionTechnicalDetails.MintQuoteSnapshot?
+    @State private var loadedQuoteID: String?
+
+    private var current: CashuRequest { store.request(withId: request.id) ?? request }
+    private var payments: [TechnicalDetailsContent.Payment] {
+        current.receivedPayments.enumerated().compactMap { index, payment in
+            walletManager.transactions.first { $0.id == payment.transactionId }.map {
+                TechnicalDetailsContent.Payment(number: index + 1, transaction: $0)
+            }
         }
-        guard let address = transaction.invoice else { return nil }
-        return OnchainExplorer.addressWebURL(for: address, mintURL: transaction.mintUrl)
     }
+
+    var body: some View {
+        TechnicalDetailsContent(details: TransactionTechnicalDetails(request: current, mintQuote: loadedQuoteID == current.quoteId ? quote : nil), payments: payments)
+            .task(id: current) {
+                let snapshot = await walletManager.requestQuoteSnapshot(for: current)
+                guard !Task.isCancelled else { return }
+                quote = snapshot
+                loadedQuoteID = current.quoteId
+            }
+    }
+}
+
+private struct TechnicalDetailsContent: View {
+    let details: TransactionTechnicalDetails
+    struct Payment: Identifiable {
+        let number: Int
+        let transaction: WalletTransaction
+        var id: String { transaction.id }
+    }
+    var payments: [Payment] = []
+    @Environment(\.dismiss) private var dismiss
+    @State private var selectedPayment: WalletTransaction?
 
     var body: some View {
         NavigationStack {
@@ -41,8 +75,27 @@ struct TransactionTechnicalDetailsView: View {
                             ForEach(section.rows) { row in
                                 TechnicalDetailRow(row: row)
                             }
-                            if section.id == details.sections.last?.id, let explorerURL {
+                            if section.id == details.sections.last?.id, let explorerURL = details.explorerURL {
                                 explorerLinkRow(url: explorerURL)
+                            }
+                        }
+                    }
+
+                    if !payments.isEmpty {
+                        VStack(spacing: 0) {
+                            SectionHeader(title: "Payment details")
+                            ForEach(payments) { payment in
+                                Button { selectedPayment = payment.transaction } label: {
+                                    HStack {
+                                        Text("Payment \(payment.number)")
+                                        Spacer()
+                                        Image(systemName: "chevron.right").foregroundStyle(.tertiary)
+                                    }
+                                    .paymentDetailRow(layout: .history, isInteractive: true)
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityIdentifier("cashu.history.details.payment.\(payment.id)")
                             }
                         }
                     }
@@ -68,8 +121,9 @@ struct TransactionTechnicalDetailsView: View {
                 }
             }
         }
-        .task(id: transaction.id) {
-            loaded = await walletManager.transactionTechnicalDetails(for: transaction)
+        .sheet(item: $selectedPayment) { payment in
+            TransactionTechnicalDetailsView(transaction: payment)
+                .presentationDetents([.large])
         }
     }
 

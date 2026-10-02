@@ -262,6 +262,64 @@ final class ActivityDetailUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Details"].waitForNonExistence(timeout: 5))
         XCTAssertTrue(details.exists)
     }
+    func testDetailsRefreshesWhenSamePaymentCompletes() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchEnvironment = ["SHOW_COMPONENT_CATALOG": "activity", "CI_INTEGRATION_TEST": "1",
+                                 "UITEST_DETAILS_UPDATES": "1", "UITEST_DISABLE_ANIMATIONS": "1"]
+        app.launch()
+        defer { app.terminate() }
+        XCTAssertTrue(app.buttons["updating-payment"].waitForExistence(timeout: 10))
+        app.buttons["updating-payment"].tap()
+        let status = app.descendants(matching: .any).matching(identifier: "Status").firstMatch
+        XCTAssertTrue(status.waitForExistence(timeout: 5))
+        XCTAssertEqual(status.value as? String, "Pending")
+        app.buttons["Complete payment"].tap()
+        let completed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == 'Completed'"), object: status)
+        XCTAssertEqual(XCTWaiter.wait(for: [completed], timeout: 5), .completed)
+        let fee = app.descendants(matching: .any).matching(identifier: "Fee").firstMatch
+        XCTAssertEqual(fee.value as? String, "2 sat")
+        XCTAssertTrue(app.buttons["Payment Proof"].exists)
+        let capture = XCTAttachment(screenshot: app.screenshot())
+        capture.name = "same-id-completed-details"; capture.lifetime = .keepAlways; add(capture)
+    }
+
+    func testReusableInvoiceDetailsExposeQuoteAndLinkedPayment() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchEnvironment = ["SHOW_COMPONENT_CATALOG": "activity", "CI_INTEGRATION_TEST": "1", "UITEST_DISABLE_ANIMATIONS": "1"]
+        app.launch()
+        defer { app.terminate() }
+        XCTAssertTrue(app.buttons["reusable-invoice"].waitForExistence(timeout: 10))
+        app.buttons["reusable-invoice"].tap()
+        let details = app.buttons["cashu.history.details"]
+        XCTAssertTrue(details.waitForExistence(timeout: 5))
+        let receiptCapture = XCTAttachment(screenshot: app.screenshot())
+        receiptCapture.name = "reusable-receipt-details-entry"; receiptCapture.lifetime = .keepAlways; add(receiptCapture)
+        details.tap()
+        let detailsCapture = XCTAttachment(screenshot: app.screenshot())
+        detailsCapture.name = "reusable-details-open"; detailsCapture.lifetime = .keepAlways; add(detailsCapture)
+        XCTAssertTrue(app.navigationBars["Details"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Quote ID"].exists)
+        let payment = app.buttons["cashu.history.details.payment.fixture-payment"]
+        let scroll = app.scrollViews.firstMatch
+        for _ in 0..<8 {
+            if payment.exists && scroll.frame.contains(payment.frame) { break }
+            scroll.swipeUp()
+        }
+        XCTAssertTrue(payment.isHittable)
+        payment.tap()
+        let id = app.buttons.matching(NSPredicate(format: "label == %@ AND value == %@", "ID", "fixture-payment")).firstMatch
+        XCTAssertTrue(id.waitForExistence(timeout: 5))
+        XCTAssertTrue(id.isHittable)
+        let method = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@ AND value == %@", "Method", "Lightning (BOLT12)")).firstMatch
+        XCTAssertTrue(method.exists)
+        let done = app.buttons.matching(identifier: "Done").allElementsBoundByIndex.first { $0.isHittable }
+        XCTAssertNotNil(done)
+        done?.tap()
+        XCTAssertTrue(payment.waitForExistence(timeout: 5))
+    }
+
 }
 
 

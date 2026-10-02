@@ -48,7 +48,18 @@ struct TransactionTechnicalDetails: Equatable {
         let paymentProof: String?
     }
 
+    /// Cache only local quote data; transaction rows are rebuilt from live inputs.
+    struct QuoteSnapshot: Equatable {
+        var mint: MintQuoteSnapshot? = nil
+        var melt: MeltQuoteSnapshot? = nil
+
+        func details(for transaction: WalletTransaction) -> TransactionTechnicalDetails {
+            TransactionTechnicalDetails(transaction: transaction, mintQuote: mint, meltQuote: melt)
+        }
+    }
+
     let sections: [Section]
+    let explorerURL: URL?
 
     /// Plain-text dump for bug reports: each section title, then its
     /// `Label: value` lines, with untruncated values.
@@ -82,13 +93,7 @@ struct TransactionTechnicalDetails: Equatable {
                 rows.append(Self.reference("Request", request))
             }
             if let mintQuote {
-                rows.append(Self.plain("State", mintQuote.state))
-                rows.append(Self.plain("Amount paid", Self.nativeAmount(mintQuote.amountPaid, unit: unit)))
-                rows.append(Self.plain("Amount issued", Self.nativeAmount(mintQuote.amountIssued, unit: unit)))
-                rows.append(Self.expiryRow(mintQuote.expiry))
-                if mintQuote.updatedAt > 0 {
-                    rows.append(Self.dateRow("Last updated", Date(timeIntervalSince1970: TimeInterval(mintQuote.updatedAt))))
-                }
+                rows += Self.mintQuoteRows(mintQuote, unit: unit)
             } else if let meltQuote {
                 rows.append(Self.plain("State", meltQuote.state))
                 rows.append(Self.plain("Quote amount", Self.nativeAmount(meltQuote.amount, unit: unit)))
@@ -98,7 +103,8 @@ struct TransactionTechnicalDetails: Equatable {
             sections.append(Section(title: "Quote", rows: rows))
         }
 
-        let proof = transaction.preimage ?? meltQuote?.paymentProof
+        let proof = transaction.preimage.flatMap { $0.isEmpty ? nil : $0 }
+            ?? meltQuote?.paymentProof.flatMap { $0.isEmpty ? nil : $0 }
         switch transaction.kind {
         case .lightning:
             if let proof {
@@ -113,6 +119,66 @@ struct TransactionTechnicalDetails: Equatable {
         }
 
         self.sections = sections
+        if transaction.kind == .onchain {
+            if let proof, !proof.isEmpty {
+                explorerURL = OnchainExplorer.transactionWebURL(
+                    for: proof, address: transaction.invoice, mintURL: transaction.mintUrl
+                )
+            } else {
+                explorerURL = transaction.invoice.flatMap {
+                    OnchainExplorer.addressWebURL(for: $0, mintURL: transaction.mintUrl)
+                }
+            }
+        } else {
+            explorerURL = nil
+        }
+    }
+
+    /// Receive artifacts have their own identity and lifecycle, not a synthetic
+    /// completed transaction. Linked payments remain separate CDK transactions.
+    init(request: CashuRequest, mintQuote: MintQuoteSnapshot? = nil) {
+        let method: String
+        switch request.rail {
+        case .ecash: method = "Ecash"
+        case .bolt11: method = "Lightning (BOLT11)"
+        case .bolt12: method = "Lightning (BOLT12)"
+        case .onchain: method = "On-chain"
+        }
+        var rows = [
+            Self.reference("ID", request.id), Self.plain("Method", method),
+            Self.dateRow("Created", request.createdAt),
+            Self.plain("Amount", request.amount.map { Self.nativeAmount($0, unit: request.unit) } ?? "Any"),
+            Self.plain("Total received", Self.nativeAmount(request.totalReceived, unit: request.unit)),
+        ]
+        for (index, mint) in request.mints.enumerated() {
+            rows.append(Row(label: request.mints.count == 1 ? "Mint" : "Mint \(index + 1)", value: mint, fullValue: mint, isCopyable: true))
+        }
+        if request.quoteId == nil { rows.append(Self.reference("Request", request.encoded)) }
+        var sections = [Section(title: "Request", rows: rows)]
+        if let quoteID = request.quoteId {
+            var quoteRows = [Self.reference("Quote ID", quoteID), Self.plain("Type", "Mint quote"),
+                             Self.reference("Request", mintQuote?.request ?? request.encoded)]
+            if let mintQuote { quoteRows += Self.mintQuoteRows(mintQuote, unit: request.unit) }
+            sections.append(Section(title: "Quote", rows: quoteRows))
+        }
+        for (index, payment) in request.receivedPayments.enumerated() {
+            sections.append(Section(title: "Payment \(index + 1)", rows: [
+                Self.reference("Transaction ID", payment.transactionId),
+                Self.plain("Amount", Self.nativeAmount(payment.amount, unit: request.unit)),
+                Self.dateRow("Date", payment.receivedAt),
+            ]))
+        }
+        self.sections = sections
+        explorerURL = nil
+    }
+
+    private static func mintQuoteRows(_ quote: MintQuoteSnapshot, unit: String) -> [Row] {
+        var rows = [plain("State", quote.state),
+                    plain("Amount paid", nativeAmount(quote.amountPaid, unit: unit)),
+                    plain("Amount issued", nativeAmount(quote.amountIssued, unit: unit)),
+                    expiryRow(quote.expiry)]
+        if quote.updatedAt > 0 { rows.append(dateRow("Last updated", Date(timeIntervalSince1970: TimeInterval(quote.updatedAt)))) }
+        return rows
     }
 
     /// The tap-to-copy toast for a row (Copy all reads "Copied details").
@@ -222,13 +288,20 @@ extension TransactionTechnicalDetails.MintQuoteSnapshot {
     init(_ quote: MintQuote) {
         self.init(
             request: quote.request,
-            state: quote.state.technicalLabel,
+            state: Self.stateLabel(quote),
             paymentMethod: PaymentMethodKind.from(quote.paymentMethod),
             amountPaid: quote.amountPaid.value,
             amountIssued: quote.amountIssued.value,
             expiry: quote.expiry,
             updatedAt: quote.updatedAt
         )
+    }
+
+    private static func stateLabel(_ quote: MintQuote) -> String {
+        if quote.amountPaid.value > 0, quote.amountIssued.value >= quote.amountPaid.value { return "Issued" }
+        if quote.amountPaid.value > quote.amountIssued.value { return "Paid" }
+        if PaymentMethodKind.from(quote.paymentMethod) != .bolt11 { return "Pending" }
+        return quote.state.technicalLabel
     }
 }
 

@@ -42,6 +42,7 @@ import com.cashu.me.Models.MeltPaymentResult
 import com.cashu.me.Models.MeltQuoteInfo
 import com.cashu.me.Models.MeltQuoteState
 import com.cashu.me.Models.MintInfo
+import com.cashu.me.Models.CashuRequest
 import com.cashu.me.Models.MintQuoteInfo
 import com.cashu.me.Models.MintQuoteState
 import com.cashu.me.Models.PaymentMethodKind
@@ -1225,6 +1226,18 @@ class WalletManager(
      * and never changes wallet state. Incoming rows carry a mint quote; outgoing
      * Lightning and on-chain rows a melt quote (iOS parity).
      */
+    suspend fun requestMintQuoteSnapshot(request: CashuRequest): MintQuoteInfo? {
+        val quoteID = request.quoteId ?: return null
+        return try {
+            gateway.storedMintQuote(quoteID)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            AppLogger.wallet.error("Request details quote read failed", error)
+            null
+        }
+    }
+
     suspend fun transactionTechnicalDetails(transaction: WalletTransaction): List<TechnicalDetailSection> {
         val quoteId = transaction.quoteId
         if (quoteId == null || transaction.kind == TransactionKind.Ecash) {

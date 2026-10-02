@@ -1,5 +1,7 @@
 package com.cashu.me.Core
 
+import com.cashu.me.Models.CashuRequest
+import com.cashu.me.Models.CashuRequestPayment
 import com.cashu.me.Models.MeltQuoteInfo
 import com.cashu.me.Models.MeltQuoteState
 import com.cashu.me.Models.MintQuoteInfo
@@ -270,4 +272,53 @@ class TransactionTechnicalDetailsTest {
         assertEquals("Copied payment proof", TransactionTechnicalDetails.copyConfirmation("Payment Proof"))
         assertEquals("Copied transaction ID", TransactionTechnicalDetails.copyConfirmation("Transaction ID"))
     }
+    @Test fun reusableOfferDetailsKeepQuoteAndIndividualPaymentIdentities() {
+        val request = CashuRequest(id = "offer-intent", encoded = "lno1fixture",
+            mints = listOf("https://mint.example.com"), createdAtEpochMillis = dateMillis,
+            quoteId = "offer-quote", quoteKind = "bolt12",
+            receivedPayments = listOf(CashuRequestPayment("payment-one", 21, dateMillis),
+                                      CashuRequestPayment("payment-two", 34, dateMillis)))
+        val quote = mintQuote("lno1fixture", PaymentMethodKind.Bolt12, MintQuoteState.Paid, 100, 55, 0, 1)
+        val sections = TransactionTechnicalDetails.requestSections(request, quote)
+        assertEquals(listOf("Request", "Quote", "Payment 1", "Payment 2"), sections.map { it.title })
+        assertEquals("offer-intent", sections.row("ID")?.fullValue)
+        assertEquals("Lightning (BOLT12)", sections.row("Method")?.value)
+        assertEquals("Any", sections.row("Amount")?.value)
+        assertEquals("55 sat", sections.row("Total received")?.value)
+        assertEquals("55 sat", sections.row("Amount issued")?.value)
+        assertEquals("100 sat", sections.row("Amount paid")?.value)
+        assertEquals("offer-quote", sections.row("Quote ID")?.fullValue)
+        assertEquals("https://mint.example.com", sections.row("Mint")?.value)
+        val copied = TransactionTechnicalDetails.copyAllText(sections)
+        assertTrue(copied.contains("Transaction ID: payment-one"))
+        assertTrue(copied.contains("Transaction ID: payment-two"))
+        assertNull(sections.row("Status"))
+    }
+
+    @Test fun requestWithoutStoredQuoteRetainsRequestAndPaymentReferences() {
+        val request = CashuRequest(id = "offer", encoded = "lno1fixture", createdAtEpochMillis = dateMillis,
+            quoteId = "missing-quote", quoteKind = "bolt12")
+        val sections = TransactionTechnicalDetails.requestSections(request)
+        assertEquals("missing-quote", sections.row("Quote ID")?.fullValue)
+        assertEquals("lno1fixture", sections.row("Request")?.fullValue)
+        assertNull(sections.row("State"))
+        assertEquals(listOf("Request", "Quote"), sections.map { it.title })
+    }
+
+    @Test fun onchainExplorerUsesResolvedQuoteProofAndTransactionProofTakesPrecedence() {
+        val tx = transaction(type = TransactionType.Outgoing, kind = TransactionKind.Onchain).copy(
+            quoteId = "melt-quote", invoice = "bc1qfixture", preimage = "")
+        val quote = MeltQuoteInfo(id = "melt-quote", amount = 21, feeReserve = 2, request = "bc1qfixture",
+            paymentMethod = PaymentMethodKind.Onchain, state = MeltQuoteState.Paid,
+            expiryEpochSeconds = 0, paymentProof = proof, mintUrl = "https://mint.example.com")
+        val sections = TransactionTechnicalDetails.sections(tx, meltQuote = quote)
+        assertEquals(proof, sections.row("Transaction ID")?.fullValue)
+        assertEquals("https://mempool.space/tx/$proof", TransactionTechnicalDetails.explorerUrl(tx, sections))
+        val latest = tx.copy(preimage = cdkId)
+        assertEquals("https://mempool.space/tx/$cdkId",
+            TransactionTechnicalDetails.explorerUrl(latest, TransactionTechnicalDetails.sections(latest, meltQuote = quote)))
+        val noAddress = tx.copy(invoice = null, preimage = null)
+        assertTrue(TransactionTechnicalDetails.explorerUrl(noAddress, TransactionTechnicalDetails.sections(noAddress, meltQuote = quote))!!.endsWith("/tx/$proof"))
+    }
+
 }

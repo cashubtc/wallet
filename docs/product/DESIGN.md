@@ -245,7 +245,7 @@ Android, while retaining the existing payment-specific content and actions.
   Settled one-shot codes retire as before.
 - Unclaimed incoming ecash opens the shared sheet with Receive to enter the
   claim flow. Keep action footers visible while long detail content scrolls.
-- **Details sheet** *(added 2026-10-02)*. Every transaction receipt ends with a
+- **Details sheet** *(added 2026-10-02)*. Every transaction and receive-request receipt ends with a
   quiet **Details ›** row (secondary label, trailing chevron, no value) that
   opens a nested full-height sheet — the Description "Read more" precedent, so
   the content-fit receipt never pushes. It holds the identifiers support and
@@ -262,6 +262,13 @@ Android, while retaining the existing payment-specific content and actions.
   request. Details read local CDK snapshots only (no network), and never show a
   quote's NUT-20 secret key or a spendable token. iOS closes with Done in the
   navigation bar; Android with a bottom Done, like its description reader.
+  Transaction fields update while the sheet is open, including completion,
+  fees, and proof; cached quotes never replace the current transaction.
+  Receive-request Details retains the artifact's ID and method in **Request**,
+  reads its local **Quote** counters, and lists each linked payment's ID, amount,
+  and date. **Payment details** opens individual transaction Details without
+  adding duplicate History rows. The on-chain explorer targets the same
+  resolved txid shown in Details, including the stored melt-quote fallback.
 
 ## 2. Colors: The Inverted-Ink Palette
 

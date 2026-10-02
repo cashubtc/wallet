@@ -234,4 +234,81 @@ final class TransactionTechnicalDetailsTests: XCTestCase {
         XCTAssertEqual(TransactionTechnicalDetails.copyConfirmation(for: "Payment Proof"), "Copied payment proof")
         XCTAssertEqual(TransactionTechnicalDetails.copyConfirmation(for: "Transaction ID"), "Copied transaction ID")
     }
+    func testCachedQuoteUsesCurrentTransactionAfterSameIDCompletes() {
+        var tx = transaction(type: .outgoing, status: .pending)
+        tx.quoteId = "melt-quote"
+        let cached = TransactionTechnicalDetails.QuoteSnapshot(melt: .init(
+            request: "lnbc1fixture", state: "Pending", paymentMethod: .bolt11,
+            amount: 21, feeReserve: 2, expiry: 0, paymentProof: nil
+        ))
+        XCTAssertEqual(row(cached.details(for: tx), "Status")?.value, "Pending")
+        tx.status = .completed; tx.preimage = proof; tx.fee = 2
+        let details = cached.details(for: tx)
+        XCTAssertEqual(row(details, "Status")?.value, "Completed")
+        XCTAssertEqual(row(details, "Fee")?.value, "2 sat")
+        XCTAssertEqual(row(details, "Payment Proof")?.fullValue, proof)
+        XCTAssertTrue(details.copyAllText.contains("Status: Completed"))
+        XCTAssertTrue(details.copyAllText.contains("Payment Proof: \(proof)"))
+    }
+
+    func testReusableOfferDetailsKeepQuoteAndIndividualPaymentIdentities() {
+        let request = CashuRequest(id: "offer-intent", encoded: "lno1fixture",
+            mints: ["https://mint.example.com"], createdAt: date,
+            receivedPayments: [.init(transactionId: "payment-one", amount: 21, receivedAt: date),
+                               .init(transactionId: "payment-two", amount: 34, receivedAt: date)],
+            rail: .bolt12, quoteId: "offer-quote")
+        let quote = TransactionTechnicalDetails.MintQuoteSnapshot(
+            request: "lno1fixture", state: "Paid", paymentMethod: .bolt12,
+            amountPaid: 100, amountIssued: 55, expiry: 0, updatedAt: 1
+        )
+        let details = TransactionTechnicalDetails(request: request, mintQuote: quote)
+        XCTAssertEqual(details.sections.map(\.title), ["Request", "Quote", "Payment 1", "Payment 2"])
+        XCTAssertEqual(row(details, "ID")?.fullValue, "offer-intent")
+        XCTAssertEqual(row(details, "Method")?.value, "Lightning (BOLT12)")
+        XCTAssertEqual(row(details, "Amount")?.value, "Any")
+        XCTAssertEqual(row(details, "Total received")?.value, "55 sat")
+        XCTAssertEqual(row(details, "Amount issued")?.value, "55 sat")
+        XCTAssertEqual(row(details, "Amount paid")?.value, "100 sat")
+        XCTAssertEqual(row(details, "Quote ID")?.fullValue, "offer-quote")
+        XCTAssertEqual(row(details, "Mint")?.value, "https://mint.example.com")
+        XCTAssertTrue(details.copyAllText.contains("Transaction ID: payment-one"))
+        XCTAssertTrue(details.copyAllText.contains("Transaction ID: payment-two"))
+        XCTAssertNil(row(details, "Status"), "An offer is not a synthetic completed payment")
+    }
+
+    func testRequestWithoutStoredQuoteRetainsRequestAndPaymentReferences() {
+        let request = CashuRequest(id: "offer", encoded: "lno1fixture", createdAt: date,
+            rail: .bolt12, quoteId: "missing-quote")
+        let details = TransactionTechnicalDetails(request: request)
+        XCTAssertEqual(row(details, "Quote ID")?.fullValue, "missing-quote")
+        XCTAssertEqual(row(details, "Request")?.fullValue, "lno1fixture")
+        XCTAssertNil(row(details, "State"))
+        XCTAssertEqual(details.sections.map(\.title), ["Request", "Quote"])
+    }
+
+    func testOnchainExplorerUsesResolvedQuoteProofAndTransactionProofTakesPrecedence() {
+        var tx = transaction(type: .outgoing, kind: .onchain)
+        tx.quoteId = "melt-quote"; tx.invoice = "bc1qfixture"; tx.preimage = ""
+        let quote = TransactionTechnicalDetails.MeltQuoteSnapshot(
+            request: "bc1qfixture", state: "Paid", paymentMethod: .onchain,
+            amount: 21, feeReserve: 2, expiry: 0, paymentProof: proof
+        )
+        let details = TransactionTechnicalDetails(transaction: tx, meltQuote: quote)
+        XCTAssertEqual(row(details, "Transaction ID")?.fullValue, proof)
+        XCTAssertEqual(details.explorerURL?.absoluteString, "https://mempool.space/tx/\(proof)")
+        tx.preimage = cdkId
+        XCTAssertEqual(TransactionTechnicalDetails(transaction: tx, meltQuote: quote).explorerURL?.absoluteString,
+                       "https://mempool.space/tx/\(cdkId)")
+        tx.invoice = nil; tx.preimage = nil
+        XCTAssertTrue(TransactionTechnicalDetails(transaction: tx, meltQuote: quote).explorerURL?.absoluteString.hasSuffix("/tx/\(proof)") == true)
+    }
+
+    func testWaitingAccountingQuoteUsesPendingLabelLikeAndroid() {
+        let stored = MintQuote(id: "offer-quote", amount: nil, unit: .sat, request: "lno1fixture", state: .unpaid,
+            expiry: 0, mintUrl: MintUrl(url: "https://mint.example.com"),
+            amountIssued: Amount(value: 0), amountPaid: Amount(value: 0), updatedAt: 0,
+            estimatedBlocks: nil, paymentMethod: .bolt12, secretKey: nil, usedByOperation: nil, version: 0)
+        XCTAssertEqual(TransactionTechnicalDetails.MintQuoteSnapshot(stored).state, "Pending")
+    }
+
 }
