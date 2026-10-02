@@ -253,12 +253,11 @@ class LightningService: ObservableObject {
             )
             let quote = try await wallet.checkMintQuote(quoteId: quoteId)
             let paymentMethod = PaymentMethodKind.from(quote.paymentMethod) ?? storedPaymentMethod ?? .bolt11
-            let refreshedQuote = mintQuoteForLocalStorage(
-                mintQuotePreservingLocalMetadata(quote, from: existingQuote),
+            let refreshedQuote = try await storedMintQuoteAfterStatusCheck(
+                quoteId: quoteId,
                 paymentMethod: paymentMethod,
                 fallbackAmount: existingQuote.amount?.value
             )
-            await persistMintQuote(refreshedQuote)
             return mintQuoteInfo(
                 from: refreshedQuote,
                 fallbackAmount: existingQuote.amount?.value,
@@ -1371,38 +1370,6 @@ class LightningService: ObservableObject {
         return nil
     }
 
-    private func mintQuotePreservingLocalMetadata(
-        _ quote: MintQuote,
-        from existingQuote: MintQuote
-    ) -> MintQuote {
-        let request = quote.request.isEmpty ? existingQuote.request : quote.request
-        let amount = quote.amount ?? existingQuote.amount
-        let expiry = quote.expiry == QuoteExpiry.never && existingQuote.expiry != QuoteExpiry.never
-            ? existingQuote.expiry
-            : quote.expiry
-        let paymentMethod = PaymentMethodKind.from(quote.paymentMethod) == nil
-            ? existingQuote.paymentMethod
-            : quote.paymentMethod
-
-        return MintQuote(
-            id: quote.id,
-            amount: amount,
-            unit: quote.unit,
-            request: request,
-            state: quote.state,
-            expiry: expiry,
-            mintUrl: quote.mintUrl,
-            amountIssued: quote.amountIssued,
-            amountPaid: quote.amountPaid,
-            updatedAt: max(quote.updatedAt, existingQuote.updatedAt),
-            estimatedBlocks: quote.estimatedBlocks ?? existingQuote.estimatedBlocks,
-            paymentMethod: paymentMethod,
-            secretKey: quote.secretKey ?? existingQuote.secretKey,
-            usedByOperation: quote.usedByOperation ?? existingQuote.usedByOperation,
-            version: quote.version
-        )
-    }
-
     func replaceStoredMintQuote(
         _ quote: MintQuote,
         in walletDatabase: WalletSqliteDatabase
@@ -1416,6 +1383,31 @@ class LightningService: ObservableObject {
             }
         }
         try await walletDatabase.addMintQuote(quote: quote)
+    }
+
+    /// CDK persists status updates but returns the pre-write version. Adopt
+    /// its stored row, and write only app metadata that actually changes.
+    /// Database failures must not fall back to stale recovery ownership.
+    func storedMintQuoteAfterStatusCheck(
+        quoteId: String,
+        paymentMethod: PaymentMethodKind,
+        fallbackAmount: UInt64?
+    ) async throws -> MintQuote {
+        guard let database = walletDatabase() else { throw WalletError.notInitialized }
+        guard let storedQuote = try await database.getMintQuote(quoteId: quoteId) else {
+            throw WalletError.networkError("This receive request is no longer available.")
+        }
+        let normalizedQuote = mintQuoteForLocalStorage(
+            storedQuote, paymentMethod: paymentMethod, fallbackAmount: fallbackAmount
+        )
+        if normalizedQuote.amount != storedQuote.amount || normalizedQuote.expiry != storedQuote.expiry {
+            try await replaceStoredMintQuote(normalizedQuote, in: database)
+            guard let persisted = try await database.getMintQuote(quoteId: quoteId) else {
+                throw WalletError.networkError("This receive request is no longer available.")
+            }
+            return persisted
+        }
+        return storedQuote
     }
 
     private func refreshStoredOnchainMintQuoteStatus(
