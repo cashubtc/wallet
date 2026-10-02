@@ -26,10 +26,10 @@ object TransactionDisplay {
             transaction.isUnpaidInvoice -> "Lightning invoice"
             else -> "Lightning received"
         }
-        TransactionKind.Onchain -> if (transaction.type == TransactionType.Incoming) {
-            "Bitcoin received"
-        } else {
-            "Bitcoin sent"
+        TransactionKind.Onchain -> when {
+            transaction.type != TransactionType.Incoming -> "Bitcoin sent"
+            transaction.isUnfundedAddress -> "Bitcoin address"
+            else -> "Bitcoin received"
         }
         TransactionKind.Ecash -> if (transaction.type == TransactionType.Incoming) {
             "Ecash received"

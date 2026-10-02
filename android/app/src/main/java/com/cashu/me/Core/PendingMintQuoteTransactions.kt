@@ -36,7 +36,7 @@ internal fun pendingMintQuoteTransactions(
             it.quoteId == quote.id && it.kind == TransactionKind.Onchain && it.preimage != null
         }.takeIf { quote.paymentMethod == PaymentMethodKind.Onchain }
         // A requested amount is not evidence that an address was funded.
-        val amount = (if (quote.paymentMethod == PaymentMethodKind.Onchain) {
+        val fundedAmount = if (quote.paymentMethod == PaymentMethodKind.Onchain) {
             quote.amountPaid.takeIf { it > 0 }
                 ?: quote.amountIssued.takeIf { it > 0 }
                 ?: observation?.amount
@@ -45,8 +45,12 @@ internal fun pendingMintQuoteTransactions(
             quote.amount?.takeIf { it > 0 }
                 ?: quote.amountPaid.takeIf { it > 0 }
                 ?: quote.amountIssued.takeIf { it > 0 }
-        }) ?: return@mapNotNull null
-        if (amount <= 0) return@mapNotNull null
+        }
+        // An address nothing has reached yet still lists, amountless, like an
+        // unpaid Lightning invoice.
+        val isUnfundedAddress = quote.paymentMethod == PaymentMethodKind.Onchain && fundedAmount == null
+        val amount = fundedAmount ?: if (isUnfundedAddress) 0L else return@mapNotNull null
+        if (amount <= 0 && !isUnfundedAddress) return@mapNotNull null
 
         // CDK 0.18 quotes carry `updatedAt` (creation time for an untouched
         // quote); the local first-seen map only backfills legacy rows that
@@ -63,7 +67,8 @@ internal fun pendingMintQuoteTransactions(
             quote.amountPaid > 0
         val isUnpaidBolt11 = quote.paymentMethod == PaymentMethodKind.Bolt11 && !isPaid
         val expiry = quote.expiryEpochSeconds ?: 0
-        val isExpiredUnpaidInvoice = isUnpaidBolt11 && expiry > 0 && nowEpochMillis / 1000 > expiry
+        val isPastExpiry = expiry > 0 && nowEpochMillis / 1000 > expiry
+        val isExpiredUnpaidRequest = (isUnpaidBolt11 || isUnfundedAddress) && isPastExpiry
         WalletTransaction(
             id = quote.id,
             amount = amount,
@@ -75,18 +80,22 @@ internal fun pendingMintQuoteTransactions(
             },
             dateEpochMillis = timestamp,
             status = when {
+                isExpiredUnpaidRequest -> TransactionStatus.Expired
+                isUnfundedAddress -> TransactionStatus.Pending
                 quote.state == MintQuoteState.Issued || quote.amountIssued >= amount ->
                     TransactionStatus.Completed
-                isExpiredUnpaidInvoice -> TransactionStatus.Expired
                 else -> TransactionStatus.Pending
             },
-            statusNote = observation?.statusText ?: previous?.let { "Payment detected on-chain" },
+            statusNote = observation?.statusText
+                ?: previous?.let { "Payment detected on-chain" }
+                ?: "Waiting for deposit".takeIf { isUnfundedAddress },
             preimage = observation?.txid ?: previous?.preimage,
             mintUrl = mintUrl,
             invoice = quote.request,
             quoteId = quote.id,
             unit = quote.unit,
             isUnpaidInvoice = isUnpaidBolt11,
+            isUnfundedAddress = isUnfundedAddress,
         )
     }
 

@@ -405,11 +405,16 @@ class TransactionService: ObservableObject {
             // ignoring the offer's nominal amount. Other methods keep showing
             // their pending quote (e.g. an unpaid BOLT11 invoice you generated).
             let amount: UInt64?
+            var isUnfundedAddress = false
             if paymentMethod == .onchain {
                 // A requested amount is not evidence that an address was funded.
-                amount = (quote.amountPaid.value > 0 ? quote.amountPaid.value : nil)
+                let fundedAmount = (quote.amountPaid.value > 0 ? quote.amountPaid.value : nil)
                     ?? (quote.amountIssued.value > 0 ? quote.amountIssued.value : nil)
                     ?? lastOnchainObservation?.amount
+                // An address nothing has reached yet still lists, amountless,
+                // like an unpaid Lightning invoice.
+                isUnfundedAddress = fundedAmount == nil
+                amount = fundedAmount ?? 0
             } else if paymentMethod == .bolt12 {
                 amount = quote.amountPaid.value > 0
                     ? quote.amountPaid.value
@@ -420,7 +425,7 @@ class TransactionService: ObservableObject {
                     ?? (quote.amountIssued.value > 0 ? quote.amountIssued.value : nil)
             }
 
-            guard let amount, amount > 0 else {
+            guard let amount, amount > 0 || isUnfundedAddress else {
                 continue
             }
 
@@ -428,12 +433,12 @@ class TransactionService: ObservableObject {
             // invoice settled, and NUT-04 lets the wallet mint it afterwards.
             let isPaid = quote.state == .paid || quote.state == .issued || quote.amountPaid.value > 0
             let isUnpaidBolt11 = paymentMethod == .bolt11 && !isPaid
-            let isExpiredUnpaidInvoice = isUnpaidBolt11
-                && quote.expiry > 0
-                && Date().timeIntervalSince1970 > Double(quote.expiry)
+            let isPastExpiry = quote.expiry > 0 && Date().timeIntervalSince1970 > Double(quote.expiry)
+            let isExpiredUnpaidRequest = (isUnpaidBolt11 || isUnfundedAddress) && isPastExpiry
             let status: WalletTransaction.TransactionStatus =
-                quote.state == .issued || quote.amountIssued.value >= amount ? .completed
-                : isExpiredUnpaidInvoice ? .expired
+                isExpiredUnpaidRequest ? .expired
+                : isUnfundedAddress ? .pending
+                : quote.state == .issued || quote.amountIssued.value >= amount ? .completed
                 : .pending
 
             var storedPaymentProof = lastOnchainObservation?.txid ?? getPreimage(quoteId: quote.id)
@@ -448,6 +453,8 @@ class TransactionService: ObservableObject {
                 }
             } else if paymentMethod == .onchain, storedPaymentProof != nil {
                 statusNote = "Payment detected on-chain"
+            } else if isUnfundedAddress {
+                statusNote = "Waiting for deposit"
             }
 
             var transaction = WalletTransaction(
@@ -467,6 +474,7 @@ class TransactionService: ObservableObject {
             )
             transaction.unit = PaymentRequestDecoder.unitDescription(quote.unit)
             transaction.isUnpaidInvoice = isUnpaidBolt11
+            transaction.isUnfundedAddress = isUnfundedAddress
             transactions.append(transaction)
         }
 

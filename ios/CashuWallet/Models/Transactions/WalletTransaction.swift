@@ -73,6 +73,10 @@ struct WalletTransaction: Identifiable {
     /// "Lightning invoice" until the invoice settles.
     var isUnpaidInvoice: Bool = false
 
+    /// On-chain deposit address nothing has reached yet — titles the row
+    /// "Bitcoin address" and carries no amount until a deposit is seen.
+    var isUnfundedAddress: Bool = false
+
     /// The Quiet Pending treatment (bare, muted amount) covers expired too:
     /// an expired invoice never credited the balance.
     var isUnsettled: Bool {
@@ -124,6 +128,7 @@ struct WalletTransaction: Identifiable {
         if isPendingReceiveToken { return "Ecash to claim" }
         // Nothing has been received while the invoice awaits payment.
         if isUnpaidInvoice { return "Lightning invoice" }
+        if isUnfundedAddress { return "Bitcoin address" }
         switch (kind, type) {
         case (.ecash,     .incoming): return "Ecash received"
         case (.ecash,     .outgoing): return "Ecash sent"
@@ -198,7 +203,12 @@ enum HomeActivity {
         limit: Int
     ) -> [WalletTransaction] {
         transactions
-            .filter { $0.status == .completed || ($0.kind == .onchain && $0.status == .pending) }
+            // An in-flight deposit is money moving; an address nothing has
+            // reached yet is only a request, like an unpaid invoice.
+            .filter {
+                $0.status == .completed
+                    || ($0.kind == .onchain && $0.status == .pending && !$0.isUnfundedAddress)
+            }
             .sorted { $0.date > $1.date }
             .prefix(max(0, limit))
             .map { $0 }

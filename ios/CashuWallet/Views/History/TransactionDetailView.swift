@@ -163,16 +163,19 @@ struct TransactionDetailView: View {
         VStack(spacing: 24) {
             // Receipt amounts use the same primary/secondary ordering
             // as Home and History. The glyph above carries state colour.
-            TransactionReceiptAmountPair(
-                transaction: transaction,
-                role: showsQR ? .amountCompact : .amountConfirm,
-                preferredPrimary: settings.homeBalancePrimary,
-                showFiat: settings.showFiatBalance,
-                btcPrice: priceService.btcPriceUSD,
-                currencyCode: settings.bitcoinPriceCurrency,
-                useBitcoinSymbol: settings.useBitcoinSymbol
-            )
-            .padding(.top, heroSlotIsEmpty ? 16 : 0)
+            // An unfunded deposit address has no amount to show yet.
+            if !transaction.isUnfundedAddress {
+                TransactionReceiptAmountPair(
+                    transaction: transaction,
+                    role: showsQR ? .amountCompact : .amountConfirm,
+                    preferredPrimary: settings.homeBalancePrimary,
+                    showFiat: settings.showFiatBalance,
+                    btcPrice: priceService.btcPriceUSD,
+                    currencyCode: settings.bitcoinPriceCurrency,
+                    useBitcoinSymbol: settings.useBitcoinSymbol
+                )
+                .padding(.top, heroSlotIsEmpty ? 16 : 0)
+            }
 
             // Detail rows on canvas, led by Status + Date. Type is
             // omitted — the nav title names it.
@@ -198,6 +201,7 @@ struct TransactionDetailView: View {
                 }
             }
             .padding(.horizontal, 4)
+            .padding(.top, transaction.isUnfundedAddress && heroSlotIsEmpty ? 16 : 0)
 
             if offersManualClaimCheck {
                 switch manualClaimCheckResult {

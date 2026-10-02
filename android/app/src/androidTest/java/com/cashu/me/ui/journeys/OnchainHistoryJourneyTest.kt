@@ -1,9 +1,12 @@
 package com.cashu.me.ui.journeys
 
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import com.cashu.me.Models.MintInfo
+import com.cashu.me.Models.PaymentMethodKind
 import com.cashu.me.Models.TransactionKind
 import com.cashu.me.Models.TransactionStatus
 import com.cashu.me.Models.TransactionType
@@ -104,6 +107,35 @@ class OnchainHistoryJourneyTest {
                 .awaitText("Bitcoin sent").awaitText("Bitcoin received")
             robot.tapTag(UiTestTags.transactionRow(sent.id))
                 .awaitText("Confirmed").awaitText("Address").awaitText("Transaction ID")
+        }
+    }
+
+    @Test fun unfundedAddressListsInHistoryWithoutAmountUntilADepositArrives() {
+        AppTestFixture.launch(FixtureMode.SeededWithMint).use { fixture ->
+            val robot = WalletJourneyRobot(compose).awaitTag(UiTestTags.WalletScreen)
+            val gateway = fixture.fakeGateway!!
+            val quote = runBlocking {
+                gateway.createMintQuote(
+                    amount = null, method = PaymentMethodKind.Onchain,
+                    mintUrl = FakeWalletGateway.TestMintUrl, unit = "sat", description = null,
+                )
+            }
+            runBlocking { fixture.container.walletManager.loadTransactions(includeRemoteObservations = false) }
+            compose.waitForIdle()
+            // An address is a request, not money moving: History only.
+            compose.onAllNodesWithText("Bitcoin address").assertCountEquals(0)
+            robot.tapText("History").awaitText("Bitcoin address")
+            compose.onNodeWithTag(UiTestTags.transactionRow(quote.id)).assertIsDisplayed()
+            compose.onAllNodesWithText("0 sat").assertCountEquals(0)
+            robot.tapTag(UiTestTags.transactionRow(quote.id))
+                .awaitText("Pending").awaitText("Address")
+            compose.onAllNodesWithText("0 sat").assertCountEquals(0)
+            robot.pressSystemBack()
+
+            gateway.markMintQuotePaid(quote.id, amountPaid = 2_100)
+            runBlocking { fixture.container.walletManager.loadTransactions(includeRemoteObservations = false) }
+            robot.awaitText("Bitcoin received")
+            compose.onAllNodesWithText("Bitcoin address").assertCountEquals(0)
         }
     }
 }

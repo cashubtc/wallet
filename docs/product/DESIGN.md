@@ -904,6 +904,12 @@ The canonical list pattern. Defined in
   only once the invoice is paid. "Received" must never assert money that hasn't
   arrived; this also covers the expired state, which keeps the invoice title.
   Mirrors the request-row precedent `CashuRequest.displayTitle`.)*
+  *(2026-10-02: the on-chain counterpart — a deposit address nothing has reached
+  yet titles as **"Bitcoin address"** — `isUnfundedAddress` — with no trailing
+  amount (the any-amount request-row precedent), flipping to "Bitcoin received"
+  once a deposit is seen in the mempool or credited by the mint. Like an unpaid
+  invoice it lists in History but not Home Recent, which only carries money in
+  motion; past its quote expiry it reads Expired and retires its QR.)*
 - **Timestamp**: `.caption`, `Color.secondary`, immediately under the title.
   Formatted with `RelativeDateTimeFormatter(.abbreviated)` ("2 hr ago", "3 d ago").
 - **Trailing amount**: `.system(.body, design: .rounded).weight(.medium)

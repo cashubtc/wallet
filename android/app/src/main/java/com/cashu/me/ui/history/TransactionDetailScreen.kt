@@ -212,7 +212,8 @@ fun TransactionReceiptSheet(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.section),
         ) {
-            HeroAmount(
+            // An unfunded deposit address has no amount to show yet.
+            if (!current.isUnfundedAddress) HeroAmount(
                 transaction = current,
                 formatter = formatter,
                 preferredPrimary = settings.homeBalancePrimary,

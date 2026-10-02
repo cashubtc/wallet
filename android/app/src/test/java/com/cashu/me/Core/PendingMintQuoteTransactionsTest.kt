@@ -117,10 +117,19 @@ class PendingMintQuoteTransactionsTest {
         assertEquals(TransactionStatus.Pending, rowFor(quote(expiryEpochSeconds = null)).status)
         assertEquals(TransactionStatus.Pending, rowFor(quote(expiryEpochSeconds = 0)).status)
 
-        // Only the BOLT11 rail expires; addresses stay fundable.
+        // A funded address stays mintable past expiry.
         val onchain = rowFor(quote(method = PaymentMethodKind.Onchain, amountPaid = 10, expiryEpochSeconds = nowSeconds - 1))
         assertEquals(TransactionStatus.Pending, onchain.status)
         assertFalse(onchain.isUnpaidInvoice)
+
+        // An address nothing reached before its expiry lapses like an unpaid invoice.
+        val unfunded = rowFor(quote(amount = null, method = PaymentMethodKind.Onchain, expiryEpochSeconds = nowSeconds - 1))
+        assertEquals(TransactionStatus.Expired, unfunded.status)
+        assertTrue(unfunded.isUnfundedAddress)
+        assertFalse(TransactionDisplay.showsQr(unfunded))
+        val liveAddress = rowFor(quote(amount = null, method = PaymentMethodKind.Onchain, expiryEpochSeconds = nowSeconds + 60))
+        assertEquals(TransactionStatus.Pending, liveAddress.status)
+        assertTrue(TransactionDisplay.showsQr(liveAddress))
     }
 
     @Test
@@ -229,9 +238,18 @@ class PendingMintQuoteTransactionsTest {
                 onchainObservations = if (observed) mapOf(q.id to observation) else emptyMap(),
             )
 
-        assertTrue(rows(observed = false).isEmpty())
-        assertTrue(rows(deposit.copy(amount = 100), observed = false).isEmpty())
+        val unfunded = rows(observed = false).single()
+        assertTrue(unfunded.isUnfundedAddress)
+        assertEquals("Bitcoin address", TransactionDisplay.title(unfunded))
+        assertEquals(0L, unfunded.amount)
+        assertEquals(TransactionStatus.Pending, unfunded.status)
+        assertEquals("Waiting for deposit", unfunded.statusNote)
+        assertTrue(recentPaymentTransactions(listOf(unfunded), 5).isEmpty())
+        // A requested amount is not evidence of funding.
+        assertEquals(0L, rows(deposit.copy(amount = 100), observed = false).single().amount)
         val pending = rows().single()
+        assertFalse(pending.isUnfundedAddress)
+        assertEquals("Bitcoin received", TransactionDisplay.title(pending))
         assertEquals(42L, pending.amount)
         assertEquals(TransactionStatus.Pending, pending.status)
         assertEquals("txid", pending.preimage)

@@ -103,13 +103,23 @@ final class TransactionServiceTests: XCTestCase {
             )
         }
         let unfunded = await rows()
-        XCTAssertTrue(unfunded.isEmpty)
+        XCTAssertEqual(unfunded.count, 1)
+        XCTAssertEqual(unfunded.first?.isUnfundedAddress, true)
+        XCTAssertEqual(unfunded.first?.displayTitle, "Bitcoin address")
+        XCTAssertEqual(unfunded.first?.amount, 0)
+        XCTAssertEqual(unfunded.first?.status, .pending)
+        XCTAssertEqual(unfunded.first?.statusNote, "Waiting for deposit")
+        XCTAssertEqual(unfunded.first?.invoice, "bc1qdeposit")
+        XCTAssertTrue(HomeActivity.recentTransactions(from: unfunded, limit: 5).isEmpty)
         quote = makeQuote(amount: 100)
         let requestedOnly = await rows()
-        XCTAssertTrue(requestedOnly.isEmpty)
+        XCTAssertEqual(requestedOnly.first?.isUnfundedAddress, true)
+        XCTAssertEqual(requestedOnly.first?.amount, 0, "A requested amount is not evidence of funding")
         quote = makeQuote()
         observation = OnchainPaymentObservation(txid: "txid", amount: 42, confirmed: false, confirmations: nil)
         let pending = await rows()
+        XCTAssertEqual(pending.first?.isUnfundedAddress, false)
+        XCTAssertEqual(pending.first?.displayTitle, "Bitcoin received")
         XCTAssertEqual(pending.first?.amount, 42)
         XCTAssertEqual(pending.first?.status, .pending)
         XCTAssertEqual(pending.first?.preimage, "txid")
@@ -123,6 +133,39 @@ final class TransactionServiceTests: XCTestCase {
         XCTAssertEqual(completed.first?.status, .completed)
         let owned = await rows(owned: true)
         XCTAssertTrue(owned.isEmpty)
+    }
+
+    func testUnfundedOnchainAddressExpiresButLateDepositStaysPending() async {
+        let mintURL = "https://mint.example.com"
+        var observation: OnchainPaymentObservation?
+        service = TransactionService(
+            walletRepository: { nil }, walletDatabase: { nil }, getTrackedMintUrls: { [mintURL] },
+            walletStore: WalletStore(storage: InMemoryStorage()),
+            observeOnchainPayment: { _, _, _, _ in observation }
+        )
+        let quote = MintQuote(
+            id: "expired-address", amount: nil, unit: .sat, request: "bc1qexpired", state: .unpaid,
+            expiry: 1, mintUrl: MintUrl(url: mintURL), amountIssued: Amount(value: 0),
+            amountPaid: Amount(value: 0), updatedAt: 1, estimatedBlocks: nil, paymentMethod: .onchain,
+            secretKey: nil, usedByOperation: nil, version: 0
+        )
+        var timestamps: [String: TimeInterval] = [:]
+        let expired = await service.pendingTransactions(
+            from: [quote], trackedMintUrls: [mintURL], quoteIdsWithTransactions: [],
+            timestamps: &timestamps, includeRemoteObservations: true
+        )
+        XCTAssertEqual(expired.first?.isUnfundedAddress, true)
+        XCTAssertEqual(expired.first?.status, .expired)
+        XCTAssertFalse(expired.first?.hasActionablePaymentCode ?? true)
+
+        observation = OnchainPaymentObservation(txid: "late", amount: 21, confirmed: true, confirmations: 1)
+        let late = await service.pendingTransactions(
+            from: [quote], trackedMintUrls: [mintURL], quoteIdsWithTransactions: [],
+            timestamps: &timestamps, includeRemoteObservations: true
+        )
+        XCTAssertEqual(late.first?.isUnfundedAddress, false)
+        XCTAssertEqual(late.first?.status, .pending)
+        XCTAssertEqual(late.first?.amount, 21)
     }
 
     func testObservedOnchainDepositsSurviveRelaunchWithoutExplorerAccess() async throws {
@@ -160,7 +203,8 @@ final class TransactionServiceTests: XCTestCase {
             }
 
             let unfunded = await rows(try reopenedService(), remote: true)
-            XCTAssertTrue(unfunded.isEmpty, "A requested amount alone must not create a payment")
+            XCTAssertEqual(unfunded.map(\.isUnfundedAddress), [true], "A requested amount alone must not create a payment")
+            XCTAssertEqual(unfunded.first?.amount, 0)
             observation = OnchainPaymentObservation(txid: "first-txid", amount: 42, confirmed: false, confirmations: nil)
             let detected = await rows(try reopenedService(), remote: true)
             XCTAssertEqual(detected.first?.amount, 42)
