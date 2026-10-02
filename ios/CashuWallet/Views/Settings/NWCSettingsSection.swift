@@ -104,7 +104,7 @@ struct NWCSettingsView: View {
         }
         .backdropSheet(isPresented: $showBudgetSheet) {
             NWCBudgetSheet()
-                .presentationDetents([.medium])
+                .sheetDetents([.medium])
                 .presentationDragIndicator(.visible)
         }
         .backdropSheet(isPresented: $showConnectionQR) {

@@ -641,7 +641,7 @@ struct DescriptionDetailRow: View {
         .paymentDetailRow(layout: layout)
         .sheet(isPresented: $showFullDescription) {
             PaymentDescriptionView(description: description)
-                .presentationDetents([.large])
+                .sheetDetents([.large])
         }
     }
 }

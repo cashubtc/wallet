@@ -647,7 +647,7 @@ private struct LockedEcashExplainerSheet: View {
                 .padding(.horizontal, 28)
                 .padding(.bottom, 16)
         }
-        .presentationDetents([.medium, .large])
+        .sheetDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .flatBottomSheetSurface()
     }

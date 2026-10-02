@@ -1,7 +1,11 @@
 import CryptoKit
 import Cdk
 import Foundation
+#if canImport(UIKit)
 import UIKit
+#else
+import AppKit
+#endif
 
 /// The shared execution lane for CDK calls that use the wallet repository and
 /// SQLite database. `@MainActor` is not sufficient here: an actor can accept a
@@ -464,6 +468,7 @@ protocol WalletOperationOutcomeError: Error {
 
 @MainActor
 private enum WalletApplicationState {
+    #if os(iOS)
     static var current: String {
         switch UIApplication.shared.applicationState {
         case .active: "active"
@@ -472,6 +477,14 @@ private enum WalletApplicationState {
         @unknown default: "unknown"
         }
     }
+    #else
+    /// macOS has no three-way app state. An accessory app is either frontmost
+    /// or it is not, and it is never suspended — so there is no "background"
+    /// to report and reporting one would make these logs lie.
+    static var current: String {
+        NSApp.isActive ? "active" : "inactive"
+    }
+    #endif
 }
 
 /// Extends the time iOS gives a money-moving native future after the app moves
@@ -479,9 +492,11 @@ private enum WalletApplicationState {
 /// the coordinator or pretends the CDK operation was cancelled.
 @MainActor
 private final class WalletBackgroundExecutionLease {
-    private var identifier: UIBackgroundTaskIdentifier = .invalid
     private let kind: WalletOperationCoordinator.Kind
     private let correlationID: String
+
+    #if os(iOS)
+    private var identifier: UIBackgroundTaskIdentifier = .invalid
 
     init(kind: WalletOperationCoordinator.Kind, correlationID: String) {
         self.kind = kind
@@ -505,4 +520,15 @@ private final class WalletBackgroundExecutionLease {
         )
         end()
     }
+    #else
+    /// No assertion to take: macOS does not suspend a running process, so the
+    /// CDK operation already has all the time it needs. The lease is kept as a
+    /// type so the coordinator's call sites stay platform-free.
+    init(kind: WalletOperationCoordinator.Kind, correlationID: String) {
+        self.kind = kind
+        self.correlationID = correlationID
+    }
+
+    func end() {}
+    #endif
 }

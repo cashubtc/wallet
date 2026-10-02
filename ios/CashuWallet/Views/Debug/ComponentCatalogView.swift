@@ -195,8 +195,8 @@ private struct ActivityDetailCatalog: View {
             Button("Cashu Request · USD") { openRequest(rail: .ecash, paid: true, unit: "usd") }
                 .accessibilityIdentifier("cashu-request-usd")
         }
-        .sheet(item: $selectedTransaction) { TransactionDetailView(transaction: $0) }
-        .sheet(item: $selectedRequest) { CashuRequestReceiptView(request: $0) }
+        .sheet(item: $selectedTransaction) { TransactionDetailView(transaction: $0).macLargeSheet() }
+        .sheet(item: $selectedRequest) { CashuRequestReceiptView(request: $0).macLargeSheet() }
         .onAppear {
             if IntegrationTestConfig.isEnabled {
                 SettingsManager.shared.useBitcoinSymbol = true

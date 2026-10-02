@@ -1,5 +1,7 @@
 import SwiftUI
+#if canImport(UIKit)
 import UIKit
+#endif
 
 // MARK: - Unified receive sheet (Send-style)
 
@@ -62,6 +64,7 @@ struct UnifiedReceiveView: View {
                     ScannerWrapperView(onScanned: handleScanned)
                         .environmentObject(walletManager)
                         .canvasSheetBackground()
+                        .macLargeSheet()
                 }
                 .fullScreenCover(item: $route) { routeView($0).canvasSheetBackground() }
                 .onChange(of: tokenInput) { handleInputChange() }

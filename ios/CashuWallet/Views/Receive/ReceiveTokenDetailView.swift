@@ -172,7 +172,7 @@ struct ReceiveTokenDetailView: View {
         .task(id: tokenString) {
             await parseToken()
         }
-        .interactiveDismissDisabled(phase == .processing)
+        .sheetDismissDisabled(phase == .processing)
     }
 
     /// The confirm step, on the shared `PayFlowScaffold` so its details block
