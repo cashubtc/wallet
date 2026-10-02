@@ -109,7 +109,7 @@ final class TransactionTechnicalDetailsTests: XCTestCase {
         XCTAssertEqual(row(details, "Method")?.value, "On-chain")
         XCTAssertEqual(row(details, "Status")?.value, "Pending")
         XCTAssertEqual(row(details, "Status detail")?.value, "Payment confirmed on-chain (45 confirmations)")
-        XCTAssertEqual(row(details, "Amount paid")?.value, "300000 sat")
+        XCTAssertEqual(row(details, "Amount paid")?.value, "300,000 sat")
         XCTAssertEqual(row(details, "Amount issued")?.value, "0 sat")
         XCTAssertEqual(row(details, "Expiry")?.value, "Never")
         XCTAssertEqual(labels(details, "Payment"), ["Transaction ID"])

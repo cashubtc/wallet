@@ -207,7 +207,9 @@ struct TransactionTechnicalDetails: Equatable {
     }
 
     private static func nativeAmount(_ amount: UInt64, unit: String) -> String {
-        if CurrencyRegistry.isSatoshiUnit(unit) { return "\(amount) sat" }
+        // Grouped like every other sat amount in the app, so a deposit reads
+        // the same here as on its History row.
+        if CurrencyRegistry.isSatoshiUnit(unit) { return AmountFormatter.sats(amount, useBitcoinSymbol: false) }
         return CurrencyAmount(
             value: amount,
             currency: CurrencyRegistry.currency(forMintUnit: unit)

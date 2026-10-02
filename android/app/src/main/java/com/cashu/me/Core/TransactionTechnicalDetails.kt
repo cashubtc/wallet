@@ -2,6 +2,7 @@ package com.cashu.me.Core
 
 import java.time.Instant
 import java.time.temporal.ChronoUnit
+import com.cashu.me.Core.Protocols.CurrencyRegistry
 import com.cashu.me.Models.MeltQuoteInfo
 import com.cashu.me.Models.MintQuoteInfo
 import com.cashu.me.Models.PaymentMethodKind
@@ -55,16 +56,16 @@ object TransactionTechnicalDetails {
                     ?.let { add(reference("Request", it)) }
                 if (mintQuote != null) {
                     add(plain("State", mintQuote.state.name))
-                    add(plain("Amount paid", TransactionDisplay.formatNativeAmount(mintQuote.amountPaid, unit)))
-                    add(plain("Amount issued", TransactionDisplay.formatNativeAmount(mintQuote.amountIssued, unit)))
+                    add(plain("Amount paid", nativeAmount(mintQuote.amountPaid, unit)))
+                    add(plain("Amount issued", nativeAmount(mintQuote.amountIssued, unit)))
                     add(expiryRow(mintQuote.expiryEpochSeconds))
                     if (mintQuote.updatedAtEpochSeconds > 0) {
                         add(dateRow("Last updated", mintQuote.updatedAtEpochSeconds * 1000))
                     }
                 } else if (meltQuote != null) {
                     add(plain("State", meltQuote.state.name))
-                    add(plain("Quote amount", TransactionDisplay.formatNativeAmount(meltQuote.amount, unit)))
-                    add(plain("Fee reserve", TransactionDisplay.formatNativeAmount(meltQuote.feeReserve, unit)))
+                    add(plain("Quote amount", nativeAmount(meltQuote.amount, unit)))
+                    add(plain("Fee reserve", nativeAmount(meltQuote.feeReserve, unit)))
                     add(expiryRow(meltQuote.expiryEpochSeconds))
                 }
             }
@@ -133,8 +134,8 @@ object TransactionTechnicalDetails {
             ?.takeIf { transaction.status == TransactionStatus.Pending && it.isNotEmpty() }
             ?.let { add(plain("Status detail", it)) }
         add(dateRow("Date", transaction.dateEpochMillis))
-        add(plain("Amount", TransactionDisplay.formatNativeAmount(transaction.amount, transaction.unit)))
-        add(plain("Fee", TransactionDisplay.formatNativeAmount(transaction.fee, transaction.unit)))
+        add(plain("Amount", nativeAmount(transaction.amount, transaction.unit)))
+        add(plain("Fee", nativeAmount(transaction.fee, transaction.unit)))
         // A URL stays legible; the row wraps instead of cutting it 8…6.
         transaction.mintUrl?.takeIf { it.isNotEmpty() }?.let {
             add(TechnicalDetailRow("Mint", it, it, copyable = true))
@@ -165,4 +166,13 @@ object TransactionTechnicalDetails {
         if (expiry <= 0 || expiry >= 253_402_300_799) return plain("Expiry", "Never")
         return dateRow("Expiry", expiry * 1000)
     }
+
+    // Grouped like every other sat amount in the app, so a deposit reads the
+    // same here as on its History row.
+    private fun nativeAmount(amount: Long, unit: String): String =
+        if (CurrencyRegistry.isSatoshiUnit(unit)) {
+            AmountFormatter().formatSats(amount, includeUnit = true, useBitcoinSymbol = false)
+        } else {
+            TransactionDisplay.formatNativeAmount(amount, unit)
+        }
 }

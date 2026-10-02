@@ -145,7 +145,7 @@ class TransactionTechnicalDetailsTest {
         assertEquals("On-chain", sections.row("Method")?.value)
         assertEquals("Pending", sections.row("Status")?.value)
         assertEquals("Payment confirmed on-chain (45 confirmations)", sections.row("Status detail")?.value)
-        assertEquals("300000 sat", sections.row("Amount paid")?.value)
+        assertEquals("300,000 sat", sections.row("Amount paid")?.value)
         assertEquals("0 sat", sections.row("Amount issued")?.value)
         assertEquals("Never", sections.row("Expiry")?.value)
         assertEquals(listOf("Transaction ID"), sections.labels("Payment"))
