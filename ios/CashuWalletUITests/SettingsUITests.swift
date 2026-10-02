@@ -3,10 +3,14 @@ import XCTest
 /// UI tests for wallet-header Settings navigation and basic interactions.
 final class SettingsUITests: UITestBase {
     override var launchMode: LaunchMode { .seededWallet }
+    override var launchesAppAutomatically: Bool { false }
 
     // MARK: - Helpers
 
     private func navigateToSettings() {
+        // Custom mint/authentication/locale tests launch with their settings
+        // already applied. Other tests start lazily on their first navigation.
+        if app.state == .notRunning { app.launch() }
         waitForMainTab()
         let settings = app.buttons["wallet-settings-button"]
         tapWhenReady(settings)

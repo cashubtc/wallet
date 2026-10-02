@@ -20,6 +20,8 @@ class UITestBase: XCTestCase {
         ProcessInfo.processInfo.environment["CDK_MINT_URL"] ?? "http://localhost:3339"
     }
     var launchMode: LaunchMode { .emptyWallet }
+    // Tests that configure their first launch can opt out of an unused launch.
+    var launchesAppAutomatically: Bool { true }
 
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -29,7 +31,12 @@ class UITestBase: XCTestCase {
             "-AppleLanguages", "(en)",
             "-AppleLocale", "en_US",
         ]
-        app.launch()
+        if launchesAppAutomatically {
+            app.launch()
+        } else {
+            // Do not reuse a process left behind by an interrupted prior test.
+            app.terminate()
+        }
     }
 
     override func tearDownWithError() throws {
