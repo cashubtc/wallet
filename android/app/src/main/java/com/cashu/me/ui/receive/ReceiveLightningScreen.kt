@@ -148,6 +148,8 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.style.TextOverflow
 import com.cashu.me.Core.OnchainDepositStatus
 import com.cashu.me.Core.TransactionDisplay
+import com.cashu.me.Core.rememberWalletHaptics
+import com.cashu.me.Core.WalletHaptic
 import com.cashu.me.Models.TransactionKind
 import com.cashu.me.ui.components.paymentDetailWidth
 
@@ -848,19 +850,24 @@ fun ReceiveLightningScreen(
                     // the quote is still un-issued (iOS refreshOnchainObservation
                     // + mintQuoteIfReady parity). 30s cadence matches iOS and is
                     // polite to the third-party explorer API.
-                    // Starts from the last sighting History holds, so a reopened
-                    // address is current before the first explorer answer.
+                    // Starts from the last sighting History holds (its note keeps
+                    // the confirmation count), so a reopened address is current
+                    // before the first explorer answer — iOS restores the stored
+                    // observation the same way.
                     var onchainObservation by remember(current.quote.id) {
                         mutableStateOf(
                             walletState.transactions.firstOrNull {
                                 it.quoteId == current.quote.id && it.kind == TransactionKind.Onchain &&
                                     !it.preimage.isNullOrEmpty() && !it.isUnfundedAddress
                             }?.let {
+                                val confirmations = it.statusNote
+                                    ?.let { note -> Regex("^(\\d+) confirmations?$").find(note) }
+                                    ?.groupValues?.get(1)?.toIntOrNull()
                                 OnchainPaymentObservation(
                                     txid = it.preimage.orEmpty(),
                                     amount = it.amount,
-                                    confirmed = false,
-                                    confirmations = null,
+                                    confirmed = confirmations != null,
+                                    confirmations = confirmations,
                                 )
                             },
                         )
@@ -1403,6 +1410,7 @@ private fun DisplayFace(
     onOpenExplorer: (() -> Unit)?,
 ) {
     val confirmationToastController = LocalConfirmationToastController.current
+    val haptics = rememberWalletHaptics()
     val isReusable = quote.paymentMethod == PaymentMethodKind.Bolt12
     val displayExpiry = mintQuoteDisplayExpiry(quote.expiryEpochSeconds)
     var nowSeconds by remember(quote.id, displayExpiry) {
@@ -1421,6 +1429,7 @@ private fun DisplayFace(
     Column(modifier = Modifier.fillMaxSize()) {
         PaymentDetailContent(
             modifier = Modifier.weight(1f),
+            stableSizeKey = quote.id,
             hero = { qrSize ->
                 QrCard(
                     content = quote.request,
@@ -1474,6 +1483,7 @@ private fun DisplayFace(
                         value = TransactionDisplay.middleTruncated(quote.request),
                         valueMonospaced = true,
                         onClick = {
+                            haptics.perform(WalletHaptic.Success)
                             onCopy()
                             confirmationToastController?.show("Copied Bitcoin address")
                         },
