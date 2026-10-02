@@ -48,3 +48,39 @@ class CoverageGateTests(unittest.TestCase):
             </testsuite>''')
             self.assertEqual(android_results(directory), {
                 'Payments/paid': [True], 'Payments/skipped': [False], 'Payments/retry': [False, True]})
+
+    def test_exported_ios_shards_merge_without_masking_failures(self):
+        import json
+        with tempfile.TemporaryDirectory() as directory:
+            shards = []
+            for index, cases in enumerate([
+                [('Payments/paid()', 'Passed'), ('Payments/retry()', 'Failed')],
+                [('UI/journey()', 'Passed'), ('Payments/retry()', 'Passed')],
+                [('UI/skipped()', 'Skipped')],
+            ]):
+                path = Path(directory, f'{index}.json')
+                path.write_text(json.dumps({'testNodes': [{'children': [
+                    {'nodeType': 'Test Case', 'nodeIdentifier': name, 'result': result}
+                    for name, result in cases
+                ]}]}))
+                shards.append(path)
+            with patch('check_coverage.subprocess.check_output') as reader:
+                results = ios_results(shards, exported_json=True)
+                reader.assert_not_called()
+            self.assertEqual(results, {
+                'Payments/paid': [True], 'Payments/retry': [False, True],
+                'UI/journey': [True], 'UI/skipped': [False]})
+            manifest = {'ios': {'pr': ['Payments/paid', 'Payments/retry', 'UI/journey'], 'full': []}}
+            self.assertEqual(missing_tests(manifest, 'ios', 'pr', results), ['Payments/retry'])
+
+    def test_missing_or_truncated_ios_shard_cannot_pass(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory, 'missing.json')
+            with self.assertRaises(FileNotFoundError):
+                ios_results([path], exported_json=True)
+            path.write_text('{')
+            with self.assertRaises(ValueError):
+                ios_results([path], exported_json=True)
+            path.write_text('{}')
+            with self.assertRaises(KeyError):
+                ios_results([path], exported_json=True)

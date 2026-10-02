@@ -30,42 +30,94 @@ env:
   TEST_RUNNER_PAYMENT_TEST_TIER: ${{ (github.event_name == 'schedule' && 'full') || inputs.tier || 'pr' }}
 
 jobs:
-  ios-tests:
-    name: iOS Unit, Mint Integration & UI Tests
+  build:
+    name: Build iOS test products
     runs-on: macos-26
-    timeout-minutes: 60
-
+    timeout-minutes: 25
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Select Xcode version
-      uses: maxim-lobanov/setup-xcode@v1
+    - uses: actions/checkout@v4
+    - uses: maxim-lobanov/setup-xcode@v1
       with:
         xcode-version: '26.5'
+    - name: Cache Swift packages
+      uses: actions/cache@v4
+      with:
+        path: ${{ runner.temp }}/SourcePackages
+        key: ios-test-packages-macos-26-arm64-xcode-26.5-${{ hashFiles('ios/CashuWallet.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+    - name: Validate shard routing and coverage aggregation
+      run: |
+        python3 -m unittest discover -s CI/tests -v
+        python3 -m unittest discover -s CI/payment-tests -p test_coverage.py -v
+    - name: Build iOS tests once
+      run: |
+        set -euo pipefail
+        xcodebuild build-for-testing \
+          -project ios/CashuWallet.xcodeproj \
+          -scheme CashuWallet \
+          -destination 'generic/platform=iOS Simulator' \
+          -derivedDataPath "$RUNNER_TEMP/CashuWalletDerivedData" \
+          -clonedSourcePackagesDirPath "$RUNNER_TEMP/SourcePackages" \
+          -skipPackageUpdates \
+          -skipPackagePluginValidation \
+          -showBuildTimingSummary \
+          ARCHS=arm64 ONLY_ACTIVE_ARCH=YES COMPILER_INDEX_STORE_ENABLE=NO \
+          CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="-" \
+          2>&1 | tee build-output.log | xcbeautify
+    - name: Package relocatable test products
+      run: |
+        # tar preserves executable permissions and framework symlinks. Include
+        # the xctestrun file and all products; no source checkout/package cache
+        # or build intermediates are needed by test-without-building.
+        tar -czf "$RUNNER_TEMP/ios-test-products.tar.gz" \
+          -C "$RUNNER_TEMP/CashuWalletDerivedData/Build" Products
+    - uses: actions/upload-artifact@v4
+      with:
+        name: ios-test-products
+        path: ${{ runner.temp }}/ios-test-products.tar.gz
+        compression-level: 0
+        retention-days: 1
+        if-no-files-found: error
+    - name: Upload build diagnostics
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ios-build-diagnostics
+        path: build-output.log
 
-    - name: Setup Python
-      uses: actions/setup-python@v5
+  test:
+    name: iOS tests (${{ matrix.shard }})
+    needs: build
+    runs-on: macos-26
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [unit, ui-lifecycle, ui-settings, ui-other]
+    env:
+      SHARD: ${{ matrix.shard }}
+    steps:
+    - uses: actions/checkout@v4
+    - uses: maxim-lobanov/setup-xcode@v1
+      with:
+        xcode-version: '26.5'
+    - uses: actions/setup-python@v5
       with:
         python-version: '3.11'
-
-    - name: Cache iOS test dependencies
+    - name: Restore local mint runtimes
       uses: actions/cache@v4
       with:
         path: |
-          ${{ runner.temp }}/SourcePackages
           CI/.nutshell-venv
           CI/.cdk-bin
-        key: ios-tests-macos-26-arm64-xcode-26.5-${{ hashFiles('ios/CashuWallet.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved', 'CI/setup-nutshell.sh', 'CI/setup-cdk.sh') }}
-
-    # Build once for both test bundles. The shared scheme contains the unit and
-    # UI targets, so separate jobs previously compiled the same app twice and
-    # paid for a second scarce macOS runner.
-    - name: Build iOS tests
-      id: build
+        key: ios-test-mints-macos-26-arm64-python-3.11-${{ hashFiles('CI/setup-nutshell.sh', 'CI/setup-cdk.sh') }}
+    - uses: actions/download-artifact@v4
+      with:
+        name: ios-test-products
+        path: ${{ runner.temp }}
+    - name: Unpack products and boot simulator
       run: |
         set -euo pipefail
-
+        tar -xzf "$RUNNER_TEMP/ios-test-products.tar.gz" -C "$RUNNER_TEMP"
         SIMULATOR_UDID="$(
           xcrun simctl list devices available -j |
             jq -r '[.devices | to_entries[] | select(.key | contains("iOS")) | .value[] | select(.name == "iPhone 17" and .isAvailable == true)] | last | .udid // empty'
@@ -75,29 +127,9 @@ jobs:
           exit 1
         fi
         echo "SIMULATOR_UDID=$SIMULATOR_UDID" >> "$GITHUB_ENV"
-
-        xcrun simctl boot "$SIMULATOR_UDID" 2>/dev/null || true
-        xcrun simctl bootstatus "$SIMULATOR_UDID" -b > "$RUNNER_TEMP/simulator-boot.log" 2>&1 &
-        SIMULATOR_BOOT_PID=$!
-
-        xcodebuild build-for-testing \
-          -project ios/CashuWallet.xcodeproj \
-          -scheme CashuWallet \
-          -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" \
-          -derivedDataPath "$RUNNER_TEMP/CashuWalletDerivedData" \
-          -clonedSourcePackagesDirPath "$RUNNER_TEMP/SourcePackages" \
-          -skipPackageUpdates \
-          -skipPackagePluginValidation \
-          -showBuildTimingSummary \
-          COMPILER_INDEX_STORE_ENABLE=NO \
-          CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="-" \
-          | tee build-output.log | xcbeautify
-
-        if ! wait "$SIMULATOR_BOOT_PID"; then
-          cat "$RUNNER_TEMP/simulator-boot.log"
-          exit 1
-        fi
-
+        xcrun simctl boot "$SIMULATOR_UDID"
+        # Mint setup can proceed while the simulator boots. The test script
+        # waits for boot completion before launching tests.
     - name: Setup local test mints
       id: setup_mints
       run: |
@@ -133,58 +165,39 @@ jobs:
         wait "$CDK_START_PID" || STATUS=$?
         if [ "$STATUS" != 0 ]; then exit "$STATUS"; fi
         ./CI/start-payment-fixtures.sh
-        CI/.nutshell-venv/bin/python -m unittest discover -s CI/payment-tests -v
+        if [ "$SHARD" = unit ]; then
+          CI/.nutshell-venv/bin/python -m unittest discover -s CI/payment-tests -v
+        fi
 
-    - name: Run unit and mint integration tests
-      id: unit_tests
-      continue-on-error: true
-      run: |
-        set -o pipefail
-        xcodebuild test-without-building \
-          -project ios/CashuWallet.xcodeproj \
-          -scheme CashuWallet \
-          -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" \
-          -derivedDataPath "$RUNNER_TEMP/CashuWalletDerivedData" \
-          -clonedSourcePackagesDirPath "$RUNNER_TEMP/SourcePackages" \
-          -skipPackagePluginValidation \
-          -only-testing:CashuWalletTests \
-          -parallel-testing-enabled NO \
-          -resultBundlePath "$RUNNER_TEMP/CashuWalletUnitTests.xcresult" \
-          CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="-" \
-          | tee ios-unit-test-output.log | xcbeautify
+    - name: Run test shard
+      id: tests
+      timeout-minutes: 25
+      run: bash CI/run-ios-test-shard.sh "$SHARD"
 
-    # UI tests are deliberately serial. Two simulator clones on the hosted
-    # three-core VM caused accessibility startup timeouts and made the suite
-    # slower. Run once: Xcode's repetition flags reran the entire bundle,
-    # doubling runtime and obscuring first-attempt interaction failures.
-    - name: Run iOS UI journeys
-      id: ui_tests
-      timeout-minutes: 40
-      if: ${{ always() && steps.build.outcome == 'success' && steps.setup_mints.outcome == 'success' && steps.start_mints.outcome == 'success' }}
-      continue-on-error: true
+    - name: Export test results and timings
+      if: ${{ always() && steps.tests.outcome != 'skipped' }}
       run: |
-        set -o pipefail
-        xcodebuild test-without-building \
-          -project ios/CashuWallet.xcodeproj \
-          -scheme CashuWallet \
-          -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" \
-          -derivedDataPath "$RUNNER_TEMP/CashuWalletDerivedData" \
-          -clonedSourcePackagesDirPath "$RUNNER_TEMP/SourcePackages" \
-          -skipPackagePluginValidation \
-          -only-testing:CashuWalletUITests \
-          -parallel-testing-enabled NO \
-          -test-timeouts-enabled YES \
-          -default-test-execution-time-allowance 90 \
-          -maximum-test-execution-time-allowance 360 \
-          -resultBundlePath "$RUNNER_TEMP/CashuWalletUITests.xcresult" \
-          CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="-" \
-          2>&1 | tee ios-ui-test-output.log
-
-    - name: Enforce executed payment coverage
-      if: ${{ always() && steps.build.outcome == 'success' }}
-      run: |
-        python3 CI/payment-tests/check_coverage.py --platform ios --tier "$PAYMENT_TIER" \
-          "$RUNNER_TEMP/CashuWalletUnitTests.xcresult" "$RUNNER_TEMP/CashuWalletUITests.xcresult"
+        set -euo pipefail
+        mkdir -p "$RUNNER_TEMP/ios-results"
+        xcrun xcresulttool get test-results tests \
+          --path "$RUNNER_TEMP/$SHARD.xcresult" \
+          > "$RUNNER_TEMP/ios-results/$SHARD.json"
+        xcrun xcresulttool get test-results summary \
+          --path "$RUNNER_TEMP/$SHARD.xcresult" \
+          > "$RUNNER_TEMP/ios-results/$SHARD-summary.json"
+        {
+          echo "### $SHARD"
+          echo '```json'
+          cat "$RUNNER_TEMP/ios-results/$SHARD-summary.json"
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"
+    - name: Upload test reports
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ios-reports-${{ matrix.shard }}
+        path: ${{ runner.temp }}/ios-results/*.json
+        if-no-files-found: error
 
     - name: Stop local test mints
       if: always()
@@ -199,45 +212,45 @@ jobs:
         wait "$NUTSHELL_STOP_PID" || true
         wait "$CDK_STOP_PID" || true
 
-    - name: Print test result summaries
-      if: ${{ always() && steps.build.outcome == 'success' }}
-      run: |
-        for bundle in \
-          "$RUNNER_TEMP/CashuWalletUnitTests.xcresult" \
-          "$RUNNER_TEMP/CashuWalletUITests.xcresult"
-        do
-          if [ -d "$bundle" ]; then
-            echo "Summary for $(basename "$bundle")"
-            xcrun xcresulttool get --legacy --path "$bundle" --format json |
-              jq -r '
-                "tests=\(.metrics.testsCount._value // "0") failed=\(.metrics.testsFailedCount._value // "0")",
-                (.issues.testFailureSummaries._values[]? | "failure: \(.testCaseName._value): \(.message._value)")
-              ' || true
-          fi
-        done
-
-    - name: Enforce test results
-      if: ${{ always() && steps.build.outcome == 'success' }}
-      run: |
-        if [ "${{ steps.unit_tests.outcome }}" != "success" ]; then
-          echo "Unit or mint integration tests failed"
-          exit 1
-        fi
-        if [ "${{ steps.ui_tests.outcome }}" != "success" ]; then
-          echo "UI journeys failed"
-          exit 1
-        fi
-
     - name: Upload failed test diagnostics
-      if: ${{ always() && (failure() || cancelled() || steps.ui_tests.outcome == 'failure') }}
+      if: ${{ failure() || cancelled() }}
       uses: actions/upload-artifact@v4
       with:
-        name: ios-test-results-${{ github.sha }}
+        name: ios-diagnostics-${{ matrix.shard }}
         path: |
-          build-output.log
-          *-test-output.log
-          ${{ runner.temp }}/CashuWalletUnitTests.xcresult
-          ${{ runner.temp }}/CashuWalletUITests.xcresult
+          ios-test-output.log
+          ${{ runner.temp }}/${{ matrix.shard }}.xcresult
           ${{ runner.temp }}/simulator-boot.log
+          ${{ runner.temp }}/receipt-proxy.log
           CI/.nutshell.log
           CI/.cdk.log
+
+  ios-tests:
+    # Preserve the existing required check name. Never let a skipped, failed,
+    # or cancelled shard turn the combined check green.
+    name: iOS Unit, Mint Integration & UI Tests
+    needs: [build, test]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    - name: Check every test job succeeded
+      env:
+        BUILD_RESULT: ${{ needs.build.result }}
+        TEST_RESULT: ${{ needs.test.result }}
+      run: |
+        test "$BUILD_RESULT" = success && test "$TEST_RESULT" = success
+    - uses: actions/download-artifact@v4
+      with:
+        pattern: ios-reports-*
+        merge-multiple: true
+        path: ios-results
+    - name: Enforce combined payment coverage
+      run: |
+        python3 CI/payment-tests/check_coverage.py --platform ios --tier "$PAYMENT_TIER" --ios-json \
+          ios-results/unit.json ios-results/ui-lifecycle.json \
+          ios-results/ui-settings.json ios-results/ui-other.json
