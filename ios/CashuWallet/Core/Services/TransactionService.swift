@@ -66,6 +66,7 @@ class TransactionService: ObservableObject {
         // CDK retains the individual attempts for recovery and diagnostics.
         var allTransactions: [WalletTransaction] = []
         var quoteIdsWithTransactions: Set<String> = []
+        let retryStates = onchainRetryStates()
         let trackedMintUrls = Set(getTrackedMintUrls().filter { !$0.isEmpty }.map(MintURLIdentity.normalized))
         let previous = transactions.filter {
             !$0.isPendingReceiveToken && $0.mintUrl.map { trackedMintUrls.contains(MintURLIdentity.normalized($0)) } == true
@@ -132,6 +133,19 @@ class TransactionService: ObservableObject {
                         walletTransaction.sagaId = tx.sagaId
                         walletTransaction.paymentMethod = paymentMethod
                         walletTransaction.unit = PaymentRequestDecoder.unitDescription(tx.unit)
+                        // CDK records a deposit's mint while it is in flight:
+                        // the mint has credited it and the ecash is landing.
+                        if kind == .onchain, walletTransaction.type == .incoming,
+                           walletTransaction.status == .pending {
+                            let retryState = tx.quoteId.flatMap { retryStates[$0] } ?? .none
+                            walletTransaction.statusNote = OnchainDepositStatus.resolve(
+                                amountPaid: tx.amount.value,
+                                amountIssued: 0,
+                                observation: nil,
+                                retryState: retryState,
+                                isPastExpiry: false
+                            ).historyText
+                        }
                         return walletTransaction
                     }
                     // A sent token's string survives in the send saga until the
@@ -345,6 +359,7 @@ class TransactionService: ObservableObject {
     ) async -> [WalletTransaction] {
         var transactions: [WalletTransaction] = []
         let savedObservations = walletStore.loadOnchainPaymentObservations()
+        let retryStates = onchainRetryStates()
         let onchainQuoteIDs = Set(quotes.filter {
             PaymentMethodKind.from($0.paymentMethod) == .onchain
         }.map(\.id))
@@ -442,20 +457,22 @@ class TransactionService: ObservableObject {
                 : .pending
 
             var storedPaymentProof = lastOnchainObservation?.txid ?? getPreimage(quoteId: quote.id)
-            var statusNote: String?
-
             if let observation {
                 storedPaymentProof = observation.txid
-                statusNote = observation.statusText
-
                 if getPreimage(quoteId: quote.id) != observation.txid {
                     savePreimage(quoteId: quote.id, preimage: observation.txid)
                 }
-            } else if paymentMethod == .onchain, storedPaymentProof != nil {
-                statusNote = "Payment detected on-chain"
-            } else if isUnfundedAddress {
-                statusNote = "Waiting for deposit"
             }
+            // One vocabulary with the receive sheet and the receipt.
+            let statusNote = paymentMethod == .onchain
+                ? OnchainDepositStatus.resolve(
+                    amountPaid: quote.amountPaid.value,
+                    amountIssued: quote.amountIssued.value,
+                    observation: lastOnchainObservation,
+                    retryState: retryStates[quote.id] ?? .none,
+                    isPastExpiry: isPastExpiry
+                ).historyText
+                : nil
 
             var transaction = WalletTransaction(
                 id: quote.id,
@@ -482,6 +499,41 @@ class TransactionService: ObservableObject {
             walletStore.saveOnchainPaymentObservations(retainedObservations)
         }
         return transactions
+    }
+
+    /// The last sighting stored for a deposit address, so a reopened sheet
+    /// starts where History already is instead of at "Waiting for deposit".
+    func storedOnchainObservation(quoteId: String) -> OnchainPaymentObservation? {
+        walletStore.loadOnchainPaymentObservations()[quoteId]
+    }
+
+    /// The receive sheet's explorer check for the one address on screen. The
+    /// sighting is stored exactly as a History load stores it, so the sheet,
+    /// the row and the receipt agree, and it survives a relaunch offline.
+    func observeOnchainDeposit(
+        quoteId: String,
+        address: String,
+        mintURL: String?,
+        createdAt: Date
+    ) async -> OnchainPaymentObservation? {
+        guard let observation = await observeOnchainPayment(address, mintURL, 1, createdAt) else {
+            return nil
+        }
+        var observations = walletStore.loadOnchainPaymentObservations()
+        if observations[quoteId] != observation {
+            observations[quoteId] = observation
+            walletStore.saveOnchainPaymentObservations(observations)
+        }
+        if getPreimage(quoteId: quoteId) != observation.txid {
+            savePreimage(quoteId: quoteId, preimage: observation.txid)
+        }
+        return observation
+    }
+
+    /// Retry state per quote, so a credited deposit whose ecash keeps failing
+    /// reads "Retrying" rather than "Adding to wallet…".
+    private func onchainRetryStates() -> [String: MintQuoteRetryState] {
+        walletStore.loadMintQuoteSchedules().mapValues { MintQuoteSchedulePolicy.retryStatus(for: $0).state }
     }
 
     private func loadMintQuoteTimestamps() -> [String: TimeInterval] {

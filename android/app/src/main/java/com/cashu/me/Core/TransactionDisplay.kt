@@ -45,7 +45,12 @@ object TransactionDisplay {
             TransactionKind.Lightning -> "Paid"
             TransactionKind.Onchain -> "Confirmed"
         }
-        TransactionStatus.Pending -> "Pending"
+        // An incoming deposit names its stage — the same words its History
+        // row and the receive sheet use (DESIGN.md → On-chain receive status).
+        TransactionStatus.Pending ->
+            transaction.statusNote?.takeIf {
+                transaction.kind == TransactionKind.Onchain && transaction.type == TransactionType.Incoming
+            } ?: "Pending"
         TransactionStatus.Failed -> "Failed"
         TransactionStatus.Expired -> "Expired"
     }
@@ -62,10 +67,20 @@ object TransactionDisplay {
         TransactionKind.Lightning ->
             !transaction.invoice.isNullOrEmpty() &&
                 transaction.status == TransactionStatus.Pending
+        // A deposit address is a live request only until money is seen; a
+        // funded address is not handed out again, so its receipt retires the QR.
         TransactionKind.Onchain ->
             !transaction.invoice.isNullOrEmpty() &&
-                transaction.status == TransactionStatus.Pending
+                transaction.status == TransactionStatus.Pending &&
+                (transaction.type == TransactionType.Outgoing || transaction.isUnfundedAddress)
     }
+
+    /**
+     * Keep re-checking the quote while this receipt is open. Separate from the
+     * QR: a deposit in the mempool has no QR but is still on its way.
+     */
+    fun monitorsWhileOpen(transaction: WalletTransaction): Boolean =
+        transaction.mintQuoteIdForStatusRefresh != null && transaction.status == TransactionStatus.Pending
 
     /**
      * Settled-ecash receipt carve-out: a completed ecash transaction keeps a
@@ -120,7 +135,7 @@ object TransactionDisplay {
 
     /** `prefix(8)…suffix(6)` middle-truncation, the decoder's convention for
      *  opaque destination blobs; short strings pass through untouched. */
-    private fun middleTruncated(value: String): String =
+    internal fun middleTruncated(value: String): String =
         if (value.length > 16) "${value.take(8)}…${value.takeLast(6)}" else value
 
     private fun formatNativeAmount(amount: Long, unit: String): String =

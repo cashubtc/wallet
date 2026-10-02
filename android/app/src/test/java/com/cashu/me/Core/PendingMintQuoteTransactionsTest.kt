@@ -253,8 +253,23 @@ class PendingMintQuoteTransactionsTest {
         assertEquals(42L, pending.amount)
         assertEquals(TransactionStatus.Pending, pending.status)
         assertEquals("txid", pending.preimage)
-        assertEquals("Payment seen in mempool", pending.statusNote)
+        assertEquals("In mempool", pending.statusNote)
         assertEquals(listOf(pending), recentPaymentTransactions(rows(), 5))
+        // Offline, the last reload's stage stands; pre-vocabulary notes are rebuilt.
+        fun offline(previous: WalletTransaction) = pendingMintQuoteTransactions(
+            quotes = listOf(deposit), trackedMintUrls = setOf(MintUrl),
+            quoteIdsWithTransactions = emptySet(), timestamps = mutableMapOf(), nowEpochMillis = 1,
+            previousTransactions = listOf(previous),
+        ).single().statusNote
+        assertEquals("2 confirmations", offline(pending.copy(statusNote = "2 confirmations")))
+        assertEquals("In mempool", offline(pending.copy(statusNote = "Payment detected on-chain")))
+        // A credited deposit whose ecash keeps failing reads Retrying.
+        val retrying = pendingMintQuoteTransactions(
+            quotes = listOf(deposit.copy(amountPaid = 42)), trackedMintUrls = setOf(MintUrl),
+            quoteIdsWithTransactions = emptySet(), timestamps = mutableMapOf(), nowEpochMillis = 1,
+            retryStates = mapOf(deposit.id to com.cashu.me.Models.MintQuoteRetryState.RetryScheduled),
+        ).single()
+        assertEquals("Retrying", retrying.statusNote)
         val cached = pendingMintQuoteTransactions(
             quotes = listOf(deposit), trackedMintUrls = setOf(MintUrl),
             quoteIdsWithTransactions = emptySet(), timestamps = mutableMapOf(), nowEpochMillis = 1,

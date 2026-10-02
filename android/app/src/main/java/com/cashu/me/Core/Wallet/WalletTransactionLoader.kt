@@ -2,6 +2,8 @@ package com.cashu.me.Core
 
 import com.cashu.me.Core.CDK.CdkWalletGateway
 import com.cashu.me.Models.MintInfo
+import com.cashu.me.Models.MintQuoteInfo
+import com.cashu.me.Models.MintQuoteRetryState
 import com.cashu.me.Models.PaymentMethodKind
 import com.cashu.me.Models.PendingReceiveToken
 import com.cashu.me.Models.TransactionKind
@@ -31,6 +33,26 @@ internal class WalletTransactionLoader(
     private val observeOnchainPayment: suspend (String, String?, Long, Long) -> OnchainPaymentObservation? =
         OnchainExplorer::observePayment,
 ) {
+    /**
+     * The receive sheet's explorer check for the one address on screen. The
+     * txid is stored exactly as a History load stores it, so the row and the
+     * sheet agree.
+     */
+    suspend fun observeOnchainDeposit(quote: MintQuoteInfo): OnchainPaymentObservation? {
+        if (quote.paymentMethod != PaymentMethodKind.Onchain) return null
+        val createdAt = if (quote.updatedAtEpochSeconds > 0) {
+            quote.updatedAtEpochSeconds * 1000
+        } else {
+            System.currentTimeMillis()
+        }
+        val observation = observeOnchainPayment(quote.request, quote.mintUrl, 1, createdAt) ?: return null
+        val preimages = walletStore.loadPaymentPreimages()
+        if (preimages[quote.id] != observation.txid) {
+            walletStore.savePaymentPreimages(preimages + (quote.id to observation.txid))
+        }
+        return observation
+    }
+
     suspend fun load(
         mints: List<MintInfo>,
         includeRemoteObservations: Boolean = true,
@@ -89,7 +111,32 @@ internal class WalletTransactionLoader(
                 transaction
             }
         }
-        val quoteIdsWithTransactions = remoteWithTokens.mapNotNull { it.quoteId }.toSet()
+        // A credited deposit whose ecash keeps failing reads "Retrying", not
+        // "Adding to wallet…" (one vocabulary with the receive sheet).
+        val retryStates = walletStore.loadMintQuoteSchedules()
+            .mapValues { (_, record) -> MintQuoteSchedulePolicy.retryStatus(record).state }
+        val remoteWithStages = remoteWithTokens.map { transaction ->
+            if (
+                transaction.kind == TransactionKind.Onchain &&
+                transaction.type == TransactionType.Incoming &&
+                transaction.status == TransactionStatus.Pending
+            ) {
+                // CDK records a deposit's mint while it is in flight: the mint
+                // has credited it and the ecash is landing.
+                transaction.copy(
+                    statusNote = OnchainDepositStatus.resolve(
+                        amountPaid = transaction.amount,
+                        amountIssued = 0,
+                        observation = null,
+                        retryState = transaction.quoteId?.let { retryStates[it] } ?: MintQuoteRetryState.None,
+                        isPastExpiry = false,
+                    ).historyText,
+                )
+            } else {
+                transaction
+            }
+        }
+        val quoteIdsWithTransactions = remoteWithStages.mapNotNull { it.quoteId }.toSet()
         val mintQuoteTimestamps = walletStore.loadMintQuoteTimestamps().toMutableMap()
         val quoteRead = runCatching { gateway.listUnissuedMintQuotes() }
         quoteRead.exceptionOrNull()?.let { if (it is kotlinx.coroutines.CancellationException) throw it }
@@ -135,6 +182,7 @@ internal class WalletTransactionLoader(
             nowEpochMillis = System.currentTimeMillis(),
             onchainObservations = observations,
             previousTransactions = previous,
+            retryStates = retryStates,
         )
         val requests = walletStore.loadCashuRequests()
         val receiveTokenTransactions = pendingReceiveTokenTransactions(pendingReceiveTokens)
@@ -143,7 +191,7 @@ internal class WalletTransactionLoader(
         // rows are skipped once CDK owns a transaction for the quote.
         // ID dedupe removes repeated reads. BOLT11 attempts additionally project
         // to one receipt without modifying CDK records.
-        val merged = (remoteWithTokens + pendingQuoteTransactions + retainedQuotes + receiveTokenTransactions)
+        val merged = (remoteWithStages + pendingQuoteTransactions + retainedQuotes + receiveTokenTransactions)
             .map { it.restoringDescription(requests) }
             .distinctBy { it.id }
             .let(MintReceiptProjection::project)

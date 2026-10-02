@@ -88,7 +88,7 @@ class StoredAccountProjectionInstrumentedTest {
                 assertEquals(2_100L, pending.amount)
                 assertFalse(pending.isUnfundedAddress)
                 assertEquals(AppTransactionStatus.Pending, pending.status)
-                assertEquals("Payment seen in mempool", pending.statusNote)
+                assertEquals("In mempool", pending.statusNote)
                 assertEquals("b".repeat(64), pending.preimage)
                 assertEquals(rows, recentPaymentTransactions(rows, 5))
                 assertEquals(listOf("tx:${quote.id}"), com.cashu.me.ui.history.unifiedFiltered(

@@ -140,6 +140,16 @@ import com.cashu.me.ui.theme.CapsuleShape
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.withMonoDigits
 import com.cashu.me.ui.testing.UiTestTags
+import androidx.compose.foundation.layout.Box
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.text.style.TextOverflow
+import com.cashu.me.Core.OnchainDepositStatus
+import com.cashu.me.Core.TransactionDisplay
+import com.cashu.me.Models.TransactionKind
+import com.cashu.me.ui.components.paymentDetailWidth
 
 private sealed interface ReceiveLnFace {
     data object Input : ReceiveLnFace
@@ -153,7 +163,7 @@ private sealed interface ReceiveLnFace {
     data class Retry(
         val method: PaymentMethodKind,
         val amountless: Boolean,
-        val forceNewReusableOffer: Boolean,
+        val forceNew: Boolean,
         val amountOverride: Long?,
     )
 }
@@ -306,7 +316,7 @@ fun ReceiveLightningScreen(
     fun createMintRequest(
         requestMethod: PaymentMethodKind,
         amountless: Boolean,
-        forceNewReusableOffer: Boolean = false,
+        forceNew: Boolean = false,
         amountOverride: Long? = null,
     ) {
         val explicit = amountOverride?.takeIf { it > 0L }
@@ -343,10 +353,19 @@ fun ReceiveLightningScreen(
                         requestMethod == PaymentMethodKind.Bolt12 &&
                             mintSupportsBolt12Description
                     }
-                val quote = if (
+                val quote = if (requestMethod == PaymentMethodKind.Onchain && !forceNew) {
+                    // Hand the same address out until the mint credits it
+                    // (iOS `existingOnchainMintQuote` parity).
+                    walletManager.existingOnchainMintQuote() ?: walletManager.createMintQuote(
+                        amount = null,
+                        method = requestMethod,
+                        unit = requestUnit,
+                        description = null,
+                    )
+                } else if (
                     requestMethod == PaymentMethodKind.Bolt12 &&
                     amountless &&
-                    !forceNewReusableOffer
+                    !forceNew
                 ) {
                     walletManager.existingAmountlessBolt12Offer(
                         unit = requestUnit,
@@ -375,7 +394,7 @@ fun ReceiveLightningScreen(
                     retry = ReceiveLnFace.Retry(
                         method = requestMethod,
                         amountless = amountless,
-                        forceNewReusableOffer = forceNewReusableOffer,
+                        forceNew = forceNew,
                         amountOverride = amountOverride,
                     ),
                 )
@@ -392,7 +411,7 @@ fun ReceiveLightningScreen(
         createMintRequest(
             requestMethod = PaymentMethodKind.Bolt12,
             amountless = true,
-            forceNewReusableOffer = true,
+            forceNew = true,
         )
     }
 
@@ -411,7 +430,7 @@ fun ReceiveLightningScreen(
         ) {
             abandonedOnchainQuoteIds = abandonedOnchainQuoteIds + quote.id
         }
-        createMintRequest(PaymentMethodKind.Onchain, amountless = true)
+        createMintRequest(PaymentMethodKind.Onchain, amountless = true, forceNew = true)
     }
 
     /**
@@ -427,7 +446,7 @@ fun ReceiveLightningScreen(
             createMintRequest(
                 requestMethod = PaymentMethodKind.Bolt12,
                 amountless = true,
-                forceNewReusableOffer = false,
+                forceNew = false,
             )
         } else {
             val quoteUnit = (face as? ReceiveLnFace.Display)?.quote?.unit ?: effectiveUnit
@@ -829,36 +848,52 @@ fun ReceiveLightningScreen(
                     // the quote is still un-issued (iOS refreshOnchainObservation
                     // + mintQuoteIfReady parity). 30s cadence matches iOS and is
                     // polite to the third-party explorer API.
+                    // Starts from the last sighting History holds, so a reopened
+                    // address is current before the first explorer answer.
                     var onchainObservation by remember(current.quote.id) {
-                        mutableStateOf<OnchainPaymentObservation?>(null)
+                        mutableStateOf(
+                            walletState.transactions.firstOrNull {
+                                it.quoteId == current.quote.id && it.kind == TransactionKind.Onchain &&
+                                    !it.preimage.isNullOrEmpty() && !it.isUnfundedAddress
+                            }?.let {
+                                OnchainPaymentObservation(
+                                    txid = it.preimage.orEmpty(),
+                                    amount = it.amount,
+                                    confirmed = false,
+                                    confirmations = null,
+                                )
+                            },
+                        )
                     }
-                    val quoteCreatedAtMillis = remember(current.quote.id) { System.currentTimeMillis() }
+                    // A reused address keeps the date it was made, the same
+                    // date its History row shows.
+                    val quoteCreatedAtMillis = remember(current.quote.id) {
+                        current.quote.updatedAtEpochSeconds.takeIf { it > 0 }?.times(1000)
+                            ?: System.currentTimeMillis()
+                    }
+                    // On-chain: the block explorer is the only source of "in
+                    // mempool" and confirmations before the mint credits the
+                    // deposit (DESIGN.md → On-chain receive status). A new
+                    // sighting asks the mint straight away, since the mint
+                    // credits on its own confirmation threshold. 30s cadence
+                    // matches iOS and is polite to the explorer API.
                     LaunchedEffect(current.quote.id) {
                         if (current.quote.paymentMethod != PaymentMethodKind.Onchain) return@LaunchedEffect
-                        while (true) {
-                            val quote = liveQuote
-                            // CDK reports the deposited amount on the quote once the
-                            // mint sees the payment; observing before that would
-                            // match any dust against an expectedAmount of zero.
-                            val expectedAmount = quote.amount ?: 0L
-                            val unissued = quote.state != MintQuoteState.Paid &&
-                                quote.state != MintQuoteState.Issued
-                            if (unissued && expectedAmount > 0) {
-                                onchainObservation = OnchainExplorer.observePayment(
-                                    address = quote.request,
-                                    mintUrl = quote.mintUrl ?: activeMint?.url,
-                                    expectedAmount = expectedAmount,
-                                    createdAfterEpochMillis = quoteCreatedAtMillis,
-                                )
+                        while (liveQuote.amountPaid == 0L) {
+                            val observed = runCatching { walletManager.observeOnchainDeposit(liveQuote) }
+                                .getOrNull()
+                            if (observed != null && observed != onchainObservation) {
+                                onchainObservation = observed
                                 // Mint on the wallet's app-lifetime scope so a
                                 // dismissal never cancels a mint mid-flight.
                                 walletManager.launch {
                                     runCatching {
                                         walletManager.refreshPendingMintQuote(
-                                            quote.id,
+                                            current.quote.id,
                                             confirmationOwner = ReceiveConfirmationOwner.InFlow,
+                                            observingQuoteId = current.quote.id,
                                         )
-                                    }
+                                    }.getOrNull()?.quote?.let { liveQuote = it }
                                 }
                             }
                             delay(30_000)
@@ -906,10 +941,13 @@ fun ReceiveLightningScreen(
                             (liveQuote.mintableAmount > 0 || liveQuote.state == MintQuoteState.Paid)
                         walletManager.launch {
                             try {
+                                // Scoped to this quote: the History reload must
+                                // not walk the explorer for every other address.
                                 val result = walletManager.refreshPendingMintQuote(
                                     quoteId,
                                     confirmationOwner = ReceiveConfirmationOwner.InFlow,
                                     force = force,
+                                    observingQuoteId = quoteId,
                                 )
                                 result.quote?.let { liveQuote = it }
                                 mintRetryStatus = result.retryStatus
@@ -999,11 +1037,14 @@ fun ReceiveLightningScreen(
                         .firstOrNull { it.quoteId == liveQuote.id }
                     DisplayFace(
                         quote = liveQuote,
+                        // On-chain carries its amount inside the Status row.
                         amountLabel = amountLabel.takeUnless {
-                            liveQuote.paymentMethod == PaymentMethodKind.Bolt12 && liveQuote.isAmountless
+                            (liveQuote.paymentMethod == PaymentMethodKind.Bolt12 && liveQuote.isAmountless) ||
+                                isOnchain
                         },
                         receivedAmountLabel = receivedAmountLabel,
                         settlementState = when {
+                            isOnchain -> null
                             isIssuingEcash -> MintQuoteSettlementState.Issuing
                             liveQuote.mintableAmount > 0 &&
                                 mintRetryStatus.state == MintQuoteRetryState.NeedsAttention ->
@@ -1036,8 +1077,16 @@ fun ReceiveLightningScreen(
                         },
                         fiatCurrencyCode = settings.bitcoinPriceCurrency,
                         useBitcoinSymbol = settings.useBitcoinSymbol,
-                        onchainStatusText = observation?.takeIf { isOnchain }?.let {
-                            "${it.statusText}. Trying to mint…"
+                        depositStatus = if (isOnchain) {
+                            OnchainDepositStatus.resolve(
+                                amountPaid = liveQuote.amountPaid,
+                                amountIssued = liveQuote.amountIssued,
+                                observation = observation,
+                                retryState = mintRetryStatus.state,
+                                isPastExpiry = liveQuote.isExpired,
+                            )
+                        } else {
+                            null
                         },
                         explorerLabel = if (observation == null) {
                             "View address in block explorer"
@@ -1076,7 +1125,7 @@ fun ReceiveLightningScreen(
                         createMintRequest(
                             requestMethod = retry.method,
                             amountless = retry.amountless,
-                            forceNewReusableOffer = retry.forceNewReusableOffer,
+                            forceNew = retry.forceNew,
                             amountOverride = retry.amountOverride,
                         )
                     },
@@ -1345,7 +1394,7 @@ private fun DisplayFace(
     fiatPrice: Double?,
     fiatCurrencyCode: String,
     useBitcoinSymbol: Boolean,
-    onchainStatusText: String?,
+    depositStatus: OnchainDepositStatus?,
     explorerLabel: String,
     onCopy: () -> Unit,
     onRetryPendingMint: () -> Unit,
@@ -1399,26 +1448,38 @@ private fun DisplayFace(
                     useBitcoinSymbol = useBitcoinSymbol,
                 )
             }
-            if (settlementState != null && settlementState != MintQuoteSettlementState.Waiting) {
-                MintQuoteSettlementStatus(
-                    state = settlementState,
-                    onRetry = onRetryPendingMint,
-                )
-            } else if (isExpired) {
-                InlineNotice(text = "Expired", severity = NoticeSeverity.Error, centered = true)
-            } else if (onchainStatusText != null) {
-                Text(
-                    text = onchainStatusText,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                )
+            // On-chain keeps nothing above its rows: progress lives in the
+            // Status row, so no line appears or disappears there.
+            if (depositStatus == null) {
+                if (settlementState != null && settlementState != MintQuoteSettlementState.Waiting) {
+                    MintQuoteSettlementStatus(
+                        state = settlementState,
+                        onRetry = onRetryPendingMint,
+                    )
+                } else if (isExpired) {
+                    InlineNotice(text = "Expired", severity = NoticeSeverity.Error, centered = true)
+                }
             }
             errorText?.let { InlineNotice(text = it, severity = NoticeSeverity.Error) }
-            if (!isReusable && settlementState == null && !isExpired) {
+            if (quote.paymentMethod == PaymentMethodKind.Bolt11 && settlementState == null && !isExpired) {
                 ExpiryCaption(expirySeconds = quote.expiryEpochSeconds, nowSeconds = nowSeconds)
             }
             Column(modifier = Modifier.fillMaxWidth()) {
+                if (depositStatus != null) {
+                    OnchainDepositStatusRow(status = depositStatus, useBitcoinSymbol = useBitcoinSymbol)
+                    // The address as text, in the standard 8…6 cut, so it can be
+                    // checked against the sender's screen; tapping copies it.
+                    InspectorRow(
+                        label = "Address",
+                        value = TransactionDisplay.middleTruncated(quote.request),
+                        valueMonospaced = true,
+                        onClick = {
+                            onCopy()
+                            confirmationToastController?.show("Copied Bitcoin address")
+                        },
+                        trailingIcon = Icons.Outlined.ContentCopy,
+                    )
+                }
                 if (mintName != null) {
                     InspectorRow(label = "Mint", value = mintName)
                 }
@@ -1451,6 +1512,9 @@ private fun DisplayFace(
                 if (onOpenExplorer != null) {
                     ExplorerLinkRow(label = explorerLabel, onClick = onOpenExplorer)
                 }
+            }
+            if (depositStatus?.needsAttention == true) {
+                MintAttentionNotice(subject = "bitcoin", onRetry = onRetryPendingMint)
             }
         }
         Column(
@@ -1551,22 +1615,11 @@ private fun MintQuoteSettlementStatus(
     ) { current ->
         when (current) {
             MintQuoteSettlementState.Waiting -> Unit
-            MintQuoteSettlementState.PaymentDetected -> Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.Schedule,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(CashuTheme.spacing.loose),
-                )
-                Text(
-                    text = "Payment received. Ecash issuance is pending.",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            MintQuoteSettlementState.PaymentDetected -> Text(
+                text = "Adding to wallet…",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             MintQuoteSettlementState.Issuing -> Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
@@ -1576,59 +1629,18 @@ private fun MintQuoteSettlementStatus(
                     strokeWidth = 2.dp,
                 )
                 Text(
-                    text = "Payment received. Issuing ecash…",
+                    text = "Adding to wallet…",
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            MintQuoteSettlementState.RetryScheduled,
-            MintQuoteSettlementState.NeedsAttention -> {
-                val needsAttention = current == MintQuoteSettlementState.NeedsAttention
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.tight),
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
-                    ) {
-                        Icon(
-                            imageVector = if (needsAttention) {
-                                Icons.Outlined.WarningAmber
-                            } else {
-                                Icons.Outlined.Schedule
-                            },
-                            contentDescription = null,
-                            tint = if (needsAttention) {
-                                MaterialTheme.colorScheme.error
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                            modifier = Modifier.size(CashuTheme.spacing.loose),
-                        )
-                        Text(
-                            text = if (needsAttention) {
-                                "Payment received. Ecash is still pending."
-                            } else {
-                                "Payment received. Retrying ecash automatically."
-                            },
-                            style = MaterialTheme.typography.titleMedium,
-                            color = if (needsAttention) {
-                                MaterialTheme.colorScheme.error
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                        )
-                    }
-                    androidx.compose.material3.TextButton(onClick = onRetry) {
-                        Icon(
-                            imageVector = Icons.Outlined.Refresh,
-                            contentDescription = null,
-                        )
-                        Text("Retry now")
-                    }
-                }
-            }
+            MintQuoteSettlementState.RetryScheduled -> Text(
+                text = "Payment received · retrying",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            MintQuoteSettlementState.NeedsAttention ->
+                MintAttentionNotice(subject = "payment", onRetry = onRetry)
             MintQuoteSettlementState.Ready -> Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
@@ -1645,6 +1657,82 @@ private fun MintQuoteSettlementStatus(
                     color = CashuTheme.colors.onReceivedContainer,
                 )
             }
+        }
+    }
+}
+
+/**
+ * The on-chain sheet's Status row: always mounted, one line, and only its
+ * value changes — so a deposit's progress never moves the rows below it or
+ * resizes the QR. Each change is announced once (iOS `OnchainDepositStatusRow`
+ * parity; DESIGN.md → On-chain receive status).
+ */
+@Composable
+private fun OnchainDepositStatusRow(status: OnchainDepositStatus, useBitcoinSymbol: Boolean) {
+    val formatter = remember { AmountFormatter() }
+    val value = status.sheetValue { formatter.satsParts(it, useBitcoinSymbol) }
+    val stacked = LocalDensity.current.fontScale > 1.3f
+    val rowStyle = MaterialTheme.typography.bodyMedium
+    Column(
+        modifier = Modifier
+            .paymentDetailWidth()
+            .testTag(UiTestTags.ReceiveOnchainStatus)
+            .clearAndSetSemantics {
+                contentDescription = "Status, ${value.spoken}"
+                liveRegion = LiveRegionMode.Polite
+            }
+            .padding(horizontal = CashuTheme.spacing.comfortable, vertical = CashuTheme.spacing.snug),
+        verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
+    ) {
+        val label: @Composable () -> Unit = {
+            Text("Status", style = rowStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        val statusValue: @Composable (Modifier) -> Unit = { modifier ->
+            Crossfade(targetState = value.text, animationSpec = tween(200), label = "onchain-status", modifier = modifier) {
+                Text(
+                    text = it,
+                    style = rowStyle,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = if (stacked) Int.MAX_VALUE else 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = if (stacked) TextAlign.Start else TextAlign.End,
+                )
+            }
+        }
+        if (stacked) {
+            label()
+            statusValue(Modifier.fillMaxWidth())
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
+            ) {
+                label()
+                Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
+                    statusValue(Modifier)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Shown only once automatic retries need attention: the money is safe and
+ * still retried, and the user may push it along (iOS `mintAttentionNotice`).
+ */
+@Composable
+private fun MintAttentionNotice(subject: String, onRetry: () -> Unit) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.tight),
+    ) {
+        InlineNotice(
+            text = "Your $subject arrived but couldn't be added to your wallet yet. It's safe — we'll keep trying.",
+            severity = NoticeSeverity.Caution,
+        )
+        androidx.compose.material3.TextButton(onClick = onRetry) {
+            Text("Retry now")
         }
     }
 }

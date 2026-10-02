@@ -175,4 +175,41 @@ class MintQuoteDomainTest {
             ),
         )
     }
+
+    private fun onchainQuote(
+        id: String,
+        mint: String = "https://mint.example.com",
+        paid: Long = 0,
+        issued: Long = 0,
+        expiry: Long? = null,
+        updatedAt: Long,
+        method: PaymentMethodKind = PaymentMethodKind.Onchain,
+    ) = MintQuoteInfo(
+        id = id, request = "bc1q$id", amount = null, paymentMethod = method, state = MintQuoteState.Unpaid,
+        expiryEpochSeconds = expiry, mintUrl = mint, amountPaid = paid, amountIssued = issued,
+        updatedAtEpochSeconds = updatedAt,
+    )
+
+    @Test
+    fun reusableOnchainAddressIsTheNewestUnfundedLiveOne() {
+        val now = 1_000_000L
+        val quotes = listOf(
+            onchainQuote("oldest", updatedAt = 100),
+            onchainQuote("abandoned-then-new", updatedAt = 300),
+            onchainQuote("funded", paid = 21, updatedAt = 400),
+            onchainQuote("minted", paid = 21, issued = 21, updatedAt = 500),
+            onchainQuote("expired", expiry = 999_999, updatedAt = 600),
+            onchainQuote("other-mint", mint = "https://other.example", updatedAt = 700),
+            onchainQuote("lightning", updatedAt = 800, method = PaymentMethodKind.Bolt11),
+        )
+        assertEquals(
+            "abandoned-then-new",
+            findReusableOnchainAddress(quotes, "https://mint.example.com:443/", now)?.id,
+        )
+        assertEquals(
+            "live",
+            findReusableOnchainAddress(listOf(onchainQuote("live", expiry = 1_000_001, updatedAt = 1)), "https://mint.example.com", now)?.id,
+        )
+        assertNull(findReusableOnchainAddress(listOf(onchainQuote("funded", paid = 1, updatedAt = 1)), "https://mint.example.com", now))
+    }
 }

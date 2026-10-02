@@ -113,10 +113,18 @@ class TransactionDisplayTest {
             kind = TransactionKind.Onchain,
             type = TransactionType.Incoming,
             invoice = "bc1qreceived",
-        ).copy(status = TransactionStatus.Pending)
+        ).copy(status = TransactionStatus.Pending, isUnfundedAddress = true)
         assertTrue(TransactionDisplay.showsQr(pending))
         assertEquals("bc1qreceived", TransactionDisplay.copyableContent(pending))
         assertEquals("Bitcoin address", TransactionDisplay.qrLabel(pending))
+
+        // Once money is seen the address is no longer handed out: no QR, but
+        // the receipt keeps checking while it is open.
+        val inMempool = pending.copy(isUnfundedAddress = false, amount = 2_317, quoteId = "q",
+            statusNote = "In mempool")
+        assertTrue(!TransactionDisplay.showsQr(inMempool))
+        assertTrue(TransactionDisplay.monitorsWhileOpen(inMempool))
+        assertEquals("In mempool", TransactionDisplay.statusText(inMempool))
 
         val received = pending.copy(
             status = TransactionStatus.Completed,
@@ -183,9 +191,11 @@ class TransactionDisplayTest {
                         token = if (kind == TransactionKind.Ecash) "cashu-token" else null,
                         invoice = if (kind == TransactionKind.Ecash) null else "one-shot-request",
                     ).copy(status = status)
+                    // An incoming deposit address keeps its QR only while
+                    // unfunded (covered above); a funded one is never reused.
                     val expected = status == TransactionStatus.Pending &&
-                        if (kind == TransactionKind.Ecash) direction == TransactionType.Outgoing
-                        else true
+                        if (kind == TransactionKind.Lightning) true
+                        else direction == TransactionType.Outgoing
                     assertEquals("$kind $direction $status", expected, TransactionDisplay.showsQr(tx))
                 }
             }

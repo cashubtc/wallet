@@ -145,7 +145,7 @@ fun TransactionReceiptSheet(
         if (!walletState.isRuntimeReady) return@LaunchedEffect
         val quoteId = transaction.mintQuoteIdForStatusRefresh ?: return@LaunchedEffect
         lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            if (TransactionDisplay.showsQr(transaction)) {
+            if (TransactionDisplay.monitorsWhileOpen(transaction)) {
                 walletManager.monitorDisplayedMintQuote(
                     quoteId, confirmationOwner = ReceiveConfirmationOwner.Home,
                 )

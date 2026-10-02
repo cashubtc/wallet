@@ -108,8 +108,18 @@ struct WalletTransaction: Identifiable {
             guard let invoice, !invoice.isEmpty else { return false }
             return status == .pending
         case .onchain:
-            return status == .pending && invoice?.isEmpty == false
+            // A deposit address is a live request only until money is seen;
+            // a funded address is not handed out again (DESIGN.md → On-chain
+            // receive status), so its receipt retires the QR.
+            guard status == .pending, invoice?.isEmpty == false else { return false }
+            return type == .outgoing || isUnfundedAddress
         }
+    }
+
+    /// Keep re-checking the quote while this receipt is open. Separate from the
+    /// QR: a deposit in the mempool has no QR but is still on its way.
+    var monitorsMintQuoteWhileOpen: Bool {
+        mintQuoteIdForStatusRefresh != nil && status == .pending
     }
 
     var displayStatusText: String {

@@ -137,7 +137,7 @@ struct TransactionDetailView: View {
         }
         .task(id: monitoredQuoteID) {
             guard let quoteID = monitoredQuoteID else { return }
-            if seed.hasActionablePaymentCode {
+            if seed.monitorsMintQuoteWhileOpen {
                 await walletManager.monitorDisplayedMintQuote(quoteID: quoteID, homeHaptic: true)
             } else {
                 // Expired receipts still get a final late-payment recovery check.
@@ -329,7 +329,14 @@ struct TransactionDetailView: View {
             case .lightning: return "Paid"
             case .onchain:   return "Confirmed"
             }
-        case .pending: return "Pending"
+        case .pending:
+            // An incoming deposit names its stage — the same words its History
+            // row and the receive sheet use (DESIGN.md → On-chain receive status).
+            if transaction.kind == .onchain, transaction.type == .incoming,
+               let stage = transaction.statusNote {
+                return stage
+            }
+            return "Pending"
         case .failed:  return "Failed"
         case .expired: return "Expired"
         }

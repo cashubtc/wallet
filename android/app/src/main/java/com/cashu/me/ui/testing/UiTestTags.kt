@@ -7,6 +7,7 @@ package com.cashu.me.ui.testing
  * reserved for screen roots and controls whose meaning is otherwise ambiguous.
  */
 object UiTestTags {
+    const val ReceiveOnchainStatus = "cashu.receive.onchain-status"
     const val AppRoot = "cashu.app"
     const val ScannerRoot = "cashu.scanner"
     const val OnboardingRoot = "cashu.onboarding"

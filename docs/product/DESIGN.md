@@ -221,6 +221,10 @@ What this system explicitly rejects, pulled verbatim from docs/product/PRODUCT.m
   actionable failures, expiry, and received totals remain. A failed Lightning
   Address claim offers Retry and never claims success before credit. Meaningful
   status updates are announced once through native accessibility facilities.
+  *On-chain exception (2026-10-02):* a deposit takes 10–60+ minutes, so the
+  on-chain sheet keeps an always-present **Status** row reading "Waiting for
+  deposit" — see **On-chain receive status**. It is a row value, never a
+  spinner, badge or animation.
 
 ### Unified activity detail sheets (2026-09-06)
 
@@ -294,7 +298,8 @@ as a tinted background.
 - **Pending Orange** (`Color.orange`, ≈ `#FF9500` / `#FF9F0A`): foreground for the
   actionable caution and asynchronous settlement, including the amber
   `exclamationmark.triangle.fill` on `PaymentStatusView`. Idle receive QR screens
-  have no orange clock, pulse, or waiting label. It does **not**
+  have no orange clock, pulse, or waiting label (the on-chain Status row is a
+  plain monochrome row value). It does **not**
   appear on a transaction *row* — a pending row is the muted `.secondary` amount
   alone (amended 2026-06-01) — nor on the transaction detail sheet, whose pending
   state is a monochrome "Pending" `Status` row (2026-07-05(c)). When used as a
@@ -379,7 +384,13 @@ values receive a trailing affordance. Remaining rows are conditional essentials 
 row stay dropped (`unitLabel` is always BTC/SAT; the live request is the QR/Copy).
 Opaque reference values, including **Payment Proof**, render as
 `prefix(8)…suffix(6)` while their Copy action preserves the full value.
-On-chain keeps **Address** / **Transaction ID** and its address QR. The **Type**
+On-chain keeps **Address** / **Transaction ID**, and its address QR only while
+the address is unfunded: once a deposit is seen the receipt is money in flight,
+not a request, so the QR (and its Share) retire while the Address row stays
+copyable and the receipt keeps checking. A pending incoming deposit's **Status**
+names its stage in the shared on-chain vocabulary — Waiting for deposit / In
+mempool / *n* confirmation(s) / Adding to wallet… / Retrying — and reads
+**Confirmed** once issued. The **Type**
 row stays omitted (the nav title names kind/direction).
 
 **The Settled-Ecash Receipt carve-out.** *Added 2026-07-05.* A **settled ecash
@@ -402,8 +413,9 @@ transaction or Cashu Request — pending/waiting is conveyed by the muted
 `arrow.triangle.2.circlepath` per-row refresh button *and* the waiting-request
 leading `clock` were both removed; manual re-check lives on History
 pull-to-refresh — `.refreshable { syncPendingMintQuotes(); checkAllPendingTokens() }`.)
-Idle receive screens also omit the waiting clock and label. Meaningful progress,
-claim errors, expiry, and received totals remain visible. History's pending state
+Idle receive screens also omit the waiting clock and label (on-chain's
+always-present Status row is the one exception — **On-chain receive status**).
+Meaningful progress, claim errors, expiry, and received totals remain visible. History's pending state
 uses a monochrome "Pending" `Status` row. Never a full-saturation pill or loud
 "PENDING" wordmark.
 
@@ -579,7 +591,13 @@ values receive a trailing affordance. Remaining rows are conditional essentials 
 row stay dropped (`unitLabel` is always BTC/SAT; the live request is the QR/Copy).
 Opaque reference values, including **Payment Proof**, render as
 `prefix(8)…suffix(6)` while their Copy action preserves the full value.
-On-chain keeps **Address** / **Transaction ID** and its address QR. The **Type**
+On-chain keeps **Address** / **Transaction ID**, and its address QR only while
+the address is unfunded: once a deposit is seen the receipt is money in flight,
+not a request, so the QR (and its Share) retire while the Address row stays
+copyable and the receipt keeps checking. A pending incoming deposit's **Status**
+names its stage in the shared on-chain vocabulary — Waiting for deposit / In
+mempool / *n* confirmation(s) / Adding to wallet… / Retrying — and reads
+**Confirmed** once issued. The **Type**
 row stays omitted (the nav title names kind/direction).
 
 **The Settled-Ecash Receipt carve-out.** *Added 2026-07-05.* A **settled ecash
@@ -602,8 +620,9 @@ transaction or Cashu Request — pending/waiting is conveyed by the muted
 `arrow.triangle.2.circlepath` per-row refresh button *and* the waiting-request
 leading `clock` were both removed; manual re-check lives on History
 pull-to-refresh — `.refreshable { syncPendingMintQuotes(); checkAllPendingTokens() }`.)
-Idle receive screens also omit the waiting clock and label. Meaningful progress,
-claim errors, expiry, and received totals remain visible. History's pending state
+Idle receive screens also omit the waiting clock and label (on-chain's
+always-present Status row is the one exception — **On-chain receive status**).
+Meaningful progress, claim errors, expiry, and received totals remain visible. History's pending state
 uses a monochrome "Pending" `Status` row. Never a full-saturation pill or loud
 "PENDING" wordmark.
 
@@ -909,7 +928,9 @@ The canonical list pattern. Defined in
   amount (the any-amount request-row precedent), flipping to "Bitcoin received"
   once a deposit is seen in the mempool or credited by the mint. Like an unpaid
   invoice it lists in History but not Home Recent, which only carries money in
-  motion; past its quote expiry it reads Expired and retires its QR.)*
+  motion; past its quote expiry it reads Expired and retires its QR. Its row
+  note and receipt Status use the shared on-chain vocabulary — see **On-chain
+  receive status**.)*
 - **Timestamp**: `.caption`, `Color.secondary`, immediately under the title.
   Formatted with `RelativeDateTimeFormatter(.abbreviated)` ("2 hr ago", "3 d ago").
 - **Trailing amount**: `.system(.body, design: .rounded).weight(.medium)
@@ -1069,11 +1090,49 @@ contexts.
 - **Amount**: when set, rendered through `CurrencyAmountDisplay` at
   `primarySize: 32` so it doesn't compete with the QR but still reads as the
   dominant numeric element.
-- **Delivery state**: the idle QR has no waiting badge. A detected payment can
+- **Delivery state**: the idle QR has no waiting badge (on-chain excepted — its
+  Status row; see **On-chain receive status**). A detected payment can
   show active claim progress or a recoverable error with Retry. Once credited,
   use the shared success screen and large amount; Done is explicit and secondary.
   Reusable requests retain their stored payment records and show Total received
   when returning to the request.
+
+### On-chain receive status
+
+*Added 2026-10-02.* An on-chain deposit takes minutes to hours, so unlike the
+instant rails its sheet says, quietly and in place, what is happening.
+
+- **Rows, in order:** Status, Address, Mint, Created, explorer link. Nothing sits
+  above the rows: no amount hero, no status line, no expiry caption. The only
+  element below them is the needs-attention notice.
+- **Status** is always mounted and only its value changes (an opacity
+  cross-fade, none under Reduce Motion), on one line except at accessibility
+  text sizes. Values: "Waiting for deposit" → "{amount} · in mempool" →
+  "{amount} · *n* confirmation(s)" → "Adding {amount} to wallet…" → the shared
+  success screen. "{amount} · retrying" while issuance retries automatically;
+  "Expired" for an address past its quote expiry with nothing paid. The mint's
+  counters outrank the block explorer, and a sighting outranks expiry. Only the
+  confirmation count is shown, never "n of N" (a mint's threshold is not
+  reliably known). Each change is announced once (VoiceOver announcement,
+  TalkBack polite live region). One model — `OnchainDepositStatus` on both
+  platforms — feeds this row, the History row note and the receipt Status.
+- **The amount lives in the Status value**, in sats (₿ when that setting is on).
+- **The QR never resizes** from in-place changes: `PaymentDetailContent` latches
+  its size per quote; later growth scrolls.
+- **Address** shows the address in the standard 8…6 cut so it can be checked
+  against the sender's screen; tapping copies the full address. **Copy Address**
+  stays the primary button.
+- **Created** is the quote's creation time — the same date its History row
+  shows — never the time the sheet opened.
+- **Reuse:** Receive hands out the newest address at the mint that the mint has
+  not credited and that has not expired; once money arrives, the next Receive
+  gets a fresh address. A deposit still in the mempool does not block reuse —
+  the sheet then shows it.
+- **Needs attention:** after repeated issuance failures a caution
+  `InlineNotice` — "Your bitcoin arrived but couldn't be added to your wallet
+  yet. It's safe — we'll keep trying." — with a plain text-link **Retry now**.
+  Lightning uses the same notice ("Your payment…"); its in-flight text is
+  "Adding to wallet…" and its automatic retry "Payment received · retrying".
 
 - **Editable inspector rows** (Mint, Amount): see `row-inspector-editable`
   in the YAML frontmatter. Tap opens the appropriate `.medium`-detent
@@ -1408,7 +1467,9 @@ code must be).
    slide — it does not extend the chooser cascade's direction monopoly (#3).
 7. **Active progress** — a native progress indicator represents work actually
    in flight, such as adding a detected payment to the wallet. Idle QR screens
-   have no repeating waiting animation. Reduce Motion retains clear state changes
+   have no repeating waiting animation. A background poll or status check is
+   not user-visible work and never shows a spinner or "Checking…" (removed
+   2026-10-02: it flickered on every poll and jumped the layout). Reduce Motion retains clear state changes
    with opacity and removes decorative spatial movement.
 
 **Allowed easings.** `.smooth(duration:)` for entrances and reflows.

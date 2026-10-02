@@ -629,6 +629,23 @@ class WalletManager(
         )
     }
 
+    /** The active mint's deposit address to hand out again, if any (iOS parity). */
+    suspend fun existingOnchainMintQuote(): MintQuoteInfo? {
+        val activeMint = mutableState.value.activeMint ?: return null
+        return findReusableOnchainAddress(
+            quotes = gateway.listUnissuedMintQuotes(),
+            mintUrl = activeMint.url,
+            nowEpochSeconds = System.currentTimeMillis() / 1000,
+        )
+    }
+
+    /**
+     * One explorer look at the deposit address on screen. Never touches CDK,
+     * only the block explorer and local evidence.
+     */
+    suspend fun observeOnchainDeposit(quote: MintQuoteInfo): OnchainPaymentObservation? =
+        transactionLoader.observeOnchainDeposit(quote)
+
     suspend fun createMintQuoteForMint(
         mintUrl: String,
         amount: Long?,

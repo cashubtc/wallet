@@ -128,7 +128,7 @@ class OnchainHistoryJourneyTest {
             compose.onNodeWithTag(UiTestTags.transactionRow(quote.id)).assertIsDisplayed()
             compose.onAllNodesWithText("0 sat").assertCountEquals(0)
             robot.tapTag(UiTestTags.transactionRow(quote.id))
-                .awaitText("Pending").awaitText("Address")
+                .awaitText("Waiting for deposit").awaitText("Address")
             compose.onAllNodesWithText("0 sat").assertCountEquals(0)
             robot.pressSystemBack()
                 .assertTagDoesNotExist(UiTestTags.TransactionReceiptSheet)

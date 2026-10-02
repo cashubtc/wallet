@@ -5,16 +5,100 @@ struct OnchainPaymentObservation: Codable, Equatable {
     let amount: UInt64
     let confirmed: Bool
     let confirmations: Int?
+}
 
-    var statusText: String {
-        if let confirmations, confirmations > 0 {
-            let suffix = confirmations == 1 ? "" : "s"
-            return "Payment confirmed on-chain (\(confirmations) confirmation\(suffix))"
+/// Where an on-chain deposit address stands, from waiting through the ecash
+/// landing. The receive sheet, the History row and the receipt all read it,
+/// so a deposit says the same thing everywhere (DESIGN.md → On-chain receive
+/// status). The mint's counters outrank the block explorer, and a sighting
+/// outranks the quote's expiry: a late deposit is still a deposit.
+enum OnchainDepositStatus: Equatable {
+    case waiting
+    case expired
+    case inMempool(amount: UInt64)
+    case confirming(amount: UInt64, confirmations: Int)
+    case adding(amount: UInt64)
+    case retrying(amount: UInt64, needsAttention: Bool)
+    case received(amount: UInt64)
+
+    static func resolve(
+        amountPaid: UInt64,
+        amountIssued: UInt64,
+        observation: OnchainPaymentObservation?,
+        retryState: MintQuoteRetryState,
+        isPastExpiry: Bool
+    ) -> OnchainDepositStatus {
+        if amountPaid > 0, amountIssued >= amountPaid {
+            return .received(amount: amountPaid)
         }
-
-        return confirmed ? "Payment detected on-chain" : "Payment seen in mempool"
+        if amountPaid > amountIssued {
+            let outstanding = amountPaid - amountIssued
+            switch retryState {
+            case .none: return .adding(amount: outstanding)
+            case .retryScheduled: return .retrying(amount: outstanding, needsAttention: false)
+            case .needsAttention: return .retrying(amount: outstanding, needsAttention: true)
+            }
+        }
+        if let observation {
+            if let confirmations = observation.confirmations, confirmations > 0 {
+                return .confirming(amount: observation.amount, confirmations: confirmations)
+            }
+            return observation.confirmed
+                ? .confirming(amount: observation.amount, confirmations: 1)
+                : .inMempool(amount: observation.amount)
+        }
+        return isPastExpiry ? .expired : .waiting
     }
 
+    /// The receive sheet's Status value. The amount rides inside it once it is
+    /// known, so nothing above or below the row appears with the deposit.
+    func sheetValue(amount format: (UInt64) -> AmountParts) -> (text: String, spoken: String) {
+        switch self {
+        case .waiting:
+            return ("Waiting for deposit", "Waiting for deposit")
+        case .expired:
+            return ("Expired", "Expired")
+        case .inMempool(let amount):
+            let parts = format(amount)
+            return ("\(parts.joined) · in mempool", "\(parts.spoken), in mempool")
+        case .confirming(let amount, let confirmations):
+            let parts = format(amount)
+            let count = Self.confirmationText(confirmations)
+            return ("\(parts.joined) · \(count)", "\(parts.spoken), \(count)")
+        case .adding(let amount):
+            let parts = format(amount)
+            return ("Adding \(parts.joined) to wallet…", "Adding \(parts.spoken) to wallet")
+        case .retrying(let amount, _):
+            let parts = format(amount)
+            return ("\(parts.joined) · retrying", "\(parts.spoken), retrying")
+        case .received(let amount):
+            let parts = format(amount)
+            return ("\(parts.joined) received", "\(parts.spoken) received")
+        }
+    }
+
+    /// History's row note and the receipt's Status value. The receipt's hero
+    /// already shows the amount, so this never repeats it. nil leaves the
+    /// row's own lifecycle word (Expired, Confirmed) in place.
+    var historyText: String? {
+        switch self {
+        case .waiting: return "Waiting for deposit"
+        case .inMempool: return "In mempool"
+        case .confirming(_, let confirmations): return Self.confirmationText(confirmations)
+        case .adding: return "Adding to wallet…"
+        case .retrying: return "Retrying"
+        case .expired, .received: return nil
+        }
+    }
+
+    var needsAttention: Bool {
+        if case .retrying(_, true) = self { return true }
+        return false
+    }
+
+    private static func confirmationText(_ confirmations: Int) -> String {
+        confirmations == 1 ? "1 confirmation" : "\(confirmations) confirmations"
+    }
 }
 
 enum OnchainExplorer {
@@ -145,6 +229,11 @@ enum OnchainExplorer {
         }
 
         let normalizedAddress = address.map(PaymentRequestParser.normalizeBitcoinRequest)?.lowercased() ?? ""
+
+        // Regtest has no public explorer; asking signet would only fail.
+        if normalizedAddress.hasPrefix("bcrt1") {
+            return nil
+        }
 
         if normalizedAddress.hasPrefix("bc1")
             || normalizedAddress.hasPrefix("1")

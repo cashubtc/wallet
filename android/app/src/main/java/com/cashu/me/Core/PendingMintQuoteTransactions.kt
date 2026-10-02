@@ -2,6 +2,7 @@ package com.cashu.me.Core
 
 import com.cashu.me.Core.CDK.mintRemovalUrlsMatch
 import com.cashu.me.Models.MintQuoteInfo
+import com.cashu.me.Models.MintQuoteRetryState
 import com.cashu.me.Models.MintQuoteState
 import com.cashu.me.Models.PaymentMethodKind
 import com.cashu.me.Models.TransactionKind
@@ -17,6 +18,7 @@ internal fun pendingMintQuoteTransactions(
     nowEpochMillis: Long,
     onchainObservations: Map<String, OnchainPaymentObservation> = emptyMap(),
     previousTransactions: List<WalletTransaction> = emptyList(),
+    retryStates: Map<String, MintQuoteRetryState> = emptyMap(),
 ): List<WalletTransaction> =
     quotes.mapNotNull { quote ->
         val mintUrl = quote.mintUrl?.takeIf { stored ->
@@ -86,9 +88,11 @@ internal fun pendingMintQuoteTransactions(
                     TransactionStatus.Completed
                 else -> TransactionStatus.Pending
             },
-            statusNote = observation?.statusText
-                ?: previous?.let { "Payment detected on-chain" }
-                ?: "Waiting for deposit".takeIf { isUnfundedAddress },
+            statusNote = if (quote.paymentMethod == PaymentMethodKind.Onchain) {
+                onchainStatusNote(quote, observation, previous, retryStates[quote.id], isPastExpiry)
+            } else {
+                null
+            },
             preimage = observation?.txid ?: previous?.preimage,
             mintUrl = mintUrl,
             invoice = quote.request,
@@ -98,6 +102,34 @@ internal fun pendingMintQuoteTransactions(
             isUnfundedAddress = isUnfundedAddress,
         )
     }
+
+/**
+ * One vocabulary with the receive sheet and the receipt. Offline, the last
+ * reload's row stands in for the explorer and keeps the stage it reported;
+ * notes from before this vocabulary all start with "Payment " and are rebuilt.
+ */
+private fun onchainStatusNote(
+    quote: MintQuoteInfo,
+    observation: OnchainPaymentObservation?,
+    previous: WalletTransaction?,
+    retryState: MintQuoteRetryState?,
+    isPastExpiry: Boolean,
+): String? {
+    val sighting = observation ?: previous?.let {
+        OnchainPaymentObservation(txid = it.preimage.orEmpty(), amount = it.amount, confirmed = false, confirmations = null)
+    }
+    val status = OnchainDepositStatus.resolve(
+        amountPaid = quote.amountPaid,
+        amountIssued = quote.amountIssued,
+        observation = sighting,
+        retryState = retryState ?: MintQuoteRetryState.None,
+        isPastExpiry = isPastExpiry,
+    )
+    if (observation == null && status is OnchainDepositStatus.InMempool) {
+        previous?.statusNote?.takeUnless { it.startsWith("Payment ") }?.let { return it }
+    }
+    return status.historyText
+}
 
 internal fun pruneMintQuoteTimestamps(
     transactions: List<WalletTransaction>,
