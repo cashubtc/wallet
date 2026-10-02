@@ -128,8 +128,17 @@ object TransactionTechnicalDetails {
         }
     }
 
+    // The counters are the truth for every method, and BOLT12 / on-chain quotes
+    // carry no meaningful state of their own (iOS `stateLabel` parity).
+    private fun mintQuoteStateLabel(quote: MintQuoteInfo): String = when {
+        quote.amountPaid > 0 && quote.amountIssued >= quote.amountPaid -> "Issued"
+        quote.amountPaid > quote.amountIssued -> "Paid"
+        quote.paymentMethod != PaymentMethodKind.Bolt11 -> "Pending"
+        else -> quote.state.name
+    }
+
     private fun mintQuoteRows(quote: MintQuoteInfo, unit: String): List<TechnicalDetailRow> = buildList {
-        add(plain("State", quote.state.name))
+        add(plain("State", mintQuoteStateLabel(quote)))
         add(plain("Amount paid", nativeAmount(quote.amountPaid, unit)))
         add(plain("Amount issued", nativeAmount(quote.amountIssued, unit)))
         add(expiryRow(quote.expiryEpochSeconds))

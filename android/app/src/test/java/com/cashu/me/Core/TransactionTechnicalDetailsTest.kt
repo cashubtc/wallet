@@ -155,6 +155,21 @@ class TransactionTechnicalDetailsTest {
     }
 
     @Test
+    fun quoteStateFollowsTheCountersLikeIos() {
+        fun state(method: PaymentMethodKind, raw: MintQuoteState, paid: Long, issued: Long): String? {
+            val quote = mintQuote("request", method, raw, amountPaid = paid, amountIssued = issued, expiry = 0)
+            val tx = transaction(kind = TransactionKind.Onchain, status = TransactionStatus.Pending).copy(quoteId = "quote")
+            return TransactionTechnicalDetails.sections(tx, mintQuote = quote).row("State")?.value
+        }
+        // The counters win on every method; BOLT12 and on-chain have no state of their own.
+        assertEquals("Issued", state(PaymentMethodKind.Onchain, MintQuoteState.Unpaid, paid = 21, issued = 21))
+        assertEquals("Paid", state(PaymentMethodKind.Onchain, MintQuoteState.Unpaid, paid = 21, issued = 0))
+        assertEquals("Pending", state(PaymentMethodKind.Onchain, MintQuoteState.Unpaid, paid = 0, issued = 0))
+        assertEquals("Pending", state(PaymentMethodKind.Bolt12, MintQuoteState.Unpaid, paid = 0, issued = 0))
+        assertEquals("Unpaid", state(PaymentMethodKind.Bolt11, MintQuoteState.Unpaid, paid = 0, issued = 0))
+    }
+
+    @Test
     fun completedOnchainDepositOmitsStatusDetail() {
         val tx = transaction(kind = TransactionKind.Onchain).copy(
             quoteId = "deposit-quote",

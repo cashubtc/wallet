@@ -84,10 +84,13 @@ private struct TechnicalDetailsContent: View {
                     if !payments.isEmpty {
                         VStack(spacing: 0) {
                             SectionHeader(title: "Payment details")
+                                .padding(.horizontal, 4)
+                                .padding(.bottom, 8)
+                                .accessibilityAddTraits(.isHeader)
                             ForEach(payments) { payment in
                                 Button { selectedPayment = payment.transaction } label: {
                                     HStack {
-                                        Text("Payment \(payment.number)")
+                                        Text("Payment \(payment.number)").foregroundStyle(.secondary)
                                         Spacer()
                                         Image(systemName: "chevron.right").foregroundStyle(.tertiary)
                                     }

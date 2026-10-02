@@ -36,6 +36,7 @@ import com.cashu.me.Models.MintQuoteInfo
 import com.cashu.me.Core.WalletManager
 import com.cashu.me.Models.WalletTransaction
 import com.cashu.me.ui.components.CashuModalBottomSheet
+import com.cashu.me.ui.components.DisclosureRow
 import com.cashu.me.ui.components.ExplorerLinkRow
 import com.cashu.me.ui.components.InspectorRow
 import com.cashu.me.ui.components.InspectorRowStyle
@@ -160,11 +161,9 @@ private fun TechnicalDetailsContent(
                 Column {
                     SectionHeader(text = "Payment details")
                     payments.forEach { (number, payment) ->
-                        InspectorRow(
-                            style = InspectorRowStyle.History,
-                            label = "Payment $number", value = "",
+                        DisclosureRow(
+                            label = "Payment $number",
                             onClick = { selectedPayment = payment },
-                            trailingIcon = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
                             modifier = Modifier.testTag("cashu.history.details.payment.${payment.id}"),
                         )
                     }

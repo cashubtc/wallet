@@ -270,7 +270,8 @@ struct CashuRequestDetailView: View {
                                 Spacer()
                                 Image(systemName: "chevron.right").foregroundStyle(.tertiary)
                             }
-                            .paymentDetailRow(layout: .history, isInteractive: true)
+                            // Same inset column as the rows above it.
+                            .paymentDetailRow(isInteractive: true)
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
