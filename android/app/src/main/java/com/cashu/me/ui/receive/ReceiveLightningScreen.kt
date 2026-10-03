@@ -144,6 +144,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.foundation.text.InlineTextContent
+import androidx.compose.foundation.text.appendInlineContent
+import androidx.compose.ui.text.Placeholder
+import androidx.compose.ui.text.PlaceholderVerticalAlign
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.onClick
@@ -1657,28 +1663,19 @@ private fun MintQuoteSettlementStatus(
             // Repeated failures: the status line itself retries, with the same
             // trailing glyph the on-chain Status row uses (iOS parity). Compose
             // widens a small target's touch area to 48dp without moving layout.
-            MintQuoteSettlementState.NeedsAttention -> Row(
+            MintQuoteSettlementState.NeedsAttention -> Text(
+                text = withRetryGlyph("Payment received · not added yet", retry = true),
+                inlineContent = retryGlyphInline(),
                 modifier = Modifier.clearAndSetSemantics {
                     contentDescription =
                         "Payment received, not added to your wallet yet. It's safe and we'll keep trying."
                     role = Role.Button
                     onClick(label = "Retry now") { onRetry(); true }
                 }.clickable(onClick = onRetry),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.tight),
-            ) {
-                Text(
-                    text = "Payment received · not added yet",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Icon(
-                    imageVector = Icons.Outlined.Refresh,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(RetryGlyphSize),
-                )
-            }
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
             MintQuoteSettlementState.Ready -> Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
@@ -1740,30 +1737,21 @@ internal fun OnchainDepositStatusRow(
             Text("Status", style = rowStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         val statusValue: @Composable (Modifier) -> Unit = { modifier ->
-            Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
-                Crossfade(
-                    targetState = value.text,
-                    animationSpec = tween(200),
-                    label = "onchain-status",
-                    modifier = Modifier.weight(1f, fill = stacked),
-                ) {
-                    Text(
-                        text = it,
-                        style = rowStyle,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = if (stacked) Int.MAX_VALUE else 1,
-                        overflow = TextOverflow.Ellipsis,
-                        textAlign = if (stacked) TextAlign.Start else TextAlign.End,
-                    )
-                }
-                if (retry != null) {
-                    Icon(
-                        imageVector = Icons.Outlined.Refresh,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(start = CashuTheme.spacing.tight).size(RetryGlyphSize),
-                    )
-                }
+            Crossfade(
+                targetState = withRetryGlyph(value.text, retry = retry != null),
+                animationSpec = tween(200),
+                label = "onchain-status",
+                modifier = modifier,
+            ) {
+                Text(
+                    text = it,
+                    inlineContent = retryGlyphInline(),
+                    style = rowStyle,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = if (stacked) Int.MAX_VALUE else 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = if (stacked) TextAlign.Start else TextAlign.End,
+                )
             }
         }
         if (stacked) {
@@ -1784,8 +1772,31 @@ internal fun OnchainDepositStatusRow(
     }
 }
 
-// Same size as the inspector rows' trailing affordances (copy, edit).
-private val RetryGlyphSize = 16.dp
+private const val RetryGlyphId = "retry"
+
+/**
+ * The retry glyph rides inline at the end of the text, so when a value wraps
+ * at large font scales it still ends the sentence (iOS inline `Text(Image)`).
+ */
+private fun withRetryGlyph(text: String, retry: Boolean): AnnotatedString = buildAnnotatedString {
+    append(text)
+    if (retry) {
+        append(" ")
+        appendInlineContent(RetryGlyphId, "↻")
+    }
+}
+
+@Composable
+private fun retryGlyphInline(): Map<String, InlineTextContent> {
+    val tint = MaterialTheme.colorScheme.onSurfaceVariant
+    return mapOf(
+        RetryGlyphId to InlineTextContent(
+            Placeholder(width = 14.sp, height = 14.sp, placeholderVerticalAlign = PlaceholderVerticalAlign.TextCenter),
+        ) {
+            Icon(imageVector = Icons.Outlined.Refresh, contentDescription = null, tint = tint, modifier = Modifier.fillMaxSize())
+        },
+    )
+}
 
 private fun formatReusableCreatedAt(epochMillis: Long): String =
     DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(epochMillis))

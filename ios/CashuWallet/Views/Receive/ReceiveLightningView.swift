@@ -920,12 +920,10 @@ struct ReceiveLightningView: View {
                 // Repeated failures: the status line itself retries, with the
                 // same trailing glyph the on-chain Status row uses.
                 Button(action: retryPendingMintQuote) {
-                    HStack(spacing: 4) {
-                        Text("Payment received · not added yet")
-                        Image(systemName: "arrow.clockwise")
-                            .font(.footnote)
-                            .foregroundStyle(.tertiary)
-                    }
+                    // The glyph is inline so a wrapped line still ends with it.
+                    (Text("Payment received · not added yet ")
+                        + Text(Image(systemName: "arrow.clockwise")).font(.footnote).foregroundStyle(.tertiary))
+                    .multilineTextAlignment(.center)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     // A full touch target without moving the rows below.
@@ -1615,6 +1613,12 @@ struct OnchainDepositStatusRow: View {
         status.needsAttention ? onRetry : nil
     }
 
+    /// Inline, so when the value wraps at accessibility sizes the glyph ends
+    /// the sentence instead of sitting beside its first line.
+    private var retryGlyph: Text {
+        Text(Image(systemName: "arrow.clockwise")).font(.footnote).foregroundStyle(.tertiary)
+    }
+
     var body: some View {
         let current = value(for: status)
         let stacked = dynamicTypeSize.isAccessibilitySize
@@ -1627,21 +1631,12 @@ struct OnchainDepositStatusRow: View {
             if !stacked {
                 Spacer(minLength: 0)
             }
-            HStack(alignment: .firstTextBaseline, spacing: 0) {
-                Text(current.text)
-                    .fontWeight(.regular)
-                    .lineLimit(stacked ? nil : 1)
-                    .truncationMode(.tail)
-                    .contentTransition(.opacity)
-                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: current.text)
-                if retry != nil {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.footnote)
-                        .foregroundStyle(.tertiary)
-                        .padding(.leading, 4)
-                        .transition(.opacity)
-                }
-            }
+            (retry == nil ? Text(current.text) : Text("\(current.text) ") + retryGlyph)
+                .fontWeight(.regular)
+                .lineLimit(stacked ? nil : 1)
+                .truncationMode(.tail)
+                .contentTransition(.opacity)
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: current.text)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         // Always the interactive height, so becoming a button never moves a row.

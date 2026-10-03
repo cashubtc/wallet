@@ -1132,9 +1132,10 @@ instant rails its sheet says, quietly and in place, what is happening.
 - **Needs attention** *(amended 2026-10-03: the notice was retired)*: after
   repeated issuance failures the status itself carries it — no notice, no
   warning glyph. The Status value reads "{amount} · not added yet" with a
-  trailing retry glyph (`arrow.clockwise` / `Refresh`, the inspector rows'
-  trailing-affordance size), and the whole row becomes the **Retry now**
-  button. The row keeps the interactive height in every state, so gaining the
+  trailing retry glyph (`arrow.clockwise` / `Refresh`, tertiary like the
+  Address row's copy glyph) set inline in the text, so a value that wraps at
+  large text sizes still ends with it, and the whole row becomes the
+  **Retry now** button. The row keeps the interactive height in every state, so gaining the
   button never moves a row. The reassurance is spoken, not printed: "{amount},
   not added to your wallet yet. It's safe and we'll keep trying." While an
   attempt is in flight the value reads "Adding {amount} to wallet…". History
