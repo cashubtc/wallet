@@ -1,0 +1,42 @@
+# The promo films' local mint: cdk-mintd with the FakeWallet Lightning backend,
+# so invoices pay themselves with test sats. Nothing here is real money.
+# capture/mint.sh runs it with --work-dir mint/work (created on first start).
+#
+# The name "Local test mint" is on screen in the films (every wallet screen
+# names its mint). The address is typed in on screen only in the restore
+# film; QA fails any other film where "127.0.0.1" is readable.
+[info]
+url = "http://127.0.0.1:3340"
+listen_host = "127.0.0.1"
+listen_port = 3340
+# The well-known all-"abandon" test mnemonic: a throwaway key for test sats.
+mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+input_fee_ppk = 0
+
+[info.logging]
+output = "stderr"
+console_level = "warn"
+
+[mint_info]
+name = "Local test mint"
+description = "FakeWallet mint for promo plates"
+
+[database]
+engine = "sqlite"
+
+[ln]
+ln_backend = "fakewallet"
+unit = "sat"
+min_mint = 1
+max_mint = 500000
+min_melt = 1
+max_melt = 500000
+
+[fake_wallet]
+supported_units = ["sat"]
+fee_percent = 0.0
+reserve_fee_min = 0
+custom_payment_methods = []
+# Invoices "pay" 3–4 s after they're created: the receive shot's wait.
+min_delay_time = 3
+max_delay_time = 4
