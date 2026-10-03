@@ -389,7 +389,7 @@ the address is unfunded: once a deposit is seen the receipt is money in flight,
 not a request, so the QR (and its Share) retire while the Address row stays
 copyable and the receipt keeps checking. A pending incoming deposit's **Status**
 names its stage in the shared on-chain vocabulary — Waiting for deposit / In
-mempool / *n* confirmation(s) / Adding to wallet… / Retrying — and reads
+mempool / *n* confirmation(s) / Adding to wallet… / Retrying / Not added yet — and reads
 **Confirmed** once issued. The **Type**
 row stays omitted (the nav title names kind/direction).
 
@@ -596,7 +596,7 @@ the address is unfunded: once a deposit is seen the receipt is money in flight,
 not a request, so the QR (and its Share) retire while the Address row stays
 copyable and the receipt keeps checking. A pending incoming deposit's **Status**
 names its stage in the shared on-chain vocabulary — Waiting for deposit / In
-mempool / *n* confirmation(s) / Adding to wallet… / Retrying — and reads
+mempool / *n* confirmation(s) / Adding to wallet… / Retrying / Not added yet — and reads
 **Confirmed** once issued. The **Type**
 row stays omitted (the nav title names kind/direction).
 
@@ -1103,13 +1103,14 @@ contexts.
 instant rails its sheet says, quietly and in place, what is happening.
 
 - **Rows, in order:** Status, Address, Mint, Created, explorer link. Nothing sits
-  above the rows: no amount hero, no status line, no expiry caption. The only
-  element below them is the needs-attention notice.
+  above or below the rows: no amount hero, no status line, no expiry caption,
+  no notice.
 - **Status** is always mounted and only its value changes (an opacity
   cross-fade, none under Reduce Motion), on one line except at accessibility
   text sizes. Values: "Waiting for deposit" → "{amount} · in mempool" →
   "{amount} · *n* confirmation(s)" → "Adding {amount} to wallet…" → the shared
   success screen. "{amount} · retrying" while issuance retries automatically;
+  "{amount} · not added yet" once retries need attention (below);
   "Expired" for an address past its quote expiry with nothing paid. The mint's
   counters outrank the block explorer, and a sighting outranks expiry. Only the
   confirmation count is shown, never "n of N" (a mint's threshold is not
@@ -1128,11 +1129,22 @@ instant rails its sheet says, quietly and in place, what is happening.
   not credited and that has not expired; once money arrives, the next Receive
   gets a fresh address. A deposit still in the mempool does not block reuse —
   the sheet then shows it.
-- **Needs attention:** after repeated issuance failures a caution
-  `InlineNotice` — "Your bitcoin arrived but couldn't be added to your wallet
-  yet. It's safe — we'll keep trying." — with a plain text-link **Retry now**.
-  Lightning uses the same notice ("Your payment…"); its in-flight text is
-  "Adding to wallet…" and its automatic retry "Payment received · retrying".
+- **Needs attention** *(amended 2026-10-03: the notice was retired)*: after
+  repeated issuance failures the status itself carries it — no notice, no
+  warning glyph. The Status value reads "{amount} · not added yet" with a
+  trailing retry glyph (`arrow.clockwise` / `Refresh`, the inspector rows'
+  trailing-affordance size), and the whole row becomes the **Retry now**
+  button. The row keeps the interactive height in every state, so gaining the
+  button never moves a row. The reassurance is spoken, not printed: "{amount},
+  not added to your wallet yet. It's safe and we'll keep trying." While an
+  attempt is in flight the value reads "Adding {amount} to wallet…". History
+  and the receipt say "Not added yet".
+- **Lightning** follows the same vocabulary on its status line under the
+  amount: "Adding to wallet…" in flight, "Payment received · retrying" while
+  retrying automatically, and "Payment received · not added yet" with the same
+  trailing retry glyph (the line is the button) once retries need attention.
+  Once an invoice is paid its "Expires in…" caption is gone: the expiry no
+  longer applies.
 
 - **Editable inspector rows** (Mint, Amount): see `row-inspector-editable`
   in the YAML frontmatter. Tap opens the appropriate `.medium`-detent

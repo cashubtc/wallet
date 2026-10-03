@@ -616,7 +616,7 @@ struct ReceiveLightningView: View {
                     if quote.paymentMethod != .onchain, !quote.isAmountless { amountSummary(for: quote) }
                     if quote.paymentMethod != .onchain { statusBadge }
 
-                    if quote.paymentMethod == .bolt11,
+                    if quote.paymentMethod == .bolt11, quote.amountPaid == 0,
                        !isPaid && !isExpired && expiryTimeRemaining > 0 {
                         HStack(spacing: 5) {
                             Image(systemName: "timer").font(.caption2)
@@ -631,7 +631,8 @@ struct ReceiveLightningView: View {
                         if quote.paymentMethod == .onchain {
                             OnchainDepositStatusRow(
                                 status: depositStatus(for: quote),
-                                useBitcoinSymbol: settings.useBitcoinSymbol
+                                useBitcoinSymbol: settings.useBitcoinSymbol,
+                                onRetry: retryPendingMintQuote
                             )
                             addressRow(quote.request)
                         }
@@ -668,10 +669,6 @@ struct ReceiveLightningView: View {
                         }
                     }
                     .padding(.horizontal, 4)
-
-                    if quote.paymentMethod == .onchain, depositStatus(for: quote).needsAttention {
-                        mintAttentionNotice(subject: "bitcoin")
-                    }
                 }
             }
 
@@ -720,7 +717,7 @@ struct ReceiveLightningView: View {
             amountPaid: quote.amountPaid,
             amountIssued: quote.amountIssued,
             observation: onchainObservation,
-            retryState: mintRetryStatus.state,
+            retryState: isMinting ? .none : mintRetryStatus.state,
             isPastExpiry: isExpired
         )
     }
@@ -890,21 +887,6 @@ struct ReceiveLightningView: View {
         .accessibilityHint("Copies the Bitcoin address")
     }
 
-    /// Shown only once automatic retries need attention: the money is safe and
-    /// still retried, and the user may push it along.
-    private func mintAttentionNotice(subject: String) -> some View {
-        VStack(spacing: 8) {
-            InlineNotice(
-                message: "Your \(subject) arrived but couldn't be added to your wallet yet. It's safe — we'll keep trying.",
-                severity: .caution
-            )
-            Button("Retry now") { retryPendingMintQuote() }
-                .textLinkButton()
-                .disabled(isMinting)
-                .accessibilityHint("Tries to add the payment to your wallet again")
-        }
-    }
-
     // MARK: - Status Badge
 
     @ViewBuilder
@@ -935,8 +917,26 @@ struct ReceiveLightningView: View {
                 .transition(.opacity)
             } else if (mintQuote?.mintableAmount ?? 0) > 0,
                       mintRetryStatus.state == .needsAttention {
-                mintAttentionNotice(subject: "payment")
-                    .transition(.opacity)
+                // Repeated failures: the status line itself retries, with the
+                // same trailing glyph the on-chain Status row uses.
+                Button(action: retryPendingMintQuote) {
+                    HStack(spacing: 4) {
+                        Text("Payment received · not added yet")
+                        Image(systemName: "arrow.clockwise")
+                            .font(.footnote)
+                            .foregroundStyle(.tertiary)
+                    }
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    // A full touch target without moving the rows below.
+                    .padding(.vertical, 12)
+                    .contentShape(Rectangle())
+                    .padding(.vertical, -12)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Payment received, not added to your wallet yet. It's safe and we'll keep trying.")
+                .accessibilityHint("Tries to add the payment to your wallet again")
+                .transition(.opacity)
             } else if (mintQuote?.mintableAmount ?? 0) > 0,
                       mintRetryStatus.state == .retryScheduled {
                 Text("Payment received · retrying")
@@ -1601,11 +1601,18 @@ struct ReceiveLightningView: View {
 struct OnchainDepositStatusRow: View {
     let status: OnchainDepositStatus
     let useBitcoinSymbol: Bool
+    /// Offered only once retries need attention: the row gains a trailing
+    /// retry glyph and becomes the button, like the Address row's copy glyph.
+    var onRetry: (() -> Void)?
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private func value(for status: OnchainDepositStatus) -> (text: String, spoken: String) {
         status.sheetValue { AmountFormatter.satsParts($0, useBitcoinSymbol: useBitcoinSymbol) }
+    }
+
+    private var retry: (() -> Void)? {
+        status.needsAttention ? onRetry : nil
     }
 
     var body: some View {
@@ -1614,22 +1621,42 @@ struct OnchainDepositStatusRow: View {
         let layout = stacked
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
             : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 16))
-        layout {
+        let row = layout {
             Text("Status")
                 .foregroundStyle(.secondary)
             if !stacked {
                 Spacer(minLength: 0)
             }
-            Text(current.text)
-                .fontWeight(.regular)
-                .lineLimit(stacked ? nil : 1)
-                .truncationMode(.tail)
-                .contentTransition(.opacity)
-                .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: current.text)
+            HStack(alignment: .firstTextBaseline, spacing: 0) {
+                Text(current.text)
+                    .fontWeight(.regular)
+                    .lineLimit(stacked ? nil : 1)
+                    .truncationMode(.tail)
+                    .contentTransition(.opacity)
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: current.text)
+                if retry != nil {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.footnote)
+                        .foregroundStyle(.tertiary)
+                        .padding(.leading, 4)
+                        .transition(.opacity)
+                }
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .paymentDetailRow()
-        .accessibilityElement(children: .ignore)
+        // Always the interactive height, so becoming a button never moves a row.
+        .paymentDetailRow(isInteractive: true)
+        .contentShape(Rectangle())
+
+        Group {
+            if let retry {
+                Button(action: retry) { row }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Tries to add the payment to your wallet again")
+            } else {
+                row.accessibilityElement(children: .ignore)
+            }
+        }
         .accessibilityLabel("Status")
         .accessibilityValue(current.spoken)
         .accessibilityIdentifier("cashu.receive.onchain-status")

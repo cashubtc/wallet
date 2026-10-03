@@ -194,10 +194,19 @@ final class ActivityDetailUITests: XCTestCase {
             "300,000 sats, 45 confirmations",
             "Adding 300,000 sats to wallet",
             "300,000 sats, retrying",
+            "300,000 sats, not added to your wallet yet. It's safe and we'll keep trying.",
             "Expired",
         ] {
             XCTAssertEqual(row.value as? String, expected)
             XCTAssertEqual(row.frame.height, height, accuracy: 0.5, "The Status row must not change size")
+            if expected.contains("not added") {
+                // Only now is the row the retry button.
+                XCTAssertEqual(row.elementType, .button)
+                row.tap()
+                XCTAssertEqual(app.staticTexts["onchain-status-retries"].label, "Retries: 1")
+            } else {
+                XCTAssertNotEqual(row.elementType, .button)
+            }
             next.tap()
         }
     }

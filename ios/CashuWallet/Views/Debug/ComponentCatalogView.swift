@@ -160,6 +160,7 @@ struct ComponentCatalogView: View {
 /// the row never changes size (DESIGN.md → On-chain receive status).
 private struct OnchainStatusCatalog: View {
     @State private var index = 0
+    @State private var retries = 0
     private let statuses: [OnchainDepositStatus] = [
         .waiting,
         .inMempool(amount: 2_317),
@@ -167,15 +168,18 @@ private struct OnchainStatusCatalog: View {
         .confirming(amount: 300_000, confirmations: 45),
         .adding(amount: 300_000),
         .retrying(amount: 300_000, needsAttention: false),
+        .retrying(amount: 300_000, needsAttention: true),
         .expired,
     ]
 
     var body: some View {
         VStack(spacing: 16) {
             Text("On-chain status").font(.title)
-            OnchainDepositStatusRow(status: statuses[index], useBitcoinSymbol: true)
+            OnchainDepositStatusRow(status: statuses[index], useBitcoinSymbol: true) { retries += 1 }
             Button("Next status") { index = (index + 1) % statuses.count }
                 .accessibilityIdentifier("next-onchain-status")
+            Text("Retries: \(retries)")
+                .accessibilityIdentifier("onchain-status-retries")
         }
     }
 }

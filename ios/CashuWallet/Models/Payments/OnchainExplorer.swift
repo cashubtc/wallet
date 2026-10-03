@@ -68,9 +68,15 @@ enum OnchainDepositStatus: Equatable {
         case .adding(let amount):
             let parts = format(amount)
             return ("Adding \(parts.joined) to wallet…", "Adding \(parts.spoken) to wallet")
-        case .retrying(let amount, _):
+        case .retrying(let amount, false):
             let parts = format(amount)
             return ("\(parts.joined) · retrying", "\(parts.spoken), retrying")
+        case .retrying(let amount, true):
+            // Repeated failures: say where the money is, not that we're stuck.
+            // The reassurance is spoken; on screen the row's retry glyph carries it.
+            let parts = format(amount)
+            return ("\(parts.joined) · not added yet",
+                    "\(parts.spoken), not added to your wallet yet. It's safe and we'll keep trying.")
         case .received(let amount):
             let parts = format(amount)
             return ("\(parts.joined) received", "\(parts.spoken) received")
@@ -86,7 +92,7 @@ enum OnchainDepositStatus: Equatable {
         case .inMempool: return "In mempool"
         case .confirming(_, let confirmations): return Self.confirmationText(confirmations)
         case .adding: return "Adding to wallet…"
-        case .retrying: return "Retrying"
+        case .retrying(_, let needsAttention): return needsAttention ? "Not added yet" : "Retrying"
         case .expired, .received: return nil
         }
     }

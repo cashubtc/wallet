@@ -40,7 +40,16 @@ sealed interface OnchainDepositStatus {
             StatusText("Adding ${it.joined} to wallet…", "Adding ${it.spoken} to wallet")
         }
         is Retrying -> format(amount).let {
-            StatusText("${it.joined} · retrying", "${it.spoken}, retrying")
+            // Repeated failures: say where the money is, not that we're stuck.
+            // The reassurance is spoken; on screen the row's retry glyph carries it.
+            if (needsAttention) {
+                StatusText(
+                    "${it.joined} · not added yet",
+                    "${it.spoken}, not added to your wallet yet. It's safe and we'll keep trying.",
+                )
+            } else {
+                StatusText("${it.joined} · retrying", "${it.spoken}, retrying")
+            }
         }
         is Received -> format(amount).let {
             StatusText("${it.joined} received", "${it.spoken} received")
@@ -58,7 +67,7 @@ sealed interface OnchainDepositStatus {
             is InMempool -> "In mempool"
             is Confirming -> confirmationText(confirmations)
             is Adding -> "Adding to wallet…"
-            is Retrying -> "Retrying"
+            is Retrying -> if (needsAttention) "Not added yet" else "Retrying"
             Expired, is Received -> null
         }
 

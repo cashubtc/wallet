@@ -874,6 +874,11 @@ final class OnchainDepositStatusTests: XCTestCase {
         XCTAssertEqual(OnchainDepositStatus.adding(amount: 2_317).sheetValue(amount: sats).text, "Adding 2,317 sat to wallet…")
         XCTAssertEqual(OnchainDepositStatus.retrying(amount: 2_317, needsAttention: false).sheetValue(amount: sats).text,
                        "2,317 sat · retrying")
+        let attention = OnchainDepositStatus.retrying(amount: 2_317, needsAttention: true).sheetValue(amount: sats)
+        XCTAssertEqual(attention.text, "2,317 sat · not added yet")
+        XCTAssertEqual(attention.spoken,
+                       "2,317 sat, not added to your wallet yet. It's safe and we'll keep trying.",
+                       "The reassurance the screen leaves to the retry glyph is spoken")
 
         let symbol = OnchainDepositStatus.inMempool(amount: 2_317).sheetValue {
             AmountFormatter.satsParts($0, useBitcoinSymbol: true)
@@ -885,7 +890,8 @@ final class OnchainDepositStatusTests: XCTestCase {
         XCTAssertEqual(OnchainDepositStatus.inMempool(amount: 2_317).historyText, "In mempool")
         XCTAssertEqual(OnchainDepositStatus.confirming(amount: 2_317, confirmations: 1).historyText, "1 confirmation")
         XCTAssertEqual(OnchainDepositStatus.adding(amount: 2_317).historyText, "Adding to wallet…")
-        XCTAssertEqual(OnchainDepositStatus.retrying(amount: 2_317, needsAttention: true).historyText, "Retrying")
+        XCTAssertEqual(OnchainDepositStatus.retrying(amount: 2_317, needsAttention: false).historyText, "Retrying")
+        XCTAssertEqual(OnchainDepositStatus.retrying(amount: 2_317, needsAttention: true).historyText, "Not added yet")
         XCTAssertNil(OnchainDepositStatus.expired.historyText)
         XCTAssertNil(OnchainDepositStatus.received(amount: 2_317).historyText)
     }

@@ -144,6 +144,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.style.TextOverflow
 import com.cashu.me.Core.OnchainDepositStatus
@@ -1089,7 +1093,7 @@ fun ReceiveLightningScreen(
                                 amountPaid = liveQuote.amountPaid,
                                 amountIssued = liveQuote.amountIssued,
                                 observation = observation,
-                                retryState = mintRetryStatus.state,
+                                retryState = if (isIssuingEcash) MintQuoteRetryState.None else mintRetryStatus.state,
                                 isPastExpiry = liveQuote.isExpired,
                             )
                         } else {
@@ -1475,7 +1479,11 @@ private fun DisplayFace(
             }
             Column(modifier = Modifier.fillMaxWidth()) {
                 if (depositStatus != null) {
-                    OnchainDepositStatusRow(status = depositStatus, useBitcoinSymbol = useBitcoinSymbol)
+                    OnchainDepositStatusRow(
+                        status = depositStatus,
+                        useBitcoinSymbol = useBitcoinSymbol,
+                        onRetry = onRetryPendingMint,
+                    )
                     // The address as text, in the standard 8…6 cut, so it can be
                     // checked against the sender's screen; tapping copies it.
                     InspectorRow(
@@ -1522,9 +1530,6 @@ private fun DisplayFace(
                 if (onOpenExplorer != null) {
                     ExplorerLinkRow(label = explorerLabel, onClick = onOpenExplorer)
                 }
-            }
-            if (depositStatus?.needsAttention == true) {
-                MintAttentionNotice(subject = "bitcoin", onRetry = onRetryPendingMint)
             }
         }
         Column(
@@ -1649,8 +1654,31 @@ private fun MintQuoteSettlementStatus(
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            MintQuoteSettlementState.NeedsAttention ->
-                MintAttentionNotice(subject = "payment", onRetry = onRetry)
+            // Repeated failures: the status line itself retries, with the same
+            // trailing glyph the on-chain Status row uses (iOS parity). Compose
+            // widens a small target's touch area to 48dp without moving layout.
+            MintQuoteSettlementState.NeedsAttention -> Row(
+                modifier = Modifier.clearAndSetSemantics {
+                    contentDescription =
+                        "Payment received, not added to your wallet yet. It's safe and we'll keep trying."
+                    role = Role.Button
+                    onClick(label = "Retry now") { onRetry(); true }
+                }.clickable(onClick = onRetry),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.tight),
+            ) {
+                Text(
+                    text = "Payment received · not added yet",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Icon(
+                    imageVector = Icons.Outlined.Refresh,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(RetryGlyphSize),
+                )
+            }
             MintQuoteSettlementState.Ready -> Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
@@ -1678,35 +1706,64 @@ private fun MintQuoteSettlementStatus(
  * parity; DESIGN.md → On-chain receive status).
  */
 @Composable
-private fun OnchainDepositStatusRow(status: OnchainDepositStatus, useBitcoinSymbol: Boolean) {
+internal fun OnchainDepositStatusRow(
+    status: OnchainDepositStatus,
+    useBitcoinSymbol: Boolean,
+    // Offered only once retries need attention: the row gains a trailing
+    // retry glyph and becomes the button, like the Address row's copy glyph.
+    onRetry: (() -> Unit)? = null,
+) {
     val formatter = remember { AmountFormatter() }
     val value = status.sheetValue { formatter.satsParts(it, useBitcoinSymbol) }
+    val retry = onRetry.takeIf { status.needsAttention }
     val stacked = LocalDensity.current.fontScale > 1.3f
     val rowStyle = MaterialTheme.typography.bodyMedium
     Column(
         modifier = Modifier
             .paymentDetailWidth()
             .testTag(UiTestTags.ReceiveOnchainStatus)
+            // Always the interactive height, so becoming a button never moves a row.
+            .heightIn(min = 48.dp)
             .clearAndSetSemantics {
                 contentDescription = "Status, ${value.spoken}"
                 liveRegion = LiveRegionMode.Polite
+                if (retry != null) {
+                    role = Role.Button
+                    onClick(label = "Retry now") { retry(); true }
+                }
             }
+            .then(if (retry != null) Modifier.clickable(onClick = retry) else Modifier)
             .padding(horizontal = CashuTheme.spacing.comfortable, vertical = CashuTheme.spacing.snug),
-        verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
+        verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug, Alignment.CenterVertically),
     ) {
         val label: @Composable () -> Unit = {
             Text("Status", style = rowStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         val statusValue: @Composable (Modifier) -> Unit = { modifier ->
-            Crossfade(targetState = value.text, animationSpec = tween(200), label = "onchain-status", modifier = modifier) {
-                Text(
-                    text = it,
-                    style = rowStyle,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = if (stacked) Int.MAX_VALUE else 1,
-                    overflow = TextOverflow.Ellipsis,
-                    textAlign = if (stacked) TextAlign.Start else TextAlign.End,
-                )
+            Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
+                Crossfade(
+                    targetState = value.text,
+                    animationSpec = tween(200),
+                    label = "onchain-status",
+                    modifier = Modifier.weight(1f, fill = stacked),
+                ) {
+                    Text(
+                        text = it,
+                        style = rowStyle,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = if (stacked) Int.MAX_VALUE else 1,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = if (stacked) TextAlign.Start else TextAlign.End,
+                    )
+                }
+                if (retry != null) {
+                    Icon(
+                        imageVector = Icons.Outlined.Refresh,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = CashuTheme.spacing.tight).size(RetryGlyphSize),
+                    )
+                }
             }
         }
         if (stacked) {
@@ -1727,25 +1784,8 @@ private fun OnchainDepositStatusRow(status: OnchainDepositStatus, useBitcoinSymb
     }
 }
 
-/**
- * Shown only once automatic retries need attention: the money is safe and
- * still retried, and the user may push it along (iOS `mintAttentionNotice`).
- */
-@Composable
-private fun MintAttentionNotice(subject: String, onRetry: () -> Unit) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.tight),
-    ) {
-        InlineNotice(
-            text = "Your $subject arrived but couldn't be added to your wallet yet. It's safe — we'll keep trying.",
-            severity = NoticeSeverity.Caution,
-        )
-        androidx.compose.material3.TextButton(onClick = onRetry) {
-            Text("Retry now")
-        }
-    }
-}
+// Same size as the inspector rows' trailing affordances (copy, edit).
+private val RetryGlyphSize = 16.dp
 
 private fun formatReusableCreatedAt(epochMillis: Long): String =
     DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(epochMillis))
