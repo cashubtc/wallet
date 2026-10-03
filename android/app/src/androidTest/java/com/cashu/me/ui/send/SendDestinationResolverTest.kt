@@ -1,6 +1,7 @@
 package com.cashu.me.ui.send
 
 import com.cashu.me.Core.PaymentRequestDecodeResult
+import com.cashu.me.Models.MintInfo
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -8,12 +9,40 @@ import org.junit.Test
 
 class SendDestinationResolverTest {
     @Test
-    fun realAmountlessBolt11FixtureShowsHintInsteadOfAdvancing() {
-        val resolution = resolveSendDestination(Bolt11AmountlessDonationInvoice, walletMints = emptyList())
+    fun realAmountlessBolt11FixtureRoutesToAmountEntry() {
+        val payingMint = MintInfo(url = "https://pays.example", supportsAmountlessBolt11Melt = true)
+        val resolution = resolveSendDestination(
+            "lightning:$Bolt11AmountlessDonationInvoice",
+            walletMints = listOf(payingMint),
+        )
+
+        assertTrue(resolution is SendDestinationResolution.Melt)
+        val melt = resolution as SendDestinationResolution.Melt
+        assertEquals(Bolt11AmountlessDonationInvoice, melt.request)
+        assertEquals(null, melt.knownAmount)
+        assertTrue(melt.requiresAmountEntry)
+        assertTrue(melt.decoded is PaymentRequestDecodeResult.Bolt11)
+    }
+
+    @Test
+    fun amountlessBolt11StaysEligibleOnMintsNotYetRefreshed() {
+        val unrefreshed = MintInfo(url = "https://unrefreshed.example")
+        val resolution = resolveSendDestination(Bolt11AmountlessDonationInvoice, walletMints = listOf(unrefreshed))
+
+        assertTrue(resolution is SendDestinationResolution.Melt)
+    }
+
+    @Test
+    fun amountlessBolt11ShowsHintWhenNoHeldMintCanPayIt() {
+        val refuses = MintInfo(url = "https://refuses.example", supportsAmountlessBolt11Melt = false)
 
         assertEquals(
             SendDestinationResolution.Hint(AmountlessBolt11Hint),
-            resolution,
+            resolveSendDestination(Bolt11AmountlessDonationInvoice, walletMints = listOf(refuses)),
+        )
+        assertEquals(
+            SendDestinationResolution.Hint(AmountlessBolt11Hint),
+            resolveSendDestination(Bolt11AmountlessDonationInvoice, walletMints = emptyList()),
         )
     }
 

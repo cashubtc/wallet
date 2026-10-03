@@ -151,3 +151,102 @@ final class LiveBolt12DescriptionTests: XCTestCase {
                       "Opt-in live mint quote test")
     }
 }
+
+/// Paying a BOLT11 invoice that leaves the amount to the payer: the mint must
+/// advertise NUT-05 `amountless`, and the entered amount rides CDK's
+/// `MeltOptions.amountless`, exactly like an amountless BOLT12 offer.
+final class AmountlessBolt11MeltTests: XCTestCase {
+    /// This file imports Cdk, which has its own `MintInfo`.
+    private typealias MintInfo = CashuWallet.MintInfo
+
+    private func mint(
+        _ name: String,
+        methods: [PaymentMethodKind] = [.bolt11],
+        amountless: Bool?
+    ) -> MintInfo {
+        var mint = MintInfo(
+            url: "https://\(name).example",
+            name: name,
+            description: nil,
+            isActive: true,
+            balance: 1_000
+        )
+        mint.supportedMeltMethods = methods
+        mint.supportsAmountlessBolt11Melt = amountless
+        return mint
+    }
+
+    func testAmountlessBolt11MeltFailsClosedUnlessAdvertisedTrueForSat() {
+        XCTAssertFalse(MintInfo.reportsAmountlessBolt11Melt(methods: []))
+        XCTAssertFalse(MintInfo.reportsAmountlessBolt11Melt(methods: [
+            (method: .bolt11, isSatUnit: true, amountless: nil),
+        ]))
+        XCTAssertFalse(MintInfo.reportsAmountlessBolt11Melt(methods: [
+            (method: .bolt11, isSatUnit: true, amountless: false),
+        ]))
+        XCTAssertFalse(MintInfo.reportsAmountlessBolt11Melt(methods: [
+            (method: .bolt11, isSatUnit: false, amountless: true),
+        ]))
+        XCTAssertFalse(MintInfo.reportsAmountlessBolt11Melt(methods: [
+            (method: .bolt12, isSatUnit: true, amountless: true),
+        ]))
+        XCTAssertTrue(MintInfo.reportsAmountlessBolt11Melt(methods: [
+            (method: .bolt12, isSatUnit: true, amountless: nil),
+            (method: .bolt11, isSatUnit: true, amountless: true),
+        ]))
+    }
+
+    func testCanMeltGatesOnlyAmountlessBolt11OnTheAdvertisement() {
+        XCTAssertTrue(mint("yes", amountless: true).canMelt(.bolt11, amountless: true))
+        XCTAssertFalse(mint("no", amountless: false).canMelt(.bolt11, amountless: true))
+        // Never fetched since this landed: stays eligible and lets the mint decide.
+        XCTAssertTrue(mint("unknown", amountless: nil).canMelt(.bolt11, amountless: true))
+
+        // Invoices that carry an amount, and BOLT12 offers, ignore the flag.
+        XCTAssertTrue(mint("no", amountless: false).canMelt(.bolt11))
+        XCTAssertTrue(mint("offers", methods: [.bolt12], amountless: false).canMelt(.bolt12, amountless: true))
+
+        // The method itself is still required.
+        XCTAssertFalse(mint("offers", methods: [.bolt12], amountless: true).canMelt(.bolt11, amountless: true))
+    }
+
+    func testRecordsPersistedBeforeTheFlagDecodeAsUnknown() throws {
+        let legacy = Data(#"{"url":"https://legacy.example","name":"Legacy","isActive":true,"balance":0}"#.utf8)
+        XCTAssertNil(try JSONDecoder().decode(MintInfo.self, from: legacy).supportsAmountlessBolt11Melt)
+
+        let unsupported = mint("no", amountless: false)
+        let roundTripped = try JSONDecoder().decode(MintInfo.self, from: JSONEncoder().encode(unsupported))
+        XCTAssertEqual(roundTripped.supportsAmountlessBolt11Melt, false)
+    }
+
+    func testAmountlessCautionOnlyWhenNoHeldMintCanPay() {
+        let amountless = PaymentRequestDecodeResult.bolt11(amountSats: nil, description: nil)
+
+        XCTAssertTrue(amountless.isAmountlessBolt11)
+        XCTAssertNil(amountless.amountlessMeltCaution(payableBy: [
+            mint("no", amountless: false),
+            mint("yes", amountless: true),
+        ]))
+        XCTAssertEqual(
+            amountless.amountlessMeltCaution(payableBy: [mint("no", amountless: false)]),
+            "None of your mints can pay invoices without an amount. Ask for one with the amount set."
+        )
+
+        let fixed = PaymentRequestDecodeResult.bolt11(amountSats: 21, description: nil)
+        XCTAssertFalse(fixed.isAmountlessBolt11)
+        XCTAssertNil(fixed.amountlessMeltCaution(payableBy: [mint("no", amountless: false)]))
+
+        let offer = PaymentRequestDecodeResult.bolt12(amountSats: nil, description: nil)
+        XCTAssertFalse(offer.isAmountlessBolt11)
+        XCTAssertNil(offer.amountlessMeltCaution(payableBy: []))
+    }
+
+    func testAmountlessBolt11MeltUsesEnteredAmountInMillisatoshis() throws {
+        XCTAssertEqual(
+            try meltOptionsForLightningRequest(requestAmountMsat: nil, amountSats: 21),
+            .amountless(amountMsat: Amount(value: 21_000))
+        )
+        XCTAssertNil(try meltOptionsForLightningRequest(requestAmountMsat: 2_500_000, amountSats: 21))
+        XCTAssertThrowsError(try meltOptionsForLightningRequest(requestAmountMsat: nil, amountSats: nil))
+    }
+}

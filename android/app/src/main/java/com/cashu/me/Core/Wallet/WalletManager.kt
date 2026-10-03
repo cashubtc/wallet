@@ -536,6 +536,9 @@ class WalletManager(
                 // Live NUT-04 advertisement is authoritative, including false
                 // (the mint dropped description support).
                 supportsBolt12MintDescription = fetched.supportsBolt12MintDescription,
+                // Same for NUT-05 amountless; only an unread value keeps the stored one.
+                supportsAmountlessBolt11Melt = fetched.supportsAmountlessBolt11Melt
+                    ?: mint.supportsAmountlessBolt11Melt,
                 lastUpdatedEpochMillis = System.currentTimeMillis(),
                 balance = mint.balance,
                 isActive = mint.isActive,

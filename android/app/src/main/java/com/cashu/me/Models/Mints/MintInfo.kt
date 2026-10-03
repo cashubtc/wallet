@@ -23,6 +23,11 @@ data class MintInfo(
     // persisted before this landed, and mints that omit the field, fail closed
     // (the Description row stays hidden until a live fetch advertises true).
     val supportsBolt12MintDescription: Boolean = false,
+    // NUT-05 bolt11 `amountless` option for the sat unit: the mint can pay an
+    // invoice that leaves the amount to the payer. Null until a live fetch has
+    // read it — records persisted before this landed stay eligible and let the
+    // mint decide, since mint info only refreshes from the Mints screen.
+    val supportsAmountlessBolt11Melt: Boolean? = null,
     val onchainMintConfirmations: Int? = null,
     // NUT-06 self-reported metadata (contact / terms / software). Empty or null
     // when the mint did not report it — the UI never invents placeholders.
@@ -47,6 +52,15 @@ data class MintInfo(
     /** Melt (send) rails with the pre-fetch compatibility default (see [effectiveMintMethods]). */
     val effectiveMeltMethods: List<PaymentMethodKind>
         get() = supportedMeltMethods ?: listOf(PaymentMethodKind.Bolt11)
+
+    /**
+     * Whether this mint can pay a request of [method]. A BOLT11 invoice that
+     * leaves the amount to the payer also needs the mint's NUT-05 `amountless`
+     * option; BOLT12 offers are amountless by design and need nothing extra.
+     */
+    fun canMelt(method: PaymentMethodKind, amountless: Boolean = false): Boolean =
+        method in effectiveMeltMethods &&
+            (!amountless || method != PaymentMethodKind.Bolt11 || supportsAmountlessBolt11Melt != false)
 
     val effectiveMintUnits: List<String> get() = mintUnits.ifEmpty { units }
 

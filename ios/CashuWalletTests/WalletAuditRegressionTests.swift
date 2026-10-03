@@ -255,7 +255,10 @@ final class WalletAuditRegressionTests: XCTestCase {
     func testPaymentSurfacesDistinguishPayloadsWithIdenticalPrefixes() {
         let prefix = String(repeating: "a", count: 80)
         XCTAssertNotEqual(FlowCover.receiveToken(prefix + "1").id, FlowCover.receiveToken(prefix + "2").id)
-        XCTAssertNotEqual(WalletSheet.meltInvoice(prefix + "1").id, WalletSheet.meltInvoice(prefix + "2").id)
+        let sheet = { (invoice: String) in
+            WalletSheet.sendAmount(.melt(request: invoice, mode: .lightning, decoded: .bolt11(amountSats: 21, description: nil)))
+        }
+        XCTAssertNotEqual(sheet(prefix + "1").id, sheet(prefix + "2").id)
     }
 
     func testMintIdentitiesPreserveSchemePathAndHostBoundaries() {

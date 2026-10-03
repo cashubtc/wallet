@@ -96,16 +96,6 @@ struct ContentView: View {
             )
             .environmentObject(walletManager)
             .canvasSheetBackground()
-        case .melt(let request, let mode, let autoQuote, let explanation):
-            MeltView(
-                initialRequest: request,
-                initialMode: mode,
-                autoQuoteOnAppear: autoQuote,
-                routeExplanation: explanation,
-                onComplete: { navigationManager.activeFlowCover = nil }
-            )
-            .environmentObject(walletManager)
-            .canvasSheetBackground()
         }
     }
 

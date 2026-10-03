@@ -110,16 +110,22 @@ enum PaymentRequestDecodeResult: Equatable, Sendable {
 }
 
 extension PaymentRequestDecodeResult {
-    /// Clean caution copy for amountless request types this wallet still cannot
-    /// pay. BOLT12 offers are intentionally excluded: Send collects an amount
-    /// and passes it through CDK's amountless melt option.
-    var amountlessMeltCaution: String? {
-        switch self {
-        case .bolt11(let amountSats, _) where amountSats == nil:
-            return "This invoice doesn't set an amount. Ask the sender for one with the amount set."
-        default:
+    /// True for a BOLT11 invoice that leaves the amount to the payer. Send
+    /// collects the amount and passes it through CDK's amountless melt option,
+    /// exactly like an amountless BOLT12 offer.
+    var isAmountlessBolt11: Bool {
+        if case .bolt11(nil, _) = self { return true }
+        return false
+    }
+
+    /// Clean caution copy when none of `mints` can pay this amountless BOLT11
+    /// invoice (NUT-05 `amountless`). Nil for everything the wallet can route.
+    func amountlessMeltCaution(payableBy mints: [MintInfo]) -> String? {
+        guard isAmountlessBolt11,
+              !mints.contains(where: { $0.canMelt(.bolt11, amountless: true) }) else {
             return nil
         }
+        return "None of your mints can pay invoices without an amount. Ask for one with the amount set."
     }
 }
 
@@ -272,17 +278,6 @@ enum PaymentRequestDecoder {
         amountMsat / 1000 + (amountMsat % 1000 == 0 ? 0 : 1)
     }
 
-    /// True if the request carries an enforceable amount the user can't change
-    /// (BOLT11 with amount, amountful BOLT12). Triggers auto-quote on tap.
-    static func amountLocked(_ result: PaymentRequestDecodeResult) -> Bool {
-        switch result {
-        case .bolt11(let amount, _), .bolt12(let amount, _):
-            return amount != nil
-        case .lightningAddress, .onchain, .cashuPaymentRequest, .unrecognized:
-            return false
-        }
-    }
-
     /// SF Symbol for the result type. Used by chip + live feedback.
     static func iconName(_ result: PaymentRequestDecodeResult) -> String {
         switch result {
@@ -332,16 +327,6 @@ enum PaymentRequestDecoder {
         return "\(amount) \(summary.unit ?? "sat")"
     }
 
-    static func suggestedMode(_ result: PaymentRequestDecodeResult) -> MeltView.MeltMode? {
-        switch result {
-        case .bolt11, .bolt12, .lightningAddress:
-            return .lightning
-        case .onchain:
-            return .onchain
-        case .cashuPaymentRequest, .unrecognized:
-            return nil
-        }
-    }
 
     static func unitDescription(_ unit: Cdk.CurrencyUnit) -> String {
         switch unit {

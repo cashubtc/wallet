@@ -38,6 +38,7 @@ class FakeWalletGateway(
     initialTransactions: List<WalletTransaction> = emptyList(),
     private val supportedMintMethods: List<PaymentMethodKind> = listOf(PaymentMethodKind.Bolt11),
     private val supportedUnits: List<String> = listOf("sat"),
+    private val supportsAmountlessBolt11Melt: Boolean? = null,
 ) : WalletGateway {
     private val sequence = AtomicInteger(1)
     private val walletUrls = linkedSetOf<String>()
@@ -53,6 +54,7 @@ class FakeWalletGateway(
         private set
     var beforeNPCMint: suspend () -> Unit = {}
     var beforeMeltQuote: suspend () -> Unit = {}
+    var lastMeltQuoteAmountSats: Long? = null
     var beforeMeltPayment: suspend () -> Unit = {}
     var pendingSendClaimed = false
     private val transactions = initialTransactions.toMutableList()
@@ -279,6 +281,7 @@ class FakeWalletGateway(
     ): MeltQuoteInfo {
         beforeMeltQuote()
         failIfRequested()
+        lastMeltQuoteAmountSats = amountSats
         val mintUrl = normalize(preferredMintURL ?: walletUrls.first())
         val quote = MeltQuoteInfo(
             id = "melt-quote-${sequence.getAndIncrement()}",
@@ -476,6 +479,7 @@ class FakeWalletGateway(
         supportedMintMethods = supportedMintMethods,
         units = supportedUnits,
         mintUnits = supportedUnits,
+        supportsAmountlessBolt11Melt = supportsAmountlessBolt11Melt,
         name = if (url == TestMintUrl) "Nutshell UI Test Mint" else "Test Mint",
         description = "Deterministic instrumented-test mint",
         nutSupport = NutSupport(

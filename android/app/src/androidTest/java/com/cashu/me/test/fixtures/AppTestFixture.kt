@@ -59,6 +59,7 @@ object AppTestFixture {
         paymentMintUrl: String? = null,
         authenticate: (suspend (String) -> Boolean)? = null,
         supportedUnits: List<String> = listOf("sat"),
+        supportsAmountlessBolt11Melt: Boolean? = null,
         npcQuotes: () -> List<NPCQuote> = { emptyList() },
         mnemonic: String? = null,
     ): LaunchedFixture {
@@ -108,6 +109,7 @@ object AppTestFixture {
             FakeWalletGateway(
                 supportedMintMethods = supportedMintMethods,
                 supportedUnits = supportedUnits,
+                supportsAmountlessBolt11Melt = supportsAmountlessBolt11Melt,
                 initialBalances = if (mode == FixtureMode.FundedWithHistory) {
                     mapOf(mintUrl to 500L)
                 } else {

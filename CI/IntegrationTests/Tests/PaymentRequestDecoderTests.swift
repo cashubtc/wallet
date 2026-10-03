@@ -66,38 +66,38 @@ final class PaymentRequestDecoderTests: XCTestCase {
         XCTAssertEqual(PaymentRequestDecoder.typeLabel(.unrecognized), "Unrecognized")
     }
 
-    // MARK: - amountLocked
+    // MARK: - carriesAmount (opens Send on confirm instead of amount entry)
 
-    func testAmountLockedBolt11WithAmount() {
-        XCTAssertTrue(PaymentRequestDecoder.amountLocked(.bolt11(amountSats: 1000, description: nil)))
+    func testCarriesAmountBolt11WithAmount() {
+        XCTAssertTrue(SendAmountDestination.melt(request: "request", mode: .lightning, decoded: .bolt11(amountSats: 1000, description: nil)).carriesAmount)
     }
 
-    func testAmountLockedBolt11WithZeroAmount() {
-        XCTAssertTrue(PaymentRequestDecoder.amountLocked(.bolt11(amountSats: 0, description: nil)))
+    func testCarriesAmountBolt11WithZeroAmount() {
+        XCTAssertTrue(SendAmountDestination.melt(request: "request", mode: .lightning, decoded: .bolt11(amountSats: 0, description: nil)).carriesAmount)
     }
 
-    func testAmountLockedBolt11NoAmount() {
-        XCTAssertFalse(PaymentRequestDecoder.amountLocked(.bolt11(amountSats: nil, description: nil)))
+    func testCarriesAmountBolt11NoAmount() {
+        XCTAssertFalse(SendAmountDestination.melt(request: "request", mode: .lightning, decoded: .bolt11(amountSats: nil, description: nil)).carriesAmount)
     }
 
-    func testAmountLockedBolt12WithAmount() {
-        XCTAssertTrue(PaymentRequestDecoder.amountLocked(.bolt12(amountSats: 500, description: nil)))
+    func testCarriesAmountBolt12WithAmount() {
+        XCTAssertTrue(SendAmountDestination.melt(request: "request", mode: .lightning, decoded: .bolt12(amountSats: 500, description: nil)).carriesAmount)
     }
 
-    func testAmountLockedBolt12NoAmount() {
-        XCTAssertFalse(PaymentRequestDecoder.amountLocked(.bolt12(amountSats: nil, description: nil)))
+    func testCarriesAmountBolt12NoAmount() {
+        XCTAssertFalse(SendAmountDestination.melt(request: "request", mode: .lightning, decoded: .bolt12(amountSats: nil, description: nil)).carriesAmount)
     }
 
-    func testAmountLockedLightningAddressAlwaysFalse() {
-        XCTAssertFalse(PaymentRequestDecoder.amountLocked(.lightningAddress("user@example.com")))
+    func testCarriesAmountLightningAddressAlwaysFalse() {
+        XCTAssertFalse(SendAmountDestination.melt(request: "request", mode: .lightning, decoded: .lightningAddress("user@example.com")).carriesAmount)
     }
 
-    func testAmountLockedOnchainAlwaysFalse() {
-        XCTAssertFalse(PaymentRequestDecoder.amountLocked(.onchain("1A1z")))
+    func testCarriesAmountOnchainAlwaysFalse() {
+        XCTAssertFalse(SendAmountDestination.melt(request: "request", mode: .lightning, decoded: .onchain("1A1z")).carriesAmount)
     }
 
-    func testAmountLockedUnrecognizedAlwaysFalse() {
-        XCTAssertFalse(PaymentRequestDecoder.amountLocked(.unrecognized))
+    func testCarriesAmountUnrecognizedAlwaysFalse() {
+        XCTAssertFalse(SendAmountDestination.melt(request: "request", mode: .lightning, decoded: .unrecognized).carriesAmount)
     }
 
     // MARK: - shortRepresentation
@@ -280,28 +280,6 @@ final class PaymentRequestDecoderTests: XCTestCase {
             mints: []
         )
         XCTAssertNil(PaymentRequestDecoder.amountLabel(for: summary))
-    }
-
-    // MARK: - suggestedMode
-
-    func testSuggestedModeOnchain() {
-        XCTAssertEqual(PaymentRequestDecoder.suggestedMode(.onchain("1A1z")), .onchain)
-    }
-
-    func testSuggestedModeBolt11() {
-        XCTAssertEqual(PaymentRequestDecoder.suggestedMode(.bolt11(amountSats: nil, description: nil)), .lightning)
-    }
-
-    func testSuggestedModeBolt12() {
-        XCTAssertEqual(PaymentRequestDecoder.suggestedMode(.bolt12(amountSats: nil, description: nil)), .lightning)
-    }
-
-    func testSuggestedModeLightningAddress() {
-        XCTAssertEqual(PaymentRequestDecoder.suggestedMode(.lightningAddress("user@example.com")), .lightning)
-    }
-
-    func testSuggestedModeUnrecognizedNil() {
-        XCTAssertNil(PaymentRequestDecoder.suggestedMode(.unrecognized))
     }
 
     // MARK: - Locked receive request (NUT-10 P2PK lock in a NUT-18 request)

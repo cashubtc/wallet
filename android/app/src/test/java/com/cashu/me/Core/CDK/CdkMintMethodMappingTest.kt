@@ -34,6 +34,43 @@ class CdkMintMethodMappingTest {
     }
 
     @Test
+    fun amountlessBolt11MeltUsesEnteredAmountInMillisatoshis() {
+        val options = meltOptionsForLightningRequest(
+            decoded = PaymentRequestDecodeResult.Bolt11(amountSats = null, description = null),
+            amountSats = 21L,
+        )
+
+        assertTrue(options is CdkMeltOptions.Amountless)
+        assertEquals(21_000uL, (options as CdkMeltOptions.Amountless).amountMsat.value)
+        assertEquals(
+            null,
+            meltOptionsForLightningRequest(
+                decoded = PaymentRequestDecodeResult.Bolt11(amountSats = 2_500L, description = null),
+                amountSats = 21L,
+            ),
+        )
+    }
+
+    @Test
+    fun amountlessBolt11MeltFailsClosedUnlessAdvertisedTrueForSat() {
+        fun reports(vararg methods: CdkMeltMethodSettings) =
+            nuts(nut05Methods = methods.toList()).reportsAmountlessBolt11Melt()
+
+        assertEquals(false, reports())
+        assertEquals(false, reports(meltMethod(CdkPaymentMethod.Bolt11, CdkCurrencyUnit.Sat, amountless = null)))
+        assertEquals(false, reports(meltMethod(CdkPaymentMethod.Bolt11, CdkCurrencyUnit.Sat, amountless = false)))
+        assertEquals(false, reports(meltMethod(CdkPaymentMethod.Bolt11, CdkCurrencyUnit.Usd, amountless = true)))
+        assertEquals(false, reports(meltMethod(CdkPaymentMethod.Bolt12, CdkCurrencyUnit.Sat, amountless = true)))
+        assertEquals(
+            true,
+            reports(
+                meltMethod(CdkPaymentMethod.Bolt12, CdkCurrencyUnit.Sat),
+                meltMethod(CdkPaymentMethod.Bolt11, CdkCurrencyUnit.Sat, amountless = true),
+            ),
+        )
+    }
+
+    @Test
     fun amountCarryingBolt12DoesNotOverrideRequestAmount() {
         val options = meltOptionsForLightningRequest(
             decoded = PaymentRequestDecodeResult.Bolt12(amountSats = 21L, description = null),
@@ -166,14 +203,18 @@ class CdkMintMethodMappingTest {
             description = description,
         )
 
-    private fun meltMethod(method: CdkPaymentMethod, unit: CdkCurrencyUnit) =
+    private fun meltMethod(
+        method: CdkPaymentMethod,
+        unit: CdkCurrencyUnit,
+        amountless: Boolean? = null,
+    ) =
         CdkMeltMethodSettings(
             method = method,
             unit = unit,
             methodName = null,
             minAmount = null,
             maxAmount = null,
-            amountless = null,
+            amountless = amountless,
         )
 
     private fun nuts(

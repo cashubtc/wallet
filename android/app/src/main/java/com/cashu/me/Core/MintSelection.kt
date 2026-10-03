@@ -27,8 +27,9 @@ internal fun recommendedSendMint(
 internal fun compatibleMintsForMeltPayment(
     mints: List<MintInfo>,
     paymentMethod: PaymentMethodKind,
+    amountless: Boolean = false,
 ): List<MintInfo> =
-    mints.filter { paymentMethod in it.effectiveMeltMethods }
+    mints.filter { it.canMelt(paymentMethod, amountless) }
 
 internal fun selectMintForMeltPayment(
     mints: List<MintInfo>,
@@ -36,8 +37,9 @@ internal fun selectMintForMeltPayment(
     activeMintUrl: String?,
     paymentMethod: PaymentMethodKind,
     minimumAmount: Long?,
+    amountless: Boolean = false,
 ): MintInfo? {
-    val compatible = compatibleMintsForMeltPayment(mints, paymentMethod)
+    val compatible = compatibleMintsForMeltPayment(mints, paymentMethod, amountless)
     val candidates = affordableOrAll(compatible, minimumAmount)
     val selected = normalizedMintUrlForSelection(selectedMintUrl)
     val active = normalizedMintUrlForSelection(activeMintUrl)

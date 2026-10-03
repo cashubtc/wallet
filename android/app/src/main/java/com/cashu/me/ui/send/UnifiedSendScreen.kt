@@ -84,14 +84,18 @@ import com.cashu.me.Core.Wallet.userFacingWalletMessage
 import com.cashu.me.Core.Wallet.walletMessage
 import com.cashu.me.Core.WalletManager
 import com.cashu.me.Core.compatibleMintsForCashuPaymentRequest
+import com.cashu.me.Core.compatibleMintsForMeltPayment
+import com.cashu.me.Core.isAmountlessBolt11
 import com.cashu.me.Core.normalizedMintUrlForSelection
 import com.cashu.me.Core.routeForCashuPaymentRequest
+import com.cashu.me.Core.selectMintForMeltPayment
 import com.cashu.me.Models.MeltPaymentResult
 import com.cashu.me.Models.MeltQuoteInfo
 import com.cashu.me.Models.MeltSettlement
 import com.cashu.me.Models.MintInfo
 import com.cashu.me.Models.MintQuoteInfo
 import com.cashu.me.Models.MintQuoteState
+import com.cashu.me.Models.PaymentMethodKind
 import com.cashu.me.R
 import com.cashu.me.ui.components.AmountFlipDisplay
 import com.cashu.me.ui.components.AmountText
@@ -242,8 +246,22 @@ fun UnifiedSendScreen(
         btcPrice = entryFiatPrice ?: 0.0,
     )
     var previousEntryContext by remember { mutableStateOf(entryContext) }
-    val activeMintUrl = selectedMintUrl ?: walletState.activeMint?.url
     val enteredAmount = UnifiedSendAmountEntry.amountSats(amount, entryContext)
+    // An amountless BOLT11 can only go to mints advertising NUT-05 `amountless`
+    // (iOS activeMeltMint parity); every other rail keeps the chosen mint.
+    val amountlessBolt11 = (locked as? LockedRail.Melt)?.decoded?.isAmountlessBolt11 == true
+    val activeMintUrl = if (amountlessBolt11) {
+        selectMintForMeltPayment(
+            mints = walletState.mints,
+            selectedMintUrl = selectedMintUrl,
+            activeMintUrl = walletState.activeMint?.url,
+            paymentMethod = PaymentMethodKind.Bolt11,
+            minimumAmount = enteredAmount.takeIf { it > 0L },
+            amountless = true,
+        )?.url
+    } else {
+        selectedMintUrl ?: walletState.activeMint?.url
+    }
     val confirmAmount = locked?.let { rail ->
         when (rail) {
             is LockedRail.Melt -> rail.knownAmount ?: enteredAmount
@@ -263,7 +281,11 @@ fun UnifiedSendScreen(
     }
     val paymentMintChoices = (locked as? LockedRail.Creq)?.let { rail ->
         compatibleMintsForCashuPaymentRequest(rail.decoded.summary, walletState.mints)
-    } ?: walletState.mints
+    } ?: if (amountlessBolt11) {
+        compatibleMintsForMeltPayment(walletState.mints, PaymentMethodKind.Bolt11, amountless = true)
+    } else {
+        walletState.mints
+    }
     val activeMint = when (val route = cashuRoute) {
         is CashuPaymentRequestRoute.PayWithEcash -> route.mint
         is CashuPaymentRequestRoute.AcquireThenPay -> route.targetMintUrl?.let { target ->

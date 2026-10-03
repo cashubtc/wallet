@@ -417,13 +417,18 @@ class LightningService: ObservableObject {
             throw WalletError.networkError("On-chain payments require an amount before requesting a quote.")
         }
 
+        let amountless = metadata.amountMsat == nil
         let candidates = meltQuoteCandidateMints(
             paymentMethod: paymentMethod,
+            amountless: amountless,
             minimumAmount: invoiceAmountSats ?? amount,
             preferredMintURL: preferredMintURL
         )
 
         guard !candidates.isEmpty else {
+            if amountless, paymentMethod == .bolt11 {
+                throw WalletError.networkError("None of your mints can pay invoices without an amount.")
+            }
             throw WalletError.networkError("No mint supports \(paymentMethod.displayName) payments.")
         }
 
@@ -726,6 +731,7 @@ class LightningService: ObservableObject {
 
     private func meltQuoteCandidateMints(
         paymentMethod: PaymentMethodKind,
+        amountless: Bool = false,
         minimumAmount: UInt64?,
         preferredMintURL: String? = nil
     ) -> [MintInfo] {
@@ -741,13 +747,13 @@ class LightningService: ObservableObject {
                activeMint: activeMint,
                mints: mints
            ) {
-            guard preferredMint.supportedMeltMethods.contains(paymentMethod) else {
+            guard preferredMint.canMelt(paymentMethod, amountless: amountless) else {
                 return []
             }
             return [preferredMint]
         }
 
-        let compatibleMints = mints.filter { $0.supportedMeltMethods.contains(paymentMethod) }
+        let compatibleMints = mints.filter { $0.canMelt(paymentMethod, amountless: amountless) }
         guard !compatibleMints.isEmpty else {
             return []
         }

@@ -1007,6 +1007,7 @@ class CdkWalletGatewayImpl : WalletGateway {
             supportedMintMethods = mintMethods,
             supportedMeltMethods = meltMethods,
             supportsBolt12MintDescription = nuts.reportsBolt12MintDescription(),
+            supportsAmountlessBolt11Melt = nuts.reportsAmountlessBolt11Melt(),
             contacts = contact.orEmpty().map { MintContact(method = it.method, info = it.info) },
             tosUrl = tosUrl,
             software = version?.let { MintSoftware(name = it.name, version = it.version) },

@@ -4,10 +4,13 @@ import com.cashu.me.Core.PaymentRequestDecodeResult
 import com.cashu.me.Core.PaymentRequestDecoder
 import com.cashu.me.Core.TokenParser
 import com.cashu.me.Core.compatibleMintsForCashuPaymentRequest
+import com.cashu.me.Core.isAmountlessBolt11
 import com.cashu.me.Models.MintInfo
+import com.cashu.me.Models.PaymentMethodKind
 
+/** Shown only when no held mint advertises NUT-05 `amountless` (iOS parity). */
 internal const val AmountlessBolt11Hint =
-    "This BOLT11 invoice doesn't include an amount. Ask for an amount-specific invoice before paying."
+    "None of your mints can pay invoices without an amount. Ask for one with the amount set."
 
 internal sealed interface SendDestinationResolution {
     data class Hint(val message: String) : SendDestinationResolution
@@ -50,15 +53,19 @@ internal fun resolveSendDestination(
     }
     return when (decoded) {
         is PaymentRequestDecodeResult.Bolt11 -> {
-            val known = decoded.amountSats
-            if (known == null || known <= 0L) {
+            // An amountless invoice opens amount entry, like a BOLT12 offer —
+            // unless no held mint can pay one, which would dead-end the quote.
+            if (decoded.isAmountlessBolt11 &&
+                walletMints.none { it.canMelt(PaymentMethodKind.Bolt11, amountless = true) }
+            ) {
                 SendDestinationResolution.Hint(AmountlessBolt11Hint)
             } else {
+                val known = decoded.amountSats?.takeIf { it > 0L }
                 SendDestinationResolution.Melt(
-                    PaymentRequestDecoder.encodedLightningRequest(request) ?: request,
-                    decoded,
-                    known,
-                    requiresAmountEntry = false,
+                    request = PaymentRequestDecoder.encodedLightningRequest(request) ?: request,
+                    decoded = decoded,
+                    knownAmount = known,
+                    requiresAmountEntry = known == null,
                 )
             }
         }
