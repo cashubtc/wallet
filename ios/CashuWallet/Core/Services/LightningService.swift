@@ -48,6 +48,41 @@ func meltOptionsForLightningRequest(
     return .amountless(amountMsat: Amount(value: amountSats * 1_000))
 }
 
+/// What Max means for a Lightning or on-chain send: the largest amount a mint
+/// can pay from `balance` once its melt fee reserve is added. `requiredTotal`
+/// quotes the mint and returns amount + fee reserve. The reserve usually tracks
+/// the amount (a percentage with a floor), so each round steps down by the
+/// overshoot and a second quote normally settles it. Nil when nothing fits.
+/// Ecash Max stays the gross balance: its fees are the receiver's.
+func largestPayableMeltAmount(
+    balance: UInt64,
+    rounds: Int = 4,
+    requiredTotal: (UInt64) async throws -> UInt64
+) async throws -> UInt64? {
+    var amount = balance
+    for _ in 0..<rounds {
+        guard amount > 0 else { return nil }
+        try Task.checkCancellation()
+        let total: UInt64
+        do {
+            total = try await requiredTotal(amount)
+        } catch LightningAddressResolverError.amountOutOfRange(let requested, let minimum, let maximum) {
+            let cap = maximum / 1_000
+            guard cap > 0, cap < amount else {
+                throw LightningAddressResolverError.amountOutOfRange(requestedMsat: requested, minMsat: minimum, maxMsat: maximum)
+            }
+            amount = cap
+            continue
+        }
+        try Task.checkCancellation()
+        if total <= balance { return amount }
+        let overshoot = total - balance
+        amount = amount > overshoot ? amount - overshoot : 0
+    }
+    guard amount > 0 else { return nil }
+    throw WalletError.networkError("Couldn’t calculate the maximum amount. Try again or enter an amount.")
+}
+
 // MARK: - Lightning Service
 
 /// Service responsible for Lightning Network operations (NUT-04/NUT-05).

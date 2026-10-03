@@ -69,9 +69,7 @@ internal class LightningAddressResolver(
                 "Lightning address response is missing its maximum amount.",
             )
         if (amountMsat < minSendable || amountMsat > maxSendable) {
-            throw LightningAddressResolutionException.Invalid(
-                "Requested amount is outside the range accepted by the Lightning address.",
-            )
+            throw LightningAddressResolutionException.AmountOutOfRange(minSendable, maxSendable)
         }
 
         val callbackUrl = invoiceCallbackUrl(
@@ -213,6 +211,9 @@ internal sealed class LightningAddressResolutionException(
 ) : IllegalArgumentException(message, cause) {
     class Unavailable(message: String, cause: Throwable? = null) :
         LightningAddressResolutionException(message, cause)
+
+    class AmountOutOfRange(val minMsat: Long, val maxMsat: Long) :
+        LightningAddressResolutionException("Requested amount is outside the range accepted by the Lightning address.")
 
     class Invalid(message: String, cause: Throwable? = null) :
         LightningAddressResolutionException(message, cause)

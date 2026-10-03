@@ -681,3 +681,104 @@ private final class ReplacementJournalStorage: SecureStorageProtocol {
     func deleteSecret(forKey key: String) throws { values.removeValue(forKey: key) }
     func hasSecret(forKey key: String) -> Bool { values[key] != nil }
 }
+
+/// Fee-aware Max for Lightning and on-chain sends. Mirrors Android's
+/// `MeltMaxAmountTest`.
+final class SendMaxMeltAmountTests: XCTestCase {
+    private func largest(
+        balance: UInt64,
+        reserve: @escaping (UInt64) -> UInt64,
+        quotes: inout Int
+    ) async throws -> UInt64? {
+        var count = 0
+        let result = try await largestPayableMeltAmount(balance: balance) { amount in
+            count += 1
+            return amount + reserve(amount)
+        }
+        quotes = count
+        return result
+    }
+
+    func testFlatReserveSettlesOnTheSecondQuote() async throws {
+        var quotes = 0
+        let payable = try await largest(balance: 1_314, reserve: { _ in 13 }, quotes: &quotes)
+        XCTAssertEqual(payable, 1_301)
+        XCTAssertEqual(quotes, 2)
+    }
+
+    func testPercentageReserveWithFloorFitsTheBalance() async throws {
+        var quotes = 0
+        // 1% rounded up, at least 2 sat — a common Lightning backend shape.
+        let reserve: (UInt64) -> UInt64 = { max(2, ($0 + 99) / 100) }
+        let payable = try await largest(balance: 1_314, reserve: reserve, quotes: &quotes)
+        XCTAssertEqual(payable, 1_300)
+        XCTAssertLessThanOrEqual(1_300 + reserve(1_300), 1_314)
+        XCTAssertGreaterThan(1_301 + reserve(1_301), 1_314, "1,300 is the largest amount that fits")
+    }
+
+    func testNoReserveKeepsTheWholeBalanceWithOneQuote() async throws {
+        var quotes = 0
+        let payable = try await largest(balance: 500, reserve: { _ in 0 }, quotes: &quotes)
+        XCTAssertEqual(payable, 500)
+        XCTAssertEqual(quotes, 1)
+    }
+
+    func testBalanceBelowTheReserveFloorPaysNothing() async throws {
+        var quotes = 0
+        let payable = try await largest(balance: 1, reserve: { _ in 2 }, quotes: &quotes)
+        XCTAssertNil(payable)
+    }
+
+    func testRecipientMaximumIsAppliedBeforeCalculatingFees() async throws {
+        var candidates: [UInt64] = []
+        let result = try await largestPayableMeltAmount(balance: 500) { amount in
+            candidates.append(amount)
+            if amount > 300 {
+                throw LightningAddressResolverError.amountOutOfRange(requestedMsat: amount * 1_000, minMsat: 1_000, maxMsat: 300_999)
+            }
+            return amount + 2
+        }
+        XCTAssertEqual(result, 300)
+        XCTAssertEqual(candidates, [500, 300])
+    }
+
+    func testRecipientCapStillLeavesRoomForFees() async throws {
+        let result = try await largestPayableMeltAmount(balance: 500) { amount in
+            if amount > 499 {
+                throw LightningAddressResolverError.amountOutOfRange(requestedMsat: amount * 1_000, minMsat: 1_000, maxMsat: 499_000)
+            }
+            return amount + 2
+        }
+        XCTAssertEqual(result, 498)
+    }
+
+    func testRecipientMinimumDoesNotCauseAnUpwardRetry() async {
+        do {
+            _ = try await largestPayableMeltAmount(balance: 100) { amount in
+                throw LightningAddressResolverError.amountOutOfRange(requestedMsat: amount * 1_000, minMsat: 200_000, maxMsat: 500_000)
+            }
+            XCTFail("Expected the recipient minimum error")
+        } catch LightningAddressResolverError.amountOutOfRange { } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testInconclusiveQuotesDoNotReportAnEmptyBalance() async {
+        do {
+            _ = try await largestPayableMeltAmount(balance: 100, rounds: 1) { $0 + 2 }
+            XCTFail("Expected an inconclusive calculation error")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("Try again or enter an amount"))
+        }
+    }
+
+    func testQuoteFailuresReachTheCaller() async {
+        struct MintDown: Error {}
+        do {
+            _ = try await largestPayableMeltAmount(balance: 100) { _ in throw MintDown() }
+            XCTFail("expected the quote error")
+        } catch {
+            XCTAssertTrue(error is MintDown)
+        }
+    }
+}

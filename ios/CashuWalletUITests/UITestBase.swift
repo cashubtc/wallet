@@ -326,4 +326,20 @@ extension XCUIElement {
 
         return exists && isEnabled && isHittable
     }
+
+    /// Polls `isEnabled` until it matches, for controls whose state follows
+    /// async work (a settling balance) rather than the tap just before it.
+    func waitUntilEnabled(_ enabled: Bool, timeout: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+
+        while Date() < deadline {
+            if exists && isEnabled == enabled {
+                return true
+            }
+
+            RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.1))
+        }
+
+        return exists && isEnabled == enabled
+    }
 }

@@ -1151,6 +1151,10 @@ struct UnifiedSendView: View {
     @State private var amountString = ""
     @State private var meltQuote: MeltQuoteInfo?
     @State private var meltQuoteTask: Task<Void, Never>?
+    /// Fee-aware Max for melts quotes the mint before filling the keypad.
+    @State private var maxTask: Task<Void, Never>?
+    @State private var isFindingMax = false
+    @State private var maxFeedback: String?
     @State private var selectedMint: MintInfo?
     /// True when the mint accepted the melt for asynchronous (NUT-05) settlement —
     /// typical for on-chain — so the success screen says "processing", not "sent".
@@ -1427,7 +1431,19 @@ struct UnifiedSendView: View {
                 .flatBottomSheetSurface()
             }
             .onChange(of: destination) { handleDestinationChange() }
+            .onChange(of: currentAmountMint?.id) { _, _ in
+                cancelMax()
+                maxFeedback = nil
+                if step == .amount { errorMessage = nil }
+            }
+            .onChange(of: step) { _, _ in
+                cancelMax()
+                maxFeedback = nil
+            }
             .onChange(of: entryUnit) { oldUnit, newUnit in
+                cancelMax()
+                maxFeedback = nil
+                errorMessage = nil
                 amountString = AmountFormatter.entryConverted(raw: amountString, from: oldUnit, to: newUnit)
             }
             .onAppear {
@@ -1455,6 +1471,7 @@ struct UnifiedSendView: View {
             .onDisappear {
                 autoAdvanceTask?.cancel()
                 feeTask?.cancel()
+                maxTask?.cancel()
                 cancelMeltQuote()
             }
         }
@@ -1787,6 +1804,10 @@ struct UnifiedSendView: View {
                         errorNotice(errorMessage)
                             .padding(.horizontal)
                             .padding(.top, 12)
+                    } else if let maxFeedback {
+                        InlineNotice(message: maxFeedback, severity: .info, isCentered: true)
+                            .padding(.horizontal)
+                            .padding(.top, 12)
                     }
 
                     Spacer(minLength: 0)
@@ -1799,7 +1820,15 @@ struct UnifiedSendView: View {
                             .padding(.bottom, 8)
                     }
 
-                    NumberPadAmountInput(amountString: $amountString, unit: entryUnit)
+                    NumberPadAmountInput(amountString: Binding(
+                        get: { amountString },
+                        set: { value in
+                            cancelMax()
+                            errorMessage = nil
+                            maxFeedback = nil
+                            amountString = value
+                        }
+                    ), unit: entryUnit)
                         .padding(.horizontal, NumberPadMetrics.gutter)
 
                     Button(action: continueFromAmount) {
@@ -1808,7 +1837,7 @@ struct UnifiedSendView: View {
                     // Quiet tonal fill, matching Android's gray keypad CTA —
                     // the white ink stays reserved for the pay-confirm commit.
                     .flatSheetSecondaryButton()
-                    .disabled(amountSats == 0)
+                    .disabled(amountSats == 0 || isFindingMax)
                     .padding(.horizontal)
                     .padding(.top, 12)
                     .padding(.bottom, 16)
@@ -1824,13 +1853,18 @@ struct UnifiedSendView: View {
     }
 
     private func amountMintRow(_ mint: MintInfo) -> some View {
-        AmountEntryMintSelector(
+        let isMelt: Bool = { if case .melt = locked { return true }; return false }()
+        return AmountEntryMintSelector(
             direction: .source,
             mint: mint,
             balanceText: AmountFormatter.sats(mint.balance, useBitcoinSymbol: settings.useBitcoinSymbol),
             // Gated on a spendable balance, matching Send Ecash — this row
             // offered a Max on an empty mint that filled in zero.
             onUseMax: mint.balance > 0 ? useMax : nil,
+            isFindingMax: isFindingMax,
+            maxHint: isMelt
+                ? "Fill the amount with the most this mint can pay after the network fee"
+                : AmountEntryMintSelector.grossMaxHint,
             onChooseMint: canChangeMint ? {
                 HapticFeedback.selection()
                 showingMintPicker = true
@@ -1838,14 +1872,68 @@ struct UnifiedSendView: View {
         )
     }
 
+    /// Lightning and on-chain payments also spend the mint's fee reserve, so
+    /// Max asks the mint what fits instead of filling the gross balance (which
+    /// the confirm step would then reject). Cashu requests pay ecash: gross.
     private func useMax() {
         guard let mint = currentAmountMint else { return }
         HapticFeedback.selection()
-        amountString = AmountFormatter.entryConverted(raw: String(mint.balance), from: .sats, to: entryUnit)
+        maxTask?.cancel()
+        guard case let .melt(request, mode, decoded) = locked else {
+            fillAmount(sats: mint.balance)
+            return
+        }
+        errorMessage = nil
+        maxFeedback = nil
+        isFindingMax = true
+        let entryBeforeMax = amountString
+        maxTask = Task { @MainActor in
+            defer { if !Task.isCancelled { isFindingMax = false } }
+            do {
+                let payable = try await largestPayableMeltAmount(balance: mint.balance) { amount in
+                    do {
+                        return try await requestMeltQuote(
+                            request: request, mode: mode, decoded: decoded,
+                            amount: amount, mintURL: mint.url
+                        ).totalAmount
+                    } catch NFCPaymentError.insufficientBalance(let required, _) {
+                        // The quote didn't fit; its required total is what we need.
+                        return required
+                    }
+                }
+                // Typing or leaving the keypad meanwhile wins over a late result.
+                guard !Task.isCancelled, step == .amount, amountString == entryBeforeMax,
+                      currentAmountMint?.id == mint.id else { return }
+                if let payable {
+                    fillAmount(sats: payable)
+                    if payable < mint.balance {
+                        maxFeedback = "Amount adjusted for fees and the recipient’s payment limits."
+                    }
+                } else {
+                    presentError("This mint's balance can't cover the network fee for this payment." + (canChangeMint ? " Choose another mint." : ""), severity: .caution)
+                }
+            } catch {
+                guard !Task.isCancelled, step == .amount, amountString == entryBeforeMax,
+                      currentAmountMint?.id == mint.id else { return }
+                presentError(from: error)
+            }
+        }
+    }
+
+    private func cancelMax() {
+        maxTask?.cancel()
+        maxTask = nil
+        isFindingMax = false
+    }
+
+    private func fillAmount(sats: UInt64) {
+        amountString = AmountFormatter.entryConverted(raw: String(sats), from: .sats, to: entryUnit)
     }
 
     private func continueFromAmount() {
-        guard amountSats > 0 else { return }
+        guard amountSats > 0, !isFindingMax else { return }
+        maxTask?.cancel()
+        isFindingMax = false
         HapticFeedback.selection()
         switch locked {
         case .melt:
@@ -2220,27 +2308,17 @@ struct UnifiedSendView: View {
         meltQuoteTask = Task { @MainActor in
             defer { if !Task.isCancelled { isWorking = false } }
             do {
-                let quote: MeltQuoteInfo
-                switch mode {
-                case .onchain:
-                    guard amount > 0 else { return }
-                    quote = try await walletManager.createOnchainMeltQuote(
-                        address: request, amount: amount, preferredMintURL: mint.url
-                    )
-                case .lightning:
-                    if case .lightningAddress = decoded {
-                        guard amount > 0 else { return }
-                        quote = try await walletManager.createHumanReadableMeltQuote(
-                            address: request, amount: amount, preferredMintURL: mint.url
-                        )
-                    } else {
-                        quote = try await walletManager.createMeltQuote(
-                            request: request,
-                            amount: amountSats > 0 ? amountSats : nil,
-                            preferredMintURL: mint.url
-                        )
-                    }
-                }
+                // Addresses have no amount of their own; invoices and offers may.
+                let isAddress: Bool = {
+                    if mode == .onchain { return true }
+                    if case .lightningAddress = decoded { return true }
+                    return false
+                }()
+                guard amount > 0 || !isAddress else { return }
+                let quote = try await requestMeltQuote(
+                    request: request, mode: mode, decoded: decoded,
+                    amount: amount, mintURL: mint.url
+                )
                 guard !Task.isCancelled, step == .confirm else { return }
                 meltQuote = quote
                 if let resolved = mintInfo(for: quote) { selectedMint = resolved }
@@ -2250,6 +2328,34 @@ struct UnifiedSendView: View {
                 // on confirm so it can never be presented as a failed melt.
                 withAnimation(.smooth(duration: 0.3)) { presentError(from: error) }
             }
+        }
+    }
+
+    /// One melt quote for the locked destination at `amount` (0 lets an
+    /// invoice or offer that carries its own amount use it).
+    private func requestMeltQuote(
+        request: String,
+        mode: MeltView.MeltMode,
+        decoded: PaymentRequestDecodeResult,
+        amount: UInt64,
+        mintURL: String
+    ) async throws -> MeltQuoteInfo {
+        switch mode {
+        case .onchain:
+            return try await walletManager.createOnchainMeltQuote(
+                address: request, amount: amount, preferredMintURL: mintURL
+            )
+        case .lightning:
+            if case .lightningAddress = decoded {
+                return try await walletManager.createHumanReadableMeltQuote(
+                    address: request, amount: amount, preferredMintURL: mintURL
+                )
+            }
+            return try await walletManager.createMeltQuote(
+                request: request,
+                amount: amount > 0 ? amount : nil,
+                preferredMintURL: mintURL
+            )
         }
     }
 

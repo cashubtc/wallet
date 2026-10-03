@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -26,6 +27,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
@@ -34,6 +36,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -276,6 +279,8 @@ fun AmountEntryMintSelector(
     balanceText: String? = null,
     onPickMint: (() -> Unit)? = null,
     onUseMax: (() -> Unit)? = null,
+    // Max is asking the mint what fits (Lightning and on-chain fee reserve).
+    isFindingMax: Boolean = false,
 ) {
     val description = "${direction.label} ${mint.name}"
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -322,13 +327,28 @@ fun AmountEntryMintSelector(
                 if (onUseMax != null) {
                     TextButton(
                         onClick = onUseMax,
+                        enabled = !isFindingMax,
                         modifier = Modifier
                             .defaultMinSize(minWidth = MinimumTouchTarget, minHeight = MinimumTouchTarget)
-                            .semantics { contentDescription = "Send maximum" },
+                            .semantics {
+                                contentDescription = "Send maximum"
+                                if (isFindingMax) stateDescription = "Checking the network fee"
+                            },
                         contentPadding = PaddingValues(horizontal = 0.dp),
                     ) {
-                        Text("Max", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurface)
+                        // The label keeps the button's width while the spinner stands in.
+                        Box(contentAlignment = Alignment.Center) {
+                            Text("Max", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.alpha(if (isFindingMax) 0f else 1f))
+                            if (isFindingMax) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                            }
+                        }
                     }
                 }
             }

@@ -53,6 +53,7 @@ class FakeWalletGateway(
         private set
     var beforeNPCMint: suspend () -> Unit = {}
     var beforeMeltQuote: suspend () -> Unit = {}
+    var lastMeltQuoteAmountSats: Long? = null
     var beforeMeltPayment: suspend () -> Unit = {}
     var pendingSendClaimed = false
     private val transactions = initialTransactions.toMutableList()
@@ -279,6 +280,7 @@ class FakeWalletGateway(
     ): MeltQuoteInfo {
         beforeMeltQuote()
         failIfRequested()
+        lastMeltQuoteAmountSats = amountSats
         val mintUrl = normalize(preferredMintURL ?: walletUrls.first())
         val quote = MeltQuoteInfo(
             id = "melt-quote-${sequence.getAndIncrement()}",
