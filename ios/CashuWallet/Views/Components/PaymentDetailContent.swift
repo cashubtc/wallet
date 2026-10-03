@@ -68,9 +68,22 @@ struct PaymentDetailPair<Value: View>: View {
 /// Fits the QR around the receipt's actual text, keeping related details together.
 /// Scrolling remains available when accessibility text needs more than one screen.
 struct PaymentDetailContent<Hero: View, Details: View>: View {
+    /// When set, the QR keeps the size it settled at for this key: details that
+    /// change in place afterwards (a status value, a notice) scroll instead of
+    /// shrinking the code someone may be scanning. A new key, container size or
+    /// text size measures again.
+    var stableSizeKey: AnyHashable? = nil
     @ViewBuilder let hero: (CGFloat) -> Hero
     @ViewBuilder let details: () -> Details
     @State private var detailsHeight: CGFloat = 0
+    @State private var sizeLatch: SizeLatch?
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    private struct SizeLatch: Equatable {
+        let key: AnyHashable
+        let container: CGSize
+        let typeSize: DynamicTypeSize
+    }
 
     var body: some View {
         GeometryReader { geometry in
@@ -82,7 +95,14 @@ struct PaymentDetailContent<Hero: View, Details: View>: View {
                     details()
                         .environment(\.compactPaymentDetails, geometry.size.height < 600)
                         .fixedSize(horizontal: false, vertical: true)
-                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { detailsHeight = $0 }
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                            let latch = stableSizeKey.map {
+                                SizeLatch(key: $0, container: geometry.size, typeSize: dynamicTypeSize)
+                            }
+                            if let latch, latch == sizeLatch, detailsHeight > 0 { return }
+                            detailsHeight = height
+                            if height > 0 { sizeLatch = latch }
+                        }
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)

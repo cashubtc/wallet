@@ -143,7 +143,7 @@ struct TransactionDetailView: View {
         }
         .task(id: monitoredQuoteID) {
             guard let quoteID = monitoredQuoteID else { return }
-            if seed.hasActionablePaymentCode {
+            if seed.monitorsMintQuoteWhileOpen {
                 await walletManager.monitorDisplayedMintQuote(quoteID: quoteID, homeHaptic: true)
             } else {
                 // Expired receipts still get a final late-payment recovery check.
@@ -169,16 +169,19 @@ struct TransactionDetailView: View {
         VStack(spacing: 24) {
             // Receipt amounts use the same primary/secondary ordering
             // as Home and History. The glyph above carries state colour.
-            TransactionReceiptAmountPair(
-                transaction: transaction,
-                role: showsQR ? .amountCompact : .amountConfirm,
-                preferredPrimary: settings.homeBalancePrimary,
-                showFiat: settings.showFiatBalance,
-                btcPrice: priceService.btcPriceUSD,
-                currencyCode: settings.bitcoinPriceCurrency,
-                useBitcoinSymbol: settings.useBitcoinSymbol
-            )
-            .padding(.top, heroSlotIsEmpty ? 16 : 0)
+            // An unfunded deposit address has no amount to show yet.
+            if !transaction.isUnfundedAddress {
+                TransactionReceiptAmountPair(
+                    transaction: transaction,
+                    role: showsQR ? .amountCompact : .amountConfirm,
+                    preferredPrimary: settings.homeBalancePrimary,
+                    showFiat: settings.showFiatBalance,
+                    btcPrice: priceService.btcPriceUSD,
+                    currencyCode: settings.bitcoinPriceCurrency,
+                    useBitcoinSymbol: settings.useBitcoinSymbol
+                )
+                .padding(.top, heroSlotIsEmpty ? 16 : 0)
+            }
 
             // Detail rows on canvas, led by Status + Date. Type is
             // omitted — the nav title names it.
@@ -205,6 +208,7 @@ struct TransactionDetailView: View {
                 technicalDetailsRow
             }
             .padding(.horizontal, 4)
+            .padding(.top, transaction.isUnfundedAddress && heroSlotIsEmpty ? 16 : 0)
 
             if offersManualClaimCheck {
                 switch manualClaimCheckResult {
@@ -332,7 +336,14 @@ struct TransactionDetailView: View {
             case .lightning: return "Paid"
             case .onchain:   return "Confirmed"
             }
-        case .pending: return "Pending"
+        case .pending:
+            // An incoming deposit names its stage — the same words its History
+            // row and the receive sheet use (DESIGN.md → On-chain receive status).
+            if transaction.kind == .onchain, transaction.type == .incoming,
+               let stage = transaction.statusNote {
+                return stage
+            }
+            return "Pending"
         case .failed:  return "Failed"
         case .expired: return "Expired"
         }

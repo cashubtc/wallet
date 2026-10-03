@@ -71,3 +71,24 @@ internal fun findExistingAmountlessBolt12Offer(
         quote.unit.equals(unit, ignoreCase = true) &&
         quote.description == description
 }
+
+/**
+ * The deposit address Receive hands out again: the newest on-chain quote at
+ * this mint that the mint has not credited and that has not expired (iOS
+ * `MintQuoteDomain.reusableOnchainAddress` parity). Once money arrives the
+ * next Receive gets a fresh address. A deposit still in the mempool does not
+ * block reuse — the sheet then shows it.
+ */
+internal fun findReusableOnchainAddress(
+    quotes: List<MintQuoteInfo>,
+    mintUrl: String,
+    nowEpochSeconds: Long,
+): MintQuoteInfo? = quotes
+    .filter { quote ->
+        quote.paymentMethod == PaymentMethodKind.Onchain &&
+            quote.mintUrl?.let { com.cashu.me.Core.CDK.mintRemovalUrlsMatch(it, mintUrl) } == true &&
+            quote.amountPaid == 0L &&
+            quote.amountIssued == 0L &&
+            quote.expiryEpochSeconds.let { it == null || it <= 0 || it > nowEpochSeconds }
+    }
+    .maxWithOrNull(compareBy<MintQuoteInfo> { it.updatedAtEpochSeconds }.thenBy { it.id })

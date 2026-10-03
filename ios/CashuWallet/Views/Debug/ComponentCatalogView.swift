@@ -20,10 +20,15 @@ struct ComponentCatalogView: View {
     /// Which page to render. Split in two so each fits one screenshot without
     /// scrolling, and so each pairs with its Android counterpart.
     enum Page {
-        case matrix, variants, activity
+        case matrix, variants, activity, onchainStatus
 
         init(rawValue: String?) {
-            self = rawValue == "activity" ? .activity : rawValue == "variants" ? .variants : .matrix
+            switch rawValue {
+            case "activity": self = .activity
+            case "variants": self = .variants
+            case "onchain-status": self = .onchainStatus
+            default: self = .matrix
+            }
         }
     }
 
@@ -37,6 +42,8 @@ struct ComponentCatalogView: View {
             switch page {
             case .activity:
                 ActivityDetailCatalog()
+            case .onchainStatus:
+                OnchainStatusCatalog()
             case .matrix:
                 noticeMatrix
                 bannerSection
@@ -149,6 +156,34 @@ struct ComponentCatalogView: View {
     }
 }
 
+/// Steps the on-chain Status row through every value so a UI test can check
+/// the row never changes size (DESIGN.md → On-chain receive status).
+private struct OnchainStatusCatalog: View {
+    @State private var index = 0
+    @State private var retries = 0
+    private let statuses: [OnchainDepositStatus] = [
+        .waiting,
+        .inMempool(amount: 2_317),
+        .confirming(amount: 2_317, confirmations: 1),
+        .confirming(amount: 300_000, confirmations: 45),
+        .adding(amount: 300_000),
+        .retrying(amount: 300_000, needsAttention: false),
+        .retrying(amount: 300_000, needsAttention: true),
+        .expired,
+    ]
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Text("On-chain status").font(.title)
+            OnchainDepositStatusRow(status: statuses[index], useBitcoinSymbol: true) { retries += 1 }
+            Button("Next status") { index = (index + 1) % statuses.count }
+                .accessibilityIdentifier("next-onchain-status")
+            Text("Retries: \(retries)")
+                .accessibilityIdentifier("onchain-status-retries")
+        }
+    }
+}
+
 /// Deterministic receipts for native UI checks; no wallet initialization or mint is needed.
 private struct ActivityDetailCatalog: View {
     @EnvironmentObject private var walletManager: WalletManager
@@ -179,7 +214,20 @@ private struct ActivityDetailCatalog: View {
             .init(id: "received-bitcoin", amount: 2100, type: .incoming, kind: .onchain,
                   date: date, status: .completed, mintUrl: "https://mint.example",
                   preimage: "0123456789abcdef0123456789abcdef", invoice: "bc1qfixture"),
+            onchainDeposit(id: "unfunded-bitcoin", amount: 0, note: "Waiting for deposit", funded: false),
+            onchainDeposit(id: "mempool-bitcoin", amount: 2317, note: "In mempool", funded: true),
         ]
+    }
+
+    private func onchainDeposit(id: String, amount: UInt64, note: String, funded: Bool) -> WalletTransaction {
+        var deposit = WalletTransaction(
+            id: id, amount: amount, type: .incoming, kind: .onchain, date: date, status: .pending,
+            statusNote: note, mintUrl: "https://mint.example",
+            preimage: funded ? "0123456789abcdef0123456789abcdef" : nil, invoice: "bc1qfixtureaddress"
+        )
+        deposit.quoteId = id
+        deposit.isUnfundedAddress = !funded
+        return deposit
     }
 
     var body: some View {

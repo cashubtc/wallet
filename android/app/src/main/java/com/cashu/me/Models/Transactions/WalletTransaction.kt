@@ -33,6 +33,9 @@ data class WalletTransaction(
     val isPendingReceiveToken: Boolean = false,
     /** BOLT11 mint quote still awaiting payment — titles the row "Lightning invoice". */
     val isUnpaidInvoice: Boolean = false,
+    /** On-chain deposit address nothing has reached yet — titles the row
+     * "Bitcoin address" and carries no amount until a deposit is seen. */
+    val isUnfundedAddress: Boolean = false,
     /** Explicit CDK method; absent in older cached history. */
     val paymentMethod: PaymentMethodKind? = null,
 ) {

@@ -182,6 +182,75 @@ final class ActivityDetailUITests: XCTestCase {
         add(attachment)
     }
 
+    func testOnchainStatusRowKeepsItsSizeAcrossEveryStage() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchEnvironment = ["SHOW_COMPONENT_CATALOG": "onchain-status", "CI_INTEGRATION_TEST": "1"]
+        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launch()
+        defer { app.terminate() }
+
+        let row = app.descendants(matching: .any).matching(identifier: "cashu.receive.onchain-status").firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        let next = app.buttons["next-onchain-status"]
+        let height = row.frame.height
+        for expected in [
+            "Waiting for deposit",
+            "2,317 sats, in mempool",
+            "2,317 sats, 1 confirmation",
+            "300,000 sats, 45 confirmations",
+            "Adding 300,000 sats to wallet",
+            "300,000 sats, retrying",
+            "300,000 sats, not added to your wallet yet. It's safe and we'll keep trying.",
+            "Expired",
+        ] {
+            XCTAssertEqual(row.value as? String, expected)
+            XCTAssertEqual(row.frame.height, height, accuracy: 0.5, "The Status row must not change size")
+            if expected.contains("not added") {
+                // Only now is the row the retry button.
+                XCTAssertEqual(row.elementType, .button)
+                row.tap()
+                XCTAssertEqual(app.staticTexts["onchain-status-retries"].label, "Retries: 1")
+            } else {
+                XCTAssertNotEqual(row.elementType, .button)
+            }
+            next.tap()
+        }
+    }
+
+    func testDepositReceiptKeepsItsQROnlyUntilMoneyIsSeen() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchEnvironment = ["SHOW_COMPONENT_CATALOG": "activity", "CI_INTEGRATION_TEST": "1"]
+        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launch()
+        defer { app.terminate() }
+
+        let unfunded = app.buttons["unfunded-bitcoin"]
+        XCTAssertTrue(unfunded.waitForExistence(timeout: 10))
+        unfunded.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        func statusRow(_ value: String) -> XCUIElement {
+            app.descendants(matching: .any)
+                .matching(NSPredicate(format: "label == 'Status' AND value == %@", value)).firstMatch
+        }
+        XCTAssertTrue(statusRow("Waiting for deposit").waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["cashu.history.payment-code"].firstMatch.exists)
+        // Native sheet gesture, starting on the title to avoid scrolling its body.
+        let title = app.navigationBars.firstMatch
+        title.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            .press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.98)))
+        XCTAssertTrue(title.waitForNonExistence(timeout: 5))
+
+        let mempool = app.buttons["mempool-bitcoin"]
+        XCTAssertTrue(mempool.waitForExistence(timeout: 10))
+        mempool.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(statusRow("In mempool").waitForExistence(timeout: 5))
+        XCTAssertFalse(app.descendants(matching: .any)["cashu.history.payment-code"].firstMatch.exists,
+                       "A funded address is not handed out again")
+        XCTAssertFalse(app.buttons["Share"].exists)
+        XCTAssertTrue(app.buttons["Address"].exists)
+    }
+
     func testReceiptLayoutAndVisiblePaymentCode() {
         continueAfterFailure = false
         let app = XCUIApplication()

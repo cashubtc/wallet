@@ -101,9 +101,53 @@ final class MintQuoteDomainTests: XCTestCase {
             storedMemo: nil, description: nil
         ))
     }
+
+    private func onchainQuote(
+        _ id: String,
+        mint: String = "https://mint.example.com",
+        paid: UInt64 = 0,
+        issued: UInt64 = 0,
+        expiry: UInt64 = 0,
+        updatedAt: UInt64,
+        method: PaymentMethod = .onchain
+    ) -> MintQuote {
+        MintQuote(
+            id: id, amount: nil, unit: .sat, request: "bc1q\(id)", state: .unpaid, expiry: expiry,
+            mintUrl: MintUrl(url: mint), amountIssued: Amount(value: issued), amountPaid: Amount(value: paid),
+            updatedAt: updatedAt, estimatedBlocks: nil, paymentMethod: method, secretKey: nil,
+            usedByOperation: nil, version: 0
+        )
+    }
+
+    func testReusableOnchainAddressIsTheNewestUnfundedLiveOne() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let quotes = [
+            onchainQuote("oldest", updatedAt: 100),
+            onchainQuote("abandoned-then-new", updatedAt: 300),
+            onchainQuote("funded", paid: 21, updatedAt: 400),
+            onchainQuote("minted", paid: 21, issued: 21, updatedAt: 500),
+            onchainQuote("expired", expiry: 999_999, updatedAt: 600),
+            onchainQuote("other-mint", mint: "https://other.example", updatedAt: 700),
+            onchainQuote("lightning", updatedAt: 800, method: .bolt11),
+        ]
+        XCTAssertEqual(
+            MintQuoteDomain.reusableOnchainAddress(in: quotes, mintURL: "HTTPS://MINT.EXAMPLE.COM/", now: now)?.id,
+            "abandoned-then-new"
+        )
+        XCTAssertEqual(
+            MintQuoteDomain.reusableOnchainAddress(
+                in: [onchainQuote("live", expiry: 1_000_001, updatedAt: 1)],
+                mintURL: "https://mint.example.com",
+                now: now
+            )?.id,
+            "live"
+        )
+        XCTAssertNil(MintQuoteDomain.reusableOnchainAddress(
+            in: [onchainQuote("funded", paid: 1, updatedAt: 1)], mintURL: "https://mint.example.com", now: now
+        ))
+    }
 }
 
-/// Opt-in against a real mint. Uses a fresh unfunded wallet and creates quotes only.
 @MainActor
 final class LiveBolt12DescriptionTests: XCTestCase {
     func testLiveOffersEncodeDescriptionsAndPreserveAmounts() async throws {

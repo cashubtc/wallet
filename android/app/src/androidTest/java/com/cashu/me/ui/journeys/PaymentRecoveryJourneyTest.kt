@@ -125,6 +125,10 @@ class PaymentRecoveryJourneyTest {
         compose.waitUntil { fake.latestMintQuoteId != null }
         val quoteId = checkNotNull(fake.latestMintQuoteId)
         assertEquals(PaymentMethodKind.Onchain, runBlocking { fake.checkMintQuote(quoteId) }.paymentMethod)
+        // A stable Status row and the address as text; no checking flicker.
+        robot.awaitText("Waiting for deposit").awaitText("bcrt1qde…ddress")
+        compose.onNodeWithTag(UiTestTags.ReceiveOnchainStatus).assertIsDisplayed()
+        compose.onAllNodesWithText("Checking", substring = true).assertCountEquals(0)
         compose.runOnIdle { fake.markMintQuotePaid(quoteId, 21) }
         robot.awaitText("Payment Received!", timeoutMillis = 20_000).tapText("Done")
         assertEquals(21L, runBlocking { fake.totalBalance(FakeWalletGateway.TestMintUrl) })

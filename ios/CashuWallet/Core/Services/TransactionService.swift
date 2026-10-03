@@ -66,6 +66,7 @@ class TransactionService: ObservableObject {
         // CDK retains the individual attempts for recovery and diagnostics.
         var allTransactions: [WalletTransaction] = []
         var quoteIdsWithTransactions: Set<String> = []
+        let retryStates = onchainRetryStates()
         let trackedMintUrls = Set(getTrackedMintUrls().filter { !$0.isEmpty }.map(MintURLIdentity.normalized))
         let previous = transactions.filter {
             !$0.isPendingReceiveToken && $0.mintUrl.map { trackedMintUrls.contains(MintURLIdentity.normalized($0)) } == true
@@ -132,6 +133,19 @@ class TransactionService: ObservableObject {
                         walletTransaction.sagaId = tx.sagaId
                         walletTransaction.paymentMethod = paymentMethod
                         walletTransaction.unit = PaymentRequestDecoder.unitDescription(tx.unit)
+                        // CDK records a deposit's mint while it is in flight:
+                        // the mint has credited it and the ecash is landing.
+                        if kind == .onchain, walletTransaction.type == .incoming,
+                           walletTransaction.status == .pending {
+                            let retryState = tx.quoteId.flatMap { retryStates[$0] } ?? .none
+                            walletTransaction.statusNote = OnchainDepositStatus.resolve(
+                                amountPaid: tx.amount.value,
+                                amountIssued: 0,
+                                observation: nil,
+                                retryState: retryState,
+                                isPastExpiry: false
+                            ).historyText
+                        }
                         return walletTransaction
                     }
                     // A sent token's string survives in the send saga until the
@@ -345,6 +359,7 @@ class TransactionService: ObservableObject {
     ) async -> [WalletTransaction] {
         var transactions: [WalletTransaction] = []
         let savedObservations = walletStore.loadOnchainPaymentObservations()
+        let retryStates = onchainRetryStates()
         let onchainQuoteIDs = Set(quotes.filter {
             PaymentMethodKind.from($0.paymentMethod) == .onchain
         }.map(\.id))
@@ -405,11 +420,16 @@ class TransactionService: ObservableObject {
             // ignoring the offer's nominal amount. Other methods keep showing
             // their pending quote (e.g. an unpaid BOLT11 invoice you generated).
             let amount: UInt64?
+            var isUnfundedAddress = false
             if paymentMethod == .onchain {
                 // A requested amount is not evidence that an address was funded.
-                amount = (quote.amountPaid.value > 0 ? quote.amountPaid.value : nil)
+                let fundedAmount = (quote.amountPaid.value > 0 ? quote.amountPaid.value : nil)
                     ?? (quote.amountIssued.value > 0 ? quote.amountIssued.value : nil)
                     ?? lastOnchainObservation?.amount
+                // An address nothing has reached yet still lists, amountless,
+                // like an unpaid Lightning invoice.
+                isUnfundedAddress = fundedAmount == nil
+                amount = fundedAmount ?? 0
             } else if paymentMethod == .bolt12 {
                 amount = quote.amountPaid.value > 0
                     ? quote.amountPaid.value
@@ -420,7 +440,7 @@ class TransactionService: ObservableObject {
                     ?? (quote.amountIssued.value > 0 ? quote.amountIssued.value : nil)
             }
 
-            guard let amount, amount > 0 else {
+            guard let amount, amount > 0 || isUnfundedAddress else {
                 continue
             }
 
@@ -428,27 +448,31 @@ class TransactionService: ObservableObject {
             // invoice settled, and NUT-04 lets the wallet mint it afterwards.
             let isPaid = quote.state == .paid || quote.state == .issued || quote.amountPaid.value > 0
             let isUnpaidBolt11 = paymentMethod == .bolt11 && !isPaid
-            let isExpiredUnpaidInvoice = isUnpaidBolt11
-                && quote.expiry > 0
-                && Date().timeIntervalSince1970 > Double(quote.expiry)
+            let isPastExpiry = quote.expiry > 0 && Date().timeIntervalSince1970 > Double(quote.expiry)
+            let isExpiredUnpaidRequest = (isUnpaidBolt11 || isUnfundedAddress) && isPastExpiry
             let status: WalletTransaction.TransactionStatus =
-                quote.state == .issued || quote.amountIssued.value >= amount ? .completed
-                : isExpiredUnpaidInvoice ? .expired
+                isExpiredUnpaidRequest ? .expired
+                : isUnfundedAddress ? .pending
+                : quote.state == .issued || quote.amountIssued.value >= amount ? .completed
                 : .pending
 
             var storedPaymentProof = lastOnchainObservation?.txid ?? getPreimage(quoteId: quote.id)
-            var statusNote: String?
-
             if let observation {
                 storedPaymentProof = observation.txid
-                statusNote = observation.statusText
-
                 if getPreimage(quoteId: quote.id) != observation.txid {
                     savePreimage(quoteId: quote.id, preimage: observation.txid)
                 }
-            } else if paymentMethod == .onchain, storedPaymentProof != nil {
-                statusNote = "Payment detected on-chain"
             }
+            // One vocabulary with the receive sheet and the receipt.
+            let statusNote = paymentMethod == .onchain
+                ? OnchainDepositStatus.resolve(
+                    amountPaid: quote.amountPaid.value,
+                    amountIssued: quote.amountIssued.value,
+                    observation: lastOnchainObservation,
+                    retryState: retryStates[quote.id] ?? .none,
+                    isPastExpiry: isPastExpiry
+                ).historyText
+                : nil
 
             var transaction = WalletTransaction(
                 id: quote.id,
@@ -467,6 +491,7 @@ class TransactionService: ObservableObject {
             )
             transaction.unit = PaymentRequestDecoder.unitDescription(quote.unit)
             transaction.isUnpaidInvoice = isUnpaidBolt11
+            transaction.isUnfundedAddress = isUnfundedAddress
             transactions.append(transaction)
         }
 
@@ -474,6 +499,41 @@ class TransactionService: ObservableObject {
             walletStore.saveOnchainPaymentObservations(retainedObservations)
         }
         return transactions
+    }
+
+    /// The last sighting stored for a deposit address, so a reopened sheet
+    /// starts where History already is instead of at "Waiting for deposit".
+    func storedOnchainObservation(quoteId: String) -> OnchainPaymentObservation? {
+        walletStore.loadOnchainPaymentObservations()[quoteId]
+    }
+
+    /// The receive sheet's explorer check for the one address on screen. The
+    /// sighting is stored exactly as a History load stores it, so the sheet,
+    /// the row and the receipt agree, and it survives a relaunch offline.
+    func observeOnchainDeposit(
+        quoteId: String,
+        address: String,
+        mintURL: String?,
+        createdAt: Date
+    ) async -> OnchainPaymentObservation? {
+        guard let observation = await observeOnchainPayment(address, mintURL, 1, createdAt) else {
+            return nil
+        }
+        var observations = walletStore.loadOnchainPaymentObservations()
+        if observations[quoteId] != observation {
+            observations[quoteId] = observation
+            walletStore.saveOnchainPaymentObservations(observations)
+        }
+        if getPreimage(quoteId: quoteId) != observation.txid {
+            savePreimage(quoteId: quoteId, preimage: observation.txid)
+        }
+        return observation
+    }
+
+    /// Retry state per quote, so a credited deposit whose ecash keeps failing
+    /// reads "Retrying" rather than "Adding to wallet…".
+    private func onchainRetryStates() -> [String: MintQuoteRetryState] {
+        walletStore.loadMintQuoteSchedules().mapValues { MintQuoteSchedulePolicy.retryStatus(for: $0).state }
     }
 
     private func loadMintQuoteTimestamps() -> [String: TimeInterval] {

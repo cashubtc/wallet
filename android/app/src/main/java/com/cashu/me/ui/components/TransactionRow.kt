@@ -68,13 +68,16 @@ fun TransactionRow(
         else -> MaterialTheme.colorScheme.onSurface
     }
     val amountText = if (!unsettled && incoming) "+${model.primaryAmount}" else model.primaryAmount
-    val semanticAmount = amountText
+    // An unfunded deposit address has no amount yet: no trailing element, like
+    // an any-amount Cashu Request that is still waiting.
+    val showsAmount = !tx.isUnfundedAddress
+    val semanticAmount = amountText.takeIf { showsAmount }
     val semanticParts = listOfNotNull(
         model.title,
         if (incoming) "Incoming" else "Outgoing",
         tx.displayStatusText,
         semanticAmount,
-        model.secondaryAmount,
+        model.secondaryAmount?.takeIf { showsAmount },
         model.timestamp,
     )
     Row(
@@ -109,7 +112,7 @@ fun TransactionRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        Column(horizontalAlignment = Alignment.End) {
+        if (showsAmount) Column(horizontalAlignment = Alignment.End) {
             AmountText(
                 text = amountText,
                 style = MaterialTheme.typography.bodyLarge

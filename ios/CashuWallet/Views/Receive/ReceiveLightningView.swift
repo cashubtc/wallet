@@ -66,6 +66,10 @@ struct ReceiveLightningView: View {
     @State private var expiryTimer: Timer?
     @State private var isExpired = false
     @State private var onchainObservation: OnchainPaymentObservation?
+    /// Block-explorer watch for the address on screen. The mint says nothing
+    /// until it credits a deposit, so this is the only source of "in mempool"
+    /// and confirmations (DESIGN.md → On-chain receive status).
+    @State private var onchainObservationTask: Task<Void, Never>?
     @State private var quoteCreatedAt: Date?
     @State private var monitoredQuoteId: String?
     /// On-chain quotes abandoned via "Use new address" — a payment may already
@@ -265,19 +269,11 @@ struct ReceiveLightningView: View {
                     ?? MintQuoteRetryStatus()
             }
             .onChange(of: mintRetryStatus.state) { oldState, newState in
-                guard oldState != newState else { return }
-                switch newState {
-                case .none:
-                    break
-                case .retryScheduled:
-                    AccessibilityNotification.Announcement(
-                        "Payment received. Ecash issuance will retry automatically."
-                    ).post()
-                case .needsAttention:
-                    AccessibilityNotification.Announcement(
-                        "Payment received, but ecash is still pending. Retry now is available."
-                    ).post()
-                }
+                // On-chain announces through its Status row; the attention
+                // notice announces itself.
+                guard oldState != newState, mintQuote?.paymentMethod != .onchain,
+                      newState == .retryScheduled else { return }
+                AccessibilityNotification.Announcement("Payment received. Retrying automatically.").post()
             }
             .onChange(of: entryUnit) { oldUnit, newUnit in
                 // Only the sats↔fiat display flip re-expresses the typed string.
@@ -299,6 +295,8 @@ struct ReceiveLightningView: View {
                 monitoredQuoteId = nil
                 abandonedQuoteTask?.cancel()
                 abandonedQuoteTask = nil
+                onchainObservationTask?.cancel()
+                onchainObservationTask = nil
             }
         }
         .accessibilityIdentifier("receive-lightning-screen")
@@ -589,7 +587,7 @@ struct ReceiveLightningView: View {
     /// Every receive rail shares the same QR, amount, status, inspector, and actions.
     private func requestDisplayView(quote: MintQuoteInfo) -> some View {
         VStack(spacing: 0) {
-            PaymentDetailContent { qrSize in
+            PaymentDetailContent(stableSizeKey: quote.id) { qrSize in
                 QRCodeView(
                     content: quote.request,
                     showControls: false,
@@ -613,10 +611,12 @@ struct ReceiveLightningView: View {
                 }
             } details: {
                 VStack(spacing: 16) {
-                    if !quote.isAmountless { amountSummary(for: quote) }
-                    statusBadge
+                    // On-chain keeps nothing above its rows: progress lives in
+                    // the Status row, so no line appears or disappears there.
+                    if quote.paymentMethod != .onchain, !quote.isAmountless { amountSummary(for: quote) }
+                    if quote.paymentMethod != .onchain { statusBadge }
 
-                    if quote.paymentMethod != .bolt12,
+                    if quote.paymentMethod == .bolt11, quote.amountPaid == 0,
                        !isPaid && !isExpired && expiryTimeRemaining > 0 {
                         HStack(spacing: 5) {
                             Image(systemName: "timer").font(.caption2)
@@ -628,6 +628,14 @@ struct ReceiveLightningView: View {
                     }
 
                     VStack(spacing: 0) {
+                        if quote.paymentMethod == .onchain {
+                            OnchainDepositStatusRow(
+                                status: depositStatus(for: quote),
+                                useBitcoinSymbol: settings.useBitcoinSymbol,
+                                onRetry: retryPendingMintQuote
+                            )
+                            addressRow(quote.request)
+                        }
                         detailRow(label: "Mint", value: mintDisplayValue(for: quote) ?? "Unknown mint")
                         if quote.paymentMethod == .bolt12 && mintSupportsBolt12Description {
                             editableRow(
@@ -696,8 +704,42 @@ struct ReceiveLightningView: View {
     private func startDisplayingQuote(_ quote: MintQuoteInfo) {
         reusablePaymentObservation.startObserving(quoteID: quote.id, amountIssued: quote.amountIssued)
         if quote.paymentMethod == .bolt12 { persistReceiveIntent(for: quote) }
+        mintRetryStatus = walletManager.mintQuoteRetryStatus(quoteID: quote.id)
         startQuoteMonitoring(for: quote)
+        if quote.paymentMethod == .onchain { startOnchainObservation(for: quote) }
         if quote.paymentMethod != .bolt12 { startExpiryCountdown(quote: quote) }
+    }
+
+    /// The on-chain Status row's value. The mint's counters outrank a sighting,
+    /// and a sighting outranks the quote's expiry.
+    private func depositStatus(for quote: MintQuoteInfo) -> OnchainDepositStatus {
+        OnchainDepositStatus.resolve(
+            amountPaid: quote.amountPaid,
+            amountIssued: quote.amountIssued,
+            observation: onchainObservation,
+            retryState: isMinting ? .none : mintRetryStatus.state,
+            isPastExpiry: isExpired
+        )
+    }
+
+    /// Looks for the deposit every 30 s until the mint credits it, starting
+    /// from the last stored sighting so a reopened sheet is current at once.
+    /// A new sighting (or confirmation) asks the mint straight away, since the
+    /// mint credits on its own confirmation threshold.
+    private func startOnchainObservation(for quote: MintQuoteInfo) {
+        onchainObservationTask?.cancel()
+        onchainObservation = walletManager.storedOnchainObservation(quoteId: quote.id)
+        onchainObservationTask = Task { @MainActor in
+            while !Task.isCancelled, !isPaid, mintQuote?.id == quote.id,
+                  (mintQuote?.amountPaid ?? 0) == 0 {
+                if let observation = await walletManager.observeOnchainDeposit(quote: quote),
+                   !Task.isCancelled, mintQuote?.id == quote.id, observation != onchainObservation {
+                    onchainObservation = observation
+                    await refreshMintQuoteStatus()
+                }
+                try? await Task.sleep(nanoseconds: 30_000_000_000)
+            }
+        }
     }
 
     /// Friendly name of the quote's issuing mint. A quote remains bound to this
@@ -752,18 +794,7 @@ struct ReceiveLightningView: View {
     private func amountSummary(for quote: MintQuoteInfo) -> some View {
         VStack(spacing: 6) {
             if let amount = quote.amount {
-                if quote.paymentMethod == .onchain {
-                    // Onchain: amount surfaces once the sender has paid (amountPaid).
-                    // Always shown in sats — no fiat toggle.
-                    AmountLockup(
-                        parts: AmountFormatter.satsParts(
-                            amount, useBitcoinSymbol: settings.useBitcoinSymbol
-                        ),
-                        role: .amountCompact,
-                        value: Double(amount),
-                        accessibilityPrefix: "Amount received"
-                    )
-                } else if quote.unit.lowercased() == "sat" {
+                if quote.unit.lowercased() == "sat" {
                     // Smaller than the QR — the QR is the focal element on this
                     // screen; the amount confirms it.
                     CurrencyAmountDisplay(
@@ -780,13 +811,6 @@ struct ReceiveLightningView: View {
                         value: Double(amount),
                         accessibilityPrefix: "Request amount"
                     )
-                }
-            } else {
-                // "New address" lives in the toolbar overflow menu (BOLT12
-                // parity); this slot only shows progress while it generates.
-                if isCreatingRequest {
-                    ProgressView()
-                        .tint(.secondary)
                 }
             }
         }
@@ -841,17 +865,41 @@ struct ReceiveLightningView: View {
         .accessibilityHint("Opens the block explorer in your browser")
     }
 
+    /// The address as text, in the standard 8…6 cut, so it can be checked
+    /// against the sender's screen; tapping copies the full address.
+    private func addressRow(_ address: String) -> some View {
+        let shortAddress = PaymentRequestDecoder.middleTruncated(address)
+        return Button { copyRequest(address) } label: {
+            PaymentDetailPair(label: "Address") {
+                Text(shortAddress)
+                    .fontWeight(.regular)
+                Image(systemName: "doc.on.doc")
+                    .font(.footnote)
+                    .foregroundStyle(.tertiary)
+                    .padding(.leading, 4)
+            }
+            .paymentDetailRow(isInteractive: true)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Address")
+        .accessibilityValue(shortAddress)
+        .accessibilityHint("Copies the Bitcoin address")
+    }
+
     // MARK: - Status Badge
 
     @ViewBuilder
     private var statusBadge: some View {
         Group {
-            if isCheckingPayment || isMinting {
+            // Lightning settles in seconds: nothing while waiting, and status
+            // only once money has actually arrived (DESIGN.md §6.7).
+            if isMinting {
                 HStack(spacing: 6) {
                     ProgressView()
                         .tint(.accentColor)
                         .scaleEffect(0.8)
-                    Text(isMinting ? "Issuing ecash..." : "Checking...")
+                    Text("Adding to wallet…")
                 }
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
@@ -868,47 +916,36 @@ struct ReceiveLightningView: View {
                 .foregroundStyle(ErrorSeverity.error.foreground)
                 .transition(.opacity)
             } else if (mintQuote?.mintableAmount ?? 0) > 0,
-                      mintRetryStatus.state != .none {
-                VStack(spacing: 8) {
-                    HStack(spacing: 6) {
-                        Image(
-                            systemName: mintRetryStatus.state == .needsAttention
-                                ? "exclamationmark.triangle.fill"
-                                : "clock.arrow.circlepath"
-                        )
-                        .accessibilityHidden(true)
-                        Text(
-                            mintRetryStatus.state == .needsAttention
-                                ? "Payment received. Ecash is still pending."
-                                : "Payment received. Retrying ecash automatically."
-                        )
-                    }
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(
-                        mintRetryStatus.state == .needsAttention
-                            ? ErrorSeverity.error.foreground
-                            : Color.secondary
-                    )
-
-                    Button {
-                        retryPendingMintQuote()
-                    } label: {
-                        Label("Retry now", systemImage: "arrow.clockwise")
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .accessibilityHint("Checks the payment and tries to issue the pending ecash again")
+                      mintRetryStatus.state == .needsAttention {
+                // Repeated failures: the status line itself retries, with the
+                // same trailing glyph the on-chain Status row uses.
+                Button(action: retryPendingMintQuote) {
+                    // The glyph is inline so a wrapped line still ends with it.
+                    (Text("Payment received · not added yet ")
+                        + Text(Image(systemName: "arrow.clockwise")).font(.footnote).foregroundStyle(.tertiary))
+                    .multilineTextAlignment(.center)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    // A full touch target without moving the rows below.
+                    .padding(.vertical, 12)
+                    .contentShape(Rectangle())
+                    .padding(.vertical, -12)
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Payment received, not added to your wallet yet. It's safe and we'll keep trying.")
+                .accessibilityHint("Tries to add the payment to your wallet again")
                 .transition(.opacity)
+            } else if (mintQuote?.mintableAmount ?? 0) > 0,
+                      mintRetryStatus.state == .retryScheduled {
+                Text("Payment received · retrying")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .transition(.opacity)
             } else if (mintQuote?.mintableAmount ?? 0) > 0 {
-                HStack(spacing: 6) {
-                    Image(systemName: "clock.badge.checkmark")
-                        .accessibilityHidden(true)
-                    Text("Payment received. Ecash issuance is pending.")
-                }
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(.secondary)
-                .transition(.opacity)
+                Text("Adding to wallet…")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .transition(.opacity)
             } else if let quote = mintQuote,
                       quote.paymentMethod == .bolt12,
                       quote.amountIssued > 0,
@@ -936,16 +973,9 @@ struct ReceiveLightningView: View {
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(.secondary)
                 .transition(reduceMotion ? .opacity : .asymmetric(insertion: .scale(scale: 0.9).combined(with: .opacity), removal: .opacity))
-            } else if mintQuote?.paymentMethod == .onchain,
-                      let observation = onchainObservation {
-                Text("\(observation.statusText). Trying to mint...")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .transition(.opacity)
             }
         }
         .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.5, dampingFraction: 0.7), value: isPaid)
-        .animation(.easeInOut(duration: 0.2), value: isCheckingPayment)
         .animation(.easeInOut(duration: 0.2), value: isMinting)
         .animation(.easeInOut(duration: 0.2), value: isExpired)
         .animation(.easeInOut(duration: 0.2), value: mintRetryStatus.state)
@@ -988,25 +1018,6 @@ struct ReceiveLightningView: View {
         return "\(secs)s"
     }
 
-    private func quoteStateText(for quote: MintQuoteInfo) -> String {
-        if isPaid { return "Paid" }
-        if isExpired { return "Expired" }
-        if quote.paymentMethod == .onchain,
-           quote.state == .pending,
-           let observation = onchainObservation {
-            return observation.statusText
-        }
-
-        switch quote.state {
-        case .issued:
-            return "Issued"
-        case .paid:
-            return "Paid"
-        case .pending:
-            return "Pending"
-        }
-    }
-
     private func copyButtonTitle(for quote: MintQuoteInfo) -> String {
         "Copy \(quote.paymentMethod.requestDisplayName)"
     }
@@ -1018,11 +1029,11 @@ struct ReceiveLightningView: View {
             return OnchainExplorer.transactionWebURL(
                 for: txid,
                 address: quote.request,
-                mintURL: walletManager.activeMint?.url
+                mintURL: quote.mintURL
             )
         }
 
-        return OnchainExplorer.addressWebURL(for: quote.request, mintURL: walletManager.activeMint?.url)
+        return OnchainExplorer.addressWebURL(for: quote.request, mintURL: quote.mintURL)
     }
 
     private func blockExplorerLabel(for quote: MintQuoteInfo) -> String {
@@ -1256,7 +1267,7 @@ struct ReceiveLightningView: View {
                     )
                 }
                 guard !Task.isCancelled else { return }
-                quoteCreatedAt = Date()
+                quoteCreatedAt = quote.updatedAt ?? Date()
                 mintQuote = quote
             } catch {
                 guard !Task.isCancelled else { return }
@@ -1303,6 +1314,7 @@ struct ReceiveLightningView: View {
         monitoredQuoteId = nil
         expiryTimeRemaining = 0
         quoteStatusTask?.cancel()
+        onchainObservationTask?.cancel()
         expiryTimer?.invalidate()
 
         requestCreationTask = Task { @MainActor in
@@ -1323,7 +1335,9 @@ struct ReceiveLightningView: View {
                     )
                 }
                 guard !Task.isCancelled else { return }
-                quoteCreatedAt = Date()
+                // A reused address keeps the date it was made, the same date
+                // its History row shows.
+                quoteCreatedAt = quote.updatedAt ?? Date()
                 mintQuote = quote
             } catch {
                 guard !Task.isCancelled else { return }
@@ -1521,16 +1535,15 @@ struct ReceiveLightningView: View {
         // The first status check can itself recover an interrupted CDK saga.
         // Keep it inside reconciliation so its issuance delta and retry deadline
         // are handled before balance updates or receive feedback.
-        guard let result = await walletManager.refreshPendingMintQuote(quoteId: quote.id, force: force),
-              !Task.isCancelled, mintQuote?.id == quote.id else { return }
+        // Scoped to this quote: the History reload must not walk the block
+        // explorer for every other address on each check.
+        guard let result = await walletManager.refreshPendingMintQuote(
+            quoteId: quote.id,
+            force: force,
+            observingQuoteID: quote.id
+        ), !Task.isCancelled, mintQuote?.id == quote.id else { return }
         mintQuote = result.quote
         mintRetryStatus = result.retryStatus
-
-        if result.quote.paymentMethod == .onchain, result.quote.state == .pending {
-            await refreshOnchainObservation(for: result.quote)
-        } else {
-            onchainObservation = nil
-        }
 
         if result.quote.paymentMethod == .bolt12 {
             if let amount = reusablePaymentObservation.newlyIssuedAmount(result.quote.amountIssued) {
@@ -1539,24 +1552,6 @@ struct ReceiveLightningView: View {
         } else if result.hasSettledPayment {
             await completeReceivedQuote(receivedAmount: result.quote.amountIssued)
         }
-    }
-
-    @MainActor
-    private func refreshOnchainObservation(for quote: MintQuoteInfo) async {
-        guard quote.paymentMethod == .onchain,
-              let amount = quote.amount,
-              let createdAt = quoteCreatedAt,
-              let mintURL = quote.mintURL else {
-            onchainObservation = nil
-            return
-        }
-
-        onchainObservation = await OnchainExplorer.observePayment(
-            for: quote.request,
-            mintURL: mintURL,
-            expectedAmount: amount,
-            createdAfter: createdAt
-        )
     }
 
     private func retryPendingMintQuote() {
@@ -1590,10 +1585,80 @@ struct ReceiveLightningView: View {
         // Returning to a reusable QR starts monitoring again with the same
         // issuance baseline, so the previous payment cannot replay success.
         quoteStatusTask?.cancel()
+        onchainObservationTask?.cancel()
         monitoredQuoteId = nil
     }
 
 
+}
+
+/// The on-chain sheet's Status row: always mounted, one line, and only its
+/// value changes — so a deposit's progress never moves the rows below it or
+/// resizes the QR. Each change is announced once (DESIGN.md → On-chain
+/// receive status).
+struct OnchainDepositStatusRow: View {
+    let status: OnchainDepositStatus
+    let useBitcoinSymbol: Bool
+    /// Offered only once retries need attention: the row gains a trailing
+    /// retry glyph and becomes the button, like the Address row's copy glyph.
+    var onRetry: (() -> Void)?
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private func value(for status: OnchainDepositStatus) -> (text: String, spoken: String) {
+        status.sheetValue { AmountFormatter.satsParts($0, useBitcoinSymbol: useBitcoinSymbol) }
+    }
+
+    private var retry: (() -> Void)? {
+        status.needsAttention ? onRetry : nil
+    }
+
+    /// Inline, so when the value wraps at accessibility sizes the glyph ends
+    /// the sentence instead of sitting beside its first line.
+    private var retryGlyph: Text {
+        Text(Image(systemName: "arrow.clockwise")).font(.footnote).foregroundStyle(.tertiary)
+    }
+
+    var body: some View {
+        let current = value(for: status)
+        let stacked = dynamicTypeSize.isAccessibilitySize
+        let layout = stacked
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
+            : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 16))
+        let row = layout {
+            Text("Status")
+                .foregroundStyle(.secondary)
+            if !stacked {
+                Spacer(minLength: 0)
+            }
+            (retry == nil ? Text(current.text) : Text("\(current.text) ") + retryGlyph)
+                .fontWeight(.regular)
+                .lineLimit(stacked ? nil : 1)
+                .truncationMode(.tail)
+                .contentTransition(.opacity)
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: current.text)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        // Always the interactive height, so becoming a button never moves a row.
+        .paymentDetailRow(isInteractive: true)
+        .contentShape(Rectangle())
+
+        Group {
+            if let retry {
+                Button(action: retry) { row }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Tries to add the payment to your wallet again")
+            } else {
+                row.accessibilityElement(children: .ignore)
+            }
+        }
+        .accessibilityLabel("Status")
+        .accessibilityValue(current.spoken)
+        .accessibilityIdentifier("cashu.receive.onchain-status")
+        .onChange(of: status) { _, newStatus in
+            AccessibilityNotification.Announcement(value(for: newStatus).spoken).post()
+        }
+    }
 }
 
 /// BOLT12 counters are cumulative. Preserve the acknowledged total across

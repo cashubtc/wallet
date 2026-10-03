@@ -212,13 +212,10 @@ class LightningService: ObservableObject {
         guard let db = walletDatabase(),
               let mintURL = mintURL ?? getActiveMint()?.url else { return nil }
         let pendingQuotes = try await db.getUnissuedMintQuotes()
-        guard let match = pendingQuotes.first(where: {
-            PaymentMethodKind.from($0.paymentMethod) == .onchain
-            && MintURLIdentity.normalized($0.mintUrl.url) == MintURLIdentity.normalized(mintURL)
-            && $0.amountPaid.value == 0
-        }) else { return nil }
-        let info = mintQuoteInfo(from: match, fallbackAmount: nil, paymentMethod: .onchain)
-        return info.isExpired ? nil : info
+        guard let match = MintQuoteDomain.reusableOnchainAddress(in: pendingQuotes, mintURL: mintURL) else {
+            return nil
+        }
+        return mintQuoteInfo(from: match, fallbackAmount: nil, paymentMethod: .onchain)
     }
 
     func checkMintQuote(quoteId: String) async throws -> MintQuoteInfo {
@@ -1225,7 +1222,8 @@ class LightningService: ObservableObject {
             unit: PaymentRequestDecoder.unitDescription(quote.unit),
             mintURL: quote.mintUrl.url,
             amountPaid: quote.amountPaid.value,
-            amountIssued: quote.amountIssued.value
+            amountIssued: quote.amountIssued.value,
+            updatedAt: quote.updatedAt > 0 ? Date(timeIntervalSince1970: TimeInterval(quote.updatedAt)) : nil
         )
     }
 

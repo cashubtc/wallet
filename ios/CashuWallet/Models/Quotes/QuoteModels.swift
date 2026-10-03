@@ -30,6 +30,10 @@ struct MintQuoteInfo: Identifiable {
     var amountPaid: UInt64 = 0
     var amountIssued: UInt64 = 0
 
+    /// CDK's last-update time; for an address nothing has reached yet, that is
+    /// when it was created — the same date its History row carries.
+    var updatedAt: Date? = nil
+
     var mintableAmount: UInt64 {
         amountPaid > amountIssued ? amountPaid - amountIssued : 0
     }
