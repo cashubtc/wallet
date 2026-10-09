@@ -482,7 +482,11 @@ internal fun OnboardingScreen(
                         // `finishing` stays set until the handoff tears this
                         // subtree down — the curtain owns the rest.
                         state.finishing = true
-                        handoff.begin { runCatching { walletManager.completeRestore() } }
+                        walletManager.clearError()
+                        handoff.begin {
+                            runCatching { walletManager.completeRestore() }
+                                .onFailure { walletManager.reportRestoreCompletionFailure() }
+                        }
                     }
                 },
                 enabled = progressState?.let { it.allSettled && !it.finishing } == true,
@@ -817,6 +821,15 @@ internal fun OnboardingScreen(
                         }
 
                         is OnboardingStep.RestoreProgress -> Column(Modifier.fillMaxSize()) {
+                            walletState.errorMessage?.let {
+                                InlineNotice(text = it, severity = NoticeSeverity.Error)
+                            }
+                            Text(
+                                text = "If you restored a different seed, continuing replaces your previous wallet. Its backup is kept until you continue.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = HeaderPadding),
+                            )
                             // No back button on this step (forward-only), so it
                             // reserves the bar band rather than skipping it —
                             // otherwise the title jumps up 56 dp on arrival.

@@ -329,7 +329,7 @@ class WalletManager(
      * of silently regenerating a new seed.
      */
     suspend fun persistedOnboardingMnemonic(): String? = withContext(Dispatchers.IO) {
-        if (settingsManager.onboardingCompleted) {
+        if (settingsManager.onboardingCompleted && !settingsManager.walletRestoreIncomplete) {
             null
         } else {
             secureStorage.loadString(StorageKeys.secureWalletMnemonic)
@@ -337,8 +337,8 @@ class WalletManager(
     }
 
     /**
-     * Phase 1 of seed restore (iOS `initializeRestoredWallet`): install the
-     * repository for this mnemonic. Does **not** force first-launch onboarding
+     * Phase 1 of seed restore: reuse this seed's ledger or stage another seed's
+     * isolated repository. Does **not** force first-launch onboarding
      * — [needsOnboarding] is preserved so:
      *   - first-launch onboarding stays on its restore faces, and
      *   - Settings → Restore keeps the in-app shell (mint staging) instead of
@@ -361,28 +361,32 @@ class WalletManager(
 
     override suspend fun deleteWallet() {
         withLoading {
-            cashuRequestListener?.pauseForWalletBoundary()
-            nwcManager.stop()
-            gateway.closeWalletRepository()
-            recoverWalletReplacement()
-            nwcManager.resetForWalletBoundary()
-            secureStorage.delete(StorageKeys.secureWalletMnemonic)
-            secureStorage.delete(StorageKeys.secureNostrPrivateKey)
-            databasePathManager.removeWalletDatabaseFiles()
-            cashuRequestStore.resetForWalletBoundary()
-            walletStore.removeAllWalletData()
-            settingsManager.resetWalletScopedData()
-            npcService.resetForWalletBoundary()
-            nostrMintBackupService.resetForWalletBoundary()
-            cashuRequestListener?.resetForWalletBoundary(restart = false)
-            MintLogoBitmapCache.clear()
-            update {
-                WalletState(
-                    isInitialized = true,
-                    isRuntimeReady = true,
-                    needsOnboarding = true,
-                    canExitOnboarding = false,
-                )
+            initializationMutex.withLock {
+                cashuRequestListener?.pauseForWalletBoundary()
+                nwcManager.stop()
+                gateway.closeWalletRepository()
+                recoverWalletReplacement()
+                withContext(Dispatchers.IO) { replacement.finishRestore() }
+                recoverWalletReplacement()
+                nwcManager.resetForWalletBoundary()
+                secureStorage.delete(StorageKeys.secureWalletMnemonic)
+                secureStorage.delete(StorageKeys.secureNostrPrivateKey)
+                databasePathManager.removeWalletDatabaseFiles()
+                cashuRequestStore.resetForWalletBoundary()
+                walletStore.removeAllWalletData()
+                settingsManager.resetWalletScopedData()
+                npcService.resetForWalletBoundary()
+                nostrMintBackupService.resetForWalletBoundary()
+                cashuRequestListener?.resetForWalletBoundary(restart = false)
+                MintLogoBitmapCache.clear()
+                update {
+                    WalletState(
+                        isInitialized = true,
+                        isRuntimeReady = true,
+                        needsOnboarding = true,
+                        canExitOnboarding = false,
+                    )
+                }
             }
         }
     }
@@ -1516,6 +1520,10 @@ class WalletManager(
 
     fun clearError() = update { copy(errorMessage = null, startupFailure = null) }
 
+    fun reportRestoreCompletionFailure() = update {
+        copy(errorMessage = "Couldn't finish restore. Your recovered wallet is still available. Try again.")
+    }
+
     fun backupMnemonic(): String? = secureStorage.loadString(StorageKeys.secureWalletMnemonic)
 
     fun openRestoreFlow() {
@@ -1538,7 +1546,11 @@ class WalletManager(
 
     /** Restore complete (iOS completeRestore): dismiss onboarding, then refresh the Nostr backup. */
     suspend fun completeRestore() {
-        completeOnboarding()
+        initializationMutex.withLock {
+            withContext(Dispatchers.IO) { replacement.finishRestore() }
+            recoverWalletReplacement()
+            completeOnboarding()
+        }
         // The restored mint list is final now — refresh the Nostr backup with it.
         // (Must not run earlier: publishing while the repository is still empty
         // would replace the addressable backup event with an empty list.)
@@ -1583,6 +1595,21 @@ class WalletManager(
         // Finish any previous recovery before starting another replacement.
         recoverWalletReplacement()
         val previousMnemonic = secureStorage.loadString(StorageKeys.secureWalletMnemonic)
+        if (restoring && reusesExistingWallet(
+                previousMnemonic?.let { gateway.mnemonicEntropy(MnemonicInput.normalize(it)) },
+                gateway.mnemonicEntropy(mnemonic),
+            )) {
+            // Same identity: restore missing proofs into the durable ledger.
+            // Do not reset services/preferences or erase quote keys and sagas.
+            if (!mutableState.value.isRuntimeReady) {
+                openWalletRepositoryWithRecovery(mnemonic)
+                deriveNostrKey(mnemonic)
+                loadCachedState(needsOnboarding = needsOnboarding)
+                update { copy(isRuntimeReady = true) }
+            }
+            return@withLock
+        }
+        replacement.requireNoStagedRestore()
         cashuRequestListener?.pauseForWalletBoundary()
         npcService.pauseForWalletBoundary()
         pendingQuotePollJob?.cancelAndJoin()
@@ -1617,7 +1644,9 @@ class WalletManager(
                 secureStorage.saveString(StorageKeys.secureWalletMnemonic, mnemonic)
                 nostrMintBackupService.resetForWalletBoundary()
                 settingsManager.onboardingCompleted = !needsOnboarding
-                withContext(Dispatchers.IO) { replacement.commit() }
+                withContext(Dispatchers.IO) {
+                    if (restoring) replacement.stageRestore() else replacement.commit()
+                }
             },
             rollback = {
                 gateway.closeWalletRepository()

@@ -507,6 +507,7 @@ struct RestoreWalletView: View {
     @State private var seedFieldFocused = false
     @State private var isRestoringSeed = false
     @State private var seedError: String?
+    @State private var completionError: String?
 
     @State private var mintUrlInput = ""
     @State private var mintsToRestore: [String] = []
@@ -826,6 +827,10 @@ struct RestoreWalletView: View {
 
     private var progressStep: some View {
         VStack(spacing: 0) {
+            if let completionError {
+                InlineNotice(message: completionError, severity: .error)
+                    .padding(.horizontal)
+            }
             VStack(spacing: 6) {
                 Text(restoreAllSettled ? "Restore Complete" : "Restoring…")
                     .font(.title2.weight(.semibold))
@@ -872,6 +877,10 @@ struct RestoreWalletView: View {
         .safeAreaInset(edge: .bottom) {
             // Forward-only — Continue enables once every mint has settled.
             VStack(spacing: 12) {
+                Text("If you restored a different seed, continuing replaces your previous wallet. Its backup is kept until you continue.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
                 Button(action: finishRestore) {
                     Text("Continue")
                 }
@@ -1158,8 +1167,9 @@ struct RestoreWalletView: View {
 
     private func finishRestore() {
         Task { @MainActor in
-            await walletManager.completeRestore()
-            dismiss()
+            completionError = nil
+            if await walletManager.completeRestore() { dismiss() }
+            else { completionError = walletManager.errorMessage }
         }
     }
 

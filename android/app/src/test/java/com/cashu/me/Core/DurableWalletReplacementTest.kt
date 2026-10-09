@@ -28,6 +28,82 @@ class DurableWalletReplacementTest {
         try { block(root, Storage()) } finally { root.deleteRecursively() }
     }
 
+    @Test fun stagedRestorePreservesBothWalletsAcrossRepeatedRelaunches() = scenario { root, storage ->
+        val db = File(root, "wallet.db").apply { writeText("old quotes and signing keys") }
+        val replacement = DurableWalletReplacement(storage, listOf(db))
+        replacement.begin("old encrypted state")
+        db.writeText("newly restored funds")
+        replacement.stageRestore()
+        repeat(3) {
+            DurableWalletReplacement(storage, listOf(db)).recover(
+                { fail("Staged funds must not be rolled back") },
+                { fail("Old state must not be discarded before completion") },
+            )
+        }
+        assertEquals("newly restored funds", db.readText())
+        assertEquals("old quotes and signing keys", File(db.path + ".replacement-backup-v1").readText())
+        assertThrows(IllegalStateException::class.java) { replacement.requireNoStagedRestore() }
+        assertTrue(storage.contains(DurableWalletReplacement.KEY))
+    }
+
+    @Test fun explicitCompletionReleasesBackupWithoutRollingBackRecoveredFunds() = scenario { root, storage ->
+        val db = File(root, "wallet.db").apply { writeText("old") }
+        val replacement = DurableWalletReplacement(storage, listOf(db))
+        replacement.begin("old state")
+        db.writeText("recovered")
+        replacement.stageRestore()
+        replacement.finishRestore()
+        replacement.finishRestore()
+        replacement.recover({ fail("Finished restore cannot roll back") }, {})
+        replacement.finishRestore()
+        assertEquals("recovered", db.readText())
+        assertFalse(File(db.path + ".replacement-backup-v1").exists())
+        assertFalse(storage.contains(DurableWalletReplacement.KEY))
+    }
+
+    @Test fun failedCompletionKeepsBothWalletsAndCanBeRetried() = scenario { root, storage ->
+        val db = File(root, "wallet.db").apply { writeText("old") }
+        val replacement = DurableWalletReplacement(storage, listOf(db))
+        replacement.begin("state")
+        db.writeText("recovered")
+        replacement.stageRestore()
+        storage.failWrite = storage.writes + 1
+        assertThrows(IllegalStateException::class.java) { replacement.finishRestore() }
+        replacement.recover({ fail("Do not roll back staged restore") }, {})
+        assertEquals("old", File(db.path + ".replacement-backup-v1").readText())
+        replacement.finishRestore()
+        replacement.recover({ fail("Finished restore cannot roll back") }, {})
+        assertEquals("recovered", db.readText())
+    }
+
+    @Test fun missingStagedBackupBlocksCompletionAndStartup() = scenario { root, storage ->
+        val db = File(root, "wallet.db").apply { writeText("old") }
+        val replacement = DurableWalletReplacement(storage, listOf(db))
+        replacement.begin("state")
+        db.writeText("recovered")
+        replacement.stageRestore()
+        File(db.path + ".replacement-backup-v1").delete()
+        assertThrows(IllegalStateException::class.java) { replacement.finishRestore() }
+        try {
+            replacement.recover({ fail("Do not roll back staged funds") }, {})
+            fail("Missing backup must fail closed")
+        } catch (_: IllegalStateException) { }
+        assertEquals("recovered", db.readText())
+        assertTrue(storage.contains(DurableWalletReplacement.KEY))
+    }
+
+    @Test fun firstInstallCanRemainStagedWithoutPreviousFiles() = scenario { root, storage ->
+        val db = File(root, "wallet.db")
+        val replacement = DurableWalletReplacement(storage, listOf(db))
+        replacement.begin("no previous wallet")
+        db.writeText("recovered")
+        replacement.stageRestore()
+        replacement.recover({ fail("Do not remove recovered funds") }, {})
+        replacement.finishRestore()
+        replacement.recover({}, {})
+        assertEquals("recovered", db.readText())
+    }
+
     @Test fun relaunchRecoversOldDatabaseSeedAndPreferencesAfterSeedWasChanged() = scenario { root, storage ->
         val db = File(root, "wallet").apply { mkdirs() }
         File(db, "wallet.db").writeText("old proofs")

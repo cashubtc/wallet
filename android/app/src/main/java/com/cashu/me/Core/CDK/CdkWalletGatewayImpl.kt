@@ -251,6 +251,10 @@ class CdkWalletGatewayImpl : WalletGateway {
         ensureWalletUnlocked(mintUrl)
         val wallet = walletFor(mintUrl)
         val info = runCatching { wallet.fetchMintInfo() }.getOrNull()
+        wallet.recoverIncompleteSagas()
+        check(database?.getIncompleteSagas().orEmpty().isEmpty()) {
+            "An interrupted payment is still being recovered. Retry restore after it finishes."
+        }
         val restored = wallet.restore()
         RestoreMintResult(
             mintUrl = mintUrl,

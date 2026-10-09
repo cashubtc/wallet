@@ -991,6 +991,15 @@ struct OnboardingView: View {
             .padding(.top, OnboardingMetrics.titleTopInset)
             .opacity(isCompleting ? 0 : 1)
 
+            Text("If you restored a different seed, continuing replaces your previous wallet. Its backup is kept until you continue.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal)
+            if let errorMessage {
+                InlineNotice(message: errorMessage, severity: .error)
+                    .padding(.horizontal)
+            }
+
             Spacer()
 
             // Hero — echoes MainWalletView's balance treatment exactly; the
@@ -1057,14 +1066,24 @@ struct OnboardingView: View {
         // skips the curtain, so ContentView's plain crossfade is the whole
         // transition (opacity is vestibular-safe).
         if reduceMotion {
-            handoff.begin(reduceMotion: true) { await walletManager.completeRestore() }
+            handoff.begin(reduceMotion: true) {
+                if !(await walletManager.completeRestore()) {
+                    errorMessage = walletManager.errorMessage
+                    isCompleting = false
+                }
+            }
             return
         }
 
         // Chrome recedes while the balance hero holds; the curtain sweeps down
         // over both and the handoff flips `needsOnboarding` at full cover.
         withAnimation(.easeOut(duration: 0.22)) { isCompleting = true }
-        handoff.begin(reduceMotion: false) { await walletManager.completeRestore() }
+        handoff.begin(reduceMotion: false) {
+            if !(await walletManager.completeRestore()) {
+                errorMessage = walletManager.errorMessage
+                isCompleting = false
+            }
+        }
     }
 
     // MARK: - Show Mnemonic Stage
@@ -1889,6 +1908,14 @@ struct OnboardingView: View {
 
     private var restoreProgressStage: some View {
         VStack(spacing: 0) {
+            if let error = walletManager.errorMessage {
+                InlineNotice(message: error, severity: .error)
+                    .padding(.horizontal)
+            }
+            Text("If you restored a different seed, continuing replaces your previous wallet. Its backup is kept until you continue.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal)
             stagger(appeared: restoreProgressAppeared, index: 0) {
                 OnboardingStepHeader(
                     title: "Restoring wallet.",
@@ -2263,7 +2290,9 @@ struct OnboardingView: View {
 
     private func finishRestore() {
         handoff.begin(reduceMotion: reduceMotion) {
-            await walletManager.completeRestore()
+            if !(await walletManager.completeRestore()) {
+                errorMessage = walletManager.errorMessage
+            }
         }
     }
 

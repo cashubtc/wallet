@@ -7,6 +7,113 @@ import SQLite3
 final class WalletAuditRegressionTests: XCTestCase {
     private enum Failure: Error { case offline }
 
+    /// Run in a fresh test simulator: never replace an existing wallet fixture.
+    func testSameSeedRestoreKeepsNativeQuoteKeyCounterAndRepository() async throws {
+        let manager = WalletManager()
+        guard try manager.keychainService.loadMnemonic() == nil else {
+            throw XCTSkip("This integration regression requires an empty test wallet container.")
+        }
+        let phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+        try await manager.initializeRestoredWallet(mnemonic: phrase)
+        let database = try XCTUnwrap(manager.db)
+        let signingKey = SecretKey(hex: String(repeating: "0", count: 63) + "1")
+        let quote = MintQuote(
+            id: "same-seed-quote", amount: nil, unit: .sat, request: "test-offer",
+            state: .paid, expiry: 0, mintUrl: MintUrl(url: "https://mint.example"),
+            amountIssued: Amount(value: 0), amountPaid: Amount(value: 12), updatedAt: 0,
+            estimatedBlocks: nil, paymentMethod: .bolt12, secretKey: signingKey.hex,
+            usedByOperation: nil, version: 0
+        )
+        try await database.addMintQuote(quote: quote)
+        let beforeCounter = try await database.incrementDerivationCounter(namespace: "nut20_quote", count: 17)
+        try await manager.initializeRestoredWallet(mnemonic: phrase.uppercased())
+        XCTAssertTrue(manager.db === database)
+        let retained = try await database.getMintQuote(quoteId: quote.id)
+        XCTAssertEqual(retained?.secretKey, signingKey.hex)
+        XCTAssertEqual(retained?.amountPaid.value, 12)
+        let afterCounter = try await database.incrementDerivationCounter(namespace: "nut20_quote", count: 0)
+        XCTAssertEqual(afterCounter, beforeCounter)
+        // Finish the isolated fixture explicitly so no staged journal leaks into
+        // the other tests; there was no previous wallet to discard.
+        let completed = await manager.completeRestore()
+        XCTAssertTrue(completed)
+        try await manager.deleteWallet()
+    }
+
+    func testRestoreIdentityPreservesSameSeedAndIsolatesDifferentSeed() throws {
+        let phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+        let other = "legal winner thank year wave sausage worth useful legal winner thank yellow"
+        let entropy = Data(try Cdk.mnemonicToEntropy(mnemonic: phrase))
+        XCTAssertTrue(WalletRestorePolicy.reusesExistingWallet(previousEntropy: entropy, restoredEntropy: entropy))
+        XCTAssertFalse(WalletRestorePolicy.reusesExistingWallet(previousEntropy: nil, restoredEntropy: entropy))
+        XCTAssertFalse(WalletRestorePolicy.reusesExistingWallet(previousEntropy: entropy, restoredEntropy: Data(try Cdk.mnemonicToEntropy(mnemonic: other))))
+    }
+
+    func testStagedRestoreRetainsQuoteKeysAndRecoveredFundsAcrossRelaunch() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let db = directory.appendingPathComponent("wallet.db")
+        try Data("old quote keys and counters".utf8).write(to: db)
+        let storage = ReplacementJournalStorage()
+        let journal = DurableWalletReplacement(storage: storage, urls: [db])
+        try journal.begin(state: Data("old state".utf8))
+        try Data("newly recovered funds".utf8).write(to: db)
+        try journal.stageRestore()
+        for _ in 0..<3 {
+            try DurableWalletReplacement(storage: storage, urls: [db]).recover { _ in XCTFail("Do not roll back staged funds") }
+        }
+        XCTAssertEqual(try Data(contentsOf: db), Data("newly recovered funds".utf8))
+        let backup = URL(fileURLWithPath: db.path + ".replacement-backup-v1")
+        XCTAssertEqual(try Data(contentsOf: backup), Data("old quote keys and counters".utf8))
+        XCTAssertThrowsError(try journal.requireNoStagedRestore())
+        try journal.finishRestore()
+        try journal.finishRestore()
+        try journal.recover { _ in XCTFail("Finished restore must not roll back") }
+        try journal.finishRestore()
+        XCTAssertEqual(try Data(contentsOf: db), Data("newly recovered funds".utf8))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: backup.path))
+        XCTAssertFalse(storage.hasSecret(forKey: DurableWalletReplacement.key))
+    }
+
+    func testFailedRestoreCompletionRetainsBackupsAndRetries() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let db = directory.appendingPathComponent("wallet.db")
+        try Data("old".utf8).write(to: db)
+        let storage = ReplacementJournalStorage()
+        let journal = DurableWalletReplacement(storage: storage, urls: [db])
+        try journal.begin(state: Data())
+        try Data("recovered".utf8).write(to: db)
+        try journal.stageRestore()
+        storage.failWrite = 4 // preparing, installing, staging, then failed commit
+        XCTAssertThrowsError(try journal.finishRestore())
+        try journal.recover { _ in XCTFail("Staged wallet must remain active") }
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: db.path + ".replacement-backup-v1")), Data("old".utf8))
+        try journal.finishRestore()
+        try journal.recover { _ in XCTFail("Committed restore must not roll back") }
+        XCTAssertEqual(try Data(contentsOf: db), Data("recovered".utf8))
+    }
+
+    func testMissingStagedBackupDoesNotDiscardRecoveredWallet() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let db = directory.appendingPathComponent("wallet.db")
+        try Data("old".utf8).write(to: db)
+        let storage = ReplacementJournalStorage()
+        let journal = DurableWalletReplacement(storage: storage, urls: [db])
+        try journal.begin(state: Data())
+        try Data("recovered".utf8).write(to: db)
+        try journal.stageRestore()
+        try FileManager.default.removeItem(at: URL(fileURLWithPath: db.path + ".replacement-backup-v1"))
+        XCTAssertThrowsError(try journal.finishRestore())
+        XCTAssertThrowsError(try journal.recover { _ in XCTFail("Do not roll back recovered funds") })
+        XCTAssertEqual(try Data(contentsOf: db), Data("recovered".utf8))
+        XCTAssertTrue(storage.hasSecret(forKey: DurableWalletReplacement.key))
+    }
+
     func testReplacementCheckpointPreservesSqliteWalContents() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

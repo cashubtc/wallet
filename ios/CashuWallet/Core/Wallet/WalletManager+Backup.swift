@@ -287,6 +287,9 @@ extension WalletManager {
         // a partial wallet look complete on the next launch.
         try Task.checkCancellation()
         try await initializeRestoredWallet(mnemonic: recoveredMnemonic)
+        // Same-seed restore preserves existing state; cloud recovery still needs
+        // its own backup barrier while its mint list is being reconciled.
+        setICloudRestoreIncomplete(true)
         ICloudRestoreState.setPendingMintURLs(backup.mintURLs)
         let urls = ICloudRestoreState.pendingMintURLs()
         // This preference can be restored now: the incomplete marker defers

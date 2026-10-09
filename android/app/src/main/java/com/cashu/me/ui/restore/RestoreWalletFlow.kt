@@ -1070,6 +1070,10 @@ fun rememberRestoreProgressState(
     val state = remember(walletManager, mintUrls) {
         RestoreProgressState(scope, walletManager, mintUrls)
     }
+    val walletState by walletManager.state.collectAsState()
+    LaunchedEffect(walletState.errorMessage) {
+        if (walletState.errorMessage != null) state.finishing = false
+    }
     LaunchedEffect(state) { state.restoreAll() }
     return state
 }
@@ -1159,6 +1163,7 @@ fun RestoreProgressStep(
     onContinue: () -> Unit,
 ) {
     val state = rememberRestoreProgressState(walletManager, mintUrls)
+    val walletState by walletManager.state.collectAsState()
 
     val titleAlign = if (presentation == RestorePresentation.InApp) {
         Alignment.CenterHorizontally
@@ -1177,6 +1182,9 @@ fun RestoreProgressStep(
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
+        walletState.errorMessage?.let {
+            InlineNotice(text = it, severity = NoticeSeverity.Error)
+        }
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1232,12 +1240,19 @@ fun RestoreProgressStep(
             PrimaryButton(
                 text = "Continue",
                 onClick = {
+                    walletManager.clearError()
                     state.finishing = true
                     onContinue()
                 },
                 enabled = state.allSettled && !state.finishing,
                 loading = state.finishing,
                 colors = ButtonDefaults.filledTonalButtonColors(),
+            )
+            Text(
+                text = "If you restored a different seed, continuing replaces your previous wallet. Its backup is kept until you continue.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
             )
         }
     }
