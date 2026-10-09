@@ -481,12 +481,22 @@ extension WalletManager {
         // UI-test support: wipe any persisted wallet so onboarding always shows
         // from a known-empty state. Driven by RESET_WALLET=1 in the test launch
         // environment; no effect in normal runs.
-        if IntegrationTestConfig.shouldResetWallet {
-            try? keychainService.deleteMnemonic()
-            try? keychainService.deleteNostrPrivateKey()
+        if IntegrationTestConfig.isEnabled && IntegrationTestConfig.shouldResetWallet {
+            // Clear the resume marker before deletion publishes onboarding;
+            // its onAppear must not enter the previous fixture's restore step.
             setICloudRestoreIncomplete(false)
-            OnboardingCompletionState.clear()
-            SettingsManager.shared.resetWalletScopedData()
+            do {
+                // Reset the entire fixture boundary, including a restore left
+                // staged by the previous test. Clearing only the seed leaves
+                // its durable journal blocking the next wallet installation.
+                try await deleteWallet()
+            } catch {
+                errorMessage = error.userFacingWalletMessage
+                isInitialized = true
+                isRuntimeReady = false
+                return
+            }
+            setICloudRestoreIncomplete(false)
         }
 
         if let relay = IntegrationTestConfig.localPaymentTestRelay {

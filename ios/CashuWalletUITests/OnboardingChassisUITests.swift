@@ -285,6 +285,17 @@ final class OnboardingChassisUITests: UITestBase {
             app.buttons["Find my mints"].waitForExistence(timeout: 30),
             "The lookup chip should settle back to its resting label"
         )
+
+        // This test leaves a durable restore in progress. A fresh fixture
+        // launch must clear that journal as well as its seed, so subsequent
+        // onboarding tests can install a different wallet.
+        app.terminate()
+        app.launch()
+        tapWhenReady(app.buttons["onboarding-create-wallet"], timeout: 30)
+        XCTAssertTrue(
+            app.buttons["onboarding-saved-seed"].waitForExistence(timeout: 15),
+            "Explicit fixture reset should allow wallet creation after a staged restore"
+        )
     }
 
     /// The rail scrubs: press-and-hold, then drag runs through the words with
