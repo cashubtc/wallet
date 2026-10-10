@@ -72,6 +72,10 @@ final class WalletLifecycleUITests: UITestBase {
         tapWhenReady(app.buttons["Remove mint"])
         XCTAssertTrue(app.staticTexts["Remove mint?"].waitForExistence(timeout: 5))
         tapWhenReady(app.buttons["Remove"])
+        // The list row is already absent while its detail screen is open.
+        // Wait for successful removal to dismiss that screen before killing
+        // the process; otherwise the pending operation can be interrupted.
+        XCTAssertTrue(app.buttons["Remove mint"].waitForNonExistence(timeout: 30))
         XCTAssertTrue(mintRow(url: mintURL).waitForNonExistence(timeout: 15))
         relaunchPreservingWallet()
         XCTAssertTrue(app.staticTexts["Add a mint to get started"].waitForExistence(timeout: 10))

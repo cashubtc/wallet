@@ -3,6 +3,12 @@ import SQLite3
 import Cdk
 import os
 
+enum WalletRestorePolicy {
+    static func reusesExistingWallet(previousEntropy: Data?, restoredEntropy: Data) -> Bool {
+        previousEntropy == restoredEntropy
+    }
+}
+
 private struct WalletLaunchRuntime: @unchecked Sendable {
     let db: WalletSqliteDatabase
     let repository: WalletRepository
@@ -475,12 +481,22 @@ extension WalletManager {
         // UI-test support: wipe any persisted wallet so onboarding always shows
         // from a known-empty state. Driven by RESET_WALLET=1 in the test launch
         // environment; no effect in normal runs.
-        if IntegrationTestConfig.shouldResetWallet {
-            try? keychainService.deleteMnemonic()
-            try? keychainService.deleteNostrPrivateKey()
+        if IntegrationTestConfig.isEnabled && IntegrationTestConfig.shouldResetWallet {
+            // Clear the resume marker before deletion publishes onboarding;
+            // its onAppear must not enter the previous fixture's restore step.
             setICloudRestoreIncomplete(false)
-            OnboardingCompletionState.clear()
-            SettingsManager.shared.resetWalletScopedData()
+            do {
+                // Reset the entire fixture boundary, including a restore left
+                // staged by the previous test. Clearing only the seed leaves
+                // its durable journal blocking the next wallet installation.
+                try await deleteWallet()
+            } catch {
+                errorMessage = error.userFacingWalletMessage
+                isInitialized = true
+                isRuntimeReady = false
+                return
+            }
+            setICloudRestoreIncomplete(false)
         }
 
         if let relay = IntegrationTestConfig.localPaymentTestRelay {
@@ -724,6 +740,10 @@ extension WalletManager {
             let mintName = info?.name ?? "Unknown Mint"
 
             // Perform NUT-09 restore - this derives proofs from the seed and checks their state with the mint
+            _ = try await wallet.recoverIncompleteSagas()
+            if let db = self.db, !(try await db.getIncompleteSagas()).isEmpty {
+                throw WalletError.networkError("An interrupted payment is still being recovered. Retry restore after it finishes.")
+            }
             let restored = try await wallet.restore()
 
             // Ensure mint is in our saved list
@@ -746,12 +766,25 @@ extension WalletManager {
     }
 
     /// Restore wallet from mnemonic - Phase 3: Complete restore and dismiss onboarding
-    func completeRestore() async {
-        completeOnboarding()
+    @discardableResult
+    func completeRestore() async -> Bool {
+        errorMessage = nil
+        do {
+            try await operationCoordinator.perform(kind: .recovery, priority: .recovery) {
+                let replacement = DurableWalletReplacement(storage: keychainService, urls: try walletDatabaseBoundaryURLs())
+                try replacement.finishRestore()
+                try await recoverWalletReplacement()
+                completeOnboarding()
+            }
+        } catch {
+            errorMessage = "Couldn't finish restore. Your recovered wallet is still available. Try again."
+            return false
+        }
         // Refresh the Nostr backup only if there are no unresolved iCloud mints.
         // (Must not run earlier: publishing while the repository is still empty
         // would replace the addressable backup event with an empty list.)
         Task { await NostrMintBackupService.shared.backupCurrentMintsIfEnabled() }
+        return true
     }
 
     func completeOnboarding() {
@@ -791,6 +824,8 @@ extension WalletManager {
                 try lightningService.requireNoActiveMeltSettlement()
                 await self.operationCoordinator.cancelPendingOperations()
                 resetRuntimeState()
+                try await recoverWalletReplacement()
+                try DurableWalletReplacement(storage: keychainService, urls: walletDatabaseBoundaryURLs()).finishRestore()
                 try await recoverWalletReplacement()
                 try keychainService.deleteMnemonic()
                 try? keychainService.deleteNostrPrivateKey()
@@ -869,8 +904,10 @@ extension WalletManager {
                 // Recheck with the lease held: a payment could have started while
                 // listener/NWC shutdown was suspended above.
                 try lightningService.requireNoActiveMeltSettlement()
-                await self.operationCoordinator.cancelPendingOperations()
                 try await self.installCleanWalletAssumingLease(mnemonic: newMnemonic, restoring: restoring)
+            }
+            if OnboardingCompletionState.isCompleted() {
+                await resumeServicesAfterWalletBoundaryFailure()
             }
         } catch {
             await resumeServicesAfterWalletBoundaryFailure()
@@ -886,7 +923,21 @@ extension WalletManager {
 
     private func installCleanWalletAssumingLease(mnemonic newMnemonic: String, restoring: Bool) async throws {
         try await recoverWalletReplacement()
-        let previousMnemonic = try mnemonic ?? keychainService.loadMnemonic()
+        let previousMnemonic = try keychainService.loadMnemonic()
+        if restoring, WalletRestorePolicy.reusesExistingWallet(
+            previousEntropy: try previousMnemonic.map { Data(try Cdk.mnemonicToEntropy(mnemonic: normalizeMnemonic($0))) },
+            restoredEntropy: Data(try Cdk.mnemonicToEntropy(mnemonic: newMnemonic))
+        ) {
+            // Preserve the current seed's complete ledger, including quote
+            // signing keys, counters and interrupted-operation evidence.
+            if walletRepository == nil {
+                try initializeWalletForLaunch(mnemonic: newMnemonic)
+                mnemonic = newMnemonic
+            }
+            return
+        }
+        try DurableWalletReplacement(storage: keychainService, urls: walletDatabaseBoundaryURLs()).requireNoStagedRestore()
+        await operationCoordinator.cancelPendingOperations()
         let defaultsSnapshot = walletBoundaryDefaultsSnapshot()
         var secrets: [String: String] = [:]
         for key in SettingsManager.shared.walletReplacementSecretKeys {
@@ -926,7 +977,9 @@ extension WalletManager {
             SettingsManager.shared.resetWalletScopedData(resetRuntimeServices: false)
             guard UserDefaults.standard.synchronize() else { throw CocoaError(.fileWriteUnknown) }
             try await Task.detached(priority: .userInitiated) {
-                try DurableWalletReplacement(storage: KeychainService(), urls: replacementURLs).commit()
+                let replacement = DurableWalletReplacement(storage: KeychainService(), urls: replacementURLs)
+                if restoring { try replacement.stageRestore() }
+                else { try replacement.commit() }
             }.value
         } catch {
             resetRuntimeState()
@@ -1561,7 +1614,7 @@ extension WalletManager {
 /// intact throughout replay; even an interrupted rollback can be repeated on the next launch.
 struct DurableWalletReplacement {
     static let key = "wallet_replacement_journal_v1"
-    private enum Phase: String, Codable { case preparing, installing, committed, restored }
+    private enum Phase: String, Codable { case preparing, installing, restoring, committed, restored }
     private struct Record: Codable {
         var phase: Phase
         let existed: [Bool]
@@ -1579,6 +1632,32 @@ struct DurableWalletReplacement {
     }
     private func write(_ record: Record) throws {
         try storage.saveSecret(PropertyListEncoder().encode(record).base64EncodedString(), forKey: Self.key)
+    }
+    func requireNoStagedRestore() throws {
+        if try read()?.phase == .restoring {
+            throw WalletError.networkError("Finish the current restore before installing a different wallet. The previous wallet is still backed up.")
+        }
+    }
+    func stageRestore() throws {
+        guard var record = try read(), record.phase == .installing else { throw CocoaError(.fileReadCorruptFile) }
+        record.phase = .restoring
+        try write(record)
+    }
+    /// Completion retries must also work after the commit succeeded but cleanup failed.
+    func finishRestore() throws {
+        guard var record = try read() else { return }
+        guard record.phase == .restoring || record.phase == .committed else { throw CocoaError(.fileReadCorruptFile) }
+        if record.phase == .restoring {
+            try validateBackups(record)
+            record.phase = .committed
+            try write(record)
+        }
+    }
+    private func validateBackups(_ record: Record) throws {
+        guard record.existed.count == urls.count,
+              urls.indices.allSatisfy({ !record.existed[$0] || fm.fileExists(atPath: backups[$0].path) }) else {
+            throw CocoaError(.fileReadNoSuchFile)
+        }
     }
     func begin(state: Data) throws {
         guard try read() == nil, backups.allSatisfy({ !fm.fileExists(atPath: $0.path) }) else {
@@ -1599,6 +1678,12 @@ struct DurableWalletReplacement {
     func recover(restoreState: (Data) throws -> Void) throws {
         guard var record = try read() else { return }
         guard record.existed.count == urls.count else { throw CocoaError(.fileReadCorruptFile) }
+        // Do not roll back recovered funds or discard the previous wallet merely
+        // because the user closed restore or the process restarted.
+        if record.phase == .restoring {
+            try validateBackups(record)
+            return
+        }
         if record.phase == .installing {
             guard urls.indices.allSatisfy({ !record.existed[$0] || fm.fileExists(atPath: backups[$0].path) }) else {
                 throw CocoaError(.fileReadNoSuchFile)

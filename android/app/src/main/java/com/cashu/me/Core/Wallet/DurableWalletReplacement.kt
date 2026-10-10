@@ -18,7 +18,7 @@ internal class DurableWalletReplacement(
     @Serializable
     private data class Record(val phase: Phase, val existed: List<Boolean>, val state: String)
     @Serializable
-    private enum class Phase { Preparing, Installing, Committed, Restored }
+    private enum class Phase { Preparing, Installing, Restoring, Committed, Restored }
 
     private val backups get() = files.map { File(it.path + ".replacement-backup-v1") }
     private fun read(): Record? = storage.loadString(KEY)?.let {
@@ -26,6 +26,31 @@ internal class DurableWalletReplacement(
         catch (_: Exception) { throw IOException("Wallet recovery journal could not be decoded.") }
     }
     private fun write(record: Record) = storage.saveString(KEY, Json.encodeToString(record))
+
+    fun requireNoStagedRestore() {
+        check(read()?.phase != Phase.Restoring) {
+            "Finish the current restore before installing a different wallet. The previous wallet is still backed up."
+        }
+    }
+
+    /** Installation succeeded; preserve both wallets until explicit completion. */
+    fun stageRestore() {
+        val record = checkNotNull(read())
+        check(record.phase == Phase.Installing)
+        write(record.copy(phase = Phase.Restoring))
+    }
+
+    /** Idempotent so completion can retry after a cleanup failure. */
+    fun finishRestore() {
+        val record = read() ?: return
+        check(record.phase == Phase.Restoring || record.phase == Phase.Committed)
+        if (record.phase == Phase.Restoring) {
+            check(backups.indices.all { !record.existed[it] || backups[it].exists() }) {
+                "A wallet recovery backup is missing."
+            }
+            write(record.copy(phase = Phase.Committed))
+        }
+    }
 
     fun begin(state: String) {
         check(read() == null) { "Wallet replacement recovery must finish first." }
@@ -50,6 +75,14 @@ internal class DurableWalletReplacement(
     ) {
         var record = read() ?: return
         check(record.existed.size == files.size) { "Unknown wallet replacement journal format." }
+        // The staged wallet may already contain recovered funds. Neither roll
+        // it back nor delete its predecessor on screen closure or relaunch.
+        if (record.phase == Phase.Restoring) {
+            check(backups.indices.all { !record.existed[it] || backups[it].exists() }) {
+                "A wallet recovery backup is missing."
+            }
+            return
+        }
         if (record.phase == Phase.Installing) {
             check(backups.indices.all { !record.existed[it] || backups[it].exists() }) {
                 "A wallet recovery backup is missing."

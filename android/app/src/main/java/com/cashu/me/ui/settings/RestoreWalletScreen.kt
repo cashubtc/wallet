@@ -151,7 +151,8 @@ fun RestoreWalletScreen(
                     onContinue = {
                         scope.launch {
                             runCatching { walletManager.completeRestore() }
-                            onClose()
+                                .onSuccess { onClose() }
+                                .onFailure { walletManager.reportRestoreCompletionFailure() }
                         }
                     },
                 )
