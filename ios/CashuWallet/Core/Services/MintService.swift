@@ -560,6 +560,13 @@ class MintService: ObservableObject {
                     (PaymentMethodKind.from($0.method), $0.description)
                 }
             )
+
+            // Live NUT-05 advertisement is authoritative, including false.
+            mintInfo.supportsAmountlessBolt11Melt = MintInfo.reportsAmountlessBolt11Melt(
+                methods: fetchedInfo.nuts.nut05.methods.map {
+                    (PaymentMethodKind.from($0.method), isSatUnit($0.unit), $0.amountless)
+                }
+            )
         }
 
         mintInfo.lastUpdated = Date()

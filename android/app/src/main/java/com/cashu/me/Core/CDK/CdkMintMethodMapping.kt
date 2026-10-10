@@ -29,6 +29,17 @@ internal fun CdkNuts.reportsBolt12MintDescription(): Boolean =
     }
 
 /**
+ * True when a sat-unit NUT-05 bolt11 method advertises `amountless: true`.
+ * Null or false on every such method (or none at all) fails closed.
+ */
+internal fun CdkNuts.reportsAmountlessBolt11Melt(): Boolean =
+    nut05.methods.any {
+        it.unit == CdkCurrencyUnit.Sat &&
+            it.method.toKnownPaymentMethodKind() == PaymentMethodKind.Bolt11 &&
+            it.amountless == true
+    }
+
+/**
  * NUT-05 melt rails exactly as reported, sat-only (pay-side non-sat is
  * deferred). Same reported-empty semantics as [reportedMintMethods].
  */

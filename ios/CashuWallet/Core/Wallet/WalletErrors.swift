@@ -277,6 +277,14 @@ enum WalletErrorMessage {
             return .error("This mint can't issue ecash for that amount right now. Try another mint.")
         }
 
+        // The mint refused NUT-05 amountless for this invoice. cdk-common renders the
+        // decoded response as "Amount Less Invoice is not allowed"; its wallet-side
+        // twin is "Amountless invoices are not supported for unit … and method …".
+        if normalized.contains("amount less invoice is not allowed")
+            || normalized.contains("amountless invoices are not supported") {
+            return .caution("This mint can't pay invoices without an amount. Choose another mint.")
+        }
+
         if normalized.contains("invoice has no amount")
             || normalized.contains("has no amount")
             || normalized.contains("amountless invoice")

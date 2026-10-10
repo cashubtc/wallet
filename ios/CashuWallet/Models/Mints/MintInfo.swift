@@ -29,6 +29,12 @@ struct MintInfo: Identifiable, Equatable, Codable {
     /// (the Description row stays hidden until a live fetch advertises true).
     var supportsBolt12MintDescription: Bool = false
 
+    /// NUT-05 bolt11 `amountless` option for the sat unit: the mint can pay an
+    /// invoice that leaves the amount to the payer. Nil until a live fetch has
+    /// read it — records persisted before this landed stay eligible and let the
+    /// mint decide, since mint info only refreshes from the Mints list.
+    var supportsAmountlessBolt11Melt: Bool? = nil
+
     /// Required on-chain confirmations for minting, if advertised by the mint
     var onchainMintConfirmations: Int? = nil
     
@@ -88,6 +94,24 @@ extension MintInfo {
         guard let unit, mintUnits.contains(unit) else { return defaultMintUnit }
         return unit
     }
+
+    // MARK: - Melt capability (NUT-05)
+
+    /// Whether this mint can pay a request of `method`. A BOLT11 invoice that
+    /// leaves the amount to the payer also needs the mint's NUT-05 `amountless`
+    /// option; BOLT12 offers are amountless by design and need nothing extra.
+    func canMelt(_ method: PaymentMethodKind, amountless: Bool = false) -> Bool {
+        guard supportedMeltMethods.contains(method) else { return false }
+        return !(amountless && method == .bolt11) || supportsAmountlessBolt11Melt != false
+    }
+
+    /// True when a sat-unit NUT-05 bolt11 method advertises `amountless: true`.
+    /// Null or false on every such method (or none at all) fails closed.
+    static func reportsAmountlessBolt11Melt(
+        methods: [(method: PaymentMethodKind?, isSatUnit: Bool, amountless: Bool?)]
+    ) -> Bool {
+        methods.contains { $0.method == .bolt11 && $0.isSatUnit && $0.amountless == true }
+    }
 }
 
 extension MintInfo {
@@ -103,6 +127,7 @@ extension MintInfo {
         case supportedMintMethods
         case supportedMeltMethods
         case supportsBolt12MintDescription
+        case supportsAmountlessBolt11Melt
         case onchainMintConfirmations
         case lastUpdated
     }
@@ -122,6 +147,7 @@ extension MintInfo {
         supportedMintMethods = try container.decodeIfPresent([PaymentMethodKind].self, forKey: .supportedMintMethods) ?? [.bolt11]
         supportedMeltMethods = try container.decodeIfPresent([PaymentMethodKind].self, forKey: .supportedMeltMethods) ?? [.bolt11]
         supportsBolt12MintDescription = try container.decodeIfPresent(Bool.self, forKey: .supportsBolt12MintDescription) ?? false
+        supportsAmountlessBolt11Melt = try container.decodeIfPresent(Bool.self, forKey: .supportsAmountlessBolt11Melt)
         onchainMintConfirmations = try container.decodeIfPresent(Int.self, forKey: .onchainMintConfirmations)
         lastUpdated = try container.decodeIfPresent(Date.self, forKey: .lastUpdated) ?? Date()
     }
@@ -139,6 +165,7 @@ extension MintInfo {
         try container.encode(supportedMintMethods, forKey: .supportedMintMethods)
         try container.encode(supportedMeltMethods, forKey: .supportedMeltMethods)
         try container.encode(supportsBolt12MintDescription, forKey: .supportsBolt12MintDescription)
+        try container.encodeIfPresent(supportsAmountlessBolt11Melt, forKey: .supportsAmountlessBolt11Melt)
         try container.encodeIfPresent(onchainMintConfirmations, forKey: .onchainMintConfirmations)
         try container.encode(lastUpdated, forKey: .lastUpdated)
     }

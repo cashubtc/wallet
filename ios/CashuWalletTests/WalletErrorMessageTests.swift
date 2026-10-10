@@ -61,6 +61,28 @@ final class WalletErrorMessageTests: XCTestCase {
         }
     }
 
+    /// A mint that refuses NUT-05 amountless must point at another mint, not tell
+    /// the user the invoice is at fault.
+    func testMintAmountlessRejectionPointsAtAnotherMint() {
+        for raw in [
+            "Amount Less Invoice is not allowed",
+            "Amountless invoices are not supported for unit `sat` and method `bolt11`",
+        ] {
+            let message = RawMintError(description: raw).walletMessage
+            XCTAssertEqual(
+                message.text,
+                "This mint can't pay invoices without an amount. Choose another mint.",
+                "raw: \(raw)"
+            )
+            XCTAssertEqual(message.severity, .caution)
+        }
+
+        XCTAssertEqual(
+            RawMintError(description: "Invoice Amount undefined").userFacingWalletMessage,
+            "This invoice doesn't set an amount. Ask the sender for one with the amount set."
+        )
+    }
+
     /// `TransactionUnbalanced` is rebuilt as `(0, 0, 0)` by the same decoder, so it
     /// reaches us as "Inputs: `0`, Outputs: `0`, Expected Fee: `0`" — three more
     /// meaningless numbers that must not be shown.

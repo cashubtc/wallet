@@ -53,6 +53,27 @@ class WalletErrorMessagesTest {
     }
 
     /**
+     * A mint that refuses NUT-05 amountless must point at another mint, not tell
+     * the user the invoice is at fault.
+     */
+    @Test
+    fun `mint amountless rejection points at another mint`() {
+        listOf(
+            "Amount Less Invoice is not allowed",
+            "Amountless invoices are not supported for unit `sat` and method `bolt11`",
+        ).forEach { raw ->
+            val message = WalletErrorMessages.classifyMessage(raw)
+            assertEquals(raw, "This mint can't pay invoices without an amount. Choose another mint.", message.text)
+            assertEquals(raw, WalletMessageSeverity.Caution, message.severity)
+        }
+
+        assertEquals(
+            "This invoice doesn't set an amount. Ask the sender for one with the amount set.",
+            WalletErrorMessages.classifyMessage("Invoice Amount undefined").text,
+        )
+    }
+
+    /**
      * `TransactionUnbalanced` is rebuilt as `(0, 0, 0)` by the same decoder, so it
      * reaches us as "Inputs: `0`, Outputs: `0`, Expected Fee: `0`" — three more
      * meaningless numbers that must not be shown.

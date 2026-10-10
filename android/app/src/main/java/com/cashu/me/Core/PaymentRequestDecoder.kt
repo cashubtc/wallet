@@ -28,6 +28,14 @@ sealed interface PaymentRequestDecodeResult {
     data object Unrecognized : PaymentRequestDecodeResult
 }
 
+/**
+ * True for a BOLT11 invoice that leaves the amount to the payer. Send collects
+ * the amount and passes it through CDK's amountless melt option, exactly like
+ * an amountless BOLT12 offer.
+ */
+val PaymentRequestDecodeResult.isAmountlessBolt11: Boolean
+    get() = this is PaymentRequestDecodeResult.Bolt11 && (amountSats == null || amountSats <= 0L)
+
 object PaymentRequestParser {
     fun normalizeLightningRequest(request: String): String {
         val trimmed = request.trim()

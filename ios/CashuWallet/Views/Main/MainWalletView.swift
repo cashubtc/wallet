@@ -694,9 +694,10 @@ struct MainWalletView: View {
                 initialDestination: prefill,
                 autoAdvanceInitialDestination: false
             )
-        case .sendAmount(let destination):
+        case .sendAmount(let destination, let explanation):
             unifiedSendSheet(
                 initialAmountDestination: destination,
+                initialRouteExplanation: explanation,
                 onEditDestination: {
                     navigationManager.present(
                         .sheet(.sendEdit(prefill: destination.rawInput))
@@ -737,11 +738,6 @@ struct MainWalletView: View {
             ReceiveLightningView()
                 .environmentObject(walletManager)
                 .presentationDetents([.large])
-        case .meltInvoice(let invoice):
-            MeltViewWithInvoice(invoice: invoice)
-                .environmentObject(walletManager)
-                .presentationDetents([.large])
-                .walletSheetSurface(fillsScreen: true)
         case .connectMint:
             // Same surface the Send sheet shows when there are no mints — the
             // detents and canvas background live inside it.
@@ -762,6 +758,7 @@ struct MainWalletView: View {
     private func unifiedSendSheet(
         initialDestination: String? = nil,
         initialAmountDestination: SendAmountDestination? = nil,
+        initialRouteExplanation: CashuRequestRouteExplanation? = nil,
         autoAdvanceInitialDestination: Bool = true,
         onEditDestination: (() -> Void)? = nil
     ) -> some View {
@@ -784,10 +781,11 @@ struct MainWalletView: View {
                 navigationManager.present(.cover(.receiveToken(token)))
             },
             onSendEcash: { navigationManager.activeWalletSheet = .sendEcash },
-            onRoutePayment: { destination in
-                navigationManager.present(.sheet(.sendAmount(destination)))
+            onRoutePayment: { destination, explanation in
+                navigationManager.present(.sheet(.sendAmount(destination, explanation: explanation)))
             },
-            onEditDestination: onEditDestination
+            onEditDestination: onEditDestination,
+            initialRouteExplanation: initialRouteExplanation
         )
         .environmentObject(walletManager)
     }
