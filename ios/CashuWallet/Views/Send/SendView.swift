@@ -1597,10 +1597,13 @@ struct UnifiedSendView: View {
                     .cashuText(.textLink)
                     .foregroundStyle(.secondary)
                 Text(recipientValue(locked))
-                    .cashuText(.body)
-                    .fontWeight(.medium)
+                    // Keeps a long Lightning address on one line. Inside
+                    // `cashuText`: a role applies its own line limit next to the
+                    // text, which would win over one added after it.
                     .lineLimit(1)
                     .truncationMode(.middle)
+                    .cashuText(.body)
+                    .fontWeight(.medium)
                 Spacer(minLength: 0)
             }
             .padding(.vertical, FlowRowMetrics.verticalPadding)
@@ -1630,11 +1633,12 @@ struct UnifiedSendView: View {
         }
     }
 
+    /// The recipient as a fixed 8…6 cut, or a Lightning address whole (Android
+    /// parity).
     private func recipientValue(_ locked: SendAmountDestination) -> String {
         switch locked {
         case .melt(let request, _, let decoded):
-            if case .lightningAddress(let addr) = decoded { return addr }
-            return PaymentRequestDecoder.shortRepresentation(request, result: decoded)
+            return PaymentRequestDecoder.displayRequest(request, result: decoded)
         case .cashuRequest(let summary):
             // Mirror the Lightning row: show the opaque request string, truncated. The
             // memo still surfaces in the confirm's dedicated Memo detail row.

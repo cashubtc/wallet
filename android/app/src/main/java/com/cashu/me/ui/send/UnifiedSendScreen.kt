@@ -60,6 +60,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
@@ -698,7 +699,12 @@ fun UnifiedSendScreen(
                     // swap's fixed anchor — it never slides with the faces
                     // (iOS parity).
                     if (step != SendStep.Input && !creqFromScan) {
-                        (locked?.raw ?: destination).takeIf { it.isNotBlank() }?.let { recipient ->
+                        val recipient = when (val rail = locked) {
+                            is LockedRail.Melt -> PaymentRequestDecoder.displayRequest(rail.raw, rail.decoded)
+                            is LockedRail.Creq -> PaymentRequestDecoder.displayRequest(rail.raw, rail.decoded)
+                            null -> PaymentRequestDecoder.middleTruncated(destination)
+                        }
+                        if (recipient.isNotBlank()) {
                             ToRow(
                                 destination = recipient,
                                 modifier = Modifier.padding(horizontal = CashuTheme.spacing.comfortable),
@@ -1107,7 +1113,9 @@ private fun ToRow(destination: String, modifier: Modifier = Modifier) {
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = 48.dp),
+            .heightIn(min = 48.dp)
+            // One "Recipient …" announcement (iOS parity), not "To" then the value.
+            .clearAndSetSemantics { contentDescription = "Recipient $destination" },
     ) {
         Text(
             text = "To",

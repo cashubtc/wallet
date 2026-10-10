@@ -89,3 +89,37 @@ final class ScanRouterTests: XCTestCase {
         XCTAssertEqual(explanation, CashuRequestRouteExplanation(state: .lightningFallback))
     }
 }
+
+/// How a locked destination reads in Send's "To" row: a fixed 8…6 cut, with
+/// Lightning addresses whole. Mirrors Android's `PaymentRequestDecoderTest`
+/// display cases.
+final class PaymentRequestDisplayTests: XCTestCase {
+    func testCaseInsensitiveRequestsFromUppercaseQRCodesShowLowercase() {
+        XCTAssertEqual(
+            PaymentRequestDecoder.displayRequest(" LNBC1P4T40C2PP5ARHNG9C7QPU02S3T ", result: .bolt11(amountSats: nil, description: nil)),
+            "lnbc1p4t…u02s3t"
+        )
+        XCTAssertEqual(
+            PaymentRequestDecoder.displayRequest("LNO1PGQPVGGR", result: .bolt12(amountSats: nil, description: nil)),
+            "lno1pgqpvggr"
+        )
+        XCTAssertEqual(
+            PaymentRequestDecoder.displayRequest("BC1QW508D6QEJXTDG4Y5R3ZARVARY0C5XW7KV8F3T4", result: .onchain("BC1QW508D6QEJXTDG4Y5R3ZARVARY0C5XW7KV8F3T4")),
+            "bc1qw508…v8f3t4"
+        )
+    }
+
+    func testCaseSensitiveRequestsKeepTheirCase() {
+        let base58 = "1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2"
+        XCTAssertEqual(PaymentRequestDecoder.displayRequest(base58, result: .onchain(base58)), "1BvBMSEY…JaNVN2")
+        XCTAssertEqual(
+            PaymentRequestDecoder.displayRequest("creqApAyloADebbdfhZHRyYW5zcG9ydHOB", result: .unrecognized),
+            "creqApAy…9ydHOB"
+        )
+    }
+
+    func testLightningAddressesStayWhole() {
+        let address = "Satoshi.Nakamoto@lightning.example.com"
+        XCTAssertEqual(PaymentRequestDecoder.displayRequest(address, result: .lightningAddress(address)), address)
+    }
+}
