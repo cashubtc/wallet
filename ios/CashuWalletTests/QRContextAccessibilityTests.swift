@@ -36,8 +36,10 @@ final class QRContextAccessibilityTests: XCTestCase {
                         status: status, token: kind == .ecash ? "cashu-token" : nil,
                         invoice: kind == .ecash ? nil : "one-shot-request"
                     )
+                    // An incoming deposit address keeps its QR only while
+                    // unfunded (covered below); a funded one is never reused.
                     let expected = status == .pending &&
-                        (kind != .ecash || direction == .outgoing)
+                        (kind == .lightning || direction == .outgoing)
                     XCTAssertEqual(transaction.hasActionablePaymentCode, expected,
                                    "Unexpected QR availability for \(kind), \(direction), \(status)")
                 }
@@ -58,6 +60,30 @@ final class QRContextAccessibilityTests: XCTestCase {
             status: .pending, invoice: "lno1offer"
         )
         XCTAssertTrue(outgoing.hasActionablePaymentCode)
+    }
+
+    func testDepositAddressKeepsItsCodeOnlyUntilMoneyIsSeen() {
+        var address = WalletTransaction(
+            id: "address", amount: 0, type: .incoming, kind: .onchain, date: .now,
+            status: .pending, invoice: "bc1qdeposit"
+        )
+        address.isUnfundedAddress = true
+        address.quoteId = "address"
+        XCTAssertTrue(address.hasActionablePaymentCode)
+        XCTAssertTrue(address.monitorsMintQuoteWhileOpen)
+
+        var inMempool = WalletTransaction(
+            id: "address", amount: 2_317, type: .incoming, kind: .onchain, date: .now,
+            status: .pending, statusNote: "In mempool", preimage: "txid", invoice: "bc1qdeposit"
+        )
+        inMempool.quoteId = "address"
+        XCTAssertFalse(inMempool.hasActionablePaymentCode)
+        XCTAssertTrue(inMempool.monitorsMintQuoteWhileOpen, "A deposit on its way keeps being checked")
+
+        var expired = address
+        expired.status = .expired
+        XCTAssertFalse(expired.hasActionablePaymentCode)
+        XCTAssertFalse(expired.monitorsMintQuoteWhileOpen)
     }
 
 }

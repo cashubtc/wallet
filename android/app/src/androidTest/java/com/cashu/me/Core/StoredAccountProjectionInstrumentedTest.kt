@@ -54,9 +54,27 @@ class StoredAccountProjectionInstrumentedTest {
                     OnchainPaymentObservation("b".repeat(64), 2_100, false, null)
                 }
                 val mints = listOf(MintInfo(trackedUrl))
-                // Disabled observation and unrelated endpoints must not query the explorer.
-                assertTrue(loader.load(mints, false).transactions.isEmpty())
-                assertTrue(loader.load(mints, observingQuoteId = "another-quote").transactions.isEmpty())
+                // Skipping observation still lists the unfunded address in History,
+                // without treating it as a payment or querying the explorer.
+                for (rows in listOf(
+                    loader.load(mints, false).transactions,
+                    loader.load(mints, observingQuoteId = "another-quote").transactions,
+                )) {
+                    val address = rows.single()
+                    assertEquals(quote.id, address.id)
+                    assertEquals(databaseMintUrl, address.mintUrl)
+                    assertEquals(quote.request, address.invoice)
+                    assertTrue(address.isUnfundedAddress)
+                    assertEquals(0L, address.amount)
+                    assertEquals(AppTransactionStatus.Pending, address.status)
+                    assertEquals("Waiting for deposit", address.statusNote)
+                    assertNull(address.preimage)
+                    assertTrue(recentPaymentTransactions(rows, 5).isEmpty())
+                    assertEquals(listOf("tx:${quote.id}"), com.cashu.me.ui.history.unifiedFiltered(
+                        rows, emptyList(), HistoryFilter.Pending, "bitcoin"
+                    ).map { it.key })
+                }
+                // Unrelated endpoints must neither list the address nor query the explorer.
                 for (otherUrl in listOf("https://offline.example/other", "https://offline.example:8443")) {
                     assertTrue(loader.load(listOf(MintInfo(otherUrl))).transactions.isEmpty())
                 }
@@ -68,8 +86,9 @@ class StoredAccountProjectionInstrumentedTest {
                 assertEquals(quote.id, pending.id)
                 assertEquals(databaseMintUrl, pending.mintUrl)
                 assertEquals(2_100L, pending.amount)
+                assertFalse(pending.isUnfundedAddress)
                 assertEquals(AppTransactionStatus.Pending, pending.status)
-                assertEquals("Payment seen in mempool", pending.statusNote)
+                assertEquals("In mempool", pending.statusNote)
                 assertEquals("b".repeat(64), pending.preimage)
                 assertEquals(rows, recentPaymentTransactions(rows, 5))
                 assertEquals(listOf("tx:${quote.id}"), com.cashu.me.ui.history.unifiedFiltered(

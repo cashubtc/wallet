@@ -492,7 +492,7 @@ internal fun unifiedFiltered(
             is HistoryItem.Tx -> {
                 val tx = item.transaction
                 TransactionDisplay.title(tx).contains(normalizedQuery, ignoreCase = true) ||
-                    tx.amount.toString().contains(normalizedQuery) ||
+                    (!tx.isUnfundedAddress && tx.amount.toString().contains(normalizedQuery)) ||
                     tx.displayDescription?.contains(normalizedQuery, ignoreCase = true) == true
             }
             is HistoryItem.Req -> {

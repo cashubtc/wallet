@@ -570,7 +570,7 @@ struct HistoryView: View {
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(rowTitle(for: transaction)), \(formatAmount(transaction)), \(transaction.status == .completed ? "completed" : transaction.displayStatusText.lowercased()), \(formatRelativeDate(transaction.date))")
+        .accessibilityLabel(rowAccessibilityLabel(for: transaction))
         .accessibilityHint(
             transaction.isPendingReceiveToken
                 ? "Opens receive review"
@@ -597,6 +597,17 @@ struct HistoryView: View {
 
     private func rowTitle(for transaction: WalletTransaction) -> String {
         transaction.displayTitle
+    }
+
+    private func rowAccessibilityLabel(for transaction: WalletTransaction) -> String {
+        [
+            rowTitle(for: transaction),
+            transaction.isUnfundedAddress ? nil : formatAmount(transaction),
+            transaction.status == .completed ? "completed" : transaction.displayStatusText.lowercased(),
+            formatRelativeDate(transaction.date),
+        ]
+        .compactMap { $0 }
+        .joined(separator: ", ")
     }
 
     // MARK: - Formatting
@@ -670,7 +681,7 @@ enum HistorySearch {
         let query = normalized(query)
         guard !query.isEmpty else { return true }
         if transaction.displayTitle.lowercased().contains(query) { return true }
-        if "\(transaction.amount)".contains(query) { return true }
+        if !transaction.isUnfundedAddress, "\(transaction.amount)".contains(query) { return true }
         if let memo = transaction.displayDescription, memo.lowercased().contains(query) { return true }
         return false
     }

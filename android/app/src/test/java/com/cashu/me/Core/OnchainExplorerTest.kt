@@ -73,19 +73,8 @@ class OnchainExplorerTest {
     }
 
     @Test
-    fun observationStatusTextMatchesConfirmationState() {
-        assertEquals(
-            "Payment seen in mempool",
-            OnchainPaymentObservation("tx", amount = 1, confirmed = false, confirmations = null).statusText,
-        )
-        assertEquals(
-            "Payment detected on-chain",
-            OnchainPaymentObservation("tx", amount = 1, confirmed = true, confirmations = null).statusText,
-        )
-        assertEquals(
-            "Payment confirmed on-chain (2 confirmations)",
-            OnchainPaymentObservation("tx", amount = 1, confirmed = true, confirmations = 2).statusText,
-        )
+    fun regtestAddressesHaveNoPublicExplorer() {
+        assertEquals(null, OnchainExplorer.addressWebUrl("bcrt1qregtest", mintUrl = "http://localhost:3339"))
     }
 
     @Test

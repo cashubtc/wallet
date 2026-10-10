@@ -563,7 +563,7 @@ struct MainWalletView: View {
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(rowTitle(for: transaction)), \(formatAmount(transaction)), \(transaction.status == .completed ? "completed" : transaction.displayStatusText.lowercased()), \(formatRelativeDate(transaction.date))")
+        .accessibilityLabel(rowAccessibilityLabel(for: transaction))
         .accessibilityHint("Opens transaction details")
     }
 
@@ -574,6 +574,17 @@ struct MainWalletView: View {
 
     private func rowTitle(for transaction: WalletTransaction) -> String {
         transaction.displayTitle
+    }
+
+    private func rowAccessibilityLabel(for transaction: WalletTransaction) -> String {
+        [
+            rowTitle(for: transaction),
+            transaction.isUnfundedAddress ? nil : formatAmount(transaction),
+            transaction.status == .completed ? "completed" : transaction.displayStatusText.lowercased(),
+            formatRelativeDate(transaction.date),
+        ]
+        .compactMap { $0 }
+        .joined(separator: ", ")
     }
 
     private func formatAmount(_ transaction: WalletTransaction) -> String {

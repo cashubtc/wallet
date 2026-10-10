@@ -2,6 +2,7 @@ package com.cashu.me.Core
 
 import com.cashu.me.Core.CDK.mintRemovalUrlsMatch
 import com.cashu.me.Models.MintQuoteInfo
+import com.cashu.me.Models.MintQuoteRetryState
 import com.cashu.me.Models.MintQuoteState
 import com.cashu.me.Models.PaymentMethodKind
 import com.cashu.me.Models.TransactionKind
@@ -17,6 +18,7 @@ internal fun pendingMintQuoteTransactions(
     nowEpochMillis: Long,
     onchainObservations: Map<String, OnchainPaymentObservation> = emptyMap(),
     previousTransactions: List<WalletTransaction> = emptyList(),
+    retryStates: Map<String, MintQuoteRetryState> = emptyMap(),
 ): List<WalletTransaction> =
     quotes.mapNotNull { quote ->
         val mintUrl = quote.mintUrl?.takeIf { stored ->
@@ -36,7 +38,7 @@ internal fun pendingMintQuoteTransactions(
             it.quoteId == quote.id && it.kind == TransactionKind.Onchain && it.preimage != null
         }.takeIf { quote.paymentMethod == PaymentMethodKind.Onchain }
         // A requested amount is not evidence that an address was funded.
-        val amount = (if (quote.paymentMethod == PaymentMethodKind.Onchain) {
+        val fundedAmount = if (quote.paymentMethod == PaymentMethodKind.Onchain) {
             quote.amountPaid.takeIf { it > 0 }
                 ?: quote.amountIssued.takeIf { it > 0 }
                 ?: observation?.amount
@@ -45,8 +47,12 @@ internal fun pendingMintQuoteTransactions(
             quote.amount?.takeIf { it > 0 }
                 ?: quote.amountPaid.takeIf { it > 0 }
                 ?: quote.amountIssued.takeIf { it > 0 }
-        }) ?: return@mapNotNull null
-        if (amount <= 0) return@mapNotNull null
+        }
+        // An address nothing has reached yet still lists, amountless, like an
+        // unpaid Lightning invoice.
+        val isUnfundedAddress = quote.paymentMethod == PaymentMethodKind.Onchain && fundedAmount == null
+        val amount = fundedAmount ?: if (isUnfundedAddress) 0L else return@mapNotNull null
+        if (amount <= 0 && !isUnfundedAddress) return@mapNotNull null
 
         // CDK 0.18 quotes carry `updatedAt` (creation time for an untouched
         // quote); the local first-seen map only backfills legacy rows that
@@ -63,7 +69,8 @@ internal fun pendingMintQuoteTransactions(
             quote.amountPaid > 0
         val isUnpaidBolt11 = quote.paymentMethod == PaymentMethodKind.Bolt11 && !isPaid
         val expiry = quote.expiryEpochSeconds ?: 0
-        val isExpiredUnpaidInvoice = isUnpaidBolt11 && expiry > 0 && nowEpochMillis / 1000 > expiry
+        val isPastExpiry = expiry > 0 && nowEpochMillis / 1000 > expiry
+        val isExpiredUnpaidRequest = (isUnpaidBolt11 || isUnfundedAddress) && isPastExpiry
         WalletTransaction(
             id = quote.id,
             amount = amount,
@@ -75,20 +82,54 @@ internal fun pendingMintQuoteTransactions(
             },
             dateEpochMillis = timestamp,
             status = when {
+                isExpiredUnpaidRequest -> TransactionStatus.Expired
+                isUnfundedAddress -> TransactionStatus.Pending
                 quote.state == MintQuoteState.Issued || quote.amountIssued >= amount ->
                     TransactionStatus.Completed
-                isExpiredUnpaidInvoice -> TransactionStatus.Expired
                 else -> TransactionStatus.Pending
             },
-            statusNote = observation?.statusText ?: previous?.let { "Payment detected on-chain" },
+            statusNote = if (quote.paymentMethod == PaymentMethodKind.Onchain) {
+                onchainStatusNote(quote, observation, previous, retryStates[quote.id], isPastExpiry)
+            } else {
+                null
+            },
             preimage = observation?.txid ?: previous?.preimage,
             mintUrl = mintUrl,
             invoice = quote.request,
             quoteId = quote.id,
             unit = quote.unit,
             isUnpaidInvoice = isUnpaidBolt11,
+            isUnfundedAddress = isUnfundedAddress,
         )
     }
+
+/**
+ * One vocabulary with the receive sheet and the receipt. Offline, the last
+ * reload's row stands in for the explorer and keeps the stage it reported;
+ * notes from before this vocabulary all start with "Payment " and are rebuilt.
+ */
+private fun onchainStatusNote(
+    quote: MintQuoteInfo,
+    observation: OnchainPaymentObservation?,
+    previous: WalletTransaction?,
+    retryState: MintQuoteRetryState?,
+    isPastExpiry: Boolean,
+): String? {
+    val sighting = observation ?: previous?.let {
+        OnchainPaymentObservation(txid = it.preimage.orEmpty(), amount = it.amount, confirmed = false, confirmations = null)
+    }
+    val status = OnchainDepositStatus.resolve(
+        amountPaid = quote.amountPaid,
+        amountIssued = quote.amountIssued,
+        observation = sighting,
+        retryState = retryState ?: MintQuoteRetryState.None,
+        isPastExpiry = isPastExpiry,
+    )
+    if (observation == null && status is OnchainDepositStatus.InMempool) {
+        previous?.statusNote?.takeUnless { it.startsWith("Payment ") }?.let { return it }
+    }
+    return status.historyText
+}
 
 internal fun pruneMintQuoteTimestamps(
     transactions: List<WalletTransaction>,

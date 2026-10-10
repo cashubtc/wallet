@@ -12,9 +12,11 @@ internal fun recentPaymentTransactions(
     limit: Int,
 ): List<WalletTransaction> = transactions
     .asSequence()
+    // An in-flight deposit is money moving; an address nothing has reached
+    // yet is only a request, like an unpaid invoice.
     .filter {
         it.status == TransactionStatus.Completed ||
-            (it.kind == TransactionKind.Onchain && it.status == TransactionStatus.Pending)
+            (it.kind == TransactionKind.Onchain && it.status == TransactionStatus.Pending && !it.isUnfundedAddress)
     }
     .sortedByDescending { it.dateEpochMillis }
     .take(limit.coerceAtLeast(0))

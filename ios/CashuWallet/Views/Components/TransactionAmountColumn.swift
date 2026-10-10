@@ -16,7 +16,16 @@ struct TransactionAmountColumn: View {
     @ObservedObject var settings: SettingsManager = .shared
     @ObservedObject var priceService: PriceService = .shared
 
+    @ViewBuilder
     var body: some View {
+        // An unfunded deposit address has no amount yet: no trailing element,
+        // like an any-amount Cashu Request that is still waiting.
+        if !transaction.isUnfundedAddress {
+            amountStack
+        }
+    }
+
+    private var amountStack: some View {
         ZStack(alignment: .trailing) {
             VStack(alignment: .trailing, spacing: 2) {
                 // The Row rung of the amount ladder. It carries the tabular figures,

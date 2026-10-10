@@ -14,17 +14,7 @@ data class OnchainPaymentObservation(
     val amount: Long,
     val confirmed: Boolean,
     val confirmations: Int?,
-) {
-    val statusText: String
-        get() = when {
-            confirmations != null && confirmations > 0 -> {
-                val suffix = if (confirmations == 1) "" else "s"
-                "Payment confirmed on-chain ($confirmations confirmation$suffix)"
-            }
-            confirmed -> "Payment detected on-chain"
-            else -> "Payment seen in mempool"
-        }
-}
+)
 
 object OnchainExplorer {
     private val json = Json { ignoreUnknownKeys = true }
@@ -108,6 +98,9 @@ object OnchainExplorer {
             ?.let(PaymentRequestParser::normalizeBitcoinRequest)
             ?.lowercase()
             .orEmpty()
+
+        // Regtest has no public explorer; asking signet would only fail.
+        if (normalizedAddress.startsWith("bcrt1")) return null
 
         if (
             normalizedAddress.startsWith("bc1") ||
