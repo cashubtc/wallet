@@ -7,7 +7,10 @@ final class WalletLifecycleUITests: UITestBase {
         // These journeys include onboarding, live mint settlement, and wallet
         // relaunches. Keep a bound without killing a successful round trip as
         // it reaches its final balance assertion on slower hosted runners.
-        executionTimeAllowance = 180
+        // A slow runner has stretched the two-relaunch mint journey (~90 s
+        // normally) past 3 minutes, so allow 5, under CI's 6-minute maximum.
+        // Individual waits stay short and bounded.
+        executionTimeAllowance = 300
         try super.setUpWithError()
     }
 
