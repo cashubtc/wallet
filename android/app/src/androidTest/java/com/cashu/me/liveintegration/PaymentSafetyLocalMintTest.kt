@@ -2,6 +2,7 @@ package com.cashu.me.liveintegration
 
 import androidx.test.platform.app.InstrumentationRegistry
 import com.cashu.me.Core.CDK.CdkWalletGatewayImpl
+import com.cashu.me.Core.CDK.MeltPaymentRecoveryException
 import com.cashu.me.Core.NostrService
 import com.cashu.me.Models.MeltQuoteState
 import com.cashu.me.Models.MeltSettlement
@@ -203,7 +204,19 @@ class PaymentSafetyLocalMintTest : PaymentFixtureTest() {
         val wallet = wallet("controlled")
         wallet.fund()
         val quote = wallet.gateway.createMeltQuote(invoice(101), null, wallet.url)
-        expectError("insufficient", "not enough", "Payment status is unknown") { wallet.gateway.meltTokens(quote.id, wallet.url) }
+        val rejected = runCatching { wallet.gateway.meltTokens(quote.id, wallet.url) }.exceptionOrNull()
+        assertNotNull("The oversized payment must be rejected", rejected)
+        if (rejected is MeltPaymentRecoveryException) {
+            // CDK 0.18.2 may journal preparation before discovering the shortfall.
+            // A compensated operation is safe only once its reservations clear.
+            assertFalse("Insufficient funds must not leave an unresolved payment", rejected.unresolved)
+        } else {
+            val message = rejected.toString().lowercase()
+            assertTrue("Unexpected rejection: $rejected", "insufficient" in message || "not enough" in message)
+        }
+        assertEquals(100, wallet.balance())
+        wallet.reopen()
+        assertEquals(100, wallet.balance())
         arm("/v1/melt/quote/bolt11", "reject")
         expectError("503", "unavailable", "http") { wallet.gateway.createMeltQuote(invoice(), null, wallet.url) }
         assertEquals(100, wallet.balance())
