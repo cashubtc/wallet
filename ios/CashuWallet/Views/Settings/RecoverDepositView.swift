@@ -2,11 +2,13 @@ import SwiftUI
 
 struct RecoverDepositView: View {
     @EnvironmentObject private var walletManager: WalletManager
+    @Environment(\.dismiss) private var dismiss
     @State private var mintURL = ""
     @State private var quoteID = ""
     @State private var method: PaymentMethodKind = .bolt11
     @State private var unit = "sat"
     @State private var searchLimit: UInt32 = 1_000
+    @State private var showOptions = false
     @State private var working = false
     @State private var error: String?
     @State private var result: DepositRecoveryResult?
@@ -15,75 +17,118 @@ struct RecoverDepositView: View {
     @FocusState private var focusedField: Field?
     private enum Field: Hashable { case mintURL, quoteID }
 
+    private var recovered: Bool { result?.status == .recovered && result?.remaining == 0 }
+    private var unitLabel: String { unit == "sat" ? "Sats" : unit.uppercased() }
+
     var body: some View {
-        Form {
-            Section {
-                Text("Recover a paid deposit that was never added to your balance. You need the mint URL and quote ID saved by the original wallet. An invoice, payment hash, or Bitcoin address alone is not enough.")
-                Text("Uses this wallet's recovery phrase. Restore the original phrase first if this deposit belongs to another wallet.")
-                    .foregroundStyle(.secondary)
-            }
-            Section("Deposit details") {
-                TextField("Mint URL", text: $mintURL)
-                    .focused($focusedField, equals: .mintURL)
-                    .submitLabel(.next)
-                    .onSubmit { focusedField = .quoteID }
-                    .keyboardType(.URL)
-                    .textContentType(.URL)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .accessibilityIdentifier("depositRecoveryMintURL")
-                TextField("Quote ID", text: $quoteID)
-                    .focused($focusedField, equals: .quoteID)
-                    .submitLabel(.done)
-                    .onSubmit { focusedField = nil }
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .accessibilityIdentifier("depositRecoveryQuoteID")
-                Picker("Payment method", selection: $method) {
-                    ForEach(PaymentMethodKind.allCases, id: \.self) { Text($0.friendlyTitle).tag($0) }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: 20) {
+                    field("Mint URL") {
+                        TextField("https://…", text: $mintURL)
+                            .accessibilityLabel("Mint URL")
+                            .focused($focusedField, equals: .mintURL)
+                            .submitLabel(.next)
+                            .onSubmit { focusedField = .quoteID }
+                            .keyboardType(.URL)
+                            .textContentType(.URL)
+                            .accessibilityIdentifier("depositRecoveryMintURL")
+                    }
+                    field("Quote ID") {
+                        TextField("Paste quote ID", text: $quoteID)
+                            .accessibilityLabel("Quote ID")
+                            .focused($focusedField, equals: .quoteID)
+                            .submitLabel(.done)
+                            .onSubmit { focusedField = nil }
+                            .accessibilityIdentifier("depositRecoveryQuoteID")
+                    }
                 }
-                Picker("Currency", selection: $unit) {
-                    ForEach(DepositRecoveryRequest.units, id: \.self) { Text($0 == "sat" ? "Sats" : $0.uppercased()).tag($0) }
-                }
-            }
-            .disabled(working)
-            Section {
-                Picker("Search depth", selection: $searchLimit) {
-                    Text("Up to 1,000 deposits").tag(UInt32(1_000))
-                    Text("Up to 10,000 deposits").tag(UInt32(10_000))
-                }
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
                 .disabled(working)
-            } footer: {
-                Text("Try the deeper search if this wallet created many deposits before you lost its data. Recovery does not find unknown quote IDs.")
-            }
-            Section {
-                if let error { InlineNotice(message: error, severity: .error) }
+
+                Button {
+                    focusedField = nil
+                    HapticFeedback.selection()
+                    withAnimation(.easeInOut(duration: 0.2)) { showOptions.toggle() }
+                } label: {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Options").foregroundStyle(.primary)
+                            Text("\(method.friendlyTitle) · \(unitLabel)")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 8)
+                        Image(systemName: showOptions ? "chevron.up" : "chevron.down")
+                            .font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+                    }
+                    .padding(.vertical, 14)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(working)
+                .accessibilityValue(showOptions ? "Expanded" : "Collapsed")
+                .accessibilityIdentifier("depositRecoveryOptions")
+                .padding(.top, 10)
+
+                if showOptions {
+                    VStack(spacing: 0) {
+                        Menu {
+                            Picker("Payment method", selection: $method) {
+                                ForEach(PaymentMethodKind.allCases, id: \.self) { Text($0.friendlyTitle).tag($0) }
+                            }
+                        } label: { optionRow("Payment method", value: method.friendlyTitle) }
+                        Menu {
+                            Picker("Currency", selection: $unit) {
+                                ForEach(DepositRecoveryRequest.units, id: \.self) {
+                                    Text($0 == "sat" ? "Sats" : $0.uppercased()).tag($0)
+                                }
+                            }
+                        } label: { optionRow("Currency", value: unitLabel) }
+                        Menu {
+                            Picker("Search depth", selection: $searchLimit) {
+                                Text("1,000 deposits").tag(UInt32(1_000))
+                                Text("10,000 deposits").tag(UInt32(10_000))
+                            }
+                        } label: { optionRow("Search depth", value: searchLimit == 1_000 ? "1,000 deposits" : "10,000 deposits") }
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(working)
+                }
+
+                if let error {
+                    InlineNotice(message: error, severity: .error).padding(.top, 12)
+                }
                 if let result {
                     InlineNotice(message: result.message, severity: result.status == .recovered ? .success : .info)
                         .accessibilityIdentifier("depositRecoveryResult")
+                        .padding(.top, 12)
                 }
-                Button {
-                    focusedField = nil
-                    error = nil
-                    result = nil
-                    do {
-                        approvedRequest = try DepositRecoveryRequest(mintURL: mintURL, quoteID: quoteID,
-                            method: method, unit: unit, searchLimit: searchLimit)
-                        showConfirmation = true
-                    } catch { self.error = error.localizedDescription }
-                } label: {
-                    HStack {
-                        if working { ProgressView() }
-                        Text(working ? "Recovering…" : "Recover deposit")
-                    }
-                    .frame(maxWidth: .infinity)
+
+                Button(action: recovered ? { dismiss() } : requestRecovery) {
+                    LoadingButtonLabel(title: recovered ? "Done" : "Recover deposit", isLoading: working)
                 }
-                .buttonStyle(.borderedProminent)
+                .glassButton()
                 .disabled(working || !walletManager.isRuntimeReady || mintURL.isEmpty || quoteID.isEmpty)
+                .accessibilityLabel(working ? "Recovering deposit" : recovered ? "Done" : "Recover deposit")
                 .accessibilityIdentifier("recoverDepositButton")
+                .padding(.top, 20)
+
+                if !recovered {
+                    Text("Uses this wallet's seed phrase.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 10)
+                }
             }
+            .padding(.horizontal, 20)
+            .padding(.top, 20)
+            .padding(.bottom, 24)
+            .frame(maxWidth: 720)
+            .frame(maxWidth: .infinity)
         }
-        .navigationTitle("Recover a deposit")
+        .navigationTitle("Recover deposit")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(working)
         .scrollDismissesKeyboard(.interactively)
@@ -91,21 +136,62 @@ struct RecoverDepositView: View {
             error = nil
             result = nil
         }
-        .alert("Recover this deposit?", isPresented: $showConfirmation) {
-            Button("Cancel", role: .cancel) { approvedRequest = nil }
-            Button("Recover deposit") {
-                guard let request = approvedRequest, !working else { return }
-                approvedRequest = nil
-                working = true
-                Task {
-                    defer { working = false }
-                    do { result = try await walletManager.recoverDeposit(request) }
-                    catch let error as DepositRecoveryError { self.error = error.localizedDescription }
-                    catch { self.error = "Recovery could not finish. Check the mint and deposit details, then retry. Any saved deposit will remain available for recovery." }
-                }
+        .backdropSheet(isPresented: $showConfirmation, onDismiss: { approvedRequest = nil }) {
+            if let request = approvedRequest {
+                ActionConfirmationSheet(
+                    title: "Recover this deposit?",
+                    message: "Claim this deposit at \(URL(string: request.mintURL)?.host ?? request.mintURL) using this wallet's seed phrase.",
+                    actionLabel: "Recover",
+                    action: { recover(request) }
+                )
             }
-        } message: {
-            Text("Use this wallet's recovery phrase to restore ecash at this mint, find the deposit key, and claim available funds. Pending deposits will continue recovering in the background.")
+        }
+        .bottomSheetBackdropHost()
+    }
+
+    private func field<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label).font(.footnote).foregroundStyle(.secondary)
+            content()
+                .padding(.horizontal, 16)
+                .padding(.vertical, 16)
+                .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 12))
+        }
+    }
+
+    private func optionRow(_ label: String, value: String) -> some View {
+        HStack {
+            Text(label).foregroundStyle(.primary)
+            Spacer(minLength: 8)
+            Text(value).foregroundStyle(.secondary)
+                .multilineTextAlignment(.trailing)
+            Image(systemName: "chevron.up.chevron.down")
+                .font(.caption).foregroundStyle(.tertiary)
+        }
+        .padding(.vertical, 14)
+        .frame(minHeight: 44)
+        .contentShape(Rectangle())
+    }
+
+    private func requestRecovery() {
+        focusedField = nil
+        error = nil
+        result = nil
+        do {
+            approvedRequest = try DepositRecoveryRequest(mintURL: mintURL, quoteID: quoteID,
+                method: method, unit: unit, searchLimit: searchLimit)
+            showConfirmation = true
+        } catch { self.error = error.localizedDescription }
+    }
+
+    private func recover(_ request: DepositRecoveryRequest) {
+        guard !working else { return }
+        working = true
+        Task {
+            defer { working = false }
+            do { result = try await walletManager.recoverDeposit(request) }
+            catch let error as DepositRecoveryError { self.error = error.localizedDescription }
+            catch { self.error = "Recovery failed. Check the deposit details and try again." }
         }
     }
 }

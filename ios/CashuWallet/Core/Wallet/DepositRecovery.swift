@@ -69,17 +69,17 @@ struct DepositRecoveryResult {
         switch status {
         case .recovered:
             let value = CurrencyAmount(value: amount, currency: CurrencyRegistry.currency(forMintUnit: unit)).formatted()
-            return remaining > 0 ? "Recovered \(value). More funds are still pending; the wallet will retry." : "Recovered \(value). Your balance and history have been updated."
+            return remaining > 0 ? "Recovered \(value). Remaining funds are pending." : "Recovered \(value)."
         case .keyNotFound:
-            return "No matching key found. Try the deeper search, or restore the original wallet's recovery phrase first. Deposits made with random keys require the original database backup."
+            return "No matching key. Try a deeper search or restore the original seed phrase. Random keys need a database backup."
         case .waiting:
-            return "Deposit key recovered. No funds are available yet. The wallet will keep checking this deposit."
+            return "No payment yet. We'll keep checking."
         case .alreadyClaimed:
-            return "This deposit has already been claimed. Use Restore to recover ecash that was issued before you lost your wallet."
+            return "Already claimed. Use Restore to recover the ecash."
         case .pending:
-            return "Deposit key recovered. Claiming the funds is still pending; the wallet will retry automatically."
+            return "Recovery pending. We'll retry automatically."
         case .expired:
-            return "This unpaid deposit has expired. There are no funds available to claim."
+            return "This unpaid deposit has expired."
         }
     }
 }

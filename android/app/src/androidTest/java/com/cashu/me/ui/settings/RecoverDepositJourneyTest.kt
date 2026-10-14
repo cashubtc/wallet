@@ -26,6 +26,10 @@ class RecoverDepositJourneyTest {
             compose.onNodeWithText("Recover a deposit").performScrollTo().performClick()
             compose.onNodeWithTag("depositRecoveryMintURL").performTextInput("https://mint.example")
             compose.onNodeWithTag("depositRecoveryQuoteID").performTextInput("saved-quote-id")
+            compose.onNodeWithText("Search depth").assertDoesNotExist()
+            compose.onNodeWithTag("depositRecoveryOptions").performClick()
+            compose.onNodeWithText("Search depth").assertIsDisplayed()
+            compose.onNodeWithTag("depositRecoveryOptions").performClick()
             compose.onNodeWithTag("recoverDepositButton").performScrollTo().performClick()
             compose.onNodeWithText("Recover this deposit?").assertIsDisplayed()
             assertEquals(0, fake.depositRecoveryCalls.get())
@@ -34,9 +38,9 @@ class RecoverDepositJourneyTest {
             assertEquals(0, fake.depositRecoveryCalls.get())
             assertEquals(seedBefore, fixture.container.walletManager.backupMnemonic())
             compose.onNodeWithTag("recoverDepositButton").performScrollTo().performClick()
-            compose.onNode(hasText("Recover deposit") and hasAnyAncestor(isDialog())).performClick()
+            compose.onNodeWithText("Recover").performClick()
             compose.waitUntil { fake.depositRecoveryCalls.get() == 1 }
-            compose.onNodeWithText("No matching key found.", substring = true).performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("No matching key.", substring = true).performScrollTo().assertIsDisplayed()
             assertEquals(seedBefore, fixture.container.walletManager.backupMnemonic())
             assertEquals(0L, fixture.container.walletManager.state.value.balance)
         }

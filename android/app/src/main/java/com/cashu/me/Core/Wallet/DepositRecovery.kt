@@ -49,14 +49,14 @@ data class DepositRecoveryResult(
     val message: String get() = when (status) {
         DepositRecoveryStatus.Recovered -> {
             val value = CurrencyAmount(amount, CurrencyRegistry.currencyForMintUnit(unit)).formatted()
-            if (remaining > 0) "Recovered $value. More funds are still pending; the wallet will retry."
-            else "Recovered $value. Your balance and history have been updated."
+            if (remaining > 0) "Recovered $value. Remaining funds are pending."
+            else "Recovered $value."
         }
-        DepositRecoveryStatus.KeyNotFound -> "No matching key found. Try the deeper search, or restore the original wallet's recovery phrase first. Deposits made with random keys require the original database backup."
-        DepositRecoveryStatus.Waiting -> "Deposit key recovered. No funds are available yet. The wallet will keep checking this deposit."
-        DepositRecoveryStatus.AlreadyClaimed -> "This deposit has already been claimed. Use Restore to recover ecash that was issued before you lost your wallet."
-        DepositRecoveryStatus.Pending -> "Deposit key recovered. Claiming the funds is still pending; the wallet will retry automatically."
-        DepositRecoveryStatus.Expired -> "This unpaid deposit has expired. There are no funds available to claim."
+        DepositRecoveryStatus.KeyNotFound -> "No matching key. Try a deeper search or restore the original seed phrase. Random keys need a database backup."
+        DepositRecoveryStatus.Waiting -> "No payment yet. We'll keep checking."
+        DepositRecoveryStatus.AlreadyClaimed -> "Already claimed. Use Restore to recover the ecash."
+        DepositRecoveryStatus.Pending -> "Recovery pending. We'll retry automatically."
+        DepositRecoveryStatus.Expired -> "This unpaid deposit has expired."
     }
 
     companion object {

@@ -28,25 +28,27 @@ final class SettingsUITests: UITestBase {
         let quote = app.textFields["depositRecoveryQuoteID"]
         tapWhenReady(quote)
         quote.typeText("saved-quote-id\n")
+        XCTAssertFalse(app.buttons["Search depth"].exists)
+        tapWhenReady(app.buttons["depositRecoveryOptions"])
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Search depth")).firstMatch.exists)
+        tapWhenReady(app.buttons["depositRecoveryOptions"])
         let recover = app.buttons["recoverDepositButton"]
-        // A native Form exposes a collection view, rather than the ScrollView
-        // used by the other settings detail pages.
         for _ in 0..<6 {
             if recover.isHittable { break }
             app.swipeUp()
         }
         XCTAssertTrue(recover.isEnabled)
         tapWhenReady(recover)
-        let confirmation = app.alerts["Recover this deposit?"]
+        let confirmation = app.staticTexts["Recover this deposit?"]
         XCTAssertTrue(confirmation.waitForExistence(timeout: 5))
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = "Deposit recovery confirmation"
         attachment.lifetime = .keepAlways
         add(attachment)
-        tapWhenReady(confirmation.buttons["Cancel"])
-        XCTAssertFalse(confirmation.exists)
+        tapWhenReady(app.buttons["Cancel"])
+        XCTAssertTrue(confirmation.waitForNonExistence(timeout: 5))
         XCTAssertEqual(quote.value as? String, "saved-quote-id")
-        XCTAssertFalse(app.otherElements["depositRecoveryResult"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["depositRecoveryResult"].exists)
     }
 
     func testCurrencyNamesRemainAccessibleAtLargeTextSizes() {

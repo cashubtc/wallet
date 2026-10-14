@@ -7,7 +7,8 @@ NUT-09.
 
 Restore the original wallet's recovery phrase first, if necessary. Deposit
 recovery uses the current wallet's seed and never replaces it. Enter the mint
-URL, exact quote ID, payment method, and original currency. A Lightning invoice,
+URL and exact quote ID. The form defaults to a Lightning invoice in sats; expand
+Options to change the payment method, currency, or search depth. A Lightning invoice,
 payment hash, or Bitcoin address alone cannot identify the mint quote.
 
 The default search covers the first 1,000 seed-derived deposit keys. Choose the
