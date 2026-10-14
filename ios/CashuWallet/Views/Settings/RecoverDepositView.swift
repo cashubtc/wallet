@@ -9,6 +9,7 @@ struct RecoverDepositView: View {
     @State private var unit = "sat"
     @State private var searchLimit: UInt32 = 1_000
     @State private var showOptions = false
+    @State private var showMintPicker = false
     @State private var working = false
     @State private var error: String?
     @State private var result: DepositRecoveryResult?
@@ -24,15 +25,33 @@ struct RecoverDepositView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 VStack(alignment: .leading, spacing: 20) {
-                    field("Mint URL") {
-                        TextField("https://…", text: $mintURL)
-                            .accessibilityLabel("Mint URL")
-                            .focused($focusedField, equals: .mintURL)
-                            .submitLabel(.next)
-                            .onSubmit { focusedField = .quoteID }
-                            .keyboardType(.URL)
-                            .textContentType(.URL)
-                            .accessibilityIdentifier("depositRecoveryMintURL")
+                    field("Mint URL", verticalPadding: walletManager.mints.isEmpty ? 16 : 5) {
+                        HStack(spacing: 0) {
+                            TextField("https://…", text: $mintURL)
+                                .accessibilityLabel("Mint URL")
+                                .focused($focusedField, equals: .mintURL)
+                                .submitLabel(.next)
+                                .onSubmit { focusedField = .quoteID }
+                                .keyboardType(.URL)
+                                .textContentType(.URL)
+                                .accessibilityIdentifier("depositRecoveryMintURL")
+                            if !walletManager.mints.isEmpty {
+                                Button {
+                                    focusedField = nil
+                                    HapticFeedback.selection()
+                                    showMintPicker = true
+                                } label: {
+                                    Image(systemName: "chevron.down")
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: 44, height: 44)
+                                        .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("Choose mint")
+                                .accessibilityIdentifier("depositRecoveryMintPicker")
+                            }
+                        }
                     }
                     field("Quote ID") {
                         TextField("Paste quote ID", text: $quoteID)
@@ -136,6 +155,18 @@ struct RecoverDepositView: View {
             error = nil
             result = nil
         }
+        .backdropSheet(isPresented: $showMintPicker) {
+            MintPickerSheet(
+                title: "Choose mint",
+                mints: walletManager.mints,
+                selectedMintUrl: Binding(
+                    get: { walletManager.mints.first { MintURLIdentity.normalized($0.url) == MintURLIdentity.normalized(mintURL) }?.url },
+                    set: { if let url = $0 { mintURL = url } }
+                ),
+                onSelect: { mintURL = $0 },
+                mintSubtitle: { $0.url.replacingOccurrences(of: "https://", with: "", options: .anchored) }
+            )
+        }
         .backdropSheet(isPresented: $showConfirmation, onDismiss: { approvedRequest = nil }) {
             if let request = approvedRequest {
                 ActionConfirmationSheet(
@@ -149,12 +180,12 @@ struct RecoverDepositView: View {
         .bottomSheetBackdropHost()
     }
 
-    private func field<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
+    private func field<Content: View>(_ label: String, verticalPadding: CGFloat = 16, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(label).font(.footnote).foregroundStyle(.secondary)
             content()
                 .padding(.horizontal, 16)
-                .padding(.vertical, 16)
+                .padding(.vertical, verticalPadding)
                 .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 12))
         }
     }

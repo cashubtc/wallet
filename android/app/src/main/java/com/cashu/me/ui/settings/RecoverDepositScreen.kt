@@ -20,6 +20,7 @@ import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -52,6 +53,7 @@ import com.cashu.me.Models.PaymentMethodKind
 import com.cashu.me.ui.components.ActionConfirmationSheet
 import com.cashu.me.ui.components.CashuTextField
 import com.cashu.me.ui.components.InlineNoticeHost
+import com.cashu.me.ui.components.MintPickerSheet
 import com.cashu.me.ui.components.NavRow
 import com.cashu.me.ui.components.NoticeSeverity
 import com.cashu.me.ui.components.PrimaryButton
@@ -74,6 +76,7 @@ fun RecoverDepositScreen(walletManager: WalletManager, onClose: () -> Unit) {
     var unit by rememberSaveable { mutableStateOf("sat") }
     var searchLimit by rememberSaveable { mutableStateOf(1_000) }
     var showOptions by rememberSaveable { mutableStateOf(false) }
+    var showMintPicker by remember { mutableStateOf(false) }
     var working by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var result by remember { mutableStateOf<DepositRecoveryResult?>(null) }
@@ -98,6 +101,14 @@ fun RecoverDepositScreen(walletManager: WalletManager, onClose: () -> Unit) {
                 CashuTextField(value = mintUrl, onValueChange = { mintUrl = it; clearResult() }, label = "Mint URL",
                     placeholder = "https://…", singleLine = true, enabled = !working,
                     modifier = Modifier.fillMaxWidth().testTag("depositRecoveryMintURL"),
+                    trailingIcon = if (walletState.mints.isNotEmpty()) {
+                        {
+                            IconButton(enabled = !working, modifier = Modifier.testTag("depositRecoveryMintPicker"),
+                                onClick = { focus.clearFocus(); showMintPicker = true }) {
+                                Icon(Icons.Outlined.ExpandMore, contentDescription = "Choose mint")
+                            }
+                        }
+                    } else null,
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false,
                         keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next),
                     keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Down) }))
@@ -150,6 +161,18 @@ fun RecoverDepositScreen(walletManager: WalletManager, onClose: () -> Unit) {
                 }
             }
         }
+    }
+    if (showMintPicker) {
+        MintPickerSheet(
+            mints = walletState.mints,
+            activeMintUrl = walletState.mints.firstOrNull { it.url.trimEnd('/') == mintUrl.trim().trimEnd('/') }?.url,
+            mintSubtitle = { it.url.removePrefix("https://") },
+            onSelect = { mint ->
+                showMintPicker = false
+                mint?.let { mintUrl = it.url; clearResult() }
+            },
+            onDismiss = { showMintPicker = false },
+        )
     }
     approval?.let { request ->
         ActionConfirmationSheet(title = "Recover this deposit?",
