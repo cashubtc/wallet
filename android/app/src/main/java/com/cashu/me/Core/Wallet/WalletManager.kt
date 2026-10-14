@@ -669,6 +669,37 @@ class WalletManager(
             }
         }
 
+    /** The current seed is never replaced. Approval precedes import so normal
+     * quote reconciliation may safely finish this deposit after a restart. */
+    suspend fun recoverDeposit(request: DepositRecoveryRequest): DepositRecoveryResult = initializationMutex.withLock {
+        check(state.value.isRuntimeReady && !state.value.needsOnboarding) { "Restore or unlock your wallet first." }
+        val input = request.validated()
+        // Once import begins, retain the repository until native work and local
+        // bookkeeping finish, even if the owning screen is disposed.
+        withContext(kotlinx.coroutines.NonCancellable) {
+            withLoadingResult {
+                walletStore.setMintRemoved(input.mintUrl, removed = false)
+                val result = try {
+                    mintQuoteSyncService.recoverDeposit(
+                        importQuote = { gateway.recoverDepositKey(input) },
+                        adopt = { quote ->
+                            trackReceivedMintLocally(input.mintUrl, quote.unit)
+                            mintQuoteSyncService.rememberMintQuoteTimestamp(quote.id)
+                        },
+                    )
+                } finally {
+                    // Keep any proofs already committed by NUT-09 or an issue
+                    // saga visible even if a later request fails.
+                    reconcileReceivedAccounts()
+                    refreshBalance()
+                    loadTransactions()
+                    scope.launch { nostrMintBackupService.backupCurrentMintsIfEnabled() }
+                }
+                result
+            }
+        }
+    }
+
     suspend fun checkMintQuote(quoteId: String): MintQuoteInfo =
         withLoadingResult {
             gateway.checkMintQuote(quoteId).also {
@@ -1734,7 +1765,7 @@ class WalletManager(
         if (walletStore.isMintRemoved(normalized)) return
         val current = walletStore.loadMints()
         val existing = current.firstOrNull { com.cashu.me.Core.CDK.mintRemovalUrlsMatch(it.url, normalized) }
-        if (existing != null && (existing.name != "Unknown Mint" || unit in existing.units)) return
+        if (existing != null && unit in existing.units) return
         val updated = if (existing == null) {
             current + MintInfo(url = normalized, name = "Unknown Mint", units = listOf(unit))
         } else {

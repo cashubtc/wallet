@@ -18,6 +18,37 @@ final class SettingsUITests: UITestBase {
 
     // MARK: - Tests
 
+    func testDepositRecoveryHasSeparateEntryAndRequiresConfirmation() {
+        navigateToSettings()
+        tapWhenReady(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Backup & Restore")).firstMatch)
+        tapWhenReady(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Recover a deposit")).firstMatch)
+        let mint = app.textFields["depositRecoveryMintURL"]
+        tapWhenReady(mint)
+        mint.typeText("https://mint.example")
+        let quote = app.textFields["depositRecoveryQuoteID"]
+        tapWhenReady(quote)
+        quote.typeText("saved-quote-id\n")
+        let recover = app.buttons["recoverDepositButton"]
+        // A native Form exposes a collection view, rather than the ScrollView
+        // used by the other settings detail pages.
+        for _ in 0..<6 {
+            if recover.isHittable { break }
+            app.swipeUp()
+        }
+        XCTAssertTrue(recover.isEnabled)
+        tapWhenReady(recover)
+        let confirmation = app.alerts["Recover this deposit?"]
+        XCTAssertTrue(confirmation.waitForExistence(timeout: 5))
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Deposit recovery confirmation"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        tapWhenReady(confirmation.buttons["Cancel"])
+        XCTAssertFalse(confirmation.exists)
+        XCTAssertEqual(quote.value as? String, "saved-quote-id")
+        XCTAssertFalse(app.otherElements["depositRecoveryResult"].exists)
+    }
+
     func testCurrencyNamesRemainAccessibleAtLargeTextSizes() {
         for (language, locale) in [("en", "en_US"), ("de", "de_DE")] {
             app.terminate()

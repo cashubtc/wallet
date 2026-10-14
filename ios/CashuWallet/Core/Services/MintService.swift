@@ -319,7 +319,7 @@ class MintService: ObservableObject {
         guard !walletStore.isMintRemoved(url: normalized) else { return }
         if let index = mints.firstIndex(where: { MintRemovalPolicy.matches($0.url, normalized) }) {
             let unitName = PaymentRequestDecoder.unitDescription(unit)
-            if mints[index].name == "Unknown Mint", !mints[index].units.contains(unitName) {
+            if !mints[index].units.contains(unitName) {
                 mints[index].units.append(unitName)
                 saveMints()
                 if activeMint?.url == mints[index].url { activeMint = mints[index] }

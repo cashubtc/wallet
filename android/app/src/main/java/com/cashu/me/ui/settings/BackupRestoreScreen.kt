@@ -55,6 +55,7 @@ fun BackupRestoreScreen(
     appLockManager: AppLockManager,
     onClose: () -> Unit,
     onOpenRestore: () -> Unit,
+    onOpenRecoverDeposit: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val settings by settingsManager.state.collectAsState()
@@ -96,6 +97,13 @@ fun BackupRestoreScreen(
                 subtitle = "Restore a wallet and recover funds from mints.",
                 leadingIcon = Icons.Outlined.Restore,
                 onClick = onOpenRestore,
+            )
+
+            NavRow(
+                title = "Recover a deposit",
+                subtitle = "Claim a lost deposit using its quote ID.",
+                leadingIcon = Icons.Outlined.Restore,
+                onClick = onOpenRecoverDeposit,
             )
 
             SectionHeader("Mint backup")
