@@ -142,12 +142,24 @@ The app checks `NFCReaderSession.readingAvailable`, `CardSession.isSupported`,
 and `CardSession.isEligible` before offering the action. It does not register as
 the default contactless app or start on field detection/double-click.
 
+After a token is retained and acknowledged, the receiver acquires an optional
+[presentment-intent assertion](https://developer.apple.com/documentation/corenfc/nfcpresentmentintentassertion)
+before dismissing the native NFC sheet. The assertion outlives the transport and
+result screen so the payer's remaining RF field does not immediately open Apple
+Wallet. Its lifetime starts at completion, not while waiting for the payer or mint.
+Claiming or reviewing the token proceeds immediately. iOS limits suppression to
+15 seconds and invalidates it on background; a quick second receipt reuses any
+still-valid assertion. Apple's cooldown or an unavailable assertion must not
+prevent a persisted payment from being claimed. Separate the phones after payment.
+
 ### Verification
 
 `NFCReceiveTests` covers request encoding, APDU selection/read/write, both NLEN
 write orders, missing chunks, reconnect resets, malformed NDEF, binary records,
 and request terms. `NFCReceiveLifecycleTests` covers cancellation, stale sessions,
 review, and failed claims. These tests run in Simulator without HCE approval.
+`NFCReceivePresentmentTests` covers protection after receive returns, bounded
+release, rapid successive receipts, invalid assertions, and cooldown failures.
 `NFCType4ReaderTests` covers custom application selection, request reading,
 chunked writes with NLEN committed last, capacity/read-only checks, malformed
 responses, and an ambiguous final acknowledgment without automatic retransmission.
@@ -167,6 +179,10 @@ and iOS payers to verify:
 - No contactless action on an ineligible device; ordinary NFC sending still works.
 - Updated iOS and Android payers can still pay a standard Android/Numo receiver
   and read ordinary NDEF payment tags.
+- After success, briefly keep the phones together: Apple Wallet should not open
+  on the receiver and Android should not show a receive-app chooser. Also test a
+  receive that takes over 15 seconds before completion and rapid repeated taps
+  during Apple's presentment cooldown; radio behavior requires physical devices.
 
 ### Reference implementation
 

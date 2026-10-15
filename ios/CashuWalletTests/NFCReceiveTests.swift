@@ -239,6 +239,114 @@ final class NFCReceiveTests: XCTestCase {
 }
 
 @MainActor
+final class NFCReceivePresentmentTests: XCTestCase {
+    private final class Assertion: NFCReceivePresentmentAssertion {
+        var isValid = true
+    }
+
+    private final class Expiry {
+        var waiters: [CheckedContinuation<Void, Never>] = []
+        func wait() async { await withCheckedContinuation { waiters.append($0) } }
+        func finishNext() { waiters.removeFirst().resume() }
+    }
+
+    private func settle() async {
+        for _ in 0..<20 { await Task.yield() }
+    }
+
+    func testProtectionOutlivesReceiveReturnAndReleasesAtExpiry() async {
+        let expiry = Expiry()
+        weak var acquired: Assertion?
+        let presentment = NFCReceivePresentment(acquire: {
+            let assertion = Assertion()
+            acquired = assertion
+            return assertion
+        }, waitForExpiry: { await expiry.wait() })
+
+        await presentment.protectCompletion()
+        await settle()
+        XCTAssertNotNil(acquired, "Returning to claim and success UI must not release Wallet suppression")
+        XCTAssertEqual(expiry.waiters.count, 1)
+        expiry.finishNext()
+        await settle()
+        XCTAssertNil(acquired, "Protection must not outlive Apple's bounded presentment window")
+    }
+
+    func testRapidReceiptReusesProtectionWithoutExtendingItsLifetime() async {
+        let expiry = Expiry()
+        var acquisitions = 0
+        weak var acquired: Assertion?
+        let presentment = NFCReceivePresentment(acquire: {
+            acquisitions += 1
+            let assertion = Assertion()
+            acquired = assertion
+            return assertion
+        }, waitForExpiry: { await expiry.wait() })
+
+        await presentment.protectCompletion()
+        await settle()
+        await presentment.protectCompletion()
+        XCTAssertEqual(acquisitions, 1)
+        XCTAssertEqual(expiry.waiters.count, 1, "A second receive must not restart the expiry timer")
+        expiry.finishNext()
+        await settle()
+        XCTAssertNil(acquired)
+    }
+
+    func testInvalidAssertionIsReplacedAndOldExpiryCannotReleaseReplacement() async {
+        let expiry = Expiry()
+        var acquisitions = 0
+        weak var acquired: Assertion?
+        let presentment = NFCReceivePresentment(acquire: {
+            acquisitions += 1
+            let assertion = Assertion()
+            acquired = assertion
+            return assertion
+        }, waitForExpiry: { await expiry.wait() })
+
+        await presentment.protectCompletion()
+        await settle()
+        weak var previous = acquired
+        acquired?.isValid = false // e.g. iOS invalidated protection on background
+        await presentment.protectCompletion()
+        await settle()
+        XCTAssertEqual(acquisitions, 2)
+        XCTAssertNil(previous)
+        XCTAssertEqual(expiry.waiters.count, 2)
+        expiry.finishNext()
+        await settle()
+        XCTAssertNotNil(acquired, "A cancelled timer must not clear a subsequent assertion")
+        expiry.finishNext()
+        await settle()
+        XCTAssertNil(acquired)
+    }
+
+    func testUnavailableAssertionDoesNotBlockReceiptOrStartExpiry() async {
+        var acquisitions = 0
+        let presentment = NFCReceivePresentment(acquire: {
+            acquisitions += 1
+            throw NFCReceiveError.message("Presentment cooldown")
+        }, waitForExpiry: { XCTFail("There is no assertion to retain") })
+
+        await presentment.protectCompletion()
+        XCTAssertEqual(acquisitions, 1)
+    }
+
+    func testAlreadyInvalidAcquisitionIsReleasedWithoutStartingExpiry() async {
+        weak var acquired: Assertion?
+        let presentment = NFCReceivePresentment(acquire: {
+            let assertion = Assertion()
+            assertion.isValid = false
+            acquired = assertion
+            return assertion
+        }, waitForExpiry: { XCTFail("An invalid assertion must not be retained") })
+
+        await presentment.protectCompletion()
+        XCTAssertNil(acquired)
+    }
+}
+
+@MainActor
 final class NFCReceiveLifecycleTests: XCTestCase {
     private final class Transport: NFCReceiveTransport {
         var gate: CheckedContinuation<Void, Never>?
