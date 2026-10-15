@@ -211,6 +211,7 @@
 		AFCE00000000000000000002 /* NFCReceivePayment.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFCE10000000000000000002 /* NFCReceivePayment.swift */; };
 		AFCE00000000000000000003 /* NFCReceiveCardSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFCE10000000000000000003 /* NFCReceiveCardSession.swift */; };
 		AFCE00000000000000000004 /* NFCReceiveCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFCE10000000000000000004 /* NFCReceiveCoordinator.swift */; };
+		AFCE00000000000000000006 /* NFCType4Reader.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFCE10000000000000000006 /* NFCType4Reader.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -433,6 +434,7 @@
 		AFCE10000000000000000002 /* NFCReceivePayment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NFCReceivePayment.swift; sourceTree = "<group>"; };
 		AFCE10000000000000000003 /* NFCReceiveCardSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NFCReceiveCardSession.swift; sourceTree = "<group>"; };
 		AFCE10000000000000000004 /* NFCReceiveCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NFCReceiveCoordinator.swift; sourceTree = "<group>"; };
+		AFCE10000000000000000006 /* NFCType4Reader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NFCType4Reader.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -806,6 +808,7 @@
 				AFCE10000000000000000004 /* NFCReceiveCoordinator.swift */,
 				AFCE10000000000000000003 /* NFCReceiveCardSession.swift */,
 				AFCE10000000000000000002 /* NFCReceivePayment.swift */,
+				AFCE10000000000000000006 /* NFCType4Reader.swift */,
 				AFCE10000000000000000001 /* NFCType4Tag.swift */,
 				F200000000000004 /* ContactlessPaymentCoordinator.swift */,
 				BB00000000000012 /* TransactionService.swift */,
@@ -1272,6 +1275,7 @@
 				AFCE00000000000000000004 /* NFCReceiveCoordinator.swift in Sources */,
 				AFCE00000000000000000003 /* NFCReceiveCardSession.swift in Sources */,
 				AFCE00000000000000000002 /* NFCReceivePayment.swift in Sources */,
+				AFCE00000000000000000006 /* NFCType4Reader.swift in Sources */,
 				AFCE00000000000000000001 /* NFCType4Tag.swift in Sources */,
 				F100000000000004 /* ContactlessPaymentCoordinator.swift in Sources */,
 				F300000000000001 /* CurrencyAmountDisplay.swift in Sources */,

@@ -4,10 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
-import android.nfc.NdefMessage
 import android.nfc.NfcAdapter
-import android.nfc.Tag
-import android.nfc.tech.Ndef
 import android.provider.Settings
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -48,12 +45,13 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.cashu.me.Core.Services.NFCPaymentInput
 import com.cashu.me.Core.Services.NFCPaymentService
-import com.cashu.me.Core.Services.NFCReaderDelegate
+import com.cashu.me.Core.Services.NfcPaymentTag
 import com.cashu.me.Core.WalletManager
 import com.cashu.me.Core.Protocols.CurrencyAmount
 import com.cashu.me.Core.Protocols.CurrencyRegistry
@@ -93,8 +91,6 @@ fun ContactlessPayView(
     var isProcessing by remember { mutableStateOf(false) }
     var paymentComplete by remember { mutableStateOf(false) }
     var lastPaymentAmount by remember { mutableStateOf<Long?>(null) }
-    val currentIsProcessing by rememberUpdatedState(isProcessing)
-    val currentPaymentComplete by rememberUpdatedState(paymentComplete)
     LaunchedEffect(paymentComplete) { onCompactSheetChanged(!paymentComplete) }
 
     DisposableEffect(lifecycleOwner, adapter) {
@@ -120,7 +116,7 @@ fun ContactlessPayView(
                 activity,
                 { tag ->
                     scope.launch {
-                        if (currentIsProcessing || currentPaymentComplete) return@launch
+                        if (isProcessing || paymentComplete) return@launch
                         isProcessing = true
                         currentDismissLockChanged(true)
                         paymentComplete = false
@@ -128,24 +124,34 @@ fun ContactlessPayView(
                         error = null
                         runCatching {
                             status = "Reading payment request..."
-                            val payload = withContext(Dispatchers.IO) { readFirstNdefPayload(tag) }
-                            when (val input = service.decodePaymentInput(payload)) {
-                                is NFCPaymentInput.CashuRequest -> {
-                                    status = "Preparing payment..."
-                                    val amount = input.summary.amount
-                                    val token = service.preparePayment(payload)
-                                    status = "Writing payment..."
-                                    withContext(Dispatchers.IO) {
-                                        writeTextRecord(tag, service.tokenRecord(token))
+                            var connection: NfcPaymentTag? = null
+                            try {
+                                // Assign inside the IO block so cancellation on returning
+                                // to Main cannot lose an already-open connection.
+                                withContext(Dispatchers.IO) { connection = NfcPaymentTag.open(tag) }
+                                val connectedTag = checkNotNull(connection)
+                                val payload = withContext(Dispatchers.IO) { connectedTag.read() }
+                                when (val input = service.decodePaymentInput(payload)) {
+                                    is NFCPaymentInput.CashuRequest -> {
+                                        withContext(Dispatchers.IO) { connectedTag.requireWritable() }
+                                        status = "Preparing payment..."
+                                        val amount = input.summary.amount
+                                        val token = service.preparePayment(payload)
+                                        status = "Writing payment..."
+                                        withContext(Dispatchers.IO) {
+                                            connectedTag.write(service.tokenRecord(token))
+                                        }
+                                        lastPaymentAmount = amount
+                                        paymentComplete = true
+                                        status = "Payment sent."
                                     }
-                                    lastPaymentAmount = amount
-                                    paymentComplete = true
-                                    status = "Payment sent."
+                                    is NFCPaymentInput.LightningRequest -> {
+                                        status = "Lightning request found."
+                                        onLightningRequest(input.request)
+                                    }
                                 }
-                                is NFCPaymentInput.LightningRequest -> {
-                                    status = "Lightning request found."
-                                    onLightningRequest(input.request)
-                                }
+                            } finally {
+                                withContext(NonCancellable + Dispatchers.IO) { runCatching { connection?.close() } }
                             }
                         }.onFailure { failure ->
                             error = failure.message ?: "NFC payment failed."
@@ -291,31 +297,6 @@ internal fun ContactlessPayContent(
             ContactlessAvailability.Unavailable,
             ContactlessAvailability.Ready -> Unit
         }
-    }
-}
-
-private fun readFirstNdefPayload(tag: Tag): String {
-    val ndef = Ndef.get(tag) ?: error("Tag does not support NDEF.")
-    try {
-        ndef.connect()
-        val message = ndef.ndefMessage ?: ndef.cachedNdefMessage ?: error("No readable data on tag.")
-        return NFCReaderDelegate.decodeMessage(message).firstOrNull()
-            ?: error("No readable data on tag.")
-    } finally {
-        runCatching { ndef.close() }
-    }
-}
-
-private fun writeTextRecord(tag: Tag, record: android.nfc.NdefRecord) {
-    val ndef = Ndef.get(tag) ?: error("Tag does not support NDEF.")
-    val message = NdefMessage(arrayOf(record))
-    try {
-        ndef.connect()
-        require(ndef.isWritable) { "NFC tag is not writable." }
-        require(ndef.maxSize >= message.toByteArray().size) { "NFC tag is too small for payment token." }
-        ndef.writeNdefMessage(message)
-    } finally {
-        runCatching { ndef.close() }
     }
 }
 

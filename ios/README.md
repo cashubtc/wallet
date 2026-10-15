@@ -82,7 +82,11 @@ History. HCE is enabled in the app target’s Debug and Release configurations.
 The action is hidden in Simulator, reader-only builds, and on ineligible devices.
 
 The payer reads a transport-free NUT-18 request and writes the token back using
-the NFC Forum Type 4 / Numo protocol, matching Android. The shared QR retains its
+the NFC Forum Type 4 / Numo file and APDU protocol. iOS receivers use Apple's
+approved custom AID `F999711510411700`; Android receivers continue to use the
+standard NDEF AID `D2760000850101`. Updated iOS and Android payers support both.
+Older payers, including third-party Numo implementations that select only the
+standard AID, need an update to pay an iOS receiver. The shared QR retains its
 Nostr transport. NFC accepts text, URI token links, and binary Cashu MIME records.
 Tokens are saved before the final write is acknowledged. Known-mint tokens are
 redeemed through the existing wallet operation coordinator and attributed to the
@@ -98,7 +102,7 @@ settlement recovery. NFC availability also differs because Apple restricts HCE.
 ### Signing and availability
 
 Apple's [HCE entitlement](https://developer.apple.com/support/hce-transactions-in-apps/)
-requires approval for the app's bundle ID and AID `D2760000850101`. Apple's
+requires approval for the app's bundle ID and AID `F999711510411700`. Apple's
 eligibility requirements apply; setting a region or adding an entitlement file
 does not grant access. This app still targets iOS 18+, above CardSession's iOS
 17.4 minimum. HCE cannot be exercised in Simulator.
@@ -106,7 +110,7 @@ does not grant access. This app still targets iOS 18+, above CardSession's iOS
 The app target requests HCE in both Debug and Release. After Apple assigns the
 capability, enable it for `com.cashu.me` in Certificates, Identifiers & Profiles
 and regenerate the development **and** distribution provisioning profiles. The
-profile must authorize HCE and AID `D2760000850101`; development-only approval
+profile must authorize HCE and AID `F999711510411700`; development-only approval
 does not authorize TestFlight or App Store distribution.
 
 Build or archive the `CashuWallet` scheme normally. `HCE.xcconfig` also explicitly
@@ -127,7 +131,11 @@ Before installing or distributing, inspect the **signed app** with
 `codesign -d --entitlements :- <app-path>` and its embedded profile with
 `security cms -D -i <app-path>/embedded.mobileprovision`. Both must contain
 `com.apple.developer.nfc.hce = true` and an approved AID/RID prefix covering
-`D2760000850101`. An unsigned SDK build only checks compilation, not entitlement
+`F999711510411700`. If Xcode reports a select-identifier-prefixes mismatch, verify
+that the checkout being built requests this custom AID and that its provisioning
+profile grants the same AID. Changing only the entitlement in an older checkout
+is insufficient: its receiver and both payer implementations also need updating.
+An unsigned SDK build only checks compilation, not entitlement
 provisioning or radio operation.
 
 The app checks `NFCReaderSession.readingAvailable`, `CardSession.isSupported`,
@@ -140,12 +148,15 @@ the default contactless app or start on field detection/double-click.
 write orders, missing chunks, reconnect resets, malformed NDEF, binary records,
 and request terms. `NFCReceiveLifecycleTests` covers cancellation, stale sessions,
 review, and failed claims. These tests run in Simulator without HCE approval.
+`NFCType4ReaderTests` covers custom application selection, request reading,
+chunked writes with NLEN committed last, capacity/read-only checks, malformed
+responses, and an ambiguous final acknowledgment without automatic retransmission.
 `NFCReceiveIntegrationTests` uses the [CI fake mint](../CI/README.md) to create
 real test tokens, transfer them in text and binary APDUs, redeem them, and verify
 that a duplicate cannot credit twice.
 
-Before shipping an HCE build, use an entitled physical iPhone and an Android or
-Macadamia payer to verify:
+Before shipping an HCE build, use an entitled physical iPhone and updated Android
+and iOS payers to verify:
 
 - Fixed-amount receipt at a known mint, with credited amount and linked History.
 - New-mint review, Review Later, app restart, and claim from History.
@@ -154,6 +165,8 @@ Macadamia payer to verify:
 - Separation during a write, retap, native-sheet cancellation/timeout, background,
   request edits, and a second receipt on a reusable request.
 - No contactless action on an ineligible device; ordinary NFC sending still works.
+- Updated iOS and Android payers can still pay a standard Android/Numo receiver
+  and read ordinary NDEF payment tags.
 
 ### Reference implementation
 
@@ -164,4 +177,5 @@ and its RequestView integration on the `release` branch. It uses a foreground
 to receive an in-band token. This implementation follows that approach while
 implementing the protocol from our Android counterpart, with complete-write
 tracking, binary token support, persistent recovery, and the wallet's own claim
-and mint-review paths.
+and mint-review paths. Application selection differs from Macadamia's standard
+NDEF AID because this app's Apple approval covers the custom AID above.

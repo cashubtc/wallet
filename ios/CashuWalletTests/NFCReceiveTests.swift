@@ -45,7 +45,7 @@ final class NFCReceiveIntegrationTests: XCTestCase {
             }
             let request = CashuRequest(encoded: "unused", amount: 16, mints: [mint.url])
             var tag = try NFCType4Tag(request: PaymentRequestBuilder.buildNFC(request: request))
-            _ = tag.process(Data([0, 0xA4, 4, 0, 7] + NFCType4Tag.aid))
+            _ = tag.process(Data([0, 0xA4, 4, 0, UInt8(NFCType4Tag.aid.count)] + NFCType4Tag.aid))
             _ = tag.process(Data([0, 0xA4, 0, 0x0C, 2, 0xE1, 4]))
             var received: NFCNdefPayload?
             for offset in stride(from: 0, to: file.count, by: 52) {
@@ -81,7 +81,7 @@ final class NFCReceiveIntegrationTests: XCTestCase {
 }
 
 final class NFCReceiveTests: XCTestCase {
-    private let selectApplication: [UInt8] = [0, 0xA4, 4, 0, 7] + NFCType4Tag.aid + [0]
+    private let selectApplication: [UInt8] = [0, 0xA4, 4, 0, UInt8(NFCType4Tag.aid.count)] + NFCType4Tag.aid + [0]
     private let selectNdef: [UInt8] = [0, 0xA4, 0, 0x0C, 2, 0xE1, 4]
     private let ok = Data([0x90, 0])
 
@@ -416,5 +416,80 @@ final class NFCReceiveLifecycleTests: XCTestCase {
         XCTAssertNil(coordinator.receivedAmount)
         XCTAssertEqual(coordinator.phase, .idle)
         XCTAssertTrue(coordinator.message?.contains("wallet changed") == true)
+    }
+}
+
+@MainActor
+final class NFCType4ReaderTests: XCTestCase {
+    func testCustomAidPayerReadsAndCommitsOnlyTheCompleteToken() async throws {
+        let request = String(repeating: "creqA", count: 100)
+        let token = String(repeating: "cashuB", count: 100)
+        var peer = try NFCType4Tag(request: request)
+        var commands: [Data] = []
+        var received: [NFCNdefPayload] = []
+        let reader = NFCType4Reader { command in
+            commands.append(command)
+            let result = peer.process(command)
+            if let payload = result.payload { received.append(payload) }
+            return result.response
+        }
+        let body = try await reader.read()
+        XCTAssertEqual(body, Data(try NFCNdefCodec.textFile(request).dropFirst(2)))
+        XCTAssertEqual(commands.first, Data([0, 0xA4, 4, 0, 8, 0xF9, 0x99, 0x71, 0x15, 0x10, 0x41, 0x17, 0, 0]))
+        try await reader.write(text: token)
+        XCTAssertEqual(received, [.text(token)])
+        let writes = commands.filter { $0[1] == 0xD6 }
+        XCTAssertEqual(writes.first, Data([0, 0xD6, 0, 0, 2, 0, 0]))
+        XCTAssertTrue(writes.allSatisfy { $0[4] <= 52 })
+        XCTAssertEqual(writes.last?.prefix(5), Data([0, 0xD6, 0, 0, 2]))
+        XCTAssertFalse(writes.last?.suffix(2) == Data([0, 0]))
+    }
+
+    func testTruncatedResponseAndRejectedApplicationCannotBecomeRequests() async {
+        for response in [Data([0x6A, 0x82]), Data([0x90]), Data([0x90, 0])] {
+            let reader = NFCType4Reader { _ in response }
+            do { _ = try await reader.read(); XCTFail("Invalid response accepted") } catch {}
+        }
+    }
+
+    func testReadOnlyAndCapacityLimitsPreventAnyTokenWrite() async throws {
+        for readOnly in [true, false] {
+            var peer = try NFCType4Tag(request: "creqA")
+            var writes = 0
+            let reader = NFCType4Reader { command in
+                if command[1] == 0xD6 { writes += 1 }
+                var result = peer.process(command).response
+                if command == Data([0, 0xB0, 0, 0, 15]) {
+                    if readOnly { result[14] = 0xFF }
+                    else { result[11] = 0; result[12] = 32 }
+                }
+                return result
+            }
+            _ = try await reader.read()
+            do { try await reader.write(text: String(repeating: "t", count: 40)); XCTFail("Write must be refused") } catch {}
+            XCTAssertEqual(writes, 0)
+        }
+    }
+
+    func testLostFinalAcknowledgmentIsNotRetried() async throws {
+        var peer = try NFCType4Tag(request: "creqA")
+        var deliveries = 0
+        let reader = NFCType4Reader { command in
+            let result = peer.process(command)
+            if result.payload != nil {
+                deliveries += 1
+                throw NFCReceiveError.message("Connection lost after persistence")
+            }
+            return result.response
+        }
+        _ = try await reader.read()
+        do { try await reader.write(text: "cashuBtoken"); XCTFail("Ambiguous delivery is not success") } catch {}
+        XCTAssertEqual(deliveries, 1)
+    }
+
+    func testReceiverUsesOnlyTheApprovedAid() throws {
+        var peer = try NFCType4Tag(request: "creqA")
+        XCTAssertEqual(peer.process(Data([0, 0xA4, 4, 0, 7, 0xD2, 0x76, 0, 0, 0x85, 1, 1, 0])).response,
+                       Data([0x6A, 0x82]))
     }
 }

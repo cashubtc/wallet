@@ -44,3 +44,22 @@ For emulator UI journeys, deterministic fixtures, local-mint tests, screenshot
 goldens, and CI tiers, see [`../docs/android/TESTING.md`](../docs/android/TESTING.md).
 
 The CDK dependency is managed by Gradle as `org.cashudevkit:cdk-kotlin` in `gradle/libs.versions.toml`.
+
+## Contactless interoperability
+
+Contactless Pay supports standard NDEF payment tags and Android/Numo receivers,
+plus iOS receivers using Apple's approved custom AID `F999711510411700`.
+Standard tags use Android's `Ndef` API. Custom-AID receivers use `IsoDep` with
+the same Type 4 capability container, NDEF file, and read/write APDUs. The
+connection stays open from request reading through token writing; the final
+NLEN commits the complete token. Ambiguous writes are not automatically retried.
+
+Android receiving continues to advertise the standard AID `D2760000850101`,
+preserving existing payer compatibility. Older payers that only recognize that
+AID need an update to pay an iOS receiver. See the [iOS HCE guide](../ios/README.md#receiving-by-tap-hce)
+for entitlement requirements and physical-device acceptance checks.
+
+The JVM `NfcType4ReaderTest` suite verifies custom AID selection and the shared
+Android receiver protocol, chunking, text/binary records, write limits, malformed
+responses, and lost final acknowledgments. Real NFC discovery and radio behavior
+still require an Android phone and an entitled physical iPhone.

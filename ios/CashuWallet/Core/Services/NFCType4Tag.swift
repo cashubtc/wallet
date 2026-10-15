@@ -9,7 +9,8 @@ enum NFCNdefPayload: Equatable {
 /// Kept independent of CoreNFC so malformed and interrupted exchanges can be tested.
 struct NFCType4Tag {
     static let maxMessageSize = 0x70ff
-    static let aid: [UInt8] = [0xD2, 0x76, 0x00, 0x00, 0x85, 0x01, 0x01]
+    static let aidHex = "F999711510411700"
+    static let aid: [UInt8] = [0xF9, 0x99, 0x71, 0x15, 0x10, 0x41, 0x17, 0x00]
     static let capabilityContainer: [UInt8] = [
         0x00, 0x0F, 0x20, 0x00, 0x3B, 0x00, 0x34,
         0x04, 0x06, 0xE1, 0x04, 0x70, 0xFF, 0x00, 0x00
@@ -37,8 +38,8 @@ struct NFCType4Tag {
         guard bytes[0] == 0 else { return reply(0x6E, 0x00) }
         if bytes[1] == 0xA4, bytes[2] == 0x04 {
             reset()
-            guard bytes[3] == 0, bytes.count == 12 || bytes.count == 13,
-                  bytes[4] == 7, Array(bytes[5..<12]) == Self.aid else {
+            guard bytes[3] == 0, bytes.count == 5 + Self.aid.count || bytes.count == 6 + Self.aid.count,
+                  Int(bytes[4]) == Self.aid.count, Array(bytes[5..<5 + Self.aid.count]) == Self.aid else {
                 return reply(0x6A, 0x82)
             }
             applicationSelected = true
