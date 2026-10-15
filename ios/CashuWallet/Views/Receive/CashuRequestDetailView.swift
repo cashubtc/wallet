@@ -368,7 +368,7 @@ struct CashuRequestDetailView: View {
                             Text("Securing ecash…")
                         }
                     } else {
-                        Label("Receive by Tap", systemImage: "wave.3.right")
+                        Label("Tap to Receive", systemImage: "wave.3.right")
                     }
                 }
                 .flatSheetSecondaryButton()
@@ -379,11 +379,6 @@ struct CashuRequestDetailView: View {
                     Text("Set an amount to receive by tap.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
-                } else {
-                    Text("Hold this iPhone near the payer's device. You'll review payments from new mints before claiming.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
                 }
                 if let message = nfcReceive.message {
                     InlineNotice(message: message, severity: .caution)

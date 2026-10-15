@@ -75,7 +75,7 @@ Nostr mint backup replacement is deferred until those mints are recovered or
 explicitly removed. Adding a failed mint later also retries its fund recovery.
 ## Receiving by tap (HCE)
 
-Open **Receive → Ecash**, set an amount, then choose **Receive by Tap** and
+Open **Receive → Ecash**, set an amount, then choose **Tap to Receive** and
 hold the payer's device near the top of the iPhone. The system presents Apple's
 contactless sheet. The same action is available when reopening a request in
 History. HCE is enabled in the app target’s Debug and Release configurations.
