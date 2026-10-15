@@ -53,6 +53,10 @@ Standard tags use Android's `Ndef` API. Custom-AID receivers use `IsoDep` with
 the same Type 4 capability container, NDEF file, and read/write APDUs. The
 connection stays open from request reading through token writing; the final
 NLEN commits the complete token. Ambiguous writes are not automatically retried.
+Reader mode remains active through the payment success screen so phones that
+are still touching cannot switch the payer into NFC receive handling. Further
+tag callbacks are ignored after success; closing the send sheet releases reader
+mode.
 
 Android receiving continues to advertise the standard AID `D2760000850101`,
 preserving existing payer compatibility. Older payers that only recognize that

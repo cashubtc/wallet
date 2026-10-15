@@ -103,8 +103,12 @@ fun ContactlessPayView(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    DisposableEffect(activity, adapter, service, nfcEnabled, paymentComplete) {
-        if (activity != null && adapter != null && nfcEnabled && !paymentComplete) {
+    // Keep reader mode through the success screen while the phones may still
+    // be touching. Disabling it on completion restores card emulation and
+    // normal tag dispatch, which can open Android's receive-app chooser.
+    // The callback guard below prevents another payment after success.
+    DisposableEffect(activity, adapter, service, nfcEnabled) {
+        if (activity != null && adapter != null && nfcEnabled) {
             val flags = (
                 NfcAdapter.FLAG_READER_NFC_A or
                     NfcAdapter.FLAG_READER_NFC_B or
