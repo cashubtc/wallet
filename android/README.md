@@ -58,7 +58,9 @@ are still touching cannot switch the payer into NFC receive handling. Further
 tag callbacks are ignored after success; closing the send sheet releases reader
 mode.
 
-Android receiving continues to advertise the standard AID `D2760000850101`,
+The request's NFC indicator shows **Tap to Receive** when ready, matching iOS's
+button label without an explanatory paragraph. Android receiving continues to
+advertise the standard AID `D2760000850101`,
 preserving existing payer compatibility. Older payers that only recognize that
 AID need an update to pay an iOS receiver. See the [iOS HCE guide](../ios/README.md#receiving-by-tap-hce)
 for entitlement requirements and physical-device acceptance checks.

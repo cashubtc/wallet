@@ -46,12 +46,12 @@ class NfcReceiveIndicatorComposeTest {
 
         compose.onNodeWithText(message).assertIsDisplayed()
         assertSurfaceHugsContentAndIsCentered()
-        assertNoLegacyNavigationCopy()
+        assertNoExplainerOrNavigationCopy()
     }
 
     @Test
     fun readySurfaceHugsContentAndIsCentered() {
-        val message = "Ask the sender to hold their phone near yours."
+        val message = "Tap to Receive"
 
         compose.setCashuContent {
             Box(Modifier.width(360.dp)) {
@@ -64,12 +64,12 @@ class NfcReceiveIndicatorComposeTest {
 
         compose.onNodeWithText(message).assertIsDisplayed()
         assertSurfaceHugsContentAndIsCentered()
-        assertNoLegacyNavigationCopy()
+        assertNoExplainerOrNavigationCopy()
     }
 
     @Test
     fun readySurfaceStaysWithinBoundsAtLargeFont() {
-        val message = "Ask the sender to hold their phone near yours."
+        val message = "Tap to Receive"
 
         compose.setCashuContent(fontScale = 2f) {
             Box(Modifier.width(280.dp)) {
@@ -101,8 +101,9 @@ class NfcReceiveIndicatorComposeTest {
         assertEquals(indicatorBounds.center.x, surfaceBounds.center.x, 1f)
     }
 
-    private fun assertNoLegacyNavigationCopy() {
-        compose.onAllNodesWithText("Tap", substring = true).assertCountEquals(0)
+    private fun assertNoExplainerOrNavigationCopy() {
+        compose.onAllNodesWithText("Ask the sender to hold their phone near yours.").assertCountEquals(0)
+        compose.onAllNodesWithText("Open this request with NFC enabled.").assertCountEquals(0)
         compose.onAllNodesWithText("→", substring = true).assertCountEquals(0)
         compose.onAllNodesWithText("->", substring = true).assertCountEquals(0)
     }
