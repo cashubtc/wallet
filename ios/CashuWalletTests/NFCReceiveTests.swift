@@ -23,7 +23,11 @@ final class NFCReceiveIntegrationTests: XCTestCase {
         }
         _ = try await wallet.mint(quoteId: quote.id, amountSplitTarget: .none, spendingConditions: nil)
         let senderService = TokenService(walletRepository: { sender }, getActiveMint: { nil })
-        let receiverService = TokenService(walletRepository: { receiver }, getActiveMint: { nil })
+        let storage = InMemoryStorage()
+        let manager = WalletManager(walletStore: WalletStore(storage: storage))
+        manager.walletRepository = receiver
+        manager.db = receiverDB
+        manager.isRuntimeReady = true
 
         for binary in [false, true] {
             let tokenString = try await senderService.sendTokens(amount: 16, mintUrl: mint.url).token
@@ -39,8 +43,8 @@ final class NFCReceiveIntegrationTests: XCTestCase {
             } else {
                 file = try NFCNdefCodec.textFile("https://wallet.example/#token=\(tokenString)")
             }
-            var tag = try NFCType4Tag(request: PaymentRequestBuilder.buildNFC(request:
-                CashuRequest(encoded: "unused", amount: 16, mints: [mint.url])))
+            let request = CashuRequest(encoded: "unused", amount: 16, mints: [mint.url])
+            var tag = try NFCType4Tag(request: PaymentRequestBuilder.buildNFC(request: request))
             _ = tag.process(Data([0, 0xA4, 4, 0, 7] + NFCType4Tag.aid))
             _ = tag.process(Data([0, 0xA4, 0, 0x0C, 2, 0xE1, 4]))
             var received: NFCNdefPayload?
@@ -52,10 +56,21 @@ final class NFCReceiveIntegrationTests: XCTestCase {
             }
             let decoded = try NFCReceivePayment.decode(XCTUnwrap(received))
             XCTAssertEqual(try decoded.value().value, 16)
-            let credited = try await receiverService.receiveTokens(tokenString: decoded.encode())
+            let payment = try manager.stageNFCReceive(XCTUnwrap(received), request: request)
+            XCTAssertEqual(payment.needsReview, !binary, "The first receipt requires new-mint approval")
+            XCTAssertEqual(payment.pending.cashuRequestId, request.id)
+            let retry = try manager.stageNFCReceive(XCTUnwrap(received), request: request)
+            XCTAssertEqual(retry.pending.tokenId, payment.pending.tokenId)
+            let reopened = WalletStore(storage: storage).loadPendingReceiveTokens()
+            XCTAssertEqual(reopened.count, 1)
+            XCTAssertEqual(reopened.first?.token, decoded.encode(), "Retain the token before acknowledging the payer")
+            // The first call represents approval in the token review screen.
+            let credited = try await manager.claimPendingReceiveToken(payment.pending)
             XCTAssertEqual(credited, 16)
+            XCTAssertTrue(manager.walletStore.loadPendingReceiveTokens().isEmpty)
+            XCTAssertThrowsError(try manager.stageNFCReceive(XCTUnwrap(received), request: request))
             do {
-                _ = try await receiverService.receiveTokens(tokenString: decoded.encode())
+                _ = try await manager.claimPendingReceiveToken(payment.pending)
                 XCTFail("The same proofs must not credit twice")
             } catch { }
         }
@@ -229,15 +244,22 @@ final class NFCReceiveLifecycleTests: XCTestCase {
         var gate: CheckedContinuation<Void, Never>?
         var stopped = false
         var payload: NFCNdefPayload? = .text("token")
+        var holdAfterAcceptance = false
+        var responseGate: CheckedContinuation<Void, Never>?
 
         func receive(request: String, accept: (NFCNdefPayload) throws -> NFCReceivePayment) async throws -> NFCReceivePayment? {
             await withCheckedContinuation { gate = $0 }
             guard let payload else { return nil }
-            return try accept(payload)
+            let payment = try accept(payload)
+            if holdAfterAcceptance {
+                await withCheckedContinuation { responseGate = $0 }
+            }
+            return payment
         }
 
         func stop() { stopped = true }
         func deliver() { gate?.resume(); gate = nil }
+        func finishResponse() { responseGate?.resume(); responseGate = nil }
     }
 
     private let request = CashuRequest(encoded: "unused", amount: 21)
@@ -293,6 +315,32 @@ final class NFCReceiveLifecycleTests: XCTestCase {
         await settle()
         XCTAssertEqual(claims, 1)
         XCTAssertEqual(coordinator.receivedAmount, 20)
+        XCTAssertEqual(coordinator.phase, .idle)
+    }
+
+    func testAcceptedTokenOwnsSettlementBeforeFinalResponseFinishes() async {
+        let transport = Transport()
+        transport.holdAfterAcceptance = true
+        let coordinator = NFCReceiveCoordinator { transport }
+        var claims = 0
+        coordinator.start(request: request, stage: { _ in self.payment() }, claim: { _ in
+            claims += 1
+            XCTAssertFalse(Task.isCancelled)
+            return 21
+        }, refresh: {})
+        await settle()
+        transport.deliver()
+        await settle()
+        XCTAssertNotNil(transport.responseGate)
+        XCTAssertEqual(coordinator.phase, .redeeming)
+        coordinator.stop()
+        coordinator.start(request: request, stage: { _ in XCTFail("Duplicate receive"); return self.payment() },
+                          claim: { _ in XCTFail("Duplicate claim"); return 0 }, refresh: {})
+        XCTAssertTrue(transport.stopped)
+        transport.finishResponse()
+        await settle()
+        XCTAssertEqual(claims, 1)
+        XCTAssertEqual(coordinator.receivedAmount, 21)
         XCTAssertEqual(coordinator.phase, .idle)
     }
 
@@ -353,5 +401,20 @@ final class NFCReceiveLifecycleTests: XCTestCase {
         XCTAssertNil(coordinator.receivedAmount)
         XCTAssertNotNil(coordinator.message)
         XCTAssertEqual(coordinator.phase, .idle)
+    }
+
+    func testWalletReplacementDoesNotOfferOldReceiptForReview() async {
+        let transport = Transport()
+        let coordinator = NFCReceiveCoordinator { transport }
+        coordinator.start(request: request, stage: { _ in self.payment() }, claim: { _ in
+            throw CancellationError()
+        }, refresh: { XCTFail("Must not refresh a replacement wallet") })
+        await settle()
+        transport.deliver()
+        await settle()
+        XCTAssertNil(coordinator.reviewPayment)
+        XCTAssertNil(coordinator.receivedAmount)
+        XCTAssertEqual(coordinator.phase, .idle)
+        XCTAssertTrue(coordinator.message?.contains("wallet changed") == true)
     }
 }

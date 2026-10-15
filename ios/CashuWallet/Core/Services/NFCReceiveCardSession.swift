@@ -1,4 +1,4 @@
-import CoreNFC
+@preconcurrency import CoreNFC
 import Foundation
 
 @MainActor
@@ -19,7 +19,7 @@ final class NFCReceiveCardSession: NFCReceiveTransport {
             return false
             #else
             guard Bundle.main.object(forInfoDictionaryKey: "CashuHCEEnabled") as? String == "YES" else { return false }
-            guard CardSession.isSupported else { return false }
+            guard NFCReaderSession.readingAvailable, CardSession.isSupported else { return false }
             return await CardSession.isEligible
             #endif
         }

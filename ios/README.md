@@ -78,7 +78,8 @@ explicitly removed. Adding a failed mint later also retries its fund recovery.
 Open **Receive → Ecash**, set an amount, then choose **Receive by Tap** and
 hold the payer's device near the top of the iPhone. The system presents Apple's
 contactless sheet. The same action is available when reopening a request in
-History. It is hidden in Simulator, ordinary builds, and on ineligible devices.
+History. HCE is enabled in the app target’s Debug and Release configurations.
+The action is hidden in Simulator, reader-only builds, and on ineligible devices.
 
 The payer reads a transport-free NUT-18 request and writes the token back using
 the NFC Forum Type 4 / Numo protocol, matching Android. The shared QR retains its
@@ -102,21 +103,36 @@ eligibility requirements apply; setting a region or adding an entitlement file
 does not grant access. This app still targets iOS 18+, above CardSession's iOS
 17.4 minimum. HCE cannot be exercised in Simulator.
 
-After Apple approves the entitlement, enable it for the App ID, regenerate the
-development/distribution profiles, and build with the supplied configuration:
+The app target requests HCE in both Debug and Release. After Apple assigns the
+capability, enable it for `com.cashu.me` in Certificates, Identifiers & Profiles
+and regenerate the development **and** distribution provisioning profiles. The
+profile must authorize HCE and AID `D2760000850101`; development-only approval
+does not authorize TestFlight or App Store distribution.
+
+Build or archive the `CashuWallet` scheme normally. `HCE.xcconfig` also explicitly
+selects the same configuration for command-line builds:
 
 ```sh
 xcodebuild -project CashuWallet.xcodeproj -scheme CashuWallet \
   -destination 'generic/platform=iOS' -xcconfig HCE.xcconfig build
 ```
 
-For Xcode, set the app target's `CASHU_HCE_ENABLED` to `YES` and
-`CODE_SIGN_ENTITLEMENTS` to `CashuWallet/CashuWalletHCE.entitlements` for the
-approved configuration. Apply the same configuration when archiving. Ordinary
-builds keep their existing entitlements so developers without HCE approval can
-still build and sign. The app also checks `CardSession.isSupported` and
-`CardSession.isEligible` before offering the action. It does not register as the
-default contactless app or start on field detection/double-click.
+Developers whose team does not have HCE approval can build with
+`-xcconfig NFCReaderOnly.xcconfig`. In Xcode, the equivalent app-target settings
+are `CASHU_HCE_ENABLED = NO` and
+`CODE_SIGN_ENTITLEMENTS = CashuWallet/CashuWallet.entitlements`. This preserves
+NFC sending and hides receiving by tap. Simulator tests need no Apple approval.
+
+Before installing or distributing, inspect the **signed app** with
+`codesign -d --entitlements :- <app-path>` and its embedded profile with
+`security cms -D -i <app-path>/embedded.mobileprovision`. Both must contain
+`com.apple.developer.nfc.hce = true` and an approved AID/RID prefix covering
+`D2760000850101`. An unsigned SDK build only checks compilation, not entitlement
+provisioning or radio operation.
+
+The app checks `NFCReaderSession.readingAvailable`, `CardSession.isSupported`,
+and `CardSession.isEligible` before offering the action. It does not register as
+the default contactless app or start on field detection/double-click.
 
 ### Verification
 

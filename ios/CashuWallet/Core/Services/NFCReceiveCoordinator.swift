@@ -21,11 +21,21 @@ final class NFCReceiveCoordinator {
     var isBusy: Bool { phase != .idle }
 
     func start(request: CashuRequest, walletManager: WalletManager) {
-        guard walletManager.isRuntimeReady else { return }
+        guard walletManager.isRuntimeReady, let repository = walletManager.walletRepository else { return }
         start(
             request: request,
-            stage: { try walletManager.stageNFCReceive($0, request: request) },
-            claim: { try await walletManager.claimPendingReceiveToken($0) },
+            stage: {
+                guard walletManager.isRuntimeReady, walletManager.walletRepository === repository else {
+                    throw NFCReceiveError.message("The wallet changed. Open the request again to receive by tap.")
+                }
+                return try walletManager.stageNFCReceive($0, request: request)
+            },
+            claim: {
+                guard walletManager.isRuntimeReady, walletManager.walletRepository === repository else {
+                    throw CancellationError()
+                }
+                return try await walletManager.claimPendingReceiveToken($0)
+            },
             refresh: { await walletManager.loadTransactions() }
         )
     }
@@ -50,7 +60,12 @@ final class NFCReceiveCoordinator {
                 let payment = try await card.receive(request: PaymentRequestBuilder.buildNFC(request: request)) {
                     guard generation == current else { throw CancellationError() }
                     try Task.checkCancellation()
-                    return try stage($0)
+                    let payment = try stage($0)
+                    // The final APDU response and system-sheet dismissal can
+                    // suspend. Own settlement as soon as the token is retained,
+                    // so dismissal cannot admit another receive in that window.
+                    phase = .redeeming
+                    return payment
                 }
                 if let payment {
                     // A new task deliberately survives view disappearance and RF
@@ -78,7 +93,10 @@ final class NFCReceiveCoordinator {
     /// payment is already persisted; its wallet operation is never cancelled.
     func stop() {
         // Keep ownership while the independent wallet operation finishes.
-        if phase == .redeeming { return }
+        if phase == .redeeming {
+            session?.stop()
+            return
+        }
         generation = UUID()
         exchangeTask?.cancel()
         exchangeTask = nil
@@ -109,6 +127,13 @@ final class NFCReceiveCoordinator {
         do {
             let amount = try await claim(payment.pending)
             if generation == current { receivedAmount = amount; phase = .idle }
+        } catch is CancellationError {
+            // Wallet replacement cancels queued operations. Do not present an
+            // old wallet's pending receipt as claimable in its replacement.
+            if generation == current {
+                message = "The wallet changed before the payment could be claimed."
+                phase = .idle
+            }
         } catch {
             await refresh()
             if generation == current {
