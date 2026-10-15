@@ -234,8 +234,9 @@ final class WalletLifecycleUITests: UITestBase {
         let field = app.textFields.firstMatch
         tapWhenReady(field)
         for (index, word) in words.enumerated() {
-            field.typeText(word)
-            tapWhenReady(app.buttons[word].firstMatch)
+            // A synthetic seed can contain "shift", which also names a keyboard
+            // button. Commit through the field instead of an ambiguous label.
+            field.typeText(word + " ")
             if index < 11 {
                 XCTAssertTrue(app.textFields["word \(index + 2)"].waitForExistence(timeout: 5))
             }

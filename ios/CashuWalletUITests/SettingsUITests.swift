@@ -43,6 +43,7 @@ final class SettingsUITests: UITestBase {
         let search = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Search depth")).firstMatch
         XCTAssertTrue(search.waitForExistence(timeout: 5))
         recoveryScreenshot("ios-options")
+        scrollToButton(app.buttons["recoverDepositButton"])
         tapWhenReady(app.buttons["recoverDepositButton"])
         let confirmation = app.staticTexts["Recover this deposit?"]
         XCTAssertTrue(confirmation.waitForExistence(timeout: 5))
