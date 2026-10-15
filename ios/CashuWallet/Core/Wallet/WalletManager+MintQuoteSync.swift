@@ -31,7 +31,7 @@ extension WalletManager {
                 kind: .mintQuote,
                 resourceID: quoteId
             ) {
-                guard let result = await self.reconcileMintQuote(quoteId: quoteId, force: force) else {
+                guard let result = await self.reconcileMintQuoteAssumingLease(quoteId: quoteId, force: force) else {
                     await self.loadTransactionsAssumingWalletOperationLease(
                         observingQuoteID: observingQuoteID
                     )
@@ -181,7 +181,7 @@ extension WalletManager {
         for quoteID in selection.quoteIDs {
             guard !Task.isCancelled else { break }
             guard force || !focusedMintQuoteMonitor.isActive else { break }
-            guard let result = await reconcileMintQuote(quoteId: quoteID, force: force) else { continue }
+            guard let result = await reconcileMintQuoteAssumingLease(quoteId: quoteID, force: force) else { continue }
             if result.newlyIssued > 0 {
                 mintedAny = true
                 postReceivedMintNotification(
@@ -207,7 +207,7 @@ extension WalletManager {
     /// mint issued ecash but the client lost the response. If another payment
     /// arrives during the attempt, `remainingAmount` stays positive and the
     /// next foreground tick mints that new delta.
-    private func reconcileMintQuote(quoteId: String, force: Bool) async -> MintQuoteReconciliationResult? {
+    func reconcileMintQuoteAssumingLease(quoteId: String, force: Bool) async -> MintQuoteReconciliationResult? {
         let reconciler = MintQuoteReconciler(
             storedQuote: lightningService.storedMintQuote,
             checkQuote: lightningService.checkMintQuote,

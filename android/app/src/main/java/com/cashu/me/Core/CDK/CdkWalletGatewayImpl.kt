@@ -336,6 +336,35 @@ class CdkWalletGatewayImpl : WalletGateway {
         )
     }
 
+    override suspend fun recoverDepositKey(request: com.cashu.me.Core.DepositRecoveryRequest): com.cashu.me.Core.DepositRecoveryLookup = cdkCall {
+        val input = request.validated()
+        val unit = cdkUnit(input.unit)
+        val method = cdkPaymentMethod(input.method)
+        val existing = database?.getMintQuote(input.quoteId)
+        existing?.let { stored ->
+            require(mintRemovalUrlsMatch(stored.mintUrl.url, input.mintUrl) && stored.unit == unit && stored.paymentMethod == method) {
+                "This quote belongs to a different mint, currency, or payment method. Check the deposit details."
+            }
+        }
+        ensureWalletUnlocked(input.mintUrl, unit)
+        val wallet = walletFor(input.mintUrl, unit)
+        // Resynchronize lost proof-output counters before importing a quote
+        // that automatic recovery could issue after a restart.
+        wallet.restore()
+        val quote = wallet.fetchMintQuoteWithKeySearch(input.quoteId, method, input.searchLimit)
+        if (!mintRemovalUrlsMatch(quote.mintUrl.url, input.mintUrl) || quote.unit != unit || quote.paymentMethod != method) {
+            if (existing == null) database?.removeMintQuote(input.quoteId)
+            throw IllegalArgumentException("This quote belongs to a different mint, currency, or payment method. Check the deposit details.")
+        }
+        // Unmatched imports must not reach automatic issuance. Preserve every
+        // pre-existing row, key, counter, and saga on an unsuccessful search.
+        if (existing == null && quote.secretKey == null) database?.removeMintQuote(input.quoteId)
+        com.cashu.me.Core.DepositRecoveryLookup(
+            quote.toDomain(fallbackAmount = quote.amount?.value?.toLong(), fallbackMethod = input.method),
+            hasSigningKey = quote.secretKey != null,
+        )
+    }
+
     override suspend fun storedMintQuote(quoteId: String): MintQuoteInfo? = cdkCall {
         database?.getMintQuote(quoteId)?.let { quote ->
             val method = quote.paymentMethod.toDomain()

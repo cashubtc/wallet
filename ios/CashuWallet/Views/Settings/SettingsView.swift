@@ -1611,6 +1611,7 @@ struct MintPickerSheet: View {
     let mints: [MintInfo]
     @Binding var selectedMintUrl: String?
     let onSelect: (String) -> Void
+    var mintSubtitle: ((MintInfo) -> String)? = nil
 
     @Environment(\.dismiss) private var dismiss
 
@@ -1630,9 +1631,11 @@ struct MintPickerSheet: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(mint.name)
                                 .font(.body.weight(.medium))
-                            Text(SettingsManager.shared.formatAmountBalance(mint.balance) + " sat")
+                            Text(mintSubtitle?(mint) ?? (SettingsManager.shared.formatAmountBalance(mint.balance) + " sat"))
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
+                                .lineLimit(mintSubtitle == nil ? nil : 1)
+                                .truncationMode(.middle)
                         }
                         Spacer()
                         if selectedMintUrl == mint.url {

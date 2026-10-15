@@ -57,6 +57,10 @@ interface CdkWalletGateway {
     suspend fun createMintQuote(amount: Long?, method: PaymentMethodKind, mintUrl: String, unit: String = "sat", description: String? = null): MintQuoteInfo
     suspend fun checkMintQuote(quoteId: String): MintQuoteInfo
 
+    /** Explicitly approved recovery; never invoked by ordinary seed restore. */
+    suspend fun recoverDepositKey(request: com.cashu.me.Core.DepositRecoveryRequest): com.cashu.me.Core.DepositRecoveryLookup =
+        throw UnsupportedOperationException("Deposit recovery is not available.")
+
     /** Last durable local quote snapshot, without contacting the mint. */
     suspend fun storedMintQuote(quoteId: String): MintQuoteInfo? = null
 

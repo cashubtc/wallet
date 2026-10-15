@@ -17,6 +17,10 @@ Implemented runtime coverage includes:
 
 ## Build
 
+For a paid deposit whose quote key was lost, use **Settings → Backup & Restore →
+Recover a deposit**. See the [deposit recovery guide](../docs/product/deposit-recovery.md)
+for requirements and supported payment methods.
+
 Use JDK 17 and a local Android SDK:
 
 ```sh

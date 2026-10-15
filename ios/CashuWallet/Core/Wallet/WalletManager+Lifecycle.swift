@@ -1067,7 +1067,13 @@ extension WalletManager {
             lastUpdated: Date()
         )
 
-        mints = [mint]
+        let extraURLs = ProcessInfo.processInfo.environment["UITEST_SEED_EXTRA_MINT_URLS"]?
+            .split(separator: ",").map(String.init) ?? []
+        let extraMints = extraURLs.enumerated().map { index, url in
+            MintInfo(url: url.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/")),
+                name: "Cashu mint \(index + 2)", isActive: false, balance: 0)
+        }
+        mints = [mint] + extraMints
         activeMint = mint
         mintService.saveMints()
     }

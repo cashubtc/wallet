@@ -64,6 +64,16 @@ class FakeWalletGateway(
 
     var receiveCandidates = emptyList<com.cashu.me.Core.CDK.ReceiveRecoveryCandidate>()
     var receiveRecoveryCalls = 0
+    val depositRecoveryCalls = AtomicInteger()
+    override suspend fun recoverDepositKey(request: com.cashu.me.Core.DepositRecoveryRequest): com.cashu.me.Core.DepositRecoveryLookup {
+        depositRecoveryCalls.incrementAndGet()
+        return com.cashu.me.Core.DepositRecoveryLookup(
+            MintQuoteInfo(id = request.quoteId, request = "test-invoice", amount = 21,
+                paymentMethod = request.method, state = MintQuoteState.Paid, expiryEpochSeconds = null,
+                mintUrl = request.mintUrl, unit = request.unit, amountPaid = 21),
+            hasSigningKey = false,
+        )
+    }
     var metadataFetches = 0
     var metadataFailure: Throwable? = null
     var onMetadataFetch: (() -> Unit)? = null

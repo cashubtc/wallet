@@ -45,6 +45,7 @@ import com.cashu.me.ui.settings.AdvancedKeysScreen
 import com.cashu.me.ui.settings.AppLockScreen
 import com.cashu.me.ui.settings.BackupRestoreScreen
 import com.cashu.me.ui.settings.RestoreWalletScreen
+import com.cashu.me.ui.settings.RecoverDepositScreen
 import com.cashu.me.ui.settings.DeviceKeyDetailScreen
 import com.cashu.me.ui.settings.LightningScreen
 import com.cashu.me.ui.settings.NostrScreen
@@ -192,7 +193,11 @@ fun CashuNavHost(
                 appLockManager = container.appLockManager,
                 onClose = { navController.popBackStack() },
                 onOpenRestore = { navController.navigate(Routes.SETTINGS_RESTORE) },
+                onOpenRecoverDeposit = { navController.navigate(Routes.SETTINGS_RECOVER_DEPOSIT) },
             )
+        }
+        composable(Routes.SETTINGS_RECOVER_DEPOSIT) {
+            RecoverDepositScreen(walletManager = container.walletManager, onClose = { navController.popBackStack() })
         }
         composable(Routes.SETTINGS_RESTORE) {
             RestoreWalletScreen(
