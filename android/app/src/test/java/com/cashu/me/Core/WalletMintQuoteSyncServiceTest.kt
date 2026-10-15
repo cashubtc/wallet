@@ -15,6 +15,74 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class WalletMintQuoteSyncServiceTest {
+    @Test fun `background reconciliation waits for approved quote import`() = runBlocking {
+        val ledger = QuoteLedger(paid = 21, issued = 0)
+        val service = ledger.service()
+        val entered = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val release = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val recovery = async {
+            service.recoverDeposit(importQuote = {
+                entered.complete(Unit)
+                release.await()
+                DepositRecoveryLookup(ledger.quote, hasSigningKey = true)
+            }, adopt = {})
+        }
+        entered.await()
+        val background = async { service.syncPendingMintQuote(ledger.quote.id, force = true) }
+        kotlinx.coroutines.yield()
+        assertFalse(background.isCompleted)
+        assertEquals(0, ledger.mintCalls)
+        release.complete(Unit)
+        assertEquals(21L, recovery.await().amount)
+        assertEquals(0L, background.await().newlyIssued)
+        assertEquals(1, ledger.mintCalls)
+    }
+
+    @Test fun `unmatched recovery never adopts or mints the quote`() = runBlocking {
+        val ledger = QuoteLedger(paid = 21, issued = 0)
+        var adopted = false
+        val result = ledger.service().recoverDeposit(
+            importQuote = { DepositRecoveryLookup(ledger.quote, hasSigningKey = false) },
+            adopt = { adopted = true },
+        )
+        assertEquals(DepositRecoveryStatus.KeyNotFound, result.status)
+        assertFalse(adopted)
+        assertEquals(0, ledger.checkCalls)
+        assertEquals(0, ledger.mintCalls)
+    }
+
+    @Test fun `approved recovery reconciles once and does not double mint`() = runBlocking {
+        val ledger = QuoteLedger(paid = 21, issued = 0)
+        val service = ledger.service()
+        var adoptions = 0
+        val first = service.recoverDeposit(
+            importQuote = { DepositRecoveryLookup(ledger.quote, hasSigningKey = true) },
+            adopt = { adoptions++ },
+        )
+        val second = service.recoverDeposit(
+            importQuote = { DepositRecoveryLookup(ledger.quote, hasSigningKey = true) },
+            adopt = { adoptions++ },
+        )
+        assertEquals(DepositRecoveryStatus.Recovered, first.status)
+        assertEquals(21L, first.amount)
+        assertEquals(DepositRecoveryStatus.AlreadyClaimed, second.status)
+        assertEquals(1, ledger.mintCalls)
+        assertEquals(1, adoptions)
+    }
+
+    @Test fun `failed issuance stays on the existing recovery path`() = runBlocking {
+        val ledger = QuoteLedger(paid = 21, issued = 0).apply { failuresBeforeIssuance = 1 }
+        val service = ledger.service()
+        val pending = service.recoverDeposit(
+            importQuote = { DepositRecoveryLookup(ledger.quote, hasSigningKey = true) }, adopt = {},
+        )
+        assertEquals(DepositRecoveryStatus.Pending, pending.status)
+        assertEquals(0L, pending.amount)
+        assertTrue(service.retryStatus(ledger.quote.id).state != MintQuoteRetryState.None)
+        val completed = service.syncPendingMintQuote(ledger.quote.id, force = true)
+        assertEquals(21L, completed.newlyIssued)
+    }
+
     @Test
     fun `focused monitoring respects failure backoff and settles without manual refresh`() = runBlocking {
         val ledger = QuoteLedger(paid = 8, issued = 0).apply {

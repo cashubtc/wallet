@@ -32,6 +32,14 @@ struct BackupSettingsSection: View {
                 .buttonStyle(.plain)
 
                 NavigationLink {
+                    RecoverDepositView()
+                        .environmentObject(walletManager)
+                } label: {
+                    backupRestoreRow(title: "Recover a deposit", subtitle: "Claim a lost deposit using its quote ID.", systemImage: "arrow.down.circle.fill")
+                }
+                .buttonStyle(.plain)
+
+                NavigationLink {
                     ICloudBackupSettingsView()
                         .environmentObject(walletManager)
                 } label: {

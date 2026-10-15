@@ -18,6 +18,84 @@ final class SettingsUITests: UITestBase {
 
     // MARK: - Tests
 
+    func testDepositRecoveryCanChooseAnEmptyInactiveMint() {
+        app.launchEnvironment["UITEST_SEED_MINT"] = "1"
+        app.launchEnvironment["UITEST_SEED_MINT_URL"] = "https://mint.example"
+        app.launchEnvironment["UITEST_SEED_EXTRA_MINT_URLS"] = "https://harbor.mint.example,https://north.mint.example"
+        navigateToSettings()
+        tapWhenReady(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Backup & Restore")).firstMatch)
+        tapWhenReady(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Recover a deposit")).firstMatch)
+        tapWhenReady(app.buttons["depositRecoveryMintPicker"])
+        let picker = app.navigationBars["Choose mint"]
+        XCTAssertTrue(picker.waitForExistence(timeout: 5))
+        for host in ["mint.example", "harbor.mint.example", "north.mint.example"] {
+            XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", host)).firstMatch.exists)
+        }
+        recoveryScreenshot("ios-mint-picker")
+        tapWhenReady(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "harbor.mint.example")).firstMatch)
+        XCTAssertTrue(picker.waitForNonExistence(timeout: 5))
+        let mint = app.textFields["depositRecoveryMintURL"]
+        XCTAssertEqual(mint.value as? String, "https://harbor.mint.example")
+        let quote = app.textFields["depositRecoveryQuoteID"]
+        tapWhenReady(quote)
+        quote.typeText("deposit-2026-001\n")
+        tapWhenReady(app.buttons["depositRecoveryOptions"])
+        let search = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Search depth")).firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        recoveryScreenshot("ios-options")
+        tapWhenReady(app.buttons["recoverDepositButton"])
+        let confirmation = app.staticTexts["Recover this deposit?"]
+        XCTAssertTrue(confirmation.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Claim this deposit at harbor.mint.example")).firstMatch.exists)
+        recoveryScreenshot("ios-confirmation")
+        tapWhenReady(app.buttons["Cancel"])
+        XCTAssertTrue(confirmation.waitForNonExistence(timeout: 5))
+        XCTAssertEqual(mint.value as? String, "https://harbor.mint.example")
+        XCTAssertFalse(app.descendants(matching: .any)["depositRecoveryResult"].exists)
+    }
+
+    private func recoveryScreenshot(_ name: String) {
+        // Let the native presentation and symbol transitions settle for capture.
+        Thread.sleep(forTimeInterval: 0.4)
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    func testDepositRecoveryHasSeparateEntryAndRequiresConfirmation() {
+        navigateToSettings()
+        tapWhenReady(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Backup & Restore")).firstMatch)
+        tapWhenReady(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Recover a deposit")).firstMatch)
+        let mint = app.textFields["depositRecoveryMintURL"]
+        tapWhenReady(mint)
+        mint.typeText("https://mint.example")
+        let quote = app.textFields["depositRecoveryQuoteID"]
+        tapWhenReady(quote)
+        quote.typeText("saved-quote-id\n")
+        XCTAssertFalse(app.buttons["Search depth"].exists)
+        tapWhenReady(app.buttons["depositRecoveryOptions"])
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Search depth")).firstMatch.exists)
+        tapWhenReady(app.buttons["depositRecoveryOptions"])
+        let recover = app.buttons["recoverDepositButton"]
+        for _ in 0..<6 {
+            if recover.isHittable { break }
+            app.swipeUp()
+        }
+        XCTAssertTrue(recover.isEnabled)
+        tapWhenReady(recover)
+        let confirmation = app.staticTexts["Recover this deposit?"]
+        XCTAssertTrue(confirmation.waitForExistence(timeout: 5))
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Deposit recovery confirmation"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        tapWhenReady(app.buttons["Cancel"])
+        XCTAssertTrue(confirmation.waitForNonExistence(timeout: 5))
+        XCTAssertEqual(quote.value as? String, "saved-quote-id")
+        XCTAssertFalse(app.descendants(matching: .any)["depositRecoveryResult"].exists)
+    }
+
     func testCurrencyNamesRemainAccessibleAtLargeTextSizes() {
         for (language, locale) in [("en", "en_US"), ("de", "de_DE")] {
             app.terminate()

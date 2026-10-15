@@ -13,6 +13,7 @@ Built with SwiftUI, targets iOS 18+, and uses [cdk-swift](https://github.com/asm
 - **Nostr** — NWC (Nostr Wallet Connect), payment requests, and NPC integration
 - **P2PK** locking, multi-mint discovery, and deterministic recovery from seed
 - Backup & restore from BIP-39 seed phrase
+- [Recover a deposit](../docs/product/deposit-recovery.md) using a known mint quote ID and the original wallet seed.
 
 ## Screenshots
 

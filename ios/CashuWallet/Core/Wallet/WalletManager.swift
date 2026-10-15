@@ -74,7 +74,7 @@ class WalletManager: ObservableObject {
     /// isolation alone is reentrant across `await` and cannot provide this.
     let operationCoordinator = WalletOperationCoordinator()
 
-    let walletStore = WalletStore()
+    let walletStore: WalletStore
     var processedQuotes: Set<String>
     var npcQuotesInFlight: Set<String> = []
     
@@ -152,7 +152,8 @@ class WalletManager: ObservableObject {
     
     // MARK: - Initialization
     
-    init() {
+    init(walletStore: WalletStore = WalletStore()) {
+        self.walletStore = walletStore
         processedQuotes = Set(walletStore.loadProcessedNPCQuotes())
         bindServiceChanges()
         configureNWCManager()
