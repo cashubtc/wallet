@@ -1172,6 +1172,7 @@ struct UnifiedSendView: View {
     @State private var errorSeverity: ErrorSeverity = .error
     @State private var errorShowsMintAction = false
     @State private var errorIsTerminal = false
+    @State private var errorTitle: String?
     @State private var meltRetryNeedsFreshQuote = false
     /// Persisted across confirmation → processing/success/failure so a
     /// rail-changing or recovery route cannot disappear as wallet state updates.
@@ -1194,6 +1195,7 @@ struct UnifiedSendView: View {
         errorSeverity = severity
         errorShowsMintAction = false
         errorIsTerminal = false
+        errorTitle = nil
     }
 
     private func presentError(from error: Error) {
@@ -1202,6 +1204,7 @@ struct UnifiedSendView: View {
         errorSeverity = walletMessage.severity
         errorShowsMintAction = error.isInsufficientBalanceError
         errorIsTerminal = walletMessage.recoverability == .terminal
+        errorTitle = walletMessage.title
     }
 
     /// Secondary line under an insufficient-balance notice: what's actually here.
@@ -2196,6 +2199,7 @@ struct UnifiedSendView: View {
             // An async-accepted (NUT-05) melt — typical for on-chain — isn't settled
             // yet: the mint took the payment and pays out in the background.
             successTitle: meltSettlementPending ? "Payment Processing" : "Payment Sent!",
+            failureTitle: errorTitle ?? "Payment Failed",
             settlementPending: meltSettlementPending,
             failureCTA: meltSwitchMintCTA,
             onDone: onClose,

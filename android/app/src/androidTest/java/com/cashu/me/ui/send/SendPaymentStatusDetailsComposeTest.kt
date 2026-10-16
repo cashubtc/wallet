@@ -7,6 +7,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.cashu.me.Core.AmountFormatter
 import com.cashu.me.ui.components.PaymentStatusPhase
@@ -22,6 +23,35 @@ import org.junit.runner.RunWith
 class SendPaymentStatusDetailsComposeTest {
     @get:Rule
     val compose = createComposeRule()
+
+    @Test
+    fun unresolvedMeltShowsUnknownStatusAndCannotRetry() {
+        val error = com.cashu.me.Core.CDK.MeltPaymentRecoveryException("quote", "operation", true)
+        var closes = 0
+        var retries = 0
+        compose.setCashuContent {
+            SendStatusTerminal(
+                status = SendStatus.Failed(
+                    SendPaymentDetails(emptyList()),
+                    com.cashu.me.Core.Wallet.WalletErrorMessages.classify(error),
+                ),
+                formatter = AmountFormatter(Locale.US),
+                useBitcoinSymbol = false,
+                onClose = { closes++ },
+                onRetry = { retries++ },
+            )
+        }
+        compose.onNodeWithText("Payment status unknown").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Caution").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Failed").assertDoesNotExist()
+        compose.onNodeWithText("Payment failed").assertDoesNotExist()
+        compose.onNodeWithText("Try again").assertDoesNotExist()
+        compose.onNodeWithText("Done").performClick()
+        compose.runOnIdle {
+            assertEquals(1, closes)
+            assertEquals(0, retries)
+        }
+    }
 
     @Test
     fun paymentFactsStayVisibleAcrossProcessingSuccessAndFailure() {

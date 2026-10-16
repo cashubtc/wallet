@@ -28,6 +28,9 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -102,6 +105,7 @@ fun PaymentStatusScreen(
     // check, with no celebration bounce (iOS parity).
     settlementPending: Boolean = false,
     successAmount: String? = null,
+    failureIsCaution: Boolean = false,
 ) {
     val haptics = LocalHapticFeedback.current
     val inspectionMode = LocalInspectionMode.current
@@ -123,13 +127,15 @@ fun PaymentStatusScreen(
             haptics.performHapticFeedback(HapticFeedbackType.Confirm)
         }
     }
-    LaunchedEffect(phase) {
+    LaunchedEffect(phase, failureIsCaution) {
         when (phase) {
             // On a staged celebration mount the haptic belongs to beat 1 above.
             PaymentStatusPhase.Success -> if (!staged) {
                 haptics.performHapticFeedback(HapticFeedbackType.Confirm)
             }
-            PaymentStatusPhase.Failure -> haptics.performHapticFeedback(HapticFeedbackType.Reject)
+            PaymentStatusPhase.Failure -> haptics.performHapticFeedback(
+                if (failureIsCaution) HapticFeedbackType.ContextClick else HapticFeedbackType.Reject,
+            )
             PaymentStatusPhase.Processing -> Unit
         }
     }
@@ -285,12 +291,21 @@ fun PaymentStatusScreen(
                                             ),
                                     )
                                 }
-                                PaymentStatusPhase.Failure -> StatusCircleGlyph(
-                                    kind = StatusGlyphKind.Failure,
-                                    contentDescription = "Failed",
-                                    tint = failureTint,
-                                    modifier = Modifier.size(StatusGlyphSize),
-                                )
+                                PaymentStatusPhase.Failure -> if (failureIsCaution) {
+                                    Icon(
+                                        Icons.Filled.Warning,
+                                        contentDescription = "Caution",
+                                        tint = CashuTheme.colors.onPendingContainer,
+                                        modifier = Modifier.size(StatusGlyphSize),
+                                    )
+                                } else {
+                                    StatusCircleGlyph(
+                                        kind = StatusGlyphKind.Failure,
+                                        contentDescription = "Failed",
+                                        tint = failureTint,
+                                        modifier = Modifier.size(StatusGlyphSize),
+                                    )
+                                }
                             }
                         }
                     }

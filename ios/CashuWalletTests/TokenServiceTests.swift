@@ -1,4 +1,6 @@
 import XCTest
+import SwiftUI
+import Vision
 @testable import CashuWallet
 
 @MainActor
@@ -902,6 +904,9 @@ final class WalletOperationCoordinatorTests: XCTestCase {
 
         XCTAssertFalse(error.retryRequiresFreshQuote)
         XCTAssertEqual(error.unresolvedQuote?.id, "quote")
+        XCTAssertEqual(message.title, "Payment status unknown")
+        XCTAssertEqual(message.severity, .caution)
+        XCTAssertEqual(message.text, "Payment status is unknown. Do not send it again yet. Refresh History to check settlement.")
         if case .terminal = message.recoverability {
             // Expected: terminal means no immediate retry CTA, not that the
             // payment is known to have failed.
@@ -909,6 +914,52 @@ final class WalletOperationCoordinatorTests: XCTestCase {
             XCTFail("An unknown payment outcome must block immediate retry")
         }
         XCTAssertEqual(error.walletOperationFailureOutcome, .ambiguousFailure)
+    }
+
+    func testUnresolvedPaymentStatusRendersUnknownHeadingAndDone() async throws {
+        let message = MeltPaymentRecoveryError.unresolved(
+            quoteID: "quote", mintURL: "https://mint.invalid", operationID: "operation"
+        ).walletMessage
+        let host = UIHostingController(rootView: PaymentStatusView(
+            details: [.init(label: "Method", value: "BOLT11")],
+            phase: .failure(message: message.text, isCaution: true, isTerminal: true),
+            failureTitle: message.title ?? "Payment Failed",
+            onDone: {}, onRetry: {}
+        )
+            .frame(width: 390, height: 800)
+            .background(.white)
+            .environment(\.colorScheme, .light))
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+        let previousWindow = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        window.overrideUserInterfaceStyle = .light
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+            previousWindow?.makeKeyAndVisible()
+        }
+        host.view.frame = window.bounds
+        host.view.setNeedsLayout()
+        host.view.layoutIfNeeded()
+        try await Task.sleep(for: .milliseconds(650))
+        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
+        let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+            .joined(separator: " ").lowercased()
+        XCTAssertTrue(text.contains("payment status unknown"), text)
+        XCTAssertTrue(text.contains("done"), text)
+        XCTAssertFalse(text.contains("payment failed"), text)
+        XCTAssertFalse(text.contains("try again"), text)
+        let attachment = XCTAttachment(image: image)
+        attachment.name = "Unresolved payment status"
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 
     private func eventually(

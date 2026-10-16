@@ -7,22 +7,22 @@ import Cdk
 /// should render it at. The text follows the contract **{what broke}. {what to
 /// try next}** in the app's quiet, native voice.
 struct WalletMessage {
-    /// Whether re-attempting the identical action could plausibly succeed. `.terminal`
-    /// marks a permanent outcome (already paid, already issued) where a retry is futile,
-    /// so the UI can offer "Done" instead of "Try Again".
+    /// Whether this message permits an immediate retry. `.terminal` also covers
+    /// unresolved money movement, where retry must wait for reconciliation.
     enum Recoverability { case retryable, terminal }
 
     let text: String
     let severity: ErrorSeverity
     var recoverability: Recoverability = .retryable
+    var title: String? = nil
 
     static func error(_ text: String) -> WalletMessage { .init(text: text, severity: .error) }
     static func caution(_ text: String) -> WalletMessage { .init(text: text, severity: .caution) }
     static func info(_ text: String) -> WalletMessage { .init(text: text, severity: .info) }
 
-    /// Mark this message as a permanent outcome that a retry cannot change.
+    /// Disable an immediate retry for this message.
     func terminal() -> WalletMessage {
-        WalletMessage(text: text, severity: severity, recoverability: .terminal)
+        WalletMessage(text: text, severity: severity, recoverability: .terminal, title: title)
     }
 }
 
@@ -43,7 +43,12 @@ enum WalletErrorMessage {
             case .compensated:
                 return .error("The payment did not complete. Create a fresh quote and try again.")
             case .unresolved:
-                return .caution("The payment outcome is still being checked. Do not retry it yet.").terminal()
+                return WalletMessage(
+                    text: "Payment status is unknown. Do not send it again yet. Refresh History to check settlement.",
+                    severity: .caution,
+                    recoverability: .terminal,
+                    title: "Payment status unknown"
+                )
             }
         }
 
