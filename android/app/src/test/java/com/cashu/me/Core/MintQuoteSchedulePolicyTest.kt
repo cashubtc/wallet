@@ -11,6 +11,17 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MintQuoteSchedulePolicyTest {
+    @Test fun `observed quotes keep durable deadlines while passive recovery serves other quotes`() {
+        val record = MintQuoteScheduleRecord(firstObservedAtEpochMillis = 0, nextAttemptAtEpochMillis = 300_000, consecutiveFailures = 5)
+        val result = MintQuoteSchedulePolicy.select(listOf("watched", "other"), mapOf("watched" to record), 10_000, false,
+            observedQuoteIds = setOf("watched"))
+        assertEquals(listOf("other"), result.quoteIds)
+        assertEquals(record, result.records["watched"])
+        val forced = MintQuoteSchedulePolicy.select(listOf("watched"), result.records, 10_000, true,
+            observedQuoteIds = setOf("watched"))
+        assertEquals(listOf("watched"), forced.quoteIds)
+    }
+
     @Test
     fun `onchain deposits remain eligible after expiry and old schedules reopen`() {
         val pending = quote(PaymentMethodKind.Onchain, MintQuoteState.Pending, 0, 0)

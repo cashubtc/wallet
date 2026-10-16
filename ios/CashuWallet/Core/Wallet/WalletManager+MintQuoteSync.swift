@@ -74,16 +74,11 @@ extension WalletManager {
     /// Called from a lifecycle-bound detail task. The balance and local receipt
     /// are refreshed before feedback; unrelated quotes/explorers are not polled.
     func monitorDisplayedMintQuote(quoteID: String, homeHaptic: Bool) async {
-        await focusedMintQuoteMonitor.monitor(quoteID: quoteID) { quoteID in
-            let result = await self.refreshPendingMintQuote(
-                quoteId: quoteID, observingQuoteID: quoteID
-            )
-            if let result, result.newlyIssued > 0 {
-                self.postReceivedMintNotification(
-                    amount: result.newlyIssued, unit: result.quote.unit, homeHaptic: homeHaptic
-                )
+        for await result in mintEvents.observe(quoteID) {
+            guard !Task.isCancelled else { break }
+            if result.newlyIssued > 0 {
+                postReceivedMintNotification(amount: result.newlyIssued, unit: result.quote.unit, homeHaptic: homeHaptic)
             }
-            return result?.quote
         }
     }
 
@@ -96,6 +91,7 @@ extension WalletManager {
     /// async melt is in flight and its in-process waiter died.
     /// Started/stopped from `CashuWalletApp` on scenePhase (Android parity).
     func startPendingQuoteForegroundPolling() {
+        mintEvents.start()
         guard pendingQuotePollTask == nil else { return }
         pendingQuotePollTask = Task { [weak self] in
             while !Task.isCancelled {
@@ -109,6 +105,7 @@ extension WalletManager {
     }
 
     func stopPendingQuoteForegroundPolling() {
+        mintEvents.stop()
         pendingQuotePollTask?.cancel()
         pendingQuotePollTask = nil
     }
@@ -120,7 +117,6 @@ extension WalletManager {
     /// - Parameter force: `false` (poll / startup / History open) only runs
     ///   when the repository lane is idle; `true` (pull-to-refresh) preempts.
     func syncPendingMintQuotes(force: Bool = false) async {
-        guard force || !focusedMintQuoteMonitor.isActive else { return }
         if force {
             do {
                 try await operationCoordinator.perform(kind: .quotePoll) {
@@ -143,7 +139,6 @@ extension WalletManager {
 
     private func mintUnissuedQuotesAcrossWallets(force: Bool) async {
         guard walletRepository != nil else { return }
-        guard force || !focusedMintQuoteMonitor.isActive else { return }
         lastMintQuoteSyncAt = Date()
 
         // The CDK database is the durable ledger. Union it with app-level
@@ -166,13 +161,13 @@ extension WalletManager {
             }
         }
 
-        guard force || !focusedMintQuoteMonitor.isActive else { return }
         let selection = MintQuoteSchedulePolicy.select(
             quoteIDs: quoteIDs,
             existing: walletStore.loadMintQuoteSchedules(),
             now: Date(),
             force: force,
-            unsettledOnchainQuoteIDs: unsettledOnchainQuoteIDs
+            unsettledOnchainQuoteIDs: unsettledOnchainQuoteIDs,
+            observedQuoteIDs: Set(quoteIDs.filter { mintEvents.isObserved($0) })
         )
         walletStore.saveMintQuoteSchedules(selection.records)
         guard !selection.quoteIDs.isEmpty else { return }
@@ -180,7 +175,6 @@ extension WalletManager {
         var mintedAny = false
         for quoteID in selection.quoteIDs {
             guard !Task.isCancelled else { break }
-            guard force || !focusedMintQuoteMonitor.isActive else { break }
             guard let result = await reconcileMintQuoteAssumingLease(quoteId: quoteID, force: force) else { continue }
             if result.newlyIssued > 0 {
                 mintedAny = true
@@ -198,7 +192,7 @@ extension WalletManager {
         }
 
         await loadTransactionsAssumingWalletOperationLease(
-            includeRemoteObservations: !focusedMintQuoteMonitor.isActive
+            includeRemoteObservations: true
         )
     }
 

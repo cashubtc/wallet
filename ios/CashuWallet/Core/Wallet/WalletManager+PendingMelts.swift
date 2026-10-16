@@ -14,7 +14,7 @@ import Cdk
 /// re-entry is the coordinated balance/history refresh once it lands.
 ///
 /// CDK 0.18 persists the melt as a Pending transaction backed by a durable
-/// saga, so no app-side quote tracking is needed: `recoverIncompleteSagas()`
+/// saga, so no app-side quote tracking is needed: `finalizePendingMelts()`
 /// re-checks in-flight melts with their mints and flips the transactions to
 /// completed/failed when settlement resolves — the safety net behind both the
 /// watcher and an app relaunch.
@@ -30,8 +30,15 @@ extension WalletManager {
                 for wallet in await self.trackedWalletsAssumingWalletOperationLease() {
                     guard !Task.isCancelled else { break }
                     do {
-                        let report = try await wallet.recoverIncompleteSagas()
-                        settledAny = settledAny || report.recovered > 0 || report.compensated > 0
+                        // General saga recovery also retries incoming mint issuance,
+                        // bypassing its durable backoff. This sweep owns melts only.
+                        let beforeBalance = try await wallet.totalBalance().value
+                        let beforeReserved = try await wallet.totalReservedBalance().value
+                        let finalized = try await wallet.finalizePendingMelts()
+                        let afterBalance = try await wallet.totalBalance().value
+                        let afterReserved = try await wallet.totalReservedBalance().value
+                        // Failed payments may release proofs without a successful melt.
+                        settledAny = settledAny || !finalized.isEmpty || beforeBalance != afterBalance || beforeReserved != afterReserved
                     } catch is CancellationError {
                         break
                     } catch {

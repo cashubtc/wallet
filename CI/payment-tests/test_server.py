@@ -77,3 +77,59 @@ class PaymentFixtureTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+class MintSocketFixtureTests(unittest.TestCase):
+    setUp = PaymentFixtureTests.setUp
+    tearDown = PaymentFixtureTests.tearDown
+
+    def test_websocket_forwarding_duplicates_only_notifications(self):
+        import asyncio
+        from contextlib import asynccontextmanager
+        from unittest.mock import patch
+
+        @asynccontextmanager
+        async def upstream(url):
+            self.assertEqual(url, server.UPSTREAMS['controlled'].replace('http', 'ws', 1) + '/v1/ws')
+            class Peer:
+                def __init__(self): self.queue = asyncio.Queue()
+                async def send(self, message):
+                    request = json.loads(message)
+                    await self.queue.put(json.dumps({'id': request['id'], 'result': {'status': 'OK'}}))
+                    await self.queue.put(json.dumps({'method': 'subscribe', 'params': {'payload': {'state': 'PAID'}}}))
+                    await self.queue.put(json.dumps({'id': 2, 'result': {'status': 'OK'}}))
+                def __aiter__(self): return self
+                async def __anext__(self): return await self.queue.get()
+            yield Peer()
+
+        self.client.post(self.root + '/transport', json={'enabled': True, 'duplicate': True})
+        with patch.object(server, 'websocket_connect', upstream):
+            with self.client.websocket_connect(self.root + '/mint/controlled/v1/ws') as socket:
+                socket.send_json({'method': 'subscribe', 'id': 1})
+                self.assertEqual(socket.receive_json()['id'], 1)
+                first = socket.receive_json()
+                self.assertEqual(first['method'], 'subscribe')
+                self.assertEqual(socket.receive_json(), first)
+                self.assertEqual(socket.receive_json()['id'], 2)
+                socket.close()
+                import time
+                for _ in range(100):
+                    if not server.sessions[self.key]['mint_sockets']:
+                        break
+                    time.sleep(0.01)
+        kinds = [entry['kind'] for entry in self.client.get(self.root).json()['ws']]
+        self.assertEqual(kinds.count('subscribe'), 1)
+        self.assertEqual(kinds.count('notification'), 1)
+        self.assertEqual(kinds.count('closed'), 1)
+
+    def test_transport_is_session_scoped_and_faults_can_be_cleared(self):
+        other = self.client.post('/sessions').json()['id']
+        self.client.post(self.root + '/transport', json={'enabled': True, 'drop': True})
+        self.assertFalse(server.sessions[other]['transport']['enabled'])
+        self.assertTrue(server.sessions[self.key]['transport']['drop'])
+        self.client.post(self.root + '/faults', json={'action': 'reject', 'method': 'POST', 'path': '/v1/mint/bolt11', 'remaining': -1})
+        self.client.delete(self.root + '/faults')
+        self.assertEqual(self.client.post(self.root + '/mint/controlled/v1/mint/bolt11', json={}).status_code, 200)
+        request = self.client.get(self.root).json()['requests'][-1]
+        self.assertGreater(request['at'], 0)
+        self.assertFalse(request['signature_retry'])
+        self.client.delete('/sessions/' + other)
