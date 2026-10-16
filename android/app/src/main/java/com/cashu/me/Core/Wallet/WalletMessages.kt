@@ -8,8 +8,8 @@ enum class WalletMessageSeverity { Error, Caution, Info }
  * should render it at. Port of iOS `WalletErrors.swift`: the text follows the
  * contract **{what broke}. {what to try next}** in the app's quiet, native voice.
  *
- * `isTerminal` marks a permanent outcome (already spent / already paid) where a
- * retry is futile, so the UI can offer "Done" instead of "Try again".
+ * `isTerminal` blocks immediate retries, including unresolved money movement
+ * that must be reconciled before sending again.
  */
 data class WalletMessage(
     val text: String,

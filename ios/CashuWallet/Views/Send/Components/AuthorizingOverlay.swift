@@ -10,8 +10,8 @@ struct PaymentStatusView: View {
         case processing
         case success
         /// `isCaution` renders an amber warning (e.g. MintSettling) instead of a red X.
-        /// `isTerminal` marks a permanent outcome (already paid / issued) so the CTA
-        /// becomes "Done" instead of a futile "Try Again".
+        /// `isTerminal` blocks retries, including an unresolved payment outcome,
+        /// so the CTA becomes "Done" while History can reconcile settlement.
         case failure(message: String, isCaution: Bool = false, isTerminal: Bool = false)
     }
 

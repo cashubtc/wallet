@@ -905,7 +905,7 @@ fun UnifiedSendScreen(
  * terminal per outcome.
  */
 @Composable
-private fun SendStatusTerminal(
+internal fun SendStatusTerminal(
     status: SendStatus,
     formatter: AmountFormatter,
     useBitcoinSymbol: Boolean,
@@ -947,6 +947,7 @@ private fun SendStatusTerminal(
             else -> null
         },
         settlementPending = settlementPending,
+        failureIsCaution = failure?.severity == com.cashu.me.Core.Wallet.WalletMessageSeverity.Caution,
         doneLabel = if (failure != null && !failure.isTerminal) "Try again" else "Done",
         onDone = when (status) {
             is SendStatus.Sending -> null

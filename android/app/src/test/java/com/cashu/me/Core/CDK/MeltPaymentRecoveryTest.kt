@@ -34,6 +34,15 @@ class MeltPaymentRecoveryTest {
             assertTrue(error.unresolved)
             assertTrue(error.walletMessage.isTerminal)
             assertEquals("Payment status unknown", error.walletMessage.title)
+            assertEquals(
+                "Payment status is unknown. Do not send it again yet. Refresh History to check settlement.",
+                error.walletMessage.text,
+            )
+            assertEquals(
+                com.cashu.me.Core.Wallet.WalletMessageSeverity.Caution,
+                error.walletMessage.severity,
+            )
+            assertFalse(error.walletMessage.isRetryable)
         }
     }
 
