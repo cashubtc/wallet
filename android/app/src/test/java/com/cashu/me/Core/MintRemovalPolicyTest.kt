@@ -1,8 +1,6 @@
 package com.cashu.me.Core
 
-import com.cashu.me.Core.CDK.MultiUnitWalletRemovalException
 import com.cashu.me.Core.CDK.mintRemovalUrlsMatch
-import com.cashu.me.Core.CDK.normalizedRegisteredWalletUnits
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
@@ -24,15 +22,6 @@ class MintRemovalPolicyTest {
     }
 
     @Test
-    fun registeredUnitsAreNormalizedAndDeduplicated() {
-        assertEquals(
-            listOf("eur"),
-            normalizedRegisteredWalletUnits(listOf(" EUR ", "eur", "EuR", " ")),
-        )
-        assertTrue(normalizedRegisteredWalletUnits(emptyList()).isEmpty())
-    }
-
-    @Test
     fun mintIdentityFoldsAuthorityButPreservesEncodedAndCaseSensitivePaths() {
         assertTrue(mintRemovalUrlsMatch(
             "https://MINT.example.com/Mint/",
@@ -49,32 +38,12 @@ class MintRemovalPolicyTest {
     }
 
     @Test
-    fun multiUnitGatewayRefusalPreservesMetadata() = runBlocking {
-        var metadataCommitted = false
-
-        try {
-            removeMintWalletBeforeCommit(
-                mintUrl = MintUrl,
-                removeWalletIfSingleUnit = {
-                    throw MultiUnitWalletRemovalException(listOf("sat", "eur"))
-                },
-                commitMetadata = { metadataCommitted = true },
-            )
-            fail("Expected multi-unit removal to be refused")
-        } catch (_: MultiUnitWalletRemovalException) {
-            // Expected: the atomic gateway operation refused before removal.
-        }
-
-        assertFalse(metadataCommitted)
-    }
-
-    @Test
     fun existingNativeWalletIsRemovedBeforeMetadataCommit() = runBlocking {
         val events = mutableListOf<String>()
 
         val existed = removeMintWalletBeforeCommit(
             mintUrl = MintUrl,
-            removeWalletIfSingleUnit = { mintUrl ->
+            removeWallets = { mintUrl ->
                 events += "remove:$mintUrl"
                 true
             },
@@ -91,15 +60,15 @@ class MintRemovalPolicyTest {
 
         val existed = removeMintWalletBeforeCommit(
             mintUrl = MintUrl,
-            removeWalletIfSingleUnit = {
-                events += "atomic-check-and-remove"
+            removeWallets = {
+                events += "remove-all-units"
                 false
             },
             commitMetadata = { events += "commit" },
         )
 
         assertFalse(existed)
-        assertEquals(listOf("atomic-check-and-remove", "commit"), events)
+        assertEquals(listOf("remove-all-units", "commit"), events)
     }
 
     @Test
@@ -109,7 +78,7 @@ class MintRemovalPolicyTest {
         try {
             removeMintWalletBeforeCommit(
                 mintUrl = MintUrl,
-                removeWalletIfSingleUnit = { throw RepositoryFailure() },
+                removeWallets = { throw RepositoryFailure() },
                 commitMetadata = { metadataCommitted = true },
             )
             fail("Expected native removal failure")
@@ -127,7 +96,7 @@ class MintRemovalPolicyTest {
             try {
                 removeMintWalletBeforeCommit(
                     mintUrl = MintUrl,
-                    removeWalletIfSingleUnit = { throw CancellationException("cancelled") },
+                    removeWallets = { throw CancellationException("cancelled") },
                     commitMetadata = { metadataCommitted = true },
                 )
             } finally {
@@ -144,7 +113,7 @@ class MintRemovalPolicyTest {
         val request = async {
             removeMintWalletBeforeCommit(
                 mintUrl = MintUrl,
-                removeWalletIfSingleUnit = {
+                removeWallets = {
                     nativeStarted.complete(Unit)
                     allowNativeReturn.await()
                     true

@@ -51,6 +51,12 @@ failures are recorded separately below.
 - Regression: native multi-unit refusal journeys and `WalletErrorMessagesTest` /
   `WalletErrorMessageTests` check the explanation and retained wallet state.
 - Validation: reproduced in the full Android UI suite; the focused post-fix mint-safety journey and JVM regression passed.
+- Superseded: the refusal itself was removed. CDK's `removeWallet` only drops the
+  in-memory (mint, unit) entry and keeps proofs in the database, so both apps now
+  remove every registered unit wallet and the mint. The multi-unit journeys
+  (`MintSafetyJourneyTest.multiUnitMintRemovalRemovesEveryUnitAfterRecreation`,
+  `WalletLifecycleUITests.testAddDuplicateSwitchAndRemoveMultiUnitMintPersists`)
+  now check that the mint stays removed after recreation or relaunch.
 
 ### UI-004 — reselecting the current non-sat currency disables Send
 
@@ -128,9 +134,6 @@ suite passed after this correction; no design-system allowlist was loosened.
 - Currency pickers have no search feature; tests cover selection, dismissal, off,
   persistence, conversion settings, and payment-unit behavior.
 - History filters are All/Pending/Completed, not incoming/outgoing.
-- Multi-unit mint removal is deliberately refused by the current product safety
-  policy. Tests check the refusal and retained wallet state; this is not reported
-  as an accidental deletion failure.
 - Android fixture recreation retains the app container; it is not a cold process
   restart. iOS persistence checks terminate/relaunch without resetting the wallet.
 - Physical camera/NFC, OS biometric enrollment, cloud accounts, and external
