@@ -187,11 +187,7 @@ internal fun NfcReceiveIndicatorContent(state: NfcReceiveState, modifier: Modifi
                     modifier = Modifier.size(18.dp),
                 )
                 AnimatedContent(
-                    targetState = state.phase to (state.message ?: if (active) {
-                        "Ask the sender to hold their phone near yours."
-                    } else {
-                        "Open this request with NFC enabled."
-                    }),
+                    targetState = state.phase to (state.message ?: "Tap to Receive"),
                     transitionSpec = {
                         if (reducedMotion) {
                             (EnterTransition.None togetherWith ExitTransition.None).using(null)

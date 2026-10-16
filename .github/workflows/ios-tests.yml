@@ -70,6 +70,21 @@ jobs:
         # or build intermediates are needed by test-without-building.
         tar -czf "$RUNNER_TEMP/ios-test-products.tar.gz" \
           -C "$RUNNER_TEMP/CashuWalletDerivedData/Build" Products
+    - name: Build HCE-enabled iPhone release
+      run: |
+        set -euo pipefail
+        # Simulator cannot compile-check the device-only eligibility path or
+        # exercise HCE. Keep a device SDK build alongside the simulator tests;
+        # actual signing and radio validation require an approved profile/device.
+        xcodebuild build \
+          -project ios/CashuWallet.xcodeproj \
+          -scheme CashuWallet -configuration Release \
+          -destination 'generic/platform=iOS' \
+          -derivedDataPath "$RUNNER_TEMP/CashuWalletDeviceDerivedData" \
+          -clonedSourcePackagesDirPath "$RUNNER_TEMP/SourcePackages" \
+          -skipPackageUpdates -skipPackagePluginValidation \
+          CODE_SIGNING_ALLOWED=NO \
+          2>&1 | tee device-build-output.log | xcbeautify
     - uses: actions/upload-artifact@v4
       with:
         name: ios-test-products
@@ -82,7 +97,9 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: ios-build-diagnostics
-        path: build-output.log
+        path: |
+          build-output.log
+          device-build-output.log
 
   test:
     name: iOS tests (${{ matrix.shard }})

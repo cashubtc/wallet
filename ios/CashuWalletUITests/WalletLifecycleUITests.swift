@@ -234,20 +234,26 @@ final class WalletLifecycleUITests: UITestBase {
         let field = app.textFields.firstMatch
         tapWhenReady(field)
         for (index, word) in words.enumerated() {
-            field.typeText(word)
-            tapWhenReady(app.buttons[word].firstMatch)
+            // A synthetic seed can contain "shift", which also names a keyboard
+            // button. Commit through the field instead of an ambiguous label.
+            field.typeText(word + " ")
             if index < 11 {
                 XCTAssertTrue(app.textFields["word \(index + 2)"].waitForExistence(timeout: 5))
             }
         }
         tapWhenReady(app.buttons["Next"])
         let mintField = app.textFields["mint.example.com"]
-        tapWhenReady(mintField)
-        mintField.typeText(mintURL)
+        enterMintURL(mintURL, into: mintField)
         tapWhenReady(app.buttons["Add"])
         tapWhenReady(app.buttons["Restore from 1 mint"])
         XCTAssertTrue(app.staticTexts["Restore Complete"].waitForExistence(timeout: 60))
-        XCTAssertTrue(app.staticTexts["Recovered: 100 sats"].exists)
+        let recovered = app.staticTexts["Recovered: 100 sats"]
+        if !recovered.waitForExistence(timeout: 5) {
+            let screenshot = XCTAttachment(screenshot: app.screenshot())
+            screenshot.lifetime = .keepAlways
+            add(screenshot)
+        }
+        XCTAssertTrue(recovered.exists)
         tapWhenReady(app.buttons["Continue"])
         tapWhenReady(app.navigationBars.buttons.element(boundBy: 0))
         tapWhenReady(app.navigationBars.buttons.element(boundBy: 0))

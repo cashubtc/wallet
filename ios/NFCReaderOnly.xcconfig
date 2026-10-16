@@ -1,0 +1,4 @@
+// For developer teams without Apple HCE approval. NFC sending remains available.
+// xcodebuild ... -xcconfig NFCReaderOnly.xcconfig
+CASHU_HCE_ENABLED = NO
+CODE_SIGN_ENTITLEMENTS = CashuWallet/CashuWallet.entitlements
