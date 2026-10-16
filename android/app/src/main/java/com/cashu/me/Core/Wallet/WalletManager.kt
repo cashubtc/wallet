@@ -443,7 +443,7 @@ class WalletManager(
                 ?: throw IllegalArgumentException("Mint is no longer tracked.")
             removeMintWalletBeforeCommit(
                 mintUrl = trackedMint.url,
-                removeWalletIfSingleUnit = gateway::removeWalletIfSingleUnit,
+                removeWallets = gateway::removeWallets,
             ) {
                 // Persist the exclusion before deleting metadata so retained
                 // CDK proofs cannot reconnect this mint after a relaunch.

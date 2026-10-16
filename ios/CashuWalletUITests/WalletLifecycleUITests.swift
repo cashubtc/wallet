@@ -14,7 +14,7 @@ final class WalletLifecycleUITests: UITestBase {
         try super.setUpWithError()
     }
 
-    func testAddDuplicateSwitchAndRefuseMultiUnitRemovalPersists() {
+    func testAddDuplicateSwitchAndRemoveMultiUnitMintPersists() {
         createWalletWithMint()
         tapTab("Mints")
         addMint(url: mintURL + "/")
@@ -45,13 +45,16 @@ final class WalletLifecycleUITests: UITestBase {
         XCTAssertTrue(app.buttons["Remove mint"].exists)
         tapWhenReady(app.buttons["Remove mint"])
         tapWhenReady(app.buttons["Remove"])
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "multiple currency units")).firstMatch
-            .waitForExistence(timeout: 15))
+        // The CDK mint registers more than one unit; removal must still finish
+        // and dismiss the detail screen before the process is killed.
+        XCTAssertTrue(app.buttons["Remove mint"].waitForNonExistence(timeout: 30))
+        XCTAssertTrue(second.waitForNonExistence(timeout: 15))
+        assertDefaultMint(mintRow(url: mintURL))
         relaunchPreservingWallet()
         tapTab("Mints")
-        XCTAssertTrue(second.waitForExistence(timeout: 10))
-        assertDefaultMint(second)
         XCTAssertTrue(mintRow(url: mintURL).waitForExistence(timeout: 10))
+        XCTAssertFalse(second.exists)
+        assertDefaultMint(mintRow(url: mintURL))
     }
 
     private func assertDefaultMint(
