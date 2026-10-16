@@ -143,7 +143,8 @@ enum MintQuoteSchedulePolicy {
         existing: [String: MintQuoteScheduleRecord],
         now: Date,
         force: Bool,
-        unsettledOnchainQuoteIDs: Set<String> = []
+        unsettledOnchainQuoteIDs: Set<String> = [],
+        observedQuoteIDs: Set<String> = []
     ) -> Selection {
         let nowValue = now.timeIntervalSince1970
         var records = existing.filter { quoteIDs.contains($0.key) }
@@ -161,7 +162,7 @@ enum MintQuoteSchedulePolicy {
         let selected = quoteIDs
             .filter { quoteID in
                 guard let record = records[quoteID] else { return false }
-                return !record.isComplete && (force || record.nextAttemptAt <= nowValue)
+                return !record.isComplete && (force || (!observedQuoteIDs.contains(quoteID) && record.nextAttemptAt <= nowValue))
             }
             .sorted { lhs, rhs in
                 guard let left = records[lhs], let right = records[rhs] else {

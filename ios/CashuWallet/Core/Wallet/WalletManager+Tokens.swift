@@ -266,6 +266,17 @@ extension WalletManager {
         return amount
     }
 
+    func openTokenClaimSubscription(token: String) async throws -> any MintEventSubscription {
+        guard let repo = walletRepository else { throw WalletError.notInitialized }
+        let decoded = try Token.decode(encodedToken: token)
+        let wallet = try await repo.getWallet(mintUrl: decoded.mintUrl(), unit: decoded.unit() ?? .sat)
+        let filters = try decoded.proofsSimple().map { try proofY(proof: $0) }
+        let subscription = try await wallet.subscribe(
+            params: SubscribeParams(kind: .proofState, filters: filters, id: nil)
+        )
+        return CdkMintEventSubscription(subscription)
+    }
+
     // MARK: - Token Status Checks
 
     func checkTokenSpendable(token: String, mintUrl: String? = nil) async -> Bool {

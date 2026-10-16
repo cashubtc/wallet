@@ -1104,6 +1104,7 @@ extension WalletManager {
     }
 
     private func resetRuntimeState() {
+        mintEvents.stop(clear: true)
         stopPendingQuoteForegroundPolling()
         lastMintQuoteSyncAt = nil
         startupMaintenanceTask?.cancel()

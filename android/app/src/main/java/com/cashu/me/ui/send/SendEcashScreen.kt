@@ -1,6 +1,9 @@
 package com.cashu.me.ui.send
 
 import androidx.activity.compose.BackHandler
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ProcessLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -497,6 +500,7 @@ fun SendEcashScreen(
                     mintName = com.cashu.me.Core.mintDisplayName(current.mintUrl, walletState.mints),
                     unit = current.unit,
                     pollingEnabled = settings.checkSentTokens,
+                    socketsEnabled = settings.useWebsockets,
                     amountPresentation = paymentConfirmationAmountPresentation(
                         amount = current.amount,
                         unit = current.unit,
@@ -1038,6 +1042,7 @@ private fun GeneratedFace(
     mintName: String,
     unit: String,
     pollingEnabled: Boolean,
+    socketsEnabled: Boolean,
     amountPresentation: PaymentConfirmationAmountPresentation,
     fiatLabel: String?,
     onDone: () -> Unit,
@@ -1049,32 +1054,58 @@ private fun GeneratedFace(
     var manualCheckResult: PendingTokenClaimCheckResult? by remember(result.token) {
         mutableStateOf(null)
     }
-    // Poll the mint to detect when the recipient redeems the token. Mirrors
+    // Subscribe to proof updates and verify claims with the mint. Mirrors
     // iOS startClaimPolling: the spinner shows for the whole watch session
     // (flipping Pending↔Checking per probe made the row flicker), intervals
-    // back off 5s → 15s, and after 10 checks the row rests at Pending.
-    LaunchedEffect(result.token, mintUrl, pollingEnabled) {
-        if (!pollingEnabled) {
-            if (claimState != ClaimState.Claimed) claimState = ClaimState.Pending
-            return@LaunchedEffect
-        }
-        claimState = ClaimState.Checking
-        var interval = 5_000L
-        repeat(10) {
-            delay(interval)
-            // A spent proof moves the tracked token to Claimed. Probe failures
-            // stay Pending and the automatic watcher keeps trying.
-            when (checkGeneratedTokenClaim(walletManager, result.token, mintUrl)) {
-                PendingTokenClaimCheckResult.Claimed -> {
-                    claimState = ClaimState.Claimed
-                    return@LaunchedEffect
-                }
-                PendingTokenClaimCheckResult.NotClaimed -> Unit
-                is PendingTokenClaimCheckResult.Failed -> Unit
+    // use exponential fallback, and after 10 checks the row rests at Pending.
+    LaunchedEffect(result.token, mintUrl, pollingEnabled, socketsEnabled) {
+        ProcessLifecycleOwner.get().repeatOnLifecycle(Lifecycle.State.STARTED) {
+            if (!pollingEnabled) {
+                if (claimState != ClaimState.Claimed) claimState = ClaimState.Pending
+                return@repeatOnLifecycle
             }
-            interval = (interval + 1_000L).coerceAtMost(15_000L)
+            claimState = ClaimState.Checking
+            var subscription: com.cashu.me.Core.MintEventSubscription? = null
+            var nextSubscribe = 0L
+            var reconnectDelay = 2_000L
+            val schedule = com.cashu.me.Core.MintEventSchedule(System.currentTimeMillis())
+            var checks = 0
+            try {
+                while (checks < 10) {
+                    val now = System.currentTimeMillis()
+                    if (socketsEnabled && subscription == null && now >= nextSubscribe) {
+                        try { subscription = walletManager.openTokenClaimSubscription(result.token, mintUrl) }
+                        catch (cancel: kotlinx.coroutines.CancellationException) { throw cancel }
+                        catch (_: Exception) {
+                            nextSubscribe = now + reconnectDelay
+                            reconnectDelay = (reconnectDelay * 2).coerceAtMost(30_000L)
+                        }
+                    }
+                    val event = try { subscription?.drain() == true }
+                    catch (cancel: kotlinx.coroutines.CancellationException) { throw cancel }
+                    catch (_: Exception) {
+                        subscription?.stop()
+                        subscription = null
+                        nextSubscribe = now + reconnectDelay
+                        reconnectDelay = (reconnectDelay * 2).coerceAtMost(30_000L)
+                        false
+                    }
+                    val subscribed = subscription != null
+                    if (schedule.due(now, subscribed, event, null, false)) {
+                        checks++
+                        if (checkGeneratedTokenClaim(walletManager, result.token, mintUrl) == PendingTokenClaimCheckResult.Claimed) {
+                            claimState = ClaimState.Claimed
+                            return@repeatOnLifecycle
+                        }
+                        schedule.checked(System.currentTimeMillis(), subscribed)
+                    }
+                    delay(250)
+                }
+            } finally {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { subscription?.stop() }
+            }
+            claimState = ClaimState.Pending
         }
-        claimState = ClaimState.Pending
     }
 
     // Claimed resolves to the shared full-screen terminal (iOS parity), with

@@ -23,12 +23,13 @@ other units, so both platforms can use the sat+USD CDK fixture profile.
 ## Added required coverage
 
 `coverage.json` lists individual executable tests, not feature labels. Both
-platforms require 14 cases on PRs (12 native + 2 UI) and 19 on full/nightly runs.
+platforms require 19 cases on PRs (17 native + 2 UI) and 24 on full/nightly runs.
 `check_coverage.py` reads JUnit XML or Xcode test-result trees and fails for any
 missing, skipped, or unsuccessful required case. The existing suites still run.
 
 | Boundary | Assertions | Tier |
 |---|---|---|
+| Mint event subscriptions | Fewer idle quote checks, duplicate-event credit safety, persisted issuance backoff, disconnect/background recovery, unsupported-socket fallback, and melt-only recovery | PR |
 | Unpaid invoice | Zero balance until explicit payment; reject early issuance; issue once | PR |
 | Internal Nutshell and external CDK BOLT11 | Paid state, amount + actual fee + change conservation, one outgoing receipt; internal recipient redeems | PR |
 | Lost melt response after mint commit | Recovery, durable reopen, paid quote, one receipt, no second debit | PR |
@@ -74,9 +75,12 @@ subscriptions, and carries actual NIP-47 encrypted requests/responses. It is a s
 local test relay, not a general-purpose Nostr implementation. Fixture behavior and
 the coverage gate have their own Python tests.
 
-The proxy currently forwards mint HTTP endpoints, not NUT-17 mint WebSockets;
-SDK subscriptions therefore fall back to HTTP polling. These tests do not cover
-mint push delivery, reconnect, or missed-update recovery.
+The proxy defaults to HTTP-only behavior for existing payment tests. Native mint-event
+cases enable NUT-17 WebSocket forwarding per session through `/transport`, with
+notification duplication/drop and forced disconnect controls. The session inspection
+endpoint reports HTTP timestamps and WebSocket activity without recording proof bodies.
+See [mint event validation](../../docs/mint-event-notifications.md#validation) for the
+released-SDK push, fallback, retry and lifecycle tests.
 
 The UI live-payment mode enables real payment maintenance while preserving test
 animation settings and disabling unrelated external services. iOS relay traffic is

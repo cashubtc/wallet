@@ -82,6 +82,7 @@ import androidx.compose.ui.unit.dp
 import java.text.DateFormat
 import java.util.Date
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collectLatest
@@ -553,34 +554,28 @@ fun ReceiveLightningScreen(
     // Keep outgoing addresses in the shared reconciliation lane, including
     // expired quotes whose deposits may still be waiting for confirmations.
     // The global pending-quote sweep remains the fallback after dismissal.
-    LaunchedEffect(abandonedOnchainQuoteIds.isNotEmpty()) {
-        while (abandonedOnchainQuoteIds.isNotEmpty() && successInfo == null) {
-            for (quoteId in abandonedOnchainQuoteIds) {
-                val reconciliation = runCatching {
-                    walletManager.refreshPendingMintQuote(
-                        quoteId,
-                        confirmationOwner = ReceiveConfirmationOwner.InFlow,
+    LaunchedEffect(abandonedOnchainQuoteIds, successInfo == null) {
+        if (successInfo != null) return@LaunchedEffect
+        kotlinx.coroutines.coroutineScope {
+            abandonedOnchainQuoteIds.forEach { quoteId ->
+                launch {
+                    val reconciliation = walletManager.observeMintQuote(quoteId).first { it.hasSettledPayment }
+                    if (successInfo != null) return@launch
+                    abandonedOnchainQuoteIds = abandonedOnchainQuoteIds - quoteId
+                    val refreshed = reconciliation.quote
+                    val paidAmount = reconciliation.newlyIssued.takeIf { it > 0 }
+                        ?: refreshed?.amountIssued?.takeIf { it > 0 }
+                        ?: refreshed?.amount
+                    successInfo = ReceiveSuccessInfo(
+                        amountLabel = paidAmount?.let {
+                            formatter.formatWalletSats(it, settings.useBitcoinSymbol)
+                        },
+                        mintName = walletState.mints.firstOrNull { it.url == refreshed?.mintUrl }?.name
+                            ?: walletState.activeMint?.name,
+                        method = refreshed?.paymentMethod ?: PaymentMethodKind.Onchain,
                     )
                 }
-                    .getOrNull()
-                if (reconciliation?.hasSettledPayment != true) continue
-                abandonedOnchainQuoteIds = abandonedOnchainQuoteIds - quoteId
-                // Refetch for the credited amount (on-chain always mints sat).
-                val refreshed = reconciliation.quote
-                val paidAmount = reconciliation.newlyIssued.takeIf { it > 0 }
-                    ?: refreshed?.amount
-                    ?: refreshed?.amountIssued?.takeIf { it > 0 }
-                successInfo = ReceiveSuccessInfo(
-                    amountLabel = paidAmount?.let {
-                        formatter.formatWalletSats(it, settings.useBitcoinSymbol)
-                    },
-                    mintName = walletState.mints.firstOrNull { it.url == refreshed?.mintUrl }?.name
-                        ?: walletState.activeMint?.name,
-                    method = refreshed?.paymentMethod ?: PaymentMethodKind.Onchain,
-                )
-                return@LaunchedEffect // terminal owns the sheet now
             }
-            delay(30_000)
         }
     }
 
@@ -811,49 +806,6 @@ fun ReceiveLightningScreen(
                     LaunchedEffect(current.quote.id) {
                         persistReusableOffer(current.quote)
                     }
-                    // Websocket push is a preference-gated accelerator; the
-                    // polling loop below is the always-on fallback that also
-                    // covers a dead subscription (iOS ReceiveLightningView
-                    // parity).
-                    LaunchedEffect(current.quote.id, settings.useWebsockets) {
-                        if (!settings.useWebsockets) return@LaunchedEffect
-                        walletManager.subscribeToMintQuote(current.quote.id)
-                            .catch { /* swallow; polling below is the fallback */ }
-                            .collectLatest { liveQuote = it }
-                    }
-                    LaunchedEffect(current.quote.id) {
-                        // iOS pollMintQuote parity: linear backoff (+1s per
-                        // iteration up to the max), terminal-state/expiry aware
-                        // via shouldPollMintQuote. Per-rail intervals:
-                        // BOLT11/BOLT12 5s→15s, on-chain flat 30s.
-                        val (initialMs, maxMs) = when (current.quote.paymentMethod) {
-                            PaymentMethodKind.Bolt11 -> 5_000L to 15_000L
-                            PaymentMethodKind.Bolt12 -> 5_000L to 15_000L
-                            PaymentMethodKind.Onchain -> 30_000L to 30_000L
-                        }
-                        var intervalMs = initialMs
-                        while (true) {
-                            delay(intervalMs)
-                            if (!walletManager.shouldAttemptMintQuote(current.quote.id)) continue
-                            val refreshed = runCatching { walletManager.pollMintQuote(current.quote.id) }
-                                .getOrNull()
-                                ?: continue // transient failure — keep monitoring
-                            liveQuote = refreshed
-                            mintRetryStatus = walletManager.mintQuoteRetryStatus(refreshed.id)
-                            // Reusable BOLT12 offers stay open after each
-                            // payment (the mint never marks them terminally
-                            // paid), so keep polling for the next one.
-                            val keepPolling = refreshed.paymentMethod == PaymentMethodKind.Bolt12 ||
-                                (refreshed.paymentMethod == PaymentMethodKind.Onchain && !refreshed.hasSettledPayment) ||
-                                shouldPollMintQuote(
-                                    state = refreshed.state,
-                                    expiryEpochSeconds = refreshed.expiryEpochSeconds,
-                                    nowEpochSeconds = System.currentTimeMillis() / 1000,
-                                )
-                            if (!keepPolling) break
-                            if (intervalMs < maxMs) intervalMs = minOf(intervalMs + 1_000, maxMs)
-                        }
-                    }
                     // On-chain: watch the address on the block explorer so the
                     // status line can report mempool/confirmation progress before
                     // the mint credits the deposit, and nudge a mint attempt while
@@ -946,6 +898,45 @@ fun ReceiveLightningScreen(
                     // issuance. The local flag describes only a real
                     // check/issue operation; durable retry truth comes from the
                     // scheduler record returned with the result.
+                    fun applyDisplayedQuote(result: com.cashu.me.Core.MintQuoteSyncResult) {
+                        val quoteId = liveQuote.id
+                        val settledMethod = liveQuote.paymentMethod
+                        result.quote?.let { liveQuote = it }
+                        mintRetryStatus = result.retryStatus
+                        if (successInfo != null ||
+                            (face as? ReceiveLnFace.Display)?.quote?.id != quoteId
+                        ) return
+                        val settledQuote = result.quote
+                        val receivedAmount = settledQuote?.let {
+                            if (settledMethod == PaymentMethodKind.Bolt12) {
+                                reusablePaymentObservation.newlyIssuedAmount(it.amountIssued)
+                            } else if (result.hasSettledPayment) {
+                                it.amountIssued.takeIf { issued -> issued > 0 } ?: it.amount
+                            } else null
+                        }
+                        if (settledQuote != null &&
+                            (receivedAmount != null ||
+                                (settledMethod != PaymentMethodKind.Bolt12 && result.hasSettledPayment))
+                        ) {
+                            face = ReceiveLnFace.Display(settledQuote)
+                            successInfo = ReceiveSuccessInfo(
+                                amountLabel = receivedAmount?.let {
+                                    if (settledQuote.unit.equals("sat", ignoreCase = true)) {
+                                        formatter.formatWalletSats(it, settings.useBitcoinSymbol)
+                                    } else {
+                                        CurrencyAmount(
+                                            it, CurrencyRegistry.currencyForMintUnit(settledQuote.unit),
+                                        ).formatted()
+                                    }
+                                },
+                                mintName = walletState.mints.firstOrNull {
+                                    it.url == settledQuote.mintUrl
+                                }?.name ?: settledQuote.mintUrl,
+                                method = settledMethod,
+                            )
+                        }
+                    }
+
                     fun reconcileDisplayedQuote(force: Boolean = false) {
                         if (isReconcilingQuote || successInfo != null) return
                         val quoteId = liveQuote.id
@@ -966,40 +957,7 @@ fun ReceiveLightningScreen(
                                     force = force,
                                     observingQuoteId = quoteId,
                                 )
-                                result.quote?.let { liveQuote = it }
-                                mintRetryStatus = result.retryStatus
-                                if (successInfo != null ||
-                                    (face as? ReceiveLnFace.Display)?.quote?.id != quoteId
-                                ) return@launch
-                                val settledQuote = result.quote
-                                val receivedAmount = settledQuote?.let {
-                                    if (paymentMethod == PaymentMethodKind.Bolt12) {
-                                        reusablePaymentObservation.newlyIssuedAmount(it.amountIssued)
-                                    } else if (result.hasSettledPayment) {
-                                        it.amountIssued.takeIf { issued -> issued > 0 } ?: it.amount
-                                    } else null
-                                }
-                                if (settledQuote != null &&
-                                    (receivedAmount != null ||
-                                        (paymentMethod != PaymentMethodKind.Bolt12 && result.hasSettledPayment))
-                                ) {
-                                    face = ReceiveLnFace.Display(settledQuote)
-                                    successInfo = ReceiveSuccessInfo(
-                                        amountLabel = receivedAmount?.let {
-                                            if (settledQuote.unit.equals("sat", ignoreCase = true)) {
-                                                formatter.formatWalletSats(it, settings.useBitcoinSymbol)
-                                            } else {
-                                                CurrencyAmount(
-                                                    it, CurrencyRegistry.currencyForMintUnit(settledQuote.unit),
-                                                ).formatted()
-                                            }
-                                        },
-                                        mintName = walletState.mints.firstOrNull {
-                                            it.url == settledQuote.mintUrl
-                                        }?.name ?: settledQuote.mintUrl,
-                                        method = paymentMethod,
-                                    )
-                                }
+                                applyDisplayedQuote(result)
                             } finally {
                                 isIssuingEcash = false
                                 isReconcilingQuote = false
@@ -1007,31 +965,9 @@ fun ReceiveLightningScreen(
                         }
                     }
 
-                    LaunchedEffect(
-                        liveQuote.id,
-                        liveQuote.state,
-                        liveQuote.amountPaid,
-                        liveQuote.amountIssued,
-                    ) {
-                        if (liveQuote.paymentMethod == PaymentMethodKind.Bolt12) {
-                            // Reconcile before showing success. The receipt uses
-                            // the issuance delta and Done restores this same QR.
-                            if (liveQuote.amountPaid > 0 ||
-                                liveQuote.state == MintQuoteState.Paid ||
-                                liveQuote.state == MintQuoteState.Issued
-                            ) {
-                                reconcileDisplayedQuote()
-                            }
-                            return@LaunchedEffect
-                        }
-                        if (liveQuote.state == MintQuoteState.Paid ||
-                            liveQuote.state == MintQuoteState.Issued
-                        ) {
-                            // Keep the request visible until reconciliation
-                            // verifies amount_issued. A paid invoice is not yet
-                            // a successful ecash receive.
-                            reconcileDisplayedQuote()
-                        }
+                    // Every emission has already passed durable reconciliation.
+                    LaunchedEffect(current.quote.id) {
+                        walletManager.observeMintQuote(current.quote.id).collect(::applyDisplayedQuote)
                     }
                     val isOnchain = liveQuote.paymentMethod == PaymentMethodKind.Onchain
                     val observation = onchainObservation

@@ -13,6 +13,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -102,7 +103,22 @@ class WalletManager(
     private val replacement = DurableWalletReplacement(secureStorage, databasePathManager.replacementBoundaryFiles())
     private val mintMetadataFetcher = WalletMintMetadataFetcher(allowCleartextLocalTestMints)
     private val mintQuoteSyncService = WalletMintQuoteSyncService(gateway, walletStore)
-    private val focusedMintQuoteMonitor = FocusedMintQuoteMonitor()
+    private val mintEvents by lazy {
+        MintEventCoordinator(
+            scope = scope,
+            socketsEnabled = { settingsManager.state.value.useWebsockets },
+            subscribe = gateway::openMintQuoteSubscription,
+            retry = { id ->
+                val record = walletStore.loadMintQuoteSchedules()[id]
+                (record?.takeIf { it.consecutiveFailures > 0 }?.nextAttemptAtEpochMillis) to
+                    ((record?.consecutiveFailures ?: 0) > 0)
+            },
+            reconcile = { id, inFlow ->
+                refreshPendingMintQuote(id, if (inFlow) ReceiveConfirmationOwner.InFlow else ReceiveConfirmationOwner.Home,
+                    observingQuoteId = id)
+            },
+        )
+    }
     private val transactionLoader = WalletTransactionLoader(walletStore, gateway)
     private val npcQuotesInFlight = mutableSetOf<String>()
     private var processedNPCQuotes = walletStore.loadProcessedNPCQuotes().toMutableSet()
@@ -707,13 +723,18 @@ class WalletManager(
             }
         }
 
+    suspend fun openTokenClaimSubscription(token: String, mintUrl: String): MintEventSubscription =
+        gateway.openTokenClaimSubscription(token, mintUrl)
+
     suspend fun pollMintQuote(quoteId: String): MintQuoteInfo =
         gateway.checkMintQuote(quoteId).also {
             mintQuoteSyncService.rememberMintQuoteTimestamp(it.id)
         }
 
+    internal fun observeMintQuote(quoteId: String): Flow<MintQuoteSyncResult> = mintEvents.observe(quoteId)
+
     fun subscribeToMintQuote(quoteId: String): Flow<MintQuoteInfo> =
-        gateway.subscribeToMintQuote(quoteId) { mintQuoteSyncService.shouldAttempt(quoteId) }
+        mintEvents.observe(quoteId).mapNotNull { it.quote }
 
     override suspend fun mintTokens(quoteId: String): Long =
         mintTokens(
@@ -764,20 +785,9 @@ class WalletManager(
         quoteId: String,
         confirmationOwner: ReceiveConfirmationOwner,
     ) {
-        focusedMintQuoteMonitor.monitor(quoteId, refresh = { id ->
-            try {
-                refreshPendingMintQuote(
-                    id,
-                    confirmationOwner = confirmationOwner,
-                    observingQuoteId = id,
-                ).quote
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Throwable) {
-                AppLogger.wallet.error("Displayed mint quote sync failed", error)
-                null
-            }
-        })
+        mintEvents.observe(quoteId, inFlow = confirmationOwner == ReceiveConfirmationOwner.InFlow).collect {
+            // Reconciliation updates wallet state and publishes feedback once, before emission.
+        }
     }
 
     /** Advisory UI state only; NUT-25 paid/issued counters remain authoritative. */
@@ -813,7 +823,6 @@ class WalletManager(
      *   it preempts cooldown gating (explicit user intent).
      */
     suspend fun syncPendingMintQuotes(force: Boolean = false): Int {
-        if (!force && focusedMintQuoteMonitor.isActive) return 0
         // Passive triggers collapse while an existing pass is active. An
         // explicit user refresh waits its turn instead of being silently
         // discarded — this makes `force` real rather than a documentation-only
@@ -833,10 +842,10 @@ class WalletManager(
             // quote instead of silently dropping an older/migrated offer.
             val intentQuoteIds = cashuRequestStore.state.value.requests.mapNotNull { it.quoteId }
             val quoteIds = (databaseQuotes.map { it.id } + intentQuoteIds).distinct().sorted()
-            if (!force && focusedMintQuoteMonitor.isActive) return 0
             val selectedQuoteIds = mintQuoteSyncService.selectQuoteIdsForSync(
                 quoteIds,
                 force,
+                observedQuoteIds = quoteIds.filter(mintEvents::isObserved).toSet(),
                 unsettledOnchainQuoteIds = databaseQuotes.filter {
                     it.paymentMethod == PaymentMethodKind.Onchain && it.amountIssued == 0L
                 }.map { it.id }.toSet(),
@@ -845,7 +854,6 @@ class WalletManager(
 
             var mintedQuotes = 0
             for (quoteId in selectedQuoteIds) {
-                if (!force && focusedMintQuoteMonitor.isActive) break
                 val result = mintQuoteSyncService.syncPendingMintQuote(quoteId, force)
                 result.receivedAmount?.let { amount ->
                     mintedQuotes += 1
@@ -861,7 +869,7 @@ class WalletManager(
                 if (!force) yield()
             }
             if (mintedQuotes > 0) refreshBalance()
-            loadTransactions(includeRemoteObservations = !focusedMintQuoteMonitor.isActive)
+            loadTransactions(includeRemoteObservations = true)
             return mintedQuotes
         } finally {
             mintQuoteSweepMutex.unlock()
@@ -975,10 +983,8 @@ class WalletManager(
 
         var settledAny = false
         mutableState.value.mints.forEach { mint ->
-            runCatching { gateway.recoverIncompleteSagas(mint.url) }
-                .onSuccess { report ->
-                    if (report.recovered > 0 || report.compensated > 0) settledAny = true
-                }
+            runCatching { gateway.finalizePendingMelts(mint.url) }
+                .onSuccess { changed -> settledAny = settledAny || changed }
                 .onFailure { AppLogger.wallet.error("Pending melt reconciliation failed for ${mint.url}", it) }
         }
 
@@ -1030,6 +1036,7 @@ class WalletManager(
      * ON_STOP (not the Activity — ModalBottomSheet dialogs must not stop it).
      */
     fun startPendingQuoteForegroundPolling() {
+        mintEvents.start()
         if (!pollQuotesInForeground) return
         if (pendingQuotePollJob?.isActive == true) return
         pendingQuotePollJob = scope.launch {
@@ -1058,6 +1065,7 @@ class WalletManager(
     }
 
     fun stopPendingQuoteForegroundPolling() {
+        mintEvents.stop()
         pendingQuotePollJob?.cancel()
         pendingQuotePollJob = null
     }
@@ -1663,6 +1671,7 @@ class WalletManager(
         replacement.requireNoStagedRestore()
         cashuRequestListener?.pauseForWalletBoundary()
         npcService.pauseForWalletBoundary()
+        mintEvents.stop(clear = true)
         pendingQuotePollJob?.cancelAndJoin()
         startupMaintenanceJob?.cancelAndJoin()
         pendingMeltWaiters.values.toList().forEach { it.cancelAndJoin() }

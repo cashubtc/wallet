@@ -1616,25 +1616,17 @@ struct CashuTopUpInvoiceSheet: View {
         ConfirmationToast.show("Copied payment request")
     }
 
-    /// Poll the target mint quote until it's paid, then mint + pay the request.
+    /// Wait for reconciled issuance before paying the request.
     private func startMonitoring() {
         monitorTask?.cancel()
         monitorTask = Task { @MainActor in
-            let delaysSec: [UInt64] = [3, 3, 4, 5, 5, 6, 8]   // backoff, then steady 10s
-            var index = 0
-            while !Task.isCancelled {
-                let sleepSec = index < delaysSec.count ? delaysSec[index] : 10
-                try? await Task.sleep(nanoseconds: sleepSec * 1_000_000_000)
-                if Task.isCancelled { return }
-                index += 1
-
-                let state: MintQuoteState
-                do {
-                    state = try await walletManager.checkMintQuote(quoteId: context.quote.id).state
-                } catch {
-                    continue   // transient — keep polling
+            for await result in walletManager.mintEvents.observe(context.quote.id) {
+                guard !Task.isCancelled else { return }
+                if result.quote.isExpired && result.quote.amountPaid == 0 {
+                    errorMessage = "This top-up quote is no longer payable. Close it and try again."
+                    return
                 }
-                guard state == .paid || state == .issued else { continue }
+                guard result.hasSettledPayment else { continue }
 
                 withAnimation(.smooth(duration: 0.3)) { phase = .paying }
                 do {

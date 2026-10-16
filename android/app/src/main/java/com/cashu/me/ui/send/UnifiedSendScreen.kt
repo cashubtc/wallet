@@ -130,6 +130,7 @@ import com.cashu.me.ui.testing.UiTestTags
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.withMonoDigits
 import com.cashu.me.ui.theme.rememberReducedMotion
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -1650,23 +1651,15 @@ private fun TopUpQuoteSheet(
     LaunchedEffect(context.quote.id, retryGeneration) {
         phase = CashuRequestTopUpPhase.AwaitingPayment
         errorMessage = null
-        val delaysMs = listOf(3_000L, 3_000L, 4_000L, 5_000L, 5_000L, 6_000L, 8_000L)
-        var delayIndex = 0
-        while (liveQuote.state != MintQuoteState.Paid && liveQuote.state != MintQuoteState.Issued) {
-            delay(delaysMs.getOrElse(delayIndex) { 10_000L })
-            delayIndex += 1
-            liveQuote = try {
-                walletManager.pollMintQuote(context.quote.id)
-            } catch (cancellation: CancellationException) {
-                throw cancellation
-            } catch (_: Throwable) {
-                continue
-            }
-            if (liveQuote.state == MintQuoteState.Failed || liveQuote.isExpired) {
-                errorMessage = "This top-up quote is no longer payable. Close it and try again."
-                phase = CashuRequestTopUpPhase.Failed
-                return@LaunchedEffect
-            }
+        liveQuote = walletManager.subscribeToMintQuote(context.quote.id).first { quote ->
+            liveQuote = quote
+            quote.hasSettledPayment || quote.state == MintQuoteState.Failed ||
+                (quote.isExpired && quote.amountPaid == 0L)
+        }
+        if (liveQuote.state == MintQuoteState.Failed || (liveQuote.isExpired && liveQuote.amountPaid == 0L)) {
+            errorMessage = "This top-up quote is no longer payable. Close it and try again."
+            phase = CashuRequestTopUpPhase.Failed
+            return@LaunchedEffect
         }
 
         phase = CashuRequestTopUpPhase.PayingRequest

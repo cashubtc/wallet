@@ -14,6 +14,7 @@ import time
 from contextlib import asynccontextmanager
 
 import httpx
+from websockets.legacy.client import connect as websocket_connect
 from bolt11 import Bolt11, MilliSatoshi, Tag, TagChar, Tags, encode, Feature, Features, FeatureState
 from coincurve import PublicKeyXOnly
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
@@ -65,14 +66,15 @@ async def health():
 @app.post("/sessions")
 async def create_session():
     key = secrets.token_hex(12)
-    sessions[key] = {"faults": [], "requests": [], "deliveries": [], "events": {}, "sockets": {}}
+    sessions[key] = {"faults": [], "requests": [], "deliveries": [], "events": {}, "sockets": {}, "mint_sockets": set(),
+                     "transport": {"enabled": False, "drop": False, "duplicate": False}, "ws": []}
     return {"id": key}
 
 
 @app.delete("/sessions/{key}")
 async def delete_session(key: str):
     state = session(key)
-    for socket in list(state["sockets"]):
+    for socket in list(state["sockets"]) + list(state["mint_sockets"]):
         await socket.close()
     sessions.pop(key, None)
     return {"deleted": True}
@@ -81,7 +83,7 @@ async def delete_session(key: str):
 @app.get("/sessions/{key}")
 async def inspect_session(key: str):
     state = session(key)
-    return {name: state[name] for name in ("faults", "requests", "deliveries")}
+    return {name: state[name] for name in ("faults", "requests", "deliveries", "ws")}
 
 
 @app.post("/sessions/{key}/faults")
@@ -94,6 +96,12 @@ async def add_fault(key: str, request: Request):
     fault.setdefault("remaining", 1)
     session(key)["faults"].append(fault)
     return {"armed": True}
+
+
+@app.delete("/sessions/{key}/faults")
+async def clear_faults(key: str):
+    session(key)["faults"].clear()
+    return {"cleared": True}
 
 
 @app.post("/sessions/{key}/invoice")
@@ -164,7 +172,7 @@ async def proxy(key: str, mint: str, path: str, request: Request):
                   and f["method"] == request.method and route.startswith(f["path"])), None)
     if fault:
         fault["remaining"] -= 1
-    record = {"method": request.method, "path": route, "forwarded": False,
+    record = {"at": time.monotonic(), "method": request.method, "path": route, "forwarded": False,
               "fault": fault["action"] if fault else None}
     state["requests"].append(record)
     if fault and fault["action"] == "reject":
@@ -176,6 +184,9 @@ async def proxy(key: str, mint: str, path: str, request: Request):
                                              params=request.query_params,
                                              content=await request.body(), headers=headers)
     record.update(forwarded=True, status=upstream.status_code)
+    # CDK negotiates legacy/current NUT-20 signature serialization with Nutshell.
+    # Record only the classification, never signatures or proof bodies.
+    record["signature_retry"] = upstream.status_code >= 400 and "signature for mint request invalid" in upstream.text.lower()
     if fault and fault["action"] == "lose_response":
         # Upstream has completed. Break the response body, producing a transport
         # error instead of lying about the mint's committed state.
@@ -186,6 +197,67 @@ async def proxy(key: str, mint: str, path: str, request: Request):
                                  headers={"content-length": str(max(1, len(upstream.content)))})
     return Response(upstream.content, status_code=upstream.status_code,
                     media_type=upstream.headers.get("content-type", "application/json"))
+
+
+@app.post("/sessions/{key}/transport")
+async def configure_mint_transport(key: str, request: Request):
+    state = session(key)
+    config = await request.json()
+    for name in ("enabled", "drop", "duplicate"):
+        if name in config:
+            state["transport"][name] = bool(config[name])
+    if config.get("disconnect"):
+        for socket in list(state["mint_sockets"]):
+            await socket.close(code=1012)
+    return state["transport"]
+
+
+@app.websocket("/sessions/{key}/mint/{mint}/v1/ws")
+async def mint_socket(key: str, mint: str, socket: WebSocket):
+    state = session(key)
+    state["ws"].append({"kind": "attempt", "at": time.monotonic()})
+    if mint not in UPSTREAMS or not state["transport"]["enabled"]:
+        await socket.close()
+        return
+    await socket.accept()
+    state["mint_sockets"].add(socket)
+    tasks = []
+    try:
+        upstream_url = UPSTREAMS[mint].replace("http", "ws", 1) + "/v1/ws"
+        async with websocket_connect(upstream_url) as upstream:
+            state["ws"].append({"kind": "connected", "at": time.monotonic()})
+
+            async def to_mint():
+                while True:
+                    message = await socket.receive_text()
+                    body = json.loads(message)
+                    state["ws"].append({"kind": body.get("method", "request"), "at": time.monotonic()})
+                    await upstream.send(message)
+
+            async def to_wallet():
+                async for message in upstream:
+                    body = json.loads(message)
+                    notification = body.get("method") == "subscribe"
+                    kind = "notification" if notification else "ack"
+                    state["ws"].append({"kind": kind, "at": time.monotonic(),
+                                        "dropped": notification and state["transport"]["drop"]})
+                    if notification and state["transport"]["drop"]:
+                        continue
+                    await socket.send_text(message)
+                    if notification and state["transport"]["duplicate"]:
+                        await socket.send_text(message)
+
+            tasks = [asyncio.create_task(to_mint()), asyncio.create_task(to_wallet())]
+            await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+    except (WebSocketDisconnect, OSError):
+        pass
+    finally:
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        state["mint_sockets"].discard(socket)
+        state["ws"].append({"kind": "closed", "at": time.monotonic()})
 
 
 def matches(event, filters):

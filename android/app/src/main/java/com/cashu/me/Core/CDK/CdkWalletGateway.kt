@@ -67,6 +67,10 @@ interface CdkWalletGateway {
     /** Push updates may trigger CDK saga recovery, so callers can defer the
      * network refresh while their persisted retry deadline is in the future. */
     fun subscribeToMintQuote(quoteId: String, mayRefresh: () -> Boolean = { true }): Flow<MintQuoteInfo>
+    suspend fun openMintQuoteSubscription(quoteId: String): com.cashu.me.Core.MintEventSubscription =
+        throw UnsupportedOperationException("Socket subscriptions unavailable")
+    suspend fun openTokenClaimSubscription(token: String, mintUrl: String): com.cashu.me.Core.MintEventSubscription =
+        throw UnsupportedOperationException("Socket subscriptions unavailable")
     suspend fun listUnissuedMintQuotes(): List<MintQuoteInfo>
     suspend fun mintTokens(quoteId: String): Long
     suspend fun mintNPCQuote(quote: NPCQuote, p2pkPubkey: String?): Long
@@ -82,6 +86,8 @@ interface CdkWalletGateway {
      * (e.g. a melt the process never saw the outcome of). iOS startup
      * maintenance parity.
      */
+    /** Periodic melt recovery must not replay incoming issuance during its retry backoff. */
+    suspend fun finalizePendingMelts(mintUrl: String): Boolean = false
     suspend fun recoverIncompleteSagas(mintUrl: String): SagaRecoveryReport
 
     /** Durable receive evidence only; never includes preview-only wallets. */

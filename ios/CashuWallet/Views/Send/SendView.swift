@@ -3,6 +3,7 @@ import CoreNFC
 
 struct SendView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject var walletManager: WalletManager
     @ObservedObject private var settings = SettingsManager.shared
 
@@ -170,6 +171,14 @@ struct SendView: View {
             }
             .onDisappear {
                 checkingTask?.cancel()
+            }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active, settings.checkSentTokens, !tokenClaimed,
+                   let token = generatedToken, let mintURL = generatedTokenMintURL {
+                    startClaimPolling(token: token, mintUrl: mintURL)
+                } else if phase != .active {
+                    checkingTask?.cancel()
+                }
             }
             .onChange(of: entryUnit) { oldUnit, newUnit in
                 // Only the sats↔fiat display flip re-expresses the typed string.
@@ -960,17 +969,37 @@ struct SendView: View {
 
         checkingTask = Task {
             let maxChecks = 10
-            let maxInterval = 15
             var checkCount = 0
-            var interval = 5
-
+            var subscription: (any MintEventSubscription)?
+            var nextSubscribe = Date.distantPast
+            var reconnectDelay: TimeInterval = 2
+            var schedule = MintEventSchedule(now: Date())
             while !Task.isCancelled && !tokenClaimed && checkCount < maxChecks {
-                do {
-                    try await Task.sleep(for: .seconds(interval))
-                } catch {
-                    break
+                let now = Date()
+                if !SettingsManager.shared.useWebsockets {
+                    await subscription?.stop()
+                    subscription = nil
+                } else if subscription == nil && now >= nextSubscribe {
+                    do { subscription = try await walletManager.openTokenClaimSubscription(token: token) }
+                    catch {
+                        nextSubscribe = now.addingTimeInterval(reconnectDelay)
+                        reconnectDelay = min(reconnectDelay * 2, 30)
+                    }
                 }
-
+                var event = false
+                do { event = try await subscription?.drain() ?? false }
+                catch {
+                    await subscription?.stop()
+                    subscription = nil
+                    nextSubscribe = now.addingTimeInterval(reconnectDelay)
+                    reconnectDelay = min(reconnectDelay * 2, 30)
+                }
+                guard !Task.isCancelled else { break }
+                let subscribed = subscription != nil
+                guard schedule.due(now: now, subscribed: subscribed, event: event, retryAt: nil, failed: false) else {
+                    do { try await Task.sleep(for: .milliseconds(250)) } catch { break }
+                    continue
+                }
                 let outcome: PendingTokenClaimCheckResult
                 do {
                     outcome = try await runPendingTokenClaimCheck {
@@ -990,9 +1019,10 @@ struct SendView: View {
                 }
 
                 checkCount += 1
-                interval = min(interval + 1, maxInterval)
+                schedule.checked(now: Date(), subscribed: subscribed)
             }
 
+            await subscription?.stop()
             isCheckingClaim = false
         }
     }

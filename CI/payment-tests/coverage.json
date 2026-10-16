@@ -14,7 +14,12 @@
       "PaymentSafetyIntegrationTests/testP2PKWrongKeyThenCorrectKeyOnBothMints",
       "PaymentSafetyIntegrationTests/testConcurrentReceiversCannotDoubleCredit",
       "LiveCdkPaymentUITests/testReceivePayAndRelaunch",
-      "LiveNutshellPaymentUITests/testReceivePayAndRelaunch"
+      "LiveNutshellPaymentUITests/testReceivePayAndRelaunch",
+      "MintEventLocalMintTests/testPushReducesRequestsAndDuplicateEventsCreditOnce",
+      "MintEventLocalMintTests/testFailedIssuanceRetainsBackoffAcrossBackgroundResume",
+      "MintEventLocalMintTests/testDisconnectAndMissedPushRecoverWithoutDuplicateCredit",
+      "MintEventLocalMintTests/testUnsupportedWebsocketStillSettlesThroughReleasedSdkFallback",
+      "MintEventLocalMintTests/testMeltOnlyRecoveryPreservesSettledAndRejectedPayments"
     ],
     "full": [
       "PaymentExtendedIntegrationTests/testCashuRequestFixedAndAmountlessHttpDelivery",
@@ -39,7 +44,12 @@
       "PaymentSafetyLocalMintTest/p2pkWrongKeyThenCorrectKeyOnBothMints",
       "PaymentSafetyLocalMintTest/concurrentReceiversCannotDoubleCredit",
       "LivePaymentJourneyTest/cdkReceivePayAndReopenHistory",
-      "LivePaymentJourneyTest/nutshellReceivePayAndReopenHistory"
+      "LivePaymentJourneyTest/nutshellReceivePayAndReopenHistory",
+      "MintEventLocalMintTest/pushReducesRequestsAndDuplicateEventsCreditOnce",
+      "MintEventLocalMintTest/failedIssuanceRetainsBackoffAcrossBackgroundResume",
+      "MintEventLocalMintTest/disconnectAndMissedPushRecoverWithoutDuplicateCredit",
+      "MintEventLocalMintTest/unsupportedWebsocketStillSettlesThroughReleasedSdkFallback",
+      "MintEventLocalMintTest/meltOnlyRecoveryPreservesSettledAndRejectedPayments"
     ],
     "full": [
       "PaymentExtendedLocalMintTest/cashuRequestFixedAndAmountlessHttpDelivery",
