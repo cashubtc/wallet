@@ -18,6 +18,107 @@ final class SettingsUITests: UITestBase {
 
     // MARK: - Tests
 
+    func testDepositRecoveryConfirmationHasContentOnFirstTapWithoutOpeningOptions() {
+        navigateToSettings()
+        tapWhenReady(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Backup & Restore")).firstMatch)
+        tapWhenReady(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Recover a deposit")).firstMatch)
+        let mint = app.textFields["depositRecoveryMintURL"]
+        tapWhenReady(mint)
+        mint.typeText("https://mint.example")
+        let quote = app.textFields["depositRecoveryQuoteID"]
+        tapWhenReady(quote)
+        quote.typeText("first-quote\n")
+        tapWhenReady(app.buttons["recoverDepositButton"])
+        let confirmation = app.staticTexts["Recover this deposit?"]
+        XCTAssertTrue(confirmation.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Claim this deposit at mint.example using this wallet's seed phrase."].exists)
+        XCTAssertTrue(app.buttons["Recover"].exists)
+        recoveryScreenshot("ios-first-tap-confirmation")
+        tapWhenReady(app.buttons["Cancel"])
+        XCTAssertTrue(confirmation.waitForNonExistence(timeout: 5))
+
+        // A new presentation must carry the newly validated request.
+        tapWhenReady(mint)
+        let value = mint.value as? String ?? ""
+        mint.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: value.count) + "https://other.mint.example\n")
+        tapWhenReady(app.buttons["recoverDepositButton"])
+        XCTAssertTrue(confirmation.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Claim this deposit at other.mint.example using this wallet's seed phrase."].exists)
+        tapWhenReady(app.buttons["Cancel"])
+    }
+
+    /// Opt-in local Bitcoin regtest journey. The fixture pays a NUT-20 quote
+    /// but never mints. The app starts with only the original seed, no mint or DB.
+    func testPaidUnmintedOnchainQuoteRecoversThroughUIAndSurvivesRelaunch() throws {
+        guard (try? regtestCall("/health")) != nil else {
+            throw XCTSkip("Requires CI/quote-recovery-regtest.py")
+        }
+        let paid = try regtestCall("/new")
+        let quoteID = try XCTUnwrap(paid["quote"] as? String)
+        let mintURL = try XCTUnwrap(paid["mint_url"] as? String)
+        XCTAssertEqual(paid["amount_paid"] as? Int, 21_000)
+        XCTAssertEqual(paid["amount_issued"] as? Int, 0)
+        XCTAssertGreaterThanOrEqual(try XCTUnwrap(paid["confirmations"] as? Int), 3)
+        app.launchEnvironment["UITEST_SEED_MNEMONIC"] = try XCTUnwrap(paid["mnemonic"] as? String)
+        navigateToSettings()
+        openOnchainRecovery(mintURL: mintURL, quoteID: quoteID)
+        let result = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Recovered ")).firstMatch
+        XCTAssertTrue(result.waitForExistence(timeout: 60), "The paid deposit should recover on its first attempt")
+        recoveryScreenshot("ios-regtest-recovered")
+        let issued = try regtestCall("/quote/" + quoteID)
+        XCTAssertEqual(issued["amount_issued"] as? Int, 21_000)
+        XCTAssertEqual(issued["amount_paid"] as? Int, 21_000)
+
+        relaunchPreservingWallet()
+        navigateToSettings()
+        openOnchainRecovery(mintURL: mintURL, quoteID: quoteID)
+        XCTAssertTrue(app.staticTexts["Already claimed. Use Restore to recover the ecash."].waitForExistence(timeout: 60))
+        let repeated = try regtestCall("/quote/" + quoteID)
+        XCTAssertEqual(repeated["amount_issued"] as? Int, 21_000, "Retry must not issue a second time")
+        recoveryScreenshot("ios-regtest-already-claimed")
+    }
+
+    private func openOnchainRecovery(mintURL: String, quoteID: String) {
+        tapWhenReady(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Backup & Restore")).firstMatch)
+        tapWhenReady(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Recover a deposit")).firstMatch)
+        let mint = app.textFields["depositRecoveryMintURL"]
+        tapWhenReady(mint)
+        mint.typeText(mintURL)
+        let quote = app.textFields["depositRecoveryQuoteID"]
+        tapWhenReady(quote)
+        quote.typeText(quoteID + "\n")
+        tapWhenReady(app.buttons["depositRecoveryOptions"])
+        tapWhenReady(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Payment method")).firstMatch)
+        tapWhenReady(app.buttons["On-chain address"])
+        tapWhenReady(app.buttons["depositRecoveryOptions"])
+        let recover = app.buttons["recoverDepositButton"]
+        if !recover.isHittable { app.swipeUp() }
+        tapWhenReady(recover)
+        XCTAssertTrue(app.staticTexts["Recover this deposit?"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Claim this deposit at 127.0.0.1")).firstMatch.exists)
+        recoveryScreenshot("ios-regtest-first-confirmation")
+        tapWhenReady(app.buttons["Recover"])
+    }
+
+    private func regtestCall(_ path: String) throws -> [String: Any] {
+        var request = URLRequest(url: URL(string: "http://127.0.0.1:3340" + path)!)
+        request.timeoutInterval = path == "/health" ? 2 : 115
+        let done = expectation(description: "Local regtest fixture")
+        var result: Result<[String: Any], Error>!
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            defer { done.fulfill() }
+            result = Result {
+                if let error { throw error }
+                guard let response = response as? HTTPURLResponse, response.statusCode == 200, let data else {
+                    throw NSError(domain: "RegtestFixture", code: 1)
+                }
+                return try JSONSerialization.jsonObject(with: data) as! [String: Any]
+            }
+        }.resume()
+        wait(for: [done], timeout: 120)
+        return try XCTUnwrap(result).get()
+    }
+
     func testDepositRecoveryCanChooseAnEmptyInactiveMint() {
         app.launchEnvironment["UITEST_SEED_MINT"] = "1"
         app.launchEnvironment["UITEST_SEED_MINT_URL"] = "https://mint.example"

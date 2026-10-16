@@ -27,17 +27,23 @@ class RecoverDepositJourneyTest {
                 manager.addMint("https://harbor.mint.example")
                 manager.addMint("https://north.mint.example")
             }
+            val hosts = listOf("mint.test", "harbor.mint.example", "north.mint.example")
+            assertEquals(hosts.map { "https://$it" }.toSet(), manager.state.value.mints.map { it.url }.toSet())
             val robot = WalletJourneyRobot(compose)
             robot.awaitTag(UiTestTags.WalletScreen).tapDescription("Settings")
                 .scrollToText(UiTestTags.SettingsList, "Backup & Restore").tapText("Backup & Restore")
             compose.onNodeWithText("Recover a deposit").performScrollTo().performClick()
             compose.onNodeWithTag("depositRecoveryMintPicker").performClick()
             compose.onNodeWithText("Choose mint").assertIsDisplayed()
-            for (host in listOf("mint.test", "harbor.mint.example", "north.mint.example")) {
-                compose.onNodeWithText(host).performScrollTo().assertIsDisplayed()
+            val mintList = compose.onNodeWithTag("mintPickerList")
+            for (host in hosts) {
+                // Offscreen lazy rows may not have a semantics node yet.
+                mintList.performScrollToNode(hasText(host))
+                compose.onNodeWithText(host).assertIsDisplayed()
             }
             recoveryScreenshot("android-mint-picker")
-            compose.onNodeWithText("harbor.mint.example").performScrollTo().performClick()
+            mintList.performScrollToNode(hasText("harbor.mint.example"))
+            compose.onNodeWithText("harbor.mint.example").performClick()
             compose.onNodeWithTag("depositRecoveryMintURL").assertTextContains("https://harbor.mint.example")
             compose.onNodeWithTag("depositRecoveryQuoteID").performTextInput("deposit-2026-001")
             compose.onNodeWithTag("depositRecoveryQuoteID").performImeAction()

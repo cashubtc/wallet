@@ -13,10 +13,14 @@ struct RecoverDepositView: View {
     @State private var working = false
     @State private var error: String?
     @State private var result: DepositRecoveryResult?
-    @State private var approvedRequest: DepositRecoveryRequest?
-    @State private var showConfirmation = false
+    @State private var confirmation: RecoveryConfirmation?
     @FocusState private var focusedField: Field?
     private enum Field: Hashable { case mintURL, quoteID }
+
+    private struct RecoveryConfirmation: Identifiable {
+        let id = UUID()
+        let request: DepositRecoveryRequest
+    }
 
     private var recovered: Bool { result?.status == .recovered && result?.remaining == 0 }
     private var unitLabel: String { unit == "sat" ? "Sats" : unit.uppercased() }
@@ -167,15 +171,13 @@ struct RecoverDepositView: View {
                 mintSubtitle: { $0.url.replacingOccurrences(of: "https://", with: "", options: .anchored) }
             )
         }
-        .backdropSheet(isPresented: $showConfirmation, onDismiss: { approvedRequest = nil }) {
-            if let request = approvedRequest {
-                ActionConfirmationSheet(
-                    title: "Recover this deposit?",
-                    message: "Claim this deposit at \(URL(string: request.mintURL)?.host ?? request.mintURL) using this wallet's seed phrase.",
-                    actionLabel: "Recover",
-                    action: { recover(request) }
-                )
-            }
+        .backdropSheet(item: $confirmation) { confirmation in
+            ActionConfirmationSheet(
+                title: "Recover this deposit?",
+                message: "Claim this deposit at \(URL(string: confirmation.request.mintURL)?.host ?? confirmation.request.mintURL) using this wallet's seed phrase.",
+                actionLabel: "Recover",
+                action: { recover(confirmation.request) }
+            )
         }
         .bottomSheetBackdropHost()
     }
@@ -209,9 +211,9 @@ struct RecoverDepositView: View {
         error = nil
         result = nil
         do {
-            approvedRequest = try DepositRecoveryRequest(mintURL: mintURL, quoteID: quoteID,
+            let request = try DepositRecoveryRequest(mintURL: mintURL, quoteID: quoteID,
                 method: method, unit: unit, searchLimit: searchLimit)
-            showConfirmation = true
+            confirmation = RecoveryConfirmation(request: request)
         } catch { self.error = error.localizedDescription }
     }
 
