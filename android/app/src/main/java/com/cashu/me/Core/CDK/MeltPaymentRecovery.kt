@@ -8,7 +8,7 @@ class MeltPaymentRecoveryException(
     val operationId: String?,
     val unresolved: Boolean,
 ) : IllegalStateException(if (unresolved) {
-    "Payment status is unknown. Do not send it again yet. Refresh History to check settlement."
+    "The mint hasn't confirmed this payment yet. Your funds are held until it's paid or refunded."
 } else {
     "The mint returned your funds. Create a new quote before trying again."
 })

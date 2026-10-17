@@ -268,6 +268,22 @@ fun paymentFailureScreenshot() {
 }
 
 @PreviewTest
+@Preview(name = "payment-awaiting-mint", widthDp = 390, heightDp = 640, showBackground = true)
+@Composable
+fun paymentAwaitingMintScreenshot() {
+    PreviewFrame(contentPadding = 0.dp) {
+        PaymentStatusScreen(
+            phase = PaymentStatusPhase.Failure,
+            title = "Waiting for mint",
+            detail = "The mint hasn't confirmed this payment yet. Your funds are held until it's paid or refunded.",
+            awaitingMint = true,
+            doneLabel = "View in history",
+            onDone = {},
+        )
+    }
+}
+
+@PreviewTest
 @Preview(name = "settings-controls", widthDp = 390, heightDp = 260, showBackground = true)
 @Composable
 fun settingsControlsScreenshot() {

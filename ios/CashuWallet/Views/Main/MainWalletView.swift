@@ -707,7 +707,8 @@ struct MainWalletView: View {
         case .cashuRequestPay(let summary):
             CashuPaymentRequestPayView(
                 request: summary,
-                onComplete: { navigationManager.activeWalletSheet = nil }
+                onComplete: { navigationManager.activeWalletSheet = nil },
+                onViewHistory: viewHistoryFromSheet
             )
             .environmentObject(walletManager)
             .presentationDetents([.large])
@@ -785,9 +786,17 @@ struct MainWalletView: View {
                 navigationManager.present(.sheet(.sendAmount(destination, explanation: explanation)))
             },
             onEditDestination: onEditDestination,
+            onViewHistory: viewHistoryFromSheet,
             initialRouteExplanation: initialRouteExplanation
         )
         .environmentObject(walletManager)
+    }
+
+    /// Close the payment sheet on the History tab, where a payment the mint
+    /// hasn't confirmed yet shows as pending and resolves.
+    private func viewHistoryFromSheet() {
+        navigationManager.activeWalletSheet = nil
+        onViewAllHistory()
     }
 }
 

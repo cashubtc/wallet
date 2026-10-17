@@ -204,7 +204,10 @@ extension WalletManager {
         } catch let recoveryError as MeltPaymentRecoveryError {
             // CDK persists the melt saga and its Pending transaction, so an
             // unresolved outcome needs no local record: startup recovery and
-            // the foreground poll reconcile it.
+            // the foreground poll reconcile it. Refresh so held funds leave the
+            // balance and the pending payment shows in History (Android parity).
+            await refreshBalance()
+            await loadTransactions()
             throw recoveryError
         }
         let result = confirmation.result
