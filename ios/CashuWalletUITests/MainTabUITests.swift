@@ -218,6 +218,34 @@ final class ActivityDetailUITests: XCTestCase {
         }
     }
 
+    func testUnconfirmedPaymentShowsWaitingFaceNotFailure() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchEnvironment = ["SHOW_COMPONENT_CATALOG": "awaiting-mint", "CI_INTEGRATION_TEST": "1"]
+        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launch()
+        defer { app.terminate() }
+
+        // Held, not failed: the face names what it waits on and says the funds are held.
+        XCTAssertTrue(app.staticTexts["Waiting for Mint"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.staticTexts["Payment Failed"].exists)
+        XCTAssertTrue(app.staticTexts[
+            "The mint hasn't confirmed this payment yet. Your funds are held until it's paid or refunded."
+        ].exists)
+        // Nothing to retry; History is where the payment resolves.
+        XCTAssertFalse(app.buttons["Try Again"].exists)
+        let viewHistory = app.buttons["View in History"]
+        XCTAssertTrue(viewHistory.exists)
+
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "payment-awaiting-mint"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+
+        viewHistory.tap()
+        XCTAssertTrue(app.staticTexts["awaiting-mint-viewed-history"].waitForExistence(timeout: 5))
+    }
+
     func testDepositReceiptKeepsItsQROnlyUntilMoneyIsSeen() {
         continueAfterFailure = false
         let app = XCUIApplication()
