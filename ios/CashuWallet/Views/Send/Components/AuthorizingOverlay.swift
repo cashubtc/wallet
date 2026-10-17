@@ -319,10 +319,11 @@ struct PaymentStatusView: View {
                 .flatSheetSecondaryButton()
         case .failure(_, _, let isTerminal):
             if awaitingMint {
-                // Nothing to retry: History is where the held payment resolves.
+                // The same quiet secondary as Done: nothing to retry, and
+                // History is where the held payment resolves.
                 if let onViewHistory {
                     Button(action: onViewHistory) { Text("View in History") }
-                        .glassButton()
+                        .flatSheetSecondaryButton()
                 } else {
                     Button(action: onDone) { Text("Done") }
                         .flatSheetSecondaryButton()
