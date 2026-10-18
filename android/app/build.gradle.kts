@@ -83,6 +83,8 @@ android {
         }
     }
 
+    sourceSets.getByName("androidTest").assets.srcDir("../../CI/fixtures")
+
     testOptions {
         execution = "ANDROIDX_TEST_ORCHESTRATOR"
         animationsDisabled = true

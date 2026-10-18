@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C41000000000000000000001 /* CDKCashuRequestInboxTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C41000000000000000000002; };
+		C41000000000000000000003 /* nostr-inbox.json in Resources */ = {isa = PBXBuildFile; fileRef = C41000000000000000000004; };
 		E20100000000000000000001 /* PaymentSafetyIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20100000000000000000002; };
 		A0C011000000000000000005 /* UITestNWCService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0C011000000000000000006 /* UITestNWCService.swift */; };
 		A0C011000000000000000003 /* UITestNPCClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0C011000000000000000004 /* UITestNPCClient.swift */; };
@@ -77,9 +79,7 @@
 		AB00000000000001 /* CashuRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC00000000000001 /* CashuRequest.swift */; };
 		AB00000000000002 /* CashuRequestStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC00000000000002 /* CashuRequestStore.swift */; };
 		AB00000000000003 /* PaymentRequestBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC00000000000003 /* PaymentRequestBuilder.swift */; };
-		AB00000000000004 /* NIP44.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC00000000000004 /* NIP44.swift */; };
-		AB00000000000005 /* NIP17.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC00000000000005 /* NIP17.swift */; };
-		AB00000000000006 /* NostrInboxClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC00000000000006 /* NostrInboxClient.swift */; };
+		AB00000000000006 /* CDKCashuRequestInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC00000000000006 /* CDKCashuRequestInbox.swift */; };
 		AB00000000000007 /* CashuRequestListener.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC00000000000007 /* CashuRequestListener.swift */; };
 		AB00000000000008 /* CashuRequestDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC00000000000008 /* CashuRequestDetailView.swift */; };
 		AB0000000000000A /* CashuRequestMintPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC0000000000000A /* CashuRequestMintPickerSheet.swift */; };
@@ -179,7 +179,6 @@
 		T2B0000000000003 /* MintServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T1B0000000000003 /* MintServiceTests.swift */; };
 		T2B0000000000004 /* TransactionServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T1B0000000000004 /* TransactionServiceTests.swift */; };
 		T2B0000000000101 /* TransactionTechnicalDetailsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T1B0000000000101 /* TransactionTechnicalDetailsTests.swift */; };
-		T2B0000000000005 /* NIP44Tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T1B0000000000005 /* NIP44Tests.swift */; };
 		T2B0000000000006 /* TokenServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T1B0000000000006 /* TokenServiceTests.swift */; };
 		T2B0000000000007 /* AmountFormatterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T1B0000000000007 /* AmountFormatterTests.swift */; };
 		T2B0000000000008 /* TokenParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T1B0000000000008 /* TokenParserTests.swift */; };
@@ -226,6 +225,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		C41000000000000000000002 /* CDKCashuRequestInboxTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CashuWalletTests/CDKCashuRequestInboxTests.swift; sourceTree = "<group>"; };
+		C41000000000000000000004 /* nostr-inbox.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../CI/fixtures/nostr-inbox.json"; sourceTree = SOURCE_ROOT; };
 		E20100000000000000000002 /* PaymentSafetyIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PaymentSafetyIntegrationTests.swift; path = ../CI/IntegrationTests/Tests/PaymentSafetyIntegrationTests.swift; sourceTree = "<group>"; };
 		A0C011000000000000000006 /* UITestNWCService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = UITestNWCService.swift; path = CashuWallet/Core/UITestNWCService.swift; sourceTree = "<group>"; };
 		A0C011000000000000000004 /* UITestNPCClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = UITestNPCClient.swift; path = CashuWallet/Core/UITestNPCClient.swift; sourceTree = "<group>"; };
@@ -297,9 +298,7 @@
 		AC00000000000001 /* CashuRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CashuRequest.swift; sourceTree = "<group>"; };
 		AC00000000000002 /* CashuRequestStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CashuRequestStore.swift; sourceTree = "<group>"; };
 		AC00000000000003 /* PaymentRequestBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaymentRequestBuilder.swift; sourceTree = "<group>"; };
-		AC00000000000004 /* NIP44.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NIP44.swift; sourceTree = "<group>"; };
-		AC00000000000005 /* NIP17.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NIP17.swift; sourceTree = "<group>"; };
-		AC00000000000006 /* NostrInboxClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NostrInboxClient.swift; sourceTree = "<group>"; };
+		AC00000000000006 /* CDKCashuRequestInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CDKCashuRequestInbox.swift; sourceTree = "<group>"; };
 		AC00000000000007 /* CashuRequestListener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CashuRequestListener.swift; sourceTree = "<group>"; };
 		AC00000000000008 /* CashuRequestDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CashuRequestDetailView.swift; sourceTree = "<group>"; };
 		AC0000000000000A /* CashuRequestMintPickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CashuRequestMintPickerSheet.swift; sourceTree = "<group>"; };
@@ -396,7 +395,6 @@
 		T1B0000000000003 /* MintServiceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MintServiceTests.swift; path = CashuWalletTests/MintServiceTests.swift; sourceTree = "<group>"; };
 		T1B0000000000004 /* TransactionServiceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TransactionServiceTests.swift; path = CashuWalletTests/TransactionServiceTests.swift; sourceTree = "<group>"; };
 		T1B0000000000101 /* TransactionTechnicalDetailsTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TransactionTechnicalDetailsTests.swift; path = CashuWalletTests/TransactionTechnicalDetailsTests.swift; sourceTree = "<group>"; };
-		T1B0000000000005 /* NIP44Tests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NIP44Tests.swift; path = CashuWalletTests/NIP44Tests.swift; sourceTree = "<group>"; };
 		T1B0000000000006 /* TokenServiceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TokenServiceTests.swift; path = CashuWalletTests/TokenServiceTests.swift; sourceTree = "<group>"; };
 		T1B0000000000007 /* AmountFormatterTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AmountFormatterTests.swift; path = ../CI/IntegrationTests/Tests/AmountFormatterTests.swift; sourceTree = "<group>"; };
 		T1B0000000000008 /* TokenParserTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TokenParserTests.swift; path = ../CI/IntegrationTests/Tests/TokenParserTests.swift; sourceTree = "<group>"; };
@@ -470,7 +468,6 @@
 				T1B0000000000014 /* MintQuoteDomainTests.swift */,
 				T1B0000000000004 /* TransactionServiceTests.swift */,
 				T1B0000000000101 /* TransactionTechnicalDetailsTests.swift */,
-				T1B0000000000005 /* NIP44Tests.swift */,
 				T1B0000000000006 /* TokenServiceTests.swift */,
 				T1B0000000000007 /* AmountFormatterTests.swift */,
 				T1B0000000000008 /* TokenParserTests.swift */,
@@ -482,6 +479,8 @@
 				F06000000000000000000003 /* FocusedMintQuoteMonitorTests.swift */,
 				T1B0000000000100 /* ConnectMintContextTests.swift */,
 				T1B000000000000D /* CashuRequestRouteExplanationTests.swift */,
+				C41000000000000000000002 /* CDKCashuRequestInboxTests.swift */,
+				C41000000000000000000004 /* nostr-inbox.json */,
 				C0A100000000000000000001 /* CashuRequestPaymentObservationTests.swift */,
 				T1B000000000000E /* CrashReportSanitizerTests.swift */,
 				T1B000000000000F /* HistorySearchTests.swift */,
@@ -583,9 +582,7 @@
 				F400000000000006 /* PaymentRequestDecoder.swift */,
 				F400000000000007 /* MintQuoteDomain.swift */,
 				AC00000000000003 /* PaymentRequestBuilder.swift */,
-				AC00000000000004 /* NIP44.swift */,
-				AC00000000000005 /* NIP17.swift */,
-				AC00000000000006 /* NostrInboxClient.swift */,
+				AC00000000000006 /* CDKCashuRequestInbox.swift */,
 				AC0000000000000C /* NostrMintBackupService.swift */,
 				AC00000000000007 /* CashuRequestListener.swift */,
 			);
@@ -1047,6 +1044,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C41000000000000000000003 /* nostr-inbox.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1093,7 +1091,6 @@
 				T2B0000000000014 /* MintQuoteDomainTests.swift in Sources */,
 				T2B0000000000004 /* TransactionServiceTests.swift in Sources */,
 				T2B0000000000101 /* TransactionTechnicalDetailsTests.swift in Sources */,
-				T2B0000000000005 /* NIP44Tests.swift in Sources */,
 				T2B0000000000006 /* TokenServiceTests.swift in Sources */,
 				T2B0000000000007 /* AmountFormatterTests.swift in Sources */,
 				T2B0000000000008 /* TokenParserTests.swift in Sources */,
@@ -1105,6 +1102,7 @@
 				F06000000000000000000004 /* FocusedMintQuoteMonitorTests.swift in Sources */,
 				T2B0000000000100 /* ConnectMintContextTests.swift in Sources */,
 				T2B000000000000D /* CashuRequestRouteExplanationTests.swift in Sources */,
+				C41000000000000000000001 /* CDKCashuRequestInboxTests.swift in Sources */,
 				C0A100000000000000000002 /* CashuRequestPaymentObservationTests.swift in Sources */,
 				T2B000000000000E /* CrashReportSanitizerTests.swift in Sources */,
 				T2B000000000000F /* HistorySearchTests.swift in Sources */,
@@ -1261,9 +1259,7 @@
 				F300000000000006 /* PaymentRequestDecoder.swift in Sources */,
 				F300000000000007 /* MintQuoteDomain.swift in Sources */,
 				AB00000000000003 /* PaymentRequestBuilder.swift in Sources */,
-				AB00000000000004 /* NIP44.swift in Sources */,
-				AB00000000000005 /* NIP17.swift in Sources */,
-				AB00000000000006 /* NostrInboxClient.swift in Sources */,
+				AB00000000000006 /* CDKCashuRequestInbox.swift in Sources */,
 				AB0000000000000C /* NostrMintBackupService.swift in Sources */,
 				AB00000000000007 /* CashuRequestListener.swift in Sources */,
 				AB00000000000008 /* CashuRequestDetailView.swift in Sources */,
