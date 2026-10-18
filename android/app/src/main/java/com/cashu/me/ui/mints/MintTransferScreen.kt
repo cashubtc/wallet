@@ -3,12 +3,17 @@ package com.cashu.me.ui.mints
 import androidx.activity.BackEventCompat
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.PredictiveBackHandler
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -104,7 +109,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
-private enum class TransferStep { Entry, Review, Status }
+private enum class TransferStep { Entry, Review }
 
 // Roughly where iOS switches to its accessibility text sizes. From here the
 // pad alone takes most of the screen, so everything above it scrolls instead.
@@ -177,7 +182,9 @@ fun MintTransferScreen(
     // A commit found its quotes lapsed and asked again. The review then says
     // the fee changed, so the button did not seem simply to do nothing.
     var requoted by remember { mutableStateOf(false) }
-    var status by remember { mutableStateOf<TransferStatus>(TransferStatus.Transferring) }
+    // The running or finished transfer. While it is set the status screen
+    // covers the faces; null shows them again.
+    var status by remember { mutableStateOf<TransferStatus?>(null) }
     // The leg the running transfer has reached; null until the wallet reports one.
     var stage by remember { mutableStateOf<MintTransferStage?>(null) }
 
@@ -273,7 +280,7 @@ fun MintTransferScreen(
         }
     }
 
-    val processing = step == TransferStep.Status && status is TransferStatus.Transferring
+    val processing = status is TransferStatus.Transferring
     LaunchedEffect(processing) { onDismissLockChanged(processing) }
 
     fun changeRoute(newRoute: MintTransferRoute) {
@@ -370,7 +377,7 @@ fun MintTransferScreen(
                     current.destinationMintUrl,
                     quoteAmount,
                 )
-                if (step != TransferStep.Review) {
+                if (step != TransferStep.Review || status != null) {
                     discard(quoted)
                     return@launch
                 }
@@ -445,7 +452,6 @@ fun MintTransferScreen(
         requoted = false
         stage = null
         status = TransferStatus.Transferring
-        step = TransferStep.Status
         scope.launch {
             status = try {
                 TransferStatus.Done(
@@ -471,6 +477,7 @@ fun MintTransferScreen(
         val currentRoute = route ?: return
         plan = null
         requoted = false
+        status = null
         if (failed.mode == MintTransferPlan.Mode.Max) {
             amount = ""
             step = TransferStep.Entry
@@ -486,7 +493,7 @@ fun MintTransferScreen(
     // deliberately differs from UnifiedSendScreen, whose back abandons the
     // sheet from any face, and follows UX_SPEC.md ("system back unwinds faces
     // before the sheet closes"). On Entry back keeps closing the sheet.
-    PredictiveBackHandler(enabled = step == TransferStep.Review) { gesture ->
+    PredictiveBackHandler(enabled = step == TransferStep.Review && status == null) { gesture ->
         backSettle?.cancel()
         try {
             gesture.collect { event ->
@@ -511,113 +518,133 @@ fun MintTransferScreen(
             .fillMaxHeight()
             .testTag(UiTestTags.MintTransferScreen),
     ) {
-        if (step == TransferStep.Status) {
-            FlowSheetTitle(title = "Transfer")
-        } else if (step == TransferStep.Review) {
-            SheetHeader(
-                title = "Transfer",
-                navigationIcon = Icons.AutoMirrored.Outlined.ArrowBack,
-                navigationContentDescription = "Back",
-                onNavigationClick = ::backToEntry,
-            )
-        } else {
-            FlowSheetTitle(title = "Transfer")
-        }
-        TwoFaceScreen(
-            targetState = step,
+        // The status screen covers the faces and fades through, like Send's
+        // terminal: no sideways move into or out of it (DESIGN.md §6 #6).
+        // One content key for every status keeps a single PaymentStatusScreen
+        // mounted from Transferring to Done/Failed, so the spinner morphs in place.
+        AnimatedContent(
+            targetState = status,
             modifier = Modifier.weight(1f).fillMaxWidth(),
-            forward = { initial, target -> target.ordinal >= initial.ordinal },
-            label = "mint-transfer-step",
-        ) { current ->
-            when (current) {
-                TransferStep.Entry -> when {
-                    mints.size < 2 -> EmptyState(
-                        title = "Add another mint",
-                        supporting = "A transfer moves ecash between two of your mints.",
-                        icon = Icons.Outlined.SwapHoriz,
-                        size = EmptyStateSize.FullScreen,
-                    )
-                    mints.all { it.balance == 0L } -> EmptyState(
-                        title = "Nothing to transfer yet",
-                        supporting = "Receive some ecash before you can move it between mints.",
-                        icon = Icons.Outlined.SwapHoriz,
-                        size = EmptyStateSize.FullScreen,
-                    )
-                    sourceMint != null && destinationMint != null -> EntryFace(
-                        source = sourceMint,
-                        destination = destinationMint,
-                        amount = amount,
-                        onAmountChange = {
-                            amount = it
-                            dropMaxPlan()
-                            entryNotice = null
-                        },
-                        amountSats = amountSats,
-                        entryPrimary = entryContext.primary,
-                        onFlipEntryPrimary = { settingsManager.setAmountDisplayPrimary(it.rawValue) },
-                        btcPrice = entryFiatPrice,
-                        fiatCurrencyCode = priceState.currencyCode,
+            transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(150)) },
+            label = "mint-transfer-terminal",
+            contentKey = { it != null },
+        ) { shownStatus ->
+            if (shownStatus != null) {
+                // The plan this screen is about. Try Again clears it while the
+                // screen is still fading out, and the rows must fade with it.
+                val shownPlan = remember { plan }
+                Column(modifier = Modifier.fillMaxSize()) {
+                    FlowSheetTitle(title = "Transfer")
+                    StatusFace(
+                        status = shownStatus,
+                        stage = stage,
+                        plan = shownPlan,
+                        mintName = ::mintName,
+                        formatter = formatter,
                         useBitcoinSymbol = settings.useBitcoinSymbol,
-                        entryState = entryState,
-                        notice = entryNotice,
-                        // "Use Max" would be wrong advice for a mint with no
-                        // maximum to offer.
-                        isWholeBalance = sourceProblem(sourceMint) == null &&
-                            MintTransferEntry.isWholeBalance(
-                                entry = entryState,
-                                amount = amountSats,
-                                source = sourceMint,
-                                holdsMaxQuote = maxPlan != null,
-                            ),
-                        sourceBalanceText = sats(sourceMint.balance),
-                        destinationBalanceText = sats(destinationMint.balance),
-                        sourceProblem = sourceProblem(sourceMint),
-                        destinationProblem = destinationProblem,
-                        isFindingMax = isFindingMax,
-                        isUsingMax = maxPlan != null,
-                        // Gated on a spendable balance: an empty mint has no maximum.
-                        onUseMax = ::useMax.takeIf {
-                            sourceMint.balance > 0 &&
-                                entryState != MintTransferEntry.Blocked(MintTransferEligibility.Blocker.SourceCannotSend)
-                        },
-                        onChooseSource = { choose(Slot.Source) }.takeIf { canChooseMint },
-                        onChooseDestination = { choose(Slot.Destination) }.takeIf { canChooseMint },
-                        onSwap = ::swap.takeIf { canSwap },
-                        onContinue = ::review,
+                        onDone = onClose,
+                        onRetry = ::retryTransfer,
                     )
                 }
+            } else {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    if (step == TransferStep.Review) {
+                        SheetHeader(
+                            title = "Transfer",
+                            navigationIcon = Icons.AutoMirrored.Outlined.ArrowBack,
+                            navigationContentDescription = "Back",
+                            onNavigationClick = ::backToEntry,
+                        )
+                    } else {
+                        FlowSheetTitle(title = "Transfer")
+                    }
+                    TwoFaceScreen(
+                        targetState = step,
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                        forward = { initial, target -> target.ordinal >= initial.ordinal },
+                        label = "mint-transfer-step",
+                    ) { current ->
+                        when (current) {
+                            TransferStep.Entry -> when {
+                                mints.size < 2 -> EmptyState(
+                                    title = "Add another mint",
+                                    supporting = "A transfer moves ecash between two of your mints.",
+                                    icon = Icons.Outlined.SwapHoriz,
+                                    size = EmptyStateSize.FullScreen,
+                                )
+                                mints.all { it.balance == 0L } -> EmptyState(
+                                    title = "Nothing to transfer yet",
+                                    supporting = "Receive some ecash before you can move it between mints.",
+                                    icon = Icons.Outlined.SwapHoriz,
+                                    size = EmptyStateSize.FullScreen,
+                                )
+                                sourceMint != null && destinationMint != null -> EntryFace(
+                                    source = sourceMint,
+                                    destination = destinationMint,
+                                    amount = amount,
+                                    onAmountChange = {
+                                        amount = it
+                                        dropMaxPlan()
+                                        entryNotice = null
+                                    },
+                                    amountSats = amountSats,
+                                    entryPrimary = entryContext.primary,
+                                    onFlipEntryPrimary = { settingsManager.setAmountDisplayPrimary(it.rawValue) },
+                                    btcPrice = entryFiatPrice,
+                                    fiatCurrencyCode = priceState.currencyCode,
+                                    useBitcoinSymbol = settings.useBitcoinSymbol,
+                                    entryState = entryState,
+                                    notice = entryNotice,
+                                    // "Use Max" would be wrong advice for a mint with no
+                                    // maximum to offer.
+                                    isWholeBalance = sourceProblem(sourceMint) == null &&
+                                        MintTransferEntry.isWholeBalance(
+                                            entry = entryState,
+                                            amount = amountSats,
+                                            source = sourceMint,
+                                            holdsMaxQuote = maxPlan != null,
+                                        ),
+                                    sourceBalanceText = sats(sourceMint.balance),
+                                    destinationBalanceText = sats(destinationMint.balance),
+                                    sourceProblem = sourceProblem(sourceMint),
+                                    destinationProblem = destinationProblem,
+                                    isFindingMax = isFindingMax,
+                                    isUsingMax = maxPlan != null,
+                                    // Gated on a spendable balance: an empty mint has no maximum.
+                                    onUseMax = ::useMax.takeIf {
+                                        sourceMint.balance > 0 &&
+                                            entryState != MintTransferEntry.Blocked(MintTransferEligibility.Blocker.SourceCannotSend)
+                                    },
+                                    onChooseSource = { choose(Slot.Source) }.takeIf { canChooseMint },
+                                    onChooseDestination = { choose(Slot.Destination) }.takeIf { canChooseMint },
+                                    onSwap = ::swap.takeIf { canSwap },
+                                    onContinue = ::review,
+                                )
+                            }
 
-                TransferStep.Review -> ReviewFace(
-                    plan = plan,
-                    failure = reviewFailure,
-                    requoted = requoted,
-                    mintName = ::mintName,
-                    formatter = formatter,
-                    useBitcoinSymbol = settings.useBitcoinSymbol,
-                    preferredPrimary = settings.amountDisplayPrimary,
-                    showFiat = settings.showFiatBalance,
-                    btcPrice = priceState.btcPrice,
-                    currencyCode = priceState.currencyCode,
-                    onChangeAmount = ::backToEntry,
-                    onRetryQuote = ::retryQuote,
-                    onTransfer = ::transfer,
-                    modifier = Modifier.graphicsLayer {
-                        val lean = BackPreviewLean.toPx() * backProgress
-                        translationX = if (backFromRightEdge) -lean else lean
-                        alpha = 1f - (1f - BackPreviewAlpha) * backProgress
-                    },
-                )
-
-                TransferStep.Status -> StatusFace(
-                    status = status,
-                    stage = stage,
-                    plan = plan,
-                    mintName = ::mintName,
-                    formatter = formatter,
-                    useBitcoinSymbol = settings.useBitcoinSymbol,
-                    onDone = onClose,
-                    onRetry = ::retryTransfer,
-                )
+                            TransferStep.Review -> ReviewFace(
+                                plan = plan,
+                                failure = reviewFailure,
+                                requoted = requoted,
+                                mintName = ::mintName,
+                                formatter = formatter,
+                                useBitcoinSymbol = settings.useBitcoinSymbol,
+                                preferredPrimary = settings.amountDisplayPrimary,
+                                showFiat = settings.showFiatBalance,
+                                btcPrice = priceState.btcPrice,
+                                currencyCode = priceState.currencyCode,
+                                onChangeAmount = ::backToEntry,
+                                onRetryQuote = ::retryQuote,
+                                onTransfer = ::transfer,
+                                modifier = Modifier.graphicsLayer {
+                                    val lean = BackPreviewLean.toPx() * backProgress
+                                    translationX = if (backFromRightEdge) -lean else lean
+                                    alpha = 1f - (1f - BackPreviewAlpha) * backProgress
+                                },
+                            )
+                        }
+                    }
+                }
             }
         }
     }
@@ -862,49 +889,77 @@ private fun ReviewFace(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Spacer(Modifier.height(scaffoldHeight * ConfirmTopFraction))
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = ConfirmHeroMinHeight),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                ) {
-                    when {
-                        failure != null -> ConfirmCautionFace(message = failure.message, detail = failure.detail)
-                        plan != null -> PaymentConfirmationAmount(
-                            amount = plan.amount,
-                            unit = "sat",
-                            preferredPrimary = preferredPrimary,
-                            showFiat = showFiat,
-                            btcPrice = btcPrice,
-                            currencyCode = currencyCode,
-                            useBitcoinSymbol = useBitcoinSymbol,
-                            formatter = formatter,
-                        )
-                        else -> SpinnerRing(
-                            size = ConfirmGlyphSize,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                    }
-                }
-                if (plan != null && failure == null) {
+                // The quote landing (or failing) fades the hero and rows in
+                // place, as on iOS. The state rides in the target so the
+                // outgoing face keeps its content while it fades.
+                AnimatedContent(
+                    targetState = plan to failure,
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.TopCenter,
+                    transitionSpec = {
+                        (fadeIn(tween(200)) togetherWith fadeOut(tween(150))).using(null)
+                    },
+                    label = "mint-transfer-review",
+                    contentKey = { (keyPlan, keyFailure) ->
+                        when {
+                            keyFailure != null -> 2
+                            keyPlan != null -> 1
+                            else -> 0
+                        }
+                    },
+                ) { (shownPlan, shownFailure) ->
                     Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = CashuTheme.spacing.comfortable),
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        TransferDetailRow(label = "From", value = mintName(plan.sourceMintUrl))
-                        TransferDetailRow(label = "To", value = mintName(plan.destinationMintUrl))
-                        TransferDetailRow(
-                            label = "Network fee",
-                            value = formatter.formatWalletSats(plan.feeUpperBound, useBitcoinSymbol),
-                            valueMonospaced = true,
-                        )
-                        TransferDetailRow(
-                            label = "Total",
-                            value = formatter.formatWalletSats(plan.total, useBitcoinSymbol),
-                            valueMonospaced = true,
-                        )
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = ConfirmHeroMinHeight),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center,
+                        ) {
+                            when {
+                                shownFailure != null -> ConfirmCautionFace(
+                                    message = shownFailure.message,
+                                    detail = shownFailure.detail,
+                                )
+                                shownPlan != null -> PaymentConfirmationAmount(
+                                    amount = shownPlan.amount,
+                                    unit = "sat",
+                                    preferredPrimary = preferredPrimary,
+                                    showFiat = showFiat,
+                                    btcPrice = btcPrice,
+                                    currencyCode = currencyCode,
+                                    useBitcoinSymbol = useBitcoinSymbol,
+                                    formatter = formatter,
+                                )
+                                else -> SpinnerRing(
+                                    size = ConfirmGlyphSize,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                        }
+                        if (shownPlan != null && shownFailure == null) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = CashuTheme.spacing.comfortable),
+                            ) {
+                                TransferDetailRow(label = "From", value = mintName(shownPlan.sourceMintUrl))
+                                TransferDetailRow(label = "To", value = mintName(shownPlan.destinationMintUrl))
+                                TransferDetailRow(
+                                    label = "Network fee",
+                                    value = formatter.formatWalletSats(shownPlan.feeUpperBound, useBitcoinSymbol),
+                                    valueMonospaced = true,
+                                )
+                                TransferDetailRow(
+                                    label = "Total",
+                                    value = formatter.formatWalletSats(shownPlan.total, useBitcoinSymbol),
+                                    valueMonospaced = true,
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -923,27 +978,45 @@ private fun ReviewFace(
                     modifier = Modifier.padding(bottom = CashuTheme.spacing.snug),
                 )
             }
-            when {
-                failure != null && failure.isShortfall -> SecondaryButton(
-                    text = "Change Amount",
-                    onClick = onChangeAmount,
-                )
-                failure != null -> SecondaryButton(text = "Retry Quote", onClick = onRetryQuote)
-                // Names the amount that arrives. Tonal, like Continue: moving
-                // between your own mints is no payment (iOS parity).
-                plan != null -> SecondaryButton(
-                    text = "Transfer ${formatter.formatWalletSats(plan.amount, useBitcoinSymbol)}",
-                    onClick = onTransfer,
-                    modifier = Modifier.testTag(UiTestTags.MintTransferSubmit),
-                )
-                // The hero spinner owns the wait; the button's footprint is
-                // reserved so nothing moves when the quote lands.
-                else -> SecondaryButton(
-                    text = " ",
-                    onClick = {},
-                    enabled = false,
-                    modifier = Modifier.graphicsLayer { alpha = 0f }.clearAndSetSemantics {},
-                )
+            // The button fades with the hero, keyed on which button it is.
+            AnimatedContent(
+                targetState = plan to failure,
+                modifier = Modifier.fillMaxWidth(),
+                transitionSpec = {
+                    (fadeIn(tween(200)) togetherWith fadeOut(tween(150))).using(null)
+                },
+                label = "mint-transfer-review-action",
+                contentKey = { (keyPlan, keyFailure) ->
+                    when {
+                        keyFailure != null && keyFailure.isShortfall -> 3
+                        keyFailure != null -> 2
+                        keyPlan != null -> 1
+                        else -> 0
+                    }
+                },
+            ) { (shownPlan, shownFailure) ->
+                when {
+                    shownFailure != null && shownFailure.isShortfall -> SecondaryButton(
+                        text = "Change Amount",
+                        onClick = onChangeAmount,
+                    )
+                    shownFailure != null -> SecondaryButton(text = "Retry Quote", onClick = onRetryQuote)
+                    // Names the amount that arrives. Tonal, like Continue: moving
+                    // between your own mints is no payment (iOS parity).
+                    shownPlan != null -> SecondaryButton(
+                        text = "Transfer ${formatter.formatWalletSats(shownPlan.amount, useBitcoinSymbol)}",
+                        onClick = onTransfer,
+                        modifier = Modifier.testTag(UiTestTags.MintTransferSubmit),
+                    )
+                    // The hero spinner owns the wait; the button's footprint is
+                    // reserved so nothing moves when the quote lands.
+                    else -> SecondaryButton(
+                        text = " ",
+                        onClick = {},
+                        enabled = false,
+                        modifier = Modifier.graphicsLayer { alpha = 0f }.clearAndSetSemantics {},
+                    )
+                }
             }
             Spacer(Modifier.height(CashuTheme.spacing.comfortable))
             Spacer(Modifier.navigationBarsPadding())
@@ -1015,7 +1088,13 @@ private fun StatusFace(
         showRowsDuringProcessing = true,
         rows = plan?.let { shown ->
             {
-                if (successAmount == null) {
+                // At success the amount moves up into the hero: its row fades
+                // out and the rows below close the gap, as on iOS.
+                AnimatedVisibility(
+                    visible = successAmount == null,
+                    enter = fadeIn(tween(200)) + expandVertically(),
+                    exit = fadeOut(tween(150)) + shrinkVertically(),
+                ) {
                     TransferDetailRow(
                         label = "Amount",
                         value = formatter.formatWalletSats(shown.amount, useBitcoinSymbol),
@@ -1024,21 +1103,22 @@ private fun StatusFace(
                 }
                 TransferDetailRow(label = "From", value = mintName(shown.sourceMintUrl))
                 TransferDetailRow(label = "To", value = mintName(shown.destinationMintUrl))
-                if (outcome is MintTransferOutcome.Completed) {
+                val feeText = if (outcome is MintTransferOutcome.Completed) {
                     // A receipt records what happened; a zero fee is omitted.
-                    if (outcome.feePaid > 0) {
-                        TransferDetailRow(
-                            label = "Network fee",
-                            value = formatter.formatWalletSats(outcome.feePaid, useBitcoinSymbol),
-                            valueMonospaced = true,
-                        )
-                    }
+                    outcome.feePaid.takeIf { it > 0 }?.let { formatter.formatWalletSats(it, useBitcoinSymbol) }
                 } else {
-                    TransferDetailRow(
-                        label = "Network fee",
-                        value = formatter.formatWalletSats(shown.feeUpperBound, useBitcoinSymbol),
-                        valueMonospaced = true,
-                    )
+                    formatter.formatWalletSats(shown.feeUpperBound, useBitcoinSymbol)
+                }
+                // The reserve gives way to the fee paid with a fade, not a cut.
+                AnimatedContent(
+                    targetState = feeText,
+                    modifier = Modifier.fillMaxWidth(),
+                    transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(150)) },
+                    label = "mint-transfer-fee",
+                ) { shownFee ->
+                    if (shownFee != null) {
+                        TransferDetailRow(label = "Network fee", value = shownFee, valueMonospaced = true)
+                    }
                 }
             }
         },

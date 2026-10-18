@@ -161,6 +161,13 @@ like a port, make the Android-native choice instead.
   `.smooth(duration: 0.4)`: the motion scheme's effects specs run faster and
   its Expressive spatial specs overshoot a half turn visibly. Reduce motion
   holds the glyph still; it and API 26–30 drop the blur and keep the fade.)*
+  *(2026-10-18: Transfer's status screen is no longer a third `TwoFaceScreen`
+  face. Like `UnifiedSendScreen`, it sits in an outer `AnimatedContent` over
+  the faces with the standard `fadeIn(200)/fadeOut(150)` pair and one content
+  key, so commit and Try Again fade instead of sliding. The review's quote
+  states and its button fade with the same pair, and at success the Amount row
+  leaves with `fadeOut(150) + shrinkVertically()` while the fee row
+  cross-fades.)*
 - **Numbers are quiet**: `AmountText` cross-fades the whole string on change
   (`Spring.StiffnessMedium`, no per-digit slide) — the same restrained
   transition every other amount swap uses (`AmountFlipDisplay`, `BalanceDisplay`).

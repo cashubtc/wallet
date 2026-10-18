@@ -65,13 +65,15 @@ struct MintTransferView: View {
     var body: some View {
         NavigationStack {
             Group {
+                // Two faces of one task cross-fade in place, like Send's
+                // amount → confirm → status (DESIGN.md §6 #5, #6).
                 switch step {
                 case .entry:
                     entryFace
-                        .transition(stepTransition(edge: .leading))
+                        .transition(.opacity)
                 case .review:
                     reviewFace
-                        .transition(stepTransition(edge: .trailing))
+                        .transition(.opacity)
                 case .status:
                     statusFace
                         .transition(.opacity)
@@ -107,13 +109,6 @@ struct MintTransferView: View {
         .walletSheetSurface(fillsScreen: true)
         .onAppear(perform: openRoute)
         .onDisappear(perform: abandonQuotes)
-    }
-
-    private func stepTransition(edge: Edge) -> AnyTransition {
-        reduceMotion ? .opacity : .asymmetric(
-            insertion: .move(edge: edge).combined(with: .opacity),
-            removal: .move(edge: edge).combined(with: .opacity)
-        )
     }
 
     // MARK: - Mints

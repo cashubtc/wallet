@@ -252,6 +252,12 @@ What this system explicitly rejects, pulled verbatim from docs/product/PRODUCT.m
   mints is no payment. While the transfer runs the status screen keeps its rows up
   and a secondary line names the leg in flight, "Leaving {source}" then
   "Arriving at {destination}", announced as it changes.)*
+  *(2026-10-18: the faces move like Send's. On iOS entry and review cross-fade
+  (§6 animation 5; they used to slide the full width), on Android they keep the
+  shared-axis `TwoFaceScreen`, and on both the status screen fades in over the
+  review and back out on Try Again, never sideways (§6 animation 6). The quote
+  landing on the review fades the amount, rows and button in place, and at
+  success the Amount row eases out as the amount takes the hero.)*
 - Payment facts use regular footnote/bodyMedium type, secondary labels, primary
   values, 8pt/dp vertical padding, and a centered 320pt/dp maximum column width.
   Editable rows retain at least 44pt/48dp touch height. At accessibility sizes,
