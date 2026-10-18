@@ -1,5 +1,6 @@
 package com.cashu.me.Core
 
+import org.cashudevkit.NostrInboxEvent
 import java.util.Base64
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CoroutineScope
@@ -42,8 +43,8 @@ class CashuRequestListener(
         load = walletStore::loadProcessedNip17GiftWraps,
         save = walletStore::saveProcessedNip17GiftWraps,
     )
-    private var client: NostrInboxClient? = null
-    private val retiringClients = mutableSetOf<NostrInboxClient>()
+    private var client: CDKCashuRequestInbox? = null
+    private val retiringClients = mutableSetOf<CDKCashuRequestInbox>()
     private val listenerGeneration = AtomicLong()
     private var pausedForWalletBoundary = false
     private var startAfterRetirement = false
@@ -84,14 +85,21 @@ class CashuRequestListener(
         }
         processedEvents.reload()
         val since = lookbackSince(System.currentTimeMillis() / 1000)
-        val recipientPrivateKey = NIP44.hexToBytes(privateKeyHex)
         val generation = listenerGeneration.incrementAndGet()
-        val newClient = NostrInboxClient(
-            pubkeyHex = nostr.publicKeyHex,
+        val newClient = CDKCashuRequestInbox(
+            secretKey = privateKeyHex,
             relays = relays,
             since = since,
+            onFailure = {
+                scope.launch {
+                    if (isCurrentGeneration(generation)) {
+                        stop()
+                        mutableState.value = mutableState.value.copy(lastError = "Nostr inbox could not start.")
+                    }
+                }
+            },
         ) { event ->
-            handle(event, recipientPrivateKey, generation)
+            handle(event, generation)
         }
         client = newClient
         newClient.start()
@@ -148,7 +156,7 @@ class CashuRequestListener(
     }
 
     /** Must be called while holding this listener's monitor. */
-    private fun detachClient(): NostrInboxClient? {
+    private fun detachClient(): CDKCashuRequestInbox? {
         listenerGeneration.incrementAndGet()
         val detached = client
         client = null
@@ -164,37 +172,28 @@ class CashuRequestListener(
     }
 
     private suspend fun handle(
-        event: NostrIncomingEvent,
-        recipientPrivateKey: ByteArray,
+        event: NostrInboxEvent,
         generation: Long,
     ) {
         if (!isCurrentGeneration(generation)) return
         eventMutex.withLock {
             if (!isCurrentGeneration(generation)) return@withLock
-            if (event.kind != 1059) return@withLock
-            if (!processedEvents.begin(event.id)) return@withLock
+            if (!processedEvents.begin(event.wrapId)) return@withLock
 
             var terminalOutcome = false
             try {
                 if (!isCurrentGeneration(generation)) return@withLock
-                val rumor = runCatching { NIP17.unwrap(event, recipientPrivateKey) }
-                    .onFailure {
-                        AppLogger.wallet.debug(
-                            "CashuRequestListener: NIP-17 unwrap failed: ${it.message}",
-                        )
-                    }
-                    .getOrNull()
-                if (rumor == null || rumor.kind != 14) {
+                if (event.rumorKind != 14.toUShort()) {
                     terminalOutcome = true
                     return@withLock
                 }
                 if (!isCurrentGeneration(generation)) return@withLock
                 terminalOutcome = shouldMarkProcessed(
-                    tryClaim(rumor.content, event.id, generation),
+                    tryClaim(event.rumorContent, event.wrapId, generation),
                 )
             } finally {
                 processedEvents.finish(
-                    eventId = event.id,
+                    eventId = event.wrapId,
                     terminalOutcome = terminalOutcome && isCurrentGeneration(generation),
                 )
             }

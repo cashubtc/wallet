@@ -378,8 +378,9 @@ final class OnboardingChassisUITests: UITestBase {
         createWalletThroughSeed()
         tapWhenReady(app.buttons["onboarding-add-custom-mint"])
         let field = app.textFields["onboarding-custom-mint-field"]
-        focusTextField(field)
-        field.typeText("ht")
+        // Verify the exact partial edit before testing interruption. XCTest
+        // can drop a setup character while the keyboard settles.
+        enterMintURL("ht", into: field)
         XCTAssertEqual(field.value as? String, "ht")
 
         // Preserve a partial edit across an interruption rather than starting

@@ -18,6 +18,15 @@ final class WalletLifecycleUITests: UITestBase {
         createWalletWithMint()
         tapTab("Mints")
         addMint(url: mintURL + "/")
+        // Duplicate detection queues behind wallet startup/mint operations.
+        // Wait for the submitted operation to settle before inspecting its
+        // result; the error's visibility is not a ten-second network deadline.
+        let duplicateFinished = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "isEnabled == true"),
+            object: app.buttons["mints-add-submit-button"]
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [duplicateFinished], timeout: 30), .completed,
+                       "Duplicate mint validation should finish before checking its error")
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "already")).firstMatch
             .waitForExistence(timeout: 10))
         tapWhenReady(app.buttons["mints-add-clear-button"])

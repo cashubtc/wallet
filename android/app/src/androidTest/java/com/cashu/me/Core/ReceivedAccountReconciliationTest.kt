@@ -43,9 +43,12 @@ class ReceivedAccountReconciliationTest {
             val fake = checkNotNull(fixture.fakeGateway)
             val store = fixture.container.walletStore
             val mint = store.loadMints().single()
+            // Multi-unit removal is supported. Exercise the independent
+            // native-failure path directly and preserve its exact error.
+            val nativeFailure = IllegalStateException("Native wallet removal failed")
+            fake.removeWalletFailure = nativeFailure
             runBlocking {
-                fake.ensureWallet(mint.url, "usd")
-                assertTrue(runCatching { manager.removeMint(mint) }.isFailure)
+                assertSame(nativeFailure, runCatching { manager.removeMint(mint) }.exceptionOrNull())
             }
             assertFalse(store.isMintRemoved(mint.url))
             assertEquals(listOf(mint.url), store.loadMints().map { it.url })
