@@ -57,3 +57,17 @@ Run Android JVM tests with `:app:testDebugUnitTest`; select
 Run the two named iOS classes plus `CashuRequestListenerClientSlotTests`,
 `CashuRequestListenerLifecycleSchedulerTests`, `CashuRequestListenerWorkGateTests`,
 and `ProcessedNIP17EventTrackerTests` with the CashuWallet test scheme.
+
+## NIP-44 boundary coverage retained from #411
+
+`CDKNIP44BoundaryTests` (iOS) and `CDKNIP44BoundaryTest` (Android instrumentation)
+retain #411's independent official vectors, Unicode/padding boundaries, key
+validation, version/nonce/ciphertext/MAC tampering, and plaintext limits. The
+old decoder-specific tests are replaced by real CDK relay tests using signed
+wraps and seals, including invalid signatures. No production changes from
+#411 are needed after this migration.
+
+CDK 0.18.2's shipped bindings accept encryption through 65,408 bytes and reject
+65,409 and 65,535 bytes; these tests retain that observed boundary. There are no
+remaining direct app NIP-44 encryption callers. Reassess the boundary before
+adding one or updating CDK.
