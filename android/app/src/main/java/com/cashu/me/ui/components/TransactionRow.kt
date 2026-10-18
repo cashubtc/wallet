@@ -47,7 +47,8 @@ data class TransactionRowModel(
  * Canonical timeline row. Leading muted directional arrow (direction is the
  * arrow's orientation, never colour); kind is named in the title. The amount is
  * the ledger signal: received is green with a plus, sent is primary with no
- * sign, and pending/expired/failed is muted with no sign. Failed rows also show a label.
+ * sign, failed is red with no sign, and pending/expired is muted with no sign.
+ * Status remains in accessibility semantics without adding another visible line.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -62,7 +63,8 @@ fun TransactionRow(
     val incoming = tx.type == TransactionType.Incoming
     val unsettled = tx.isUnsettled
     val amountColor = when {
-        unsettled || tx.status == TransactionStatus.Failed -> MaterialTheme.colorScheme.onSurfaceVariant
+        tx.status == TransactionStatus.Failed -> MaterialTheme.colorScheme.error
+        unsettled -> MaterialTheme.colorScheme.onSurfaceVariant
         // Match iOS TransactionAmountColumn's .green ledger amounts.
         incoming -> CashuTheme.colors.received
         else -> MaterialTheme.colorScheme.onSurface
@@ -106,13 +108,6 @@ fun TransactionRow(
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
             )
-            if (tx.status == TransactionStatus.Failed) {
-                Text(
-                    text = tx.displayStatusText,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
             Text(
                 text = model.timestamp,
                 style = MaterialTheme.typography.bodySmall,

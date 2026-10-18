@@ -25,12 +25,6 @@ struct HistoryTransactionRow: View {
                         .font(.body.weight(.medium))
                         .lineLimit(1)
 
-                    if transaction.status == .failed {
-                        Text(transaction.displayStatusText)
-                            .cashuText(.metadata)
-                            .foregroundStyle(.red)
-                    }
-
                     Text(timestamp)
                         .cashuText(.metadata)
                         .foregroundStyle(.secondary)
