@@ -219,24 +219,20 @@ class CdkWalletGatewayImpl : WalletGateway {
         ensureWalletUnlocked(mintUrl, cdkUnit(unit))
     }
 
-    override suspend fun removeWalletIfSingleUnit(mintUrl: String): Boolean = cdkCall {
+    override suspend fun removeWallets(mintUrl: String): Boolean = cdkCall {
         val repository = requireRepository()
         val registeredWallets = repository.getWallets()
             .filter { wallet ->
                 mintRemovalUrlsMatch(wallet.mintUrl().url, mintUrl)
             }
-        val registeredUnits = normalizedRegisteredWalletUnits(
-            registeredWallets.map { it.unit().toDomainUnit() },
-        )
-        if (registeredUnits.size > 1) {
-            throw MultiUnitWalletRemovalException(registeredUnits)
+        // CDK's removeWallet only drops the in-memory (mint, unit) entry;
+        // proofs stay in the database. Removing units one at a time cannot
+        // lose funds, and a failure part-way keeps the mint listed so a retry
+        // removes only the units still registered.
+        registeredWallets.forEach { wallet ->
+            repository.removeWallet(wallet.mintUrl(), wallet.unit())
         }
-        val registeredUnit = registeredUnits.singleOrNull() ?: return@cdkCall false
-        val wallet = registeredWallets.first { wallet ->
-            wallet.unit().toDomainUnit().trim().equals(registeredUnit, ignoreCase = true)
-        }
-        repository.removeWallet(wallet.mintUrl(), wallet.unit())
-        true
+        registeredWallets.isNotEmpty()
     }
 
     override suspend fun fetchMintInfo(mintUrl: String): MintInfo? = cdkCall {

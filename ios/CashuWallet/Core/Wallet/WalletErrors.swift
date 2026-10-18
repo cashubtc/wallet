@@ -46,10 +46,6 @@ enum WalletErrorMessage {
         if let checkpointError = error as? WalletCheckpointError {
             return .error(checkpointError.localizedDescription)
         }
-        if let removalError = error as? MintRemovalPolicyError {
-            // Preserve app-owned safety guidance before generic CDK matching.
-            return .error(removalError.localizedDescription)
-        }
         if let meltRecoveryError = error as? MeltPaymentRecoveryError {
             switch meltRecoveryError {
             case .compensated:
