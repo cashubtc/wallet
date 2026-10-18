@@ -88,16 +88,21 @@ Cashu Request payment, and NFC receive (Android-only surface).
   or "Still leaving {source}. Your funds are safe."
 - **Transfer entry and review.** Each mint's balance is a bare number under
   its name, with no "available" or "Balance" (screen readers hear "2 sat
-  available" and "Balance 1 sat"). There is no "Max" button: the source's
-  balance is the control, and tapping it fills the largest amount the mint can
-  transfer after fees. A problem with a mint is said on that mint's line in
+  available" and "Balance 1 sat"). "Max" sits at the end of the source's
+  balance line, as on Send, and fills the largest amount the mint can transfer
+  after fees (screen readers hear "Transfer maximum"). A problem with a mint is said on that mint's line in
   the route, after its balance and behind the caution glyph, never under the
   amount: "2 sat · too little to cover the fee" (the maximum came out at
-  nothing after fees; the line then stops acting), "2 sat · can't send over
+  nothing after fees; Max then goes), "2 sat · can't send over
   Lightning", "1 sat · can't receive over Lightning".
-  The note under the amount is for the amount only. Typing a source's whole
-  balance shows the info hint "Fees are added on top. Tap the balance to move
-  everything." before any quote is asked for; it also teaches the gesture. When the quotes lapse on the review screen and are
+  The note under the amount is for the amount only, and it holds one line: an
+  info note is written to fit it and carries no glyph; a wallet error shows its
+  {what broke} sentence alone ("Couldn't reach the mint."), since tapping Max
+  again is the retry, and screen readers hear the whole message.
+  Typing a source's whole balance shows the caution "Not enough left for the
+  fee. Use Max." before any quote is asked for: the fee is paid from the source
+  on top of the amount, so the whole balance cannot arrive, and Max is the one
+  control that fixes it. When the quotes lapse on the review screen and are
   replaced, the review says "The fee was updated. Check it and transfer
   again." The commit names the amount that arrives: "Transfer 21 sat".
 

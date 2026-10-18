@@ -2,6 +2,7 @@ package com.cashu.me.Core
 
 import com.cashu.me.Core.MintTransferEligibility.Blocker
 import com.cashu.me.Core.Wallet.WalletErrorMessages
+import com.cashu.me.Core.Wallet.WalletMessage
 import com.cashu.me.Core.Wallet.WalletMessageSeverity
 import com.cashu.me.Models.MintTransferException
 import org.junit.Assert.assertEquals
@@ -17,6 +18,20 @@ class WalletErrorMessagesTest {
         assertEquals(
             "This mint uses multiple currency units and cannot be removed safely yet. Keep it connected and try again after updating the app.",
             WalletErrorMessages.classify(error).text,
+        )
+    }
+
+    /** A one-line slot shows {what broke} and drops {what to try next}. */
+    @Test
+    fun headlineIsTheFirstSentence() {
+        assertEquals(
+            "Couldn't reach the mint.",
+            WalletMessage("Couldn't reach the mint. Check your connection and try again.").headline,
+        )
+        assertEquals("Not enough balance.", WalletMessage("Not enough balance.").headline)
+        assertEquals(
+            "Amountless invoices are not supported for unit sat and method bolt12",
+            WalletMessage("Amountless invoices are not supported for unit sat and method bolt12").headline,
         )
     }
 

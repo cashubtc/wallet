@@ -219,7 +219,10 @@ What this system explicitly rejects, pulled verbatim from docs/product/PRODUCT.m
   they stay put when the mints trade places. *(2026-10-01: Transfer drops the
   Max button; the source's balance is the control, and tapping it fills the
   maximum. Both balances are bare secondary numbers, no "available" or
-  "Balance"; screen readers hear the words. Send keeps its Max.)* No
+  "Balance"; screen readers hear the words. Send keeps its Max.)*
+  *(2026-10-18: Max is back, at the end of the source's balance line as on
+  Send; the balance is a plain number again, not a control. At large text Max
+  drops under the balance.)* No
   fill, card or pill. With exactly
   two mints the rows have no chevron and the swap control is the only way to
   change the pair. `MintTransferRouteView` (iOS) / `MintTransferRoute` (Android).
@@ -231,6 +234,13 @@ What this system explicitly rejects, pulled verbatim from docs/product/PRODUCT.m
   can't send or receive over Lightning, or its balance can't cover the fee) is
   said on that mint's line behind the caution glyph, with the words kept
   secondary for contrast; the note under the amount is for the amount only.
+  That note travels with the amount, 6pt/dp under it in a one-line slot held
+  whether or not a note shows, so the amount never moves when one appears. It
+  is never truncated: a note that wraps at a larger text size grows the slot
+  and the amount steps down its ladder instead of meeting it. Where even the
+  compact amount, its note and both mints no longer fit above the pad (iOS
+  from xxLarge, Android from 1.5× text), they scroll instead, and a note that
+  appears is scrolled into view. Info notes carry no glyph.
   The review names the mints in its From and To rows, without avatars, and the
   commit is the tonal "Transfer 21 sat", like Continue: moving between your own
   mints is no payment. While the transfer runs the status screen keeps its rows up

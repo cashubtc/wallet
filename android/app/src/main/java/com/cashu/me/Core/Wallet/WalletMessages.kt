@@ -21,6 +21,16 @@ data class WalletMessage(
     val title: String? = null,
 ) {
     val isRetryable: Boolean get() = !isTerminal
+
+    /**
+     * The {what broke} sentence alone, for a slot that holds one line. The
+     * whole text when there is no second sentence.
+     */
+    val headline: String
+        get() {
+            val end = text.indexOf(". ")
+            return if (end < 0) text else text.substring(0, end) + "."
+        }
 }
 
 /** Resolve any thrown error to its user-facing message, severity, and recoverability. */

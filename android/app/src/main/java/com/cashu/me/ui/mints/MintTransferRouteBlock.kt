@@ -12,6 +12,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
@@ -356,20 +358,14 @@ private fun IdentityRow(mint: MintInfo, showsChevron: Boolean) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SourceSupport(
     balanceText: String,
     isFindingMax: Boolean,
     onUseMax: (() -> Unit)?,
 ) {
-    if (onUseMax != null) {
-        AvailableBalance(
-            balanceText = balanceText,
-            isFindingMax = isFindingMax,
-            onUseMax = onUseMax,
-        )
-    } else {
-        // An empty mint has nothing to take: its balance only informs.
+    val balance: @Composable () -> Unit = {
         SupportText(
             text = balanceText,
             modifier = Modifier
@@ -377,28 +373,47 @@ private fun SourceSupport(
                 .clearAndSetSemantics { contentDescription = "$balanceText available" },
         )
     }
+    if (onUseMax == null) {
+        // An empty mint has nothing to take: its balance only informs.
+        balance()
+        return
+    }
+    // Max sits at the end of the balance's line, as on Send. Side by side
+    // while both fit; at large text Max drops under the balance rather than
+    // squeezing it (iOS parity).
+    FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        itemVerticalAlignment = Alignment.CenterVertically,
+    ) {
+        balance()
+        MaxControl(
+            isFindingMax = isFindingMax,
+            onUseMax = onUseMax,
+            // The 48dp target must not grow the line it shares.
+            modifier = Modifier.trimVertical((MinimumTouchTarget - SupportMinHeight) / 2),
+        )
+    }
 }
 
 /**
- * The balance is the maximum: tapping it fills the largest amount this mint
- * can transfer after fees (iOS parity). It reads as the plain balance; the
- * whole-balance hint is what teaches the tap. The 48dp target overhangs the
- * line rather than growing it.
+ * Fills the largest amount this mint can transfer after fees. The word keeps
+ * its place under the spinner, so the line never shifts.
  */
 @Composable
-private fun AvailableBalance(
-    balanceText: String,
+private fun MaxControl(
     isFindingMax: Boolean,
     onUseMax: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Row(
+    Box(
         modifier = modifier
-            .trimVertical((MinimumTouchTarget - SupportMinHeight) / 2)
-            .defaultMinSize(minHeight = MinimumTouchTarget)
+            .defaultMinSize(minWidth = MinimumTouchTarget, minHeight = MinimumTouchTarget)
             .clickable(enabled = !isFindingMax, role = Role.Button, onClick = onUseMax)
+            // Before clearAndSetSemantics, which would clear a tag set after it.
+            .testTag(UiTestTags.MintTransferMax)
             .clearAndSetSemantics {
-                contentDescription = "$balanceText available"
+                contentDescription = "Transfer maximum"
                 role = Role.Button
                 if (isFindingMax) {
                     stateDescription = "Checking the network fee"
@@ -409,15 +424,16 @@ private fun AvailableBalance(
                         true
                     }
                 }
-            }
-            .testTag(UiTestTags.MintTransferMax),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.tight),
+            },
+        // Aligned to the chevron above it.
+        contentAlignment = Alignment.CenterEnd,
     ) {
         Text(
-            text = bitcoinAmountText(balanceText),
-            style = MaterialTheme.typography.bodyMedium.withMonoDigits(),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            text = "Max",
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.alpha(if (isFindingMax) 0f else 1f),
         )
         if (isFindingMax) {
             CircularProgressIndicator(

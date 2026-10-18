@@ -32,6 +32,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
@@ -86,6 +88,11 @@ enum class NoticeSeverity { Error, Caution, Info, Success }
  *   Matches iOS `InlineNotice`, which never fills.
  * @param centered centre the glyph + text as a group, for a notice that floats
  *   under a centred amount rather than sitting in a left-aligned form.
+ * @param showsIcon hide the leading glyph, for a note that reads as plain text
+ *   (iOS `showsIcon`).
+ * @param spokenText what TalkBack reads in place of [text] and [detail], when
+ *   the visible line is a shortened form of it (a wallet error's {what broke}
+ *   sentence).
  */
 @Composable
 fun InlineNotice(
@@ -95,6 +102,8 @@ fun InlineNotice(
     detail: String? = null,
     showsContainer: Boolean = false,
     centered: Boolean = false,
+    showsIcon: Boolean = true,
+    spokenText: String? = null,
 ) {
     val (icon, accent, container) = noticeColors(severity)
     val content = if (showsContainer) when (severity) {
@@ -115,7 +124,16 @@ fun InlineNotice(
             )
             // Announced on appearance without stealing focus. The component owns
             // this so a call site cannot forget it.
-            .semantics { liveRegion = LiveRegionMode.Polite },
+            .then(
+                if (spokenText != null) {
+                    Modifier.clearAndSetSemantics {
+                        contentDescription = spokenText
+                        liveRegion = LiveRegionMode.Polite
+                    }
+                } else {
+                    Modifier.semantics { liveRegion = LiveRegionMode.Polite }
+                },
+            ),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -125,12 +143,14 @@ fun InlineNotice(
                 if (centered) Alignment.CenterHorizontally else Alignment.Start,
             ),
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = if (showsContainer) content else accent,
-                modifier = Modifier.size(NoticeIconSize),
-            )
+            if (showsIcon) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = if (showsContainer) content else accent,
+                    modifier = Modifier.size(NoticeIconSize),
+                )
+            }
             Column(
                 // `fill = false` when centred: a filling child leaves no free
                 // space for the row to centre the group into.

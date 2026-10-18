@@ -18,6 +18,19 @@ final class WalletErrorMessageTests: XCTestCase {
         )
     }
 
+    /// A one-line slot shows {what broke} and drops {what to try next}.
+    func testHeadlineIsTheFirstSentence() {
+        XCTAssertEqual(
+            WalletMessage.error("Couldn't reach the mint. Check your connection and try again.").headline,
+            "Couldn't reach the mint."
+        )
+        XCTAssertEqual(WalletMessage.error("Not enough balance.").headline, "Not enough balance.")
+        XCTAssertEqual(
+            WalletMessage.error("Amountless invoices are not supported for unit sat and method bolt12").headline,
+            "Amountless invoices are not supported for unit sat and method bolt12"
+        )
+    }
+
     func testCheckpointBusyPreservesRetryGuidance() {
         let message = WalletCheckpointError.busy.walletMessage
         XCTAssertEqual(message.text, "Wallet database is still busy. Try again in a moment.")

@@ -157,34 +157,58 @@ struct MintTransferRouteView: View {
                 .frame(minHeight: Metrics.supportHeight, alignment: .leading)
                 .accessibilityLabel("\(sourceBalanceText) available, \(sourceProblem)")
         } else if let onUseMax {
-            availableBalance(onUseMax)
+            balanceAndMax(onUseMax)
         } else {
             // An empty mint has nothing to take: its balance only informs.
-            supportText(sourceBalanceText)
+            sourceBalance
                 .frame(minHeight: Metrics.supportHeight, alignment: .leading)
-                .accessibilityLabel("\(sourceBalanceText) available")
         }
     }
 
-    /// The balance is the maximum: tapping it fills the largest amount this
-    /// mint can transfer after fees. It reads as the plain balance; the
-    /// whole-balance hint is what teaches the tap.
-    private func availableBalance(_ onUseMax: @escaping () -> Void) -> some View {
+    private var sourceBalance: some View {
+        supportText(sourceBalanceText)
+            .accessibilityLabel("\(sourceBalanceText) available")
+    }
+
+    /// Max sits at the end of the balance's line, as on Send. Side by side
+    /// while both fit; at large text Max drops under the balance rather than
+    /// squeezing it.
+    private func balanceAndMax(_ onUseMax: @escaping () -> Void) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: Metrics.gap) {
+                sourceBalance
+                Spacer(minLength: 8)
+                maxControl(onUseMax, alignment: .trailing)
+                    // The 44pt target must not grow the line it shares.
+                    .padding(.vertical, (Metrics.supportHeight - 44) / 2)
+            }
+            VStack(alignment: .leading, spacing: 0) {
+                sourceBalance
+                maxControl(onUseMax, alignment: .leading)
+            }
+        }
+        .frame(minHeight: Metrics.supportHeight)
+    }
+
+    /// Fills the largest amount this mint can transfer after fees. The word
+    /// keeps its place under the spinner, so the line never shifts.
+    private func maxControl(_ onUseMax: @escaping () -> Void, alignment: Alignment) -> some View {
         Button(action: onUseMax) {
-            HStack(spacing: 6) {
-                supportText(sourceBalanceText)
+            ZStack(alignment: alignment) {
+                Text("Max")
+                    .font(.subheadline.weight(.medium))
+                    .opacity(isFindingMax ? 0 : 1)
                 if isFindingMax {
-                    ProgressView().controlSize(.mini)
+                    ProgressView().controlSize(.small)
                 }
             }
-            .frame(minHeight: 44)
+            // Aligned to the chevron above it, or to the balance when stacked.
+            .frame(minWidth: 44, minHeight: 44, alignment: alignment)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        // The 44pt target must not grow the line it sits on.
-        .padding(.vertical, (Metrics.supportHeight - 44) / 2)
         .disabled(isFindingMax)
-        .accessibilityLabel("\(sourceBalanceText) available")
+        .accessibilityLabel("Transfer maximum")
         .accessibilityHint("Fills the largest amount this mint can transfer after fees")
         .accessibilityValue(isFindingMax ? "Checking the network fee" : "")
         .accessibilityIdentifier("mints-transfer-max")

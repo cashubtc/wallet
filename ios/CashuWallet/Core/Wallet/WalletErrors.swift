@@ -16,6 +16,13 @@ struct WalletMessage {
     let severity: ErrorSeverity
     var recoverability: Recoverability = .retryable
 
+    /// The {what broke} sentence alone, for a slot that holds one line. The
+    /// whole text when there is no second sentence.
+    var headline: String {
+        guard let end = text.range(of: ". ") else { return text }
+        return String(text[..<end.lowerBound]) + "."
+    }
+
     static func error(_ text: String) -> WalletMessage { .init(text: text, severity: .error) }
     static func caution(_ text: String) -> WalletMessage { .init(text: text, severity: .caution) }
     static func info(_ text: String) -> WalletMessage { .init(text: text, severity: .info) }

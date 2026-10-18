@@ -21,6 +21,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -48,6 +50,8 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import com.cashu.me.Core.AmountFormatter
 import com.cashu.me.Core.MintTransferEligibility
@@ -113,7 +117,12 @@ private const val FeeShortfallText = "too little to cover the fee"
 private val BackPreviewLean = 24.dp
 private const val BackPreviewAlpha = 0.9f
 
-private data class EntryNotice(val text: String, val severity: NoticeSeverity)
+/** [spoken] is the whole message, when [text] is its first sentence. */
+private data class EntryNotice(val text: String, val severity: NoticeSeverity, val spoken: String? = null)
+
+// InlineNotice's 18dp glyph and the 8dp gap after it, which a note's text
+// cannot use.
+private val NoticeGlyphWidth = 26.dp
 
 private data class ReviewFailure(
     val message: String,
@@ -332,7 +341,10 @@ fun MintTransferScreen(
                 haptics.performHapticFeedback(HapticFeedbackType.Reject)
             } catch (error: Throwable) {
                 val message = error.walletMessage
-                entryNotice = EntryNotice(message.text, message.severity.toNoticeSeverity())
+                // The note under the amount holds one line: what broke. Tapping
+                // the balance again is the retry, so the advice goes unsaid
+                // (TalkBack still hears it).
+                entryNotice = EntryNotice(message.headline, message.severity.toNoticeSeverity(), spoken = message.text)
             } finally {
                 if (maxRequest == request) isFindingMax = false
             }
@@ -556,8 +568,8 @@ fun MintTransferScreen(
                         useBitcoinSymbol = settings.useBitcoinSymbol,
                         entryState = entryState,
                         notice = entryNotice,
-                        // "Tap the balance" would be wrong advice for a mint whose
-                        // balance offers no maximum.
+                        // "Use Max" would be wrong advice for a mint with no
+                        // maximum to offer.
                         isWholeBalance = sourceProblem(sourceMint) == null &&
                             MintTransferEntry.isWholeBalance(
                                 entry = entryState,
@@ -680,19 +692,27 @@ private fun EntryFace(
     // mint's line in the route.
     val noticeText: String?
     val noticeSeverity: NoticeSeverity
+    var noticeSpoken: String? = null
     when {
         // The source row states what is available, so the notice does not repeat it.
         overBalance -> { noticeText = "Insufficient balance"; noticeSeverity = NoticeSeverity.Caution }
-        notice != null -> { noticeText = notice.text; noticeSeverity = notice.severity }
-        // The fee comes on top of the amount, so the whole balance cannot
-        // arrive. Said here, not after a quote has been asked for.
+        notice != null -> {
+            noticeText = notice.text
+            noticeSeverity = notice.severity
+            noticeSpoken = notice.spoken
+        }
+        // The fee is paid from the source on top of the amount, so the whole
+        // balance cannot arrive. Said here, not after a quote has been asked
+        // for, with the one control that fixes it.
         isWholeBalance -> {
-            // It also teaches the gesture: the balance is the maximum.
-            noticeText = "Fees are added on top. Tap the balance to move everything."
-            noticeSeverity = NoticeSeverity.Info
+            noticeText = "Not enough left for the fee. Use Max."
+            noticeSeverity = NoticeSeverity.Caution
         }
         else -> { noticeText = null; noticeSeverity = NoticeSeverity.Info }
     }
+    // An info note is plain secondary text; the glyph is kept for the
+    // severities it tells apart.
+    val noticeShowsIcon = noticeSeverity != NoticeSeverity.Info
     val amountDisplay: @Composable (AmountScale) -> Unit = { scale ->
         AmountFlipDisplay(
             amountSats = amountSats,
@@ -723,10 +743,29 @@ private fun EntryFace(
                 severity = noticeSeverity,
                 showsContainer = false,
                 centered = true,
+                showsIcon = noticeShowsIcon,
+                spokenText = noticeSpoken,
                 modifier = noticeModifier,
             )
         }
     }
+    val noticeStyle = MaterialTheme.typography.bodyMedium
+    val noticeLineHeight = with(LocalDensity.current) { noticeStyle.lineHeight.toDp() }
+    // One line is held under the amount whether or not a note shows, so the
+    // amount does not move when one appears. A note that wraps at a larger
+    // text size grows the slot rather than being cut short.
+    val noticeSlot: @Composable () -> Unit = {
+        Box(
+            modifier = Modifier.fillMaxWidth().heightIn(min = noticeLineHeight),
+            contentAlignment = Alignment.TopCenter,
+        ) {
+            noticeLine(Modifier)
+        }
+    }
+    // In the scrolling layout a note answers what was just typed or tapped,
+    // which may have left it out of view above or below.
+    val noticeInView = remember { BringIntoViewRequester() }
+    val textMeasurer = rememberTextMeasurer()
     val routeBlock: @Composable (Boolean) -> Unit = { showsDestinationBalance ->
         MintTransferRouteBlock(
             source = source,
@@ -754,11 +793,25 @@ private fun EntryFace(
         // amount can still sit at Hero beside it. On a shorter screen it goes
         // first, then the amount steps down a rung, so none of them crowd
         // each other.
-        val nameLine = with(LocalDensity.current) { MaterialTheme.typography.bodyLarge.lineHeight.toDp() }
+        val density = LocalDensity.current
+        val nameLine = with(density) { MaterialTheme.typography.bodyLarge.lineHeight.toDp() }
         val mintsHeight = 120.dp + nameLine * 2
         val room = maxHeight - numberPadFooterMinimumHeight()
         val showsDestinationBalance = room >= mintsHeight + 24.dp + 160.dp
-        val heroRoom = room - if (showsDestinationBalance) mintsHeight + 24.dp else mintsHeight
+        // The rungs below already budget one line of note under the amount.
+        // A note that wraps takes its extra lines from the amount, which steps
+        // down rather than meeting it.
+        val noticeLines = noticeText?.let { text ->
+            val textWidth = maxWidth - CashuTheme.spacing.comfortable * 2 -
+                if (noticeShowsIcon) NoticeGlyphWidth else 0.dp
+            textMeasurer.measure(
+                text = text,
+                style = noticeStyle,
+                constraints = Constraints(maxWidth = with(density) { textWidth.roundToPx() }.coerceAtLeast(0)),
+            ).lineCount
+        } ?: 1
+        val heroRoom = room - (if (showsDestinationBalance) mintsHeight + 24.dp else mintsHeight) -
+            noticeLineHeight * (noticeLines - 1) - CashuTheme.spacing.snug
         val heroScale = when {
             heroRoom >= 160.dp -> AmountScale.Hero
             heroRoom >= 110.dp -> AmountScale.Confirm
@@ -783,24 +836,35 @@ private fun EntryFace(
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     amountDisplay(AmountScale.Compact)
-                    noticeLine(Modifier.padding(top = CashuTheme.spacing.default))
+                    // No line is held here: this space is too short to spend
+                    // on an empty one, and it scrolls.
+                    noticeLine(
+                        Modifier
+                            .padding(top = CashuTheme.spacing.tight)
+                            .bringIntoViewRequester(noticeInView),
+                    )
+                    LaunchedEffect(noticeText) {
+                        if (noticeText != null) noticeInView.bringIntoView()
+                    }
                     Spacer(Modifier.height(CashuTheme.spacing.default))
                     routeBlock(true)
                 }
             } else {
+                // The note travels with the amount: the two are centred as one
+                // group, so the note never drifts onto the mints below.
                 Box(
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        // Keeps the note off the first mint's caption on a
+                        // short screen.
+                        .padding(bottom = CashuTheme.spacing.snug),
                     contentAlignment = Alignment.Center,
                 ) {
-                    amountDisplay(heroScale)
-                    Column(
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .fillMaxWidth()
-                            .padding(bottom = CashuTheme.spacing.default),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        noticeLine(Modifier)
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        amountDisplay(heroScale)
+                        Spacer(Modifier.height(CashuTheme.spacing.tight))
+                        noticeSlot()
                     }
                 }
                 routeBlock(showsDestinationBalance)

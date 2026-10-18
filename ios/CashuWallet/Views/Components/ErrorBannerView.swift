@@ -76,6 +76,9 @@ struct InlineNotice: View {
     /// Centre the glyph + text as a group, for a notice that floats under a
     /// centred amount rather than sitting in a left-aligned form.
     var isCentered: Bool = false
+    /// What VoiceOver reads in place of `message`, when the visible line is a
+    /// shortened form of it (a wallet error's {what broke} sentence).
+    var spokenMessage: String? = nil
 
     var body: some View {
         HStack(alignment: .top, spacing: 6) {
@@ -124,7 +127,7 @@ struct InlineNotice: View {
     }
 
     private var accessibilityText: String {
-        var parts = [severity.announcementPrefix + (title.map { "\($0). " } ?? "") + message]
+        var parts = [severity.announcementPrefix + (title.map { "\($0). " } ?? "") + (spokenMessage ?? message)]
         if let detail { parts.append(detail) }
         return parts.joined(separator: " ")
     }
