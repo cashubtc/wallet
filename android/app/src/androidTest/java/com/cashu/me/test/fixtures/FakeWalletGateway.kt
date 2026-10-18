@@ -78,6 +78,7 @@ class FakeWalletGateway(
     var onMetadataFetch: (() -> Unit)? = null
     var nextFailure: Throwable? = null
     var nextCloseFailure: Throwable? = null
+    var removeWalletFailure: Throwable? = null
     val latestMintQuoteId: String?
         get() = mintQuotes.keys.lastOrNull()
 
@@ -153,6 +154,7 @@ class FakeWalletGateway(
     }
 
     override suspend fun removeWallets(mintUrl: String): Boolean {
+        removeWalletFailure?.let { throw it }
         failIfRequested()
         val normalized = normalize(mintUrl)
         if (walletUnits[normalized].isNullOrEmpty()) return false
