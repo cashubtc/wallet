@@ -541,41 +541,15 @@ struct HistoryView: View {
     // MARK: - Transaction Row
 
     private func transactionRow(transaction: WalletTransaction) -> some View {
-        return Button {
+        HistoryTransactionRow(
+            transaction: transaction,
+            timestamp: formatRelativeDate(transaction.date),
+            amountAccessibilityText: transaction.isUnfundedAddress ? nil : formatAmount(transaction)
+        ) {
             HapticFeedback.selection()
             isSearchFocused = false
             selectedTransaction = transaction
-        } label: {
-            HStack(spacing: 14) {
-                rowIcon(for: transaction)
-                    .frame(width: 36, height: 36)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(rowTitle(for: transaction))
-                        .font(.body.weight(.medium))
-                        .lineLimit(1)
-
-                    Text(formatRelativeDate(transaction.date))
-                        .cashuText(.metadata)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer(minLength: 8)
-
-                TransactionAmountColumn(transaction: transaction)
-            }
-            .padding(.horizontal, rowHorizontalPadding)
-            .padding(.vertical, rowVerticalPadding)
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(rowAccessibilityLabel(for: transaction))
-        .accessibilityHint(
-            transaction.isPendingReceiveToken
-                ? "Opens receive review"
-                : "Opens transaction details"
-        )
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             if transaction.isPendingReceiveToken {
                 Button {
@@ -586,28 +560,6 @@ struct HistoryView: View {
                 .tint(.red)
             }
         }
-    }
-
-    // MARK: - Row content
-
-    @ViewBuilder
-    private func rowIcon(for transaction: WalletTransaction) -> some View {
-        TransactionIcon(direction: transaction.type)
-    }
-
-    private func rowTitle(for transaction: WalletTransaction) -> String {
-        transaction.displayTitle
-    }
-
-    private func rowAccessibilityLabel(for transaction: WalletTransaction) -> String {
-        [
-            rowTitle(for: transaction),
-            transaction.isUnfundedAddress ? nil : formatAmount(transaction),
-            transaction.status == .completed ? "completed" : transaction.displayStatusText.lowercased(),
-            formatRelativeDate(transaction.date),
-        ]
-        .compactMap { $0 }
-        .joined(separator: ", ")
     }
 
     // MARK: - Formatting
@@ -625,7 +577,7 @@ struct HistoryView: View {
             currencyCode: settings.bitcoinPriceCurrency,
             useBitcoinSymbol: settings.useBitcoinSymbol
         ).primary
-        guard !transaction.isUnsettled else { return value }
+        guard transaction.status == .completed else { return value }
         return transaction.type == .incoming ? "+\(value)" : value
     }
 

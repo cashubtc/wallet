@@ -123,6 +123,39 @@ final class ActivityDetailUITests: XCTestCase {
         executionTimeAllowance = 180
     }
 
+    func testFailedHistoryRowIsVisibleAndMatchesReceiptStatus() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchEnvironment = ["SHOW_COMPONENT_CATALOG": "history", "CI_INTEGRATION_TEST": "1",
+                                 "UITEST_DISABLE_ANIMATIONS": "1"]
+        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launch()
+        defer { app.terminate() }
+        let failed = app.buttons["failed-lightning"]
+        let completed = app.buttons["sent-lightning"]
+        XCTAssertTrue(failed.waitForExistence(timeout: 10))
+        XCTAssertTrue(failed.label.contains("failed"))
+        XCTAssertTrue(completed.label.contains("completed"))
+        // Check rendered text separately from the row's combined VoiceOver label.
+        XCTAssertTrue(app.staticTexts["Failed"].exists)
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "failed-and-completed-history-rows"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        failed.tap()
+        XCTAssertTrue(app.staticTexts["Status"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.images["Failed"].exists)
+        let title = app.navigationBars.firstMatch
+        title.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            .press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.98)))
+        XCTAssertTrue(title.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(completed.waitForExistence(timeout: 5))
+        completed.tap()
+        XCTAssertTrue(app.staticTexts["Status"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.images["Completed"].exists)
+        XCTAssertTrue(app.staticTexts["Paid"].exists)
+    }
+
     func testCurrencyAndMintEditsShowNewRequestWithoutRelabelingOldPayments() {
         continueAfterFailure = false
         let app = XCUIApplication()
