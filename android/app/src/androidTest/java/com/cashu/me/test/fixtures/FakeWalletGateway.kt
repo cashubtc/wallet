@@ -2,7 +2,6 @@ package com.cashu.me.test.fixtures
 
 import com.cashu.me.Core.CDK.ForeignNfcSettlement
 import com.cashu.me.Core.CDK.MeltConfirmation
-import com.cashu.me.Core.CDK.MultiUnitWalletRemovalException
 import com.cashu.me.Core.CDK.NfcReceiveReceipt
 import com.cashu.me.Core.CDK.NwcServiceHandle
 import com.cashu.me.Core.CDK.SagaRecoveryReport
@@ -153,12 +152,10 @@ class FakeWalletGateway(
         mintInfo.putIfAbsent(normalized, defaultMint(normalized))
     }
 
-    override suspend fun removeWalletIfSingleUnit(mintUrl: String): Boolean {
+    override suspend fun removeWallets(mintUrl: String): Boolean {
         failIfRequested()
         val normalized = normalize(mintUrl)
-        val registeredUnits = walletUnits[normalized].orEmpty().toList()
-        if (registeredUnits.size > 1) throw MultiUnitWalletRemovalException(registeredUnits)
-        if (registeredUnits.isEmpty()) return false
+        if (walletUnits[normalized].isNullOrEmpty()) return false
         walletUrls -= normalized
         walletUnits -= normalized
         mintInfo -= normalized
@@ -361,8 +358,11 @@ class FakeWalletGateway(
         return SagaRecoveryReport(0, 0, 0, 0)
     }
 
-    override suspend fun recoverIncompleteSagas(mintUrl: String): SagaRecoveryReport =
-        SagaRecoveryReport(recovered = 0, compensated = 0, skipped = 0, failed = 0)
+    val sagaRecoveryCalls = AtomicInteger()
+    override suspend fun recoverIncompleteSagas(mintUrl: String): SagaRecoveryReport {
+        sagaRecoveryCalls.incrementAndGet()
+        return SagaRecoveryReport(recovered = 0, compensated = 0, skipped = 0, failed = 0)
+    }
 
     override suspend fun sendEcashToken(
         amount: Long,

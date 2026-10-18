@@ -42,6 +42,18 @@ class PaymentRecoveryJourneyTest {
         fake.nextCloseFailure = null
     }
 
+    /** "View in history" from a payment the mint hasn't confirmed must ask the mint again. */
+    @Test fun openingHistoryRechecksHeldPayments() {
+        val app = launch()
+        val fake = checkNotNull(app.fakeGateway)
+        robot.awaitTag(UiTestTags.WalletScreen)
+        // The deterministic policy runs no startup maintenance or foreground poll,
+        // so opening History is the only thing that can start this check.
+        assertEquals(0, fake.sagaRecoveryCalls.get())
+        robot.tapText("History").awaitTag(UiTestTags.HistoryScreen)
+        compose.waitUntil(5_000) { fake.sagaRecoveryCalls.get() > 0 }
+    }
+
     @Test fun receiveLaterCanBeClaimedFromHistoryExactlyOnce() {
         val app = launch(FixtureMode.SeededWithMint, FakeWalletGateway.MemoDeterministicToken)
         robot.awaitTag(UiTestTags.ReceiveEcashDetail).tapText("Receive later").awaitTag(UiTestTags.WalletScreen)

@@ -10,12 +10,17 @@ enum class WalletMessageSeverity { Error, Caution, Info }
  *
  * `isTerminal` marks a permanent outcome (already spent / already paid) where a
  * retry is futile, so the UI can offer "Done" instead of "Try again".
+ *
+ * `awaitsMintConfirmation` marks a payment that left the wallet but the mint
+ * hasn't confirmed, so the funds are held rather than lost. The UI shows a
+ * waiting face, not a failure.
  */
 data class WalletMessage(
     val text: String,
     val severity: WalletMessageSeverity = WalletMessageSeverity.Error,
     val isTerminal: Boolean = false,
     val title: String? = null,
+    val awaitsMintConfirmation: Boolean = false,
 ) {
     val isRetryable: Boolean get() = !isTerminal
 }
@@ -43,17 +48,13 @@ object WalletErrorMessages {
         "The wallet couldn't finish that action. Try again in a moment."
 
     fun classify(error: Throwable): WalletMessage {
-        // This is an application safety policy, not a transport failure. Its
-        // guidance contains "connected", which the raw network matcher catches.
-        if (error is com.cashu.me.Core.CDK.MultiUnitWalletRemovalException) {
-            return WalletMessage(checkNotNull(error.message))
-        }
         if (error is com.cashu.me.Core.CDK.MeltPaymentRecoveryException) {
             return WalletMessage(
                 text = checkNotNull(error.message),
                 severity = WalletMessageSeverity.Caution,
                 isTerminal = true,
-                title = if (error.unresolved) "Payment status unknown" else "Payment returned",
+                title = if (error.unresolved) "Waiting for mint" else "Payment returned",
+                awaitsMintConfirmation = error.unresolved,
             )
         }
         val raw = error.message ?: error.toString()

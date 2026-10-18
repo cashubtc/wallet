@@ -33,7 +33,10 @@ class MeltPaymentRecoveryTest {
         } catch (error: MeltPaymentRecoveryException) {
             assertTrue(error.unresolved)
             assertTrue(error.walletMessage.isTerminal)
-            assertEquals("Payment status unknown", error.walletMessage.title)
+            assertEquals("Waiting for mint", error.walletMessage.title)
+            // Held, not failed: the UI shows the waiting face and says the funds are held.
+            assertTrue(error.walletMessage.awaitsMintConfirmation)
+            assertTrue(error.walletMessage.text.contains("held"))
         }
     }
 
@@ -44,6 +47,7 @@ class MeltPaymentRecoveryTest {
                 fail("UNPAID must require a fresh quote or further recovery")
             } catch (error: MeltPaymentRecoveryException) {
                 assertEquals(reserved, error.unresolved)
+                assertEquals(reserved, error.walletMessage.awaitsMintConfirmation)
                 assertTrue(error.walletMessage.isTerminal)
             }
         }

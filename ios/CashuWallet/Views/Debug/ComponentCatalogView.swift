@@ -20,7 +20,7 @@ struct ComponentCatalogView: View {
     /// Which page to render. Split in two so each fits one screenshot without
     /// scrolling, and so each pairs with its Android counterpart.
     enum Page {
-        case matrix, variants, activity, history, onchainStatus
+        case matrix, variants, activity, history, onchainStatus, awaitingMint
 
         init(rawValue: String?) {
             switch rawValue {
@@ -28,6 +28,7 @@ struct ComponentCatalogView: View {
             case "history": self = .history
             case "variants": self = .variants
             case "onchain-status": self = .onchainStatus
+            case "awaiting-mint": self = .awaitingMint
             default: self = .matrix
             }
         }
@@ -52,10 +53,13 @@ struct ComponentCatalogView: View {
                 bannerSection
             case .variants:
                 handRolledVariants
+            case .awaitingMint:
+                AwaitingMintCatalog()
             }
             Spacer(minLength: 0)
         }
-        .padding(16)
+        // The status face fills the screen; page padding would inset it.
+        .padding(page == .awaitingMint ? 0 : 16)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -183,6 +187,44 @@ private struct OnchainStatusCatalog: View {
                 .accessibilityIdentifier("next-onchain-status")
             Text("Retries: \(retries)")
                 .accessibilityIdentifier("onchain-status-retries")
+        }
+    }
+}
+
+/// The send status face for a payment the mint hasn't confirmed, driven by the
+/// real unresolved-melt error, so a UI test can check it without a stuck mint.
+private struct AwaitingMintCatalog: View {
+    @State private var viewedHistory = false
+
+    private let message = MeltPaymentRecoveryError.unresolved(
+        quoteID: "catalog-quote",
+        mintURL: "https://testnut.cashu.space",
+        operationID: "catalog-operation"
+    ).walletMessage
+
+    var body: some View {
+        PaymentStatusView(
+            details: [
+                .init(label: "Method", value: "BOLT11"),
+                .init(label: "Amount", isAmount: true, value: "2,500 sat"),
+                .init(label: "Network fee", value: "10 sat"),
+                .init(label: "Mint", value: "Testnut"),
+            ],
+            phase: .failure(
+                message: message.text,
+                isCaution: message.severity == .caution,
+                isTerminal: message.recoverability == .terminal
+            ),
+            awaitingMint: message.awaitsMintConfirmation,
+            onViewHistory: { viewedHistory = true },
+            onDone: {},
+            onRetry: {}
+        )
+        .overlay(alignment: .top) {
+            if viewedHistory {
+                Text("Viewed history")
+                    .accessibilityIdentifier("awaiting-mint-viewed-history")
+            }
         }
     }
 }

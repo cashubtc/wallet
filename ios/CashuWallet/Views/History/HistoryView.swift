@@ -183,9 +183,12 @@ struct HistoryView: View {
                 // Show the current ledger immediately, then quietly re-check
                 // pending mint quotes (throttled) so a paid BOLT12 offer lands
                 // in history just by opening the tab — no pull-to-refresh.
+                // Held payments get the same check, so "View in History" from
+                // a payment the mint hasn't confirmed asks the mint right away.
                 await walletManager.loadTransactions()
                 didInitialLoad = true
                 await walletManager.syncPendingMintQuotesIfStale()
+                await walletManager.syncPendingMeltQuotes()
             }
             .onReceive(NotificationCenter.default.publisher(for: .cashuTransactionsUpdated)) { _ in
                 transactionUpdateRevision += 1
