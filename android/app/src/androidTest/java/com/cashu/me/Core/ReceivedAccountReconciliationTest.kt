@@ -45,7 +45,10 @@ class ReceivedAccountReconciliationTest {
             val mint = store.loadMints().single()
             runBlocking {
                 fake.ensureWallet(mint.url, "usd")
-                assertTrue(runCatching { manager.removeMint(mint) }.isFailure)
+                // Multi-unit removal is supported; inject an actual native failure.
+                val failure = IllegalStateException("Native removal unavailable")
+                fake.nextFailure = failure
+                assertSame(failure, runCatching { manager.removeMint(mint) }.exceptionOrNull())
             }
             assertFalse(store.isMintRemoved(mint.url))
             assertEquals(listOf(mint.url), store.loadMints().map { it.url })
