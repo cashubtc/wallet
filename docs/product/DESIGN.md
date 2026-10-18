@@ -226,7 +226,9 @@ What this system explicitly rejects, pulled verbatim from docs/product/PRODUCT.m
   amount changes, which says why the amount came out under the balance.)* No
   fill, card or pill. With exactly
   two mints the rows have no chevron and the swap control is the only way to
-  change the pair. `MintTransferRouteView` (iOS) / `MintTransferRoute` (Android).
+  change the pair. *(2026-10-18: with three or more mints the chevron follows
+  the mint's name, as on Send's "From {mint}", rather than sitting at the
+  trailing edge, where it crowded Max on the line below.)* `MintTransferRouteView` (iOS) / `MintTransferRoute` (Android).
   *(2026-10-01: each slot carries a visible footnote / labelMedium caption,
   "From" and "To", that stays with the slot when the mints trade places, so the
   direction is read from words rather than from the glyph. The destination's
@@ -1585,7 +1587,8 @@ code must be).
    SwiftUI's own `.blurReplace` on `.snappy(0.28)`, keyed to the mint, so the
    outgoing mint blurs out as the incoming one comes into focus where it
    stands. Nothing travels between the slots and nothing is directional; the
-   caption and chevron belong to the slot and stay still. A pick from the list
+   caption belongs to the slot and stays still, and the chevron keeps its
+   place after the name. A pick from the list
    lands the same way. The glyph makes a half turn on `.smooth(duration:
    0.4)` (user-picked from a side-by-side of the options): symmetric, it lands
    on itself, and with no overshoot it settles square. Only the arrows turn,

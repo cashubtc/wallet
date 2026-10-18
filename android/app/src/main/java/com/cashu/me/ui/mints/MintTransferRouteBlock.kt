@@ -330,13 +330,15 @@ private fun RouteIdentity(
 
 @Composable
 private fun IdentityRow(mint: MintInfo, showsChevron: Boolean) {
+    // The chevron follows the name, as on Send's "From {mint}", which leaves
+    // the trailing edge to Max on the line below (iOS parity).
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
+        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.micro),
     ) {
         // The name belongs to the mint, the chevron to the slot.
-        SlotMorph(state = mint, key = MintInfo::url, modifier = Modifier.weight(1f)) { current ->
+        SlotMorph(state = mint, key = MintInfo::url, modifier = Modifier.weight(1f, fill = false)) { current ->
             Text(
                 text = current.name,
                 style = MaterialTheme.typography.bodyLarge,
@@ -431,7 +433,7 @@ private fun MaxControl(
                     }
                 }
             },
-        // Aligned to the chevron above it.
+        // At the trailing edge, clear of the chevron, which follows the name.
         contentAlignment = Alignment.CenterEnd,
     ) {
         Text(

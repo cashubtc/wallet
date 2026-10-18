@@ -90,7 +90,8 @@ struct MintTransferRouteView: View {
             }
         }
         // A different mint taking the slot is the only change that morphs
-        // (DESIGN.md §6, animation 8); the caption and chevron stay put.
+        // (DESIGN.md §6, animation 8); the caption stays put, and the
+        // chevron keeps its place after the name.
         .animation(reduceMotion ? .easeInOut(duration: 0.2) : .snappy(duration: 0.28), value: mint.id)
     }
 
@@ -117,7 +118,9 @@ struct MintTransferRouteView: View {
         direction: MintSelectorDirection,
         onChoose: (() -> Void)?
     ) -> some View {
-        let content = HStack(spacing: Metrics.gap) {
+        // The chevron follows the name, as on Send's "From {mint}", which
+        // leaves the trailing edge to Max on the line below.
+        let content = HStack(spacing: 6) {
             // The name belongs to the mint, the chevron to the slot.
             ZStack(alignment: .leading) {
                 Text(mint.name)
@@ -127,13 +130,13 @@ struct MintTransferRouteView: View {
                     .id(mint.id)
                     .transition(mintChange)
             }
-            Spacer(minLength: 8)
             if onChoose != nil {
                 Image(systemName: "chevron.down")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .accessibilityHidden(true)
             }
+            Spacer(minLength: 0)
         }
         .frame(minHeight: Metrics.identityHeight, alignment: .bottom)
         .contentShape(Rectangle())
@@ -207,7 +210,7 @@ struct MintTransferRouteView: View {
                     ProgressView().controlSize(.small)
                 }
             }
-            // Aligned to the chevron above it, or to the balance when stacked.
+            // At the trailing edge, or under the balance when stacked.
             .frame(minWidth: 44, minHeight: 44, alignment: alignment)
             .contentShape(Rectangle())
         }
