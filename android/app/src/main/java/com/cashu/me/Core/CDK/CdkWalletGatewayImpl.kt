@@ -1,5 +1,8 @@
 package com.cashu.me.Core.CDK
 
+import com.cashu.me.Models.MintUrlIdentity
+import com.cashu.me.Core.toDomainUnit
+
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -285,10 +288,6 @@ class CdkWalletGatewayImpl : WalletGateway {
 
     override suspend fun unitBalance(mintUrl: String, unit: String): Long = cdkCall {
         checkNotNull(database).getBalance(CdkMintUrl(mintUrl), cdkUnit(unit), listOf(org.cashudevkit.ProofState.UNSPENT)).toLong()
-    }
-
-    override suspend fun unitBalanceIfExists(mintUrl: String, unit: String): Long? = cdkCall {
-        runCatching { walletFor(mintUrl, cdkUnit(unit)).totalBalance().value.toLong() }.getOrNull()
     }
 
     override suspend fun createMintQuote(amount: Long?, method: PaymentMethodKind, mintUrl: String, unit: String, description: String?): MintQuoteInfo = cdkCall {
@@ -942,7 +941,7 @@ class CdkWalletGatewayImpl : WalletGateway {
         requireRepository().createWallet(CdkMintUrl(mintUrl), unit, null)
     }
 
-    private fun normalizeMintUrl(url: String): String = url.trim().trimEnd('/')
+    private fun normalizeMintUrl(url: String): String = MintUrlIdentity.normalized(url)
 
     private fun requireRepository(): CdkWalletRepository =
         repository ?: throw CdkGatewayUnavailable("Wallet repository is not initialized.")
@@ -1056,14 +1055,6 @@ class CdkWalletGatewayImpl : WalletGateway {
         )
     }
 
-    private fun CdkCurrencyUnit.toDomainUnit(): String = when (this) {
-        CdkCurrencyUnit.Sat -> "sat"
-        CdkCurrencyUnit.Msat -> "msat"
-        CdkCurrencyUnit.Usd -> "usd"
-        CdkCurrencyUnit.Eur -> "eur"
-        CdkCurrencyUnit.Auth -> "auth"
-        is CdkCurrencyUnit.Custom -> unit
-    }
 
     private fun CdkMintQuote.toDomain(
         fallbackAmount: Long?,

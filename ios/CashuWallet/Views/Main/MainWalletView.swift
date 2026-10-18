@@ -494,7 +494,10 @@ struct MainWalletView: View {
             sectionHeader("Recent")
 
             ForEach(items) { item in
-                transactionRow(transaction: item)
+                TransactionRowView(transaction: item) {
+                    HapticFeedback.selection()
+                    selectedTransaction = item
+                }
             }
 
             Button(action: onViewAllHistory) {
@@ -533,114 +536,6 @@ struct MainWalletView: View {
     }
 
     // MARK: - Transaction row (slimmer than HistoryView's variant)
-
-    private func transactionRow(transaction: WalletTransaction) -> some View {
-        Button {
-            HapticFeedback.selection()
-            selectedTransaction = transaction
-        } label: {
-            HStack(spacing: 14) {
-                rowIcon(for: transaction)
-                    .frame(width: 36, height: 36)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(rowTitle(for: transaction))
-                        .font(.body.weight(.medium))
-                        .lineLimit(1)
-
-                    Text(formatRelativeDate(transaction.date))
-                        .cashuText(.metadata)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer(minLength: 8)
-
-                TransactionAmountColumn(transaction: transaction)
-            }
-            .padding(.horizontal, 4)
-            .padding(.vertical, 16)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(rowAccessibilityLabel(for: transaction))
-        .accessibilityHint("Opens transaction details")
-    }
-
-    @ViewBuilder
-    private func rowIcon(for transaction: WalletTransaction) -> some View {
-        TransactionIcon(direction: transaction.type)
-    }
-
-    private func rowTitle(for transaction: WalletTransaction) -> String {
-        transaction.displayTitle
-    }
-
-    private func rowAccessibilityLabel(for transaction: WalletTransaction) -> String {
-        [
-            rowTitle(for: transaction),
-            transaction.isUnfundedAddress ? nil : formatAmount(transaction),
-            transaction.status == .completed ? "completed" : transaction.displayStatusText.lowercased(),
-            formatRelativeDate(transaction.date),
-        ]
-        .compactMap { $0 }
-        .joined(separator: ", ")
-    }
-
-    private func formatAmount(_ transaction: WalletTransaction) -> String {
-        let value = AmountFormatter.displayMintUnitAmount(
-            amount: transaction.amount,
-            unit: transaction.unit,
-            preferredPrimary: settings.homeBalancePrimary,
-            showFiat: settings.showFiatBalance,
-            btcPrice: priceService.btcPriceUSD,
-            currencyCode: settings.bitcoinPriceCurrency,
-            useBitcoinSymbol: settings.useBitcoinSymbol
-        ).primary
-        guard !transaction.isUnsettled else { return value }
-        return transaction.type == .incoming ? "+\(value)" : value
-    }
-
-    // MARK: - Relative date
-
-    private static let shortTimeFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateStyle = .none
-        f.timeStyle = .short
-        return f
-    }()
-
-    private static let sameYearDateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.setLocalizedDateFormatFromTemplate("MMMd")
-        return f
-    }()
-
-    private static let otherYearDateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.setLocalizedDateFormatFromTemplate("MMMdyyyy")
-        return f
-    }()
-
-    private func formatRelativeDate(_ date: Date) -> String {
-        let now = Date()
-        let delta = now.timeIntervalSince(date)
-        if delta < 60 { return "Now" }
-
-        let calendar = Calendar.current
-        if calendar.isDateInToday(date) {
-            if delta < 3600 {
-                let minutes = max(1, Int(delta / 60))
-                return "\(minutes) min ago"
-            }
-            return Self.shortTimeFormatter.string(from: date)
-        }
-        if calendar.isDateInYesterday(date) {
-            return "Yesterday \(Self.shortTimeFormatter.string(from: date))"
-        }
-        let sameYear = calendar.component(.year, from: date) == calendar.component(.year, from: now)
-        return (sameYear ? Self.sameYearDateFormatter : Self.otherYearDateFormatter).string(from: date)
-    }
 
     // MARK: - Helpers
 

@@ -30,7 +30,6 @@ import com.cashu.me.Core.WalletManager
 import com.cashu.me.Models.MintInfo
 import com.cashu.me.ui.components.ToolbarIcon
 import com.cashu.me.ui.restore.RestoreMintsStep
-import com.cashu.me.ui.restore.RestorePresentation
 import com.cashu.me.ui.restore.RestoreProgressStep
 import com.cashu.me.ui.restore.RestoreSeedStep
 import com.cashu.me.ui.restore.restoreSeedInstallErrorMessage
@@ -110,8 +109,7 @@ fun RestoreWalletScreen(
         ) { current ->
             when (current) {
                 InAppRestoreStep.Seed -> RestoreSeedStep(
-                    presentation = RestorePresentation.InApp,
-                    restoring = restoring,
+                                        restoring = restoring,
                     errorText = seedError,
                     onClearError = { seedError = null },
                     onBack = null,
@@ -130,8 +128,7 @@ fun RestoreWalletScreen(
                 )
 
                 is InAppRestoreStep.Mints -> RestoreMintsStep(
-                    presentation = RestorePresentation.InApp,
-                    walletManager = walletManager,
+                                        walletManager = walletManager,
                     nostrMintBackupService = nostrMintBackupService,
                     onBack = {
                         seedError = null
@@ -144,8 +141,7 @@ fun RestoreWalletScreen(
                 )
 
                 is InAppRestoreStep.Progress -> RestoreProgressStep(
-                    presentation = RestorePresentation.InApp,
-                    walletManager = walletManager,
+                                        walletManager = walletManager,
                     mintUrls = current.mintUrls,
                     stagedPreviews = current.previews,
                     onContinue = {

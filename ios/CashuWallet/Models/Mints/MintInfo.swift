@@ -53,8 +53,7 @@ struct MintPreviewInfo {
 extension MintInfo {
     static func displayName(for url: String, in mints: [MintInfo]) -> String {
         func normalized(_ value: String) -> String {
-            value.trimmingCharacters(in: .whitespacesAndNewlines)
-                .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            MintURLIdentity.normalized(value)
         }
         let name = mints.first { normalized($0.url) == normalized(url) }?.name
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -171,4 +170,49 @@ extension MintInfo {
     }
 }
 
-// Extension for notifications
+
+/// Shared mint identity filtering and payment selection. Callers choose whether
+/// an explicit preference is binding; NFC may fall back, while send confirms it.
+enum MintSelection {
+    static func matching(_ mints: [MintInfo], requestedURLs: [String]) -> [MintInfo] {
+        guard !requestedURLs.isEmpty else { return mints }
+        let identities = Set(requestedURLs.map(MintURLIdentity.normalized))
+        return mints.filter { identities.contains(MintURLIdentity.normalized($0.url)) }
+    }
+
+    static func select(
+        from mints: [MintInfo], requestedURLs: [String], amount: UInt64,
+        preferredURL: String?, activeURL: String? = nil,
+        requiresPreferredBalance: Bool = false
+    ) throws -> MintInfo {
+        let candidates = matching(mints, requestedURLs: requestedURLs)
+        guard !candidates.isEmpty else { throw NFCPaymentError.noMatchingMint(requestedMints: requestedURLs) }
+        if let preferredURL,
+           let mint = candidates.first(where: { MintURLIdentity.normalized($0.url) == MintURLIdentity.normalized(preferredURL) }) {
+            if mint.balance >= amount { return mint }
+            if requiresPreferredBalance { throw NFCPaymentError.insufficientBalance(required: amount, available: mint.balance) }
+        }
+        if let activeURL,
+           let mint = candidates.first(where: { MintURLIdentity.normalized($0.url) == MintURLIdentity.normalized(activeURL) }),
+           mint.balance >= amount { return mint }
+        guard let mint = candidates.first(where: { $0.balance >= amount }) else {
+            throw NFCPaymentError.insufficientBalance(required: amount, available: candidates.map(\.balance).max() ?? 0)
+        }
+        return mint
+    }
+
+    static func sorted(_ mints: [MintInfo], selectedID: String? = nil, minimumAmount: UInt64? = nil) -> [MintInfo] {
+        mints.sorted { lhs, rhs in
+            let lhsSelected = lhs.id == selectedID
+            let rhsSelected = rhs.id == selectedID
+            if lhsSelected != rhsSelected { return lhsSelected }
+            if let minimumAmount {
+                let lhsCanPay = lhs.balance >= minimumAmount
+                let rhsCanPay = rhs.balance >= minimumAmount
+                if lhsCanPay != rhsCanPay { return lhsCanPay }
+            }
+            if lhs.balance == rhs.balance { return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending }
+            return lhs.balance > rhs.balance
+        }
+    }
+}

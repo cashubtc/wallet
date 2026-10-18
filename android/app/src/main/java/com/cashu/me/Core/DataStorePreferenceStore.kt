@@ -23,6 +23,13 @@ internal class DataStorePreferenceStore(
     name: String,
 ) {
     private val dataStore = DataStorePreferenceRegistry.store(context, name)
+    private val readSnapshot = ThreadLocal<Preferences?>()
+
+    fun <T> withReadSnapshot(block: () -> T): T {
+        if (readSnapshot.get() != null) return block()
+        readSnapshot.set(read())
+        return try { block() } finally { readSnapshot.remove() }
+    }
 
     fun string(key: String): String? = read()[stringPreferencesKey(key)]
 
@@ -54,7 +61,7 @@ internal class DataStorePreferenceStore(
         read().asMap().mapKeys { it.key.name }.mapValues { it.value.snapshotPreferenceValue() }
 
     fun remove(key: String) {
-        edit { preferences -> preferences.remove(stringPreferencesKey(key)) }
+        edit { preferences -> removeDynamicPreference(preferences, key) }
     }
 
     fun removeKeys(keys: Iterable<String>) {
@@ -94,7 +101,7 @@ internal class DataStorePreferenceStore(
     }
 
     private fun read(): Preferences =
-        runBlocking(Dispatchers.IO) { dataStore.data.first() }
+        readSnapshot.get() ?: runBlocking(Dispatchers.IO) { dataStore.data.first() }
 
     private fun edit(block: (MutablePreferences) -> Unit) {
         runBlocking(Dispatchers.IO) { dataStore.edit(block) }

@@ -34,7 +34,6 @@ enum NIP17 {
         case decryptFailed
         case invalidSeal
         case invalidRumor
-        case canonicalizeFailed
     }
 
     /// Unwrap an incoming kind:1059 gift wrap addressed to us. Returns the inner kind:14 rumor.

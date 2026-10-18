@@ -1,5 +1,6 @@
 package com.cashu.me.ui.settings
 
+import com.cashu.me.ui.components.openExternal
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import android.content.Context
@@ -264,11 +265,4 @@ fun SettingsScreen(
             onDismiss = { confirmDelete = false },
         )
     }
-}
-
-private fun Context.openExternal(url: String) {
-    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
-        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    }
-    startActivity(intent)
 }

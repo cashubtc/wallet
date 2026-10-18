@@ -276,7 +276,7 @@ private fun mintDisplayName(url: String): String =
         ?: url
 
 private fun sameMintUrl(left: String, right: String): Boolean =
-    left.trim().trimEnd('/').lowercase() == right.trim().trimEnd('/').lowercase()
+    com.cashu.me.Models.MintUrlIdentity.comparisonKey(left) == com.cashu.me.Models.MintUrlIdentity.comparisonKey(right)
 
 private fun textRow(
     key: SendPaymentDetailKey,

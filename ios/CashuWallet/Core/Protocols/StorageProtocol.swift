@@ -293,3 +293,36 @@ enum StorageKeys {
         static let nostrPrivateKey = "nostr_private_key"
     }
 }
+
+
+extension StorageProtocol {
+    func migratedValue<T: Codable>(forKey key: String, legacyKeys: [String]) -> T? {
+        if let value: T = try? get(forKey: key) { return value }
+        for legacyKey in legacyKeys {
+            if let value: T = try? get(forKey: legacyKey) {
+                saveValue(value, forKey: key)
+                return value
+            }
+        }
+        return nil
+    }
+
+    func saveValue<T: Codable>(_ value: T, forKey key: String) {
+        do { try set(value, forKey: key) }
+        catch { AppLogger.wallet.error("Failed to save \(key): \(error)") }
+    }
+
+    func saveOptionalValue<T: Codable>(_ value: T?, forKey key: String) {
+        do {
+            if let value { try set(value, forKey: key) }
+            else { try remove(forKey: key) }
+        } catch { AppLogger.wallet.error("Failed to update \(key): \(error)") }
+    }
+
+    func removeValues(keys: [String]) {
+        for key in Set(keys) {
+            do { try remove(forKey: key) }
+            catch { AppLogger.wallet.error("Failed to remove \(key): \(error)") }
+        }
+    }
+}

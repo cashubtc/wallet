@@ -1,5 +1,6 @@
 package com.cashu.me.Core
 
+import com.cashu.me.Models.MintUrlIdentity
 import java.net.URL
 import java.text.Normalizer
 import java.util.UUID
@@ -36,7 +37,6 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import com.cashu.me.Core.Protocols.SecureStorage
 import com.cashu.me.Core.Protocols.StorageKeys
-import com.cashu.me.Core.Protocols.WalletServiceProtocol
 import com.cashu.me.Core.Wallet.isInsufficientBalance
 import com.cashu.me.Models.MeltPaymentResult
 import com.cashu.me.Models.MeltQuoteInfo
@@ -73,7 +73,7 @@ class WalletManager(
     private val pollQuotesInForeground: Boolean = true,
     private val externalServicesEnabled: Boolean = true,
     private val allowCleartextLocalTestMints: Boolean = false,
-) : WalletServiceProtocol, NPCQuoteClaimHandler {
+) : NPCQuoteClaimHandler {
     @Serializable
     private data class WalletReplacementSnapshot(
         val mnemonic: String?,
@@ -100,7 +100,6 @@ class WalletManager(
     val receivedPayments: SharedFlow<ReceivedPaymentEvent> = mutableReceivedPayments.asSharedFlow()
     private val initializationMutex = Mutex()
     private val replacement = DurableWalletReplacement(secureStorage, databasePathManager.replacementBoundaryFiles())
-    private val mintMetadataFetcher = WalletMintMetadataFetcher(allowCleartextLocalTestMints)
     private val mintQuoteSyncService = WalletMintQuoteSyncService(gateway, walletStore)
     private val focusedMintQuoteMonitor = FocusedMintQuoteMonitor()
     private val transactionLoader = WalletTransactionLoader(walletStore, gateway)
@@ -131,7 +130,7 @@ class WalletManager(
     private var pendingQuotePollJob: Job? = null
     private var startupMaintenanceJob: Job? = null
 
-    override suspend fun initialize() {
+    suspend fun initialize() {
         initializationMutex.withLock {
             if (mutableState.value.isRuntimeReady) return@withLock
 
@@ -165,7 +164,6 @@ class WalletManager(
                             isInitialized = true,
                             isLoading = false,
                             needsOnboarding = true,
-                            canExitOnboarding = false,
                             mints = walletStore.loadMints(),
                         )
                     }
@@ -275,13 +273,6 @@ class WalletManager(
         }
     }
 
-    override suspend fun createNewWallet() {
-        withLoading {
-            val mnemonic = gateway.generateMnemonic()
-            installCleanWallet(mnemonic, needsOnboarding = false)
-        }
-    }
-
     suspend fun generateMnemonicForOnboarding(): String =
         withLoadingResult { gateway.generateMnemonic() }
 
@@ -355,11 +346,7 @@ class WalletManager(
         withLoading { installCleanWallet(normalized, needsOnboarding = keepOnboarding, restoring = true) }
     }
 
-    override suspend fun restoreWallet(mnemonic: String) {
-        initializeRestoredWallet(mnemonic)
-    }
-
-    override suspend fun deleteWallet() {
+    suspend fun deleteWallet() {
         withLoading {
             initializationMutex.withLock {
                 cashuRequestListener?.pauseForWalletBoundary()
@@ -384,18 +371,17 @@ class WalletManager(
                         isInitialized = true,
                         isRuntimeReady = true,
                         needsOnboarding = true,
-                        canExitOnboarding = false,
                     )
                 }
             }
         }
     }
 
-    override suspend fun addMint(url: String) {
+    suspend fun addMint(url: String) {
         var addedMintUrl: String? = null
         withLoading {
-            val normalized = mintMetadataFetcher.normalizeMintUrl(url)
-            mintMetadataFetcher.validateMintUrl(normalized)?.let { throw IllegalArgumentException(it) }
+            val normalized = MintUrlIdentity.withDefaultScheme(url)
+            MintUrlIdentity.validationError(normalized, allowCleartextLocalTestMints)?.let { throw IllegalArgumentException(it) }
             if (mutableState.value.mints.any { it.url == normalized }) {
                 throw IllegalArgumentException("Mint already exists.")
             }
@@ -437,7 +423,7 @@ class WalletManager(
         }
     }
 
-    override suspend fun removeMint(mint: MintInfo) {
+    suspend fun removeMint(mint: MintInfo) {
         withLoading {
             val trackedMint = mutableState.value.mints.firstOrNull { it.url == mint.url }
                 ?: throw IllegalArgumentException("Mint is no longer tracked.")
@@ -462,15 +448,15 @@ class WalletManager(
         }
     }
 
-    override suspend fun setActiveMint(mint: MintInfo) {
+    suspend fun setActiveMint(mint: MintInfo) {
         walletStore.activeMintURL = mint.url
         loadCachedState(needsOnboarding = false)
     }
 
-    override suspend fun restoreFromMint(url: String): RestoreMintResult =
+    suspend fun restoreFromMint(url: String): RestoreMintResult =
         withLoadingResult {
-            val normalized = mintMetadataFetcher.normalizeMintUrl(url)
-            mintMetadataFetcher.validateMintUrl(normalized)?.let { throw IllegalArgumentException(it) }
+            val normalized = MintUrlIdentity.withDefaultScheme(url)
+            MintUrlIdentity.validationError(normalized, allowCleartextLocalTestMints)?.let { throw IllegalArgumentException(it) }
             val trackedMintUrl = ensureMintTracked(normalized)
             val result = withContext(Dispatchers.IO) { gateway.restoreMint(trackedMintUrl) }
             refreshBalance()
@@ -587,11 +573,11 @@ class WalletManager(
      * Throws when the mint is unreachable so callers can map Checking → Offline.
      */
     suspend fun fetchLiveMintInfo(mintUrl: String): MintInfo? {
-        val normalized = mintMetadataFetcher.normalizeMintUrl(mintUrl)
+        val normalized = MintUrlIdentity.withDefaultScheme(mintUrl)
         return gateway.fetchMintInfo(normalized)
     }
 
-    override suspend fun createMintQuote(amount: Long?, method: PaymentMethodKind, unit: String, description: String?): MintQuoteInfo {
+    suspend fun createMintQuote(amount: Long?, method: PaymentMethodKind, unit: String = "sat", description: String? = null): MintQuoteInfo {
         val active = mutableState.value.activeMint ?: throw IllegalStateException("No active mint.")
         val offerDescription = normalizedOfferDescription(description)
         return withLoadingResult {
@@ -656,19 +642,6 @@ class WalletManager(
     suspend fun observeOnchainDeposit(quote: MintQuoteInfo): OnchainPaymentObservation? =
         transactionLoader.observeOnchainDeposit(quote)
 
-    suspend fun createMintQuoteForMint(
-        mintUrl: String,
-        amount: Long?,
-        method: PaymentMethodKind = PaymentMethodKind.Bolt11,
-        unit: String = "sat",
-    ): MintQuoteInfo =
-        withLoadingResult {
-            val trackedMintUrl = ensureMintTracked(mintUrl)
-            gateway.createMintQuote(amount, method, trackedMintUrl, unit).also {
-                mintQuoteSyncService.rememberMintQuoteTimestamp(it.id)
-            }
-        }
-
     /** The current seed is never replaced. Approval precedes import so normal
      * quote reconciliation may safely finish this deposit after a restart. */
     suspend fun recoverDeposit(request: DepositRecoveryRequest): DepositRecoveryResult = initializationMutex.withLock {
@@ -715,7 +688,7 @@ class WalletManager(
     fun subscribeToMintQuote(quoteId: String): Flow<MintQuoteInfo> =
         gateway.subscribeToMintQuote(quoteId) { mintQuoteSyncService.shouldAttempt(quoteId) }
 
-    override suspend fun mintTokens(quoteId: String): Long =
+    suspend fun mintTokens(quoteId: String): Long =
         mintTokens(
             quoteId = quoteId,
             unit = "sat",
@@ -909,10 +882,10 @@ class WalletManager(
         }
     }
 
-    override suspend fun createMeltQuote(request: String, amountSats: Long?, preferredMintURL: String?): MeltQuoteInfo =
+    suspend fun createMeltQuote(request: String, amountSats: Long? = null, preferredMintURL: String? = null): MeltQuoteInfo =
         withLoadingResult { gateway.createMeltQuote(request, amountSats, preferredMintURL) }
 
-    override suspend fun meltTokens(quoteId: String, mintUrl: String?): MeltPaymentResult =
+    suspend fun meltTokens(quoteId: String, mintUrl: String? = null): MeltPaymentResult =
         withLoadingResult {
             val confirmation = try {
                 gateway.meltTokens(quoteId, mintUrl)
@@ -1062,7 +1035,7 @@ class WalletManager(
         pendingQuotePollJob = null
     }
 
-    override suspend fun sendTokens(amount: Long, memo: String?, p2pkPubkey: String?, mintUrl: String?, unit: String): SendTokenResult {
+    suspend fun sendTokens(amount: Long, memo: String?, p2pkPubkey: String?, mintUrl: String?, unit: String = "sat"): SendTokenResult {
         val selectedMint = mintUrl ?: mutableState.value.activeMint?.url ?: throw IllegalStateException("No active mint.")
         val normalizedP2PKPubkey = SettingsManager.normalizeP2PKPublicKeyForSend(p2pkPubkey)
         return withLoadingResult {
@@ -1089,7 +1062,7 @@ class WalletManager(
         }
     }
 
-    override suspend fun receiveTokens(tokenString: String): Long =
+    suspend fun receiveTokens(tokenString: String): Long =
         receiveTokens(
             tokenString = tokenString,
             confirmationOwner = ReceiveConfirmationOwner.InFlow,
@@ -1577,16 +1550,6 @@ class WalletManager(
 
     fun backupMnemonic(): String? = secureStorage.loadString(StorageKeys.secureWalletMnemonic)
 
-    fun openRestoreFlow() {
-        if (!secureStorage.contains(StorageKeys.secureWalletMnemonic)) return
-        update { copy(needsOnboarding = true, canExitOnboarding = true, errorMessage = null) }
-    }
-
-    fun closeRestoreFlow() {
-        if (!mutableState.value.canExitOnboarding) return
-        update { copy(needsOnboarding = false, errorMessage = null) }
-    }
-
     suspend fun completeOnboarding() {
         settingsManager.onboardingCompleted = true
         settingsManager.walletRestoreIncomplete = false
@@ -1740,7 +1703,6 @@ class WalletManager(
                 isInitialized = true,
                 isLoading = false,
                 needsOnboarding = needsOnboarding,
-                canExitOnboarding = secureStorage.contains(StorageKeys.secureWalletMnemonic),
                 mints = mints,
                 activeMint = active,
                 transactions = transactions,
@@ -1761,7 +1723,7 @@ class WalletManager(
 
     /** Publish the durable mint before any online reconciliation can fail. */
     private fun trackReceivedMintLocally(url: String, unit: String) {
-        val normalized = mintMetadataFetcher.normalizeMintUrl(url)
+        val normalized = MintUrlIdentity.withDefaultScheme(url)
         if (walletStore.isMintRemoved(normalized)) return
         val current = walletStore.loadMints()
         val existing = current.firstOrNull { com.cashu.me.Core.CDK.mintRemovalUrlsMatch(it.url, normalized) }
@@ -1801,7 +1763,7 @@ class WalletManager(
     }
 
     private suspend fun ensureMintTracked(url: String): String {
-        val normalized = mintMetadataFetcher.normalizeMintUrl(url)
+        val normalized = MintUrlIdentity.withDefaultScheme(url)
         walletStore.setMintRemoved(normalized, removed = false)
         runCatching { gateway.ensureWallet(normalized) }
             .onFailure { AppLogger.wallet.error("CDK wallet preparation is not available yet for $normalized", it) }
@@ -1908,10 +1870,6 @@ class WalletManager(
 
     fun launch(block: suspend CoroutineScope.() -> Unit) {
         scope.launch { block() }
-    }
-
-    fun reopenOnboarding() {
-        update { copy(needsOnboarding = true, canExitOnboarding = true) }
     }
 
     private companion object {

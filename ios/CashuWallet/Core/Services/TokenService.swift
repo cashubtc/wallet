@@ -360,33 +360,13 @@ class TokenService: ObservableObject {
     /// up a wallet repository — `sendTokens` reaches it only after the repository
     /// guard and `getWallet`, which need a live mint.
     func normalizedP2PKPubkey(_ pubkey: String?) throws -> String? {
-        guard let pubkey else { return nil }
-        let trimmed = pubkey.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !trimmed.isEmpty else { return nil }
-
-        let hexCharacters = CharacterSet(charactersIn: "0123456789abcdef")
-        let containsOnlyHex = trimmed.unicodeScalars.allSatisfy { hexCharacters.contains($0) }
-
-        var normalized = trimmed
-        if normalized.count == 64 && containsOnlyHex {
-            normalized = "02\(normalized)"
-        }
-
-        guard normalized.count == 66,
-              (normalized.hasPrefix("02") || normalized.hasPrefix("03")),
-              normalized.unicodeScalars.allSatisfy({ hexCharacters.contains($0) }) else {
-            throw TokenServiceError.invalidP2PKPubkey
-        }
-
+        guard let pubkey, !pubkey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        guard let normalized = P2PKPublicKey.validatedCompressed(pubkey) else { throw TokenServiceError.invalidP2PKPubkey }
         return normalized
     }
 
     private func normalizedP2PKForComparison(_ pubkey: String) -> String {
-        let normalized = pubkey.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if normalized.count == 66, normalized.hasPrefix("02") || normalized.hasPrefix("03") {
-            return String(normalized.dropFirst(2))
-        }
-        return normalized
+        P2PKPublicKey.normalizedForComparison(pubkey)
     }
 }
 

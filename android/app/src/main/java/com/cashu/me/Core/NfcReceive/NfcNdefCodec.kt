@@ -1,5 +1,6 @@
 package com.cashu.me.Core.NfcReceive
 
+import com.cashu.me.Core.Services.NDEFTextRecordCoder
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
 
@@ -21,12 +22,7 @@ internal object NfcNdefCodec {
     private const val CASHU_BINARY_MIME = "application/octet-stream"
 
     fun textFile(text: String): ByteArray {
-        val language = "en".toByteArray(StandardCharsets.US_ASCII)
-        val textBytes = text.toByteArray(StandardCharsets.UTF_8)
-        val payload = ByteArray(1 + language.size + textBytes.size)
-        payload[0] = language.size.toByte()
-        language.copyInto(payload, 1)
-        textBytes.copyInto(payload, 1 + language.size)
+        val payload = NDEFTextRecordCoder.encodeTextPayload(text)
         return type4File(type = byteArrayOf('T'.code.toByte()), payload = payload, tnf = TNF_WELL_KNOWN)
     }
 
@@ -105,29 +101,13 @@ internal object NfcNdefCodec {
                 val languageLength = status and 0x3f
                 require(status and 0x80 == 0) { "UTF-16 NDEF text is unsupported." }
                 require(1 + languageLength <= payload.size) { "NDEF language code is invalid." }
-                NfcNdefPayload.Text(String(payload, 1 + languageLength, payload.size - 1 - languageLength, StandardCharsets.UTF_8))
+                NfcNdefPayload.Text(NDEFTextRecordCoder.decodeTextPayload(payload).orEmpty())
             }
             'U' -> {
-                val prefix = uriPrefix(payload[0].toInt() and 0xff)
-                NfcNdefPayload.Text(prefix + String(payload, 1, payload.size - 1, StandardCharsets.UTF_8))
+                NfcNdefPayload.Text(requireNotNull(NDEFTextRecordCoder.decodeUriPayload(payload)))
             }
             else -> throw IllegalArgumentException("Unsupported NDEF well-known record.")
         }
     }
 
-    private fun uriPrefix(code: Int): String = when (code) {
-        0x01 -> "http://www."
-        0x02 -> "https://www."
-        0x03 -> "http://"
-        0x04 -> "https://"
-        0x05 -> "tel:"
-        0x06 -> "mailto:"
-        0x0d -> "ftp://"
-        0x13 -> "urn:"
-        0x15 -> "sip:"
-        0x16 -> "sips:"
-        0x1d -> "file://"
-        0x23 -> "urn:nfc:"
-        else -> ""
-    }
 }

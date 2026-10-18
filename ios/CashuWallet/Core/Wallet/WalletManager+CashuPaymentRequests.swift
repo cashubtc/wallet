@@ -113,13 +113,7 @@ extension WalletManager {
     func canFulfillFromEcash(_ summary: CashuPaymentRequestSummary) -> Bool {
         guard summary.isSatUnit else { return false }
 
-        let candidates: [MintInfo]
-        if summary.mints.isEmpty {
-            candidates = mints
-        } else {
-            let requestedHosts = Set(summary.mints.map(normalizedMintURL))
-            candidates = mints.filter { requestedHosts.contains(normalizedMintURL($0.url)) }
-        }
+        let candidates = MintSelection.matching(mints, requestedURLs: summary.mints)
 
         guard !candidates.isEmpty else { return false }
 
@@ -296,49 +290,7 @@ extension WalletManager {
         amount: UInt64,
         preferredMintURL: String?
     ) throws -> MintInfo {
-        let requested = request.mints()
-        let candidates: [MintInfo]
-
-        if requested.isEmpty {
-            candidates = mints
-        } else {
-            let requestedHosts = Set(requested.map(normalizedMintURL))
-            candidates = mints.filter { requestedHosts.contains(normalizedMintURL($0.url)) }
-        }
-
-        guard !candidates.isEmpty else {
-            throw NFCPaymentError.noMatchingMint(requestedMints: requested)
-        }
-
-        if let preferredMintURL,
-           let preferredMint = candidates.first(where: {
-               normalizedMintURL($0.url) == normalizedMintURL(preferredMintURL)
-           }) {
-            guard preferredMint.balance >= amount else {
-                throw NFCPaymentError.insufficientBalance(required: amount, available: preferredMint.balance)
-            }
-
-            return preferredMint
-        }
-
-        if let activeMint,
-           let preferredMint = candidates.first(where: {
-               normalizedMintURL($0.url) == normalizedMintURL(activeMint.url)
-           }),
-           preferredMint.balance >= amount {
-            return preferredMint
-        }
-
-        guard let selectedMint = candidates.first(where: { $0.balance >= amount }) else {
-            let available = candidates.map(\.balance).max() ?? 0
-            throw NFCPaymentError.insufficientBalance(required: amount, available: available)
-        }
-
-        return selectedMint
-    }
-
-    private func normalizedMintURL(_ urlString: String) -> String {
-        MintURLIdentity.normalized(urlString)
+        try MintSelection.select(from: mints, requestedURLs: request.mints(), amount: amount, preferredURL: preferredMintURL, activeURL: activeMint?.url, requiresPreferredBalance: true)
     }
 
     // MARK: - Add mint & pay (acquire ecash at an unheld mint, then pay)
@@ -347,9 +299,9 @@ extension WalletManager {
     /// of `amount` into the target mint. Highest balance first; final
     /// affordability (incl. the melt fee reserve) is confirmed by `createMeltQuote`.
     private func fundingSourceMint(excluding targetMintURL: String, amount: UInt64) -> MintInfo? {
-        let targetHost = normalizedMintURL(targetMintURL)
+        let targetHost = MintURLIdentity.normalized(targetMintURL)
         return mints
-            .filter { normalizedMintURL($0.url) != targetHost }
+            .filter { MintURLIdentity.normalized($0.url) != targetHost }
             .filter { $0.supportedMeltMethods.contains(.bolt11) }
             .filter { $0.balance >= amount }
             .max { $0.balance < $1.balance }

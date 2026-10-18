@@ -30,12 +30,10 @@ internal fun walletStartupFailure(hasStoredWallet: Boolean): WalletStartupFailur
 
 data class WalletState(
     val balance: Long = 0,
-    val pendingBalance: Long = 0,
     val isInitialized: Boolean = false,
     /** True once the encrypted seed and local CDK repository are ready. */
     val isRuntimeReady: Boolean = false,
     val needsOnboarding: Boolean = true,
-    val canExitOnboarding: Boolean = false,
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
     val startupFailure: WalletStartupFailure? = null,
