@@ -202,7 +202,9 @@ struct PaymentStatusView: View {
                                 .transition(.opacity)
                         }
                         .padding(.horizontal, 32)
-                        .frame(minHeight: 44)
+                        // Top-aligned so the line sits under the title, not
+                        // floated mid-slot (Android parity).
+                        .frame(minHeight: 44, alignment: .top)
                         .animation(.smooth(duration: 0.3), value: processingMessage)
                     } else {
                         // Reserved slot so success ↔ failure never nudges the icon above it.
@@ -213,7 +215,7 @@ struct PaymentStatusView: View {
                             .lineLimit(3)
                             .opacity(statusMessage == nil ? 0 : 1)
                             .padding(.horizontal, 32)
-                            .frame(minHeight: 44)
+                            .frame(minHeight: 44, alignment: .top)
                     }
                 }
                 .opacity(bandVisible ? 1 : 0)
