@@ -19,6 +19,8 @@ struct MintTransferRouteView: View {
     /// Short screens keep the destination to its identity line.
     var showsDestinationBalance = true
     var isFindingMax = false
+    /// The amount is the one Max filled, until it changes.
+    var isUsingMax = false
     var onUseMax: (() -> Void)?
     /// Nil when there is no other mint to choose; the rows then only inform.
     var onChooseSource: (() -> Void)?
@@ -191,12 +193,15 @@ struct MintTransferRouteView: View {
     }
 
     /// Fills the largest amount this mint can transfer after fees. The word
-    /// keeps its place under the spinner, so the line never shifts.
+    /// keeps its place under the spinner, so the line never shifts. Once used
+    /// it reads "Using Max", dimmed, until the amount changes: that is why
+    /// the amount came out under the balance (Family's pattern).
     private func maxControl(_ onUseMax: @escaping () -> Void, alignment: Alignment) -> some View {
         Button(action: onUseMax) {
             ZStack(alignment: alignment) {
-                Text("Max")
+                Text(isUsingMax ? "Using Max" : "Max")
                     .font(.subheadline.weight(.medium))
+                    .foregroundStyle(isUsingMax ? .secondary : .primary)
                     .opacity(isFindingMax ? 0 : 1)
                 if isFindingMax {
                     ProgressView().controlSize(.small)
@@ -207,9 +212,9 @@ struct MintTransferRouteView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(isFindingMax)
-        .accessibilityLabel("Transfer maximum")
-        .accessibilityHint("Fills the largest amount this mint can transfer after fees")
+        .disabled(isFindingMax || isUsingMax)
+        .accessibilityLabel(isUsingMax ? "Using the maximum" : "Transfer maximum")
+        .accessibilityHint(isUsingMax ? "" : "Fills the largest amount this mint can transfer after fees")
         .accessibilityValue(isFindingMax ? "Checking the network fee" : "")
         .accessibilityIdentifier("mints-transfer-max")
     }
@@ -226,12 +231,11 @@ struct MintTransferRouteView: View {
             .accessibilityLabel(label)
     }
 
-    /// An inline notice moved into the row: the caution glyph carries the
-    /// colour and the words stay secondary, so the line keeps its contrast.
+    /// The balance, then the problem in red words with no glyph, as the note
+    /// under the amount is written.
     private func problemLine(_ balance: String, _ problem: String) -> Text {
-        let glyph = Text(Image(systemName: ErrorSeverity.caution.icon))
-            .foregroundStyle(ErrorSeverity.caution.foreground)
-        return Text("\(glyph) \(balance) · \(problem)")
+        let words = Text(problem).foregroundStyle(ErrorSeverity.caution.noteForeground)
+        return Text("\(balance) · \(words)")
     }
 
     private func supportText(_ text: String) -> some View {

@@ -90,18 +90,21 @@ Cashu Request payment, and NFC receive (Android-only surface).
   its name, with no "available" or "Balance" (screen readers hear "2 sat
   available" and "Balance 1 sat"). "Max" sits at the end of the source's
   balance line, as on Send, and fills the largest amount the mint can transfer
-  after fees (screen readers hear "Transfer maximum"). A problem with a mint is said on that mint's line in
-  the route, after its balance and behind the caution glyph, never under the
-  amount: "2 sat · too little to cover the fee" (the maximum came out at
-  nothing after fees; Max then goes), "2 sat · can't send over
-  Lightning", "1 sat · can't receive over Lightning".
-  The note under the amount is for the amount only, and it holds one line: an
-  info note is written to fit it and carries no glyph; a wallet error shows its
-  {what broke} sentence alone ("Couldn't reach the mint."), since tapping Max
-  again is the retry, and screen readers hear the whole message.
-  Typing a source's whole balance shows the caution "Not enough left for the
-  fee. Use Max." before any quote is asked for: the fee is paid from the source
-  on top of the amount, so the whole balance cannot arrive, and Max is the one
+  after fees (screen readers hear "Transfer maximum"). Once used it reads
+  "Using Max" until the amount changes; that is the whole explanation of an
+  amount that came out under the balance, so no note says it. A problem with
+  a mint is said on that mint's line in the route, after its balance and in
+  red words, never under the amount: "2 sat · too little to cover the fee"
+  (the maximum came out at nothing after fees; Max then goes), "2 sat · can't
+  send over Lightning", "1 sat · can't receive over Lightning".
+  The note under the amount is for the amount only. It takes the conversion
+  line, so it is written to fit one line: red words for a problem, no glyph. A
+  wallet error shows its {what broke} sentence alone ("Couldn't reach the
+  mint."), since tapping Max again is the retry, and screen readers hear the
+  whole message. Over the balance it says "Insufficient balance", as Send
+  does. Typing a source's whole balance says "Not enough left for the fee.
+  Use Max." before any quote is asked for: the fee is paid from the source on
+  top of the amount, so the whole balance cannot arrive, and Max is the one
   control that fixes it. When the quotes lapse on the review screen and are
   replaced, the review says "The fee was updated. Check it and transfer
   again." The commit names the amount that arrives: "Transfer 21 sat".

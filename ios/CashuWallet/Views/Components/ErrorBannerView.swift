@@ -39,6 +39,17 @@ enum ErrorSeverity {
         }
     }
 
+    /// Ink for a note written in colour with no glyph: the line under an
+    /// amount. A problem is red whether it is an error or a caution, since
+    /// orange text fails contrast on a light background; anything else stays
+    /// secondary.
+    var noteForeground: Color {
+        switch self {
+        case .error, .caution: return Color(uiColor: .legibleRed)
+        case .info, .success:  return .secondary
+        }
+    }
+
     /// Prefix spoken by VoiceOver so the tier is announced, not just the message.
     var announcementPrefix: String {
         switch self {
@@ -47,6 +58,16 @@ enum ErrorSeverity {
         case .info:    return ""
         case .success: return ""
         }
+    }
+}
+
+private extension UIColor {
+    /// The system red, except in light mode, where it takes the red iOS uses
+    /// under Increase Contrast: the standard one falls short of 4.5:1 as text
+    /// on white. Dark mode's red already clears it.
+    static let legibleRed = UIColor { traits in
+        guard traits.userInterfaceStyle != .dark else { return .systemRed.resolvedColor(with: traits) }
+        return .systemRed.resolvedColor(with: traits.modifyingTraits { $0.accessibilityContrast = .high })
     }
 }
 
@@ -76,9 +97,6 @@ struct InlineNotice: View {
     /// Centre the glyph + text as a group, for a notice that floats under a
     /// centred amount rather than sitting in a left-aligned form.
     var isCentered: Bool = false
-    /// What VoiceOver reads in place of `message`, when the visible line is a
-    /// shortened form of it (a wallet error's {what broke} sentence).
-    var spokenMessage: String? = nil
 
     var body: some View {
         HStack(alignment: .top, spacing: 6) {
@@ -127,7 +145,7 @@ struct InlineNotice: View {
     }
 
     private var accessibilityText: String {
-        var parts = [severity.announcementPrefix + (title.map { "\($0). " } ?? "") + (spokenMessage ?? message)]
+        var parts = [severity.announcementPrefix + (title.map { "\($0). " } ?? "") + message]
         if let detail { parts.append(detail) }
         return parts.joined(separator: " ")
     }

@@ -15,10 +15,6 @@ struct SendView: View {
     @State private var errorMessage: String?
     @State private var tokenCreationFailure: String?
     @State private var errorSeverity: ErrorSeverity = .error
-    @State private var errorShowsMintAction = false
-    // Optional second line under the error notice (e.g. the change-fee hint);
-    // overrides the generic insufficient-balance detail when set.
-    @State private var errorDetail: String?
     @State private var showMintPicker = false
     @State private var selectedSendMint: MintInfo?
 
@@ -209,18 +205,22 @@ struct SendView: View {
                     .padding(.top, 10)
             }
 
-            // Flexible cell between mint row and keypad: amount centered (Android
-            // InputFace weight spacers), notice pinned to the bottom of the same cell.
-            ZStack {
-                Group {
-                    if isSatSend {
-                        CurrencyAmountDisplay(
-                            sats: amountSats,
-                            primary: $settings.amountDisplayPrimary,
-                            entryRaw: amountString,
-                            isDimmed: isInsufficientBalance
-                        )
-                    } else {
+            // Flexible cell between mint row and keypad, the amount centered in
+            // it (Android InputFace weight spacers). A note takes the
+            // conversion line under the amount.
+            Group {
+                if isSatSend {
+                    CurrencyAmountDisplay(
+                        sats: amountSats,
+                        primary: $settings.amountDisplayPrimary,
+                        entryRaw: amountString,
+                        isDimmed: isInsufficientBalance,
+                        note: sendInputNote,
+                        holdsNoteLine: true
+                    )
+                } else {
+                    // A unit with no conversion keeps the line for its notes.
+                    VStack(spacing: AmountPairMetrics.spacing) {
                         AmountLockup(
                             parts: AmountParts.parse(sendUnitEntryDisplay),
                             role: .amountHero,
@@ -228,31 +228,17 @@ struct SendView: View {
                             isDimmed: isInsufficientBalance
                         )
                         .animation(.snappy, value: isInsufficientBalance)
-                    }
-                }
-
-                VStack {
-                    Spacer(minLength: 0)
-                    if isInsufficientBalance {
-                        // The mint selector states the available balance, so
-                        // repeating it in this notice would add visual noise.
-                        sendInputNotice(
-                            message: "Insufficient balance",
-                            detail: nil,
-                            severity: .caution
-                        )
-                    } else if let error = errorMessage {
-                        sendInputNotice(
-                            message: error,
-                            detail: errorDetail ?? (errorShowsMintAction ? insufficientBalanceDetail : nil),
-                            severity: errorSeverity
-                        )
+                        if let sendInputNote {
+                            AmountNoteLine(note: sendInputNote)
+                                .transition(.asymmetric(insertion: .opacity, removal: .identity))
+                        } else {
+                            AmountNoteLine.placeholder
+                        }
                     }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .animation(reduceMotion ? .easeInOut(duration: 0.2) : .snappy(duration: 0.25), value: isInsufficientBalance)
-            .animation(reduceMotion ? .easeInOut(duration: 0.2) : .snappy(duration: 0.25), value: errorMessage)
+            .animation(reduceMotion ? .easeInOut(duration: 0.2) : .snappy(duration: 0.25), value: sendInputNote)
 
             // The selector sits under the amount and over the keypad, not under
             // the toolbar: it qualifies the amount, so it reads as a setting on
@@ -297,18 +283,14 @@ struct SendView: View {
         .animation(.snappy(duration: 0.3), value: lockWithP2PK)
     }
 
-    /// The send amount face's notice. Positioning only — the rendering belongs
-    /// to `InlineNotice`, which also supplies the VoiceOver severity prefix this
-    /// used to drop back when it was a hand-rolled copy of that component.
-    private func sendInputNotice(
-        message: String,
-        detail: String?,
-        severity: ErrorSeverity
-    ) -> some View {
-        InlineNotice(message: message, severity: severity, detail: detail, isCentered: true)
-            .padding(.horizontal)
-            .padding(.bottom, 8)
-            .transition(.opacity)
+    /// The send amount face's note, said in the conversion line's place.
+    private var sendInputNote: AmountNote? {
+        if isInsufficientBalance {
+            // The mint selector states the available balance, so repeating it
+            // here would add visual noise.
+            return AmountNote(text: "Insufficient balance", severity: .caution)
+        }
+        return errorMessage.map { AmountNote(text: $0, severity: errorSeverity) }
     }
 
     // MARK: - Mint Selector
@@ -819,17 +801,9 @@ struct SendView: View {
         AmountFormatter.sats(sats, useBitcoinSymbol: settings.useBitcoinSymbol)
     }
 
-    /// Secondary line under an insufficient-balance notice: what's actually here.
-    private var insufficientBalanceDetail: String? {
-        guard let mint = displaySendMint else { return nil }
-        return "You have \(sendBalanceText) in \(mint.name)."
-    }
-
-    private func presentError(_ message: String, severity: ErrorSeverity = .error, showsMintAction: Bool = false, detail: String? = nil) {
+    private func presentError(_ message: String, severity: ErrorSeverity = .error) {
         errorMessage = message
         errorSeverity = severity
-        errorShowsMintAction = showsMintAction
-        errorDetail = detail
     }
 
     private func extractMintHost(_ url: String) -> String {
@@ -1784,17 +1758,15 @@ struct UnifiedSendView: View {
                 VStack(spacing: 0) {
                     Spacer(minLength: 0)
 
+                    // A note takes the conversion line under the amount.
                     CurrencyAmountDisplay(
                         sats: amountSats,
                         primary: $settings.amountDisplayPrimary,
-                        entryRaw: amountString
+                        entryRaw: amountString,
+                        note: errorMessage.map { AmountNote(text: $0, severity: errorSeverity) },
+                        holdsNoteLine: true
                     )
-
-                    if let errorMessage {
-                        errorNotice(errorMessage)
-                            .padding(.horizontal)
-                            .padding(.top, 12)
-                    }
+                    .animation(reduceMotion ? .easeInOut(duration: 0.2) : .snappy(duration: 0.25), value: errorMessage)
 
                     Spacer(minLength: 0)
 

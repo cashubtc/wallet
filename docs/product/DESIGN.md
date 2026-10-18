@@ -222,7 +222,8 @@ What this system explicitly rejects, pulled verbatim from docs/product/PRODUCT.m
   "Balance"; screen readers hear the words. Send keeps its Max.)*
   *(2026-10-18: Max is back, at the end of the source's balance line as on
   Send; the balance is a plain number again, not a control. At large text Max
-  drops under the balance.)* No
+  drops under the balance. Once used it reads "Using Max", dimmed, until the
+  amount changes, which says why the amount came out under the balance.)* No
   fill, card or pill. With exactly
   two mints the rows have no chevron and the swap control is the only way to
   change the pair. `MintTransferRouteView` (iOS) / `MintTransferRoute` (Android).
@@ -232,15 +233,18 @@ What this system explicitly rejects, pulled verbatim from docs/product/PRODUCT.m
   line is its balance alone, with no preview of the balance after the
   transfer. A problem with a mint (it
   can't send or receive over Lightning, or its balance can't cover the fee) is
-  said on that mint's line behind the caution glyph, with the words kept
-  secondary for contrast; the note under the amount is for the amount only.
-  That note travels with the amount, 6pt/dp under it in a one-line slot held
-  whether or not a note shows, so the amount never moves when one appears. It
-  is never truncated: a note that wraps at a larger text size grows the slot
-  and the amount steps down its ladder instead of meeting it. Where even the
-  compact amount, its note and both mints no longer fit above the pad (iOS
-  from xxLarge, Android from 1.5× text), they scroll instead, and a note that
-  appears is scrolled into view. Info notes carry no glyph.
+  said on that mint's line after its balance, in red words with no glyph; the
+  note under the amount is for the amount only. *(2026-10-18: that note takes
+  the conversion line under the amount, as Family does: red words for a
+  problem, secondary for information, never a glyph. The line is already
+  there, so the note costs no room and the amount never moves when one
+  appears; with no price to show, the line is held empty. It is never
+  truncated: a note that wraps at a larger text size takes its extra lines
+  from the amount, which steps down its ladder instead of meeting the mints.
+  Where even the compact amount and both mints no longer fit above the pad
+  (iOS from xxLarge, Android from 1.5× text), they scroll instead,
+  and the amount is scrolled into view when a note appears. Send's amount screens say
+  their notes the same way; see inline-error-fixes.md §1b.)*
   The review names the mints in its From and To rows, without avatars, and the
   commit is the tonal "Transfer 21 sat", like Continue: moving between your own
   mints is no payment. While the transfer runs the status screen keeps its rows up

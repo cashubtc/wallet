@@ -4,7 +4,8 @@ import SwiftUI
 ///
 /// Renders the active amount in either fiat or sats as the primary (large) line,
 /// with the alternate unit underneath. Tapping either line flips which side is
-/// primary and persists the choice.
+/// primary and persists the choice. A note about the amount being entered
+/// takes the alternate unit's line while it shows.
 struct CurrencyAmountDisplay: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -21,6 +22,12 @@ struct CurrencyAmountDisplay: View {
     var entryRaw: String? = nil
     /// Dims the primary amount (e.g. while the typed value exceeds spendable balance).
     var isDimmed: Bool = false
+    /// A note about the amount, said in the conversion line's place: the line
+    /// is there already, so the note costs no room.
+    var note: AmountNote? = nil
+    /// Holds the conversion line's height when there is no price to show, so
+    /// a note appearing never moves the amount. For screens that pass `note`.
+    var holdsNoteLine: Bool = false
 
     @ObservedObject private var priceService = PriceService.shared
     @ObservedObject private var settings = SettingsManager.shared
@@ -83,19 +90,31 @@ struct CurrencyAmountDisplay: View {
     }
 
     var body: some View {
-        Group {
-            if fiatAvailable {
-                Button(action: flip) {
+        VStack(spacing: AmountPairMetrics.spacing) {
+            Group {
+                if fiatAvailable {
+                    Button(action: flip) {
+                        amountPair
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Amount: \(primaryText)")
+                    .accessibilityHint("Double tap to make \(secondaryText) primary")
+                    .sensoryFeedback(.selection, trigger: primary)
+                } else {
                     amountPair
-                        .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("Amount: \(primaryText)")
-                .accessibilityHint("Double tap to make \(secondaryText) primary")
-                .sensoryFeedback(.selection, trigger: primary)
-            } else {
-                amountPair
+            }
+
+            // Outside the toggle, so VoiceOver reads it as its own line. The
+            // two lines trade places without overlapping, so the amount holds
+            // still.
+            if let note {
+                AmountNoteLine(note: note)
+                    .transition(.asymmetric(insertion: .opacity, removal: .identity))
+            } else if holdsNoteLine && !fiatAvailable {
+                AmountNoteLine.placeholder
             }
         }
     }
@@ -113,12 +132,13 @@ struct CurrencyAmountDisplay: View {
             // The whole pair is the toggle, matching Home. Keeping the support
             // line visually plain avoids implying that only the smaller value
             // can be tapped.
-            if fiatAvailable {
+            if fiatAvailable && note == nil {
                 Text(secondaryText)
                     .cashuText(.bodyEmphasis)
                     .monospacedDigit()
                     .contentTransition(.numericText(value: Double(sats)))
                     .foregroundStyle(.secondary)
+                    .transition(.asymmetric(insertion: .opacity, removal: .identity))
             }
         }
         .frame(minHeight: AmountPairMetrics.minimumTapTarget)
@@ -129,5 +149,50 @@ struct CurrencyAmountDisplay: View {
         withAnimation(reduceMotion ? .easeOut(duration: 0.2) : .snappy) {
             primary.toggle()
         }
+    }
+}
+
+/// A note about an amount being entered: why it can't go as typed, or what was
+/// done to it.
+struct AmountNote: Equatable {
+    let text: String
+    var severity: ErrorSeverity = .error
+    /// What VoiceOver reads in place of `text`, when the line is a shortened
+    /// form of a longer message (a wallet error's {what broke} sentence).
+    var spoken: String? = nil
+}
+
+/// A note in the conversion line's place under an amount (Family's pattern):
+/// plain words, red for a problem and secondary otherwise, with no glyph. It
+/// wraps rather than truncating; the line is the conversion's, so the amount
+/// above it does not move.
+struct AmountNoteLine: View {
+    let note: AmountNote
+
+    var body: some View {
+        Text(note.text)
+            .cashuText(.body)
+            .foregroundStyle(note.severity.noteForeground)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal)
+            .accessibilityLabel(note.spoken ?? note.text)
+            .onChange(of: note, initial: true) { _, note in
+                // The colour is lost to VoiceOver, so the announcement names
+                // the tier.
+                guard note.severity != .info else { return }
+                AccessibilityNotification.Announcement(
+                    note.severity.announcementPrefix + (note.spoken ?? note.text)
+                ).post()
+            }
+    }
+
+    /// The line's height with nothing in it.
+    static var placeholder: some View {
+        Text(" ")
+            .cashuText(.body)
+            .hidden()
+            .accessibilityHidden(true)
     }
 }

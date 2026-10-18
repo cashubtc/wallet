@@ -2,14 +2,12 @@ package com.cashu.me.ui.send
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -99,6 +97,9 @@ import com.cashu.me.Views.Components.ScannerQuickAction
 import com.cashu.me.ui.components.SectionHeader
 import com.cashu.me.ui.components.AmountEntryHero
 import com.cashu.me.ui.components.AmountFlipDisplay
+import com.cashu.me.ui.components.AmountNote
+import com.cashu.me.ui.components.AmountNoteLine
+import com.cashu.me.ui.components.AmountNoteLinePlaceholder
 import com.cashu.me.ui.components.CashuTextField
 import com.cashu.me.ui.components.GhostButton
 import com.cashu.me.ui.components.InlineNotice
@@ -122,7 +123,6 @@ import com.cashu.me.ui.components.shareText
 import com.cashu.me.ui.settings.P2PKKeyDisplay
 import com.cashu.me.ui.testing.UiTestTags
 import com.cashu.me.ui.theme.CashuTheme
-import com.cashu.me.ui.theme.rememberReducedMotion
 import com.cashu.me.ui.theme.withMonoDigits
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -623,11 +623,16 @@ private fun InputFace(
             animationSpec = spring(stiffness = Spring.StiffnessMedium),
             label = "amount-color",
         )
-        val reduceMotion = rememberReducedMotion()
-        // One flexible cell between the mint row and the keypad: the amount
-        // centered in it, the notice *overlaid* at its bottom (iOS SendView's
-        // ZStack). As siblings the notice pushed the amount upward the instant
-        // it appeared — a jump you now hit on the first over-balance keystroke.
+        // The mint selector states the available balance, so repeating it in
+        // the note would add visual noise.
+        val note = when {
+            insufficient -> AmountNote("Insufficient balance", NoticeSeverity.Caution)
+            errorText != null -> AmountNote(errorText, NoticeSeverity.Error)
+            else -> null
+        }
+        // One flexible cell between the mint row and the keypad, the amount
+        // centered in it (iOS SendView parity). A note takes the conversion
+        // line under the amount, so it never pushes the amount up.
         Box(
             modifier = Modifier.weight(1f, fill = true).fillMaxWidth(),
             contentAlignment = Alignment.Center,
@@ -644,16 +649,25 @@ private fun InputFace(
                         entryRaw = amount,
                         primaryAccessibilityPrefix = "Send amount",
                         color = amountColor,
+                        note = note,
+                        holdsNoteLine = true,
                     )
                 } else {
-                    AmountEntryHero(
-                        entryRaw = amount,
-                        isSat = false,
-                        unit = unit,
-                        useBitcoinSymbol = useBitcoinSymbol,
-                        formatter = formatter,
-                        color = amountColor,
-                    )
+                    // A unit with no conversion keeps the line for its notes.
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
+                    ) {
+                        AmountEntryHero(
+                            entryRaw = amount,
+                            isSat = false,
+                            unit = unit,
+                            useBitcoinSymbol = useBitcoinSymbol,
+                            formatter = formatter,
+                            color = amountColor,
+                        )
+                        if (note != null) AmountNoteLine(note) else AmountNoteLinePlaceholder()
+                    }
                 }
 
                 confirmedP2pkPubkey?.let { pubkey ->
@@ -662,46 +676,6 @@ private fun InputFace(
                         recipientIsPrimaryKey = p2pkRecipientIsPrimaryKey,
                         onEditRecipient = onEditP2pkRecipient,
                         onRemoveRecipient = onRemoveP2pkRecipient,
-                    )
-                }
-            }
-
-            // Fade+scale warning (iOS .transition(.opacity.combined(with: .scale))),
-            // reduce-motion collapses to a plain fade.
-            Column(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                AnimatedVisibility(
-                    visible = insufficient,
-                    enter = if (reduceMotion) {
-                        fadeIn(spring(stiffness = Spring.StiffnessMedium))
-                    } else {
-                        fadeIn(spring(stiffness = Spring.StiffnessMedium)) + scaleIn(
-                            animationSpec = spring(stiffness = Spring.StiffnessMedium),
-                            initialScale = 0.95f,
-                        )
-                    },
-                    exit = fadeOut(spring(stiffness = Spring.StiffnessMedium)),
-                ) {
-                    // The mint selector states the available balance, so
-                    // repeating it in this notice would add visual noise.
-                    InlineNotice(
-                        text = "Insufficient balance",
-                        detail = null,
-                        severity = NoticeSeverity.Caution,
-                        showsContainer = false,
-                        centered = true,
-                        modifier = Modifier.padding(bottom = CashuTheme.spacing.snug),
-                    )
-                }
-                if (errorText != null) {
-                    InlineNotice(
-                        text = errorText,
-                        modifier = Modifier.padding(bottom = CashuTheme.spacing.snug),
-                        severity = NoticeSeverity.Error,
                     )
                 }
             }

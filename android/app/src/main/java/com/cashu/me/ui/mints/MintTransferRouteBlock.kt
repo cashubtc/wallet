@@ -26,12 +26,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.text.InlineTextContent
-import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.SwapVert
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -68,14 +65,13 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.text.Placeholder
-import androidx.compose.ui.text.PlaceholderVerticalAlign
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.em
 import com.cashu.me.Core.CDK.mintRemovalUrlsMatch
 import com.cashu.me.Core.MintTransferRoute.Slot
 import com.cashu.me.Models.MintInfo
@@ -148,6 +144,8 @@ internal fun MintTransferRouteBlock(
     // Short screens keep the destination to its identity line.
     showsDestinationBalance: Boolean = true,
     isFindingMax: Boolean = false,
+    // The amount is the one Max filled, until it changes.
+    isUsingMax: Boolean = false,
     onUseMax: (() -> Unit)? = null,
     // Null when there is no other mint to choose; the rows then only inform.
     onChooseSource: (() -> Unit)? = null,
@@ -184,6 +182,7 @@ internal fun MintTransferRouteBlock(
                 SourceSupport(
                     balanceText = line.balanceText,
                     isFindingMax = isFindingMax,
+                    isUsingMax = isUsingMax,
                     onUseMax = onUseMax,
                 )
             }
@@ -363,6 +362,7 @@ private fun IdentityRow(mint: MintInfo, showsChevron: Boolean) {
 private fun SourceSupport(
     balanceText: String,
     isFindingMax: Boolean,
+    isUsingMax: Boolean,
     onUseMax: (() -> Unit)?,
 ) {
     val balance: @Composable () -> Unit = {
@@ -389,6 +389,7 @@ private fun SourceSupport(
         balance()
         MaxControl(
             isFindingMax = isFindingMax,
+            isUsingMax = isUsingMax,
             onUseMax = onUseMax,
             // The 48dp target must not grow the line it shares.
             modifier = Modifier.trimVertical((MinimumTouchTarget - SupportMinHeight) / 2),
@@ -398,25 +399,30 @@ private fun SourceSupport(
 
 /**
  * Fills the largest amount this mint can transfer after fees. The word keeps
- * its place under the spinner, so the line never shifts.
+ * its place under the spinner, so the line never shifts. Once used it reads
+ * "Using Max", dimmed, until the amount changes: that is why the amount came
+ * out under the balance (Family's pattern, iOS parity).
  */
 @Composable
 private fun MaxControl(
     isFindingMax: Boolean,
+    isUsingMax: Boolean,
     onUseMax: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Box(
         modifier = modifier
             .defaultMinSize(minWidth = MinimumTouchTarget, minHeight = MinimumTouchTarget)
-            .clickable(enabled = !isFindingMax, role = Role.Button, onClick = onUseMax)
+            .clickable(enabled = !isFindingMax && !isUsingMax, role = Role.Button, onClick = onUseMax)
             // Before clearAndSetSemantics, which would clear a tag set after it.
             .testTag(UiTestTags.MintTransferMax)
             .clearAndSetSemantics {
-                contentDescription = "Transfer maximum"
+                contentDescription = if (isUsingMax) "Using the maximum" else "Transfer maximum"
                 role = Role.Button
                 if (isFindingMax) {
                     stateDescription = "Checking the network fee"
+                    disabled()
+                } else if (isUsingMax) {
                     disabled()
                 } else {
                     onClick(label = "Fill the largest amount this mint can transfer after fees") {
@@ -429,10 +435,14 @@ private fun MaxControl(
         contentAlignment = Alignment.CenterEnd,
     ) {
         Text(
-            text = "Max",
+            text = if (isUsingMax) "Using Max" else "Max",
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurface,
+            color = if (isUsingMax) {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            },
             modifier = Modifier.alpha(if (isFindingMax) 0f else 1f),
         )
         if (isFindingMax) {
@@ -460,29 +470,18 @@ private fun SupportText(text: String, modifier: Modifier = Modifier) {
 
 
 /**
- * An inline notice moved into the row: the caution glyph carries the colour
- * and the words stay secondary, so the line keeps its contrast. Announced
- * politely when it appears, as `InlineNotice` is.
+ * The balance, then the problem in red words with no glyph, as the note under
+ * the amount is written (iOS parity). Announced politely when it appears, as
+ * `InlineNotice` is.
  */
 @Composable
 private fun ProblemLine(balanceText: String, problem: String, description: String) {
     val secondary = MaterialTheme.colorScheme.onSurfaceVariant
+    val problemColor = MaterialTheme.colorScheme.error
     val line = buildAnnotatedString {
-        appendInlineContent(CautionGlyphId, "!")
-        append(' ')
-        append(bitcoinAmountText("$balanceText · $problem"))
+        append(bitcoinAmountText("$balanceText · "))
+        withStyle(SpanStyle(color = problemColor)) { append(problem) }
     }
-    val glyph = mapOf(
-        CautionGlyphId to InlineTextContent(
-            Placeholder(width = 1.em, height = 1.em, placeholderVerticalAlign = PlaceholderVerticalAlign.TextCenter),
-        ) {
-            Icon(
-                imageVector = Icons.Filled.Warning,
-                contentDescription = null,
-                tint = CashuTheme.colors.pending,
-            )
-        },
-    )
     Box(
         modifier = Modifier
             .heightIn(min = SupportMinHeight)
@@ -494,14 +493,11 @@ private fun ProblemLine(balanceText: String, problem: String, description: Strin
     ) {
         Text(
             text = line,
-            inlineContent = glyph,
             style = MaterialTheme.typography.bodyMedium.withMonoDigits(),
             color = secondary,
         )
     }
 }
-
-private const val CautionGlyphId = "caution-glyph"
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable

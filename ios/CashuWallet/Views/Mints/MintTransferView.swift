@@ -20,13 +20,6 @@ struct MintTransferView: View {
         case status
     }
 
-    private struct EntryNotice: Equatable {
-        let text: String
-        let severity: ErrorSeverity
-        /// The whole message, when `text` is its first sentence.
-        var spoken: String? = nil
-    }
-
     private struct ReviewFailure: Equatable {
         let message: String
         let detail: String?
@@ -47,7 +40,7 @@ struct MintTransferView: View {
     /// Identifies the latest Max request, so a superseded one that returns late
     /// cannot clear the spinner of the one that replaced it.
     @State private var maxRequest = 0
-    @State private var entryNotice: EntryNotice?
+    @State private var entryNotice: AmountNote?
     /// A source Max found too small to pay any fee, at the balance it held
     /// then. It stays said on that mint's line until its balance changes.
     @State private var feeShortfall: FeeShortfall?
@@ -215,57 +208,50 @@ struct MintTransferView: View {
             VStack(spacing: 0) {
                 if dynamicTypeSize >= .xxLarge {
                     // From xxLarge the pad takes most of the screen, and even
-                    // the compact amount, its note and both mints overrun what
-                    // is left. They scroll above the pad rather than being
-                    // squeezed until they overlap.
+                    // the compact amount and both mints overrun what is left.
+                    // They scroll above the pad rather than being squeezed
+                    // until they overlap.
                     ScrollViewReader { scroller in
                         ScrollView {
                             VStack(spacing: 12) {
-                                // No line is held here: this space is too short
-                                // to spend on an empty one, and it scrolls.
-                                VStack(spacing: Self.noticeGap) {
-                                    amountDisplay(role: .amountCompact)
-                                    if amountNote != nil {
-                                        entryNoticeView
-                                            .padding(.horizontal)
-                                            .id(Self.noticeAnchor)
-                                    }
-                                }
+                                amountDisplay(role: .amountCompact)
+                                    .id(Self.amountAnchor)
                                 route(source: source, destination: destination, showsDestinationBalance: true)
                             }
                             .padding(.top, 8)
                         }
                         .scrollBounceBehavior(.basedOnSize)
                         // A note answers what was just typed or tapped, which
-                        // may have left it out of view above or below.
+                        // may have left the amount out of view.
                         .onChange(of: amountNote?.text) { _, text in
                             guard text != nil else { return }
                             // Next turn of the run loop: the note is inserted
                             // by this same change and has no frame yet.
                             DispatchQueue.main.async {
                                 withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) {
-                                    scroller.scrollTo(Self.noticeAnchor)
+                                    // The note is the news, so its line is the
+                                    // one brought to the pad's edge; the amount
+                                    // shows above it as room allows.
+                                    scroller.scrollTo(Self.amountAnchor, anchor: .bottom)
                                 }
                             }
                         }
                     }
+                    .animation(reduceMotion ? .easeInOut(duration: 0.2) : .snappy(duration: 0.25), value: amountNote)
                 } else {
                     // The pad and the two mints are fixed; the amount takes
                     // what is left. On a short screen the destination gives up
-                    // its balance line so the amount still has room. The note
-                    // travels with the amount, and the amount's rung is chosen
-                    // against what the note leaves, so the two never touch.
-                    VStack(spacing: Self.noticeGap) {
-                        amountHero
-                        noticeSlot
-                    }
-                    // Keeps the note off the first mint's caption on a short
-                    // screen; the amount steps down a rung instead.
-                    .padding(.bottom, 8)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .animation(reduceMotion ? .easeInOut(duration: 0.2) : .snappy(duration: 0.25), value: entryNotice)
-                    .animation(reduceMotion ? .easeInOut(duration: 0.2) : .snappy(duration: 0.25), value: entryState)
-                    .animation(reduceMotion ? .easeInOut(duration: 0.2) : .snappy(duration: 0.25), value: isWholeBalance)
+                    // its balance line so the amount still has room. A note
+                    // takes the conversion line, so it costs the amount no
+                    // room unless it wraps, and then the amount steps down a
+                    // rung rather than meeting the mints.
+                    amountHero
+                        // Keeps the amount's lines off the first mint's
+                        // caption on a short screen.
+                        .padding(.bottom, 8)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .animation(reduceMotion ? .easeInOut(duration: 0.2) : .snappy(duration: 0.25), value: amountNote)
+                        .animation(reduceMotion ? .easeInOut(duration: 0.2) : .snappy(duration: 0.25), value: entryState)
 
                     route(source: source, destination: destination, showsDestinationBalance: proxy.size.height >= 600)
                         .padding(.bottom, 8)
@@ -299,6 +285,7 @@ struct MintTransferView: View {
             destinationProblem: destinationProblem,
             showsDestinationBalance: showsDestinationBalance,
             isFindingMax: isFindingMax,
+            isUsingMax: maxPlan != nil,
             // Gated on a spendable balance: an empty mint has no maximum.
             onUseMax: source.balance > 0 && entryState != .blocked(.sourceCannotSend) ? useMax : nil,
             onChooseSource: canChooseMint ? { choose(.source) } : nil,
@@ -323,58 +310,30 @@ struct MintTransferView: View {
             primary: $settings.amountDisplayPrimary,
             role: role,
             entryRaw: amountString,
-            isDimmed: entryState == .overBalance
+            isDimmed: entryState == .overBalance,
+            note: amountNote,
+            holdsNoteLine: true
         )
     }
 
+    private static let amountAnchor = "transfer-amount"
+
     /// Notes about the amount only. A problem with a mint is said on that
     /// mint's line in the route (`sourceProblem` / `destinationProblem`).
-    private var amountNote: EntryNotice? {
+    private var amountNote: AmountNote? {
         if entryState == .overBalance {
-            // The source row states what is available, so the notice does not
+            // The source row states what is available, so the note does not
             // repeat it.
-            return EntryNotice(text: "Insufficient balance", severity: .caution)
+            return AmountNote(text: "Insufficient balance", severity: .caution)
         }
         if let entryNotice { return entryNotice }
         if isWholeBalance {
             // The fee is paid from the source on top of the amount, so the
             // whole balance cannot arrive. Said here, not after a quote has
             // been asked for, with the one control that fixes it.
-            return EntryNotice(text: "Not enough left for the fee. Use Max.", severity: .caution)
+            return AmountNote(text: "Not enough left for the fee. Use Max.", severity: .caution)
         }
         return nil
-    }
-
-    /// An info note is plain secondary text; the glyph is kept for the
-    /// severities it tells apart.
-    @ViewBuilder
-    private var entryNoticeView: some View {
-        if let amountNote {
-            InlineNotice(
-                message: amountNote.text,
-                severity: amountNote.severity,
-                showsIcon: amountNote.severity != .info,
-                isCentered: true,
-                spokenMessage: amountNote.spoken
-            )
-            .transition(.opacity)
-        }
-    }
-
-    private static let noticeGap: CGFloat = 6
-    private static let noticeAnchor = "transfer-amount-note"
-
-    /// One line is held under the amount whether or not a note shows, so the
-    /// amount does not move when one appears. A note that wraps at a larger
-    /// text size grows the slot rather than being cut short.
-    private var noticeSlot: some View {
-        ZStack(alignment: .top) {
-            InlineNotice(message: " ", severity: .info, showsIcon: false)
-                .hidden()
-                .accessibilityHidden(true)
-            entryNoticeView
-        }
-        .padding(.horizontal)
     }
 
     private var isWholeBalance: Bool {
@@ -480,16 +439,12 @@ struct MintTransferView: View {
                     await walletManager.discardMintTransferPlan(quoted)
                     return
                 }
+                // Max then reads "Using Max" until the amount changes, which
+                // says why it came out under the balance.
                 maxPlan = quoted
                 amountString = AmountFormatter.entryConverted(
                     raw: String(quoted.amount), from: .sats, to: entryUnit
                 )
-                if let balance = sourceMint?.balance, quoted.amount < balance {
-                    entryNotice = EntryNotice(
-                        text: "Amount adjusted for fees and mint limits.",
-                        severity: .info
-                    )
-                }
             } catch is CancellationError {
                 return
             } catch MintTransferError.nothingToTransfer {
@@ -508,9 +463,9 @@ struct MintTransferView: View {
                 guard !Task.isCancelled else { return }
                 let message = error.walletMessage
                 // The note under the amount holds one line: what broke. Tapping
-                // the balance again is the retry, so the advice goes unsaid
-                // (VoiceOver still hears it).
-                entryNotice = EntryNotice(text: message.headline, severity: message.severity, spoken: message.text)
+                // Max again is the retry, so the advice goes unsaid (VoiceOver
+                // still hears it).
+                entryNotice = AmountNote(text: message.headline, severity: message.severity, spoken: message.text)
             }
         }
     }
