@@ -1,194 +1,75 @@
 package com.cashu.me.Core.CDK
 
+import com.cashu.me.Core.Wallet.WalletErrorMessages
 import kotlinx.coroutines.runBlocking
-import okhttp3.HttpUrl
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
+import org.cashudevkit.FfiException
+import org.junit.Assert.*
 import org.junit.Test
 
 class LightningAddressResolverTest {
-    @Test
-    fun acceptsAmountMatchedInvoiceWhenLnurlMetadataHashDoesNotMatch() = runBlocking {
-        val transport = RecordingTransport(
-            LnurlHttpResponse(
-                code = 200,
-                body = payRequestJson(
-                    callback = "https://example.com/lnurl/callback?amount=1&memo=coffee",
-                    metadata = """[["text/plain","metadata deliberately unrelated to invoice"]]""",
-                ),
-            ),
-            LnurlHttpResponse(
-                code = 200,
-                body = """{"pr":"$Bolt11AmountfulCoffeeInvoice"}""",
-            ),
-        )
-
-        val invoice = resolver(transport, decodedAmountMsat = InvoiceAmountMsat).resolveBolt11Invoice(
-            address = "alice@example.com",
-            amountMsat = InvoiceAmountMsat,
-        )
-
-        assertEquals(Bolt11AmountfulCoffeeInvoice, invoice)
-        assertEquals(
-            "https://example.com/.well-known/lnurlp/alice",
-            transport.requestedUrls[0].toString(),
-        )
-        val callback = transport.requestedUrls[1]
-        assertEquals(listOf(InvoiceAmountMsat.toString()), callback.queryParameterValues("amount"))
-        assertEquals("coffee", callback.queryParameter("memo"))
-    }
+    private val discovery = "Failed to request invoice from Lightning address service: Failed to fetch pay request data: Http transport error Some("
+    private fun failure(message: String) = FfiException.Cdk(50000u, message)
 
     @Test
-    fun rejectsInvoiceWhoseAmountDoesNotMatchRequest() = runBlocking {
-        val transport = RecordingTransport(
-            LnurlHttpResponse(
-                code = 200,
-                body = payRequestJson(callback = "https://example.com/lnurl/callback"),
-            ),
-            LnurlHttpResponse(
-                code = 200,
-                body = """{"pr":"$Bolt11AmountfulCoffeeInvoice"}""",
-            ),
-        )
-
-        val error = runCatching {
-            resolver(transport, decodedAmountMsat = InvoiceAmountMsat).resolveBolt11Invoice(
-                address = "alice@example.com",
-                amountMsat = InvoiceAmountMsat - 1,
+    fun lnurlWinsForBothBolt11OnlyAndBolt12Mints() = runBlocking {
+        for (supportsBolt12 in listOf(false, true)) {
+            val calls = mutableListOf<String>()
+            val quote = LightningAddressResolver.quote(
+                lnurl = { calls += "lnurl"; "bolt11" },
+                bip353 = { calls += "bip353"; check(supportsBolt12); "bolt12" },
             )
-        }.exceptionOrNull()
-
-        assertTrue(error is LightningAddressResolutionException.Invalid)
-        assertTrue(error?.message.orEmpty().contains("amount does not match"))
+            assertEquals("bolt11", quote)
+            assertEquals(listOf("lnurl"), calls)
+        }
     }
 
     @Test
-    fun marksMissingLnurlEndpointAsUnavailableForBip353Fallback() = runBlocking {
-        val transport = RecordingTransport(LnurlHttpResponse(code = 404, body = "not found"))
-
-        val error = runCatching {
-            resolver(transport, decodedAmountMsat = InvoiceAmountMsat).resolveBolt11Invoice(
-                address = "alice@example.com",
-                amountMsat = InvoiceAmountMsat,
+    fun onlyMissingDiscoveryEndpointFallsBack() = runBlocking {
+        for (status in listOf(404, 410)) {
+            var fallbackCalls = 0
+            val quote = LightningAddressResolver.quote(
+                lnurl = { throw failure("$discovery$status): missing") },
+                bip353 = { fallbackCalls++; "bolt12" },
             )
-        }.exceptionOrNull()
-
-        assertTrue(error is LightningAddressResolutionException.Unavailable)
-    }
-
-    @Test
-    fun acceptsDelegatedCallbackAndReplacesEveryAmountParameter() = runBlocking {
-        val transport = RecordingTransport(
-            LnurlHttpResponse(200, payRequestJson("https://pay.example.net/invoice?amount=1&Amount=2&memo=coffee")),
-            LnurlHttpResponse(200, """{"pr":"$Bolt11AmountfulCoffeeInvoice"}"""),
-        )
-        assertEquals(Bolt11AmountfulCoffeeInvoice, resolver(transport, InvoiceAmountMsat)
-            .resolveBolt11Invoice("alice@example.com", InvoiceAmountMsat))
-        val callback = transport.requestedUrls.last()
-        assertEquals("pay.example.net", callback.host)
-        assertEquals(listOf(InvoiceAmountMsat.toString()), callback.queryParameterValues("amount"))
-        assertEquals(emptyList<String>(), callback.queryParameterValues("Amount"))
-        assertEquals("coffee", callback.queryParameter("memo"))
-    }
-
-    @Test
-    fun rejectsUnsafeCallbacksBeforeRequestingAnInvoice() = runBlocking {
-        listOf(
-            "http://pay.example.net/invoice",
-            "https://@pay.example.net/invoice",
-            "https:///invoice",
-            "https://bad host/invoice",
-            "https://user:pass@pay.example.net/invoice",
-            "https://pay.example.net/invoice#fragment",
-            "not a URL",
-        ).forEach { callback ->
-            val transport = RecordingTransport(LnurlHttpResponse(200, payRequestJson(callback)))
-            val error = runCatching {
-                resolver(transport, InvoiceAmountMsat).resolveBolt11Invoice("alice@example.com", InvoiceAmountMsat)
-            }.exceptionOrNull()
-            assertTrue(callback, error is LightningAddressResolutionException.Invalid)
-            assertEquals(1, transport.requestedUrls.size)
+            assertEquals("bolt12", quote)
+            assertEquals(1, fallbackCalls)
         }
     }
 
     @Test
-    fun rejectsInvalidAndNonBolt11InvoicesFromDelegatedCallback() = runBlocking {
-        listOf<LightningInvoiceDecoder>(
-            LightningInvoiceDecoder { throw IllegalArgumentException("bad invoice") },
-            LightningInvoiceDecoder { LightningInvoiceMetadata(false, InvoiceAmountMsat.toULong()) },
-        ).forEach { decoder ->
-            val transport = RecordingTransport(
-                LnurlHttpResponse(200, payRequestJson("https://pay.example.net/invoice")),
-                LnurlHttpResponse(200, """{"pr":"invalid"}"""),
-            )
-            val error = runCatching {
-                LightningAddressResolver(transport, decoder).resolveBolt11Invoice("alice@example.com", InvoiceAmountMsat)
-            }.exceptionOrNull()
-            assertTrue(error is LightningAddressResolutionException.Invalid)
-        }
-    }
-
-    private fun payRequestJson(
-        callback: String,
-        metadata: String = """[["text/plain","Coffee for Alice"]]""",
-    ): String =
-        """
-        {
-          "callback": "$callback",
-          "maxSendable": 1000000000,
-          "minSendable": 1,
-          "metadata": ${jsonString(metadata)},
-          "tag": "payRequest"
-        }
-        """.trimIndent()
-
-    private fun jsonString(value: String): String =
-        buildString {
-            append('"')
-            value.forEach { character ->
-                when (character) {
-                    '\\' -> append("\\\\")
-                    '"' -> append("\\\"")
-                    '\n' -> append("\\n")
-                    '\r' -> append("\\r")
-                    '\t' -> append("\\t")
-                    else -> append(character)
-                }
-            }
-            append('"')
-        }
-
-    private fun resolver(
-        transport: LnurlHttpTransport,
-        decodedAmountMsat: Long,
-    ): LightningAddressResolver =
-        LightningAddressResolver(
-            transport = transport,
-            invoiceDecoder = LightningInvoiceDecoder {
-                LightningInvoiceMetadata(
-                    isBolt11 = true,
-                    amountMsat = decodedAmountMsat.toULong(),
+    fun temporaryAndInvalidRecipientResponsesNeverFallBack() = runBlocking {
+        val prefix = "Failed to request invoice from Lightning address service: "
+        for (message in listOf(
+            "${discovery}502): Bad Gateway", "${discovery}429): Slow down",
+            "${prefix}Failed to fetch pay request data: Http transport error None: DNS failed",
+            "${prefix}Http transport error Some(404): callback missing",
+            "${prefix}Returned invoice amount 1 msat does not match requested amount 1000 msat",
+            "${prefix}Invalid LNURL callback URL: callback host must match lightning address domain",
+            "${prefix}Failed to fetch pay request data: Http transport error None: invalid JSON",
+            "Http transport error Some(404): mint quote missing",
+        )) {
+            val original = failure(message)
+            var fallbackCalls = 0
+            val thrown = runCatching {
+                LightningAddressResolver.quote<String>(
+                    lnurl = { throw original }, bip353 = { fallbackCalls++; "bolt12" },
                 )
-            },
-        )
-
-    private class RecordingTransport(
-        vararg responses: LnurlHttpResponse,
-    ) : LnurlHttpTransport {
-        private val remainingResponses = ArrayDeque(responses.toList())
-        val requestedUrls = mutableListOf<HttpUrl>()
-
-        override suspend fun get(url: HttpUrl): LnurlHttpResponse {
-            requestedUrls += url
-            return remainingResponses.removeFirst()
+            }.exceptionOrNull()
+            assertSame(original, thrown)
+            assertEquals(0, fallbackCalls)
         }
     }
 
-    private companion object {
-        private const val InvoiceAmountMsat = 250_000_000L
-
-        // BOLT #11 example: fixed amount invoice for 2500 micro-bitcoin (250,000 sat).
-        private const val Bolt11AmountfulCoffeeInvoice =
-            "lnbc2500u1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpu9qrsgquk0rl77nj30yxdy8j9vdx85fkpmdla2087ne0xh8nhedh8w27kyke0lp53ut353s06fv3qfegext0eh0ymjpf39tuven09sam30g4vgpfna3rh"
+    @Test
+    fun errorsKeepRecipientDnsAndMintOrigins() = runBlocking {
+        val unavailable = failure("${discovery}502): Bad Gateway")
+        assertEquals("The recipient’s Lightning address service is unavailable (HTTP 502). Try again later.", WalletErrorMessages.classify(unavailable).text)
+        val dns = failure("Failed to resolve BIP353 address: DNS timeout")
+        val thrown = runCatching {
+            LightningAddressResolver.quote<String>(lnurl = { throw failure("${discovery}404): missing") }, bip353 = { throw dns })
+        }.exceptionOrNull()!!
+        assertSame(dns, thrown)
+        assertEquals("Couldn't resolve the recipient’s BIP-353 address. Check the address or try again later.", WalletErrorMessages.classify(thrown).text)
+        assertEquals("Couldn't reach the mint. Check your connection and try again.", WalletErrorMessages.classify(failure("Http transport error None: connection refused")).text)
     }
 }

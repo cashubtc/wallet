@@ -57,7 +57,11 @@ object WalletErrorMessages {
                 awaitsMintConfirmation = error.unresolved,
             )
         }
-        val raw = error.message ?: error.toString()
+        val raw = when (error) {
+            is org.cashudevkit.FfiException.Cdk -> error.errorMessage
+            is org.cashudevkit.FfiException.Internal -> error.errorMessage
+            else -> error.message ?: error.toString()
+        }
 
         classifyRawMessage(raw)?.let { return it }
 
@@ -89,6 +93,23 @@ object WalletErrorMessages {
         fun has(vararg needles: String): Boolean = needles.any { normalized.contains(it) }
 
         return when {
+            normalized.startsWith("failed to parse lightning address:") ->
+                error("That Lightning address does not look valid. Check it and try again.")
+
+            normalized.startsWith("failed to request invoice from lightning address service:") -> {
+                val status = Regex("^failed to request invoice from lightning address service: (?:failed to fetch pay request data: )?http transport error Some\\((\\d{3})\\):", RegexOption.IGNORE_CASE)
+                    .find(extractCdkMessage(rawMessage))?.groupValues?.get(1)
+                error(if (status != null)
+                    "The recipient’s Lightning address service is unavailable (HTTP $status). Try again later."
+                else "Couldn't get an invoice from the recipient’s Lightning address service. Check the address or try again later.")
+            }
+
+            normalized.startsWith("failed to resolve bip353 address:") ||
+                normalized.startsWith("failed to parse bip353 address:") ||
+                normalized.startsWith("no bolt12 offer found in bip353") ||
+                normalized.startsWith("failed to parse bip321 payment instruction:") ->
+                error("Couldn't resolve the recipient’s BIP-353 address. Check the address or try again later.")
+
             has("already being minted") ->
                 error("This payment is already being claimed. Give it a moment and refresh.")
 

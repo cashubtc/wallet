@@ -158,6 +158,25 @@ enum WalletErrorMessage {
             return nil
         }
 
+        if normalized.hasPrefix("failed to parse lightning address:") {
+            return .error("That Lightning address does not look valid. Check it and try again.")
+        }
+        if normalized.hasPrefix("failed to request invoice from lightning address service:") {
+            let pattern = #"^Failed to request invoice from Lightning address service: (?:Failed to fetch pay request data: )?Http transport error Some\((\d{3})\):"#
+            if let expression = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
+               let match = expression.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)),
+               let range = Range(match.range(at: 1), in: message) {
+                return .error("The recipient’s Lightning address service is unavailable (HTTP \(message[range])). Try again later.")
+            }
+            return .error("Couldn't get an invoice from the recipient’s Lightning address service. Check the address or try again later.")
+        }
+        if normalized.hasPrefix("failed to resolve bip353 address:")
+            || normalized.hasPrefix("failed to parse bip353 address:")
+            || normalized.hasPrefix("no bolt12 offer found in bip353")
+            || normalized.hasPrefix("failed to parse bip321 payment instruction:") {
+            return .error("Couldn't resolve the recipient’s BIP-353 address. Check the address or try again later.")
+        }
+
         if normalized.contains("already being minted") {
             return .error("This payment is already being claimed. Give it a moment and refresh.")
         }
