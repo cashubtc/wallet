@@ -6,6 +6,8 @@ import com.cashu.me.Models.PaymentMethodKind
 import com.cashu.me.test.fixtures.AppTestFixture
 import com.cashu.me.test.fixtures.FakeWalletGateway
 import com.cashu.me.test.fixtures.FixtureMode
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -33,6 +35,30 @@ class ReceivedAccountReconciliationTest {
                 assertFalse(store.isMintRemoved(mint.url))
                 assertEquals(listOf(mint.url), store.loadMints().map { it.url })
                 assertEquals(1, fake.receiveRecoveryCalls)
+            }
+        }
+    }
+
+    @Test fun balanceRefreshKeepsMintsAddedWhileReadingAccounts() {
+        AppTestFixture.launch(FixtureMode.SeededWithMint).use { fixture ->
+            val manager = fixture.container.walletManager
+            val fake = checkNotNull(fixture.fakeGateway)
+            runBlocking(Dispatchers.Main) {
+                val reading = CompletableDeferred<Unit>()
+                val resume = CompletableDeferred<Unit>()
+                fake.beforeStoredAccountBalance = {
+                    fake.beforeStoredAccountBalance = null
+                    reading.complete(Unit)
+                    resume.await()
+                }
+                val refresh = launch(start = CoroutineStart.UNDISPATCHED) { manager.refreshBalance() }
+                reading.await()
+                manager.addMint("https://added.mint.example")
+                resume.complete(Unit)
+                refresh.join()
+                val expected = setOf(FakeWalletGateway.TestMintUrl, "https://added.mint.example")
+                assertEquals(expected, manager.state.value.mints.map { it.url }.toSet())
+                assertEquals(expected, fixture.container.walletStore.loadMints().map { it.url }.toSet())
             }
         }
     }

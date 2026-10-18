@@ -1,0 +1,17 @@
+// Opt-in test-only artifact override. Never modifies the repository dependency pin.
+gradle.beforeProject { p ->
+    p.configurations.configureEach {
+        withDependencies { dependencies ->
+            def fixture = p.findProperty('lightningFixtureAar')
+            if (fixture != null) {
+                def matches = dependencies.findAll { it.group == 'org.cashudevkit' && it.name == 'cdk-android' }
+                if (!matches.isEmpty()) {
+                    dependencies.removeAll(matches)
+                    dependencies.add(p.dependencies.create(p.files(fixture)))
+                    // A file dependency has no POM; retain the released AAR's native loader.
+                    dependencies.add(p.dependencies.create('net.java.dev.jna:jna:5.17.0@aar'))
+                }
+            }
+        }
+    }
+}

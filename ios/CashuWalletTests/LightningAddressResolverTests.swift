@@ -1,73 +1,207 @@
 import XCTest
+import Cdk
 @testable import CashuWallet
 
 @MainActor
 final class LightningAddressResolverTests: XCTestCase {
-    private let amount: UInt64 = 250_000_000
-    private let invoice = "lnbc2500u1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpu9qrsgquk0rl77nj30yxdy8j9vdx85fkpmdla2087ne0xh8nhedh8w27kyke0lp53ut353s06fv3qfegext0eh0ymjpf39tuven09sam30g4vgpfna3rh"
+    private let discovery = "Failed to request invoice from Lightning address service: Failed to fetch pay request data: Http transport error Some("
+    private func failure(_ message: String) -> FfiError { .Cdk(code: 50000, errorMessage: message) }
 
-    func testSameHostAndDelegatedCallbacksPreserveQueryAndReplaceAmounts() async throws {
-        for host in ["example.com", "pay.example.net"] {
-            var urls: [URL] = []
-            let resolved = try await resolve(callback: "https://\(host)/invoice?amount=1&Amount=2&memo=coffee") {
-                urls.append($0)
-            }
-            XCTAssertEqual(resolved, invoice)
-            let callback = try XCTUnwrap(URLComponents(url: XCTUnwrap(urls.last), resolvingAgainstBaseURL: false))
-            XCTAssertEqual(callback.host, host)
-            XCTAssertEqual(callback.queryItems?.filter { $0.name.lowercased() == "amount" }, [URLQueryItem(name: "amount", value: String(amount))])
-            XCTAssertTrue(callback.queryItems?.contains(URLQueryItem(name: "memo", value: "coffee")) == true)
+    func testLnurlWinsForBothBolt11OnlyAndBolt12Mints() async throws {
+        for supportsBolt12 in [false, true] {
+            var calls: [String] = []
+            let quote = try await LightningAddressResolver.quote(
+                lnurl: { calls.append("lnurl"); return "bolt11" },
+                bip353: { calls.append("bip353"); XCTAssertTrue(supportsBolt12); return "bolt12" }
+            )
+            XCTAssertEqual(quote, "bolt11")
+            XCTAssertEqual(calls, ["lnurl"])
         }
     }
 
-    func testUnsafeCallbacksAreRejectedBeforeRequestingInvoice() async {
-        for callback in ["http://pay.example.net/invoice", "https://@pay.example.net/invoice", "https:///invoice", "https://bad host/invoice", "https://user:pass@pay.example.net/invoice", "https://pay.example.net/invoice#fragment", "not a URL"] {
-            var requests = 0
+    func testOnlyMissingDiscoveryEndpointFallsBack() async throws {
+        for status in [404, 410] {
+            var fallbackCalls = 0
+            let quote = try await LightningAddressResolver.quote(
+                lnurl: { () -> String in throw self.failure("\(self.discovery)\(status)): missing") },
+                bip353: { fallbackCalls += 1; return "bolt12" }
+            )
+            XCTAssertEqual(quote, "bolt12")
+            XCTAssertEqual(fallbackCalls, 1)
+        }
+    }
+
+    func testTemporaryAndInvalidRecipientResponsesNeverFallBack() async {
+        let prefix = "Failed to request invoice from Lightning address service: "
+        for message in [
+            "\(discovery)502): Bad Gateway", "\(discovery)429): Slow down",
+            "\(prefix)Failed to fetch pay request data: Http transport error None: DNS failed",
+            "\(prefix)Http transport error Some(404): callback missing",
+            "\(prefix)Returned invoice amount 1 msat does not match requested amount 1000 msat",
+            "\(prefix)Invalid LNURL callback URL: callback host must match lightning address domain",
+            "\(prefix)Failed to fetch pay request data: Http transport error None: invalid JSON",
+            "Http transport error Some(404): mint quote missing"
+        ] {
+            var fallbackCalls = 0
             do {
-                _ = try await resolve(callback: callback) { _ in requests += 1 }
-                XCTFail("Unsafe callback accepted")
+                _ = try await LightningAddressResolver.quote(
+                    lnurl: { () -> String in throw self.failure(message) },
+                    bip353: { fallbackCalls += 1; return "bolt12" }
+                )
+                XCTFail("Expected failure")
             } catch {
-                XCTAssertEqual(requests, 1)
-                XCTAssertFalse((error as? LightningAddressResolverError)?.indicatesNoLnurlPayEndpoint ?? true)
+                guard case let FfiError.Cdk(_, detail) = error else { return XCTFail("Lost FFI error") }
+                XCTAssertEqual(detail, message)
+                XCTAssertEqual(fallbackCalls, 0)
             }
         }
     }
 
-    func testInvalidOrAmountMismatchedInvoiceCannotTriggerFallback() async {
-        for (response, requested) in [("invalid", amount), (invoice, amount - 1)] {
-            do {
-                _ = try await resolve(callback: "https://pay.example.net/invoice", responseInvoice: response, requested: requested)
-                XCTFail("Invalid invoice accepted")
-            } catch {
-                XCTAssertFalse((error as? LightningAddressResolverError)?.indicatesNoLnurlPayEndpoint ?? true)
-            }
-        }
-    }
-
-    func testMissingEndpointStillAllowsBip353Fallback() async {
+    func testErrorsKeepRecipientDnsAndMintOrigins() async {
+        XCTAssertEqual(failure("\(discovery)502): Bad Gateway").userFacingWalletMessage,
+                       "The recipient’s Lightning address service is unavailable (HTTP 502). Try again later.")
         do {
-            _ = try await LightningAddressResolver.resolveBolt11Invoice(address: "alice@example.com", amountMsat: amount) { request in
-                (Data(), HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!)
-            }
-            XCTFail("Missing endpoint accepted")
+            _ = try await LightningAddressResolver.quote(
+                lnurl: { () -> String in throw self.failure("\(self.discovery)404): missing") },
+                bip353: { () -> String in throw self.failure("Failed to resolve BIP353 address: DNS timeout") }
+            )
+            XCTFail("Expected DNS failure")
         } catch {
-            XCTAssertTrue((error as? LightningAddressResolverError)?.indicatesNoLnurlPayEndpoint == true)
+            XCTAssertEqual(error.userFacingWalletMessage,
+                           "Couldn't resolve the recipient’s BIP-353 address. Check the address or try again later.")
         }
+        XCTAssertEqual(failure("Http transport error None: connection refused").userFacingWalletMessage,
+                       "Couldn't reach the mint. Check your connection and try again.")
+    }
+}
+
+/// Opt-in network tests: production service -> generated Swift binding -> native
+/// CDK -> TLS LNURL / DNSSEC / mint stubs. No resolver or FFI errors are mocked.
+@MainActor
+final class LightningAddressBindingTests: XCTestCase {
+    private var fixture = ""
+    private var repositories: [WalletRepository] = []
+    private var paths: [String] = []
+
+    override func setUp() async throws {
+        fixture = ProcessInfo.processInfo.environment["LIGHTNING_FIXTURE_URL"] ?? ""
+        try XCTSkipIf(fixture.isEmpty, "Run the Lightning Address fixture harness")
+        let (certificate, _) = try await URLSession.shared.data(from: URL(string: fixture + "/ca.pem")!)
+        let path = NSTemporaryDirectory() + "lightning-fixture-ca.pem"
+        try certificate.write(to: URL(fileURLWithPath: path))
+        setenv("SSL_CERT_FILE", path, 1)
+        setenv("LIGHTNING_DNS_STUB", "1", 1)
     }
 
-    private func resolve(
-        callback: String, responseInvoice: String? = nil, requested: UInt64? = nil,
-        observe: (URL) -> Void = { _ in }
-    ) async throws -> String {
-        var calls = 0
-        return try await LightningAddressResolver.resolveBolt11Invoice(address: "alice@example.com", amountMsat: requested ?? amount) { request in
-            let url = try XCTUnwrap(request.url)
-            observe(url)
-            calls += 1
-            let body: [String: Any] = calls == 1
-                ? ["tag": "payRequest", "callback": callback, "minSendable": 1, "maxSendable": 1_000_000_000]
-                : ["pr": responseInvoice ?? self.invoice]
-            return (try JSONSerialization.data(withJSONObject: body), HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+    override func tearDown() {
+        // Native runtime destruction must happen outside an async context.
+        repositories.removeAll()
+        for path in paths { for suffix in ["", "-wal", "-shm"] { try? FileManager.default.removeItem(atPath: path + suffix) } }
+        paths.removeAll()
+        super.tearDown()
+    }
+
+    private func call(_ path: String, body: [String: Any]? = nil) async throws -> [String: Any] {
+        var request = URLRequest(url: URL(string: fixture + path)!)
+        if let body {
+            request.httpMethod = "POST"
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
+        let (data, response) = try await URLSession.shared.data(for: request)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+        return try JSONSerialization.jsonObject(with: data) as! [String: Any]
+    }
+
+    private func service(_ scenario: [String: Any] = [:]) async throws -> LightningService {
+        _ = try await call("/scenario", body: scenario)
+        let path = NSTemporaryDirectory() + "lightning-\(UUID().uuidString).sqlite"
+        paths.append(path)
+        let repo = try WalletRepository(mnemonic: generateMnemonic(), store: .sqlite(path: path))
+        repositories.append(repo)
+        let url = fixture
+        try await repo.createWallet(mintUrl: MintUrl(url: url), unit: .sat, targetProofCount: nil)
+        var mint = MintInfo(url: url, name: "Fixture", isActive: true, balance: 1000)
+        mint.supportedMeltMethods = scenario["bolt12"] as? Bool == false ? [.bolt11] : [.bolt11, .bolt12]
+        return LightningService(walletRepository: { repo }, walletDatabase: { nil }, getActiveMint: { mint }, getMints: { [mint] })
+    }
+
+    private func events() async throws -> [[String: Any]] {
+        try await call("/state")["events"] as! [[String: Any]]
+    }
+
+    private func assertTrace(method: String?, dns: Bool, file: StaticString = #filePath, line: UInt = #line) async throws {
+        let trace = try await events()
+        let quotes = trace.filter { $0["kind"] as? String == "mint-quote" }
+        XCTAssertEqual(quotes.compactMap { $0["method"] as? String }, method.map { [$0] } ?? [], file: file, line: line)
+        XCTAssertEqual(trace.contains { $0["kind"] as? String == "dns" }, dns, file: file, line: line)
+        XCTAssertEqual(trace.filter { $0["kind"] as? String == "lnurl-discovery" }.count, 1, file: file, line: line)
+    }
+
+    func testDualNameWithBolt11OnlyMintUsesLnurl() async throws {
+        let service = try await service(["bolt12": false])
+        let quote = try await service.createHumanReadableMeltQuote(address: "test@twelve.cash", amount: 100)
+        XCTAssertEqual(quote.paymentMethod, .bolt11)
+        XCTAssertEqual(quote.amount, 100)
+        try await assertTrace(method: "bolt11", dns: false)
+    }
+
+    func testDualNameWithBolt12MintStillUsesLnurl() async throws {
+        let service = try await service()
+        let quote = try await service.createHumanReadableMeltQuote(address: "test@twelve.cash", amount: 100)
+        XCTAssertEqual(quote.paymentMethod, .bolt11)
+        try await assertTrace(method: "bolt11", dns: false)
+    }
+
+    func testRecipient502DoesNotFallBackOrReachMint() async throws {
+        let service = try await service(["lnurl_status": 502])
+        do {
+            _ = try await service.createHumanReadableMeltQuote(address: "test@twelve.cash", amount: 100)
+            XCTFail("Expected recipient failure")
+        } catch {
+            XCTAssertEqual(error.userFacingWalletMessage, "The recipient’s Lightning address service is unavailable (HTTP 502). Try again later.")
+        }
+        try await assertTrace(method: nil, dns: false)
+    }
+
+    func testAbsentLnurlUsesValidatedBip353AndBolt12() async throws {
+        let service = try await service(["lnurl_status": 404])
+        let quote = try await service.createHumanReadableMeltQuote(address: "matt@mattcorallo.com", amount: 100)
+        XCTAssertEqual(quote.paymentMethod, .bolt12)
+        XCTAssertEqual(quote.amount, 100)
+        try await assertTrace(method: "bolt12", dns: true)
+    }
+
+    func testActualMintConnectionFailureKeepsMintMessage() async throws {
+        let service = try await service(["mint_failure": true])
+        do {
+            _ = try await service.createHumanReadableMeltQuote(address: "test@twelve.cash", amount: 100)
+            XCTFail("Expected mint failure")
+        } catch {
+            XCTAssertEqual(error.userFacingWalletMessage, "Couldn't reach the mint. Check your connection and try again.")
+        }
+        try await assertTrace(method: "bolt11", dns: false)
+    }
+
+    func testDnsFailureKeepsBip353Origin() async throws {
+        let service = try await service(["lnurl_status": 404, "dns_failure": true])
+        do {
+            _ = try await service.createHumanReadableMeltQuote(address: "test@twelve.cash", amount: 100)
+            XCTFail("Expected DNS failure")
+        } catch {
+            XCTAssertEqual(error.userFacingWalletMessage, "Couldn't resolve the recipient’s BIP-353 address. Check the address or try again later.")
+        }
+        try await assertTrace(method: nil, dns: true)
+    }
+
+    func testAbsentLnurlCannotUseBolt11OnlyMintForBip353() async throws {
+        let service = try await service(["lnurl_status": 404, "bolt12": false])
+        do {
+            _ = try await service.createHumanReadableMeltQuote(address: "test@twelve.cash", amount: 100)
+            XCTFail("Expected unsupported mint")
+        } catch {
+            XCTAssertEqual(error.userFacingWalletMessage, "No mint supports BOLT12 payments required for this address.")
+        }
+        try await assertTrace(method: nil, dns: false)
     }
 }

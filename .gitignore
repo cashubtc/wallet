@@ -86,3 +86,5 @@ iOSInjectionProject/
 CI/.payment-workdir/
 CI/.nutshell-venv
 CI/payment-tests/__pycache__/
+
+CI/lightning-address-tests/__pycache__/
