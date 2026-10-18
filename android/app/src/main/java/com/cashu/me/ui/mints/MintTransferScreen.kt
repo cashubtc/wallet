@@ -1,10 +1,10 @@
 package com.cashu.me.ui.mints
 
-import androidx.activity.BackEventCompat
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.spring
@@ -37,6 +37,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -55,6 +56,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
@@ -70,7 +72,10 @@ import com.cashu.me.Core.Wallet.isInsufficientBalance
 import com.cashu.me.Core.Wallet.userFacingWalletMessage
 import com.cashu.me.Core.Wallet.walletMessage
 import com.cashu.me.Core.CDK.mintRemovalUrlsMatch
+import com.cashu.me.Core.WalletHaptic
 import com.cashu.me.Core.WalletManager
+import com.cashu.me.Core.mintDisplayName
+import com.cashu.me.Core.rememberWalletHaptics
 import com.cashu.me.Models.MintInfo
 import com.cashu.me.Models.MintTransferException
 import com.cashu.me.Models.MintTransferOutcome
@@ -78,20 +83,25 @@ import com.cashu.me.Models.MintTransferPlan
 import com.cashu.me.Models.MintTransferStage
 import com.cashu.me.ui.components.AmountFlipDisplay
 import com.cashu.me.ui.components.AmountNote
+import com.cashu.me.ui.components.AmountNoteStyle
 import com.cashu.me.ui.components.EmptyState
 import com.cashu.me.ui.components.EmptyStateSize
 import com.cashu.me.ui.components.FlowSheetTitle
 import com.cashu.me.ui.components.InlineNotice
 import com.cashu.me.ui.components.InspectorRow
+import com.cashu.me.ui.components.MintPickerSheet
 import com.cashu.me.ui.components.NoticeSeverity
 import com.cashu.me.ui.components.NumberPadFooter
+import com.cashu.me.ui.components.NumberPadMinimumKeyHeight
+import com.cashu.me.ui.components.NumberPadPreferredKeyHeight
 import com.cashu.me.ui.components.PaymentStatusPhase
 import com.cashu.me.ui.components.PaymentStatusScreen
 import com.cashu.me.ui.components.SecondaryButton
 import com.cashu.me.ui.components.SheetHeader
 import com.cashu.me.ui.components.SpinnerRing
 import com.cashu.me.ui.components.TwoFaceScreen
-import com.cashu.me.ui.components.numberPadFooterMinimumHeight
+import com.cashu.me.ui.components.amountHeroHeight
+import com.cashu.me.ui.components.numberPadFooterHeight
 import com.cashu.me.ui.send.ConfirmCautionFace
 import com.cashu.me.ui.send.ConfirmGlyphSize
 import com.cashu.me.ui.send.ConfirmHeroMinHeight
@@ -111,15 +121,17 @@ import kotlinx.coroutines.launch
 
 private enum class TransferStep { Entry, Review }
 
-// Roughly where iOS switches to its accessibility text sizes. From here the
-// pad alone takes most of the screen, so everything above it scrolls instead.
-private const val AccessibilityTextScale = 1.5f
+// Where the app's other layouts switch for large text (MintSelectorRow,
+// InspectorRow). iOS switches this screen at `.xxLarge`, a step short of its
+// accessibility sizes. From here the pad alone takes most of the screen, so
+// everything above it scrolls instead.
+private const val LargeTextScale = 1.3f
 
 // Said on the source's line when Max finds its whole balance would not pay the fee.
 private const val FeeShortfallText = "too little to cover the fee"
 
-// How far a held back gesture pulls the review toward the swipe, and how far
-// it dims, before it lets go to the amount.
+// How far a held back gesture pulls the review the way it will leave, and
+// how far it dims, before it lets go to the amount.
 private val BackPreviewLean = 24.dp
 private const val BackPreviewAlpha = 0.9f
 
@@ -133,8 +145,22 @@ private data class ReviewFailure(
 private sealed interface TransferStatus {
     data object Transferring : TransferStatus
     data class Done(val outcome: MintTransferOutcome) : TransferStatus
-    data class Failed(val text: String, val isTerminal: Boolean) : TransferStatus
+    data class Failed(
+        val text: String,
+        val isTerminal: Boolean,
+        /** Nothing was spent and the user only needs to look again (iOS `isCaution`). */
+        val isCaution: Boolean,
+    ) : TransferStatus
 }
+
+/** What the review shows: a plan with its fee, or why there is none. */
+private data class ReviewContent(
+    val plan: MintTransferPlan?,
+    /** The plan's quotes lapsed and are being asked for again: its fee and total are pending. */
+    val pending: Boolean,
+    val failure: ReviewFailure?,
+    val requoted: Boolean,
+)
 
 /**
  * Move ecash from one held mint to another: choose the two mints and an
@@ -156,6 +182,7 @@ fun MintTransferScreen(
     val formatter = remember { AmountFormatter() }
     val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
+    val walletHaptics = rememberWalletHaptics()
     val reducedMotion = rememberReducedMotion()
 
     var step by remember { mutableStateOf(TransferStep.Entry) }
@@ -182,22 +209,26 @@ fun MintTransferScreen(
     // A commit found its quotes lapsed and asked again. The review then says
     // the fee changed, so the button did not seem simply to do nothing.
     var requoted by remember { mutableStateOf(false) }
+    // The lapsed plan while its replacement is quoted. Its amount and mints
+    // stay on the review, so the commit does not blink through the spinner.
+    var requotingFrom by remember { mutableStateOf<MintTransferPlan?>(null) }
     // The running or finished transfer. While it is set the status screen
     // covers the faces; null shows them again.
     var status by remember { mutableStateOf<TransferStatus?>(null) }
     // The leg the running transfer has reached; null until the wallet reports one.
     var stage by remember { mutableStateOf<MintTransferStage?>(null) }
 
-    // How far a held system back gesture has pulled the review, and from
-    // which edge. Read only in the draw phase.
+    // How far a held system back gesture has pulled the review. Read only in
+    // the draw phase.
     var backProgress by remember { mutableFloatStateOf(0f) }
-    var backFromRightEdge by remember { mutableStateOf(false) }
     var backSettle by remember { mutableStateOf<Job?>(null) }
     val backSettleSpec = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
 
     val mints = walletState.mints
     fun mint(url: String): MintInfo? = mints.firstOrNull { mintRemovalUrlsMatch(it.url, url) }
-    fun mintName(url: String): String = mint(url)?.name ?: url
+    // A mint the wallet no longer holds is named by its address, never shown
+    // as a raw URL (iOS `MintInfo.displayName`).
+    fun mintName(url: String): String = mintDisplayName(url, mints)
 
     LaunchedEffect(mints.size) {
         if (route == null) {
@@ -337,7 +368,8 @@ fun MintTransferScreen(
                 // mint, said on its line, where the balance stops offering a
                 // maximum.
                 mint(current.sourceMintUrl)?.let { feeShortfall = it.url to it.balance }
-                haptics.performHapticFeedback(HapticFeedbackType.Reject)
+                // A warning, as on iOS: Reject is kept for payment outcomes.
+                walletHaptics.perform(WalletHaptic.Warning)
             } catch (error: Throwable) {
                 val message = error.walletMessage
                 // The note under the amount holds one line: what broke. Tapping
@@ -366,9 +398,12 @@ fun MintTransferScreen(
         )
     }
 
-    fun requestQuote(current: MintTransferRoute, quoteAmount: Long) {
+    // [replacing] is a lapsed plan to keep on screen, fee pending, while its
+    // replacement is quoted; without one the review waits on the spinner.
+    fun requestQuote(current: MintTransferRoute, quoteAmount: Long, replacing: MintTransferPlan? = null) {
         quoteJob?.cancel()
         plan = null
+        requotingFrom = replacing
         reviewFailure = null
         quoteJob = scope.launch {
             try {
@@ -382,12 +417,15 @@ fun MintTransferScreen(
                     return@launch
                 }
                 plan = quoted
-                // The fee the commit was turned back for has just changed.
-                if (requoted) haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
+                requotingFrom = null
+                // The fee the commit was turned back for has just changed
+                // (iOS `.warning`).
+                if (requoted) walletHaptics.perform(WalletHaptic.Warning)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
                 requoted = false
+                requotingFrom = null
                 reviewFailure = failure(error)
             }
         }
@@ -422,6 +460,7 @@ fun MintTransferScreen(
         // specific to this visit.
         plan?.takeIf { it.id != maxPlan?.id }?.let(::discard)
         plan = null
+        requotingFrom = null
         reviewFailure = null
         requoted = false
         step = TransferStep.Entry
@@ -439,11 +478,12 @@ fun MintTransferScreen(
         if (current.isExpired()) {
             // The quotes lapsed while the review was open. Quote again and show
             // the fee that now applies instead of failing the commit, and say
-            // so: the button did not simply fail to respond.
+            // so: the button did not simply fail to respond. The amount and
+            // mints hold still meanwhile; only the fee and total wait.
             if (maxPlan?.id == current.id) maxPlan = null
             discard(current)
             requoted = true
-            requestQuote(currentRoute, current.amount)
+            requestQuote(currentRoute, current.amount, replacing = current)
             return
         }
         haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
@@ -464,7 +504,11 @@ fun MintTransferScreen(
                 throw cancelled
             } catch (error: Throwable) {
                 val message = error.walletMessage
-                TransferStatus.Failed(message.text, message.isTerminal)
+                TransferStatus.Failed(
+                    text = message.text,
+                    isTerminal = message.isTerminal,
+                    isCaution = message.severity == WalletMessageSeverity.Caution,
+                )
             }
         }
     }
@@ -489,15 +533,16 @@ fun MintTransferScreen(
     }
 
     // System back on the review returns to the amount, previewed while the
-    // gesture is held: the face leans toward the swipe and dims a touch. This
-    // deliberately differs from UnifiedSendScreen, whose back abandons the
-    // sheet from any face, and follows UX_SPEC.md ("system back unwinds faces
-    // before the sheet closes"). On Entry back keeps closing the sheet.
+    // gesture is held: the face leans the way the backward slide will carry it
+    // off, from either edge, so preview and commit read as one motion, and it
+    // dims a touch. This deliberately differs from UnifiedSendScreen, whose
+    // back abandons the sheet from any face, and follows UX_SPEC.md ("system
+    // back unwinds faces before the sheet closes"). On Entry back keeps
+    // closing the sheet.
     PredictiveBackHandler(enabled = step == TransferStep.Review && status == null) { gesture ->
         backSettle?.cancel()
         try {
             gesture.collect { event ->
-                backFromRightEdge = event.swipeEdge == BackEventCompat.EDGE_RIGHT
                 if (!reducedMotion) backProgress = event.progress
             }
             // The review keeps its lean as it leaves; the next one starts at rest.
@@ -570,13 +615,15 @@ fun MintTransferScreen(
                                     title = "Add another mint",
                                     supporting = "A transfer moves ecash between two of your mints.",
                                     icon = Icons.Outlined.SwapHoriz,
-                                    size = EmptyStateSize.FullScreen,
+                                    // Sheet scale, as Send's "Nothing to send
+                                    // yet": FullScreen is for tabs.
+                                    size = EmptyStateSize.Section,
                                 )
                                 mints.all { it.balance == 0L } -> EmptyState(
                                     title = "Nothing to transfer yet",
                                     supporting = "Receive some ecash before you can move it between mints.",
                                     icon = Icons.Outlined.SwapHoriz,
-                                    size = EmptyStateSize.FullScreen,
+                                    size = EmptyStateSize.Section,
                                 )
                                 sourceMint != null && destinationMint != null -> EntryFace(
                                     source = sourceMint,
@@ -622,26 +669,41 @@ fun MintTransferScreen(
                                 )
                             }
 
-                            TransferStep.Review -> ReviewFace(
-                                plan = plan,
-                                failure = reviewFailure,
-                                requoted = requoted,
-                                mintName = ::mintName,
-                                formatter = formatter,
-                                useBitcoinSymbol = settings.useBitcoinSymbol,
-                                preferredPrimary = settings.amountDisplayPrimary,
-                                showFiat = settings.showFiatBalance,
-                                btcPrice = priceState.btcPrice,
-                                currencyCode = priceState.currencyCode,
-                                onChangeAmount = ::backToEntry,
-                                onRetryQuote = ::retryQuote,
-                                onTransfer = ::transfer,
-                                modifier = Modifier.graphicsLayer {
-                                    val lean = BackPreviewLean.toPx() * backProgress
-                                    translationX = if (backFromRightEdge) -lean else lean
-                                    alpha = 1f - (1f - BackPreviewAlpha) * backProgress
-                                },
-                            )
+                            TransferStep.Review -> {
+                                val live = ReviewContent(
+                                    plan = plan ?: requotingFrom,
+                                    pending = plan == null && requotingFrom != null,
+                                    failure = reviewFailure,
+                                    requoted = requoted,
+                                )
+                                // The review leaving for the amount keeps what it
+                                // last showed. backToEntry clears the plan as the
+                                // slide starts, which would otherwise fade the
+                                // outgoing face to the spinner (the status screen
+                                // holds its plan the same way).
+                                val leaving = step != TransferStep.Review
+                                val lastShown = remember { mutableStateOf(live) }
+                                SideEffect { if (!leaving) lastShown.value = live }
+                                ReviewFace(
+                                    content = if (leaving) lastShown.value else live,
+                                    mintName = ::mintName,
+                                    formatter = formatter,
+                                    useBitcoinSymbol = settings.useBitcoinSymbol,
+                                    preferredPrimary = settings.amountDisplayPrimary,
+                                    showFiat = settings.showFiatBalance,
+                                    btcPrice = priceState.btcPrice,
+                                    currencyCode = priceState.currencyCode,
+                                    onChangeAmount = ::backToEntry,
+                                    onRetryQuote = ::retryQuote,
+                                    onTransfer = ::transfer,
+                                    modifier = Modifier.graphicsLayer {
+                                        // Toward where TwoFaceScreen's backward
+                                        // shared-axis slide takes it on commit.
+                                        translationX = BackPreviewLean.toPx() * backProgress
+                                        alpha = 1f - (1f - BackPreviewAlpha) * backProgress
+                                    },
+                                )
+                            }
                         }
                     }
                 }
@@ -650,26 +712,27 @@ fun MintTransferScreen(
     }
 
     picking?.let { slot ->
-        val options = mints.map { mint ->
-            MintTransferPickerOption(
-                mint = mint,
-                balanceText = sats(mint.balance),
-                unavailableReason = when (slot) {
+        MintPickerSheet(
+            mints = mints,
+            activeMintUrl = when (slot) {
+                Slot.Source -> sourceMint?.url
+                Slot.Destination -> destinationMint?.url
+            },
+            title = if (slot == Slot.Source) "Transfer from" else "Transfer to",
+            // Every held mint is listed, so one that can't take this end
+            // says why (iOS `MintTransferMintPicker` parity).
+            unavailableReason = { mint ->
+                when (slot) {
                     Slot.Source ->
                         if (MintTransferEligibility.canSend(mint)) null else "Can't send over Lightning"
                     Slot.Destination ->
                         if (MintTransferEligibility.canReceive(mint)) null else "Can't receive over Lightning"
-                },
-            )
-        }
-        MintTransferMintPicker(
-            slot = slot,
-            options = options,
-            selectedMintUrl = when (slot) {
-                Slot.Source -> route?.sourceMintUrl
-                Slot.Destination -> route?.destinationMintUrl
-            }.orEmpty(),
-            onSelect = { picked -> route?.let { changeRoute(it.choosing(picked.url, slot)) } },
+                }
+            },
+            onSelect = { picked ->
+                if (picked != null) route?.let { changeRoute(it.choosing(picked.url, slot)) }
+                picking = null
+            },
             onDismiss = { picking = null },
         )
     }
@@ -721,6 +784,16 @@ private fun EntryFace(
         isWholeBalance -> AmountNote("Not enough left for the fee. Use Max.", NoticeSeverity.Caution)
         else -> null
     }
+    // Dims over the balance with a fade, as Send Ecash's amount does.
+    val amountColor by animateColorAsState(
+        targetValue = if (overBalance) {
+            MaterialTheme.colorScheme.onSurfaceVariant
+        } else {
+            MaterialTheme.colorScheme.onSurface
+        },
+        animationSpec = spring(stiffness = Spring.StiffnessMedium),
+        label = "amount-color",
+    )
     // A note takes the conversion line under the amount.
     val amountDisplay: @Composable (AmountScale, Modifier) -> Unit = { scale, displayModifier ->
         AmountFlipDisplay(
@@ -734,11 +807,7 @@ private fun EntryFace(
             entryRaw = amount,
             entryScale = scale,
             primaryAccessibilityPrefix = "Transfer amount",
-            color = if (overBalance) {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            } else {
-                MaterialTheme.colorScheme.onSurface
-            },
+            color = amountColor,
             note = note,
             holdsNoteLine = true,
         )
@@ -764,26 +833,29 @@ private fun EntryFace(
             onSwap = onSwap,
         )
     }
-    val accessibilityText = LocalDensity.current.fontScale >= AccessibilityTextScale
+    val largeText = LocalDensity.current.fontScale >= LargeTextScale
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         // The pad and the two mints are fixed; the amount takes what is left.
+        // The pad is measured first and grows its keys to 64dp whenever it
+        // has the room, so the budget starts from its full height.
         // The mints need two 16dp captions with their 4dp gaps, two name lines
         // (each 48dp target overhangs its caption, so a row claims only its
         // line), the 24dp source balance, the 48dp swap row and the 8dp gap
         // above the pad: 120dp plus the name lines, 168dp at ordinary text.
         // The destination's balance adds 24dp and is kept only while the
         // amount can still sit at Hero beside it. On a shorter screen it goes
-        // first, then the amount steps down a rung, so none of them crowd
-        // each other.
+        // first, then the amount steps down a rung, then the keys give up
+        // height to keep the compact amount, so none of them crowd each other.
         val density = LocalDensity.current
         val nameLine = with(density) { MaterialTheme.typography.bodyLarge.lineHeight.toDp() }
         val mintsHeight = 120.dp + nameLine * 2
-        val room = maxHeight - numberPadFooterMinimumHeight()
+        val room = maxHeight - numberPadFooterHeight(NumberPadPreferredKeyHeight)
         val showsDestinationBalance = room >= mintsHeight + 24.dp + 160.dp
+        val besideMints = if (showsDestinationBalance) mintsHeight + 24.dp else mintsHeight
         // The rungs below budget the conversion line, which a note takes. A
         // note that wraps takes its extra lines from the amount, which steps
-        // down rather than meeting the mints.
-        val noteStyle = CashuTheme.type.amountSecondary
+        // down rather than meeting the mints. Measured in the note's own style.
+        val noteStyle = AmountNoteStyle
         val noteLines = note?.let {
             val textWidth = maxWidth - CashuTheme.spacing.comfortable * 2
             textMeasurer.measure(
@@ -793,20 +865,30 @@ private fun EntryFace(
             ).lineCount
         } ?: 1
         val noteLineHeight = with(density) { noteStyle.lineHeight.toDp() }
-        val heroRoom = room - (if (showsDestinationBalance) mintsHeight + 24.dp else mintsHeight) -
-            noteLineHeight * (noteLines - 1) - CashuTheme.spacing.snug
+        // The amount box's own gap under the amount, and the lines a wrapping
+        // note adds.
+        val amountExtras = noteLineHeight * (noteLines - 1) + CashuTheme.spacing.snug
+        val heroRoom = room - besideMints - amountExtras
         val heroScale = when {
             heroRoom >= 160.dp -> AmountScale.Hero
             heroRoom >= 110.dp -> AmountScale.Confirm
             else -> AmountScale.Compact
         }
+        // The compact amount's line, its gap and the conversion line.
+        val compactRoom = amountHeroHeight(AmountScale.Compact) + CashuTheme.spacing.default + noteLineHeight
+        // Below that the keys shrink toward their 48dp minimum so the compact
+        // amount keeps its room. Where even that leaves too little, the amount
+        // and the mints scroll above the pad, as at large text.
+        val footerCap = maxHeight - besideMints - amountExtras - compactRoom
+        val scrolls = largeText || footerCap < numberPadFooterHeight(NumberPadMinimumKeyHeight)
+        val footerModifier = if (heroRoom < compactRoom) Modifier.heightIn(max = footerCap) else Modifier
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = CashuTheme.spacing.comfortable),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            if (accessibilityText) {
+            if (scrolls) {
                 // The amount and the mints scroll above the pad rather than
                 // being squeezed until they overlap (iOS parity). The amount
                 // takes the compact rung; the destination keeps its balance.
@@ -847,6 +929,7 @@ private fun EntryFace(
                 onButtonClick = onContinue,
                 decimals = if (entryPrimary == com.cashu.me.Core.AmountDisplayPrimary.Fiat) 2 else 0,
                 buttonEnabled = entryState == MintTransferEntry.Ready && !isFindingMax,
+                modifier = if (scrolls) Modifier else footerModifier,
                 buttonModifier = Modifier.testTag(UiTestTags.MintTransferContinue),
             )
         }
@@ -855,9 +938,7 @@ private fun EntryFace(
 
 @Composable
 private fun ReviewFace(
-    plan: MintTransferPlan?,
-    failure: ReviewFailure?,
-    requoted: Boolean,
+    content: ReviewContent,
     mintName: (String) -> String,
     formatter: AmountFormatter,
     useBitcoinSymbol: Boolean,
@@ -891,23 +972,26 @@ private fun ReviewFace(
                 Spacer(Modifier.height(scaffoldHeight * ConfirmTopFraction))
                 // The quote landing (or failing) fades the hero and rows in
                 // place, as on iOS. The state rides in the target so the
-                // outgoing face keeps its content while it fades.
+                // outgoing face keeps its content while it fades. A plan
+                // quoted again keeps its key: only its fee and total change.
                 AnimatedContent(
-                    targetState = plan to failure,
+                    targetState = content,
                     modifier = Modifier.fillMaxWidth(),
                     contentAlignment = Alignment.TopCenter,
                     transitionSpec = {
                         (fadeIn(tween(200)) togetherWith fadeOut(tween(150))).using(null)
                     },
                     label = "mint-transfer-review",
-                    contentKey = { (keyPlan, keyFailure) ->
+                    contentKey = { shown ->
                         when {
-                            keyFailure != null -> 2
-                            keyPlan != null -> 1
+                            shown.failure != null -> 2
+                            shown.plan != null -> 1
                             else -> 0
                         }
                     },
-                ) { (shownPlan, shownFailure) ->
+                ) { shown ->
+                    val shownPlan = shown.plan
+                    val shownFailure = shown.failure
                     Column(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -941,22 +1025,29 @@ private fun ReviewFace(
                             }
                         }
                         if (shownPlan != null && shownFailure == null) {
+                            // The snug gap under the hero, as Send's confirm and
+                            // the status screen have: the status screen's rows
+                            // land exactly on these at commit.
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(top = CashuTheme.spacing.comfortable),
+                                    .padding(top = CashuTheme.spacing.snug),
                             ) {
                                 TransferDetailRow(label = "From", value = mintName(shownPlan.sourceMintUrl))
                                 TransferDetailRow(label = "To", value = mintName(shownPlan.destinationMintUrl))
+                                // Pending while the quote is asked for again;
+                                // the new values fade in where these were.
                                 TransferDetailRow(
                                     label = "Network fee",
                                     value = formatter.formatWalletSats(shownPlan.feeUpperBound, useBitcoinSymbol),
                                     valueMonospaced = true,
+                                    loading = shown.pending,
                                 )
                                 TransferDetailRow(
                                     label = "Total",
                                     value = formatter.formatWalletSats(shownPlan.total, useBitcoinSymbol),
                                     valueMonospaced = true,
+                                    loading = shown.pending,
                                 )
                             }
                         }
@@ -967,7 +1058,7 @@ private fun ReviewFace(
             // lapsed and this is the fee that applies now. The notice's own
             // polite live region announces it.
             AnimatedVisibility(
-                visible = requoted && plan != null && failure == null,
+                visible = content.requoted && content.plan != null && !content.pending && content.failure == null,
                 enter = fadeIn(spring(stiffness = Spring.StiffnessMedium)),
                 exit = fadeOut(spring(stiffness = Spring.StiffnessMedium)),
             ) {
@@ -980,21 +1071,23 @@ private fun ReviewFace(
             }
             // The button fades with the hero, keyed on which button it is.
             AnimatedContent(
-                targetState = plan to failure,
+                targetState = content,
                 modifier = Modifier.fillMaxWidth(),
                 transitionSpec = {
                     (fadeIn(tween(200)) togetherWith fadeOut(tween(150))).using(null)
                 },
                 label = "mint-transfer-review-action",
-                contentKey = { (keyPlan, keyFailure) ->
+                contentKey = { shown ->
                     when {
-                        keyFailure != null && keyFailure.isShortfall -> 3
-                        keyFailure != null -> 2
-                        keyPlan != null -> 1
+                        shown.failure != null && shown.failure.isShortfall -> 3
+                        shown.failure != null -> 2
+                        shown.plan != null -> 1
                         else -> 0
                     }
                 },
-            ) { (shownPlan, shownFailure) ->
+            ) { shown ->
+                val shownPlan = shown.plan
+                val shownFailure = shown.failure
                 when {
                     shownFailure != null && shownFailure.isShortfall -> SecondaryButton(
                         text = "Change Amount",
@@ -1002,10 +1095,12 @@ private fun ReviewFace(
                     )
                     shownFailure != null -> SecondaryButton(text = "Retry Quote", onClick = onRetryQuote)
                     // Names the amount that arrives. Tonal, like Continue: moving
-                    // between your own mints is no payment (iOS parity).
+                    // between your own mints is no payment (iOS parity). Held
+                    // off, as it was, while a lapsed quote is replaced.
                     shownPlan != null -> SecondaryButton(
                         text = "Transfer ${formatter.formatWalletSats(shownPlan.amount, useBitcoinSymbol)}",
                         onClick = onTransfer,
+                        enabled = !shown.pending,
                         modifier = Modifier.testTag(UiTestTags.MintTransferSubmit),
                     )
                     // The hero spinner owns the wait; the button's footprint is
@@ -1077,7 +1172,7 @@ private fun StatusFace(
         settlementPending = settling != null,
         successAmount = successAmount,
         // A terminal outcome can't be retried; anything else re-quotes.
-        doneLabel = if (status is TransferStatus.Failed && !status.isTerminal) "Try Again" else "Done",
+        doneLabel = if (status is TransferStatus.Failed && !status.isTerminal) "Try again" else "Done",
         onDone = when (status) {
             TransferStatus.Transferring -> null
             is TransferStatus.Done -> onDone
@@ -1085,22 +1180,14 @@ private fun StatusFace(
                 { if (status.isTerminal) onDone() else onRetry() }
             }
         },
+        caution = status is TransferStatus.Failed && status.isCaution,
         showRowsDuringProcessing = true,
         rows = plan?.let { shown ->
             {
-                // At success the amount moves up into the hero: its row fades
-                // out and the rows below close the gap, as on iOS.
-                AnimatedVisibility(
-                    visible = successAmount == null,
-                    enter = fadeIn(tween(200)) + expandVertically(),
-                    exit = fadeOut(tween(150)) + shrinkVertically(),
-                ) {
-                    TransferDetailRow(
-                        label = "Amount",
-                        value = formatter.formatWalletSats(shown.amount, useBitcoinSymbol),
-                        valueMonospaced = true,
-                    )
-                }
+                // The review's rows, in its order and words, so nothing under
+                // the title moves at commit. At success the amount is the
+                // hero, the fee becomes the fee paid and the total the review
+                // reserved leaves, the rows above holding still (iOS parity).
                 TransferDetailRow(label = "From", value = mintName(shown.sourceMintUrl))
                 TransferDetailRow(label = "To", value = mintName(shown.destinationMintUrl))
                 val feeText = if (outcome is MintTransferOutcome.Completed) {
@@ -1120,22 +1207,40 @@ private fun StatusFace(
                         TransferDetailRow(label = "Network fee", value = shownFee, valueMonospaced = true)
                     }
                 }
+                AnimatedVisibility(
+                    visible = successAmount == null,
+                    enter = fadeIn(tween(200)) + expandVertically(),
+                    exit = fadeOut(tween(150)) + shrinkVertically(),
+                ) {
+                    TransferDetailRow(
+                        label = "Total",
+                        value = formatter.formatWalletSats(shown.total, useBitcoinSymbol),
+                        valueMonospaced = true,
+                    )
+                }
             }
         },
     )
 }
 
-/** One TalkBack stop per row: the label is read with its value, not before it. */
+/**
+ * One TalkBack stop per row: the label is read with its value, not before it.
+ * A [loading] value is a skeleton that the value fades in over.
+ */
 @Composable
 private fun TransferDetailRow(
     label: String,
     value: String,
     valueMonospaced: Boolean = false,
+    loading: Boolean = false,
 ) {
     InspectorRow(
         label = label,
         value = value,
         valueMonospaced = valueMonospaced,
-        modifier = Modifier.semantics(mergeDescendants = true) {},
+        loading = loading,
+        modifier = Modifier.semantics(mergeDescendants = true) {
+            if (loading) stateDescription = "Calculating"
+        },
     )
 }

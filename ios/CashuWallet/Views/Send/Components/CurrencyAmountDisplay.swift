@@ -28,6 +28,11 @@ struct CurrencyAmountDisplay: View {
     /// Holds the conversion line's height when there is no price to show, so
     /// a note appearing never moves the amount. For screens that pass `note`.
     var holdsNoteLine: Bool = false
+    /// Announce the note to VoiceOver as it changes. A screen that offers
+    /// several of these to a `ViewThatFits` announces once itself instead: the
+    /// candidates it is not showing still see the note change, so each would
+    /// announce it.
+    var announcesNote: Bool = true
 
     @ObservedObject private var priceService = PriceService.shared
     @ObservedObject private var settings = SettingsManager.shared
@@ -111,7 +116,7 @@ struct CurrencyAmountDisplay: View {
             // two lines trade places without overlapping, so the amount holds
             // still.
             if let note {
-                AmountNoteLine(note: note)
+                AmountNoteLine(note: note, announces: announcesNote)
                     .transition(.asymmetric(insertion: .opacity, removal: .identity))
             } else if holdsNoteLine && !fiatAvailable {
                 AmountNoteLine.placeholder
@@ -168,6 +173,7 @@ struct AmountNote: Equatable {
 /// above it does not move.
 struct AmountNoteLine: View {
     let note: AmountNote
+    var announces = true
 
     var body: some View {
         Text(note.text)
@@ -179,13 +185,18 @@ struct AmountNoteLine: View {
             .padding(.horizontal)
             .accessibilityLabel(note.spoken ?? note.text)
             .onChange(of: note, initial: true) { _, note in
-                // The colour is lost to VoiceOver, so the announcement names
-                // the tier.
-                guard note.severity != .info else { return }
-                AccessibilityNotification.Announcement(
-                    note.severity.announcementPrefix + (note.spoken ?? note.text)
-                ).post()
+                guard announces else { return }
+                Self.announce(note)
             }
+    }
+
+    static func announce(_ note: AmountNote) {
+        // The colour is lost to VoiceOver, so the announcement names the
+        // tier.
+        guard note.severity != .info else { return }
+        AccessibilityNotification.Announcement(
+            note.severity.announcementPrefix + (note.spoken ?? note.text)
+        ).post()
     }
 
     /// The line's height with nothing in it.

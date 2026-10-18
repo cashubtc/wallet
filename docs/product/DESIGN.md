@@ -228,7 +228,10 @@ What this system explicitly rejects, pulled verbatim from docs/product/PRODUCT.m
   two mints the rows have no chevron and the swap control is the only way to
   change the pair. *(2026-10-18: with three or more mints the chevron follows
   the mint's name, as on Send's "From {mint}", rather than sitting at the
-  trailing edge, where it crowded Max on the line below.)* `MintTransferRouteView` (iOS) / `MintTransferRoute` (Android).
+  trailing edge, where it crowded Max on the line below.)* *(2026-10-18: the
+  balance line and Max belong to the mint, not to the slot. On a swap they
+  change with the mint's name (§6 animation 8); only the caption stays with
+  the slot.)* `MintTransferRouteView` (iOS) / `MintTransferRouteBlock` (Android).
   *(2026-10-01: each slot carries a visible footnote / labelMedium caption,
   "From" and "To", that stays with the slot when the mints trade places, so the
   direction is read from words rather than from the glyph. The destination's
@@ -244,7 +247,8 @@ What this system explicitly rejects, pulled verbatim from docs/product/PRODUCT.m
   truncated: a note that wraps at a larger text size takes its extra lines
   from the amount, which steps down its ladder instead of meeting the mints.
   Where even the compact amount and both mints no longer fit above the pad
-  (iOS from xxLarge, Android from 1.5× text), they scroll instead,
+  (iOS from xxLarge, Android from 1.3× text, the app's usual cut-over; it
+  was 1.5× until 2026-10-18), they scroll instead,
   and the amount is scrolled into view when a note appears. Send's amount screens say
   their notes the same way; see inline-error-fixes.md §1b.)*
   The review names the mints in its From and To rows, without avatars, and the
@@ -256,8 +260,21 @@ What this system explicitly rejects, pulled verbatim from docs/product/PRODUCT.m
   (§6 animation 5; they used to slide the full width), on Android they keep the
   shared-axis `TwoFaceScreen`, and on both the status screen fades in over the
   review and back out on Try Again, never sideways (§6 animation 6). The quote
-  landing on the review fades the amount, rows and button in place, and at
-  success the Amount row eases out as the amount takes the hero.)*
+  landing on the review fades the amount, rows and button in place.)*
+  *(2026-10-18, consistency pass: nothing on the review moves when the
+  transfer starts. The status screen keeps the review's own rows, From, To,
+  Network fee and Total, in the same order and at the same place, so they fade
+  onto themselves; at success the amount takes the hero, Total leaves and the
+  fee becomes the fee paid. A commit whose quotes lapsed keeps the review up
+  and holds only the fee and Total as pending while they are quoted again,
+  with the button held off under its old label. Max reserves the width of
+  "Using Max", so the line never changes layout when Max lands, and its words
+  and spinner cross-fade. The mint picker is Send's own (`MintSelectorSheet` /
+  `MintPickerSheet`), which lists a mint that can't take part dimmed, with the
+  reason in place of its balance. Caution failures show the orange triangle on
+  both platforms. Try Again on the failure face is quiet like the flow's other
+  actions, not the white primary that Send's retry uses on iOS; Android's
+  status button is the neutral fill on every flow.)*
 - Payment facts use regular footnote/bodyMedium type, secondary labels, primary
   values, 8pt/dp vertical padding, and a centered 320pt/dp maximum column width.
   Editable rows retain at least 44pt/48dp touch height. At accessibility sizes,
@@ -378,7 +395,11 @@ as a tinted background.
   state is a monochrome "Pending" `Status` row (2026-07-05(c)). When used as a
   background it lives at `.opacity(0.1)` — the quiet-pending principle made visual.
 - **Error Red** (`Color.red`, ≈ `#FF3B30` / `#FF453A`): the `.failed` status
-  foreground and destructive-action accents. As a tint background it appears at
+  foreground and destructive-action accents. *(2026-10-18: also the words of an
+  amount note, for caution as well as error, since orange text fails contrast on
+  a light background. In light mode the note resolves `systemRed` at increased
+  contrast (≈ `#D70015`), through the one token `ErrorSeverity.noteForeground`;
+  Android uses `colorScheme.error`.)* As a tint background it appears at
   `.opacity(0.18)` (e.g. the authorizing-overlay destructive surface).
 
 ### Selection / Pressed
@@ -923,7 +944,10 @@ right tool for the job.
   **This is the only button surface vocabulary in the app.** Defined in
   `ios/CashuWallet/Views/Components/LiquidGlassModifiers.swift`. Used everywhere a
   button needs a visible affordance: Create Wallet, Continue, Pay, Send,
-  Receive, Copy, Restore, etc.
+  Receive, Copy, Restore, etc. *(2026-10-18: a payment's commit is no longer
+  the white primary. Send's "Pay {amount} sat", the Cashu request's Pay and
+  Transfer's "Transfer {amount}" use the quiet `.flatSheetSecondaryButton()`,
+  as Android's neutral `PrimaryButton` fill already did.)*
 - **Text link — `.textLinkButton()`** (= `TextLinkButtonStyle`): the canonical
   borderless, text-only tertiary action. `.subheadline.weight(.medium)`,
   `.secondary`, press-dim to 0.6, disabled 0.4 — the same feedback family as
@@ -1609,11 +1633,11 @@ code must be).
    `Spring.StiffnessLow` spring, whose response matches `.smooth(0.4)`; the
    motion scheme's effects specs are faster and its spatial specs
    overshoot.)*
-   The balance lines belong to the slots and change in place with a numeric
-   content transition. None of the seven fit: this is the one place two elements
-   exchange positions, and the travel is what tells the user which mint went
-   where. Reduce Motion replaces the travel with an opacity cross-fade in place.
-   Android runs the same exchange on its spatial spring.
+   None of the seven fit: this is the one place a slot's mint is replaced by
+   another while the user watches, so the change has to read as a different
+   mint rather than a changed number. *(The original recipe above, with
+   balances rolling in place and identities travelling between slots, is
+   retired; the 2026-10-01 notes describe what ships.)*
 
 **Allowed easings.** `.smooth(duration:)` for entrances and reflows.
 `.snappy(duration:)` for state flips and presses (.09 / .18 / .25 / .28 / .35

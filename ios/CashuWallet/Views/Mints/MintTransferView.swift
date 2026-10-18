@@ -51,6 +51,10 @@ struct MintTransferView: View {
     }
 
     @State private var plan: MintTransferPlan?
+    /// A plan whose quotes lapsed on the review screen, held on screen while
+    /// its replacement is quoted: the amount and mints stay put and only the
+    /// fee and total wait. Its quotes are already discarded; it is never sent.
+    @State private var lapsedPlan: MintTransferPlan?
     @State private var reviewFailure: ReviewFailure?
     @State private var quoteTask: Task<Void, Never>?
     /// The quotes lapsed on the review screen and were replaced, so the fee
@@ -66,7 +70,10 @@ struct MintTransferView: View {
         NavigationStack {
             Group {
                 // Two faces of one task cross-fade in place, like Send's
-                // amount → confirm → status (DESIGN.md §6 #5, #6).
+                // amount → confirm → status (DESIGN.md §6 #5, #6). A step
+                // change makes all of its state changes inside one
+                // `withAnimation`: anything changed outside it in the same
+                // update turns the swap into a cut (measured in the simulator).
                 switch step {
                 case .entry:
                     entryFace
@@ -213,7 +220,9 @@ struct MintTransferView: View {
                                     .id(Self.amountAnchor)
                                 route(source: source, destination: destination, showsDestinationBalance: true)
                             }
-                            .padding(.top, 8)
+                            // Scrolled to its end, the route keeps the fixed
+                            // layout's gap above the pad.
+                            .padding(.vertical, 8)
                         }
                         .scrollBounceBehavior(.basedOnSize)
                         // A note answers what was just typed or tapped, which
@@ -245,8 +254,13 @@ struct MintTransferView: View {
                         // caption on a short screen.
                         .padding(.bottom, 8)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        // Keyed to the note alone, as Send's amount is. The
+                        // over-balance dimming animates inside the amount
+                        // display; keyed to the entry state as well, the fiat
+                        // line rolled on the few keystrokes that changed it
+                        // (the first digit, crossing the balance) and jumped
+                        // on all the others.
                         .animation(reduceMotion ? .easeInOut(duration: 0.2) : .snappy(duration: 0.25), value: amountNote)
-                        .animation(reduceMotion ? .easeInOut(duration: 0.2) : .snappy(duration: 0.25), value: entryState)
 
                     route(source: source, destination: destination, showsDestinationBalance: proxy.size.height >= 600)
                         .padding(.bottom, 8)
@@ -267,6 +281,13 @@ struct MintTransferView: View {
                 .padding(.top, 16)
                 .padding(.bottom, 16)
             }
+        }
+        // The amount is offered to a ViewThatFits at three sizes. A size it
+        // is not showing still sees the note change, so each announcing it
+        // would say it three times; it is said here, once.
+        .onChange(of: amountNote, initial: true) { _, note in
+            guard let note else { return }
+            AmountNoteLine.announce(note)
         }
     }
 
@@ -307,7 +328,9 @@ struct MintTransferView: View {
             entryRaw: amountString,
             isDimmed: entryState == .overBalance,
             note: amountNote,
-            holdsNoteLine: true
+            holdsNoteLine: true,
+            // Said once by the entry face, not by each rung.
+            announcesNote: false
         )
     }
 
@@ -391,26 +414,28 @@ struct MintTransferView: View {
         Task { await walletManager.discardMintTransferPlan(abandoned) }
     }
 
+    /// Send's mint picker, so a mint is chosen the same way in both flows.
+    /// Every held mint is listed; one that cannot take this end says why on
+    /// its own row and does nothing.
     private func mintPicker(for direction: MintSelectorDirection) -> some View {
-        let options = walletManager.mints.map { mint in
-            let unavailable: String? = switch direction {
-            case .source:
-                MintTransferEligibility.canSend(mint) ? nil : "Can't send over Lightning"
-            case .destination:
-                MintTransferEligibility.canReceive(mint) ? nil : "Can't receive over Lightning"
-            }
-            return MintTransferMintPicker.Option(mint: mint, unavailableReason: unavailable)
-        }
-        let selected = direction == .source ? route?.sourceMintURL : route?.destinationMintURL
-        return MintTransferMintPicker(
-            direction: direction,
-            options: options,
-            selectedMintURL: selected ?? "",
-            onSelect: { mint in
+        let selectedURL = direction == .source ? route?.sourceMintURL : route?.destinationMintURL
+        return MintSelectorSheet(
+            selectedMint: .constant(selectedURL.flatMap { mint($0) }),
+            title: direction == .source ? "Transfer from" : "Transfer to",
+            unavailableReason: { candidate in
+                switch direction {
+                case .source:
+                    MintTransferEligibility.canSend(candidate) ? nil : "Can't send over Lightning"
+                case .destination:
+                    MintTransferEligibility.canReceive(candidate) ? nil : "Can't receive over Lightning"
+                }
+            },
+            onSelect: { chosen in
                 guard let route else { return }
-                changeRoute(to: route.choosing(mint.url, as: direction))
+                changeRoute(to: route.choosing(chosen.url, as: direction))
             }
         )
+        .environmentObject(walletManager)
     }
 
     private func useMax() {
@@ -469,25 +494,35 @@ struct MintTransferView: View {
 
     private func review() {
         guard entryState == .ready, let route else { return }
-        HapticFeedback.impact(.light)
-        reviewFailure = nil
+        // A step within the sheet, as Send's amount → confirm.
+        HapticFeedback.selection()
         if let maxPlan, !maxPlan.isExpired() {
             // Already quoted: nothing to wait for.
-            plan = maxPlan
-            step = .review
+            withAnimation(.smooth(duration: 0.3)) {
+                reviewFailure = nil
+                plan = maxPlan
+                step = .review
+            }
             return
         }
         // Read before the Max quote is dropped: the amount is its amount.
         let amount = amountSats
-        dropMaxPlan()
-        plan = nil
-        step = .review
-        requestQuote(route: route, amount: amount)
+        withAnimation(.smooth(duration: 0.3)) {
+            reviewFailure = nil
+            dropMaxPlan()
+            plan = nil
+            step = .review
+            requestQuote(route: route, amount: amount)
+        }
     }
 
-    private func requestQuote(route: MintTransferRoute, amount: UInt64) {
+    /// Quotes `amount` on `route`. Passing `lapsed` keeps that plan's amount
+    /// and mints on screen while the new quote is fetched; without it the
+    /// hero spinner owns the wait.
+    private func requestQuote(route: MintTransferRoute, amount: UInt64, replacing lapsed: MintTransferPlan? = nil) {
         quoteTask?.cancel()
         plan = nil
+        lapsedPlan = lapsed
         reviewFailure = nil
         quoteTask = Task {
             do {
@@ -501,6 +536,7 @@ struct MintTransferView: View {
                     return
                 }
                 plan = quoted
+                lapsedPlan = nil
                 if requoted {
                     HapticFeedback.notification(.warning)
                     AccessibilityNotification.Announcement(Self.requotedNotice).post()
@@ -510,6 +546,7 @@ struct MintTransferView: View {
             } catch {
                 guard !Task.isCancelled else { return }
                 requoted = false
+                lapsedPlan = nil
                 reviewFailure = failure(for: error)
             }
         }
@@ -538,113 +575,113 @@ struct MintTransferView: View {
         if let plan, plan.id != maxPlan?.id {
             Task { await walletManager.discardMintTransferPlan(plan) }
         }
-        plan = nil
-        reviewFailure = nil
-        requoted = false
-        step = .entry
+        // The review fades out as it was and is cleared once it has gone, so
+        // it shows no spinner on the way out. A Continue in the meantime has
+        // already set up the next review, so it is left alone then.
+        withAnimation(.smooth(duration: 0.3)) {
+            step = .entry
+        } completion: {
+            guard step == .entry else { return }
+            plan = nil
+            lapsedPlan = nil
+            reviewFailure = nil
+            requoted = false
+        }
     }
 
     private static let requotedNotice = "The fee was updated. Check it and transfer again."
 
+    /// Laid out as the status face is — the button in the scaffold's footer,
+    /// the rows in its details block at the same width and inset — so on
+    /// commit the rows stay exactly where they are and only the hero and the
+    /// button change.
     private var reviewFace: some View {
-        let quotePending = plan == nil && reviewFailure == nil
-        return VStack(spacing: 0) {
-            PayFlowScaffold {
-                VStack(spacing: 8) {
-                    if let reviewFailure {
-                        cautionFace(message: reviewFailure.message, detail: reviewFailure.detail)
-                            .transition(.opacity)
-                    } else if let plan {
-                        CurrencyAmountDisplay(sats: plan.amount, primary: $settings.amountDisplayPrimary)
-                            .transition(.opacity)
-                    } else {
-                        SpinnerRing()
+        // A lapsed plan stands in while its replacement is quoted.
+        let shown = plan ?? lapsedPlan
+        return PayFlowScaffold {
+            VStack(spacing: 8) {
+                if let reviewFailure {
+                    ConfirmCautionFace(message: reviewFailure.message, detail: reviewFailure.detail)
+                        .transition(.opacity)
+                } else if let shown {
+                    CurrencyAmountDisplay(sats: shown.amount, primary: $settings.amountDisplayPrimary)
+                        .transition(.opacity)
+                } else {
+                    SpinnerRing()
+                        .transition(.opacity)
+                }
+            }
+        } details: {
+            if let shown, reviewFailure == nil {
+                VStack(spacing: 0) {
+                    reviewRows(shown, isRequoting: plan == nil)
+                    // Under the rows whose fee it is about, as Send's confirm
+                    // places its notice.
+                    if requoted, plan != nil {
+                        InlineNotice(message: Self.requotedNotice, severity: .info, isCentered: true)
+                            .padding(.top, 12)
+                            .padding(.horizontal)
                             .transition(.opacity)
                     }
                 }
-            } details: {
-                if let plan, reviewFailure == nil {
-                    reviewRows(plan)
-                }
-            } footer: {
-                EmptyView()
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            if requoted, plan != nil, reviewFailure == nil {
-                InlineNotice(message: Self.requotedNotice, severity: .info, isCentered: true)
-                    .padding(.horizontal)
-                    .padding(.bottom, 8)
-                    .transition(.opacity)
-            }
-
-            Group {
-                if quotePending {
-                    // Reserve the button's footprint while the spinner owns
-                    // the wait — no second spinner in the button.
-                    Button(action: {}) { Text(verbatim: " ") }
-                        .glassButton()
-                        .disabled(true)
-                        .opacity(0)
-                        .accessibilityHidden(true)
-                } else if let reviewFailure {
-                    if reviewFailure.isShortfall {
-                        Button(action: backToEntry) { Text("Change Amount") }
-                            .flatSheetSecondaryButton()
-                    } else {
-                        Button(action: retryQuote) { Text("Retry Quote") }
-                            .flatSheetSecondaryButton()
-                    }
-                } else if let plan {
-                    // Names the amount that arrives. Quiet tonal fill, like
-                    // Continue: moving between your own mints is no payment.
-                    Button(action: transfer) { Text("Transfer \(formatSats(plan.amount))") }
-                        .flatSheetSecondaryButton()
-                        .accessibilityIdentifier("mints-transfer-commit")
-                }
-            }
-            .padding(.horizontal)
-            .padding(.bottom, 16)
+        } footer: {
+            reviewAction(shown: shown)
+                // PaymentStatusView's footer inset, so the button holds the
+                // place Done takes.
+                .padding(.horizontal)
+                .padding(.bottom, 16)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .animation(.smooth(duration: 0.3), value: plan != nil)
         .animation(.smooth(duration: 0.3), value: reviewFailure)
         .animation(.smooth(duration: 0.3), value: requoted)
     }
 
-    /// Preflight caution in the status screens' anatomy. Always the orange
-    /// triangle: a failed quote has spent nothing.
-    private func cautionFace(message: String, detail: String?) -> some View {
-        VStack(spacing: 16) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.statusGlyph)
-                .foregroundStyle(.orange)
-
-            VStack(spacing: 8) {
-                Text(message)
-                    .font(.title2.weight(.semibold))
-                    .multilineTextAlignment(.center)
-
-                if let detail {
-                    Text(detail)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                }
+    @ViewBuilder
+    private func reviewAction(shown: MintTransferPlan?) -> some View {
+        if let reviewFailure {
+            if reviewFailure.isShortfall {
+                Button(action: backToEntry) { Text("Change Amount") }
+                    .flatSheetSecondaryButton()
+            } else {
+                Button(action: retryQuote) { Text("Retry Quote") }
+                    .flatSheetSecondaryButton()
             }
-            .padding(.horizontal, 32)
+        } else if let shown {
+            // Names the amount that arrives. Quiet tonal fill, like
+            // Continue: moving between your own mints is no payment. While
+            // a lapsed quote is replaced it keeps its place and its words,
+            // and waits.
+            Button(action: transfer) { Text("Transfer \(formatSats(shown.amount))") }
+                .flatSheetSecondaryButton()
+                .disabled(plan == nil)
+                .accessibilityIdentifier("mints-transfer-commit")
+        } else {
+            // Reserve the button's footprint while the spinner owns the
+            // wait — no second spinner in the button.
+            Button(action: {}) { Text(verbatim: " ") }
+                .glassButton()
+                .disabled(true)
+                .opacity(0)
+                .accessibilityHidden(true)
         }
-        .accessibilityElement(children: .combine)
     }
 
-    private func reviewRows(_ plan: MintTransferPlan) -> some View {
+    /// The rows the status face carries over unchanged while the transfer
+    /// runs (`statusRows`): same order, same words, same block.
+    private func reviewRows(_ plan: MintTransferPlan, isRequoting: Bool) -> some View {
         VStack(spacing: 0) {
             mintRow(label: "From", mintURL: plan.sourceMintURL)
             mintRow(label: "To", mintURL: plan.destinationMintURL)
-            detailRow(label: "Network fee", value: formatSats(plan.feeUpperBound))
-            detailRow(label: "Total", value: formatSats(plan.total))
+            PaymentDetailTextRow(label: "Network fee", value: formatSats(plan.feeUpperBound), isPending: isRequoting)
+            PaymentDetailTextRow(label: "Total", value: formatSats(plan.total), isPending: isRequoting)
         }
-        .padding(.top, 16)
-        .padding(.horizontal)
+        // The new quote's values replace the old in place.
+        .contentTransition(.opacity)
+        // PaymentStatusView's details block.
+        .frame(maxWidth: PaymentDetailMetrics.maxWidth)
+        .padding(.horizontal, 24)
     }
 
     private func mintRow(label: String, mintURL: String) -> some View {
@@ -657,16 +694,6 @@ struct MintTransferView: View {
         .paymentDetailRow()
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(label): \(name)")
-    }
-
-    private func detailRow(label: String, value: String) -> some View {
-        PaymentDetailPair(label: label) {
-            Text(value)
-                .fontWeight(.regular)
-                .truncationMode(.tail)
-        }
-        .paymentDetailRow()
-        .accessibilityElement(children: .combine)
     }
 
     private func retryQuote() {
@@ -686,31 +713,43 @@ struct MintTransferView: View {
             if maxPlan?.id == plan.id { maxPlan = nil }
             Task { await walletManager.discardMintTransferPlan(plan) }
             requoted = true
-            requestQuote(route: route, amount: plan.amount)
+            // The review stays as it is, its fee and total waiting, rather
+            // than blinking back to the spinner.
+            requestQuote(route: route, amount: plan.amount, replacing: plan)
             return
         }
         HapticFeedback.impact(.medium)
-        // The plan is spent whatever happens next.
-        if maxPlan?.id == plan.id { maxPlan = nil }
-        requoted = false
-        outcome = nil
-        stage = nil
-        phase = .processing
-        step = .status
+        withAnimation(.smooth(duration: 0.3)) {
+            // The plan is spent whatever happens next.
+            if maxPlan?.id == plan.id { maxPlan = nil }
+            requoted = false
+            outcome = nil
+            stage = nil
+            phase = .processing
+            step = .status
+        }
         Task {
             do {
-                outcome = try await walletManager.executeMintTransfer(plan) { leg in
+                let result = try await walletManager.executeMintTransfer(plan) { leg in
                     // Reported from the engine's executor.
                     Task { @MainActor in stage = leg }
                 }
-                phase = .success
+                // The outcome changes the rows (Total leaves, the fee paid
+                // replaces the reserve), so it lands with the phase, as Send's
+                // `step = .sent` does.
+                withAnimation(.smooth(duration: 0.3)) {
+                    outcome = result
+                    phase = .success
+                }
             } catch {
                 let message = error.walletMessage
-                phase = .failure(
-                    message: message.text,
-                    isCaution: message.severity == .caution,
-                    isTerminal: message.recoverability == .terminal
-                )
+                withAnimation(.smooth(duration: 0.3)) {
+                    phase = .failure(
+                        message: message.text,
+                        isCaution: message.severity == .caution,
+                        isTerminal: message.recoverability == .terminal
+                    )
+                }
             }
         }
     }
@@ -761,6 +800,8 @@ struct MintTransferView: View {
             settlementMessage: settlingMessage,
             processingMessage: stageMessage,
             showsDetailsWhileProcessing: true,
+            // Tonal like Continue and the commit.
+            quietRetry: true,
             onDone: { dismiss() },
             onRetry: retryTransfer
         )
@@ -768,18 +809,29 @@ struct MintTransferView: View {
 
     private var statusRows: [PaymentStatusView.DetailRow] {
         guard let plan else { return [] }
-        var rows: [PaymentStatusView.DetailRow] = [
-            .init(label: "Amount", isAmount: true, value: formatSats(plan.amount)),
-            .init(label: "From", value: MintInfo.displayName(for: plan.sourceMintURL, in: walletManager.mints)),
-            .init(label: "To", value: MintInfo.displayName(for: plan.destinationMintURL, in: walletManager.mints)),
-        ]
-        if case .completed(_, let feePaid) = outcome {
-            // A receipt records what happened; a zero fee is omitted.
-            if feePaid > 0 {
-                rows.append(.init(label: "Network fee", value: formatSats(feePaid)))
-            }
-        } else {
-            rows.append(.init(label: "Network fee", value: formatSats(plan.feeUpperBound)))
+        let from = PaymentStatusView.DetailRow(
+            label: "From", value: MintInfo.displayName(for: plan.sourceMintURL, in: walletManager.mints)
+        )
+        let to = PaymentStatusView.DetailRow(
+            label: "To", value: MintInfo.displayName(for: plan.destinationMintURL, in: walletManager.mints)
+        )
+        guard phase == .success, case .completed(_, let feePaid) = outcome else {
+            // While it runs, fails or settles, the review's rows exactly, so
+            // committing changes the face above them and nothing else.
+            return [
+                from,
+                to,
+                .init(label: "Network fee", value: formatSats(plan.feeUpperBound)),
+                .init(label: "Total", value: formatSats(plan.total)),
+            ]
+        }
+        // A receipt records what happened: the amount moves up into the hero
+        // (PaymentStatusView promotes the amount row and drops it from the
+        // list), the fee is the one paid, a zero fee is omitted, and the
+        // total leaves with the reserve it was counted from.
+        var rows = [PaymentStatusView.DetailRow(label: "Amount", isAmount: true, value: formatSats(plan.amount)), from, to]
+        if feePaid > 0 {
+            rows.append(.init(label: "Network fee", value: formatSats(feePaid)))
         }
         return rows
     }
@@ -789,13 +841,15 @@ struct MintTransferView: View {
     /// has to be found afresh.
     private func retryTransfer() {
         guard let failed = plan, let route else { return }
-        plan = nil
-        if failed.mode == .max {
-            amountString = ""
-            withAnimation(.smooth(duration: 0.3)) { step = .entry }
-        } else {
-            withAnimation(.smooth(duration: 0.3)) { step = .review }
-            requestQuote(route: route, amount: failed.amount)
+        withAnimation(.smooth(duration: 0.3)) {
+            plan = nil
+            if failed.mode == .max {
+                amountString = ""
+                step = .entry
+            } else {
+                step = .review
+                requestQuote(route: route, amount: failed.amount)
+            }
         }
     }
 

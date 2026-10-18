@@ -65,6 +65,33 @@ struct PaymentDetailPair<Value: View>: View {
     }
 }
 
+/// One plain label and value on a confirm screen: a fee, a total, a memo.
+struct PaymentDetailTextRow: View {
+    let label: String
+    let value: String
+    /// The value is being worked out again. The last one keeps its width,
+    /// unseen, under the status screen's mini spinner, so the row holds still
+    /// and the new value replaces it in place.
+    var isPending = false
+
+    var body: some View {
+        PaymentDetailPair(label: label) {
+            Text(value)
+                .fontWeight(.regular)
+                .truncationMode(.tail)
+                .opacity(isPending ? 0 : 1)
+                .accessibilityHidden(isPending)
+                .overlay(alignment: .trailing) {
+                    if isPending {
+                        ProgressView().controlSize(.mini)
+                    }
+                }
+        }
+        .paymentDetailRow()
+        .accessibilityElement(children: .combine)
+    }
+}
+
 /// Fits the QR around the receipt's actual text, keeping related details together.
 /// Scrolling remains available when accessibility text needs more than one screen.
 struct PaymentDetailContent<Hero: View, Details: View>: View {

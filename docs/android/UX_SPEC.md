@@ -225,7 +225,7 @@ Pushed top-level destination from the Mints tab. `CenterAlignedTopAppBar(title =
 
 `LazyColumn` with:
 1. **Mints section** — each mint as a row (see anatomy below).
-2. **"Transfer"** `ListEntryRow` (leading `Icons.Outlined.SwapHoriz`), above "Add mint" and shown only when the wallet holds two or more mints → opens the full-height `WalletFlow.Transfer` sheet. The same action is in a mint row's long-press menu and starts the transfer on that mint (as the source when it holds a balance, otherwise as the destination). The sheet runs Entry (amount hero, From / To route block with captions, the source balance (a plain secondary number) that fills the maximum when tapped, and a swap control, number pad, "Continue") → Review (amount, From and To by name, Network fee, Total, tonal "Transfer {amount}") → Status ("Transferring…" over "Leaving {source}" / "Arriving at {destination}" → "Transfer complete"). The typed amount is what arrives; the fee is added at the source. System back on Review returns to Entry (predictive) rather than closing the sheet.
+2. **"Transfer"** `ListEntryRow` (leading `Icons.Outlined.SwapHoriz`), above "Add mint" and shown only when the wallet holds two or more mints → opens the full-height `WalletFlow.Transfer` sheet. The same action is in a mint row's long-press menu and starts the transfer on that mint (as the source when it holds a balance, otherwise as the destination). The sheet runs Entry (amount hero, From / To route block with captions, the source balance (a plain secondary number) with "Max" at the end of its line ("Using Max" once used), and a swap control, number pad, "Continue") → Review (amount, From and To by name, Network fee, Total, tonal "Transfer {amount}") → Status ("Transferring…" over "Leaving {source}" / "Arriving at {destination}" → "Transfer complete"), which keeps the review's rows in place while it runs. Choosing a mint opens Send's `MintPickerSheet`, with a mint that can't take part dimmed and its reason shown. The typed amount is what arrives; the fee is added at the source. System back on Review returns to Entry (predictive) rather than closing the sheet.
 3. **"Discover mints"** `ListItem` with leading `Icons.Outlined.Search` → pushes `MintDiscoveryScreen`.
 4. **Add mint inline form** — two `OutlinedTextField`s (URL, optional nickname) + `TextButton("Paste URL from clipboard")` + `FilledTonalButton("Add")` (disabled until URL non-empty and adding-in-progress is false).
 5. **Inline error** below the Add button on failure: `bodyMedium`, `error` color.
@@ -312,7 +312,7 @@ Footer below all groups: app name + version, `bodySmall`, centered, `onSurfaceVa
 
 ## 7. Send flows
 
-Full-height `ModalBottomSheet` flows hosted by `ui.shell.WalletFlowSheetHost` (**revised 2026-07** — previously pushed destinations; converted for iOS `.large`-sheet parity). Each is a single screen with **two faces** swapped via `AnimatedContent` (250ms fade-through cross-fade), headed by a `SheetHeader` instead of a `TopAppBar`. Sheet dismissal (swipe/scrim/back) is blocked while a payment or token generation is in flight; system back unwinds faces before the sheet closes.
+Full-height `ModalBottomSheet` flows hosted by `ui.shell.WalletFlowSheetHost` (**revised 2026-07** — previously pushed destinations; converted for iOS `.large`-sheet parity). Each is a single screen with **two faces** swapped via `TwoFaceScreen` (Material shared axis X: both faces travel 30dp over 300ms, the outgoing fading in 90ms and the incoming over the remaining 210ms; a plain cross-fade under reduced motion; revised from a 250ms fade-through), headed by a `SheetHeader` instead of a `TopAppBar`. Sheet dismissal (swipe/scrim/back) is blocked while a payment or token generation is in flight; system back unwinds faces before the sheet closes.
 
 ### 7.1 Send Ecash
 
@@ -503,7 +503,7 @@ Match iOS named animations as closely as Compose allows.
 | Badge symbol-replace | `AnimatedContent(targetState = badgeState, transitionSpec = { fadeIn(tween(280)) togetherWith fadeOut(tween(280)) })`. |
 | Chooser cascade | `AnimatedVisibility` per item, 70ms-per-index delay, slide-in horizontally (12dp) + fade. |
 | Press feedback | M3 native ripple + scale-on-press via `Modifier.scale()` keyed to `interactionSource.collectIsPressedAsState()`. |
-| Sheet cross-fade (two-face) | `AnimatedContent` with `fadeIn(tween(250)) togetherWith fadeOut(tween(250))`. |
+| Sheet face swap (two-face) | `TwoFaceScreen`: shared axis X, 30dp over 300ms, 90ms out / 210ms in; cross-fade under reduced motion. The payment status terminal is not a face: it fades over the form with `fadeIn(tween(200)) togetherWith fadeOut(tween(150))`. |
 | Payment-received celebration | `AnimatedVisibility(enter = scaleIn(spring(0.5f, 0.7f)) + fadeIn, exit = fadeOut)` + 2.5s hold via `LaunchedEffect(Unit) { delay(2500); … }`. |
 | Waiting-pulse | `rememberInfiniteTransition().animateFloat(... infiniteRepeatable(reverse))` on alpha. |
 

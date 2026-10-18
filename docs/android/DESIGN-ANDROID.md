@@ -131,7 +131,9 @@ like a port, make the Android-native choice instead.
   and no gesture momentum preceded it.
 - Lists animate placement (`Modifier.animateItem()` — History, Home recent,
   Mint discovery), reveals expand/shrink, page dots stretch into pills.
-- **Route swap (Transfer, 2026-09-30)**: the arrow between the From and To
+- **Route swap (Transfer, 2026-09-30)**: *(the original recipe in this first
+  paragraph is retired; the dated notes after it describe what ships: no
+  avatars, no travel, an in-place morph.)* The arrow between the From and To
   mints makes the two identities (avatar + name) travel to each other's slot on
   `defaultSpatialSpec`; the balance lines belong to the slots and change in
   place, and the arrow turns once and lands pointing down again. It is the one
@@ -165,9 +167,12 @@ like a port, make the Android-native choice instead.
   face. Like `UnifiedSendScreen`, it sits in an outer `AnimatedContent` over
   the faces with the standard `fadeIn(200)/fadeOut(150)` pair and one content
   key, so commit and Try Again fade instead of sliding. The review's quote
-  states and its button fade with the same pair, and at success the Amount row
-  leaves with `fadeOut(150) + shrinkVertically()` while the fee row
-  cross-fades.)*
+  states and its button fade with the same pair. Later the same day the status
+  rows became the review's own (From, To, Network fee, Total): at success the
+  Total row leaves with `fadeOut(150) + shrinkVertically()` while the fee row
+  cross-fades, and a terminal that shows its rows while processing
+  (`showRowsDuringProcessing`) enters with the fade alone, without the 0.96
+  settle, so those rows land where the review's were.)*
 - **Numbers are quiet**: `AmountText` cross-fades the whole string on change
   (`Spring.StiffnessMedium`, no per-digit slide) — the same restrained
   transition every other amount swap uses (`AmountFlipDisplay`, `BalanceDisplay`).

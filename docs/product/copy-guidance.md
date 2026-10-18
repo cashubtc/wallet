@@ -90,7 +90,10 @@ Cashu Request payment, and NFC receive (Android-only surface).
   its name, with no "available" or "Balance" (screen readers hear "2 sat
   available" and "Balance 1 sat"). "Max" sits at the end of the source's
   balance line, as on Send, and fills the largest amount the mint can transfer
-  after fees (screen readers hear "Transfer maximum"). Once used it reads
+  after fees. The visible word is part of its accessible name, so Voice
+  Control and Voice Access can say "Max" (or "Using Max"): VoiceOver reads
+  "Transfer maximum" with "Max" as an input label, and TalkBack reads "Max"
+  with "transfer maximum" as the action. Once used it reads
   "Using Max" until the amount changes; that is the whole explanation of an
   amount that came out under the balance, so no note says it. A problem with
   a mint is said on that mint's line in the route, after its balance and in

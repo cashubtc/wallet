@@ -12,47 +12,37 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalIconButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.LoadingIndicator
+import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -62,26 +52,23 @@ import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
-import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import com.cashu.me.Core.CDK.mintRemovalUrlsMatch
 import com.cashu.me.Core.MintTransferRoute.Slot
 import com.cashu.me.Models.MintInfo
-import com.cashu.me.ui.components.CashuModalBottomSheet
-import com.cashu.me.ui.components.CompactSheetContent
-import com.cashu.me.ui.components.FlowSheetTitle
-import com.cashu.me.ui.components.MintAvatar
+import com.cashu.me.ui.components.CanvasDivider
 import com.cashu.me.ui.components.bitcoinAmountText
 import com.cashu.me.ui.components.morphBlur
-import com.cashu.me.ui.components.rememberSheetDismissAction
 import com.cashu.me.ui.testing.UiTestTags
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.rememberReducedMotion
@@ -93,8 +80,17 @@ private val ChevronSize = 18.dp
 private val SwapGlyphSize = 20.dp
 private val MinimumTouchTarget = 48.dp
 private val MaxProgressSize = 16.dp
-private val HairlineThickness = 0.5.dp
-private const val DisabledContentAlpha = 0.38f
+// Max's pill around its word, and the least gap it keeps from the balance
+// before it drops under it.
+private val MaxLabelPadding = 12.dp
+private val MaxGap = 12.dp
+// A text link's cross-fade mask, as GhostButton's: lighter than a CTA's.
+private val MaxMorphBlur = 1.5.dp
+private const val MaxLabel = "Max"
+private const val UsingMaxLabel = "Using Max"
+
+private val MaxLabelStyle: TextStyle
+    @Composable get() = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium)
 
 // A different mint taking a slot: its lines blur out as the new mint's come
 // into focus (iOS `.blurReplace` parity).
@@ -108,13 +104,6 @@ private val SwapTurnSpec = spring<Float>(
     dampingRatio = Spring.DampingRatioNoBouncy,
     stiffness = Spring.StiffnessLow,
 )
-
-// The transfer picker keeps the pay flows' viewport: the title and roughly
-// four rows. A longer list opens half-height instead and drags to full, so it
-// is not read through a four-row slot.
-private val PickerAvatarSize = 40.dp
-private val PickerSheetHeight = 360.dp
-private const val PickerFixedRows = 4
 
 /**
  * The two ends of a transfer, stacked: the mint the ecash leaves, the control
@@ -359,7 +348,6 @@ private fun IdentityRow(mint: MintInfo, showsChevron: Boolean) {
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SourceSupport(
     balanceText: String,
@@ -382,77 +370,124 @@ private fun SourceSupport(
     }
     // Max sits at the end of the balance's line, as on Send. Side by side
     // while both fit; at large text Max drops under the balance rather than
-    // squeezing it (iOS parity).
-    FlowRow(
+    // squeezing it (iOS parity). Whether they fit is judged on the widest
+    // label, so "Using Max" landing never moves Max to another line.
+    val widestLabel = rememberTextMeasurer()
+        .measure(UsingMaxLabel, MaxLabelStyle, maxLines = 1, softWrap = false)
+        .size.width
+    Layout(
+        content = {
+            balance()
+            MaxControl(isFindingMax = isFindingMax, isUsingMax = isUsingMax, onUseMax = onUseMax)
+        },
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        itemVerticalAlignment = Alignment.CenterVertically,
-    ) {
-        balance()
-        MaxControl(
-            isFindingMax = isFindingMax,
-            isUsingMax = isUsingMax,
-            onUseMax = onUseMax,
-            // The 48dp target must not grow the line it shares.
-            modifier = Modifier.trimVertical((MinimumTouchTarget - SupportMinHeight) / 2),
-        )
+    ) { measurables, constraints ->
+        val loose = constraints.copy(minWidth = 0, minHeight = 0)
+        val balanceLine = measurables[0].measure(loose)
+        val max = measurables[1].measure(loose)
+        val padding = MaxLabelPadding.roundToPx()
+        val reserved = maxOf(widestLabel + padding * 2, MinimumTouchTarget.roundToPx(), max.width)
+        val width = constraints.maxWidth
+        // The pill overhangs the content edge by its padding, so the word
+        // itself lines up with the edge, as the balance does.
+        if (balanceLine.width + MaxGap.roundToPx() + reserved <= width) {
+            val height = maxOf(balanceLine.height, max.height)
+            layout(width, height) {
+                balanceLine.placeRelative(0, (height - balanceLine.height) / 2)
+                max.placeRelative(width - max.width + padding, (height - max.height) / 2)
+            }
+        } else {
+            layout(width, balanceLine.height + max.height) {
+                balanceLine.placeRelative(0, 0)
+                max.placeRelative(-padding, balanceLine.height)
+            }
+        }
     }
 }
 
 /**
- * Fills the largest amount this mint can transfer after fees. The word keeps
- * its place under the spinner, so the line never shifts. Once used it reads
- * "Using Max", dimmed, until the amount changes: that is why the amount came
- * out under the balance (Family's pattern, iOS parity).
+ * Fills the largest amount this mint can transfer after fees, a text button
+ * like Send's Max. Once used it reads "Using Max", dimmed, until the amount
+ * changes: that is why the amount came out under the balance (Family's
+ * pattern, iOS parity). The word, the spinner and "Using Max" cross-fade
+ * through one another, as a button's label and its spinner do.
  */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun MaxControl(
     isFindingMax: Boolean,
     isUsingMax: Boolean,
     onUseMax: () -> Unit,
-    modifier: Modifier = Modifier,
 ) {
-    Box(
-        modifier = modifier
-            .defaultMinSize(minWidth = MinimumTouchTarget, minHeight = MinimumTouchTarget)
-            .clickable(enabled = !isFindingMax && !isUsingMax, role = Role.Button, onClick = onUseMax)
-            // Before clearAndSetSemantics, which would clear a tag set after it.
-            .testTag(UiTestTags.MintTransferMax)
-            .clearAndSetSemantics {
-                contentDescription = if (isUsingMax) "Using the maximum" else "Transfer maximum"
-                role = Role.Button
-                if (isFindingMax) {
-                    stateDescription = "Checking the network fee"
-                    disabled()
-                } else if (isUsingMax) {
-                    disabled()
-                } else {
-                    onClick(label = "Fill the largest amount this mint can transfer after fees") {
-                        onUseMax()
-                        true
+    val label = if (isUsingMax) UsingMaxLabel else MaxLabel
+    // Captured outside the non-composable transitionSpec lambda.
+    val enterSpec = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
+    val exitSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
+    val sizeSpec = MaterialTheme.motionScheme.defaultSpatialSpec<IntSize>()
+    // The pill claims only the balance's line. The framework still widens its
+    // touch to 48dp wherever no other target is hit, but a tap on the name row
+    // above stays the name row's: a 48dp box overhanging the line took the
+    // bottom of those taps.
+    CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides Dp.Unspecified) {
+        TextButton(
+            onClick = onUseMax,
+            enabled = !isFindingMax && !isUsingMax,
+            modifier = Modifier
+                .defaultMinSize(minWidth = MinimumTouchTarget, minHeight = SupportMinHeight)
+                // Before clearAndSetSemantics, which would clear a tag set after it.
+                .testTag(UiTestTags.MintTransferMax)
+                // Named by its visible word, so Voice Access can say it; what
+                // it does is the action's label.
+                .clearAndSetSemantics {
+                    contentDescription = label
+                    role = Role.Button
+                    if (isFindingMax) {
+                        stateDescription = "Checking the network fee"
+                        disabled()
+                    } else if (isUsingMax) {
+                        disabled()
+                    } else {
+                        onClick(label = "Fill the largest amount this mint can transfer after fees") {
+                            onUseMax()
+                            true
+                        }
                     }
+                },
+            contentPadding = PaddingValues(horizontal = MaxLabelPadding),
+        ) {
+            AnimatedContent(
+                // Null while the fee is checked: the spinner is a morph target,
+                // like the label it replaces.
+                targetState = if (isFindingMax) null else label,
+                transitionSpec = {
+                    fadeIn(enterSpec)
+                        .togetherWith(fadeOut(exitSpec))
+                        // Unclipped and centred, so the wider label is not
+                        // sheared or walked sideways while the pill resizes.
+                        .using(SizeTransform(clip = false) { _, _ -> sizeSpec })
+                },
+                contentAlignment = Alignment.Center,
+                label = "transfer-max-label",
+            ) { current ->
+                val morph = morphBlur(MaxMorphBlur, enterSpec = enterSpec, exitSpec = exitSpec)
+                if (current == null) {
+                    LoadingIndicator(
+                        modifier = Modifier.size(MaxProgressSize).then(morph),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    Text(
+                        text = current,
+                        style = MaxLabelStyle,
+                        color = if (current == UsingMaxLabel) {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
+                        modifier = morph,
+                    )
                 }
-            },
-        // At the trailing edge, clear of the chevron, which follows the name.
-        contentAlignment = Alignment.CenterEnd,
-    ) {
-        Text(
-            text = if (isUsingMax) "Using Max" else "Max",
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Medium,
-            color = if (isUsingMax) {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            } else {
-                MaterialTheme.colorScheme.onSurface
-            },
-            modifier = Modifier.alpha(if (isFindingMax) 0f else 1f),
-        )
-        if (isFindingMax) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(MaxProgressSize),
-                strokeWidth = 2.dp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            }
         }
     }
 }
@@ -531,7 +566,7 @@ private fun SwapDivider(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
     ) {
-        Hairline(Modifier.weight(1f))
+        CanvasDivider(modifier = Modifier.weight(1f), leadingInset = 0.dp, trailingInset = 0.dp)
         FilledTonalIconButton(
             onClick = { swap() },
             shapes = IconButtonDefaults.shapes(),
@@ -558,17 +593,8 @@ private fun SwapDivider(
                     .graphicsLayer { rotationZ = rotation },
             )
         }
-        Hairline(Modifier.weight(1f))
+        CanvasDivider(modifier = Modifier.weight(1f), leadingInset = 0.dp, trailingInset = 0.dp)
     }
-}
-
-@Composable
-private fun Hairline(modifier: Modifier = Modifier) {
-    HorizontalDivider(
-        modifier = modifier,
-        thickness = HairlineThickness,
-        color = CashuTheme.colors.canvasDivider,
-    )
 }
 
 /**
@@ -581,124 +607,4 @@ private fun Modifier.trimTop(trim: Dp) = this.layout { measurable, constraints -
     val trimPx = trim.roundToPx()
     val height = (placeable.height - trimPx).coerceAtLeast(0)
     layout(placeable.width, height) { placeable.place(0, -trimPx) }
-}
-
-/**
- * Report a shorter box than was measured, placing the content centred so it
- * overhangs above and below. The touch target keeps its full size; only the
- * height it claims in the line shrinks.
- */
-private fun Modifier.trimVertical(trim: Dp) = this.layout { measurable, constraints ->
-    val placeable = measurable.measure(constraints)
-    val trimPx = trim.roundToPx()
-    val height = (placeable.height - trimPx * 2).coerceAtLeast(0)
-    layout(placeable.width, height) { placeable.place(0, -trimPx) }
-}
-
-/** One held mint offered for an end of a transfer. */
-internal data class MintTransferPickerOption(
-    val mint: MintInfo,
-    val balanceText: String,
-    /** Why this mint cannot take the slot, or null when it can. */
-    val unavailableReason: String?,
-)
-
-/**
- * Chooses the mint for one end of a transfer. Every held mint is listed so the
- * user can see why one is unavailable; those rows carry the reason and do
- * nothing (iOS `MintTransferMintPicker` parity). `MintPickerSheet` has no
- * disabled rows, and gaining them would change it for every pay flow.
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-internal fun MintTransferMintPicker(
-    slot: Slot,
-    options: List<MintTransferPickerOption>,
-    selectedMintUrl: String,
-    onSelect: (MintInfo) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val tall = options.size > PickerFixedRows
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = !tall)
-    val dismiss = rememberSheetDismissAction(sheetState)
-    val haptics = LocalHapticFeedback.current
-    CashuModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        sheetGesturesEnabled = !dismiss.isDismissing,
-        containerColor = CashuTheme.colors.compactSheetContainer,
-    ) {
-        CompactSheetContent {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .then(if (tall) Modifier.fillMaxHeight() else Modifier.height(PickerSheetHeight))
-                    .padding(horizontal = CashuTheme.spacing.comfortable)
-                    .navigationBarsPadding(),
-            ) {
-                FlowSheetTitle(title = if (slot == Slot.Source) "Transfer from" else "Transfer to")
-                LazyColumn(modifier = Modifier.weight(1f)) {
-                    items(options, key = { it.mint.url }) { option ->
-                        PickerRow(
-                            option = option,
-                            selected = mintRemovalUrlsMatch(option.mint.url, selectedMintUrl),
-                            onClick = {
-                                haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                                dismiss { onSelect(option.mint) }
-                            },
-                        )
-                    }
-                }
-                Spacer(Modifier.height(CashuTheme.spacing.default))
-            }
-        }
-    }
-}
-
-@Composable
-private fun PickerRow(
-    option: MintTransferPickerOption,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
-    val available = option.unavailableReason == null
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(enabled = available, role = Role.Button, onClick = onClick)
-            .semantics(mergeDescendants = true) { this.selected = selected }
-            .padding(
-                horizontal = CashuTheme.spacing.snug,
-                vertical = CashuTheme.spacing.default,
-            )
-            .alpha(if (available) 1f else DisabledContentAlpha),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
-    ) {
-        MintAvatar(mint = option.mint, size = PickerAvatarSize)
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = option.mint.name,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = bitcoinAmountText(option.unavailableReason ?: option.balanceText),
-                style = MaterialTheme.typography.bodySmall.withMonoDigits(),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-            )
-        }
-        if (selected) {
-            // The row's selected state already says it.
-            Icon(
-                imageVector = Icons.Filled.Check,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.size(CashuTheme.spacing.loose),
-            )
-        }
-    }
 }

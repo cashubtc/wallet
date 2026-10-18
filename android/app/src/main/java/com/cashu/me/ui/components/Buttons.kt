@@ -276,6 +276,23 @@ fun SecondaryButton(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val scale = rememberPressScale(interactionSource)
+    val target = if (compact) ButtonDefaults.filledTonalButtonColors(
+        containerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.11f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        disabledContainerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f),
+    ) else ButtonDefaults.filledTonalButtonColors()
+    // Eased like PrimaryButton's: a commit held off while its quote is asked
+    // for again turns back on without a hard cut.
+    val container by animateColorAsState(
+        targetValue = if (enabled) target.containerColor else target.disabledContainerColor,
+        animationSpec = spring(stiffness = Spring.StiffnessMedium),
+        label = "secondary-button-container",
+    )
+    val content by animateColorAsState(
+        targetValue = if (enabled) target.contentColor else target.disabledContentColor,
+        animationSpec = spring(stiffness = Spring.StiffnessMedium),
+        label = "secondary-button-content",
+    )
     FilledTonalButton(
         onClick = onClick,
         modifier = modifier
@@ -287,11 +304,7 @@ fun SecondaryButton(
             },
         enabled = enabled,
         interactionSource = interactionSource,
-        colors = if (compact) ButtonDefaults.filledTonalButtonColors(
-            containerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.11f),
-            contentColor = MaterialTheme.colorScheme.onSurface,
-            disabledContainerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f),
-        ) else ButtonDefaults.filledTonalButtonColors(),
+        colors = ButtonColors(container, content, container, content),
         contentPadding = PaddingValues(
             horizontal = if (compact) CashuTheme.spacing.comfortable else CashuTheme.spacing.section,
             vertical = ButtonContentVertical,

@@ -448,6 +448,12 @@ final class MintTransferUITests: XCTestCase {
         add(attachment)
     }
 
+    /// A row of the shared mint picker, whose label is the mint's name and
+    /// then its balance. The route's own buttons start with From or To.
+    private func pickerRow(_ app: XCUIApplication, _ name: String) -> XCUIElement {
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", name)).firstMatch
+    }
+
     func testAmountSurvivesASwapAndIsCheckedAgainstTheNewSource() {
         continueAfterFailure = false
         let app = launch()
@@ -489,13 +495,13 @@ final class MintTransferUITests: XCTestCase {
         source.tap()
         XCTAssertTrue(app.navigationBars["Transfer from"].waitForExistence(timeout: 5))
         capture(app, "transfer-source-picker")
-        app.buttons["Harbor Mint"].tap()
+        pickerRow(app, "Harbor Mint").tap()
         XCTAssertTrue(app.buttons["From Harbor Mint"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["To Alpine Mint"].exists)
 
         app.buttons["From Harbor Mint"].tap()
         XCTAssertTrue(app.navigationBars["Transfer from"].waitForExistence(timeout: 5))
-        app.buttons["Meadow Mint"].tap()
+        pickerRow(app, "Meadow Mint").tap()
         XCTAssertTrue(app.buttons["From Meadow Mint"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["mints-transfer-max"].exists)
         capture(app, "transfer-empty-source")

@@ -43,8 +43,8 @@ import com.cashu.me.ui.theme.CashuTheme
 // Matches iOS NumberPadAmountInput (10pt gaps, up to 64pt keys).
 private val KeyGap = 10.dp
 // Grow toward iOS on roomy screens while preserving the 48dp touch target.
-private val PreferredKeyHeight = 64.dp
-private val MinimumKeyHeight = 48.dp
+internal val NumberPadPreferredKeyHeight = 64.dp
+internal val NumberPadMinimumKeyHeight = 48.dp
 
 /**
  * Minimal numeric keypad for amount entry — no background boxes, just numbers
@@ -73,7 +73,7 @@ fun NumberPad(
     )
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
         val keyHeight = ((maxHeight - KeyGap * 3) / 4)
-            .coerceIn(MinimumKeyHeight, PreferredKeyHeight)
+            .coerceIn(NumberPadMinimumKeyHeight, NumberPadPreferredKeyHeight)
         Column(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(KeyGap),
@@ -136,21 +136,23 @@ fun NumberPad(
 }
 
 /**
+ * The height [NumberPadFooter] takes at ordinary text sizes with keys
+ * [keyHeight] tall: the pad, the button, the gaps around it and the navigation
+ * inset. The pad grows its keys to [NumberPadPreferredKeyHeight] whenever it is
+ * given the room, so a screen that has to decide what else fits above it
+ * budgets against that height, not the minimum.
+ */
+@Composable
+internal fun numberPadFooterHeight(keyHeight: Dp): Dp =
+    keyHeight * 4 + KeyGap * 3 + CashuTheme.spacing.comfortable * 2 + ButtonMinHeight +
+        WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+
+/**
  * Shared tail for every amount-entry screen: [NumberPad] followed by a primary
  * action button, spaced with the 16dp keypad-to-button gap
  * and a bottom spacer sized to the real navigation-bar/gesture-bar inset.
  * Centralizing this stops each screen from hand-deriving its own spacing.
  */
-/**
- * The least height [NumberPadFooter] takes at ordinary text sizes: the pad at
- * its minimum key height, the button, the gaps around it and the navigation
- * inset. For screens that have to decide what else fits above the pad.
- */
-@Composable
-internal fun numberPadFooterMinimumHeight(): Dp =
-    MinimumKeyHeight * 4 + KeyGap * 3 + CashuTheme.spacing.comfortable * 2 + ButtonMinHeight +
-        WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-
 @Composable
 fun NumberPadFooter(
     amount: String,

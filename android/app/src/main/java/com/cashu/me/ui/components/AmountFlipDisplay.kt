@@ -1,6 +1,7 @@
 package com.cashu.me.ui.components
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -150,6 +151,10 @@ fun AmountFlipDisplay(
     val lineGap = Arrangement.spacedBy(
         if (entryRaw != null) CashuTheme.spacing.default else CashuTheme.spacing.micro,
     )
+    // Set after the first frame. The conversion line composed after it (back
+    // from under a note, or a price arriving) fades in rather than popping.
+    var settled by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { settled = true }
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -216,8 +221,17 @@ fun AmountFlipDisplay(
                 }
             }
             if (secondary != null && note == null) {
+                // AnimatedContent never animates its first content, so a line
+                // coming back when a note clears would cut in. It fades in on
+                // the note's own spec instead (iOS `CurrencyAmountDisplay`);
+                // at first composition it is simply there.
+                val entrance = remember { Animatable(if (settled) 0f else 1f) }
+                LaunchedEffect(Unit) {
+                    entrance.animateTo(1f, spring(stiffness = Spring.StiffnessMedium))
+                }
                 AnimatedContent(
                     targetState = secondary,
+                    modifier = Modifier.graphicsLayer { alpha = entrance.value },
                     transitionSpec = {
                         fadeIn(spring(stiffness = Spring.StiffnessMedium))
                             .togetherWith(fadeOut(spring(stiffness = Spring.StiffnessMedium)))
@@ -298,8 +312,11 @@ fun AmountNoteLinePlaceholder(modifier: Modifier = Modifier) {
     )
 }
 
-/** The secondary line's size and leading, at regular weight (iOS `.body`). */
-private val AmountNoteStyle: TextStyle
+/**
+ * The secondary line's size and leading, at regular weight (iOS `.body`). For
+ * screens that measure how many lines a note will take.
+ */
+internal val AmountNoteStyle: TextStyle
     @Composable get() = CashuTheme.type.amountSecondary.copy(fontWeight = FontWeight.Normal)
 
 /**

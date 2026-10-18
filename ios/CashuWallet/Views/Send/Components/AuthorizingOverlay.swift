@@ -60,6 +60,10 @@ struct PaymentStatusView: View {
     /// (which mints, how much) are what the user is waiting on.
     var showsDetailsWhileProcessing: Bool = false
 
+    /// Try Again in the quiet secondary style, for a flow whose own actions are
+    /// tonal (Transfer: moving between your own mints is no payment).
+    var quietRetry: Bool = false
+
     /// Optional custom failure CTA (overrides the default Done / Try Again button).
     var failureCTA: FailureCTA? = nil
 
@@ -92,6 +96,7 @@ struct PaymentStatusView: View {
         settlementMessage: String? = nil,
         processingMessage: String? = nil,
         showsDetailsWhileProcessing: Bool = false,
+        quietRetry: Bool = false,
         failureCTA: FailureCTA? = nil,
         onDone: @escaping () -> Void,
         onRetry: @escaping () -> Void
@@ -105,6 +110,7 @@ struct PaymentStatusView: View {
         self.settlementMessage = settlementMessage
         self.processingMessage = processingMessage
         self.showsDetailsWhileProcessing = showsDetailsWhileProcessing
+        self.quietRetry = quietRetry
         self.failureCTA = failureCTA
         self.onDone = onDone
         self.onRetry = onRetry
@@ -349,6 +355,9 @@ struct PaymentStatusView: View {
                 // Same demotion as success — there is nothing left to do here.
                 Button(action: onDone) { Text("Done") }
                     .flatSheetSecondaryButton()
+            } else if quietRetry {
+                Button(action: onRetry) { Text("Try Again") }
+                    .flatSheetSecondaryButton()
             } else {
                 Button(action: onRetry) { Text("Try Again") }
                     .glassButton()
@@ -524,6 +533,39 @@ struct PayFlowScaffold<TopAccessory: View, Hero: View, Details: View, Footer: Vi
             // (confirm) or absence (status) never shifts the details-block Y.
             .overlay(alignment: .top) { topAccessory }
         }
+    }
+}
+
+/// Preflight caution, in the status screens' hero anatomy — glyph, message,
+/// secondary detail — centered where the amount hero sits. Always the orange
+/// warning triangle: a quote failure or balance shortfall spends nothing, so
+/// it never wears the terminal failures' red. Shared by the pay confirm and
+/// the transfer review (Android renders the identical `ConfirmCautionFace`).
+struct ConfirmCautionFace: View {
+    let message: String
+    var detail: String?
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.statusGlyph)
+                .foregroundStyle(.orange)
+
+            VStack(spacing: 8) {
+                Text(message)
+                    .font(.title2.weight(.semibold))
+                    .multilineTextAlignment(.center)
+
+                if let detail {
+                    Text(detail)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+            }
+            .padding(.horizontal, 32)
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 

@@ -275,7 +275,8 @@ private struct ActivityDetailCatalog: View {
                     .accessibilityIdentifier("updating-payment")
             }
             ForEach(transactions) { transaction in
-                Button(transaction.displayTitle) { selectedTransaction = transaction }
+                // Titled as History titles it, so a transfer names its mint.
+                Button(transaction.displayTitle(mints: walletManager.mints)) { selectedTransaction = transaction }
                     .accessibilityIdentifier(transaction.id)
             }
             Button("Reusable Invoice") { openRequest(rail: .bolt12) }

@@ -1826,13 +1826,20 @@ struct UnifiedSendView: View {
     private func continueFromAmount() {
         guard amountSats > 0 else { return }
         HapticFeedback.selection()
+        // The preflight's first state changes ride in the step's animation: a
+        // change made outside it in the same update turns the cross-fade into
+        // a cut.
         switch locked {
         case .melt:
-            withAnimation(.smooth(duration: 0.3)) { step = .confirm }
-            fetchMeltQuote()
+            withAnimation(.smooth(duration: 0.3)) {
+                step = .confirm
+                fetchMeltQuote()
+            }
         case .cashuRequest:
-            withAnimation(.smooth(duration: 0.3)) { step = .confirm }
-            recomputeFee()
+            withAnimation(.smooth(duration: 0.3)) {
+                step = .confirm
+                recomputeFee()
+            }
         case nil:
             break
         }
@@ -1842,13 +1849,21 @@ struct UnifiedSendView: View {
     /// face, so it is dropped on the way out — Continue re-runs it against
     /// whatever amount the user settles on.
     private func backToAmount() {
-        cancelMeltQuote()
         HapticFeedback.selection()
         feeTask?.cancel()
-        feeState = .idle
-        meltQuote = nil
-        errorMessage = nil
-        withAnimation(.smooth(duration: 0.3)) { step = .amount }
+        // Everything this tap changes rides in the one animation: a change made
+        // outside it in the same update turns the cross-fade into a cut. The
+        // error goes now, since the amount screen says it too; the quote and
+        // fee are cleared once the confirm face has faded out as it was.
+        withAnimation(.smooth(duration: 0.3)) {
+            cancelMeltQuote()
+            errorMessage = nil
+            step = .amount
+        } completion: {
+            guard step == .amount else { return }
+            feeState = .idle
+            meltQuote = nil
+        }
     }
 
     // MARK: Confirm step
@@ -1887,7 +1902,7 @@ struct UnifiedSendView: View {
             PayFlowScaffold {
                 VStack(spacing: 8) {
                     if let quote = shortQuote {
-                        confirmCautionFace(
+                        ConfirmCautionFace(
                             message: "Not enough balance.",
                             detail: mintInfo(for: quote).map { mint in
                                 "This mint holds \(AmountFormatter.sats(mint.balance, useBitcoinSymbol: settings.useBitcoinSymbol)); the payment reserves up to \(AmountFormatter.sats(quote.totalAmount, useBitcoinSymbol: settings.useBitcoinSymbol))."
@@ -1898,7 +1913,7 @@ struct UnifiedSendView: View {
                         CurrencyAmountDisplay(sats: quote.amount, primary: $settings.amountDisplayPrimary)
                             .transition(.opacity)
                     } else if let errorMessage {
-                        confirmCautionFace(
+                        ConfirmCautionFace(
                             message: errorMessage,
                             detail: errorShowsMintAction ? meltInsufficientDetail : nil
                         )
@@ -1935,7 +1950,7 @@ struct UnifiedSendView: View {
                     // wait (PaymentStatusView.processing parity) — no second
                     // spinner in the button.
                     Button(action: {}) { Text(verbatim: " ") }
-                        .glassButton()
+                        .flatSheetSecondaryButton()
                         .disabled(true)
                         .opacity(0)
                         .accessibilityHidden(true)
@@ -1958,7 +1973,7 @@ struct UnifiedSendView: View {
                         // Nothing actionable — the X closes; the ask stays
                         // visible on the disabled commit.
                         Button(action: payMelt) { Text("Pay \(displayAmount) sat") }
-                            .glassButton()
+                            .flatSheetSecondaryButton()
                             .disabled(true)
                     }
                 } else if meltQuote == nil {
@@ -1967,8 +1982,10 @@ struct UnifiedSendView: View {
                     Button(action: fetchMeltQuote) { Text("Retry Quote") }
                         .flatSheetSecondaryButton()
                 } else {
+                    // Quiet tonal, like the Cashu request's Pay and Transfer's
+                    // commit; Android's neutral fill is the same.
                     Button(action: payMelt) { Text("Pay \(displayAmount) sat") }
-                        .glassButton()
+                        .flatSheetSecondaryButton()
                         .disabled(isWorking || !canPay)
                 }
             }
@@ -1977,34 +1994,6 @@ struct UnifiedSendView: View {
         }
         .animation(.smooth(duration: 0.3), value: meltQuote != nil)
         .animation(.smooth(duration: 0.3), value: errorMessage != nil)
-    }
-
-    /// Preflight caution, in the status screens' hero anatomy — glyph, message,
-    /// secondary detail — centered where the amount hero sits. Always the
-    /// orange warning triangle: a quote failure or balance shortfall spends
-    /// nothing, so it never wears the terminal failures' red (Android renders
-    /// the identical face).
-    private func confirmCautionFace(message: String, detail: String?) -> some View {
-        VStack(spacing: 16) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.statusGlyph)
-                .foregroundStyle(.orange)
-
-            VStack(spacing: 8) {
-                Text(message)
-                    .font(.title2.weight(.semibold))
-                    .multilineTextAlignment(.center)
-
-                if let detail {
-                    Text(detail)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-            }
-            .padding(.horizontal, 32)
-        }
-        .accessibilityElement(children: .combine)
     }
 
     private var meltCompatibleMints: [MintInfo] {
@@ -2019,16 +2008,16 @@ struct UnifiedSendView: View {
         let isOnchain: Bool = { if case .melt(_, .onchain, _) = locked { return true } else { return false } }()
         return VStack(spacing: 0) {
             if isOnchain, case let .melt(request, _, _) = locked {
-                creqDetailRow(label: "To", value: request)
+                PaymentDetailTextRow(label: "To", value: request)
             }
             if let explanation = activeRouteExplanation {
                 CashuRequestRouteExplanationRow(explanation: explanation)
             }
-            creqDetailRow(
+            PaymentDetailTextRow(
                 label: "Network fee",
                 value: AmountFormatter.sats(quote.feeReserve, useBitcoinSymbol: settings.useBitcoinSymbol)
             )
-            creqDetailRow(
+            PaymentDetailTextRow(
                 label: "Total",
                 value: AmountFormatter.sats(quote.totalAmount, useBitcoinSymbol: settings.useBitcoinSymbol)
             )
@@ -2186,15 +2175,22 @@ struct UnifiedSendView: View {
     // MARK: Melt quote + pay
 
     private func fetchMeltQuote() {
-        cancelMeltQuote()
-        guard case let .melt(request, mode, decoded) = locked else { return }
+        guard case let .melt(request, mode, decoded) = locked else {
+            cancelMeltQuote()
+            return
+        }
         guard let mint = activeMeltMint else {
+            cancelMeltQuote()
             presentError("No mint supports \(meltPaymentMethod.displayName) payments.")
             return
         }
-        isWorking = true
-        errorMessage = nil
-        meltQuote = nil
+        // Retry Quote swaps the face too, so these animate wherever they run.
+        withAnimation(.smooth(duration: 0.3)) {
+            cancelMeltQuote()
+            isWorking = true
+            errorMessage = nil
+            meltQuote = nil
+        }
         let amount = amountSats
         meltQuoteTask = Task { @MainActor in
             defer { if !Task.isCancelled { isWorking = false } }
@@ -2221,13 +2217,22 @@ struct UnifiedSendView: View {
                     }
                 }
                 guard !Task.isCancelled, step == .confirm else { return }
-                meltQuote = quote
-                if let resolved = mintInfo(for: quote) { selectedMint = resolved }
+                // The quote landing swaps the waiting face for confirm. The
+                // working flag clears in the same animation; left to the
+                // `defer` it would land outside it and cut the swap.
+                withAnimation(.smooth(duration: 0.3)) {
+                    isWorking = false
+                    meltQuote = quote
+                    if let resolved = mintInfo(for: quote) { selectedMint = resolved }
+                }
             } catch {
                 guard !Task.isCancelled else { return }
                 // Quote creation is a preflight, not a payment. Keep its failure inline
                 // on confirm so it can never be presented as a failed melt.
-                withAnimation(.smooth(duration: 0.3)) { presentError(from: error) }
+                withAnimation(.smooth(duration: 0.3)) {
+                    isWorking = false
+                    presentError(from: error)
+                }
             }
         }
     }
@@ -2732,7 +2737,7 @@ struct UnifiedSendView: View {
                     CashuRequestRouteExplanationRow(explanation: explanation)
                 }
                 if let memo = creqMemo(creq) {
-                    creqDetailRow(label: "Memo", value: memo)
+                    PaymentDetailTextRow(label: "Memo", value: memo)
                 }
                 creqFeesRow
             }
@@ -2824,16 +2829,6 @@ struct UnifiedSendView: View {
                 Text("—").foregroundStyle(.secondary)
             }
         }
-    }
-
-    private func creqDetailRow(label: String, value: String) -> some View {
-        PaymentDetailPair(label: label) {
-            Text(value)
-                .fontWeight(.regular)
-                .truncationMode(.tail)
-        }
-        .paymentDetailRow()
-        .accessibilityElement(children: .combine)
     }
 
     // MARK: Input actions
@@ -3015,6 +3010,11 @@ struct MintSelectorSheet: View {
     private let paymentMethod: PaymentMethodKind?
     private let amountlessBolt11: Bool
     private let minimumAmount: UInt64?
+    private let title: LocalizedStringKey
+    /// Why a listed mint cannot be chosen, or nil when it can. Such a mint
+    /// stays in the list, dimmed, with the reason in place of its balance, so
+    /// the user can see why it is not on offer.
+    private let unavailableReason: ((MintInfo) -> String?)?
     private let onSelect: ((MintInfo) -> Void)?
 
     /// A stable viewport for the title and roughly four mint rows. Additional
@@ -3027,6 +3027,8 @@ struct MintSelectorSheet: View {
         paymentMethod: PaymentMethodKind? = nil,
         amountlessBolt11: Bool = false,
         minimumAmount: UInt64? = nil,
+        title: LocalizedStringKey = "Choose mint",
+        unavailableReason: ((MintInfo) -> String?)? = nil,
         onSelect: ((MintInfo) -> Void)? = nil
     ) {
         _selectedMint = selectedMint
@@ -3034,6 +3036,8 @@ struct MintSelectorSheet: View {
         self.paymentMethod = paymentMethod
         self.amountlessBolt11 = amountlessBolt11
         self.minimumAmount = minimumAmount
+        self.title = title
+        self.unavailableReason = unavailableReason
         self.onSelect = onSelect
     }
 
@@ -3048,7 +3052,7 @@ struct MintSelectorSheet: View {
                     mintListView
                 }
             }
-            .navigationTitle("Choose mint")
+            .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
         }
         .presentationDetents([.height(Self.pickerHeight)])
@@ -3090,6 +3094,12 @@ struct MintSelectorSheet: View {
                 let rhsSelected = selectedMint?.id == rhs.id
                 if lhsSelected != rhsSelected { return lhsSelected }
 
+                if let unavailableReason {
+                    let lhsAvailable = unavailableReason(lhs) == nil
+                    let rhsAvailable = unavailableReason(rhs) == nil
+                    if lhsAvailable != rhsAvailable { return lhsAvailable }
+                }
+
                 if let minimumAmount {
                     let lhsCanPay = lhs.balance >= minimumAmount
                     let rhsCanPay = rhs.balance >= minimumAmount
@@ -3111,6 +3121,7 @@ struct MintSelectorSheet: View {
         ScrollView {
             VStack(spacing: 0) {
                 ForEach(displayMints) { mint in
+                    let reason = unavailableReason?(mint)
                     Button(action: { selectMint(mint) }) {
                         HStack(spacing: 12) {
                             mintIcon(for: mint)
@@ -3129,7 +3140,7 @@ struct MintSelectorSheet: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(mint.name)
                                     .font(.body.weight(.medium))
-                                Text(mintSubtitle(for: mint))
+                                Text(reason ?? mintSubtitle(for: mint))
                                     .font(.subheadline)
                                     .foregroundStyle(.secondary)
                             }
@@ -3144,8 +3155,10 @@ struct MintSelectorSheet: View {
                         .padding(.horizontal, 20)
                         .padding(.vertical, 12)
                         .contentShape(Rectangle())
+                        .opacity(reason == nil ? 1 : DisabledControlOpacity.content)
                     }
                     .buttonStyle(.plain)
+                    .disabled(reason != nil)
                 }
             }
         }

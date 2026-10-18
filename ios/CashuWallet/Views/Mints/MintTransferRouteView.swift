@@ -75,7 +75,7 @@ struct MintTransferRouteView: View {
             // The slot carries the direction, so the caption stays put while
             // the mints trade places. VoiceOver hears it in the row's label.
             Text(direction.label)
-                .font(.footnote)
+                .cashuText(.metadata)
                 .foregroundStyle(.secondary)
                 .padding(.bottom, Metrics.captionGap)
                 .accessibilityHidden(true)
@@ -132,7 +132,7 @@ struct MintTransferRouteView: View {
             }
             if onChoose != nil {
                 Image(systemName: "chevron.down")
-                    .font(.caption.weight(.semibold))
+                    .font(.caption)
                     .foregroundStyle(.secondary)
                     .accessibilityHidden(true)
             }
@@ -200,23 +200,41 @@ struct MintTransferRouteView: View {
     /// it reads "Using Max", dimmed, until the amount changes: that is why
     /// the amount came out under the balance (Family's pattern).
     private func maxControl(_ onUseMax: @escaping () -> Void, alignment: Alignment) -> some View {
-        Button(action: onUseMax) {
+        let label: LocalizedStringKey = isUsingMax ? "Using Max" : "Max"
+        let spokenLabel: LocalizedStringKey = isUsingMax ? "Using the maximum" : "Transfer maximum"
+        return Button(action: onUseMax) {
             ZStack(alignment: alignment) {
-                Text(isUsingMax ? "Using Max" : "Max")
-                    .font(.subheadline.weight(.medium))
+                // The longer word holds the width, so Max landing neither
+                // moves the line nor tips it into the stacked layout.
+                Text("Using Max")
+                    .cashuText(.textLink)
+                    .hidden()
+                // One word fades into the other, each pinned to the edge,
+                // rather than one Text sliding between two widths.
+                Text(label)
+                    .cashuText(.textLink)
                     .foregroundStyle(isUsingMax ? .secondary : .primary)
                     .opacity(isFindingMax ? 0 : 1)
+                    .id(isUsingMax)
+                    .transition(.opacity)
                 if isFindingMax {
                     ProgressView().controlSize(.small)
+                        .transition(.opacity)
                 }
             }
+            // Opacity alone, so Reduce Motion keeps the same fade.
+            .animation(.easeInOut(duration: 0.2), value: isUsingMax)
+            .animation(.easeInOut(duration: 0.2), value: isFindingMax)
             // At the trailing edge, or under the balance when stacked.
             .frame(minWidth: 44, minHeight: 44, alignment: alignment)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(isFindingMax || isUsingMax)
-        .accessibilityLabel(isUsingMax ? "Using the maximum" : "Transfer maximum")
+        .accessibilityLabel(spokenLabel)
+        // Voice Control matches what is on screen, so the visible word comes
+        // first (copy-guidance.md, "Quote the label verbatim").
+        .accessibilityInputLabels([Text(label), Text(spokenLabel)])
         .accessibilityHint(isUsingMax ? "" : "Fills the largest amount this mint can transfer after fees")
         .accessibilityValue(isFindingMax ? "Checking the network fee" : "")
         .accessibilityIdentifier("mints-transfer-max")
@@ -289,96 +307,5 @@ struct MintTransferRouteView: View {
             .fill(Color(.separator))
             .frame(height: 0.5)
             .accessibilityHidden(true)
-    }
-}
-
-/// Chooses the mint for one end of a transfer. Every held mint is listed so the
-/// user can see why one is unavailable; those rows carry the reason and do
-/// nothing.
-struct MintTransferMintPicker: View {
-    struct Option: Identifiable {
-        let mint: MintInfo
-        /// Why this mint cannot take the slot, or nil when it can.
-        let unavailableReason: String?
-        var id: String { mint.id }
-    }
-
-    let direction: MintSelectorDirection
-    let options: [Option]
-    let selectedMintURL: String
-    let onSelect: (MintInfo) -> Void
-
-    @Environment(\.dismiss) private var dismiss
-
-    /// The same viewport as the pay flows' mint picker: the title and roughly
-    /// four rows, scrolling beyond that.
-    private static let pickerHeight: CGFloat = 368
-    private static let rowsInViewport = 4
-
-    /// Beyond the viewport's four rows the sheet can also be pulled up to
-    /// show them all; with four or fewer there is nothing more to reveal.
-    private var detents: Set<PresentationDetent> {
-        options.count > Self.rowsInViewport ? [.height(Self.pickerHeight), .large] : [.height(Self.pickerHeight)]
-    }
-
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 0) {
-                    ForEach(options) { option in
-                        row(option)
-                    }
-                }
-            }
-            .scrollBounceBehavior(.basedOnSize)
-            .navigationTitle(direction == .source ? "Transfer from" : "Transfer to")
-            .navigationBarTitleDisplayMode(.inline)
-        }
-        .presentationDetents(detents)
-        .presentationDragIndicator(.visible)
-        .compactBottomSheetSurface()
-    }
-
-    private func row(_ option: Option) -> some View {
-        let isSelected = MintURLIdentity.normalized(option.mint.url) == MintURLIdentity.normalized(selectedMintURL)
-        // The same form the route rows show, so a balance reads alike in both.
-        let balance = AmountFormatter.sats(
-            option.mint.balance,
-            useBitcoinSymbol: SettingsManager.shared.useBitcoinSymbol
-        )
-        return Button {
-            HapticFeedback.selection()
-            onSelect(option.mint)
-            dismiss()
-        } label: {
-            HStack(spacing: 12) {
-                MintAvatarView(iconUrl: option.mint.iconUrl, name: option.mint.name, size: 40)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(option.mint.name)
-                        .font(.body.weight(.medium))
-                        .lineLimit(1)
-                    Text(option.unavailableReason ?? balance)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-
-                if isSelected {
-                    Image(systemName: "checkmark")
-                        .foregroundStyle(Color.accentColor)
-                }
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 12)
-            .contentShape(Rectangle())
-            .opacity(option.unavailableReason == nil ? 1 : DisabledControlOpacity.content)
-        }
-        .buttonStyle(.plain)
-        .disabled(option.unavailableReason != nil)
-        .accessibilityLabel(option.mint.name)
-        .accessibilityValue(option.unavailableReason ?? balance)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
