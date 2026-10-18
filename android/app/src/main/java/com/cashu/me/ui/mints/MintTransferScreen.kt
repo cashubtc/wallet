@@ -850,8 +850,6 @@ private fun EntryFace(
         val nameLine = with(density) { MaterialTheme.typography.bodyLarge.lineHeight.toDp() }
         val mintsHeight = 120.dp + nameLine * 2
         val room = maxHeight - numberPadFooterHeight(NumberPadPreferredKeyHeight)
-        val showsDestinationBalance = room >= mintsHeight + 24.dp + 160.dp
-        val besideMints = if (showsDestinationBalance) mintsHeight + 24.dp else mintsHeight
         // The rungs below budget the conversion line, which a note takes. A
         // note that wraps takes its extra lines from the amount, which steps
         // down rather than meeting the mints. Measured in the note's own style.
@@ -868,14 +866,20 @@ private fun EntryFace(
         // The amount box's own gap under the amount, and the lines a wrapping
         // note adds.
         val amountExtras = noteLineHeight * (noteLines - 1) + CashuTheme.spacing.snug
+        // What each rung takes: its line, the gap and the conversion line
+        // under it. Measured, not guessed, so the largest rung that fits is
+        // the one shown (iOS picks the same way with ViewThatFits).
+        val heroNeed = amountHeroHeight(AmountScale.Hero) + CashuTheme.spacing.default + noteLineHeight
+        val confirmNeed = amountHeroHeight(AmountScale.Confirm) + CashuTheme.spacing.default + noteLineHeight
+        val compactRoom = amountHeroHeight(AmountScale.Compact) + CashuTheme.spacing.default + noteLineHeight
+        val showsDestinationBalance = room - mintsHeight - 24.dp - amountExtras >= heroNeed
+        val besideMints = if (showsDestinationBalance) mintsHeight + 24.dp else mintsHeight
         val heroRoom = room - besideMints - amountExtras
         val heroScale = when {
-            heroRoom >= 160.dp -> AmountScale.Hero
-            heroRoom >= 110.dp -> AmountScale.Confirm
+            heroRoom >= heroNeed -> AmountScale.Hero
+            heroRoom >= confirmNeed -> AmountScale.Confirm
             else -> AmountScale.Compact
         }
-        // The compact amount's line, its gap and the conversion line.
-        val compactRoom = amountHeroHeight(AmountScale.Compact) + CashuTheme.spacing.default + noteLineHeight
         // Below that the keys shrink toward their 48dp minimum so the compact
         // amount keeps its room. Where even that leaves too little, the amount
         // and the mints scroll above the pad, as at large text.
