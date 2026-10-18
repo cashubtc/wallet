@@ -9,6 +9,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
+import org.cashudevkit.nip44Decrypt
 
 @Serializable
 data class NostrIncomingEvent(
@@ -35,17 +36,18 @@ internal object NIP17 {
     private val json = Json { ignoreUnknownKeys = true }
 
     fun unwrap(giftWrap: NostrIncomingEvent, recipientPrivateKey: ByteArray): NostrRumor {
-        val sealJson = NIP44.decrypt(
+        val secretKeyHex = recipientPrivateKey.joinToString("") { "%02x".format(it) }
+        val sealJson = nip44Decrypt(
             payload = giftWrap.content,
-            recipientPrivateKey = recipientPrivateKey,
-            senderPubkeyHex = giftWrap.pubkey,
+            nostrSecretKey = secretKeyHex,
+            senderPubkey = giftWrap.pubkey,
         )
         val seal = json.decodeFromString<NostrIncomingEvent>(sealJson)
         require(seal.kind == 13) { "Invalid NIP-17 seal." }
-        val rumorJson = NIP44.decrypt(
+        val rumorJson = nip44Decrypt(
             payload = seal.content,
-            recipientPrivateKey = recipientPrivateKey,
-            senderPubkeyHex = seal.pubkey,
+            nostrSecretKey = secretKeyHex,
+            senderPubkey = seal.pubkey,
         )
         return decodeRumor(rumorJson, expectedAuthor = seal.pubkey)
     }

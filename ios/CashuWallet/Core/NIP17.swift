@@ -1,4 +1,5 @@
 import Foundation
+import Cdk
 
 struct NostrIncomingEvent: Codable, Hashable {
     let id: String
@@ -39,13 +40,14 @@ enum NIP17 {
 
     /// Unwrap an incoming kind:1059 gift wrap addressed to us. Returns the inner kind:14 rumor.
     static func unwrap(giftWrap event: NostrIncomingEvent, recipientPrivateKey: Data) throws -> NostrRumor {
+        let secretKeyHex = recipientPrivateKey.map { String(format: "%02x", $0) }.joined()
         // Layer 1: decrypt wrap content with our private key + wrap.pubkey (ephemeral)
         let sealJSON: String
         do {
-            sealJSON = try NIP44.decrypt(
-                payload: event.content,
-                recipientPrivateKey: recipientPrivateKey,
-                senderPubkeyHex: event.pubkey
+            sealJSON = try nip44Decrypt(
+                nostrSecretKey: secretKeyHex,
+                senderPubkey: event.pubkey,
+                payload: event.content
             )
         } catch {
             throw Error.decryptFailed
@@ -56,10 +58,10 @@ enum NIP17 {
         // Layer 2: decrypt seal content with our private key + seal.pubkey (real sender)
         let rumorJSON: String
         do {
-            rumorJSON = try NIP44.decrypt(
-                payload: seal.content,
-                recipientPrivateKey: recipientPrivateKey,
-                senderPubkeyHex: seal.pubkey
+            rumorJSON = try nip44Decrypt(
+                nostrSecretKey: secretKeyHex,
+                senderPubkey: seal.pubkey,
+                payload: seal.content
             )
         } catch {
             throw Error.decryptFailed

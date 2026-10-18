@@ -84,7 +84,7 @@ class CashuRequestListener(
         }
         processedEvents.reload()
         val since = lookbackSince(System.currentTimeMillis() / 1000)
-        val recipientPrivateKey = NIP44.hexToBytes(privateKeyHex)
+        val recipientPrivateKey = NostrService.hexToBytes(privateKeyHex)
         val generation = listenerGeneration.incrementAndGet()
         val newClient = NostrInboxClient(
             pubkeyHex = nostr.publicKeyHex,

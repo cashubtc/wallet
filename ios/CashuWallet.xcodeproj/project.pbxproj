@@ -77,7 +77,6 @@
 		AB00000000000001 /* CashuRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC00000000000001 /* CashuRequest.swift */; };
 		AB00000000000002 /* CashuRequestStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC00000000000002 /* CashuRequestStore.swift */; };
 		AB00000000000003 /* PaymentRequestBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC00000000000003 /* PaymentRequestBuilder.swift */; };
-		AB00000000000004 /* NIP44.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC00000000000004 /* NIP44.swift */; };
 		AB00000000000005 /* NIP17.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC00000000000005 /* NIP17.swift */; };
 		AB00000000000006 /* NostrInboxClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC00000000000006 /* NostrInboxClient.swift */; };
 		AB00000000000007 /* CashuRequestListener.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC00000000000007 /* CashuRequestListener.swift */; };
@@ -297,7 +296,6 @@
 		AC00000000000001 /* CashuRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CashuRequest.swift; sourceTree = "<group>"; };
 		AC00000000000002 /* CashuRequestStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CashuRequestStore.swift; sourceTree = "<group>"; };
 		AC00000000000003 /* PaymentRequestBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaymentRequestBuilder.swift; sourceTree = "<group>"; };
-		AC00000000000004 /* NIP44.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NIP44.swift; sourceTree = "<group>"; };
 		AC00000000000005 /* NIP17.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NIP17.swift; sourceTree = "<group>"; };
 		AC00000000000006 /* NostrInboxClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NostrInboxClient.swift; sourceTree = "<group>"; };
 		AC00000000000007 /* CashuRequestListener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CashuRequestListener.swift; sourceTree = "<group>"; };
@@ -583,7 +581,6 @@
 				F400000000000006 /* PaymentRequestDecoder.swift */,
 				F400000000000007 /* MintQuoteDomain.swift */,
 				AC00000000000003 /* PaymentRequestBuilder.swift */,
-				AC00000000000004 /* NIP44.swift */,
 				AC00000000000005 /* NIP17.swift */,
 				AC00000000000006 /* NostrInboxClient.swift */,
 				AC0000000000000C /* NostrMintBackupService.swift */,
@@ -1261,7 +1258,6 @@
 				F300000000000006 /* PaymentRequestDecoder.swift in Sources */,
 				F300000000000007 /* MintQuoteDomain.swift in Sources */,
 				AB00000000000003 /* PaymentRequestBuilder.swift in Sources */,
-				AB00000000000004 /* NIP44.swift in Sources */,
 				AB00000000000005 /* NIP17.swift in Sources */,
 				AB00000000000006 /* NostrInboxClient.swift in Sources */,
 				AB0000000000000C /* NostrMintBackupService.swift in Sources */,
