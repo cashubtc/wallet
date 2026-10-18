@@ -361,8 +361,11 @@ class FakeWalletGateway(
         return SagaRecoveryReport(0, 0, 0, 0)
     }
 
-    override suspend fun recoverIncompleteSagas(mintUrl: String): SagaRecoveryReport =
-        SagaRecoveryReport(recovered = 0, compensated = 0, skipped = 0, failed = 0)
+    val sagaRecoveryCalls = AtomicInteger()
+    override suspend fun recoverIncompleteSagas(mintUrl: String): SagaRecoveryReport {
+        sagaRecoveryCalls.incrementAndGet()
+        return SagaRecoveryReport(recovered = 0, compensated = 0, skipped = 0, failed = 0)
+    }
 
     override suspend fun sendEcashToken(
         amount: Long,

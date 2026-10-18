@@ -682,6 +682,9 @@ private fun AuthenticatedShell(container: AppContainer) {
                 mintDiscoveryManager = container.mintDiscoveryManager,
                 allowCleartextLocalTestMints = container.runtimePolicy.allowCleartextLocalTestMints,
                 onDismissLockChanged = { flowDismissLocked = it },
+                onViewHistory = {
+                    flowHandoff.request(FlowHandoffDestination.NavTab(TopTab.History), close)
+                },
             )
 
             WalletFlow.SendEcash -> SendEcashScreen(

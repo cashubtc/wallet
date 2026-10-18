@@ -101,6 +101,10 @@ fun PaymentStatusScreen(
     // completion: the glyph becomes a pending clock instead of the green
     // check, with no celebration bounce (iOS parity).
     settlementPending: Boolean = false,
+    // The payment left the wallet but the mint hasn't confirmed its outcome,
+    // so the funds are held, not lost. The failure face then must not claim
+    // failure: the glyph becomes the same pending clock (iOS parity).
+    awaitingMint: Boolean = false,
     successAmount: String? = null,
 ) {
     val haptics = LocalHapticFeedback.current
@@ -285,12 +289,22 @@ fun PaymentStatusScreen(
                                             ),
                                     )
                                 }
-                                PaymentStatusPhase.Failure -> StatusCircleGlyph(
-                                    kind = StatusGlyphKind.Failure,
-                                    contentDescription = "Failed",
-                                    tint = failureTint,
-                                    modifier = Modifier.size(StatusGlyphSize),
-                                )
+                                PaymentStatusPhase.Failure -> if (awaitingMint) {
+                                    // Unconfirmed, not failed: the pending clock.
+                                    StatusCircleGlyph(
+                                        kind = StatusGlyphKind.Pending,
+                                        contentDescription = "Pending",
+                                        tint = CashuTheme.colors.pending,
+                                        modifier = Modifier.size(StatusGlyphSize),
+                                    )
+                                } else {
+                                    StatusCircleGlyph(
+                                        kind = StatusGlyphKind.Failure,
+                                        contentDescription = "Failed",
+                                        tint = failureTint,
+                                        modifier = Modifier.size(StatusGlyphSize),
+                                    )
+                                }
                             }
                         }
                     }

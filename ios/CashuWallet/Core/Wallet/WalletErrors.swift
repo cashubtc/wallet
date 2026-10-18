@@ -15,6 +15,9 @@ struct WalletMessage {
     let text: String
     let severity: ErrorSeverity
     var recoverability: Recoverability = .retryable
+    /// The payment left the wallet but the mint hasn't confirmed its outcome, so
+    /// the funds are held rather than lost. The UI shows a waiting face, not a failure.
+    var awaitsMintConfirmation = false
 
     static func error(_ text: String) -> WalletMessage { .init(text: text, severity: .error) }
     static func caution(_ text: String) -> WalletMessage { .init(text: text, severity: .caution) }
@@ -22,7 +25,16 @@ struct WalletMessage {
 
     /// Mark this message as a permanent outcome that a retry cannot change.
     func terminal() -> WalletMessage {
-        WalletMessage(text: text, severity: severity, recoverability: .terminal)
+        var message = self
+        message.recoverability = .terminal
+        return message
+    }
+
+    /// Mark this message as a payment the mint still has to confirm.
+    func awaitingMintConfirmation() -> WalletMessage {
+        var message = self
+        message.awaitsMintConfirmation = true
+        return message
     }
 }
 
@@ -43,7 +55,9 @@ enum WalletErrorMessage {
             case .compensated:
                 return .error("The payment did not complete. Create a fresh quote and try again.")
             case .unresolved:
-                return .caution("The payment outcome is still being checked. Do not retry it yet.").terminal()
+                return .caution("The mint hasn't confirmed this payment yet. Your funds are held until it's paid or refunded.")
+                    .terminal()
+                    .awaitingMintConfirmation()
             }
         }
 
