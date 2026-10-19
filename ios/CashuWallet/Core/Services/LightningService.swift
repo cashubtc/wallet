@@ -1514,3 +1514,20 @@ private extension PaymentMethodKind {
         }
     }
 }
+
+
+@MainActor
+final class CdkMintEventSubscription: MintEventSubscription {
+    private var subscription: ActiveSubscription?
+    init(_ subscription: ActiveSubscription) { self.subscription = subscription }
+    func drain() async throws -> Bool {
+        guard let subscription else { return false }
+        var changed = false
+        for _ in 0..<64 {
+            guard try await subscription.tryRecv() != nil else { return changed }
+            changed = true
+        }
+        return changed
+    }
+    func stop() async { subscription = nil }
+}

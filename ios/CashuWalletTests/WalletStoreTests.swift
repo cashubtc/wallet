@@ -276,6 +276,20 @@ final class MintQuoteReconcilerTests: XCTestCase {
 }
 
 final class MintQuoteSchedulePolicyTests: XCTestCase {
+    func testObservedQuotesRetainBackoffWhilePassiveRecoveryServesOtherQuotes() {
+        var record = MintQuoteScheduleRecord(firstObservedAt: 0)
+        record.nextAttemptAt = 300
+        record.consecutiveFailures = 5
+        let result = MintQuoteSchedulePolicy.select(quoteIDs: ["watched", "other"], existing: ["watched": record],
+            now: Date(timeIntervalSince1970: 10), force: false, observedQuoteIDs: ["watched"])
+        XCTAssertEqual(result.quoteIDs, ["other"])
+        XCTAssertEqual(result.records["watched"]?.nextAttemptAt, 300)
+        XCTAssertEqual(result.records["watched"]?.consecutiveFailures, 5)
+        let forced = MintQuoteSchedulePolicy.select(quoteIDs: ["watched"], existing: result.records,
+            now: Date(timeIntervalSince1970: 10), force: true, observedQuoteIDs: ["watched"])
+        XCTAssertEqual(forced.quoteIDs, ["watched"])
+    }
+
     func testOnchainDepositRemainsEligibleAfterExpiryAndOldScheduleReopens() {
         let pending = MintQuoteInfo(
             id: "pending-confirmation", request: "address", amount: nil,

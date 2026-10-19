@@ -38,6 +38,7 @@ internal object MintQuoteSchedulePolicy {
         nowEpochMillis: Long,
         force: Boolean,
         unsettledOnchainQuoteIds: Set<String> = emptySet(),
+        observedQuoteIds: Set<String> = emptySet(),
     ): Selection {
         val uniqueIds = quoteIds.asSequence().filter(String::isNotBlank).toSet()
         val records = existing
@@ -62,7 +63,7 @@ internal object MintQuoteSchedulePolicy {
         val selected = uniqueIds.asSequence()
             .filter { quoteId ->
                 val record = checkNotNull(records[quoteId])
-                !record.isComplete && (force || record.nextAttemptAtEpochMillis <= nowEpochMillis)
+                !record.isComplete && (force || (quoteId !in observedQuoteIds && record.nextAttemptAtEpochMillis <= nowEpochMillis))
             }
             .sortedWith(
                 compareBy<String> { records[it]?.lastAttemptAtEpochMillis ?: Long.MIN_VALUE }

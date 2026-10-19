@@ -66,7 +66,29 @@ class WalletManager: ObservableObject {
     /// without pull-to-refresh (Android parity).
     var pendingQuotePollTask: Task<Void, Never>?
     let pendingQuotePollInterval: TimeInterval = 10
-    let focusedMintQuoteMonitor = FocusedMintQuoteMonitor()
+    lazy var mintEvents = MintEventCoordinator(
+        socketsEnabled: { SettingsManager.shared.useWebsockets },
+        subscribe: { [weak self] id in
+            guard let self, let quote = await self.lightningService.storedMintQuote(quoteId: id),
+                  let subscription = try await self.subscribeToMintQuote(quoteId: id, paymentMethod: quote.paymentMethod) else {
+                throw WalletError.notInitialized
+            }
+            return CdkMintEventSubscription(subscription)
+        },
+        retry: { [weak self] id in
+            let record = self?.walletStore.loadMintQuoteSchedules()[id]
+            let failed = (record?.consecutiveFailures ?? 0) > 0
+            return (failed ? record.map { Date(timeIntervalSince1970: $0.nextAttemptAt) } : nil, failed)
+        },
+        reconcile: { [weak self] id, visible in
+            guard let self else { return nil }
+            let result = await self.refreshPendingMintQuote(quoteId: id, observingQuoteID: id)
+            if !visible, let result, result.newlyIssued > 0 {
+                self.postReceivedMintNotification(amount: result.newlyIssued, unit: result.quote.unit, homeHaptic: true)
+            }
+            return result
+        }
+    )
 
     // MARK: - Services
 

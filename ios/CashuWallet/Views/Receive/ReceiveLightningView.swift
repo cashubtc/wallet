@@ -1399,11 +1399,7 @@ struct ReceiveLightningView: View {
         }
     }
 
-    /// "Use new address" re-keys every monitor to the replacement quote
-    /// (`createRequest` resets `monitoredQuoteId` and cancels
-    /// `quoteStatusTask`); this keeps the outgoing address on a 30s
-    /// mint-status check so a payment already in flight still lands with the
-    /// full success screen. Multiple presses accrue; ids are deduped.
+    /// Keep previous addresses observed while a deposit may still be in flight.
     private func trackAbandonedOnchainQuote() {
         guard let quote = mintQuote,
               quote.paymentMethod == .onchain,
@@ -1414,29 +1410,29 @@ struct ReceiveLightningView: View {
     }
 
     private func startAbandonedQuoteWatcher() {
-        guard abandonedQuoteTask == nil else { return }
+        abandonedQuoteTask?.cancel()
+        let streams = abandonedOnchainQuoteIds.map { walletManager.mintEvents.observe($0) }
         abandonedQuoteTask = Task { @MainActor in
-            while !Task.isCancelled && !isPaid && !abandonedOnchainQuoteIds.isEmpty {
-                await checkAbandonedOnchainQuotes()
-                try? await Task.sleep(nanoseconds: 30_000_000_000)
+            await withTaskGroup(of: MintQuoteReconciliationResult?.self) { group in
+                for stream in streams {
+                    group.addTask {
+                        for await result in stream {
+                            guard !Task.isCancelled else { return nil }
+                            if result.hasSettledPayment { return result }
+                        }
+                        return nil
+                    }
+                }
+                let result = await group.next() ?? nil
+                group.cancelAll()
+                guard let result, !Task.isCancelled, !isPaid else { return }
+                abandonedOnchainQuoteIds.removeAll { $0 == result.quote.id }
+                quoteStatusTask?.cancel()
+                monitoredQuoteId = nil
+                expiryTimer?.invalidate()
+                mintQuote = result.quote
+                await completeReceivedQuote(receivedAmount: result.quote.amountIssued)
             }
-            abandonedQuoteTask = nil
-        }
-    }
-
-    @MainActor
-    private func checkAbandonedOnchainQuotes() async {
-        for quoteId in abandonedOnchainQuoteIds {
-            guard !isPaid, !Task.isCancelled else { return }
-            guard let result = await walletManager.refreshPendingMintQuote(quoteId: quoteId),
-                  result.hasSettledPayment else { continue }
-            abandonedOnchainQuoteIds.removeAll { $0 == quoteId }
-            quoteStatusTask?.cancel()
-            monitoredQuoteId = nil
-            expiryTimer?.invalidate()
-            mintQuote = result.quote
-            await completeReceivedQuote(receivedAmount: result.quote.amountIssued)
-            return
         }
     }
 
@@ -1446,76 +1442,9 @@ struct ReceiveLightningView: View {
         monitoredQuoteId = quote.id
         quoteStatusTask?.cancel()
         quoteStatusTask = Task { @MainActor in
-            switch quote.paymentMethod {
-            case .bolt11:
-                await pollMintQuote(quoteId: quote.id, initialInterval: 5, maxInterval: 15)
-            case .bolt12:
-                // A reusable offer must keep making progress even when a
-                // websocket stays connected but stops delivering updates.
-                // Polling also reconciles every paid/issued counter delta, so
-                // no individual payment can leave the quote stranded.
-                await pollMintQuote(quoteId: quote.id, initialInterval: 5, maxInterval: 15)
-            case .onchain:
-                await refreshMintQuoteStatus()
-                await monitorMintQuoteViaSubscription(quoteId: quote.id, paymentMethod: .onchain)
-            }
-        }
-    }
-
-    @MainActor
-    private func monitorMintQuoteViaSubscription(
-        quoteId: String,
-        paymentMethod: PaymentMethodKind
-    ) async {
-        do {
-            if SettingsManager.shared.useWebsockets,
-               let subscription = try await walletManager.subscribeToMintQuote(
-                quoteId: quoteId,
-                paymentMethod: paymentMethod
-            ) {
-                while !Task.isCancelled && !isPaid && (!isExpired || paymentMethod == .onchain) {
-                    let notification = try await subscription.recv()
-                    guard !Task.isCancelled else { break }
-
-                    switch notification {
-                    case .mintQuoteUpdate(let quoteUpdate):
-                        guard quoteUpdate.quote == quoteId else { continue }
-                        await refreshMintQuoteStatus()
-                    case .mintQuoteOnchainUpdate(let quoteUpdate):
-                        guard quoteUpdate.quote == quoteId else { continue }
-                        await refreshMintQuoteStatus()
-                    case .proofState, .meltQuoteUpdate, .meltQuoteOnchainUpdate:
-                        continue
-                    }
-                }
-                return
-            }
-        } catch {
-            // Fall back to polling when subscriptions are unavailable or fail.
-        }
-
-        let initialInterval: UInt64 = paymentMethod == .onchain ? 30 : 10
-        await pollMintQuote(quoteId: quoteId, initialInterval: initialInterval, maxInterval: 30)
-    }
-
-    @MainActor
-    private func pollMintQuote(
-        quoteId: String,
-        initialInterval: UInt64,
-        maxInterval: UInt64
-    ) async {
-        var interval = initialInterval
-
-        while !Task.isCancelled && !isPaid && mintQuote?.id == quoteId {
-            try? await Task.sleep(nanoseconds: interval * 1_000_000_000)
-
-            guard !Task.isCancelled, !isPaid, mintQuote?.id == quoteId,
-                  !isExpired || mintQuote?.paymentMethod == .onchain ||
-                    (mintQuote?.mintableAmount ?? 0) > 0 else { break }
-            await refreshMintQuoteStatus()
-
-            if interval < maxInterval {
-                interval = min(interval + 1, maxInterval)
+            for await result in walletManager.mintEvents.observe(quote.id) {
+                guard !Task.isCancelled, mintQuote?.id == quote.id else { break }
+                await applyMintQuoteResult(result)
             }
         }
     }
@@ -1542,6 +1471,11 @@ struct ReceiveLightningView: View {
             force: force,
             observingQuoteID: quote.id
         ), !Task.isCancelled, mintQuote?.id == quote.id else { return }
+        await applyMintQuoteResult(result)
+    }
+
+    @MainActor
+    private func applyMintQuoteResult(_ result: MintQuoteReconciliationResult) async {
         mintQuote = result.quote
         mintRetryStatus = result.retryStatus
 

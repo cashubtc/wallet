@@ -370,31 +370,64 @@ class CdkWalletGatewayImpl : WalletGateway {
         }
     }
 
-    override fun subscribeToMintQuote(quoteId: String, mayRefresh: () -> Boolean): Flow<MintQuoteInfo> = flow {
+    override suspend fun openTokenClaimSubscription(token: String, mintUrl: String): com.cashu.me.Core.MintEventSubscription {
+        val subscription = cdkCall {
+            val decoded = org.cashudevkit.Token.decode(token)
+            val filters = decoded.proofsSimple().map { org.cashudevkit.proofY(it) }
+            walletFor(mintUrl, decoded.unit() ?: CdkCurrencyUnit.Sat).subscribe(
+                org.cashudevkit.SubscribeParams(org.cashudevkit.SubscriptionKind.PROOF_STATE, filters, null),
+            )
+        }
+        return object : com.cashu.me.Core.MintEventSubscription {
+            override suspend fun drain(): Boolean {
+                var changed = false
+                repeat(64) {
+                    if (subscription.tryRecv() == null) return changed
+                    changed = true
+                }
+                return changed
+            }
+            override suspend fun stop() { subscription.close() }
+        }
+    }
+
+    override suspend fun openMintQuoteSubscription(quoteId: String): com.cashu.me.Core.MintEventSubscription {
         val subscription = cdkCall {
             val quote = database?.getMintQuote(quoteId)
-                ?: throw CdkGatewayUnavailable("No stored mint quote for $quoteId.")
-            val method = quote.paymentMethod.toDomain()
-            walletFor(quote.mintUrl.url, quote.unit)
-                .subscribeMintQuoteState(listOf(quoteId), cdkPaymentMethod(method))
+                ?: throw CdkGatewayUnavailable("No stored mint quote.")
+            val kind = when (quote.paymentMethod.toDomain()) {
+                PaymentMethodKind.Bolt11 -> org.cashudevkit.SubscriptionKind.BOLT11_MINT_QUOTE
+                PaymentMethodKind.Bolt12 -> org.cashudevkit.SubscriptionKind.BOLT12_MINT_QUOTE
+                PaymentMethodKind.Onchain -> org.cashudevkit.SubscriptionKind.ONCHAIN_MINT_QUOTE
+            }
+            walletFor(quote.mintUrl.url, quote.unit).subscribe(
+                org.cashudevkit.SubscribeParams(kind, listOf(quoteId), null),
+            )
         }
+        return object : com.cashu.me.Core.MintEventSubscription {
+            override suspend fun drain(): Boolean = withContext(Dispatchers.IO) {
+                var changed = false
+                // Bounded draining coalesces bursts and keeps cancellation responsive.
+                repeat(64) {
+                    if (subscription.tryRecv() == null) return@withContext changed
+                    // CDK already filters this subscription to the quote and payment method.
+                    changed = true
+                }
+                changed
+            }
+            override suspend fun stop() { subscription.close() }
+        }
+    }
+
+    override fun subscribeToMintQuote(quoteId: String, mayRefresh: () -> Boolean): Flow<MintQuoteInfo> = flow {
+        val subscription = openMintQuoteSubscription(quoteId)
         try {
             while (true) {
-                val payload = withContext(Dispatchers.IO) { subscription.recv() }
-                if (!payload.referencesMintQuote(quoteId)) continue
-                if (!mayRefresh()) continue
-                val refreshed = checkMintQuote(quoteId)
-                emit(refreshed)
-                // An amountless BOLT12 offer remains open after each mint. Keep
-                // the subscription alive so its display can show later payments.
-                if (refreshed.paymentMethod != PaymentMethodKind.Bolt12 &&
-                    (refreshed.state == MintQuoteState.Paid || refreshed.state == MintQuoteState.Issued)
-                ) {
-                    return@flow
-                }
+                if (subscription.drain() && mayRefresh()) emit(checkMintQuote(quoteId))
+                kotlinx.coroutines.delay(250)
             }
         } finally {
-            withContext(Dispatchers.IO) { subscription.close() }
+            withContext(kotlinx.coroutines.NonCancellable) { subscription.stop() }
         }
     }.flowOn(Dispatchers.IO)
 
@@ -679,6 +712,18 @@ class CdkWalletGatewayImpl : WalletGateway {
         }
         val report = walletFor(candidate.mintUrl, unit).recoverIncompleteSagas()
         SagaRecoveryReport(report.recovered.toLong(), report.compensated.toLong(), report.skipped.toLong(), report.failed.toLong())
+    }
+
+    override suspend fun finalizePendingMelts(mintUrl: String): Boolean = cdkCall {
+        var changed = false
+        for (wallet in requireRepository().getWallets().filter { mintRemovalUrlsMatch(it.mintUrl().url, mintUrl) }) {
+            val before = wallet.totalBalance().value to wallet.totalReservedBalance().value
+            val finalized = wallet.finalizePendingMelts()
+            val after = wallet.totalBalance().value to wallet.totalReservedBalance().value
+            // Compensation can release proofs without returning a successful melt.
+            changed = changed || finalized.isNotEmpty() || before != after
+        }
+        changed
     }
 
     override suspend fun recoverIncompleteSagas(mintUrl: String): SagaRecoveryReport = cdkCall {
