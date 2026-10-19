@@ -23,7 +23,7 @@ other units, so both platforms can use the sat+USD CDK fixture profile.
 ## Added required coverage
 
 `coverage.json` lists individual executable tests, not feature labels. Both
-platforms require 14 cases on PRs (12 native + 2 UI) and 19 on full/nightly runs.
+platforms require 18 cases on PRs (16 native + 2 UI) and 24 on full/nightly runs.
 `check_coverage.py` reads JUnit XML or Xcode test-result trees and fails for any
 missing, skipped, or unsuccessful required case. The existing suites still run.
 
@@ -41,8 +41,11 @@ missing, skipped, or unsuccessful required case. The existing suites still run.
 | Nonzero input fees | Send-max at 1000 ppk, real redemption fee and net balances | PR |
 | P2PK on both mint implementations | Wrong key cannot credit; correct key subsequently succeeds | PR |
 | Concurrent redemption | Two separate receivers race; exactly one succeeds and total credit equals token value | PR |
+| CDK fault/concurrency counterparts | Lost mint response recovers once; concurrent redemption has exactly one winner on CDK as well as Nutshell | PR |
+| Direct native mint subscriptions | Each mint delivers the paid quote through the native subscription API; issuance persists after reopening | PR |
 | Real native UI on both mints | Receive 100, pay 21, history survives relaunch (iOS) / activity recreation (Android) | PR |
 | Cashu Request HTTP | Fixed and amountless request, matching request ID, actual recipient redemption, exact sender debit on the zero-fee mint | Full |
+| CDK Cashu Request HTTP | The same fixed/amountless payment invariants on the zero-fee CDK mint | Full |
 | Cashu Request delivery failure | Failed HTTP delivery leaves a reclaimable operation; revoke restores balance | Full |
 | Proof reservation release | Swift competing preparation/cancel; Android repeated real fee-preview/cancel; full balance remains spendable | Full |
 | Currency isolation | Sat and USD share one repository/database per wallet owner; USD payments preserve both sender and recipient sat balances | Full |

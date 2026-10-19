@@ -93,7 +93,7 @@ class LiveMintRetryHistoryJourneyTest {
         assertEquals(quoteId, receipt.quoteId)
         assertEquals(TransactionStatus.Completed, receipt.status)
         compose.onNodeWithTag(UiTestTags.transactionRow(receipt.id)).assertIsDisplayed()
-        robot.tapTag(UiTestTags.transactionRow(receipt.id)).awaitText("Completed")
+        robot.tapTag(UiTestTags.transactionRow(receipt.id)).awaitDescription("Completed")
         robot.pressSystemBack().tapText("Wallet").awaitTag(UiTestTags.WalletScreen)
         fixture.scenario.recreate()
         runBlocking { manager.loadTransactions() }
