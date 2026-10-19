@@ -27,6 +27,9 @@ struct CashuRequestDetailView: View {
     /// VoiceOver Share action for the QR: ShareLink can't be invoked
     /// imperatively, so the accessibility action presents the share sheet.
     @State private var showShareSheet = false
+    @State private var nfcReceive = NFCReceiveCoordinator()
+    @State private var contactlessAvailable = false
+    @State private var nfcPaymentCountAtStart = 0
 
     init(request: CashuRequest, onClose: (() -> Void)? = nil, showsNavigationHeader: Bool = true) {
         self._requestId = State(initialValue: request.id)
@@ -132,14 +135,48 @@ struct CashuRequestDetailView: View {
             }
         }
         .onChange(of: request?.receivedPayments) {
+            nfcReceive.stop()
             presentNextPayment()
         }
         .onChange(of: showPaymentSuccess) {
             presentNextPayment()
         }
+        .onChange(of: nfcReceive.receivedAmount) {
+            // CDK may credit the wallet without returning an attributable tx ID.
+            // Still show the actual redeemed amount in that case.
+            if let amount = nfcReceive.receivedAmount, !showPaymentSuccess,
+               paymentCount == nfcPaymentCountAtStart {
+                receivedAmount = amount
+                showPaymentSuccess = true
+            }
+        }
+        .onChange(of: nfcReceive.reviewPayment) { presentNextPayment() }
         .task(id: monitoredQuoteID) {
             guard let quoteID = monitoredQuoteID else { return }
             await walletManager.monitorDisplayedMintQuote(quoteID: quoteID, homeHaptic: false)
+        }
+        .task(id: scenePhase) {
+            if scenePhase == .active {
+                contactlessAvailable = await NFCReceiveCardSession.isAvailable
+            } else if scenePhase == .background {
+                nfcReceive.stop()
+            }
+        }
+        .onChange(of: request) { nfcReceive.stop() }
+        .onDisappear { nfcReceive.stop() }
+        .fullScreenCover(item: Binding(
+            get: { nfcReceive.reviewPayment },
+            set: { if $0 == nil { nfcReceive.dismissReview() } }
+        )) { pending in
+            ReceiveTokenDetailView(
+                tokenString: pending.token,
+                onComplete: { nfcReceive.dismissReview() },
+                claim: { try await walletManager.claimPendingReceiveToken(pending) },
+                secondaryActionTitle: "Review Later",
+                onSecondaryAction: { nfcReceive.dismissReview() }
+            )
+            .environmentObject(walletManager)
+            .canvasSheetBackground()
         }
         .walletSheetSurface(fillsScreen: true)
     }
@@ -147,8 +184,17 @@ struct CashuRequestDetailView: View {
     /// Keep the current receipt stable; payments arriving during it are picked
     /// up after Done without replaying any previously acknowledged payment.
     private func presentNextPayment() {
-        guard !showPaymentSuccess, let request,
-              let payment = paymentObservation.newlyLinkedPayment(in: request.receivedPayments) else { return }
+        guard !showPaymentSuccess, let request else { return }
+        if let reviewed = nfcReceive.reviewPayment {
+            // The review screen owns this payment's success. Keep other
+            // concurrent receipts queued until that screen closes.
+            let saved = walletManager.walletStore.loadSavedTokens()
+            for payment in request.receivedPayments where saved[payment.transactionId] == reviewed.token {
+                paymentObservation.acknowledge(transactionId: payment.transactionId)
+            }
+            return
+        }
+        guard let payment = paymentObservation.newlyLinkedPayment(in: request.receivedPayments) else { return }
         receivedAmount = payment.amount
         // PaymentStatusView owns the success haptic on appear — don't buzz here.
         showPaymentSuccess = true
@@ -220,6 +266,8 @@ struct CashuRequestDetailView: View {
                     }
 
                     deliveryStatus(for: request)
+
+                    contactlessReceive(request: request)
 
                     if let regenerationError {
                         InlineNotice(message: regenerationError, severity: .error)
@@ -303,6 +351,39 @@ struct CashuRequestDetailView: View {
             .multilineTextAlignment(.center)
             .padding(.horizontal)
             .padding(.bottom, 16)
+        }
+    }
+
+    @ViewBuilder
+    private func contactlessReceive(request: CashuRequest) -> some View {
+        if contactlessAvailable && (request.rail == .ecash || request.receivedPayments.isEmpty) {
+            VStack(spacing: 8) {
+                Button {
+                    nfcPaymentCountAtStart = paymentCount
+                    nfcReceive.start(request: request, walletManager: walletManager)
+                } label: {
+                    if nfcReceive.phase == .redeeming {
+                        HStack {
+                            ProgressView()
+                            Text("Securing ecash…")
+                        }
+                    } else {
+                        Label("Tap to Receive", systemImage: "wave.3.right")
+                    }
+                }
+                .flatSheetSecondaryButton()
+                .disabled(nfcReceive.isBusy || !NFCReceivePayment.canPresent(request) || !walletManager.isRuntimeReady)
+                .accessibilityIdentifier("cashu.receive.contactless")
+                .accessibilityHint("Hold this iPhone near the payer's device to receive ecash")
+                if (request.amount ?? 0) == 0 {
+                    Text("Set an amount to receive by tap.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                if let message = nfcReceive.message {
+                    InlineNotice(message: message, severity: .caution)
+                }
+            }
         }
     }
 
@@ -485,6 +566,10 @@ struct CashuRequestPaymentObservation {
 
     init(existingPayments: [CashuRequestPayment]) {
         observedTransactionIds = Set(existingPayments.map(\.transactionId))
+    }
+
+    mutating func acknowledge(transactionId: String) {
+        observedTransactionIds.insert(transactionId)
     }
 
     mutating func newlyLinkedPayment(

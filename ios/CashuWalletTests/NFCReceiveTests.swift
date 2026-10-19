@@ -1,0 +1,603 @@
+import Cdk
+import XCTest
+@testable import CashuWallet
+
+/// Uses the same fake-money mint fixture as the existing receipt recovery tests.
+@MainActor
+final class NFCReceiveIntegrationTests: XCTestCase {
+    func testTextAndBinaryTokensSurviveChunkedNfcTransferAndRedeemOnce() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let senderDB = try LifecycleSafeWalletDatabase(filePath: directory.appendingPathComponent("sender.sqlite").path)
+        let receiverDB = try LifecycleSafeWalletDatabase(filePath: directory.appendingPathComponent("receiver.sqlite").path)
+        let sender = try WalletRepository(mnemonic: generateMnemonic(), store: customWalletStore(db: senderDB))
+        let receiver = try WalletRepository(mnemonic: generateMnemonic(), store: customWalletStore(db: receiverDB))
+        let mint = MintUrl(url: "http://localhost:3338")
+        try await sender.createWallet(mintUrl: mint, unit: .sat, targetProofCount: nil)
+        let wallet = try await sender.getWallet(mintUrl: mint, unit: .sat)
+        let quote = try await wallet.mintQuote(paymentMethod: .bolt11, amount: Amount(value: 32), description: nil, extra: nil)
+        for _ in 0..<40 {
+            if try await wallet.checkMintQuote(quoteId: quote.id).state == .paid { break }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        _ = try await wallet.mint(quoteId: quote.id, amountSplitTarget: .none, spendingConditions: nil)
+        let senderService = TokenService(walletRepository: { sender }, getActiveMint: { nil })
+        let storage = InMemoryStorage()
+        let manager = WalletManager(walletStore: WalletStore(storage: storage))
+        manager.walletRepository = receiver
+        manager.db = receiverDB
+        manager.isRuntimeReady = true
+
+        for binary in [false, true] {
+            let tokenString = try await senderService.sendTokens(amount: 16, mintUrl: mint.url).token
+            let token = try Token.decode(encodedToken: tokenString)
+            let file: [UInt8]
+            if binary {
+                let payload = [UInt8](try token.toRawBytes())
+                let mime = Array("application/octet-stream".utf8)
+                let length = UInt32(payload.count)
+                let record: [UInt8] = [0xC2, UInt8(mime.count), UInt8(length >> 24), UInt8((length >> 16) & 255),
+                                       UInt8((length >> 8) & 255), UInt8(length & 255)] + mime + payload
+                file = [UInt8(record.count >> 8), UInt8(record.count & 255)] + record
+            } else {
+                file = try NFCNdefCodec.textFile("https://wallet.example/#token=\(tokenString)")
+            }
+            let request = CashuRequest(encoded: "unused", amount: 16, mints: [mint.url])
+            var tag = try NFCType4Tag(request: PaymentRequestBuilder.buildNFC(request: request))
+            _ = tag.process(Data([0, 0xA4, 4, 0, UInt8(NFCType4Tag.aid.count)] + NFCType4Tag.aid))
+            _ = tag.process(Data([0, 0xA4, 0, 0x0C, 2, 0xE1, 4]))
+            var received: NFCNdefPayload?
+            for offset in stride(from: 0, to: file.count, by: 52) {
+                let chunk = Array(file[offset..<min(offset + 52, file.count)])
+                let result = tag.process(Data([0, 0xD6, UInt8(offset >> 8), UInt8(offset & 255), UInt8(chunk.count)] + chunk))
+                XCTAssertEqual(result.response, Data([0x90, 0]))
+                received = result.payload ?? received
+            }
+            let decoded = try NFCReceivePayment.decode(XCTUnwrap(received))
+            XCTAssertEqual(try decoded.value().value, 16)
+            let payment = try manager.stageNFCReceive(XCTUnwrap(received), request: request)
+            XCTAssertEqual(payment.needsReview, !binary, "The first receipt requires new-mint approval")
+            XCTAssertEqual(payment.pending.cashuRequestId, request.id)
+            let retry = try manager.stageNFCReceive(XCTUnwrap(received), request: request)
+            XCTAssertEqual(retry.pending.tokenId, payment.pending.tokenId)
+            let reopened = WalletStore(storage: storage).loadPendingReceiveTokens()
+            XCTAssertEqual(reopened.count, 1)
+            XCTAssertEqual(reopened.first?.token, decoded.encode(), "Retain the token before acknowledging the payer")
+            // The first call represents approval in the token review screen.
+            let credited = try await manager.claimPendingReceiveToken(payment.pending)
+            XCTAssertEqual(credited, 16)
+            XCTAssertTrue(manager.walletStore.loadPendingReceiveTokens().isEmpty)
+            XCTAssertThrowsError(try manager.stageNFCReceive(XCTUnwrap(received), request: request))
+            do {
+                _ = try await manager.claimPendingReceiveToken(payment.pending)
+                XCTFail("The same proofs must not credit twice")
+            } catch { }
+        }
+        let receivedWallet = try await receiver.getWallet(mintUrl: mint, unit: .sat)
+        let balance = try await receivedWallet.totalBalance().value
+        XCTAssertEqual(balance, 32)
+    }
+}
+
+final class NFCReceiveTests: XCTestCase {
+    private let selectApplication: [UInt8] = [0, 0xA4, 4, 0, UInt8(NFCType4Tag.aid.count)] + NFCType4Tag.aid + [0]
+    private let selectNdef: [UInt8] = [0, 0xA4, 0, 0x0C, 2, 0xE1, 4]
+    private let ok = Data([0x90, 0])
+
+    private func selectedTag() throws -> NFCType4Tag {
+        var tag = try NFCType4Tag(request: "creqAtest")
+        XCTAssertEqual(tag.process(Data(selectApplication)).response, ok)
+        XCTAssertEqual(tag.process(Data(selectNdef)).response, ok)
+        return tag
+    }
+
+    private func update(_ offset: Int, _ bytes: [UInt8]) -> Data {
+        Data([0, 0xD6, UInt8(offset >> 8), UInt8(offset & 255), UInt8(bytes.count)] + bytes)
+    }
+
+    func testAndroidCompatibleCapabilityContainerAndRequest() throws {
+        var tag = try selectedTag()
+        XCTAssertEqual(tag.process(Data([0, 0xB0, 0, 0, 0])).response,
+                       Data(try NFCNdefCodec.textFile("creqAtest")) + ok)
+        XCTAssertEqual(tag.process(Data([0, 0xA4, 0, 0x0C, 2, 0xE1, 3])).response, ok)
+        XCTAssertEqual(tag.process(Data([0, 0xB0, 0, 0, 15])).response,
+                       Data(NFCType4Tag.capabilityContainer) + ok)
+        XCTAssertNotEqual(tag.process(update(0, [0, 1, 2])).response, ok)
+    }
+
+    func testShortAndLongUTF8TextRoundTrip() throws {
+        for text in ["cashuBtoken", String(repeating: "é", count: 500)] {
+            XCTAssertEqual(NFCNdefCodec.parseFile(try NFCNdefCodec.textFile(text)), .text(text))
+        }
+        XCTAssertThrowsError(try NFCNdefCodec.textFile(String(repeating: "a", count: 30_000)))
+    }
+
+    func testNlenFirstRequiresEveryByteIncludingHoles() throws {
+        var tag = try selectedTag()
+        let file = try NFCNdefCodec.textFile("cashuBtest")
+        XCTAssertNil(tag.process(update(0, Array(file[0..<2]))).payload)
+        XCTAssertNil(tag.process(update(8, Array(file[8...]))).payload)
+        XCTAssertNil(tag.process(update(2, Array(file[2..<7]))).payload)
+        XCTAssertEqual(tag.process(update(7, [file[7]])).payload, .text("cashuBtest"))
+        XCTAssertNil(tag.process(update(7, [file[7]])).payload)
+    }
+
+    func testNlenLastAndOutOfOrderChunks() throws {
+        var tag = try selectedTag()
+        let file = try NFCNdefCodec.textFile("cashuBtest")
+        XCTAssertNil(tag.process(update(0, [0, 0])).payload)
+        XCTAssertNil(tag.process(update(8, Array(file[8...]))).payload)
+        XCTAssertNil(tag.process(update(2, Array(file[2..<8]))).payload)
+        XCTAssertEqual(tag.process(update(0, Array(file[0..<2]))).payload, .text("cashuBtest"))
+    }
+
+    func testDisconnectAndReselectDiscardPartialWrites() throws {
+        for disconnect in [true, false] {
+            var tag = try selectedTag()
+            let file = try NFCNdefCodec.textFile("cashuBtest")
+            _ = tag.process(update(0, Array(file[0..<8])))
+            if disconnect { tag.reset() }
+            _ = tag.process(Data(selectApplication))
+            _ = tag.process(Data(selectNdef))
+            XCTAssertNil(tag.process(update(8, Array(file[8...]))).payload)
+            XCTAssertNil(tag.process(update(0, Array(file[0..<2]))).payload)
+        }
+    }
+
+    func testZeroNlenDiscardsPreviousBody() throws {
+        var tag = try selectedTag()
+        let file = try NFCNdefCodec.textFile("cashuBtest")
+        _ = tag.process(update(2, Array(file.dropFirst(2))))
+        _ = tag.process(update(0, [0, 0]))
+        XCTAssertNil(tag.process(update(0, Array(file.prefix(2)))).payload)
+    }
+
+    func testMalformedApdusAndBounds() throws {
+        var tag = try selectedTag()
+        for bytes: [UInt8] in [[], [0], [0, 0xB0], [0, 0xB0, 0, 0],
+                               [0, 0xD6, 0, 0, 2, 1], [0, 0xD6, 0xFF, 0xFF, 1, 0],
+                               [0, 0xB0, 0xFF, 0xFF, 1], [0x80, 0xB0, 0, 0, 1]] {
+            XCTAssertNotEqual(tag.process(Data(bytes)).response, ok)
+        }
+        XCTAssertNotEqual(tag.process(update(0, [0xFF, 0xFF])).response, ok)
+    }
+
+    func testApplicationSelectionRequiredAndUnknownFileClearsSelection() throws {
+        var tag = try NFCType4Tag(request: "creqAtest")
+        XCTAssertNotEqual(tag.process(Data(selectNdef)).response, ok)
+        _ = tag.process(Data(selectApplication))
+        _ = tag.process(Data(selectNdef))
+        _ = tag.process(Data([0, 0xA4, 0, 0x0C, 2, 0xE1, 9]))
+        XCTAssertNotEqual(tag.process(update(0, [0, 0])).response, ok)
+    }
+
+    func testRejectsTruncationChunkingIdsAndTrailingBytes() throws {
+        let valid = try NFCNdefCodec.textFile("cashuBtest")
+        for count in 0..<valid.count {
+            XCTAssertNil(NFCNdefCodec.parseFile(Array(valid.prefix(count))))
+        }
+        for header: UInt8 in [0x91, 0x51, 0xF1, 0xD9] {
+            var invalid = valid
+            invalid[2] = header
+            XCTAssertNil(NFCNdefCodec.parseFile(invalid))
+        }
+        XCTAssertNil(NFCNdefCodec.parseFile(valid + [0]))
+        // Huge long-record payload length must not allocate or index out of bounds.
+        XCTAssertNil(NFCNdefCodec.parseFile([0, 7, 0xC1, 1, 0xFF, 0xFF, 0xFF, 0xFF, 0x54]))
+    }
+
+    func testBinaryMimeAndUriRecords() {
+        let mime = Array("application/octet-stream".utf8)
+        let record: [UInt8] = [0xD2, UInt8(mime.count), 3] + mime + [0, 1, 2]
+        XCTAssertEqual(NFCNdefCodec.parseFile([0, UInt8(record.count)] + record), .cashuBinary(Data([0, 1, 2])))
+        let uri: [UInt8] = [0xD1, 1, 7, 0x55, 0] + Array("cashuB".utf8)
+        XCTAssertEqual(NFCNdefCodec.parseFile([0, UInt8(uri.count)] + uri), .text("cashuB"))
+    }
+
+    func testMalformedTextAndUnsupportedUriAreRejected() {
+        for payload: [UInt8] in [[0x80], [0x40], [5, 0x65], [0, 0xFF]] {
+            let record: [UInt8] = [0xD1, 1, UInt8(payload.count), 0x54] + payload
+            XCTAssertNil(NFCNdefCodec.parseFile([0, UInt8(record.count)] + record))
+        }
+        XCTAssertNil(NFCNdefCodec.parseFile([0, 5, 0xD1, 1, 1, 0x55, 0xFF]))
+    }
+
+    func testTransportFreeRequestPreservesTerms() throws {
+        let request = CashuRequest(id: "nfc", encoded: "unused", amount: 21, unit: "usd",
+                                   mints: ["https://mint.example"], memo: "Coffee", reusable: false)
+        let decoded = try decodePaymentRequest(encoded: PaymentRequestBuilder.buildNFC(request: request))
+        XCTAssertEqual(decoded.paymentId(), "nfc")
+        XCTAssertEqual(decoded.amount()?.value, 21)
+        XCTAssertEqual(decoded.unit(), .usd)
+        XCTAssertEqual(decoded.mints(), ["https://mint.example"])
+        XCTAssertTrue(decoded.transports().isEmpty)
+    }
+
+    func testRequestValidationAndAvailability() {
+        let request = CashuRequest(encoded: "unused", amount: 21, mints: ["https://mint.example/"])
+        XCTAssertTrue(NFCReceivePayment.canPresent(request))
+        XCTAssertNil(NFCReceivePayment.validationMessage(request: request, amount: 22, unit: "SAT", mint: "https://MINT.example"))
+        XCTAssertNotNil(NFCReceivePayment.validationMessage(request: request, amount: 20, unit: "sat", mint: "https://mint.example"))
+        XCTAssertNotNil(NFCReceivePayment.validationMessage(request: request, amount: 21, unit: "usd", mint: "https://mint.example"))
+        XCTAssertNotNil(NFCReceivePayment.validationMessage(request: request, amount: 21, unit: "sat", mint: "https://other.example"))
+        XCTAssertFalse(NFCReceivePayment.canPresent(CashuRequest(encoded: "unused")))
+        XCTAssertFalse(NFCReceivePayment.canPresent(CashuRequest(encoded: "unused", amount: 21, expiry: .distantPast)))
+        let paid = [CashuRequestPayment(transactionId: "tx", amount: 21, receivedAt: Date())]
+        XCTAssertFalse(NFCReceivePayment.canPresent(CashuRequest(encoded: "unused", amount: 21, receivedPayments: paid, rail: .bolt11)))
+        XCTAssertTrue(NFCReceivePayment.canPresent(CashuRequest(encoded: "unused", amount: 21, receivedPayments: paid)))
+    }
+
+    func testReviewedReceiptDoesNotReplaySuccessOrSuppressConcurrentPayment() {
+        let reviewed = CashuRequestPayment(transactionId: "reviewed", amount: 21, receivedAt: Date())
+        let concurrent = CashuRequestPayment(transactionId: "concurrent", amount: 5, receivedAt: Date())
+        var observation = CashuRequestPaymentObservation(existingPayments: [])
+        observation.acknowledge(transactionId: reviewed.transactionId)
+        XCTAssertEqual(observation.newlyLinkedPayment(in: [concurrent, reviewed])?.transactionId, "concurrent")
+        XCTAssertNil(observation.newlyLinkedPayment(in: [concurrent, reviewed]))
+    }
+}
+
+@MainActor
+final class NFCReceivePresentmentTests: XCTestCase {
+    private final class Assertion: NFCReceivePresentmentAssertion {
+        var isValid = true
+    }
+
+    private final class Expiry {
+        var waiters: [CheckedContinuation<Void, Never>] = []
+        func wait() async { await withCheckedContinuation { waiters.append($0) } }
+        func finishNext() { waiters.removeFirst().resume() }
+    }
+
+    private func settle() async {
+        for _ in 0..<20 { await Task.yield() }
+    }
+
+    func testProtectionOutlivesReceiveReturnAndReleasesAtExpiry() async {
+        let expiry = Expiry()
+        weak var acquired: Assertion?
+        let presentment = NFCReceivePresentment(acquire: {
+            let assertion = Assertion()
+            acquired = assertion
+            return assertion
+        }, waitForExpiry: { await expiry.wait() })
+
+        await presentment.protectCompletion()
+        await settle()
+        XCTAssertNotNil(acquired, "Returning to claim and success UI must not release Wallet suppression")
+        XCTAssertEqual(expiry.waiters.count, 1)
+        expiry.finishNext()
+        await settle()
+        XCTAssertNil(acquired, "Protection must not outlive Apple's bounded presentment window")
+    }
+
+    func testRapidReceiptReusesProtectionWithoutExtendingItsLifetime() async {
+        let expiry = Expiry()
+        var acquisitions = 0
+        weak var acquired: Assertion?
+        let presentment = NFCReceivePresentment(acquire: {
+            acquisitions += 1
+            let assertion = Assertion()
+            acquired = assertion
+            return assertion
+        }, waitForExpiry: { await expiry.wait() })
+
+        await presentment.protectCompletion()
+        await settle()
+        await presentment.protectCompletion()
+        XCTAssertEqual(acquisitions, 1)
+        XCTAssertEqual(expiry.waiters.count, 1, "A second receive must not restart the expiry timer")
+        expiry.finishNext()
+        await settle()
+        XCTAssertNil(acquired)
+    }
+
+    func testInvalidAssertionIsReplacedAndOldExpiryCannotReleaseReplacement() async {
+        let expiry = Expiry()
+        var acquisitions = 0
+        weak var acquired: Assertion?
+        let presentment = NFCReceivePresentment(acquire: {
+            acquisitions += 1
+            let assertion = Assertion()
+            acquired = assertion
+            return assertion
+        }, waitForExpiry: { await expiry.wait() })
+
+        await presentment.protectCompletion()
+        await settle()
+        weak var previous = acquired
+        acquired?.isValid = false // e.g. iOS invalidated protection on background
+        await presentment.protectCompletion()
+        await settle()
+        XCTAssertEqual(acquisitions, 2)
+        XCTAssertNil(previous)
+        XCTAssertEqual(expiry.waiters.count, 2)
+        expiry.finishNext()
+        await settle()
+        XCTAssertNotNil(acquired, "A cancelled timer must not clear a subsequent assertion")
+        expiry.finishNext()
+        await settle()
+        XCTAssertNil(acquired)
+    }
+
+    func testUnavailableAssertionDoesNotBlockReceiptOrStartExpiry() async {
+        var acquisitions = 0
+        let presentment = NFCReceivePresentment(acquire: {
+            acquisitions += 1
+            throw NFCReceiveError.message("Presentment cooldown")
+        }, waitForExpiry: { XCTFail("There is no assertion to retain") })
+
+        await presentment.protectCompletion()
+        XCTAssertEqual(acquisitions, 1)
+    }
+
+    func testAlreadyInvalidAcquisitionIsReleasedWithoutStartingExpiry() async {
+        weak var acquired: Assertion?
+        let presentment = NFCReceivePresentment(acquire: {
+            let assertion = Assertion()
+            assertion.isValid = false
+            acquired = assertion
+            return assertion
+        }, waitForExpiry: { XCTFail("An invalid assertion must not be retained") })
+
+        await presentment.protectCompletion()
+        XCTAssertNil(acquired)
+    }
+}
+
+@MainActor
+final class NFCReceiveLifecycleTests: XCTestCase {
+    private final class Transport: NFCReceiveTransport {
+        var gate: CheckedContinuation<Void, Never>?
+        var stopped = false
+        var payload: NFCNdefPayload? = .text("token")
+        var holdAfterAcceptance = false
+        var responseGate: CheckedContinuation<Void, Never>?
+
+        func receive(request: String, accept: (NFCNdefPayload) throws -> NFCReceivePayment) async throws -> NFCReceivePayment? {
+            await withCheckedContinuation { gate = $0 }
+            guard let payload else { return nil }
+            let payment = try accept(payload)
+            if holdAfterAcceptance {
+                await withCheckedContinuation { responseGate = $0 }
+            }
+            return payment
+        }
+
+        func stop() { stopped = true }
+        func deliver() { gate?.resume(); gate = nil }
+        func finishResponse() { responseGate?.resume(); responseGate = nil }
+    }
+
+    private let request = CashuRequest(encoded: "unused", amount: 21)
+    private func payment(review: Bool = false, validation: String? = nil) -> NFCReceivePayment {
+        NFCReceivePayment(pending: PendingReceiveToken(
+            tokenId: "receipt", token: "token", amount: 21, date: Date(), mintUrl: "https://mint.example"
+        ), needsReview: review, validationMessage: validation)
+    }
+
+    private func settle() async {
+        for _ in 0..<20 { await Task.yield() }
+    }
+
+    func testCancelledInitializationCannotAcceptOrClearReplacement() async {
+        let old = Transport(), next = Transport()
+        var transports = [old, next]
+        let coordinator = NFCReceiveCoordinator { transports.removeFirst() }
+        var staged = 0
+        coordinator.start(request: request, stage: { _ in staged += 1; return self.payment() }, claim: { _ in 21 }, refresh: {})
+        await settle()
+        coordinator.stop()
+        coordinator.start(request: request, stage: { _ in staged += 1; return self.payment() }, claim: { _ in 21 }, refresh: {})
+        await settle()
+        old.deliver()
+        await settle()
+        XCTAssertTrue(old.stopped)
+        XCTAssertEqual(staged, 0)
+        XCTAssertEqual(coordinator.phase, .presenting)
+        next.deliver()
+        await settle()
+        XCTAssertEqual(staged, 1)
+        XCTAssertEqual(coordinator.receivedAmount, 21)
+    }
+
+    func testAcceptedClaimSurvivesStopAndBlocksAnotherTap() async {
+        let transport = Transport()
+        let coordinator = NFCReceiveCoordinator { transport }
+        var claimGate: CheckedContinuation<Void, Never>?
+        var claims = 0
+        coordinator.start(request: request, stage: { _ in self.payment() }, claim: { _ in
+            claims += 1
+            await withCheckedContinuation { claimGate = $0 }
+            XCTAssertFalse(Task.isCancelled)
+            return 20
+        }, refresh: {})
+        await settle()
+        transport.deliver()
+        await settle()
+        XCTAssertEqual(coordinator.phase, .redeeming)
+        coordinator.stop()
+        coordinator.start(request: request, stage: { _ in XCTFail("Duplicate tap"); return self.payment() }, claim: { _ in 0 }, refresh: {})
+        claimGate?.resume()
+        await settle()
+        XCTAssertEqual(claims, 1)
+        XCTAssertEqual(coordinator.receivedAmount, 20)
+        XCTAssertEqual(coordinator.phase, .idle)
+    }
+
+    func testAcceptedTokenOwnsSettlementBeforeFinalResponseFinishes() async {
+        let transport = Transport()
+        transport.holdAfterAcceptance = true
+        let coordinator = NFCReceiveCoordinator { transport }
+        var claims = 0
+        coordinator.start(request: request, stage: { _ in self.payment() }, claim: { _ in
+            claims += 1
+            XCTAssertFalse(Task.isCancelled)
+            return 21
+        }, refresh: {})
+        await settle()
+        transport.deliver()
+        await settle()
+        XCTAssertNotNil(transport.responseGate)
+        XCTAssertEqual(coordinator.phase, .redeeming)
+        coordinator.stop()
+        coordinator.start(request: request, stage: { _ in XCTFail("Duplicate receive"); return self.payment() },
+                          claim: { _ in XCTFail("Duplicate claim"); return 0 }, refresh: {})
+        XCTAssertTrue(transport.stopped)
+        transport.finishResponse()
+        await settle()
+        XCTAssertEqual(claims, 1)
+        XCTAssertEqual(coordinator.receivedAmount, 21)
+        XCTAssertEqual(coordinator.phase, .idle)
+    }
+
+    func testUnknownMintRequiresReviewWithoutClaim() async {
+        let transport = Transport()
+        let coordinator = NFCReceiveCoordinator { transport }
+        coordinator.start(request: request, stage: { _ in self.payment(review: true) }, claim: { _ in
+            XCTFail("Unknown mint must be reviewed")
+            return 0
+        }, refresh: {})
+        await settle()
+        transport.deliver()
+        await settle()
+        XCTAssertNotNil(coordinator.reviewPayment)
+        XCTAssertNil(coordinator.receivedAmount)
+        XCTAssertEqual(coordinator.phase, .idle)
+    }
+
+    func testMismatchIsVisibleAndDoesNotShowPaymentSuccess() async {
+        let transport = Transport()
+        let coordinator = NFCReceiveCoordinator { transport }
+        coordinator.start(request: request, stage: { _ in self.payment(review: true, validation: "Wrong amount.") }, claim: { _ in
+            XCTFail("Mismatched payment must not fulfill request")
+            return 0
+        }, refresh: {})
+        await settle()
+        transport.deliver()
+        await settle()
+        XCTAssertNil(coordinator.reviewPayment)
+        XCTAssertNil(coordinator.receivedAmount)
+        XCTAssertTrue(coordinator.message?.contains("Wrong amount.") == true)
+    }
+
+    func testClaimFailureKeepsRecoveryReceipt() async {
+        let transport = Transport()
+        let coordinator = NFCReceiveCoordinator { transport }
+        coordinator.start(request: request, stage: { _ in self.payment() }, claim: { _ in
+            throw NFCReceiveError.message("Offline")
+        }, refresh: {})
+        await settle()
+        transport.deliver()
+        await settle()
+        XCTAssertEqual(coordinator.reviewPayment?.tokenId, "receipt")
+        XCTAssertNil(coordinator.receivedAmount)
+        XCTAssertEqual(coordinator.phase, .idle)
+    }
+
+    func testPersistenceFailureDoesNotClaim() async {
+        let transport = Transport()
+        let coordinator = NFCReceiveCoordinator { transport }
+        coordinator.start(request: request, stage: { _ in throw NFCReceiveError.message("Storage failed") }, claim: { _ in
+            XCTFail("Unretained payment must not be claimed")
+            return 0
+        }, refresh: {})
+        await settle()
+        transport.deliver()
+        await settle()
+        XCTAssertNil(coordinator.receivedAmount)
+        XCTAssertNotNil(coordinator.message)
+        XCTAssertEqual(coordinator.phase, .idle)
+    }
+
+    func testWalletReplacementDoesNotOfferOldReceiptForReview() async {
+        let transport = Transport()
+        let coordinator = NFCReceiveCoordinator { transport }
+        coordinator.start(request: request, stage: { _ in self.payment() }, claim: { _ in
+            throw CancellationError()
+        }, refresh: { XCTFail("Must not refresh a replacement wallet") })
+        await settle()
+        transport.deliver()
+        await settle()
+        XCTAssertNil(coordinator.reviewPayment)
+        XCTAssertNil(coordinator.receivedAmount)
+        XCTAssertEqual(coordinator.phase, .idle)
+        XCTAssertTrue(coordinator.message?.contains("wallet changed") == true)
+    }
+}
+
+@MainActor
+final class NFCType4ReaderTests: XCTestCase {
+    func testCustomAidPayerReadsAndCommitsOnlyTheCompleteToken() async throws {
+        let request = String(repeating: "creqA", count: 100)
+        let token = String(repeating: "cashuB", count: 100)
+        var peer = try NFCType4Tag(request: request)
+        var commands: [Data] = []
+        var received: [NFCNdefPayload] = []
+        let reader = NFCType4Reader { command in
+            commands.append(command)
+            let result = peer.process(command)
+            if let payload = result.payload { received.append(payload) }
+            return result.response
+        }
+        let body = try await reader.read()
+        XCTAssertEqual(body, Data(try NFCNdefCodec.textFile(request).dropFirst(2)))
+        XCTAssertEqual(commands.first, Data([0, 0xA4, 4, 0, 8, 0xF9, 0x99, 0x71, 0x15, 0x10, 0x41, 0x17, 0, 0]))
+        try await reader.write(text: token)
+        XCTAssertEqual(received, [.text(token)])
+        let writes = commands.filter { $0[1] == 0xD6 }
+        XCTAssertEqual(writes.first, Data([0, 0xD6, 0, 0, 2, 0, 0]))
+        XCTAssertTrue(writes.allSatisfy { $0[4] <= 52 })
+        XCTAssertEqual(writes.last?.prefix(5), Data([0, 0xD6, 0, 0, 2]))
+        XCTAssertFalse(writes.last?.suffix(2) == Data([0, 0]))
+    }
+
+    func testTruncatedResponseAndRejectedApplicationCannotBecomeRequests() async {
+        for response in [Data([0x6A, 0x82]), Data([0x90]), Data([0x90, 0])] {
+            let reader = NFCType4Reader { _ in response }
+            do { _ = try await reader.read(); XCTFail("Invalid response accepted") } catch {}
+        }
+    }
+
+    func testReadOnlyAndCapacityLimitsPreventAnyTokenWrite() async throws {
+        for readOnly in [true, false] {
+            var peer = try NFCType4Tag(request: "creqA")
+            var writes = 0
+            let reader = NFCType4Reader { command in
+                if command[1] == 0xD6 { writes += 1 }
+                var result = peer.process(command).response
+                if command == Data([0, 0xB0, 0, 0, 15]) {
+                    if readOnly { result[14] = 0xFF }
+                    else { result[11] = 0; result[12] = 32 }
+                }
+                return result
+            }
+            _ = try await reader.read()
+            do { try await reader.write(text: String(repeating: "t", count: 40)); XCTFail("Write must be refused") } catch {}
+            XCTAssertEqual(writes, 0)
+        }
+    }
+
+    func testLostFinalAcknowledgmentIsNotRetried() async throws {
+        var peer = try NFCType4Tag(request: "creqA")
+        var deliveries = 0
+        let reader = NFCType4Reader { command in
+            let result = peer.process(command)
+            if result.payload != nil {
+                deliveries += 1
+                throw NFCReceiveError.message("Connection lost after persistence")
+            }
+            return result.response
+        }
+        _ = try await reader.read()
+        do { try await reader.write(text: "cashuBtoken"); XCTFail("Ambiguous delivery is not success") } catch {}
+        XCTAssertEqual(deliveries, 1)
+    }
+
+    func testReceiverUsesOnlyTheApprovedAid() throws {
+        var peer = try NFCType4Tag(request: "creqA")
+        XCTAssertEqual(peer.process(Data([0, 0xA4, 4, 0, 7, 0xD2, 0x76, 0, 0, 0x85, 1, 1, 0])).response,
+                       Data([0x6A, 0x82]))
+    }
+}
