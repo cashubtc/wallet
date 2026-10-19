@@ -1,5 +1,6 @@
 package com.cashu.me.liveintegration
 
+import androidx.test.platform.app.InstrumentationRegistry
 import com.cashu.me.Models.MintQuoteState
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -13,7 +14,9 @@ class LiveMintSubscriptionTest : PaymentFixtureTest() {
     @Test fun nutshellQuoteSubscriptionAndIssuance() = runBlocking { observeAndMint("nutshell", 3338) }
 
     private suspend fun observeAndMint(mint: String, port: Int) {
-        val receiver = wallet(mint, "http://127.0.0.1:$port")
+        val mintUrl = InstrumentationRegistry.getArguments().getString("cashu.${mint}MintUrl")
+            ?: "http://127.0.0.1:$port"
+        val receiver = wallet(mint, mintUrl)
         val quote = receiver.quote(21)
         val paid = withTimeout(20_000) {
             receiver.gateway.subscribeToMintQuote(quote.id) { true }.first { it.state == MintQuoteState.Paid }
