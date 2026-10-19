@@ -49,14 +49,13 @@ fi
 # PyPI as the `cashu` package; it exposes the `mint` console script.
 "$PYTHON_BIN" -m venv "$VENV_DIR"
 "$VENV_DIR/bin/pip" install --upgrade pip
-# Exact mint and transitive-dependency pins required by cashu 0.20.1:
-#   - cashu==0.20.1: this is the version validated with the app's pinned CDK
-#     binding. Do not let the live UI boundary change underneath CI.
+# Official stable mint release and compatible transitive-dependency pins:
+#   - cashu==0.21.0: keep local and CI interoperability runs reproducible.
 #   - marshmallow<4: cashu depends on environs<10, which breaks against
 #     marshmallow 4.x (removed `__version_info__`) -> mint won't import.
 #   - limits<4: cashu hardcodes the `fixed-window-elastic-expiry` rate-limit
 #     strategy, removed in limits 4.x -> mint won't start.
-"$VENV_DIR/bin/pip" install "marshmallow<4" "limits<4" "cashu==0.20.1"
+"$VENV_DIR/bin/pip" install "marshmallow<4" "limits<4" "cashu==0.21.0"
 
 echo "✅ Nutshell installed via pip into ${VENV_DIR}"
 echo "📦 Binary: ${VENV_DIR}/bin/mint"

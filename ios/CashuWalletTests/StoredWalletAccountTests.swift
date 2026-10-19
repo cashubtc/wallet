@@ -201,7 +201,7 @@ final class StoredWalletAccountTests: XCTestCase {
     func testLiveBolt11RetriesThroughLightningServiceProduceOneReceipt() async throws {
         try XCTSkipUnless(ProcessInfo.processInfo.environment["CASHU_LIVE_MINT_HISTORY"] == "1",
             "Start the local mint and CI/mint-history-retry-proxy.py, then opt in")
-        let mintURL = "http://127.0.0.1:3344"
+        let mintURL = ProcessInfo.processInfo.environment["CASHU_LIVE_MINT_HISTORY_URL"] ?? "http://127.0.0.1:3344"
         let mint = MintUrl(url: mintURL)
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -265,7 +265,8 @@ final class StoredWalletAccountTests: XCTestCase {
     }
 
     private func mintHistoryControl(_ action: String, quote: String) async throws -> [String: Any] {
-        var request = URLRequest(url: URL(string: "http://127.0.0.1:3344/__mint_history/" + action)!)
+        let mintURL = ProcessInfo.processInfo.environment["CASHU_LIVE_MINT_HISTORY_URL"] ?? "http://127.0.0.1:3344"
+        var request = URLRequest(url: URL(string: mintURL + "/__mint_history/" + action)!)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: ["quote": quote])
