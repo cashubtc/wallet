@@ -7,6 +7,45 @@ import SQLite3
 final class WalletAuditRegressionTests: XCTestCase {
     private enum Failure: Error { case offline }
 
+    func testSharedBech32FramingAcceptsBothChecksumsAndRejectsCorruption() throws {
+        let classic = try Bech32.decodeWords("A12UEL5L")
+        XCTAssertEqual(classic.hrp, "a")
+        XCTAssertEqual(classic.checksum, 1)
+        XCTAssertTrue(classic.words.isEmpty)
+        let modern = try Bech32.decodeWords("A1LQFN3A")
+        XCTAssertEqual(modern.checksum, 0x2bc830a3)
+        for invalid in ["a12UEL5L", "A12UEL5Q", "1UEL5L", " a12uel5l", "a1!uel5l"] {
+            XCTAssertThrowsError(try Bech32.decodeWords(invalid), invalid)
+        }
+        let bytes = Data((0..<32).map(UInt8.init))
+        let npub = try Bech32.encode(hrp: "npub", data: bytes)
+        XCTAssertEqual(try Bech32.decode(hrp: "npub", bech32: npub), Array(bytes))
+        XCTAssertEqual(try Bech32.decode(hrp: "npub", bech32: npub.uppercased()), Array(bytes))
+        XCTAssertThrowsError(try Bech32.decode(hrp: "nsec", bech32: npub))
+        XCTAssertThrowsError(try Bech32.decode(hrp: "a", bech32: "A1LQFN3A"))
+    }
+
+
+    func testSharedHexCodecRoundTripsAllBytesAndRejectsMalformedInput() {
+        let bytes = Data((0...255).map(UInt8.init))
+        XCTAssertEqual(Data(hexString: bytes.hexEncodedString), bytes)
+        XCTAssertEqual(Data(hexString: bytes.hexEncodedString.uppercased()), bytes)
+        XCTAssertEqual(Data(hexString: ""), Data())
+        for malformed in ["0", "001", "gg", " 00", "00\n", "é0", "０0"] {
+            XCTAssertNil(Data(hexString: malformed), malformed)
+        }
+    }
+
+    func testP2PKComparisonSharesCompressedAndBareKeyIdentity() {
+        let xOnly = String(repeating: "ab", count: 32)
+        XCTAssertEqual(P2PKPublicKey.normalizedForComparison(" 02" + xOnly.uppercased() + "\n"), xOnly)
+        XCTAssertEqual(P2PKPublicKey.normalizedForComparison("03" + xOnly), xOnly)
+        XCTAssertEqual(P2PKPublicKey.normalizedForComparison(xOnly), xOnly)
+        // Only full compressed keys lose their prefix.
+        XCTAssertEqual(P2PKPublicKey.normalizedForComparison("02ab"), "02ab")
+    }
+
+
     /// Run in a fresh test simulator: never replace an existing wallet fixture.
     func testSameSeedRestoreKeepsNativeQuoteKeyCounterAndRepository() async throws {
         let manager = WalletManager()

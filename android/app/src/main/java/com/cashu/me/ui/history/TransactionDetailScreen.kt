@@ -1,5 +1,6 @@
 package com.cashu.me.ui.history
 
+import com.cashu.me.ui.components.PendingTokenClaimNotice
 import android.content.ClipData
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -274,25 +275,7 @@ fun TransactionReceiptSheet(
             }
 
             if (offersManualClaimCheck) {
-                when (val outcome = manualCheckResult) {
-                    PendingTokenClaimCheckResult.NotClaimed -> InlineNotice(
-                        text = "Status checked",
-                        detail = "This token has not been claimed yet.",
-                        severity = NoticeSeverity.Info,
-                        modifier = Modifier.semantics {
-                            liveRegion = LiveRegionMode.Polite
-                        },
-                    )
-                    is PendingTokenClaimCheckResult.Failed -> InlineNotice(
-                        text = "Couldn't check status",
-                        detail = outcome.message.text,
-                        modifier = Modifier.semantics {
-                            liveRegion = LiveRegionMode.Polite
-                        },
-                        severity = NoticeSeverity.Caution,
-                    )
-                    PendingTokenClaimCheckResult.Claimed, null -> Unit
-                }
+                PendingTokenClaimNotice(manualCheckResult)
             }
         }
     }

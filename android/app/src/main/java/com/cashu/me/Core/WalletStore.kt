@@ -104,7 +104,7 @@ class WalletStore(
 
     internal fun snapshotWalletScopedData(): PreferenceSnapshot {
         val prefixKeys = store.keys().filter {
-            it.startsWith(StorageKeys.walletDataPrefix) || it.startsWith(StorageKeys.npcDataPrefix)
+            it.startsWith(StorageKeys.walletDataPrefix)
         }
         return store.snapshot(StorageKeys.walletBoundaryKeys + prefixKeys)
     }
@@ -115,7 +115,7 @@ class WalletStore(
 
     fun removeAllWalletData() {
         store.removeKeys(StorageKeys.walletBoundaryKeys)
-        store.removePrefix(listOf(StorageKeys.walletDataPrefix, StorageKeys.npcDataPrefix))
+        store.removePrefix(listOf(StorageKeys.walletDataPrefix))
     }
 
     /**

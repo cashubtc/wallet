@@ -1,5 +1,6 @@
 package com.cashu.me.ui.send
 
+import com.cashu.me.ui.components.PendingTokenClaimNotice
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -128,15 +129,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 // Inline status icons inside dense rows — smaller than the standard 20dp body icon.
-private val STATUS_ICON_SMALL = 18.dp
 private val CHECKING_PROGRESS_SIZE = 14.dp
 
 internal object LockEcashCopy {
     const val Label = "Lock ecash"
     const val Hint = "Lock this ecash to a public key"
     const val InvalidRecipientKey = "That's not a valid public key."
-    const val RecipientEffect = "Only the recipient with this public key can claim it."
-    const val RecipientKeyLabel = "Recipient public key (P2PK)"
     const val ScanPrompt = "Scan a public key to lock to"
 }
 
@@ -772,39 +770,8 @@ internal fun rememberP2pkScannerQuickActions(
     }
 }
 
-internal fun isOwnP2pkRecipient(
-    recipient: String,
-    ownPublicKeys: Iterable<String>,
-): Boolean {
-    val comparableRecipient = SettingsManager.normalizeP2PKPublicKeyForComparison(recipient)
-    return ownPublicKeys.any { ownKey ->
-        SettingsManager.normalizeP2PKPublicKeyForComparison(ownKey) == comparableRecipient
-    }
-}
-
 @Composable
-internal fun LockEcashToolbarAction(
-    onClick: () -> Unit,
-) = LockEcashToolbarAction(onClick = onClick, legacyStateDescription = null)
-
-@Composable
-internal fun LockEcashToolbarAction(
-    locked: Boolean,
-    onToggle: () -> Unit,
-) = LockEcashToolbarAction(
-    onClick = onToggle,
-    legacyStateDescription = if (locked) {
-        "On. Only the recipient with the selected key can claim it."
-    } else {
-        "Off. Anyone with the ecash token can claim it."
-    },
-)
-
-@Composable
-private fun LockEcashToolbarAction(
-    onClick: () -> Unit,
-    legacyStateDescription: String?,
-) {
+internal fun LockEcashToolbarAction(onClick: () -> Unit) {
     val haptics = rememberWalletHaptics()
     IconButton(
         onClick = {
@@ -815,9 +782,6 @@ private fun LockEcashToolbarAction(
             .testTag(UiTestTags.LockEcashToggle)
             .semantics {
                 this[SemanticsActions.OnClick] = AccessibilityAction(LockEcashCopy.Hint, null)
-                if (legacyStateDescription != null) {
-                    stateDescription = legacyStateDescription
-                }
             },
     ) {
         ToolbarIcon(
@@ -887,145 +851,6 @@ internal fun P2pkRecipientConfirmation(
             }) {
                 Icon(Icons.Outlined.Close, "Remove lock", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
             }
-        }
-    }
-}
-
-@Composable
-internal fun P2pkLockSection(
-    input: String,
-    onInputChange: (String) -> Unit,
-    inputError: String?,
-    confirmedPubkey: String?,
-    recipientIsOwnKey: Boolean,
-    onEditRecipient: () -> Unit,
-    onRemoveRecipient: () -> Unit,
-    onScanKey: () -> Unit = {},
-    onPasteKey: () -> Unit = {},
-    canPasteKey: Boolean = false,
-    myKeyHex: String?,
-    onUseMyKey: () -> Unit,
-) {
-    if (confirmedPubkey != null) {
-        val recipientLabel = if (recipientIsOwnKey) {
-            "Your key"
-        } else {
-            P2PKKeyDisplay.shortLabel(confirmedPubkey)
-        }
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .semantics {
-                    contentDescription = "Locked ecash recipient: $recipientLabel"
-                },
-            shape = MaterialTheme.shapes.medium,
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 56.dp)
-                    .padding(start = CashuTheme.spacing.default, end = CashuTheme.spacing.micro),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.tight),
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.CheckCircle,
-                    contentDescription = null,
-                    tint = CashuTheme.colors.onReceivedContainer,
-                    modifier = Modifier.size(CashuTheme.spacing.comfortable),
-                )
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Locked to",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        text = recipientLabel,
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            fontFamily = if (recipientIsOwnKey) {
-                                FontFamily.Default
-                            } else {
-                                CashuTheme.fonts.mono
-                            },
-                        ),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.MiddleEllipsis,
-                    )
-                }
-                IconButton(onClick = onEditRecipient) {
-                    Icon(
-                        imageVector = Icons.Outlined.Edit,
-                        contentDescription = "Edit locked ecash recipient",
-                    )
-                }
-                IconButton(onClick = onRemoveRecipient) {
-                    Icon(
-                        imageVector = Icons.Outlined.Close,
-                        contentDescription = "Remove locked ecash recipient",
-                    )
-                }
-            }
-        }
-        return
-    }
-
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.tight),
-    ) {
-        Text(
-            text = LockEcashCopy.Label,
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        Text(
-            text = LockEcashCopy.RecipientEffect,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        CashuTextField(
-            value = input,
-            onValueChange = onInputChange,
-            modifier = Modifier.fillMaxWidth(),
-            label = LockEcashCopy.RecipientKeyLabel,
-            placeholder = "02… or 64-character hex",
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(
-                capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.None,
-            ),
-            textStyle = MaterialTheme.typography.bodyMedium.copy(
-                fontFamily = CashuTheme.fonts.mono,
-            ),
-            isError = inputError != null && input.isNotBlank(),
-            supportingText = inputError?.takeIf { input.isNotBlank() },
-        )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.tight),
-        ) {
-            com.cashu.me.ui.components.GhostButton(
-                context = TextButtonContext.Compact,
-                text = "Scan key",
-                onClick = onScanKey,
-                modifier = Modifier.weight(1f),
-            )
-            com.cashu.me.ui.components.GhostButton(
-                context = TextButtonContext.Compact,
-                text = "Paste key",
-                onClick = onPasteKey,
-                modifier = Modifier.weight(1f),
-                enabled = canPasteKey,
-            )
-        }
-        if (myKeyHex != null) {
-            com.cashu.me.ui.components.GhostButton(
-                context = TextButtonContext.Compact,
-                text = "Lock ecash to my key",
-                onClick = onUseMyKey,
-            )
         }
     }
 }
@@ -1133,30 +958,12 @@ private fun GeneratedFace(
                 shareSubject = "Cashu token",
                 confirmationMessage = "Copied ecash token",
             )
-            GeneratedEcashAmount(presentation = amountPresentation)
+            PaymentConfirmationAmount(presentation = amountPresentation, generatedReceipt = true)
             if (claimState == ClaimState.Checking) {
                 ClaimStatusRow(claimState = claimState)
             }
             if (!pollingEnabled) {
-                when (val outcome = manualCheckResult) {
-                    PendingTokenClaimCheckResult.NotClaimed -> InlineNotice(
-                        text = "Status checked",
-                        detail = "This token has not been claimed yet.",
-                        severity = NoticeSeverity.Info,
-                        modifier = Modifier.semantics {
-                            liveRegion = LiveRegionMode.Polite
-                        },
-                    )
-                    is PendingTokenClaimCheckResult.Failed -> InlineNotice(
-                        text = "Couldn't check status",
-                        detail = outcome.message.text,
-                        modifier = Modifier.semantics {
-                            liveRegion = LiveRegionMode.Polite
-                        },
-                        severity = NoticeSeverity.Caution,
-                    )
-                    PendingTokenClaimCheckResult.Claimed, null -> Unit
-                }
+                PendingTokenClaimNotice(manualCheckResult)
             }
             // Detail rows: Fee -> Unit -> Fiat (sat-only) -> Mint (iOS order).
             Column(modifier = Modifier.fillMaxWidth()) {
@@ -1232,41 +1039,6 @@ private fun GeneratedFace(
         }
         Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
     }
-        }
-    }
-}
-
-@Composable
-private fun GeneratedEcashAmount(
-    presentation: PaymentConfirmationAmountPresentation,
-) {
-    Column(
-        modifier = Modifier.clearAndSetSemantics {
-            contentDescription = presentation.talkBackDescription
-        },
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
-    ) {
-        Text(
-            text = presentation.primary,
-            style = MaterialTheme.typography.headlineMedium.withMonoDigits(),
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        presentation.alternate?.let { alternate ->
-            Surface(
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            ) {
-                Text(
-                    text = alternate,
-                    modifier = Modifier.padding(
-                        horizontal = CashuTheme.spacing.default,
-                        vertical = CashuTheme.spacing.micro,
-                    ),
-                    style = MaterialTheme.typography.labelLarge.withMonoDigits(),
-                )
-            }
         }
     }
 }

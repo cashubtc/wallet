@@ -338,7 +338,7 @@ actor WalletOperationCoordinator {
 
     nonisolated static func privacySafeIdentifier(_ value: String) -> String {
         let digest = SHA256.hash(data: Data(value.utf8))
-        return digest.prefix(6).map { String(format: "%02x", $0) }.joined()
+        return Data(digest.prefix(6)).hexEncodedString
     }
 
     private nonisolated static func milliseconds(from start: UInt64, to end: UInt64) -> UInt64 {

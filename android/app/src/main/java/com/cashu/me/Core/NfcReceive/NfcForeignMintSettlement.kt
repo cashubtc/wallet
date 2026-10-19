@@ -1,5 +1,6 @@
 package com.cashu.me.Core.NfcReceive
 
+import com.cashu.me.Models.MintUrlIdentity
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
@@ -107,4 +108,4 @@ internal suspend fun settleForeignNfcTokenWithCdk(
     )
 }
 
-private fun normalizeMint(url: String): String = url.trim().trimEnd('/')
+private fun normalizeMint(url: String): String = MintUrlIdentity.normalized(url)

@@ -234,22 +234,13 @@ enum SagaTransactionId {
     static func transactionIdHex(operationId: String) -> String? {
         let simple = operationId.lowercased().replacingOccurrences(of: "-", with: "")
         guard simple.count == 32, simple.allSatisfy({ $0.isHexDigit }) else { return nil }
-        return Data(simple.utf8).map { String(format: "%02x", $0) }.joined()
+        return Data(simple.utf8).hexEncodedString
     }
 
     /// CDK transaction id hex → operation (saga) UUID string, as accepted by
     /// `checkSendStatus` / `revokeSend` (UUID parsing tolerates the simple form).
     static func operationId(fromTransactionIdHex txId: String) -> String? {
-        var bytes = [UInt8]()
-        bytes.reserveCapacity(txId.count / 2)
-        var index = txId.startIndex
-        while index < txId.endIndex {
-            let next = txId.index(index, offsetBy: 2, limitedBy: txId.endIndex) ?? txId.endIndex
-            guard let byte = UInt8(txId[index..<next], radix: 16) else { return nil }
-            bytes.append(byte)
-            index = next
-        }
-        guard bytes.count == 32 else { return nil }
+        guard let bytes = Data(hexString: txId), bytes.count == 32 else { return nil }
         let simple = String(decoding: bytes, as: UTF8.self)
         guard simple.count == 32, simple.allSatisfy({ $0.isHexDigit }) else { return nil }
         return simple

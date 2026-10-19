@@ -379,5 +379,3 @@ enum OnchainExplorer {
         return tipHeight - blockHeight + 1
     }
 }
-
-/// Mint information

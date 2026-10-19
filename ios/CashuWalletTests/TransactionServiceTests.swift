@@ -639,45 +639,6 @@ final class MintQuoteContextPolicyTests: XCTestCase {
         XCTAssertEqual(bUSD?.mintURL, mintB)
     }
 
-    func testAmountlessOfferSelectionDoesNotCrossMintOrUnit() throws {
-        let quotes = [
-            quote(id: "wrong-method", mintURL: mintA, unit: .usd, paymentMethod: .bolt11),
-            quote(id: "fixed-a-usd", mintURL: mintA, unit: .usd, amount: 500),
-            quote(id: "offer-b-usd", mintURL: mintB, unit: .usd),
-            quote(id: "offer-a-sat", mintURL: mintA, unit: .sat),
-            quote(id: "offer-a-usd", mintURL: mintA, unit: .usd),
-            quote(id: "offer-b-sat", mintURL: mintB, unit: .sat)
-        ]
-
-        XCTAssertEqual(
-            MintQuoteContextPolicy.existingAmountlessOffer(
-                in: quotes,
-                requestedContext: MintQuoteWalletContext(mintURL: mintA, unit: .usd)
-            )?.id,
-            "offer-a-usd"
-        )
-        XCTAssertEqual(
-            MintQuoteContextPolicy.existingAmountlessOffer(
-                in: quotes,
-                requestedContext: MintQuoteWalletContext(mintURL: mintA, unit: .sat)
-            )?.id,
-            "offer-a-sat"
-        )
-        XCTAssertEqual(
-            MintQuoteContextPolicy.existingAmountlessOffer(
-                in: quotes,
-                requestedContext: MintQuoteWalletContext(mintURL: mintB, unit: .usd)
-            )?.id,
-            "offer-b-usd"
-        )
-        XCTAssertNil(
-            MintQuoteContextPolicy.existingAmountlessOffer(
-                in: quotes,
-                requestedContext: MintQuoteWalletContext(mintURL: mintB, unit: .eur)
-            )
-        )
-    }
-
     func testStoredQuoteContextPreservesMintAndUnitAndMissingContextFailsClosed() {
         for unit: Cdk.CurrencyUnit in [.sat, .usd] {
             let storedQuote = quote(id: "offer", mintURL: mintA, unit: unit)

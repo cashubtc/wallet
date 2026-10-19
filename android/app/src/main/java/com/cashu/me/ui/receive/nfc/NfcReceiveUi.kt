@@ -1,9 +1,9 @@
 package com.cashu.me.ui.receive.nfc
 
+import com.cashu.me.ui.components.findActivity
 import android.app.Activity
 import android.content.ComponentName
 import android.content.Context
-import android.content.ContextWrapper
 import android.nfc.NfcAdapter
 import android.nfc.cardemulation.CardEmulation
 import android.os.Build
@@ -318,10 +318,4 @@ internal fun NfcReceiveOverlayContent(
             null
         },
     )
-}
-
-private tailrec fun Context.findActivity(): Activity? = when (this) {
-    is Activity -> this
-    is ContextWrapper -> baseContext.findActivity()
-    else -> null
 }

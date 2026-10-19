@@ -13,15 +13,11 @@ enum MintRemovalPolicy {
     }
 
     static func matches(_ lhs: String, _ rhs: String) -> Bool {
-        normalizedMintURL(lhs) == normalizedMintURL(rhs)
+        MintURLIdentity.normalized(lhs) == MintURLIdentity.normalized(rhs)
     }
 
     static func removingMint(withURL targetURL: String, from mints: [MintInfo]) -> [MintInfo] {
         mints.filter { !matches($0.url, targetURL) }
-    }
-
-    private static func normalizedMintURL(_ url: String) -> String {
-        MintURLIdentity.normalized(url)
     }
 
     /// Commit local mint metadata only after every registered unit wallet

@@ -198,20 +198,8 @@ class NPCService: ObservableObject {
     
     /// Convert hex public key to bech32 npub format
     private func hexToNpub(_ hexPubkey: String) throws -> String {
-        // Convert hex string to bytes
-        var bytes = [UInt8]()
-        var hex = hexPubkey
-        while hex.count >= 2 {
-            let byteString = String(hex.prefix(2))
-            hex = String(hex.dropFirst(2))
-            guard let byte = UInt8(byteString, radix: 16) else {
-                throw NPCError.invalidResponse
-            }
-            bytes.append(byte)
-        }
-        
-        // Use Bech32 encoder from NostrService
-        return try Bech32.encode(hrp: "npub", data: Data(bytes))
+        guard let data = Data(hexString: hexPubkey) else { throw NPCError.invalidResponse }
+        return try Bech32.encode(hrp: "npub", data: data)
     }
     
     // MARK: - Connection
@@ -532,30 +520,18 @@ class NPCService: ObservableObject {
 // MARK: - Error Types
 
 enum NPCError: LocalizedError {
-    case invalidURL
     case invalidResponse
-    case httpError(Int)
     case apiError(String)
     case notConnected
-    case authFailed
-    case notInitialized
     
     var errorDescription: String? {
         switch self {
-        case .invalidURL:
-            return "Invalid API URL"
         case .invalidResponse:
             return "Invalid response from server"
-        case .httpError(let code):
-            return "HTTP error: \(code)"
         case .apiError(let message):
             return message
         case .notConnected:
             return "Not connected to npub.cash"
-        case .authFailed:
-            return "Authentication failed"
-        case .notInitialized:
-            return "NPC service not initialized"
         }
     }
 }

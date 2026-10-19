@@ -248,18 +248,7 @@ enum LockedReceiveRequest {
 
 extension Data {
     init?(hex: String) {
-        let cleaned = hex.hasPrefix("0x") ? String(hex.dropFirst(2)) : hex
-        guard cleaned.count.isMultiple(of: 2) else { return nil }
-        var bytes = Data()
-        bytes.reserveCapacity(cleaned.count / 2)
-        var index = cleaned.startIndex
-        while index < cleaned.endIndex {
-            let next = cleaned.index(index, offsetBy: 2)
-            guard let byte = UInt8(cleaned[index..<next], radix: 16) else { return nil }
-            bytes.append(byte)
-            index = next
-        }
-        self = bytes
+        self.init(hexString: hex.hasPrefix("0x") ? String(hex.dropFirst(2)) : hex)
     }
 }
 

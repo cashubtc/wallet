@@ -164,34 +164,7 @@ final class NFCPaymentService {
         amount: UInt64,
         preferredMintURL: String?
     ) throws -> MintInfo {
-        let requested = request.mints()
-        let candidates: [MintInfo]
-
-        if requested.isEmpty {
-            candidates = walletManager.mints
-        } else {
-            let requestedHosts = Set(requested.map(Self.normalizedMintURL))
-            candidates = walletManager.mints.filter { requestedHosts.contains(Self.normalizedMintURL($0.url)) }
-        }
-
-        guard !candidates.isEmpty else {
-            throw NFCPaymentError.noMatchingMint(requestedMints: requested)
-        }
-
-        if let preferredMintURL,
-           let preferredMint = candidates.first(where: {
-               Self.normalizedMintURL($0.url) == Self.normalizedMintURL(preferredMintURL)
-           }),
-           preferredMint.balance >= amount {
-            return preferredMint
-        }
-
-        guard let selectedMint = candidates.first(where: { $0.balance >= amount }) else {
-            let available = candidates.map(\.balance).max() ?? 0
-            throw NFCPaymentError.insufficientBalance(required: amount, available: available)
-        }
-
-        return selectedMint
+        try MintSelection.select(from: walletManager.mints, requestedURLs: request.mints(), amount: amount, preferredURL: preferredMintURL)
     }
 
     private static func stripPrefix(_ prefix: String, from input: String) -> String {
@@ -207,10 +180,6 @@ final class NFCPaymentService {
             return true
         }
         return false
-    }
-
-    private static func normalizedMintURL(_ urlString: String) -> String {
-        MintURLIdentity.normalized(urlString)
     }
 
     private static func description(for unit: Cdk.CurrencyUnit) -> String {
