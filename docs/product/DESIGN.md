@@ -431,6 +431,13 @@ none). Received tokens are persisted at redeem time for this — Copy surfaces o
 on rows received/sent after this shipped, since older received tokens were
 discarded and can't be recovered.
 
+**Failed History rows.** On iOS and Android, show an X in the existing muted
+icon circle and use the same muted, unsigned primary amount as pending payments.
+Preserve the two-line title/date layout and row height, without a visible status
+label. The X distinguishes failure without relying on color. Accessibility
+continues to announce the transaction's failed status. Failed remains a terminal
+status, separate from pending and expired recovery behavior.
+
 **The Quiet Pending Rule.** *Amended 2026-06-01.* On **any list row** —
 transaction or Cashu Request — pending/waiting is conveyed by the muted
 `.secondary` amount **alone**: no badge, no icon, no orange. (The

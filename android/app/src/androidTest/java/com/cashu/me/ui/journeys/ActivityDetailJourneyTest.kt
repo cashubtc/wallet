@@ -160,7 +160,9 @@ class ActivityDetailJourneyTest {
         runBlocking { fixture.container.walletManager.loadTransactions() }
         robot.tapText("History").tapText("Lightning paid").awaitTag(UiTestTags.TransactionReceiptSheet)
         compose.onNodeWithContentDescription("Failed").assertIsDisplayed()
-        compose.onNodeWithText("Failed").assertIsDisplayed()
+        // History also displays Failed behind the sheet; assert the receipt's status.
+        compose.onNode(hasText("Failed") and hasAnyAncestor(hasTestTag(UiTestTags.TransactionReceiptSheet)))
+            .assertIsDisplayed()
     }
 
     @Test fun receiptDetailsRowOpensTechnicalDetails() {

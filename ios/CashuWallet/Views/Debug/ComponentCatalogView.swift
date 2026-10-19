@@ -20,11 +20,12 @@ struct ComponentCatalogView: View {
     /// Which page to render. Split in two so each fits one screenshot without
     /// scrolling, and so each pairs with its Android counterpart.
     enum Page {
-        case matrix, variants, activity, onchainStatus, awaitingMint
+        case matrix, variants, activity, history, onchainStatus, awaitingMint
 
         init(rawValue: String?) {
             switch rawValue {
             case "activity": self = .activity
+            case "history": self = .history
             case "variants": self = .variants
             case "onchain-status": self = .onchainStatus
             case "awaiting-mint": self = .awaitingMint
@@ -43,6 +44,8 @@ struct ComponentCatalogView: View {
             switch page {
             case .activity:
                 ActivityDetailCatalog()
+            case .history:
+                ActivityDetailCatalog(historyRows: true)
             case .onchainStatus:
                 OnchainStatusCatalog()
             case .matrix:
@@ -228,6 +231,7 @@ private struct AwaitingMintCatalog: View {
 
 /// Deterministic receipts for native UI checks; no wallet initialization or mint is needed.
 private struct ActivityDetailCatalog: View {
+    var historyRows = false
     @EnvironmentObject private var walletManager: WalletManager
     @State private var selectedTransaction: WalletTransaction?
     @State private var selectedRequest: CashuRequest?
@@ -279,9 +283,16 @@ private struct ActivityDetailCatalog: View {
                 Button("Updating payment") { showUpdatingDetails = true }
                     .accessibilityIdentifier("updating-payment")
             }
-            ForEach(transactions) { transaction in
-                Button(transaction.displayTitle) { selectedTransaction = transaction }
+            ForEach(transactions.filter { !historyRows || ["sent-lightning", "failed-lightning"].contains($0.id) }) { transaction in
+                if historyRows {
+                    HistoryTransactionRow(transaction: transaction, timestamp: "Today", amountAccessibilityText: "2,100 sat") {
+                        selectedTransaction = transaction
+                    }
                     .accessibilityIdentifier(transaction.id)
+                } else {
+                    Button(transaction.displayTitle) { selectedTransaction = transaction }
+                        .accessibilityIdentifier(transaction.id)
+                }
             }
             Button("Reusable Invoice") { openRequest(rail: .bolt12) }
                 .accessibilityIdentifier("reusable-invoice")

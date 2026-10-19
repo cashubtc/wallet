@@ -123,6 +123,50 @@ final class ActivityDetailUITests: XCTestCase {
         executionTimeAllowance = 180
     }
 
+    private func dismissReceipt(in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+        let title = app.navigationBars.firstMatch
+        let grabber = app.buttons["Sheet Grabber"]
+        XCTAssertTrue(grabber.waitForExistence(timeout: 5), file: file, line: line)
+        // Drag the system handle, outside the receipt's scroll view. A slow
+        // title drag can leave a compact sheet open instead of dismissing it.
+        grabber.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            .press(forDuration: 0.1,
+                   thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.98)),
+                   withVelocity: .fast, thenHoldForDuration: 0)
+        XCTAssertTrue(title.waitForNonExistence(timeout: 5), "Receipt should dismiss", file: file, line: line)
+    }
+
+    func testFailedHistoryRowIsVisibleAndMatchesReceiptStatus() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchEnvironment = ["SHOW_COMPONENT_CATALOG": "history", "CI_INTEGRATION_TEST": "1",
+                                 "UITEST_DISABLE_ANIMATIONS": "1"]
+        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launch()
+        defer { app.terminate() }
+        let failed = app.buttons["failed-lightning"]
+        let completed = app.buttons["sent-lightning"]
+        XCTAssertTrue(failed.waitForExistence(timeout: 10))
+        XCTAssertTrue(failed.label.contains("failed"))
+        XCTAssertTrue(completed.label.contains("completed"))
+        // The leading X carries failure styling; there is no third visible status line.
+        XCTAssertFalse(app.staticTexts["Failed"].exists)
+        XCTAssertEqual(failed.frame.height, completed.frame.height, accuracy: 1)
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "failed-and-completed-history-rows"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        failed.tap()
+        XCTAssertTrue(app.staticTexts["Status"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.images["Failed"].exists)
+        dismissReceipt(in: app)
+        XCTAssertTrue(completed.waitForExistence(timeout: 5))
+        completed.tap()
+        XCTAssertTrue(app.staticTexts["Status"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.images["Completed"].exists)
+        XCTAssertTrue(app.staticTexts["Paid"].exists)
+    }
+
     func testCurrencyAndMintEditsShowNewRequestWithoutRelabelingOldPayments() {
         continueAfterFailure = false
         let app = XCUIApplication()
@@ -204,6 +248,13 @@ final class ActivityDetailUITests: XCTestCase {
             "300,000 sats, not added to your wallet yet. It's safe and we'll keep trying.",
             "Expired",
         ] {
+            // A completed tap does not guarantee SwiftUI has published the
+            // next stage to accessibility yet. Wait for that exact value.
+            let stage = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "value == %@", expected), object: row
+            )
+            XCTAssertEqual(XCTWaiter.wait(for: [stage], timeout: 5), .completed,
+                           "Expected onchain status: \(expected)")
             XCTAssertEqual(row.value as? String, expected)
             XCTAssertEqual(row.frame.height, height, accuracy: 0.5, "The Status row must not change size")
             if expected.contains("not added") {
@@ -263,11 +314,7 @@ final class ActivityDetailUITests: XCTestCase {
         }
         XCTAssertTrue(statusRow("Waiting for deposit").waitForExistence(timeout: 5))
         XCTAssertTrue(app.descendants(matching: .any)["cashu.history.payment-code"].firstMatch.exists)
-        // Native sheet gesture, starting on the title to avoid scrolling its body.
-        let title = app.navigationBars.firstMatch
-        title.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-            .press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.98)))
-        XCTAssertTrue(title.waitForNonExistence(timeout: 5))
+        dismissReceipt(in: app)
 
         let mempool = app.buttons["mempool-bitcoin"]
         XCTAssertTrue(mempool.waitForExistence(timeout: 10))
@@ -325,11 +372,7 @@ final class ActivityDetailUITests: XCTestCase {
             }
             XCTAssertFalse(app.buttons["Show QR code"].exists)
             XCTAssertFalse(app.buttons["Hide QR code"].exists)
-            // Native sheet gesture, starting on the title to avoid scrolling its body.
-            let title = app.navigationBars.firstMatch
-            title.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-                .press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.98)))
-            XCTAssertTrue(title.waitForNonExistence(timeout: 5))
+            dismissReceipt(in: app)
         }
     }
 

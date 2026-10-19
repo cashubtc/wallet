@@ -90,6 +90,7 @@
 		AB0000000000000D /* ReusableOfferDescriptionSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC0000000000000D /* ReusableOfferDescriptionSheet.swift */; };
 		AB0000000000000C /* NostrMintBackupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC0000000000000C /* NostrMintBackupService.swift */; };
 		AB00000000000050 /* TransactionAmountColumn.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB00000000000052 /* TransactionAmountColumn.swift */; };
+		FD9210000000000000000001 /* HistoryTransactionRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD9210000000000000000002 /* HistoryTransactionRow.swift */; };
 		AB00000000000051 /* CashuRequestAmountColumn.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB00000000000053 /* CashuRequestAmountColumn.swift */; };
 		AV00000000000001 /* AppVersion.swift in Sources */ = {isa = PBXBuildFile; fileRef = AV00000000000011 /* AppVersion.swift */; };
 		AV00000000000002 /* AppVersionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AV00000000000012 /* AppVersionTests.swift */; };
@@ -300,6 +301,7 @@
 		AA00000000000014 /* StorageProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageProtocol.swift; sourceTree = "<group>"; };
 		AA00000000000015 /* NavigationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationManager.swift; sourceTree = "<group>"; };
 		AB00000000000052 /* TransactionAmountColumn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransactionAmountColumn.swift; sourceTree = "<group>"; };
+		FD9210000000000000000002 /* HistoryTransactionRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryTransactionRow.swift; sourceTree = "<group>"; };
 		AB00000000000053 /* CashuRequestAmountColumn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CashuRequestAmountColumn.swift; sourceTree = "<group>"; };
 		AC00000000000001 /* CashuRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CashuRequest.swift; sourceTree = "<group>"; };
 		AC00000000000002 /* CashuRequestStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CashuRequestStore.swift; sourceTree = "<group>"; };
@@ -738,6 +740,7 @@
 				MA00000000000011 /* MethodActionRow.swift */,
 				MA00000000000012 /* MethodActionRowButtonStyle.swift */,
 				AB00000000000052 /* TransactionAmountColumn.swift */,
+				FD9210000000000000000002 /* HistoryTransactionRow.swift */,
 				AB00000000000053 /* CashuRequestAmountColumn.swift */,
 			);
 			path = Components;
@@ -1241,6 +1244,7 @@
 				MA00000000000001 /* MethodActionRow.swift in Sources */,
 				MA00000000000002 /* MethodActionRowButtonStyle.swift in Sources */,
 				AB00000000000050 /* TransactionAmountColumn.swift in Sources */,
+				FD9210000000000000000001 /* HistoryTransactionRow.swift in Sources */,
 				AB00000000000051 /* CashuRequestAmountColumn.swift in Sources */,
 				CC00000000000008 /* LightningAddressSettingsSection.swift in Sources */,
 				DD00000000000001 /* AppLogger.swift in Sources */,
