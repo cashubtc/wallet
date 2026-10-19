@@ -478,7 +478,9 @@ class WalletManager(
         )
         val unitTotals = projection.totals
         val total = unitTotals["sat"] ?: 0L
-        val updated = mints.map { mint ->
+        // Native balance reads suspend. Preserve mints added or removed while
+        // they were in flight instead of writing the old membership back.
+        val updated = mutableState.value.mints.map { mint ->
             val account = accounts.firstOrNull { it.unit == "sat" && com.cashu.me.Core.CDK.mintRemovalUrlsMatch(it.mintUrl, mint.url) }
             mint.copy(balance = if (account == null) 0L else projection.balances[account] ?: mint.balance)
         }
