@@ -76,8 +76,10 @@ class FakeWalletGateway(
     var metadataFetches = 0
     var metadataFailure: Throwable? = null
     var onMetadataFetch: (() -> Unit)? = null
+    var beforeStoredAccountBalance: (suspend () -> Unit)? = null
     var nextFailure: Throwable? = null
     var nextCloseFailure: Throwable? = null
+    var removeWalletFailure: Throwable? = null
     val latestMintQuoteId: String?
         get() = mintQuotes.keys.lastOrNull()
 
@@ -153,6 +155,7 @@ class FakeWalletGateway(
     }
 
     override suspend fun removeWallets(mintUrl: String): Boolean {
+        removeWalletFailure?.let { throw it }
         failIfRequested()
         val normalized = normalize(mintUrl)
         if (walletUnits[normalized].isNullOrEmpty()) return false
@@ -188,8 +191,10 @@ class FakeWalletGateway(
         units.map { com.cashu.me.Core.CDK.WalletAccountReference(url, it) }
     } + transactions.mapNotNull { tx -> tx.mintUrl?.let { com.cashu.me.Core.CDK.WalletAccountReference(it, tx.unit) } }
 
-    override suspend fun storedAccountBalance(account: com.cashu.me.Core.CDK.WalletAccountReference): Long =
-        unitBalance(account.mintUrl, account.unit)
+    override suspend fun storedAccountBalance(account: com.cashu.me.Core.CDK.WalletAccountReference): Long {
+        beforeStoredAccountBalance?.invoke()
+        return unitBalance(account.mintUrl, account.unit)
+    }
 
     override suspend fun totalBalance(mintUrl: String): Long =
         balances[normalize(mintUrl)] ?: 0
