@@ -281,4 +281,71 @@ final class SeedPhraseEntryTests: XCTestCase {
         XCTAssertEqual(bip39Completions(prefix: "abandon"), ["abandon"])
         XCTAssertEqual(bip39Completions(prefix: "zoo"), ["zoo"])
     }
+
+    // MARK: - Shared restore host state
+
+    @MainActor
+    func testRestoreHostsKeepIndependentSeedAndMintState() {
+        var settings = RestoreFlowState()
+        let onboarding = RestoreFlowState()
+        _ = settings.pasteSeed(vector.joined(separator: " "), validate: { _ in true })
+        settings.mintsToRestore.append("https://mint.example")
+        settings.stagedMintNames["https://mint.example"] = "Mint"
+        XCTAssertTrue(settings.seedEntry.isComplete)
+        XCTAssertFalse(onboarding.seedEntry.isComplete)
+        XCTAssertTrue(onboarding.mintsToRestore.isEmpty)
+        XCTAssertTrue(onboarding.stagedMintNames.isEmpty)
+        XCTAssertNil(onboarding.seedNotice)
+    }
+
+    @MainActor
+    func testRestorePasteValidatesCompletePhraseAndClearsStaleNotice() {
+        var state = RestoreFlowState()
+        state.seedNotice = SeedEntryNotice(message: "Previous warning", severity: .caution)
+        let phrase = vector.joined(separator: " ")
+        var checkedPhrase: String?
+        let focused = state.pasteSeed(phrase) { checkedPhrase = $0; return true }
+        XCTAssertEqual(checkedPhrase, phrase)
+        XCTAssertTrue(focused)
+        XCTAssertTrue(state.seedEntry.isComplete)
+        XCTAssertFalse(state.seedEntry.isReviewing)
+        XCTAssertNil(state.seedNotice)
+    }
+
+    @MainActor
+    func testRestoreChecksumFailureEntersReviewAndDismissesKeyboard() {
+        var state = RestoreFlowState()
+        let focused = state.pasteSeed(vector.joined(separator: " "), validate: { _ in false })
+        XCTAssertFalse(focused)
+        XCTAssertTrue(state.seedEntry.isReviewing)
+        XCTAssertEqual(state.seedNotice?.message, SeedEntryCopy.checksumBody)
+        XCTAssertEqual(state.seedNotice?.title, SeedEntryCopy.checksumTitle)
+    }
+
+    @MainActor
+    func testRestorePartialAndInvalidPastesNeverRunChecksum() {
+        var state = RestoreFlowState()
+        let neverValidate: (String) -> Bool = { _ in
+            XCTFail("Checksum must wait until every word is valid")
+            return false
+        }
+        XCTAssertTrue(state.pasteSeed("abandon ability able about", validate: neverValidate))
+        XCTAssertEqual(state.seedEntry.index, 4)
+        XCTAssertEqual(state.seedNotice?.message, SeedEntryCopy.pastePartial(4))
+        var broken = vector
+        broken[3] = "zzzz"
+        XCTAssertTrue(state.pasteSeed(broken.joined(separator: " "), validate: neverValidate))
+        XCTAssertEqual(state.seedEntry.index, 3)
+        XCTAssertEqual(state.seedNotice?.message, SeedEntryCopy.pasteInvalid(at: 3))
+        XCTAssertTrue(state.pasteSeed("https://mint.example", validate: neverValidate))
+        XCTAssertEqual(state.seedNotice?.message, SeedEntryCopy.pasteUnusable)
+    }
+
+    func testRestoreMintInputPreservesSchemePathAndQuoteHandling() {
+        XCTAssertEqual(RestoreFlowState.normalizedMintURL(from: "  \"mint.example/path/\"  "), "https://mint.example/path")
+        XCTAssertEqual(RestoreFlowState.normalizedMintURL(from: "http://mint.example:8080/path/"), "http://mint.example:8080/path")
+        XCTAssertEqual(RestoreFlowState.normalizedMintURL(from: "https://mint.example/Path"), "https://mint.example/Path")
+        XCTAssertNil(RestoreFlowState.normalizedMintURL(from: "  "))
+        XCTAssertNil(RestoreFlowState.normalizedMintURL(from: "https://"))
+    }
 }

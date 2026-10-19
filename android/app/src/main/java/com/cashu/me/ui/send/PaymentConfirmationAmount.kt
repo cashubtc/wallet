@@ -1,5 +1,8 @@
 package com.cashu.me.ui.send
 
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Surface
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.MaterialTheme
@@ -82,6 +85,15 @@ internal fun PaymentConfirmationAmount(
         useBitcoinSymbol = useBitcoinSymbol,
         formatter = formatter,
     )
+    PaymentConfirmationAmount(presentation, modifier = modifier)
+}
+
+@Composable
+internal fun PaymentConfirmationAmount(
+    presentation: PaymentConfirmationAmountPresentation,
+    modifier: Modifier = Modifier,
+    generatedReceipt: Boolean = false,
+) {
     Column(
         modifier = modifier.clearAndSetSemantics {
             contentDescription = presentation.talkBackDescription
@@ -89,21 +101,38 @@ internal fun PaymentConfirmationAmount(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
     ) {
-        // The amount ladder's confirm rung (SemiBold, tracked, tabular) — the
-        // raw displayMedium it replaced rendered regular-weight and read
-        // lighter than every other amount in the app and than iOS.
-        AmountText(
-            text = presentation.primary,
-            style = CashuTheme.type.amountConfirm,
-        )
-        // Quiet supporting line, exactly as AmountFlipDisplay renders the
-        // conversion under the entry hero — no badge chrome around it.
-        presentation.alternate?.let { alternate ->
+        if (generatedReceipt) {
             Text(
-                text = alternate,
-                style = MaterialTheme.typography.labelLarge.withMonoDigits(),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                text = presentation.primary,
+                style = MaterialTheme.typography.headlineMedium.withMonoDigits(),
+                color = MaterialTheme.colorScheme.onSurface,
             )
+        } else {
+            AmountText(text = presentation.primary, style = CashuTheme.type.amountConfirm)
+        }
+        presentation.alternate?.let { alternate ->
+            if (generatedReceipt) {
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                ) {
+                    Text(
+                        text = alternate,
+                        modifier = Modifier.padding(
+                            horizontal = CashuTheme.spacing.default,
+                            vertical = CashuTheme.spacing.micro,
+                        ),
+                        style = MaterialTheme.typography.labelLarge.withMonoDigits(),
+                    )
+                }
+            } else {
+                Text(
+                    text = alternate,
+                    style = MaterialTheme.typography.labelLarge.withMonoDigits(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }

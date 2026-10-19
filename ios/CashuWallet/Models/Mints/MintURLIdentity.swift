@@ -1,6 +1,11 @@
 import Foundation
 
 enum MintURLIdentity {
+    static func fromUserInput(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalized(trimmed.contains("://") ? trimmed : "https://" + trimmed)
+    }
+
     /// Normalize only URL components that are case-insensitive. Preserve the
     /// scheme and path boundary so distinct mint endpoints cannot alias.
     static func normalized(_ raw: String) -> String {

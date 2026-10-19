@@ -7,6 +7,19 @@ import org.junit.Test
 
 class NfcType4TagTest {
     @Test
+    fun `shared payload codec preserves receiver validation and URI prefixes`() {
+        val prefixes = mapOf(0x04 to "https://", 0x0d to "ftp://", 0x1d to "file://", 0x23 to "urn:nfc:")
+        for ((code, prefix) in prefixes) {
+            val payload = byteArrayOf(code.toByte()) + "example".toByteArray()
+            val record = byteArrayOf(0xd1.toByte(), 1, payload.size.toByte(), 'U'.code.toByte()) + payload
+            val file = byteArrayOf(0, record.size.toByte()) + record
+            assertEquals(NfcNdefPayload.Text(prefix + "example"), NfcNdefCodec.parseType4File(file))
+        }
+        val utf16 = NfcNdefCodec.textFile("token").also { it[6] = (it[6].toInt() or 0x80).toByte() }
+        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) { NfcNdefCodec.parseType4File(utf16) }
+    }
+
+    @Test
     fun `reader selects and reads payment request`() {
         val events = mutableListOf<NfcType4Event>()
         val request = NfcNdefCodec.textFile("creqA-request")

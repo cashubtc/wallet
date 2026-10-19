@@ -46,12 +46,6 @@ interface CdkWalletGateway {
     /** Balance of the (mint, unit) wallet, registering the unit wallet if needed. */
     suspend fun unitBalance(mintUrl: String, unit: String): Long
 
-    /**
-     * Balance of the (mint, unit) wallet WITHOUT creating it — null when the
-     * wallet was never registered. Used by refreshBalance so advertising a unit
-     * never registers keysets/counters the user hasn't touched.
-     */
-    suspend fun unitBalanceIfExists(mintUrl: String, unit: String): Long?
     suspend fun createMintQuote(amount: Long?, method: PaymentMethodKind, mintUrl: String, unit: String = "sat", description: String? = null): MintQuoteInfo
     suspend fun checkMintQuote(quoteId: String): MintQuoteInfo
 

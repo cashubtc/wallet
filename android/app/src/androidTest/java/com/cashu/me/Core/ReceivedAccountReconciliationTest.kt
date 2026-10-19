@@ -23,7 +23,9 @@ class ReceivedAccountReconciliationTest {
             val mint = store.loadMints().single()
             fake.receiveCandidates = listOf(ReceiveRecoveryCandidate(mint.url, "sat"))
             runBlocking {
+                fake.ensureWallet(mint.url, "usd")
                 manager.removeMint(mint)
+                assertFalse(fake.hasWallets())
                 manager.reconcileReceivedAccounts()
                 manager.reconcileReceivedAccounts()
                 assertTrue(store.isMintRemoved(mint.url))
@@ -74,7 +76,9 @@ class ReceivedAccountReconciliationTest {
             val nativeFailure = IllegalStateException("Native wallet removal failed")
             fake.removeWalletFailure = nativeFailure
             runBlocking {
+                fake.ensureWallet(mint.url, "usd")
                 assertSame(nativeFailure, runCatching { manager.removeMint(mint) }.exceptionOrNull())
+                assertTrue(fake.hasWallets())
             }
             assertFalse(store.isMintRemoved(mint.url))
             assertEquals(listOf(mint.url), store.loadMints().map { it.url })

@@ -350,12 +350,4 @@ object PaymentRequestDecoder {
     private fun String.decodeQueryComponent(): String =
         runCatching { URLDecoder.decode(this, StandardCharsets.UTF_8.name()) }.getOrDefault(this)
 
-    private fun CdkCurrencyUnit.toDomainUnit(): String = when (this) {
-        CdkCurrencyUnit.Sat -> "sat"
-        CdkCurrencyUnit.Msat -> "msat"
-        CdkCurrencyUnit.Usd -> "usd"
-        CdkCurrencyUnit.Eur -> "eur"
-        CdkCurrencyUnit.Auth -> "auth"
-        is CdkCurrencyUnit.Custom -> unit
-    }
 }

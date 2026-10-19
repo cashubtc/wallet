@@ -13,17 +13,6 @@ enum MintQuoteContextPolicy {
         MintQuoteWalletContext(mintURL: quote.mintUrl.url, unit: quote.unit)
     }
 
-    static func existingAmountlessOffer(
-        in quotes: [MintQuote],
-        requestedContext: MintQuoteWalletContext
-    ) -> MintQuote? {
-        quotes.first {
-            PaymentMethodKind.from($0.paymentMethod) == .bolt12
-                && $0.amount == nil
-                && context(for: $0) == requestedContext
-        }
-    }
-
     static func walletContext(storedQuote: MintQuote?) -> MintQuoteWalletContext? {
         storedQuote.map { context(for: $0) }
     }
@@ -429,40 +418,21 @@ class LightningService: ObservableObject {
             throw WalletError.networkError("No mint supports \(paymentMethod.displayName) payments.")
         }
 
-        var lastError: Error?
-        for mint in candidates {
-            do {
-                let mintUrl = MintUrl(url: mint.url)
-                let wallet = try await repo.getWallet(mintUrl: mintUrl, unit: .sat)
-                AppLogger.wallet.info(
-                    "wallet-op native-call kind=meltQuote resource=\(WalletOperationCoordinator.privacySafeIdentifier(mint.url), privacy: .public) method=\(paymentMethod.rawValue, privacy: .public)"
-                )
-                let quote = try await wallet.meltQuote(
-                    method: paymentMethod.cdkMethod,
-                    request: normalizedRequest,
-                    options: meltOptions,
-                    extra: nil
-                )
+        return try await firstAffordableMeltQuote(in: candidates, failureMessage: "No mint could create a melt quote for this payment request.") { mint in
+            let mintUrl = MintUrl(url: mint.url)
+            let wallet = try await repo.getWallet(mintUrl: mintUrl, unit: .sat)
+            AppLogger.wallet.info(
+                "wallet-op native-call kind=meltQuote resource=\(WalletOperationCoordinator.privacySafeIdentifier(mint.url), privacy: .public) method=\(paymentMethod.rawValue, privacy: .public)"
+            )
+            let quote = try await wallet.meltQuote(
+                method: paymentMethod.cdkMethod,
+                request: normalizedRequest,
+                options: meltOptions,
+                extra: nil
+            )
 
-                let totalRequired = try Self.requiredMeltAmount(amount: quote.amount.value, feeReserve: quote.feeReserve.value)
-                guard mint.balance >= totalRequired else {
-                    lastError = NFCPaymentError.insufficientBalance(required: totalRequired, available: mint.balance)
-                    continue
-                }
-
-                return meltQuoteInfo(from: quote, paymentMethod: paymentMethod, fallbackMintUrl: mint.url)
-            } catch {
-                lastError = error
-                AppLogger.wallet.error(
-                    "melt quote failed resource=\(WalletOperationCoordinator.privacySafeIdentifier(mint.url), privacy: .public) method=\(paymentMethod.rawValue, privacy: .public) error_type=\(String(reflecting: type(of: error)), privacy: .public)"
-                )
-            }
+            return meltQuoteInfo(from: quote, paymentMethod: paymentMethod, fallbackMintUrl: mint.url)
         }
-
-        if let lastError {
-            throw lastError
-        }
-        throw WalletError.networkError("No mint could create a melt quote for this payment request.")
     }
     
     /// Backward-compatible wrapper for older bolt11-specific call sites.
@@ -530,39 +500,23 @@ class LightningService: ObservableObject {
             throw WalletError.networkError("No mint supports Lightning payments.")
         }
 
-        var lastError: Error?
-        for mint in candidates {
-            do {
-                let mintUrl = MintUrl(url: mint.url)
-                let wallet = try await repo.getWallet(mintUrl: mintUrl, unit: .sat)
-                AppLogger.wallet.info(
-                    "wallet-op native-call kind=meltQuote resource=\(WalletOperationCoordinator.privacySafeIdentifier(mint.url), privacy: .public) method=bolt11"
-                )
-                let quote = try await wallet.meltLightningAddressQuote(
-                    lightningAddress: address,
-                    amountMsat: Amount(value: amount * 1000)
-                )
+        return try await firstAffordableMeltQuote(
+            in: candidates,
+            failureMessage: "No mint could create a melt quote for this Lightning address.",
+            shouldStopOnError: LightningAddressResolver.isRecipientError
+        ) { mint in
+            let mintUrl = MintUrl(url: mint.url)
+            let wallet = try await repo.getWallet(mintUrl: mintUrl, unit: .sat)
+            AppLogger.wallet.info(
+                "wallet-op native-call kind=meltQuote resource=\(WalletOperationCoordinator.privacySafeIdentifier(mint.url), privacy: .public) method=bolt11"
+            )
+            let quote = try await wallet.meltLightningAddressQuote(
+                lightningAddress: address,
+                amountMsat: Amount(value: amount * 1000)
+            )
 
-                let totalRequired = try Self.requiredMeltAmount(amount: quote.amount.value, feeReserve: quote.feeReserve.value)
-                guard mint.balance >= totalRequired else {
-                    lastError = NFCPaymentError.insufficientBalance(required: totalRequired, available: mint.balance)
-                    continue
-                }
-
-                return meltQuoteInfo(from: quote, paymentMethod: .bolt11, fallbackMintUrl: mint.url)
-            } catch {
-                if LightningAddressResolver.isRecipientError(error) { throw error }
-                lastError = error
-                AppLogger.wallet.error(
-                    "Lightning address melt quote failed resource=\(WalletOperationCoordinator.privacySafeIdentifier(mint.url), privacy: .public) error_type=\(String(reflecting: type(of: error)), privacy: .public)"
-                )
-            }
+            return meltQuoteInfo(from: quote, paymentMethod: .bolt11, fallbackMintUrl: mint.url)
         }
-
-        if let lastError {
-            throw lastError
-        }
-        throw WalletError.networkError("No mint could create a melt quote for this Lightning address.")
     }
 
     /// Fallback for human-readable addresses without an LNURL-pay endpoint (BIP-353 names).
@@ -583,40 +537,21 @@ class LightningService: ObservableObject {
             throw WalletError.networkError("No mint supports BOLT12 payments required for this address.")
         }
 
-        var lastError: Error?
-        for mint in candidates {
-            do {
-                let mintUrl = MintUrl(url: mint.url)
-                let wallet = try await repo.getWallet(mintUrl: mintUrl, unit: .sat)
-                AppLogger.wallet.info(
-                    "wallet-op native-call kind=meltQuote resource=\(WalletOperationCoordinator.privacySafeIdentifier(mint.url), privacy: .public) method=bolt12"
-                )
-                let quote = try await wallet.meltBip353Quote(
-                    bip353Address: address,
-                    amountMsat: Amount(value: amount * 1000),
-                    network: bitcoinNetwork(for: mint.url)
-                )
+        return try await firstAffordableMeltQuote(in: candidates, failureMessage: "No mint could create a melt quote for this address.") { mint in
+            let mintUrl = MintUrl(url: mint.url)
+            let wallet = try await repo.getWallet(mintUrl: mintUrl, unit: .sat)
+            AppLogger.wallet.info(
+                "wallet-op native-call kind=meltQuote resource=\(WalletOperationCoordinator.privacySafeIdentifier(mint.url), privacy: .public) method=bolt12"
+            )
+            let quote = try await wallet.meltBip353Quote(
+                bip353Address: address,
+                amountMsat: Amount(value: amount * 1000),
+                network: bitcoinNetwork(for: mint.url)
+            )
 
-                let totalRequired = try Self.requiredMeltAmount(amount: quote.amount.value, feeReserve: quote.feeReserve.value)
-                guard mint.balance >= totalRequired else {
-                    lastError = NFCPaymentError.insufficientBalance(required: totalRequired, available: mint.balance)
-                    continue
-                }
-
-                let paymentMethod = PaymentMethodKind.from(quote.paymentMethod) ?? .bolt12
-                return meltQuoteInfo(from: quote, paymentMethod: paymentMethod, fallbackMintUrl: mint.url)
-            } catch {
-                lastError = error
-                AppLogger.wallet.error(
-                    "BIP-353 melt quote failed resource=\(WalletOperationCoordinator.privacySafeIdentifier(mint.url), privacy: .public) error_type=\(String(reflecting: type(of: error)), privacy: .public)"
-                )
-            }
+            let paymentMethod = PaymentMethodKind.from(quote.paymentMethod) ?? .bolt12
+            return meltQuoteInfo(from: quote, paymentMethod: paymentMethod, fallbackMintUrl: mint.url)
         }
-
-        if let lastError {
-            throw lastError
-        }
-        throw WalletError.networkError("No mint could create a melt quote for this address.")
     }
 
     func createOnchainMeltQuote(
@@ -642,45 +577,57 @@ class LightningService: ObservableObject {
             throw WalletError.networkError("No mint supports On-chain payments.")
         }
 
+        return try await firstAffordableMeltQuote(in: candidates, failureMessage: "No mint could create a melt quote for this on-chain payment.") { mint in
+            let mintUrl = MintUrl(url: mint.url)
+            let wallet = try await repo.getWallet(mintUrl: mintUrl, unit: .sat)
+            AppLogger.wallet.info(
+                "wallet-op native-call kind=meltQuote resource=\(WalletOperationCoordinator.privacySafeIdentifier(mint.url), privacy: .public) method=onchain"
+            )
+            let quoteOptions = try await wallet.quoteOnchainMeltOptions(
+                address: normalizedAddress,
+                amount: Amount(value: amount),
+                maxFeeAmount: nil
+            )
+
+            guard let quoteOption = quoteOptions.first else {
+                throw WalletError.networkError("Mint returned no on-chain melt fee options.")
+            }
+
+            let quote = try await wallet.selectOnchainMeltQuote(quote: quoteOption)
+            return meltQuoteInfo(from: quote, paymentMethod: .onchain, fallbackMintUrl: mint.url)
+        }
+    }
+
+    /// Candidate order, overflow-safe affordability and last-error propagation are shared
+    /// by every payment rail; the closure only creates the rail-specific quote.
+    func firstAffordableMeltQuote(
+        in candidates: [MintInfo],
+        failureMessage: String,
+        shouldStopOnError: (Error) -> Bool = { _ in false },
+        createQuote: (MintInfo) async throws -> MeltQuoteInfo
+    ) async throws -> MeltQuoteInfo {
         var lastError: Error?
         for mint in candidates {
             do {
-                let mintUrl = MintUrl(url: mint.url)
-                let wallet = try await repo.getWallet(mintUrl: mintUrl, unit: .sat)
-                AppLogger.wallet.info(
-                    "wallet-op native-call kind=meltQuote resource=\(WalletOperationCoordinator.privacySafeIdentifier(mint.url), privacy: .public) method=onchain"
-                )
-                let quoteOptions = try await wallet.quoteOnchainMeltOptions(
-                    address: normalizedAddress,
-                    amount: Amount(value: amount),
-                    maxFeeAmount: nil
-                )
-
-                guard let quoteOption = quoteOptions.first else {
-                    lastError = WalletError.networkError("Mint returned no on-chain melt fee options.")
+                let quote = try await createQuote(mint)
+                let required = try Self.requiredMeltAmount(amount: quote.amount, feeReserve: quote.feeReserve)
+                guard mint.balance >= required else {
+                    lastError = NFCPaymentError.insufficientBalance(required: required, available: mint.balance)
                     continue
                 }
-
-                let quote = try await wallet.selectOnchainMeltQuote(quote: quoteOption)
-                let totalRequired = try Self.requiredMeltAmount(amount: quote.amount.value, feeReserve: quote.feeReserve.value)
-                guard mint.balance >= totalRequired else {
-                    lastError = NFCPaymentError.insufficientBalance(required: totalRequired, available: mint.balance)
-                    continue
-                }
-
-                return meltQuoteInfo(from: quote, paymentMethod: .onchain, fallbackMintUrl: mint.url)
+                return quote
             } catch {
+                // Recipient failures are independent of the mint. Surface them
+                // immediately so LNURL discovery can choose BIP-353 precisely.
+                if shouldStopOnError(error) { throw error }
                 lastError = error
                 AppLogger.wallet.error(
-                    "on-chain melt quote failed resource=\(WalletOperationCoordinator.privacySafeIdentifier(mint.url), privacy: .public) error_type=\(String(reflecting: type(of: error)), privacy: .public)"
+                    "melt quote failed resource=\(WalletOperationCoordinator.privacySafeIdentifier(mint.url), privacy: .public) error_type=\(String(reflecting: type(of: error)), privacy: .public)"
                 )
             }
         }
-
-        if let lastError {
-            throw lastError
-        }
-        throw WalletError.networkError("No mint could create a melt quote for this on-chain payment.")
+        if let lastError { throw lastError }
+        throw WalletError.networkError(failureMessage)
     }
 
     func subscribeToMintQuote(
@@ -780,25 +727,21 @@ class LightningService: ObservableObject {
         activeMint: MintInfo?,
         mints: [MintInfo]
     ) -> MintInfo? {
-        let normalizedPreferredURL = normalizedMintURL(preferredMintURL)
+        let normalizedPreferredURL = MintURLIdentity.normalized(preferredMintURL)
         if let mint = mints.first(where: {
-            normalizedMintURL($0.url) == normalizedPreferredURL
+            MintURLIdentity.normalized($0.url) == normalizedPreferredURL
         }) {
             return mint
         }
 
         guard let activeMint,
-              normalizedMintURL(activeMint.url) == normalizedPreferredURL else {
+              MintURLIdentity.normalized(activeMint.url) == normalizedPreferredURL else {
             return nil
         }
 
         return activeMint
     }
 
-    private func normalizedMintURL(_ urlString: String) -> String {
-        MintURLIdentity.normalized(urlString)
-    }
-    
     /// Outcome of a melt confirmation. Pending results are persisted and
     /// reconciled by the manager's serialized foreground poll.
     struct MeltConfirmation {

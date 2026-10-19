@@ -7,6 +7,51 @@ final class LightningAddressResolverTests: XCTestCase {
     private let discovery = "Failed to request invoice from Lightning address service: Failed to fetch pay request data: Http transport error Some("
     private func failure(_ message: String) -> FfiError { .Cdk(code: 50000, errorMessage: message) }
 
+    func testCandidateLoopPreservesMissingDiscoveryErrorForFallback() async throws {
+        let service = LightningService(walletRepository: { nil }, walletDatabase: { nil }, getActiveMint: { nil })
+        let candidates = [
+            MintInfo(url: "https://first.example", name: "First", isActive: true, balance: 100),
+            MintInfo(url: "https://second.example", name: "Second", isActive: false, balance: 100)
+        ]
+        var attempted: [String] = []
+        var fallbackCalls = 0
+        let quote = try await LightningAddressResolver.quote(
+            lnurl: {
+                try await service.firstAffordableMeltQuote(
+                    in: candidates, failureMessage: "No quote",
+                    shouldStopOnError: LightningAddressResolver.isRecipientError
+                ) { mint in
+                    attempted.append(mint.url)
+                    if attempted.count == 1 { throw self.failure("\(self.discovery)404): missing") }
+                    throw self.failure("Http transport error None: connection refused")
+                }
+            },
+            bip353: {
+                fallbackCalls += 1
+                return MeltQuoteInfo(id: "fallback", mintUrl: candidates[0].url, amount: 10, feeReserve: 0, paymentMethod: .bolt12, state: .unpaid, expiry: nil)
+            }
+        )
+        XCTAssertEqual(attempted, [candidates[0].url])
+        XCTAssertEqual(fallbackCalls, 1)
+        XCTAssertEqual(quote.id, "fallback")
+    }
+
+    func testCandidateLoopRetriesMintFailuresAndChecksQuoteFees() async throws {
+        let service = LightningService(walletRepository: { nil }, walletDatabase: { nil }, getActiveMint: { nil })
+        let candidates = (1...3).map { MintInfo(url: "https://mint\($0).example", name: "Mint", isActive: false, balance: 10) }
+        var attempted: [String] = []
+        let quote = try await service.firstAffordableMeltQuote(
+            in: candidates, failureMessage: "No quote",
+            shouldStopOnError: LightningAddressResolver.isRecipientError
+        ) { mint in
+            attempted.append(mint.url)
+            if attempted.count == 1 { throw self.failure("Http transport error None: connection refused") }
+            return MeltQuoteInfo(id: mint.url, mintUrl: mint.url, amount: 10, feeReserve: attempted.count == 2 ? 1 : 0, paymentMethod: .bolt11, state: .unpaid, expiry: nil)
+        }
+        XCTAssertEqual(attempted, candidates.map(\.url))
+        XCTAssertEqual(quote.mintUrl, candidates[2].url)
+    }
+
     func testLnurlWinsForBothBolt11OnlyAndBolt12Mints() async throws {
         for supportsBolt12 in [false, true] {
             var calls: [String] = []

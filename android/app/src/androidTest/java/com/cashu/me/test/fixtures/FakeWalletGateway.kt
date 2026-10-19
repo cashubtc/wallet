@@ -202,9 +202,6 @@ class FakeWalletGateway(
     override suspend fun unitBalance(mintUrl: String, unit: String): Long =
         if (unit.equals("sat", ignoreCase = true)) totalBalance(mintUrl) else nonSatBalances[normalize(mintUrl) to unit] ?: 0
 
-    override suspend fun unitBalanceIfExists(mintUrl: String, unit: String): Long? =
-        if (unit.equals("sat", ignoreCase = true)) totalBalance(mintUrl) else nonSatBalances[normalize(mintUrl) to unit]
-
     override suspend fun createMintQuote(
         amount: Long?,
         method: PaymentMethodKind,

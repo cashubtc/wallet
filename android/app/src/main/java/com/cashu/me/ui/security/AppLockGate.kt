@@ -1,5 +1,6 @@
 package com.cashu.me.ui.security
 
+import com.cashu.me.ui.components.findActivity
 import android.view.WindowManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
