@@ -136,7 +136,7 @@ final class ActivityDetailUITests: XCTestCase {
         XCTAssertTrue(failed.waitForExistence(timeout: 10))
         XCTAssertTrue(failed.label.contains("failed"))
         XCTAssertTrue(completed.label.contains("completed"))
-        // The amount carries failure styling; there is no third visible status line.
+        // The leading X carries failure styling; there is no third visible status line.
         XCTAssertFalse(app.staticTexts["Failed"].exists)
         XCTAssertEqual(failed.frame.height, completed.frame.height, accuracy: 1)
         let screenshot = XCTAttachment(screenshot: app.screenshot())

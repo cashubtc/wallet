@@ -14,12 +14,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -47,7 +49,7 @@ data class TransactionRowModel(
  * Canonical timeline row. Leading muted directional arrow (direction is the
  * arrow's orientation, never colour); kind is named in the title. The amount is
  * the ledger signal: received is green with a plus, sent is primary with no
- * sign, failed is red with no sign, and pending/expired is muted with no sign.
+ * sign, and failed/pending/expired are muted with no sign. Failed uses an X.
  * Status remains in accessibility semantics without adding another visible line.
  */
 @OptIn(ExperimentalFoundationApi::class)
@@ -63,8 +65,7 @@ fun TransactionRow(
     val incoming = tx.type == TransactionType.Incoming
     val unsettled = tx.isUnsettled
     val amountColor = when {
-        tx.status == TransactionStatus.Failed -> MaterialTheme.colorScheme.error
-        unsettled -> MaterialTheme.colorScheme.onSurfaceVariant
+        unsettled || tx.status == TransactionStatus.Failed -> MaterialTheme.colorScheme.onSurfaceVariant
         // Match iOS TransactionAmountColumn's .green ledger amounts.
         incoming -> CashuTheme.colors.received
         else -> MaterialTheme.colorScheme.onSurface
@@ -99,7 +100,7 @@ fun TransactionRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
     ) {
-        DirectionIcon(incoming = incoming)
+        DirectionIcon(incoming = incoming, isFailed = tx.status == TransactionStatus.Failed)
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = model.title,
@@ -137,9 +138,9 @@ fun TransactionRow(
     }
 }
 
-/** Always-muted directional arrow on a soft neutral circle (iOS TransactionIcon). */
+/** Muted directional arrow, or failure X, on a soft neutral circle (iOS TransactionIcon). */
 @Composable
-internal fun DirectionIcon(incoming: Boolean) {
+internal fun DirectionIcon(incoming: Boolean, isFailed: Boolean = false) {
     Box(
         modifier = Modifier
             .size(DirectionIconCircle)
@@ -150,10 +151,16 @@ internal fun DirectionIcon(incoming: Boolean) {
         contentAlignment = Alignment.Center,
     ) {
         Icon(
-            imageVector = if (incoming) Icons.Filled.ArrowDownward else Icons.Filled.ArrowUpward,
-            contentDescription = if (incoming) "Incoming" else "Outgoing",
+            imageVector = when {
+                isFailed -> Icons.Filled.Close
+                incoming -> Icons.Filled.ArrowDownward
+                else -> Icons.Filled.ArrowUpward
+            },
+            // The row already announces failure; keep the X decorative.
+            contentDescription = if (isFailed) null else if (incoming) "Incoming" else "Outgoing",
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(DirectionIconSize),
+            modifier = Modifier.size(DirectionIconSize)
+                .then(if (isFailed) Modifier.testTag("transaction-failure-icon") else Modifier),
         )
     }
 }

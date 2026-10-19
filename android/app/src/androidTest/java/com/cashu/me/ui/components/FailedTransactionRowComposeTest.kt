@@ -5,6 +5,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.text.TextLayoutResult
 import org.junit.Assert.assertEquals
@@ -27,18 +30,20 @@ import org.junit.runner.RunWith
 class FailedTransactionRowComposeTest {
     @get:Rule val compose = createComposeRule()
 
-    @Test fun failedPaymentUsesRedAmountWithoutAStatusLine() = verifyFailedRow(dark = false)
+    @Test fun failedPaymentUsesXAndPendingAmountColorWithoutAStatusLine() = verifyFailedRow(dark = false)
 
-    @Test fun failedPaymentUsesRedAmountInDarkMode() = verifyFailedRow(dark = true)
+    @Test fun failedPaymentUsesXAndPendingAmountColorInDarkMode() = verifyFailedRow(dark = true)
 
     private fun verifyFailedRow(dark: Boolean) {
         var failureColor = Color.Unspecified
         var completedColor = Color.Unspecified
+        var pendingColor = Color.Unspecified
         compose.setCashuContent(darkTheme = dark) {
-            failureColor = MaterialTheme.colorScheme.error
+            failureColor = MaterialTheme.colorScheme.onSurfaceVariant
+            pendingColor = MaterialTheme.colorScheme.onSurfaceVariant
             completedColor = MaterialTheme.colorScheme.onSurface
             Column {
-                for (status in listOf(TransactionStatus.Failed, TransactionStatus.Completed)) {
+                for (status in listOf(TransactionStatus.Failed, TransactionStatus.Completed, TransactionStatus.Pending)) {
                     val tx = WalletTransaction(
                         id = status.name, amount = 2100, type = TransactionType.Outgoing,
                         kind = TransactionKind.Lightning, dateEpochMillis = 0, status = status,
@@ -50,6 +55,8 @@ class FailedTransactionRowComposeTest {
                 }
             }
         }
+        compose.onAllNodesWithTag("transaction-failure-icon", useUnmergedTree = true).assertCountEquals(1)
+        compose.onNodeWithTag("transaction-failure-icon", useUnmergedTree = true).assertIsDisplayed()
         compose.onNodeWithText("Failed", useUnmergedTree = true).assertDoesNotExist()
         compose.onNodeWithText("Completed", useUnmergedTree = true).assertDoesNotExist()
         compose.onNodeWithContentDescription("Lightning paid, Outgoing, Failed, 2,100 sat, Today")
@@ -61,7 +68,7 @@ class FailedTransactionRowComposeTest {
         assertEquals(completed.fetchSemanticsNode().boundsInRoot.height,
             failed.fetchSemanticsNode().boundsInRoot.height, 1f)
         val amounts = compose.onAllNodesWithText("2,100 sat", useUnmergedTree = true)
-        for ((index, expected) in listOf(failureColor, completedColor).withIndex()) {
+        for ((index, expected) in listOf(failureColor, completedColor, pendingColor).withIndex()) {
             val layouts = mutableListOf<TextLayoutResult>()
             amounts[index].performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
             assertEquals(expected, layouts.single().layoutInput.style.color)

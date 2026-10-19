@@ -4,14 +4,13 @@ import SwiftUI
 // Renders the configured primary amount plus its optional conversion —
 // trailing-aligned.
 // Amount styling is the ledger signal: received = green with a plus, sent =
-// primary with no sign, failed = red with no sign, pending/expired = muted.
+// primary with no sign, failed/pending/expired = muted with no sign.
 // No status line or row badge;
 // re-check lives on History pull-to-refresh. See DESIGN.md — The Received
 // Amount Rule, The Quiet Pending Rule,
 // The Fiat Sub-Amount Rule.
 struct TransactionAmountColumn: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.colorScheme) private var colorScheme
 
     let transaction: WalletTransaction
 
@@ -52,21 +51,14 @@ struct TransactionAmountColumn: View {
     }
 
     // Received value is the only green element in the row. Sent value stays
-    // primary; failed is red, while pending and expired stay muted.
+    // primary; failed, pending, and expired share the same muted amount ink.
     private var amountColor: Color {
-        if transaction.status == .failed {
-            // Match Android's error text ink, with at least 4.5:1 contrast on
-            // the light and dark list backgrounds at the normal row text size.
-            return colorScheme == .dark
-                ? Color(red: 239 / 255, green: 83 / 255, blue: 80 / 255)
-                : Color(red: 198 / 255, green: 40 / 255, blue: 40 / 255)
-        }
-        if transaction.isUnsettled { return .secondary }
+        if transaction.isUnsettled || transaction.status == .failed { return .secondary }
         return transaction.type == .incoming ? .green : .primary
     }
 
     // Only a settled receipt gets a sign. Sent, pending, expired, and failed rows stay
-    // unsigned; direction remains explicit in the title and arrow.
+    // unsigned; direction remains explicit in the title.
     private var formattedAmount: String {
         let value = amountDisplay.primary
         guard transaction.status == .completed, transaction.type == .incoming else { return value }

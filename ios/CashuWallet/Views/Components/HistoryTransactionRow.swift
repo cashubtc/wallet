@@ -17,7 +17,7 @@ struct HistoryTransactionRow: View {
     var body: some View {
         Button(action: onSelect) {
             HStack(spacing: 14) {
-                TransactionIcon(direction: transaction.type)
+                TransactionIcon(direction: transaction.type, isFailed: transaction.status == .failed)
                     .frame(width: 36, height: 36)
 
                 VStack(alignment: .leading, spacing: 4) {
