@@ -1,6 +1,16 @@
 package com.cashu.me.ui.onboarding
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.test.performSemanticsAction
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -167,6 +177,32 @@ class SeedPhraseAccessibilityComposeTest {
         compose.onNodeWithContentDescription("Reveal seed phrase").assertIsDisplayed()
         compose.onNodeWithTag(UiTestTags.SeedPhrase).assertDoesNotExist()
         words.forEach { word -> compose.onNodeWithText(word).assertDoesNotExist() }
+    }
+
+    @Test
+    fun narrowLargeTextShowsEveryRecoveryWordWhole() {
+        val longWords = List(12) { "abstract" }
+        compose.setCashuContent(fontScale = 2f) {
+            Box(Modifier.width(280.dp).verticalScroll(rememberScrollState())) {
+                SeedPhraseReveal(words = longWords, revealed = true, onToggle = {})
+            }
+        }
+        val nodes = compose.onAllNodes(
+            SemanticsMatcher.expectValue(SemanticsProperties.Text, listOf(androidx.compose.ui.text.AnnotatedString("abstract"))),
+            useUnmergedTree = true,
+        )
+        nodes.assertCountEquals(12)
+        repeat(12) { index ->
+            val layouts = mutableListOf<TextLayoutResult>()
+            nodes[index].performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+            assertTrue(layouts.isNotEmpty())
+            layouts.forEach { layout ->
+                assertEquals(1, layout.lineCount)
+                assertFalse(layout.isLineEllipsized(0))
+                assertFalse(layout.didOverflowWidth)
+                assertEquals("abstract".length, layout.getLineEnd(0))
+            }
+        }
     }
 
     private fun setSeedPhraseContent() {

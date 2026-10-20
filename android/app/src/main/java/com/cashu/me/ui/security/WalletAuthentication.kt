@@ -1,5 +1,6 @@
 package com.cashu.me.ui.security
 
+import com.cashu.me.ui.components.findActivity
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
@@ -32,11 +33,5 @@ fun rememberWalletAuthenticationLauncher(
 internal tailrec fun Context.findFragmentActivity(): FragmentActivity? = when (this) {
     is FragmentActivity -> this
     is ContextWrapper -> baseContext.findFragmentActivity()
-    else -> null
-}
-
-internal tailrec fun Context.findActivity(): Activity? = when (this) {
-    is Activity -> this
-    is ContextWrapper -> baseContext.findActivity()
     else -> null
 }

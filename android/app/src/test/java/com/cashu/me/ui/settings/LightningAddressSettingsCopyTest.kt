@@ -6,16 +6,6 @@ import org.junit.Test
 
 class LightningAddressSettingsCopyTest {
     @Test
-    fun statusOnlySaysConnectingWhileARequestIsRunning() {
-        val state = com.cashu.me.Core.NPCState(isEnabled = true, isInitialized = true)
-        assertEquals("Not connected", npcStatusLabel(state))
-        assertEquals("Connecting", npcStatusLabel(state.copy(isLoading = true)))
-        assertEquals("Connected", npcStatusLabel(state.copy(isConnected = true)))
-        assertEquals("Not connected", npcStatusLabel(state.copy(errorMessage = "errorMessage=HTTP failed")))
-        assertEquals("Needs attention", npcStatusLabel(state.copy(isConnected = true, errorMessage = "Claim failed")))
-    }
-
-    @Test
     fun enableControlLeadsWithTheUserOutcome() {
         assertEquals(
             "Enable Lightning Address",

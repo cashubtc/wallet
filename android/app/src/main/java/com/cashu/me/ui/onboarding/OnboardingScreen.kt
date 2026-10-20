@@ -22,6 +22,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -77,6 +78,8 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalInspectionMode
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -126,6 +129,7 @@ import com.cashu.me.ui.restore.rememberSeedPhraseEntryState
 import com.cashu.me.ui.restore.restoreSeedInstallErrorMessage
 import com.cashu.me.ui.restore.runSeedChecksum
 import com.cashu.me.ui.testing.UiTestTags
+import com.cashu.me.ui.theme.scaledBy
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.rememberAppeared
 import com.cashu.me.ui.theme.rememberReducedMotion
@@ -304,7 +308,7 @@ internal fun OnboardingScreen(
     fun handleFirstMintContinue(mnemonic: String) {
         if (firstMint.customDraft.input.isNotBlank()) {
             firstMint.commitCustomUrl()
-            if (firstMint.customDraft.error != null) return
+            return
         }
         if (firstMint.selected.isEmpty()) return
         finishCreate(mnemonic, firstMint.orderedSelection())
@@ -388,7 +392,7 @@ internal fun OnboardingScreen(
 
         is OnboardingStep.FirstMint -> OnboardingChassisModel(
             primary = ChassisAction(
-                label = "Continue",
+                label = if (firstMint.customDraft.input.isBlank()) "Continue" else "Add mint",
                 onClick = { handleFirstMintContinue(current.mnemonic) },
                 enabled = firstMint.canContinue && !finishing,
                 loading = finishing,
@@ -478,7 +482,11 @@ internal fun OnboardingScreen(
                         // `finishing` stays set until the handoff tears this
                         // subtree down — the curtain owns the rest.
                         state.finishing = true
-                        handoff.begin { runCatching { walletManager.completeRestore() } }
+                        walletManager.clearError()
+                        handoff.begin {
+                            runCatching { walletManager.completeRestore() }
+                                .onFailure { walletManager.reportRestoreCompletionFailure() }
+                        }
                     }
                 },
                 enabled = progressState?.let { it.allSettled && !it.finishing } == true,
@@ -813,6 +821,15 @@ internal fun OnboardingScreen(
                         }
 
                         is OnboardingStep.RestoreProgress -> Column(Modifier.fillMaxSize()) {
+                            walletState.errorMessage?.let {
+                                InlineNotice(text = it, severity = NoticeSeverity.Error)
+                            }
+                            Text(
+                                text = "If you restored a different seed, continuing replaces your previous wallet. Its backup is kept until you continue.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = HeaderPadding),
+                            )
                             // No back button on this step (forward-only), so it
                             // reserves the bar band rather than skipping it —
                             // otherwise the title jumps up 56 dp on arrival.
@@ -963,10 +980,31 @@ internal fun WelcomeStageContent(
     }
 }
 
-/** iOS concept sheet: heavy title + three bearer-cash beats + Got it. */
+@Composable
+private fun EcashConceptSheet(onDismiss: () -> Unit) = OnboardingInfoSheet(
+    title = "Ecash is bearer cash for Bitcoin.",
+    paragraphs = listOf(
+        "Whoever holds it, owns it. Your balance stays on this device, hidden from everyone else.",
+        "Mints hold the Bitcoin behind your ecash. You can use several at once.",
+        "Send instantly. Cash out to Lightning anytime.",
+    ),
+    onDismiss = onDismiss,
+)
+
+@Composable
+private fun MintBackupSheet(onDismiss: () -> Unit) = OnboardingInfoSheet(
+    title = "Your mint list can be backed up.",
+    paragraphs = listOf(
+        "Your wallet publishes an encrypted list of the mints you use to your Nostr relays. Only your seed phrase can open it.",
+        "Find my mints looks that list up and stages every mint in it. Nothing is restored until you tap Restore.",
+        "If you never published a list, nothing turns up. Add your mints by hand instead.",
+    ),
+    onDismiss = onDismiss,
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun EcashConceptSheet(onDismiss: () -> Unit) {
+private fun OnboardingInfoSheet(title: String, paragraphs: List<String>, onDismiss: () -> Unit) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = CashuTheme.colors.compactSheetContainer,
@@ -994,96 +1032,20 @@ private fun EcashConceptSheet(onDismiss: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.comfortable),
             ) {
                 Text(
-                    text = "Ecash is bearer cash for Bitcoin.",
+                    text = title,
                     style = MaterialTheme.typography.headlineMedium.copy(
                         fontWeight = FontWeight.ExtraBold,
                     ),
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Column(verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default)) {
-                    Text(
-                        text = "Whoever holds it, owns it. Your balance stays on this device, hidden from everyone else.",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        text = "Mints hold the Bitcoin behind your ecash. You can use several at once.",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        text = "Send instantly. Cash out to Lightning anytime.",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-            Spacer(Modifier.height(CashuTheme.spacing.comfortable))
-            PrimaryButton(text = "Got it", onClick = onDismiss)
-        }
-    }
-}
-
-/**
- * What "Find my mints" actually does. The chip deliberately names the outcome
- * rather than the transport, but this sheet is the one place the user has
- * explicitly asked how it works, and withholding the mechanism there is the same
- * opacity that made the old automatic lookup feel like the wallet knew too much.
- *
- * Beat one matches the Settings copy almost word for word (BackupRestoreScreen),
- * so the two surfaces corroborate each other and a curious user can find the
- * toggle. Beat two is why the button is safe to press. Beat three pre-answers
- * the empty-handed outcome. iOS twin: `OnboardingView.mintBackupSheet`.
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun MintBackupSheet(onDismiss: () -> Unit) {
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        containerColor = CashuTheme.colors.compactSheetContainer,
-        // Same reason as EcashConceptSheet: at the partial detent a short
-        // viewport or a large font scale clipped "Got it".
-        sheetState = rememberBottomSheetState(
-            initialValue = SheetValue.Hidden,
-            enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
-        ),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = HeaderPadding)
-                .padding(bottom = CashuTheme.spacing.comfortable)
-                .navigationBarsPadding(),
-        ) {
-            Column(
-                modifier = Modifier
-                    .weight(1f, fill = false)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.comfortable),
-            ) {
-                Text(
-                    text = "Your mint list can be backed up.",
-                    style = MaterialTheme.typography.headlineMedium.copy(
-                        fontWeight = FontWeight.ExtraBold,
-                    ),
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Column(verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default)) {
-                    Text(
-                        text = "Your wallet publishes an encrypted list of the mints you use to your Nostr relays. Only your seed phrase can open it.",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        text = "Find my mints looks that list up and stages every mint in it. Nothing is restored until you tap Restore.",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        text = "If you never published a list, nothing turns up. Add your mints by hand instead.",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    paragraphs.forEach { paragraph ->
+                        Text(
+                            text = paragraph,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
             Spacer(Modifier.height(CashuTheme.spacing.comfortable))
@@ -1404,66 +1366,79 @@ private fun SeedGrid(words: List<String>, revealed: Boolean) {
         fontFamily = CashuTheme.fonts.mono,
         fontWeight = FontWeight.Medium,
     )
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .then(
-                if (revealed) {
-                    Modifier.semantics {
-                        semanticsTestTag = UiTestTags.SeedPhrase
-                        isTraversalGroup = true
-                    }
-                } else {
-                    Modifier.clearAndSetSemantics {
-                        semanticsTestTag = UiTestTags.HiddenSeedPhrase
-                    }
-                },
-            )
-            .then(if (blurRadius > 0.05f) Modifier.blur(blurRadius.dp) else Modifier),
-        verticalArrangement = Arrangement.spacedBy(SeedGridRowGap),
-    ) {
-        words.chunked(3).forEachIndexed { rowIndex, rowWords ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(SeedGridColumnGap),
-            ) {
-                rowWords.forEachIndexed { columnIndex, word ->
-                    val number = rowIndex * 3 + columnIndex + 1
-                    Row(
-                        modifier = Modifier
-                            .weight(1f)
-                            .then(
-                                if (revealed) {
-                                    Modifier.clearAndSetSemantics {
-                                        contentDescription = "$number. $word"
-                                        traversalIndex = number.toFloat()
-                                    }
+    val textMeasurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val indexWidth = with(density) {
+        textMeasurer.measure("00", indexStyle).size.width.toDp()
+    }.coerceAtLeast(SeedIndexWidth)
+    val wordWidth = with(density) {
+        textMeasurer.measure("m".repeat(maxOf(8, words.maxOfOrNull { it.length } ?: 8)), wordStyle).size.width.toDp()
+    }
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val cellWidth = indexWidth + CashuTheme.spacing.micro + wordWidth
+        val columns = ((maxWidth + SeedGridColumnGap) / (cellWidth + SeedGridColumnGap)).toInt().coerceIn(1, 3)
+        val scale = (maxWidth / cellWidth).coerceAtMost(1f)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(
+                    if (revealed) {
+                        Modifier.semantics {
+                            semanticsTestTag = UiTestTags.SeedPhrase
+                            isTraversalGroup = true
+                        }
+                    } else {
+                        Modifier.clearAndSetSemantics {
+                            semanticsTestTag = UiTestTags.HiddenSeedPhrase
+                        }
+                    },
+                )
+                .then(if (blurRadius > 0.05f) Modifier.blur(blurRadius.dp) else Modifier),
+            verticalArrangement = Arrangement.spacedBy(SeedGridRowGap),
+        ) {
+            words.chunked(columns).forEachIndexed { rowIndex, rowWords ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(SeedGridColumnGap),
+                ) {
+                    rowWords.forEachIndexed { columnIndex, word ->
+                        val number = rowIndex * columns + columnIndex + 1
+                        Row(
+                            modifier = Modifier
+                                .weight(1f)
+                                .then(
+                                    if (revealed) {
+                                        Modifier.clearAndSetSemantics {
+                                            contentDescription = "$number. $word"
+                                            traversalIndex = number.toFloat()
+                                        }
+                                    } else {
+                                        Modifier
+                                    },
+                                ),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.micro),
+                        ) {
+                            Text(
+                                text = "%02d".format(number),
+                                style = indexStyle.scaledBy(scale),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f * fade),
+                                textAlign = TextAlign.End,
+                                modifier = Modifier.width(indexWidth * scale),
+                            )
+                            Text(
+                                text = if (revealed) word else "••••••",
+                                style = wordStyle.scaledBy(scale),
+                                color = if (revealed) {
+                                    MaterialTheme.colorScheme.onSurface
                                 } else {
-                                    Modifier
+                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f * fade)
                                 },
-                            ),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.micro),
-                    ) {
-                        Text(
-                            text = "%02d".format(number),
-                            style = indexStyle,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f * fade),
-                            textAlign = TextAlign.End,
-                            modifier = Modifier.width(SeedIndexWidth),
-                        )
-                        Text(
-                            text = if (revealed) word else "••••••",
-                            style = wordStyle,
-                            color = if (revealed) {
-                                MaterialTheme.colorScheme.onSurface
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f * fade)
-                            },
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f),
-                        )
+                                maxLines = 1,
+                                softWrap = false,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
                     }
                 }
             }
@@ -1708,4 +1683,4 @@ private fun RecommendedMintAvatar(name: String, url: String, iconUrl: String?, s
 
 /** iOS shortenUrl: strip scheme + trailing slash for display. */
 private fun shortenMintUrl(url: String): String =
-    url.removePrefix("https://").removePrefix("http://").trimEnd('/')
+    com.cashu.me.Models.MintUrlIdentity.display(url)

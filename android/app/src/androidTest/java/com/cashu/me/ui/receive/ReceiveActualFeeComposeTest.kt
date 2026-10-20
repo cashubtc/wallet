@@ -2,6 +2,7 @@ package com.cashu.me.ui.receive
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.cashu.me.Core.AmountFormatter
@@ -43,8 +44,7 @@ class ReceiveActualFeeComposeTest {
             )
         }
 
-        compose.onNodeWithText("Amount").assertIsDisplayed()
-        compose.onNodeWithText("93 sat").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Amount: 93 sat", useUnmergedTree = true).assertIsDisplayed()
         compose.onNodeWithText("Fee").assertIsDisplayed()
         compose.onNodeWithText("7 sat").assertIsDisplayed()
         compose.onNodeWithText("3 sat").assertDoesNotExist()

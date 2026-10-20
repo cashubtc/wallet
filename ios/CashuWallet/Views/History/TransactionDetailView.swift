@@ -3,6 +3,7 @@ import SwiftUI
 struct TransactionDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @EnvironmentObject var walletManager: WalletManager
     /// Snapshot at open; [transaction] prefers the live wallet row so a
     /// successful open-check can flip Pending → Completed without dismissing.
@@ -13,6 +14,7 @@ struct TransactionDetailView: View {
     @State private var contentHeight: CGFloat = 0
     @State private var claimReceiveToken: PendingReceiveToken?
     @State private var showShareSheet = false
+    @State private var showTechnicalDetails = false
     @State private var isCheckingClaim = false
     @State private var manualClaimCheckResult: PendingTokenClaimCheckResult?
     @State private var manualClaimCheckTask: Task<Void, Never>?
@@ -133,13 +135,18 @@ struct TransactionDetailView: View {
                     ShareSheet(items: [invoice])
                 }
             }
+            .sheet(isPresented: $showTechnicalDetails) {
+                TransactionTechnicalDetailsView(transaction: transaction)
+                    .environmentObject(walletManager)
+                    .presentationDetents([.large])
+            }
             .onDisappear {
                 manualClaimCheckTask?.cancel()
             }
         }
         .task(id: monitoredQuoteID) {
             guard let quoteID = monitoredQuoteID else { return }
-            if seed.hasActionablePaymentCode {
+            if seed.monitorsMintQuoteWhileOpen {
                 await walletManager.monitorDisplayedMintQuote(quoteID: quoteID, homeHaptic: true)
             } else {
                 // Expired receipts still get a final late-payment recovery check.
@@ -168,16 +175,19 @@ struct TransactionDetailView: View {
             }
             // Receipt amounts use the same primary/secondary ordering
             // as Home and History. The glyph above carries state colour.
-            TransactionReceiptAmountPair(
-                transaction: transaction,
-                role: showsQR ? .amountCompact : .amountConfirm,
-                preferredPrimary: settings.homeBalancePrimary,
-                showFiat: settings.showFiatBalance,
-                btcPrice: priceService.btcPriceUSD,
-                currencyCode: settings.bitcoinPriceCurrency,
-                useBitcoinSymbol: settings.useBitcoinSymbol
-            )
-            .padding(.top, heroSlotIsEmpty ? 16 : 0)
+            // An unfunded deposit address has no amount to show yet.
+            if !transaction.isUnfundedAddress {
+                TransactionReceiptAmountPair(
+                    transaction: transaction,
+                    role: showsQR ? .amountCompact : .amountConfirm,
+                    preferredPrimary: settings.homeBalancePrimary,
+                    showFiat: settings.showFiatBalance,
+                    btcPrice: priceService.btcPriceUSD,
+                    currencyCode: settings.bitcoinPriceCurrency,
+                    useBitcoinSymbol: settings.useBitcoinSymbol
+                )
+                .padding(.top, heroSlotIsEmpty ? 16 : 0)
+            }
 
             // Detail rows on canvas, led by Status + Date. Type is
             // omitted — the nav title names it.
@@ -190,19 +200,21 @@ struct TransactionDetailView: View {
                     }
                     if row.label == "Mint", transaction.descriptionHash == nil,
                        let description = transaction.displayDescription {
-                        DescriptionDetailRow(description: description)
+                        DescriptionDetailRow(description: description, layout: .history)
                     }
                 }
                 if !detailRows.contains(where: { $0.label == "Mint" }),
                    transaction.descriptionHash == nil,
                    let description = transaction.displayDescription {
-                    DescriptionDetailRow(description: description)
+                    DescriptionDetailRow(description: description, layout: .history)
                 }
                 if let explorerURL = onchainExplorerURL {
                     explorerLinkRow(label: "View in block explorer", url: explorerURL)
                 }
+                technicalDetailsRow
             }
             .padding(.horizontal, 4)
+            .padding(.top, transaction.isUnfundedAddress && heroSlotIsEmpty ? 16 : 0)
 
             if offersManualClaimCheck {
                 switch manualClaimCheckResult {
@@ -331,7 +343,14 @@ struct TransactionDetailView: View {
             case .onchain:   return "Confirmed"
             case .custom:    return "Paid"
             }
-        case .pending: return "Pending"
+        case .pending:
+            // An incoming deposit names its stage — the same words its History
+            // row and the receive sheet use (DESIGN.md → On-chain receive status).
+            if transaction.kind == .onchain, transaction.type == .incoming,
+               let stage = transaction.statusNote {
+                return stage
+            }
+            return "Pending"
         case .failed:  return "Failed"
         case .expired: return "Expired"
         }
@@ -351,7 +370,7 @@ struct TransactionDetailView: View {
         }
         if transaction.kind == .onchain {
             if let mintUrl = transaction.mintUrl {
-                rows.append(("Mint", walletManager.mints.first(where: { $0.url == mintUrl })?.name ?? extractMintHost(mintUrl), nil))
+                rows.append(("Mint", MintInfo.displayName(for: mintUrl, in: walletManager.mints), nil))
             }
             // Address/txid are reference blobs — show the decoder's standard
             // 8…6 short form; tap-to-copy carries the full value.
@@ -363,7 +382,7 @@ struct TransactionDetailView: View {
             }
         } else {
             if let mintUrl = transaction.mintUrl {
-                rows.append(("Mint", walletManager.mints.first(where: { $0.url == mintUrl })?.name ?? extractMintHost(mintUrl), nil))
+                rows.append(("Mint", MintInfo.displayName(for: mintUrl, in: walletManager.mints), nil))
             }
             if let hash = transaction.descriptionHash {
                 rows.append(("Hash", PaymentRequestDecoder.middleTruncated(hash), hash))
@@ -393,15 +412,12 @@ struct TransactionDetailView: View {
                 .foregroundStyle(.secondary)
             Spacer()
             Text(value)
-                .fontWeight(.medium)
+                .fontWeight(.regular)
                 .multilineTextAlignment(.trailing)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
         }
-        .font(.subheadline)
-        .padding(.horizontal, 4)
-        .padding(.vertical, 12)
-        .frame(minHeight: 44)
+        .paymentDetailRow(layout: .history)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
         .accessibilityValue(value)
@@ -416,30 +432,57 @@ struct TransactionDetailView: View {
             HapticFeedback.notification(.success)
             ConfirmationToast.show(copyConfirmationMessage(for: label))
         } label: {
-            HStack {
+            let layout = dynamicTypeSize.isAccessibilitySize
+                ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+                : AnyLayout(HStackLayout(spacing: 8))
+            layout {
                 Text(label)
                     .foregroundStyle(.secondary)
-                Spacer()
-                Text(value)
-                    .fontWeight(.medium)
-                    .multilineTextAlignment(.trailing)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Image(systemName: "doc.on.doc")
-                    .font(.footnote)
-                    .foregroundStyle(.tertiary)
-                    .padding(.leading, 4)
+                if !dynamicTypeSize.isAccessibilitySize {
+                    Spacer()
+                }
+                HStack(spacing: 8) {
+                    Text(value)
+                        .fontWeight(.regular)
+                        .multilineTextAlignment(dynamicTypeSize.isAccessibilitySize ? .leading : .trailing)
+                        .lineLimit(2)
+                        .truncationMode(.middle)
+                    Image(systemName: "doc.on.doc")
+                        .font(.footnote)
+                        .foregroundStyle(.tertiary)
+                }
+                .frame(maxWidth: .infinity, alignment: dynamicTypeSize.isAccessibilitySize ? .leading : .trailing)
             }
-            .font(.subheadline)
-            .padding(.horizontal, 4)
-            .padding(.vertical, 12)
-            .frame(minHeight: 44)
+            .paymentDetailRow(layout: .history, isInteractive: true)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
         .accessibilityValue(value)
         .accessibilityHint("Copies the \(label.lowercased()) to clipboard")
+    }
+
+    /// Last receipt row: the identifiers behind the payment (quote ID, request,
+    /// proof) open in a nested `.large` sheet, like the description reader.
+    private var technicalDetailsRow: some View {
+        Button {
+            HapticFeedback.selection()
+            showTechnicalDetails = true
+        } label: {
+            HStack {
+                Text("Details")
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .paymentDetailRow(layout: .history, isInteractive: true)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Shows quote, request and proof identifiers")
+        .accessibilityIdentifier("cashu.history.details")
     }
 
     /// Same shape as `detailRow` but opens an external URL, with the trailing
@@ -455,10 +498,7 @@ struct TransactionDetailView: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.tertiary)
             }
-            .font(.subheadline)
-            .padding(.horizontal, 4)
-            .padding(.vertical, 12)
-            .frame(minHeight: 44)
+            .paymentDetailRow(layout: .history, isInteractive: true)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -603,6 +643,7 @@ struct TransactionReceiptAmountPair: View {
 /// Prose belongs to the inspector, with a native reader for longer descriptions.
 struct DescriptionDetailRow: View {
     let description: String
+    var layout: PaymentDetailLayout = .flow
     @Environment(\.compactPaymentDetails) private var compactPaymentDetails
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -645,9 +686,7 @@ struct DescriptionDetailRow: View {
                 }
                 .accessibilityIdentifier("payment-description-preview")
         }
-        .font(.subheadline)
-        .padding(.horizontal, 4)
-        .padding(.vertical, 12)
+        .paymentDetailRow(layout: layout)
         .sheet(isPresented: $showFullDescription) {
             PaymentDescriptionView(description: description)
                 .presentationDetents([.large])

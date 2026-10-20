@@ -30,10 +30,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -61,8 +65,14 @@ fun BackupSeedSheet(
 ) {
     val mnemonic = remember { walletManager.backupMnemonic().orEmpty() }
     val words = remember(mnemonic) { mnemonic.trim().split(' ').filter { it.isNotBlank() } }
+    val wordStyle = MaterialTheme.typography.labelSmall
+    val textMeasurer = rememberTextMeasurer()
+    val minimumWordWidth = with(LocalDensity.current) {
+        textMeasurer.measure("12. " + "m".repeat(maxOf(8, words.maxOfOrNull { it.length } ?: 8)), wordStyle).size.width.toDp()
+    } + CashuTheme.spacing.default * 2
     val revealedText = remember(words) { words.joinToString(" ") }
 
+    val haptics = LocalHapticFeedback.current
     val clipboard = LocalClipboard.current
     val clipboardScope = rememberCoroutineScope()
     val confirmationToastController = LocalConfirmationToastController.current
@@ -117,7 +127,7 @@ fun BackupSeedSheet(
                     exit = fadeOut(revealExitSpec),
                 ) {
                     LazyVerticalGrid(
-                        columns = GridCells.Adaptive(minSize = 96.dp),
+                        columns = GridCells.Adaptive(minSize = minimumWordWidth),
                         horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
                         verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
                         modifier = Modifier
@@ -127,7 +137,9 @@ fun BackupSeedSheet(
                         itemsIndexed(words, key = { index, _ -> index }) { index, word ->
                             Text(
                                 text = "${index + 1}. $word",
-                                style = MaterialTheme.typography.labelSmall,
+                                style = wordStyle,
+                                maxLines = 1,
+                                softWrap = false,
                                 color = MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -150,6 +162,7 @@ fun BackupSeedSheet(
                                     clipboard.setClipEntry(
                                         ClipEntry(ClipData.newPlainText("Recovery phrase", revealedText)),
                                     )
+                                    haptics.performHapticFeedback(HapticFeedbackType.Confirm)
                                     confirmationToastController?.show("Copied recovery phrase")
                                 }
                             }

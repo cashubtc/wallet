@@ -6,8 +6,12 @@ import android.content.res.Configuration
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -16,6 +20,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
@@ -32,7 +37,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -43,6 +51,16 @@ import com.cashu.me.ui.theme.withMonoDigits
 // so the inspector reads as denser metadata, not list-row chrome.
 private val InspectorLeadingIconSize = 18.dp
 private val InspectorEditHintSize = 16.dp
+
+/** Payment flows share an inset column; compact History receipts use the full sheet width. */
+internal val PaymentDetailMaxWidth = 320.dp
+
+enum class InspectorRowStyle { Payment, History, Standard }
+
+internal fun Modifier.paymentDetailWidth(): Modifier = fillMaxWidth()
+    .wrapContentWidth(Alignment.CenterHorizontally)
+    .widthIn(max = PaymentDetailMaxWidth)
+    .fillMaxWidth()
 
 /**
  * Two-column metadata row used inside Cashu Request / Transaction Detail inspector
@@ -70,80 +88,113 @@ fun InspectorRow(
     valueColor: Color? = null,
     secondaryValue: String? = null,
     loading: Boolean = false,
+    style: InspectorRowStyle = InspectorRowStyle.Payment,
 ) {
-    val rowMod = if (onClick != null) {
-        modifier.fillMaxWidth().clickable(onClick = onClick)
-    } else {
-        modifier.fillMaxWidth()
+    val paymentDetails = style == InspectorRowStyle.Payment
+    val rowStyle = if (style == InspectorRowStyle.Standard) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.bodyMedium
+    val columnModifier = when (style) {
+        InspectorRowStyle.Payment -> modifier.paymentDetailWidth()
+        InspectorRowStyle.History -> modifier.fillMaxWidth().heightIn(min = 48.dp)
+        InspectorRowStyle.Standard -> modifier.fillMaxWidth()
     }
-    Row(
-        modifier = rowMod.padding(
-            horizontal = CashuTheme.spacing.comfortable,
-            vertical = CashuTheme.spacing.default,
-        ),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
-    ) {
-        if (leadingIcon != null) {
-            Icon(
-                imageVector = leadingIcon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(InspectorLeadingIconSize),
-            )
+    val textMeasurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    BoxWithConstraints(modifier = columnModifier) {
+        val gapCount = 1 + (if (leadingIcon != null) 1 else 0) + (if (editable || trailingIcon != null) 1 else 0)
+        val decorationWidth = CashuTheme.spacing.default * gapCount +
+            (if (leadingIcon != null) InspectorLeadingIconSize else 0.dp) +
+            (if (editable || trailingIcon != null) InspectorEditHintSize else 0.dp)
+        val availableWidth = with(density) {
+            (maxWidth - CashuTheme.spacing.comfortable * 2 - decorationWidth).roundToPx()
         }
-        Text(
-            text = label,
-            // bodyLarge, not bodyMedium: every neighboring row vocabulary
-            // (settings rows, MintSelectorRow, the flow rows) reads at 16sp,
-            // and 14sp here made payment facts look like fine print.
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        // Value fills the remaining width and right-aligns its text so it sits
-        // flush against the trailing edge, matching iOS (HStack + Spacer).
-        Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
-            SkeletonValue(loading = loading) {
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(
-                        text = value,
-                        style = if (valueMonospaced) {
-                            MaterialTheme.typography.bodyLarge.withMonoDigits()
-                        } else MaterialTheme.typography.bodyLarge,
-                        color = valueColor ?: MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.MiddleEllipsis,
-                        textAlign = TextAlign.End,
+        val labelWidth = textMeasurer.measure(AnnotatedString(label), rowStyle, maxLines = 1, softWrap = false).size.width
+        val valueWidth = textMeasurer.measure(AnnotatedString(value),
+            if (valueMonospaced) rowStyle.withMonoDigits() else rowStyle, maxLines = 1, softWrap = false).size.width
+        val stacked = style != InspectorRowStyle.Standard &&
+            (density.fontScale > 1.3f || labelWidth + valueWidth > availableWidth)
+        val rowMod = if (onClick != null) {
+            Modifier.heightIn(min = 48.dp).clickable(onClick = onClick)
+        } else {
+            Modifier
+        }
+        Column(
+            modifier = rowMod.padding(
+                horizontal = CashuTheme.spacing.comfortable,
+                vertical = if (paymentDetails) CashuTheme.spacing.snug else CashuTheme.spacing.default,
+            ),
+            verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug, Alignment.CenterVertically),
+        ) {
+            if (stacked) {
+                Text(label, style = rowStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
+            ) {
+                if (leadingIcon != null) {
+                    Icon(
+                        imageVector = leadingIcon,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(InspectorLeadingIconSize),
                     )
-                    if (secondaryValue != null) {
-                        Text(
-                            text = secondaryValue,
-                            style = if (valueMonospaced) {
-                                MaterialTheme.typography.bodyMedium.withMonoDigits()
-                            } else MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.MiddleEllipsis,
-                            textAlign = TextAlign.End,
-                        )
+                }
+                if (!stacked) {
+                    Text(
+                        text = label,
+                        style = rowStyle,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                // Values align to the trailing edge in columns, or to the label
+                // above when a row stacks for long values or accessibility text.
+                Box(modifier = Modifier.weight(1f), contentAlignment = if (stacked) Alignment.CenterStart else Alignment.CenterEnd) {
+                    SkeletonValue(loading = loading) {
+                        Column(horizontalAlignment = if (stacked) Alignment.Start else Alignment.End) {
+                            Text(
+                                text = value,
+                                modifier = if (stacked) Modifier.fillMaxWidth() else Modifier,
+                                style = if (valueMonospaced) {
+                                    rowStyle.withMonoDigits()
+                                } else rowStyle,
+                                color = valueColor ?: MaterialTheme.colorScheme.onSurface,
+                                maxLines = if (stacked) Int.MAX_VALUE else if (style == InspectorRowStyle.Standard) 1 else 2,
+                                overflow = if (stacked) TextOverflow.Clip else TextOverflow.MiddleEllipsis,
+                                textAlign = if (stacked) TextAlign.Start else TextAlign.End,
+                            )
+                            if (secondaryValue != null) {
+                                Text(
+                                    text = secondaryValue,
+                                    modifier = if (stacked) Modifier.fillMaxWidth() else Modifier,
+                                    style = if (valueMonospaced) {
+                                        MaterialTheme.typography.bodyMedium.withMonoDigits()
+                                    } else MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = if (stacked) Int.MAX_VALUE else 1,
+                                    overflow = if (stacked) TextOverflow.Clip else TextOverflow.MiddleEllipsis,
+                                    textAlign = if (stacked) TextAlign.Start else TextAlign.End,
+                                )
+                            }
+                        }
                     }
                 }
+                if (editable) {
+                    Icon(
+                        imageVector = Icons.Outlined.Edit,
+                        contentDescription = "Edit $label",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(InspectorEditHintSize),
+                    )
+                } else if (trailingIcon != null) {
+                    Icon(
+                        imageVector = trailingIcon,
+                        contentDescription = null,
+                        tint = trailingIconTint ?: MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(InspectorEditHintSize),
+                    )
+                }
             }
-        }
-        if (editable) {
-            Icon(
-                imageVector = Icons.Outlined.Edit,
-                contentDescription = "Edit $label",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(InspectorEditHintSize),
-            )
-        } else if (trailingIcon != null) {
-            Icon(
-                imageVector = trailingIcon,
-                contentDescription = null,
-                tint = trailingIconTint ?: MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(InspectorEditHintSize),
-            )
         }
     }
 }
@@ -152,7 +203,11 @@ fun InspectorRow(
 /** Prose belongs to the inspector, with a native reader for longer descriptions. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DescriptionDetailRow(description: String, label: String = "Description") {
+fun DescriptionDetailRow(
+    description: String,
+    label: String = "Description",
+    style: InspectorRowStyle = InspectorRowStyle.Payment,
+) {
     var overflowing by remember(description) { mutableStateOf(false) }
     var showFullDescription by remember(description) { mutableStateOf(false) }
     val configuration = LocalConfiguration.current
@@ -160,9 +215,9 @@ fun DescriptionDetailRow(description: String, label: String = "Description") {
         configuration.fontScale > 1.3f) 1 else 3
 
     Column(
-        modifier = Modifier.fillMaxWidth().padding(
+        modifier = (if (style == InspectorRowStyle.Payment) Modifier.paymentDetailWidth() else Modifier.fillMaxWidth()).padding(
             horizontal = CashuTheme.spacing.comfortable,
-            vertical = CashuTheme.spacing.default,
+            vertical = if (style == InspectorRowStyle.Payment) CashuTheme.spacing.snug else CashuTheme.spacing.default,
         ),
         verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
     ) {
@@ -176,7 +231,7 @@ fun DescriptionDetailRow(description: String, label: String = "Description") {
         SelectionContainer {
             Text(
                 text = description,
-                style = MaterialTheme.typography.bodyLarge,
+                style = MaterialTheme.typography.bodyMedium,
                 maxLines = previewLines,
                 overflow = TextOverflow.Ellipsis,
                 onTextLayout = { overflowing = it.hasVisualOverflow },
@@ -205,5 +260,41 @@ fun DescriptionDetailRow(description: String, label: String = "Description") {
                 PrimaryButton("Done", onClick = { showFullDescription = false })
             }
         }
+    }
+}
+
+/**
+ * A row that opens something else ("Details ›", "Payment 1 ›"). It has no value
+ * to stack under its label, so unlike [InspectorRow] it stays on one line at
+ * every font scale — the chevron never drops onto a line of its own (iOS keeps
+ * these on one line at accessibility sizes too). Styled like a History row.
+ */
+@Composable
+fun DisclosureRow(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .clickable(onClick = onClick)
+            .padding(horizontal = CashuTheme.spacing.comfortable, vertical = CashuTheme.spacing.default),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+        )
+        Icon(
+            imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(InspectorEditHintSize),
+        )
     }
 }

@@ -5,6 +5,11 @@ set -euo pipefail
 # Usage: ./CI/start-nutshell.sh [port]
 
 PORT=${1:-3338}
+STARTUP_TIMEOUT=${NUTSHELL_STARTUP_TIMEOUT_SECONDS:-180}
+if [[ ! "$STARTUP_TIMEOUT" =~ ^[1-9][0-9]*$ ]]; then
+    echo "NUTSHELL_STARTUP_TIMEOUT_SECONDS must be a positive integer" >&2
+    exit 1
+fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENV_DIR="${SCRIPT_DIR}/.nutshell-venv"
 LOG_FILE="${SCRIPT_DIR}/.nutshell.log"
@@ -64,14 +69,22 @@ echo "📝 Log: $LOG_FILE"
 
 # Wait for mint to be ready
 echo "⏳ Waiting for mint to be ready..."
-for i in {1..30}; do
-    if curl -sf "http://localhost:${PORT}/v1/info" > /dev/null 2>&1; then
+# Cold Python imports can exceed a minute while a hosted simulator boots.
+# Use elapsed time rather than a probe count, and bound each HTTP request.
+STARTUP_DEADLINE=$((SECONDS + STARTUP_TIMEOUT))
+while (( SECONDS < STARTUP_DEADLINE )); do
+    if ! kill -0 "$MINT_PID" 2>/dev/null; then
+        echo "❌ Nutshell exited before becoming ready"
+        cat "$LOG_FILE"
+        exit 1
+    fi
+    if curl --connect-timeout 1 --max-time 2 -sf "http://localhost:${PORT}/v1/info" > /dev/null 2>&1; then
         echo "✅ Mint is ready!"
         exit 0
     fi
     sleep 1
 done
 
-echo "❌ Mint failed to start within 30 seconds"
+echo "❌ Mint failed to start within ${STARTUP_TIMEOUT} seconds"
 cat "$LOG_FILE"
 exit 1

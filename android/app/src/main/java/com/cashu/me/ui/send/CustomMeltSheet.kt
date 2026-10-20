@@ -50,7 +50,7 @@ import com.cashu.me.ui.components.InlineNotice
 import com.cashu.me.ui.components.InspectorRow
 import com.cashu.me.ui.components.NoticeSeverity
 import com.cashu.me.ui.components.MintSelectorDirection
-import com.cashu.me.ui.components.MintSelectorRow
+import com.cashu.me.ui.components.AmountEntryMintSelector
 import com.cashu.me.ui.components.NumberPadFooter
 import com.cashu.me.ui.components.QuoteAmountEntry
 import com.cashu.me.ui.components.PaymentDetailContent
@@ -151,9 +151,8 @@ internal fun CustomMeltSheet(walletManager: WalletManager, mint: MintInfo, metho
                             InlineNotice(text = it, severity = NoticeSeverity.Caution)
                         }
                     }, details = {
-                        MintSelectorRow(direction = MintSelectorDirection.Source, mint = mint,
-                            balanceText = balance?.let(::formatted) ?: "…", showBalance = true,
-                            modifier = Modifier.padding(horizontal = CashuTheme.spacing.snug))
+                        AmountEntryMintSelector(direction = MintSelectorDirection.Source, mint = mint,
+                            balanceText = balance?.let(::formatted) ?: "…")
                         Spacer(Modifier.height(CashuTheme.spacing.snug))
                     }, footer = {
                         NumberPadFooter(amount = rawAmount, onAmountChange = { if (!working) rawAmount = it },

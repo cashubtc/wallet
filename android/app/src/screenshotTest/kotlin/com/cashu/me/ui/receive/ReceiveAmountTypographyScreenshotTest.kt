@@ -15,18 +15,20 @@ import com.cashu.me.Models.PaymentMethodKind
 import com.cashu.me.ui.components.SheetHeader
 import com.cashu.me.ui.theme.CashuTheme
 
+// Distinct viewport sizes prevent Layoutlib from reusing a cached scrolling layer
+// across these previews and silently omitting or overlapping amount content.
 @PreviewTest
 @Preview(name = "receive-sats-light", widthDp = 390, heightDp = 780)
-@Preview(name = "receive-sats-dark", widthDp = 390, heightDp = 780, uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Preview(name = "receive-sats-dark", widthDp = 390, heightDp = 781, uiMode = Configuration.UI_MODE_NIGHT_YES)
 @Preview(name = "receive-compact", widthDp = 320, heightDp = 568)
-@Preview(name = "receive-large-text", widthDp = 390, heightDp = 780, fontScale = 1.5f)
+@Preview(name = "receive-large-text", widthDp = 390, heightDp = 782, fontScale = 1.5f)
 @Composable
 fun receiveSatsTypographyScreenshot() {
     ReceiveTypographyPreview()
 }
 
 @PreviewTest
-@Preview(name = "receive-fiat-dark", widthDp = 390, heightDp = 780, uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Preview(name = "receive-fiat-dark", widthDp = 390, heightDp = 783, uiMode = Configuration.UI_MODE_NIGHT_YES)
 @Composable
 fun receiveFiatTypographyScreenshot() {
     ReceiveTypographyPreview(fiat = true)

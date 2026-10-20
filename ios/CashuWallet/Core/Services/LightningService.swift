@@ -13,17 +13,6 @@ enum MintQuoteContextPolicy {
         MintQuoteWalletContext(mintURL: quote.mintUrl.url, unit: quote.unit)
     }
 
-    static func existingAmountlessOffer(
-        in quotes: [MintQuote],
-        requestedContext: MintQuoteWalletContext
-    ) -> MintQuote? {
-        quotes.first {
-            PaymentMethodKind.from($0.paymentMethod) == .bolt12
-                && $0.amount == nil
-                && context(for: $0) == requestedContext
-        }
-    }
-
     static func walletContext(storedQuote: MintQuote?) -> MintQuoteWalletContext? {
         storedQuote.map { context(for: $0) }
     }
@@ -222,13 +211,10 @@ class LightningService: ObservableObject {
         guard let db = walletDatabase(),
               let mintURL = mintURL ?? getActiveMint()?.url else { return nil }
         let pendingQuotes = try await db.getUnissuedMintQuotes()
-        guard let match = pendingQuotes.first(where: {
-            PaymentMethodKind.from($0.paymentMethod) == .onchain
-            && MintURLIdentity.normalized($0.mintUrl.url) == MintURLIdentity.normalized(mintURL)
-            && $0.amountPaid.value == 0
-        }) else { return nil }
-        let info = mintQuoteInfo(from: match, fallbackAmount: nil, paymentMethod: .onchain)
-        return info.isExpired ? nil : info
+        guard let match = MintQuoteDomain.reusableOnchainAddress(in: pendingQuotes, mintURL: mintURL) else {
+            return nil
+        }
+        return mintQuoteInfo(from: match, fallbackAmount: nil, paymentMethod: .onchain)
     }
 
     func checkMintQuote(quoteId: String) async throws -> MintQuoteInfo {
@@ -263,12 +249,11 @@ class LightningService: ObservableObject {
             )
             let quote = try await wallet.checkMintQuote(quoteId: quoteId)
             let paymentMethod = PaymentMethodKind.from(quote.paymentMethod) ?? storedPaymentMethod ?? .bolt11
-            let refreshedQuote = mintQuoteForLocalStorage(
-                mintQuotePreservingLocalMetadata(quote, from: existingQuote),
+            let refreshedQuote = try await storedMintQuoteAfterStatusCheck(
+                quoteId: quoteId,
                 paymentMethod: paymentMethod,
                 fallbackAmount: existingQuote.amount?.value
             )
-            await persistMintQuote(refreshedQuote)
             return mintQuoteInfo(
                 from: refreshedQuote,
                 fallbackAmount: existingQuote.amount?.value,
@@ -444,50 +429,36 @@ class LightningService: ObservableObject {
             throw WalletError.networkError("On-chain payments require an amount before requesting a quote.")
         }
 
+        let amountless = metadata.amountMsat == nil
         let candidates = meltQuoteCandidateMints(
             paymentMethod: paymentMethod,
+            amountless: amountless,
             minimumAmount: invoiceAmountSats ?? amount,
             preferredMintURL: preferredMintURL
         )
 
         guard !candidates.isEmpty else {
+            if amountless, paymentMethod == .bolt11 {
+                throw WalletError.networkError("None of your mints can pay invoices without an amount.")
+            }
             throw WalletError.networkError("No mint supports \(paymentMethod.displayName) payments.")
         }
 
-        var lastError: Error?
-        for mint in candidates {
-            do {
-                let mintUrl = MintUrl(url: mint.url)
-                let wallet = try await repo.getWallet(mintUrl: mintUrl, unit: .sat)
-                AppLogger.wallet.info(
-                    "wallet-op native-call kind=meltQuote resource=\(WalletOperationCoordinator.privacySafeIdentifier(mint.url), privacy: .public) method=\(paymentMethod.rawValue, privacy: .public)"
-                )
-                let quote = try await wallet.meltQuote(
-                    method: paymentMethod.cdkMethod,
-                    request: normalizedRequest,
-                    options: meltOptions,
-                    extra: nil
-                )
+        return try await firstAffordableMeltQuote(in: candidates, failureMessage: "No mint could create a melt quote for this payment request.") { mint in
+            let mintUrl = MintUrl(url: mint.url)
+            let wallet = try await repo.getWallet(mintUrl: mintUrl, unit: .sat)
+            AppLogger.wallet.info(
+                "wallet-op native-call kind=meltQuote resource=\(WalletOperationCoordinator.privacySafeIdentifier(mint.url), privacy: .public) method=\(paymentMethod.rawValue, privacy: .public)"
+            )
+            let quote = try await wallet.meltQuote(
+                method: paymentMethod.cdkMethod,
+                request: normalizedRequest,
+                options: meltOptions,
+                extra: nil
+            )
 
-                let totalRequired = try Self.requiredMeltAmount(amount: quote.amount.value, feeReserve: quote.feeReserve.value)
-                guard mint.balance >= totalRequired else {
-                    lastError = NFCPaymentError.insufficientBalance(required: totalRequired, available: mint.balance)
-                    continue
-                }
-
-                return meltQuoteInfo(from: quote, paymentMethod: paymentMethod, fallbackMintUrl: mint.url)
-            } catch {
-                lastError = error
-                AppLogger.wallet.error(
-                    "melt quote failed resource=\(WalletOperationCoordinator.privacySafeIdentifier(mint.url), privacy: .public) method=\(paymentMethod.rawValue, privacy: .public) error_type=\(String(reflecting: type(of: error)), privacy: .public)"
-                )
-            }
+            return meltQuoteInfo(from: quote, paymentMethod: paymentMethod, fallbackMintUrl: mint.url)
         }
-
-        if let lastError {
-            throw lastError
-        }
-        throw WalletError.networkError("No mint could create a melt quote for this payment request.")
     }
     
     /// Backward-compatible wrapper for older bolt11-specific call sites.
@@ -501,7 +472,7 @@ class LightningService: ObservableObject {
     /// Create a melt quote for paying a human-readable address.
     ///
     /// Resolves the address as a Lightning Address (LUD-16 / LNURL-pay) first. If the
-    /// domain serves no LNURL-pay endpoint, falls back to CDK's `meltHumanReadable`,
+    /// domain returns HTTP 404/410 for LNURL discovery, falls back to `meltBip353Quote`,
     /// which resolves BIP-353 names (DNS-published BOLT12 offers).
     /// - Parameters:
     ///   - address: The user@domain address
@@ -522,38 +493,25 @@ class LightningService: ObservableObject {
         guard amount <= UInt64.max / 1000 else {
             throw WalletError.networkError("Amount is too large.")
         }
-        let amountMsat = amount * 1000
 
-        do {
-            let resolvedLightningInvoice = try await LightningAddressResolver.resolveBolt11Invoice(
-                address: address,
-                amountMsat: amountMsat
-            )
-            return try await lightningAddressMeltQuote(
-                invoice: resolvedLightningInvoice,
-                amount: amount,
-                preferredMintURL: preferredMintURL,
-                repo: repo
-            )
-        } catch let resolverError as LightningAddressResolverError where resolverError.indicatesNoLnurlPayEndpoint {
-            do {
-                return try await bip353MeltQuote(
-                    address: address,
-                    amount: amount,
-                    preferredMintURL: preferredMintURL,
-                    repo: repo
+        return try await LightningAddressResolver.quote(
+            lnurl: {
+                try await self.lightningAddressMeltQuote(
+                    address: address, amount: amount,
+                    preferredMintURL: preferredMintURL, repo: repo
                 )
-            } catch {
-                AppLogger.wallet.error(
-                    "BIP-353 fallback failed error_type=\(String(reflecting: type(of: error)), privacy: .public)"
+            },
+            bip353: {
+                try await self.bip353MeltQuote(
+                    address: address, amount: amount,
+                    preferredMintURL: preferredMintURL, repo: repo
                 )
-                throw resolverError
             }
-        }
+        )
     }
 
     private func lightningAddressMeltQuote(
-        invoice: String,
+        address: String,
         amount: UInt64,
         preferredMintURL: String?,
         repo: WalletRepository
@@ -568,40 +526,23 @@ class LightningService: ObservableObject {
             throw WalletError.networkError("No mint supports Lightning payments.")
         }
 
-        var lastError: Error?
-        for mint in candidates {
-            do {
-                let mintUrl = MintUrl(url: mint.url)
-                let wallet = try await repo.getWallet(mintUrl: mintUrl, unit: .sat)
-                AppLogger.wallet.info(
-                    "wallet-op native-call kind=meltQuote resource=\(WalletOperationCoordinator.privacySafeIdentifier(mint.url), privacy: .public) method=bolt11"
-                )
-                let quote = try await wallet.meltQuote(
-                    method: PaymentMethodKind.bolt11.cdkMethod,
-                    request: invoice,
-                    options: nil,
-                    extra: nil
-                )
+        return try await firstAffordableMeltQuote(
+            in: candidates,
+            failureMessage: "No mint could create a melt quote for this Lightning address.",
+            shouldStopOnError: LightningAddressResolver.isRecipientError
+        ) { mint in
+            let mintUrl = MintUrl(url: mint.url)
+            let wallet = try await repo.getWallet(mintUrl: mintUrl, unit: .sat)
+            AppLogger.wallet.info(
+                "wallet-op native-call kind=meltQuote resource=\(WalletOperationCoordinator.privacySafeIdentifier(mint.url), privacy: .public) method=bolt11"
+            )
+            let quote = try await wallet.meltLightningAddressQuote(
+                lightningAddress: address,
+                amountMsat: Amount(value: amount * 1000)
+            )
 
-                let totalRequired = try Self.requiredMeltAmount(amount: quote.amount.value, feeReserve: quote.feeReserve.value)
-                guard mint.balance >= totalRequired else {
-                    lastError = NFCPaymentError.insufficientBalance(required: totalRequired, available: mint.balance)
-                    continue
-                }
-
-                return meltQuoteInfo(from: quote, paymentMethod: .bolt11, fallbackMintUrl: mint.url)
-            } catch {
-                lastError = error
-                AppLogger.wallet.error(
-                    "Lightning address melt quote failed resource=\(WalletOperationCoordinator.privacySafeIdentifier(mint.url), privacy: .public) error_type=\(String(reflecting: type(of: error)), privacy: .public)"
-                )
-            }
+            return meltQuoteInfo(from: quote, paymentMethod: .bolt11, fallbackMintUrl: mint.url)
         }
-
-        if let lastError {
-            throw lastError
-        }
-        throw WalletError.networkError("No mint could create a melt quote for this Lightning address.")
     }
 
     /// Fallback for human-readable addresses without an LNURL-pay endpoint (BIP-353 names).
@@ -622,40 +563,21 @@ class LightningService: ObservableObject {
             throw WalletError.networkError("No mint supports BOLT12 payments required for this address.")
         }
 
-        var lastError: Error?
-        for mint in candidates {
-            do {
-                let mintUrl = MintUrl(url: mint.url)
-                let wallet = try await repo.getWallet(mintUrl: mintUrl, unit: .sat)
-                AppLogger.wallet.info(
-                    "wallet-op native-call kind=meltQuote resource=\(WalletOperationCoordinator.privacySafeIdentifier(mint.url), privacy: .public) method=bolt12"
-                )
-                let quote = try await wallet.meltHumanReadable(
-                    address: address,
-                    amountMsat: Amount(value: amount * 1000),
-                    network: bitcoinNetwork(for: mint.url)
-                )
+        return try await firstAffordableMeltQuote(in: candidates, failureMessage: "No mint could create a melt quote for this address.") { mint in
+            let mintUrl = MintUrl(url: mint.url)
+            let wallet = try await repo.getWallet(mintUrl: mintUrl, unit: .sat)
+            AppLogger.wallet.info(
+                "wallet-op native-call kind=meltQuote resource=\(WalletOperationCoordinator.privacySafeIdentifier(mint.url), privacy: .public) method=bolt12"
+            )
+            let quote = try await wallet.meltBip353Quote(
+                bip353Address: address,
+                amountMsat: Amount(value: amount * 1000),
+                network: bitcoinNetwork(for: mint.url)
+            )
 
-                let totalRequired = try Self.requiredMeltAmount(amount: quote.amount.value, feeReserve: quote.feeReserve.value)
-                guard mint.balance >= totalRequired else {
-                    lastError = NFCPaymentError.insufficientBalance(required: totalRequired, available: mint.balance)
-                    continue
-                }
-
-                let paymentMethod = PaymentMethodKind.from(quote.paymentMethod) ?? .bolt12
-                return meltQuoteInfo(from: quote, paymentMethod: paymentMethod, fallbackMintUrl: mint.url)
-            } catch {
-                lastError = error
-                AppLogger.wallet.error(
-                    "BIP-353 melt quote failed resource=\(WalletOperationCoordinator.privacySafeIdentifier(mint.url), privacy: .public) error_type=\(String(reflecting: type(of: error)), privacy: .public)"
-                )
-            }
+            let paymentMethod = PaymentMethodKind.from(quote.paymentMethod) ?? .bolt12
+            return meltQuoteInfo(from: quote, paymentMethod: paymentMethod, fallbackMintUrl: mint.url)
         }
-
-        if let lastError {
-            throw lastError
-        }
-        throw WalletError.networkError("No mint could create a melt quote for this address.")
     }
 
     func createOnchainMeltQuote(
@@ -681,45 +603,57 @@ class LightningService: ObservableObject {
             throw WalletError.networkError("No mint supports On-chain payments.")
         }
 
+        return try await firstAffordableMeltQuote(in: candidates, failureMessage: "No mint could create a melt quote for this on-chain payment.") { mint in
+            let mintUrl = MintUrl(url: mint.url)
+            let wallet = try await repo.getWallet(mintUrl: mintUrl, unit: .sat)
+            AppLogger.wallet.info(
+                "wallet-op native-call kind=meltQuote resource=\(WalletOperationCoordinator.privacySafeIdentifier(mint.url), privacy: .public) method=onchain"
+            )
+            let quoteOptions = try await wallet.quoteOnchainMeltOptions(
+                address: normalizedAddress,
+                amount: Amount(value: amount),
+                maxFeeAmount: nil
+            )
+
+            guard let quoteOption = quoteOptions.first else {
+                throw WalletError.networkError("Mint returned no on-chain melt fee options.")
+            }
+
+            let quote = try await wallet.selectOnchainMeltQuote(quote: quoteOption)
+            return meltQuoteInfo(from: quote, paymentMethod: .onchain, fallbackMintUrl: mint.url)
+        }
+    }
+
+    /// Candidate order, overflow-safe affordability and last-error propagation are shared
+    /// by every payment rail; the closure only creates the rail-specific quote.
+    func firstAffordableMeltQuote(
+        in candidates: [MintInfo],
+        failureMessage: String,
+        shouldStopOnError: (Error) -> Bool = { _ in false },
+        createQuote: (MintInfo) async throws -> MeltQuoteInfo
+    ) async throws -> MeltQuoteInfo {
         var lastError: Error?
         for mint in candidates {
             do {
-                let mintUrl = MintUrl(url: mint.url)
-                let wallet = try await repo.getWallet(mintUrl: mintUrl, unit: .sat)
-                AppLogger.wallet.info(
-                    "wallet-op native-call kind=meltQuote resource=\(WalletOperationCoordinator.privacySafeIdentifier(mint.url), privacy: .public) method=onchain"
-                )
-                let quoteOptions = try await wallet.quoteOnchainMeltOptions(
-                    address: normalizedAddress,
-                    amount: Amount(value: amount),
-                    maxFeeAmount: nil
-                )
-
-                guard let quoteOption = quoteOptions.first else {
-                    lastError = WalletError.networkError("Mint returned no on-chain melt fee options.")
+                let quote = try await createQuote(mint)
+                let required = try Self.requiredMeltAmount(amount: quote.amount, feeReserve: quote.feeReserve)
+                guard mint.balance >= required else {
+                    lastError = NFCPaymentError.insufficientBalance(required: required, available: mint.balance)
                     continue
                 }
-
-                let quote = try await wallet.selectOnchainMeltQuote(quote: quoteOption)
-                let totalRequired = try Self.requiredMeltAmount(amount: quote.amount.value, feeReserve: quote.feeReserve.value)
-                guard mint.balance >= totalRequired else {
-                    lastError = NFCPaymentError.insufficientBalance(required: totalRequired, available: mint.balance)
-                    continue
-                }
-
-                return meltQuoteInfo(from: quote, paymentMethod: .onchain, fallbackMintUrl: mint.url)
+                return quote
             } catch {
+                // Recipient failures are independent of the mint. Surface them
+                // immediately so LNURL discovery can choose BIP-353 precisely.
+                if shouldStopOnError(error) { throw error }
                 lastError = error
                 AppLogger.wallet.error(
-                    "on-chain melt quote failed resource=\(WalletOperationCoordinator.privacySafeIdentifier(mint.url), privacy: .public) error_type=\(String(reflecting: type(of: error)), privacy: .public)"
+                    "melt quote failed resource=\(WalletOperationCoordinator.privacySafeIdentifier(mint.url), privacy: .public) error_type=\(String(reflecting: type(of: error)), privacy: .public)"
                 )
             }
         }
-
-        if let lastError {
-            throw lastError
-        }
-        throw WalletError.networkError("No mint could create a melt quote for this on-chain payment.")
+        if let lastError { throw lastError }
+        throw WalletError.networkError(failureMessage)
     }
 
     func subscribeToMintQuote(
@@ -756,6 +690,7 @@ class LightningService: ObservableObject {
 
     private func meltQuoteCandidateMints(
         paymentMethod: PaymentMethodKind,
+        amountless: Bool = false,
         minimumAmount: UInt64?,
         preferredMintURL: String? = nil
     ) -> [MintInfo] {
@@ -771,13 +706,13 @@ class LightningService: ObservableObject {
                activeMint: activeMint,
                mints: mints
            ) {
-            guard preferredMint.supportedMeltMethods.contains(paymentMethod) else {
+            guard preferredMint.canMelt(paymentMethod, amountless: amountless) else {
                 return []
             }
             return [preferredMint]
         }
 
-        let compatibleMints = mints.filter { $0.supportedMeltMethods.contains(paymentMethod) }
+        let compatibleMints = mints.filter { $0.canMelt(paymentMethod, amountless: amountless) }
         guard !compatibleMints.isEmpty else {
             return []
         }
@@ -821,25 +756,21 @@ class LightningService: ObservableObject {
         activeMint: MintInfo?,
         mints: [MintInfo]
     ) -> MintInfo? {
-        let normalizedPreferredURL = normalizedMintURL(preferredMintURL)
+        let normalizedPreferredURL = MintURLIdentity.normalized(preferredMintURL)
         if let mint = mints.first(where: {
-            normalizedMintURL($0.url) == normalizedPreferredURL
+            MintURLIdentity.normalized($0.url) == normalizedPreferredURL
         }) {
             return mint
         }
 
         guard let activeMint,
-              normalizedMintURL(activeMint.url) == normalizedPreferredURL else {
+              MintURLIdentity.normalized(activeMint.url) == normalizedPreferredURL else {
             return nil
         }
 
         return activeMint
     }
 
-    private func normalizedMintURL(_ urlString: String) -> String {
-        MintURLIdentity.normalized(urlString)
-    }
-    
     /// Outcome of a melt confirmation. Pending results are persisted and
     /// reconciled by the manager's serialized foreground poll.
     struct MeltConfirmation {
@@ -1255,7 +1186,8 @@ class LightningService: ObservableObject {
             unit: PaymentRequestDecoder.unitDescription(quote.unit),
             mintURL: quote.mintUrl.url,
             amountPaid: quote.amountPaid.value,
-            amountIssued: quote.amountIssued.value
+            amountIssued: quote.amountIssued.value,
+            updatedAt: quote.updatedAt > 0 ? Date(timeIntervalSince1970: TimeInterval(quote.updatedAt)) : nil
         )
     }
 
@@ -1402,42 +1334,12 @@ class LightningService: ObservableObject {
         return nil
     }
 
-    private func mintQuotePreservingLocalMetadata(
-        _ quote: MintQuote,
-        from existingQuote: MintQuote
-    ) -> MintQuote {
-        let request = quote.request.isEmpty ? existingQuote.request : quote.request
-        let amount = quote.amount ?? existingQuote.amount
-        let expiry = quote.expiry == QuoteExpiry.never && existingQuote.expiry != QuoteExpiry.never
-            ? existingQuote.expiry
-            : quote.expiry
-
-        return MintQuote(
-            id: quote.id,
-            amount: amount,
-            unit: quote.unit,
-            request: request,
-            state: quote.state,
-            expiry: expiry,
-            mintUrl: quote.mintUrl,
-            amountIssued: quote.amountIssued,
-            amountPaid: quote.amountPaid,
-            updatedAt: max(quote.updatedAt, existingQuote.updatedAt),
-            estimatedBlocks: quote.estimatedBlocks ?? existingQuote.estimatedBlocks,
-            paymentMethod: existingQuote.paymentMethod,
-            secretKey: quote.secretKey ?? existingQuote.secretKey,
-            usedByOperation: quote.usedByOperation ?? existingQuote.usedByOperation,
-            version: quote.version
-        )
-    }
-
     func replaceStoredMintQuote(
         _ quote: MintQuote,
         in walletDatabase: WalletSqliteDatabase
     ) async throws {
-        // The FFI upsert accepts a stale record, including its reservation.
         // While the repository lease is held, reject stale app projections
-        // instead of overwriting CDK's newer recovery state.
+        // and reservation changes instead of overwriting CDK's recovery state.
         if let current = try await walletDatabase.getMintQuote(quoteId: quote.id) {
             guard quote.version >= current.version,
                   quote.usedByOperation == current.usedByOperation else {
@@ -1447,28 +1349,58 @@ class LightningService: ObservableObject {
         try await walletDatabase.addMintQuote(quote: quote)
     }
 
+    /// CDK persists status updates but returns the pre-write version. Adopt
+    /// its stored row, and write only app metadata that actually changes.
+    /// Database failures must not fall back to stale recovery ownership.
+    func storedMintQuoteAfterStatusCheck(
+        quoteId: String,
+        paymentMethod: PaymentMethodKind,
+        fallbackAmount: UInt64?
+    ) async throws -> MintQuote {
+        guard let database = walletDatabase() else { throw WalletError.notInitialized }
+        guard let storedQuote = try await database.getMintQuote(quoteId: quoteId) else {
+            throw WalletError.networkError("This receive request is no longer available.")
+        }
+        let normalizedQuote = mintQuoteForLocalStorage(
+            storedQuote, paymentMethod: paymentMethod, fallbackAmount: fallbackAmount
+        )
+        if normalizedQuote.amount != storedQuote.amount || normalizedQuote.expiry != storedQuote.expiry {
+            try await replaceStoredMintQuote(normalizedQuote, in: database)
+            guard let persisted = try await database.getMintQuote(quoteId: quoteId) else {
+                throw WalletError.networkError("This receive request is no longer available.")
+            }
+            return persisted
+        }
+        return storedQuote
+    }
+
     private func refreshStoredOnchainMintQuoteStatus(
         _ existingQuote: MintQuote,
         fallbackAmount: UInt64?
     ) async throws -> MintQuote {
-        guard let repo = walletRepository() else {
+        guard let repo = walletRepository(), let database = walletDatabase() else {
             throw WalletError.notInitialized
         }
 
-        let wallet = try await repo.getWallet(mintUrl: existingQuote.mintUrl, unit: .sat)
-        let checkedQuote = try await wallet.checkMintQuoteStatus(quoteId: existingQuote.id)
+        let wallet = try await repo.getWallet(mintUrl: existingQuote.mintUrl, unit: existingQuote.unit)
+        let storedQuote = try await MintQuoteRecovery.refresh(
+            check: { try await wallet.checkMintQuoteStatus(quoteId: existingQuote.id) },
+            reload: { try await database.getMintQuote(quoteId: existingQuote.id) }
+        )
         let refreshedQuote = mintQuoteForLocalStorage(
-            mintQuotePreservingLocalMetadata(checkedQuote, from: existingQuote),
+            storedQuote,
             paymentMethod: .onchain,
             fallbackAmount: fallbackAmount
         )
 
-        guard let walletDatabase = walletDatabase() else {
-            return refreshedQuote
+        if refreshedQuote.amount != storedQuote.amount || refreshedQuote.expiry != storedQuote.expiry {
+            try await replaceStoredMintQuote(refreshedQuote, in: database)
+            guard let persisted = try await database.getMintQuote(quoteId: existingQuote.id) else {
+                throw WalletError.networkError("This receive request is no longer available.")
+            }
+            return persisted
         }
-
-        try await replaceStoredMintQuote(refreshedQuote, in: walletDatabase)
-        return refreshedQuote
+        return storedQuote
     }
 
     private func createOnchainMintQuote(mintURL: String) async throws -> MintQuoteInfo {
@@ -1516,196 +1448,32 @@ class LightningService: ObservableObject {
 }
 
 enum LightningAddressResolver {
-    static func resolveBolt11Invoice(
-        address: String,
-        amountMsat: UInt64,
-        load: (URLRequest) async throws -> (Data, URLResponse) = { try await URLSession.shared.data(for: $0) }
-    ) async throws -> String {
-        let endpoint = try lightningAddressEndpoint(for: address)
-        let payRequest = try await fetchJSON(LnurlPayRequest.self, from: endpoint, load: load)
-
-        try throwIfServiceError(status: payRequest.status, reason: payRequest.reason)
-
-        guard payRequest.tag == "payRequest" else {
-            throw LightningAddressResolverError.invalidResponse("Lightning address did not return an LNURL-pay request.")
-        }
-        guard let callback = payRequest.callback,
-              let minSendable = payRequest.minSendable,
-              let maxSendable = payRequest.maxSendable else {
-            throw LightningAddressResolverError.invalidResponse("Lightning address response is missing payment details.")
-        }
-        guard amountMsat >= minSendable, amountMsat <= maxSendable else {
-            throw LightningAddressResolverError.amountOutOfRange(
-                requestedMsat: amountMsat,
-                minMsat: minSendable,
-                maxMsat: maxSendable
-            )
-        }
-
-        let callbackURL = try invoiceCallbackURL(callback: callback, amountMsat: amountMsat)
-        let callbackResponse = try await fetchJSON(LnurlPayCallbackResponse.self, from: callbackURL, load: load)
-
-        try throwIfServiceError(status: callbackResponse.status, reason: callbackResponse.reason)
-
-        guard let paymentRequest = callbackResponse.pr?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !paymentRequest.isEmpty else {
-            throw LightningAddressResolverError.missingInvoice
-        }
-        guard let metadata = await CdkRuntime.shared.lightningMetadata(from: paymentRequest),
-              metadata.paymentMethod == .bolt11,
-              metadata.amountMsat == amountMsat else {
-            throw LightningAddressResolverError.invoiceMismatch
-        }
-
-        return metadata.normalizedRequest
-    }
-
-    private static func lightningAddressEndpoint(for address: String) throws -> URL {
-        let trimmed = address.trimmingCharacters(in: .whitespacesAndNewlines)
-        let parts = trimmed.split(separator: "@", maxSplits: 1, omittingEmptySubsequences: false)
-        guard parts.count == 2,
-              !parts[0].isEmpty,
-              !parts[1].isEmpty else {
-            throw LightningAddressResolverError.invalidAddress
-        }
-
-        let username = String(parts[0])
-        let domain = String(parts[1]).lowercased()
-        guard domain.contains("."),
-              !domain.hasPrefix("."),
-              !domain.hasSuffix(".") else {
-            throw LightningAddressResolverError.invalidAddress
-        }
-
-        guard let encodedUsername = username.addingPercentEncoding(withAllowedCharacters: pathSegmentAllowed) else {
-            throw LightningAddressResolverError.invalidAddress
-        }
-
-        var components = URLComponents()
-        components.scheme = "https"
-        components.host = domain
-        components.percentEncodedPath = "/.well-known/lnurlp/\(encodedUsername)"
-
-        guard let url = components.url else {
-            throw LightningAddressResolverError.invalidAddress
-        }
-
-        return url
-    }
-
-    private static func invoiceCallbackURL(callback: String, amountMsat: UInt64) throws -> URL {
-        guard var components = URLComponents(string: callback),
-              components.scheme?.lowercased() == "https",
-              components.host?.isEmpty == false,
-              components.user == nil,
-              components.password == nil,
-              components.fragment == nil else {
-            throw LightningAddressResolverError.invalidCallback
-        }
-
-        var queryItems = components.queryItems ?? []
-        queryItems.removeAll { $0.name.lowercased() == "amount" }
-        queryItems.append(URLQueryItem(name: "amount", value: String(amountMsat)))
-        components.queryItems = queryItems
-
-        guard let url = components.url else {
-            throw LightningAddressResolverError.invalidCallback
-        }
-
-        return url
-    }
-
-    private static func fetchJSON<T: Decodable>(
-        _ type: T.Type, from url: URL,
-        load: (URLRequest) async throws -> (Data, URLResponse)
+    /// Preserve LNURL-first behavior independently of the mint's BOLT12 support.
+    static func quote<T>(
+        lnurl: () async throws -> T,
+        bip353: () async throws -> T
     ) async throws -> T {
-        var request = URLRequest(url: url, timeoutInterval: 20)
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-
-        let (data, response) = try await load(request)
-        guard let httpResponse = response as? HTTPURLResponse,
-              (200..<300).contains(httpResponse.statusCode) else {
-            throw LightningAddressResolverError.networkFailure
-        }
-
-        do {
-            return try JSONDecoder().decode(T.self, from: data)
-        } catch {
-            throw LightningAddressResolverError.invalidResponse("Lightning address service returned an invalid JSON response.")
+        do { return try await lnurl() }
+        catch {
+            guard case let FfiError.Cdk(_, message) = error,
+                  isMissingEndpoint(message) else { throw error }
+            return try await bip353()
         }
     }
 
-    private static func throwIfServiceError(status: String?, reason: String?) throws {
-        guard status?.uppercased() == "ERROR" else { return }
-        throw LightningAddressResolverError.serviceError(reason ?? "Lightning address service returned an error.")
+    // CDK 0.18.2 flattens resolver errors into FFI detail strings. Require the
+    // discovery-stage prefix; callback/mint errors must never trigger fallback.
+    static func isMissingEndpoint(_ message: String) -> Bool {
+        [404, 410].contains { message.hasPrefix("\(discoveryPrefix)\($0)):") }
     }
 
-    private static var pathSegmentAllowed: CharacterSet {
-        var allowed = CharacterSet.urlPathAllowed
-        allowed.remove(charactersIn: "/?#[]@!$&'()*+,;=%")
-        return allowed
-    }
-}
-
-private struct LnurlPayRequest: Decodable {
-    let callback: String?
-    let maxSendable: UInt64?
-    let minSendable: UInt64?
-    let metadata: String?
-    let tag: String?
-    let status: String?
-    let reason: String?
-}
-
-private struct LnurlPayCallbackResponse: Decodable {
-    let pr: String?
-    let status: String?
-    let reason: String?
-}
-
-enum LightningAddressResolverError: LocalizedError {
-    case invalidAddress
-    case invalidCallback
-    case invalidResponse(String)
-    case serviceError(String)
-    case networkFailure
-    case amountOutOfRange(requestedMsat: UInt64, minMsat: UInt64, maxMsat: UInt64)
-    case missingInvoice
-    case invoiceMismatch
-
-    /// True when the failure suggests the domain serves no LNURL-pay endpoint at all
-    /// (e.g. HTTP 404 or a non-LNURL response), so the address may be a BIP-353 name.
-    /// False for definitive LNURL-pay answers (service errors, amount limits, bad invoices),
-    /// where falling back would mask the real error.
-    var indicatesNoLnurlPayEndpoint: Bool {
-        switch self {
-        case .networkFailure, .invalidResponse:
-            return true
-        case .invalidAddress, .invalidCallback, .serviceError, .amountOutOfRange, .missingInvoice, .invoiceMismatch:
-            return false
-        }
+    static func isRecipientError(_ error: Error) -> Bool {
+        guard case let FfiError.Cdk(_, message) = error else { return false }
+        return message.hasPrefix("Failed to request invoice from Lightning address service:")
+            || message.hasPrefix("Failed to parse Lightning address:")
     }
 
-    var errorDescription: String? {
-        switch self {
-        case .invalidAddress:
-            return "That Lightning address does not look valid."
-        case .invalidCallback:
-            return "Lightning address service returned an invalid payment callback."
-        case .invalidResponse(let message):
-            return message
-        case .serviceError(let reason):
-            return reason
-        case .networkFailure:
-            return "Lightning address service could not be reached."
-        case .amountOutOfRange(let requestedMsat, let minMsat, let maxMsat):
-            return "Amount is outside this Lightning address range. Requested \(requestedMsat / 1000) sats, supported range is \(minMsat / 1000)-\(maxMsat / 1000) sats."
-        case .missingInvoice:
-            return "Lightning address service did not return an invoice."
-        case .invoiceMismatch:
-            return "Lightning address service returned an invoice for a different amount."
-        }
-    }
+    private static let discoveryPrefix = "Failed to request invoice from Lightning address service: Failed to fetch pay request data: Http transport error Some("
 }
 
 private extension PaymentMethodKind {

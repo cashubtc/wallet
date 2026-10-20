@@ -14,6 +14,23 @@ import org.junit.Test
 
 class PendingMintQuoteTransactionsTest {
     @Test
+    fun creditedOnchainDepositMatchesEquivalentTrackedMintUrl() {
+        val rows = pendingMintQuoteTransactions(
+            quotes = listOf(quote(amount = null, method = PaymentMethodKind.Onchain,
+                state = MintQuoteState.Paid, amountPaid = 2_100).copy(mintUrl = "https://mint.example.com:443/")),
+            trackedMintUrls = setOf("https://mint.example.com"),
+            quoteIdsWithTransactions = emptySet(),
+            timestamps = mutableMapOf(),
+            nowEpochMillis = 1,
+        )
+        assertEquals(1, rows.size)
+        assertEquals(2_100L, rows.single().amount)
+        assertEquals(TransactionKind.Onchain, rows.single().kind)
+        assertEquals(TransactionStatus.Pending, rows.single().status)
+        assertEquals("https://mint.example.com:443/", rows.single().mintUrl)
+    }
+
+    @Test
     fun buildsPendingLightningRowsWithStableTimestamp() {
         val timestamps = mutableMapOf<String, Long>()
 
@@ -100,10 +117,19 @@ class PendingMintQuoteTransactionsTest {
         assertEquals(TransactionStatus.Pending, rowFor(quote(expiryEpochSeconds = null)).status)
         assertEquals(TransactionStatus.Pending, rowFor(quote(expiryEpochSeconds = 0)).status)
 
-        // Only the BOLT11 rail expires; addresses stay fundable.
-        val onchain = rowFor(quote(method = PaymentMethodKind.Onchain, expiryEpochSeconds = nowSeconds - 1))
+        // A funded address stays mintable past expiry.
+        val onchain = rowFor(quote(method = PaymentMethodKind.Onchain, amountPaid = 10, expiryEpochSeconds = nowSeconds - 1))
         assertEquals(TransactionStatus.Pending, onchain.status)
         assertFalse(onchain.isUnpaidInvoice)
+
+        // An address nothing reached before its expiry lapses like an unpaid invoice.
+        val unfunded = rowFor(quote(amount = null, method = PaymentMethodKind.Onchain, expiryEpochSeconds = nowSeconds - 1))
+        assertEquals(TransactionStatus.Expired, unfunded.status)
+        assertTrue(unfunded.isUnfundedAddress)
+        assertFalse(TransactionDisplay.showsQr(unfunded))
+        val liveAddress = rowFor(quote(amount = null, method = PaymentMethodKind.Onchain, expiryEpochSeconds = nowSeconds + 60))
+        assertEquals(TransactionStatus.Pending, liveAddress.status)
+        assertTrue(TransactionDisplay.showsQr(liveAddress))
     }
 
     @Test
@@ -198,6 +224,63 @@ class PendingMintQuoteTransactionsTest {
         val timestamps = mapOf("quote-kept" to 10L, "old" to 20L)
 
         assertEquals(mapOf("quote-kept" to 10L), pruneMintQuoteTimestamps(listOf(kept), timestamps))
+    }
+
+    @Test
+    fun amountlessOnchainDepositAppearsAtZeroConfirmationsAndStaysPendingUntilIssued() {
+        val deposit = quote(amount = null, method = PaymentMethodKind.Onchain)
+        val observation = OnchainPaymentObservation("txid", 42, false, null)
+        fun rows(q: MintQuoteInfo = deposit, observed: Boolean = true, owned: Boolean = false) =
+            pendingMintQuoteTransactions(
+                quotes = listOf(q), trackedMintUrls = setOf(MintUrl),
+                quoteIdsWithTransactions = if (owned) setOf(q.id) else emptySet(),
+                timestamps = mutableMapOf(), nowEpochMillis = 1,
+                onchainObservations = if (observed) mapOf(q.id to observation) else emptyMap(),
+            )
+
+        val unfunded = rows(observed = false).single()
+        assertTrue(unfunded.isUnfundedAddress)
+        assertEquals("Bitcoin address", TransactionDisplay.title(unfunded))
+        assertEquals(0L, unfunded.amount)
+        assertEquals(TransactionStatus.Pending, unfunded.status)
+        assertEquals("Waiting for deposit", unfunded.statusNote)
+        assertTrue(recentPaymentTransactions(listOf(unfunded), 5).isEmpty())
+        // A requested amount is not evidence of funding.
+        assertEquals(0L, rows(deposit.copy(amount = 100), observed = false).single().amount)
+        val pending = rows().single()
+        assertFalse(pending.isUnfundedAddress)
+        assertEquals("Bitcoin received", TransactionDisplay.title(pending))
+        assertEquals(42L, pending.amount)
+        assertEquals(TransactionStatus.Pending, pending.status)
+        assertEquals("txid", pending.preimage)
+        assertEquals("In mempool", pending.statusNote)
+        assertEquals(listOf(pending), recentPaymentTransactions(rows(), 5))
+        // Offline, the last reload's stage stands; pre-vocabulary notes are rebuilt.
+        fun offline(previous: WalletTransaction) = pendingMintQuoteTransactions(
+            quotes = listOf(deposit), trackedMintUrls = setOf(MintUrl),
+            quoteIdsWithTransactions = emptySet(), timestamps = mutableMapOf(), nowEpochMillis = 1,
+            previousTransactions = listOf(previous),
+        ).single().statusNote
+        assertEquals("2 confirmations", offline(pending.copy(statusNote = "2 confirmations")))
+        assertEquals("In mempool", offline(pending.copy(statusNote = "Payment detected on-chain")))
+        // A credited deposit whose ecash keeps failing reads Retrying.
+        val retrying = pendingMintQuoteTransactions(
+            quotes = listOf(deposit.copy(amountPaid = 42)), trackedMintUrls = setOf(MintUrl),
+            quoteIdsWithTransactions = emptySet(), timestamps = mutableMapOf(), nowEpochMillis = 1,
+            retryStates = mapOf(deposit.id to com.cashu.me.Models.MintQuoteRetryState.RetryScheduled),
+        ).single()
+        assertEquals("Retrying", retrying.statusNote)
+        val cached = pendingMintQuoteTransactions(
+            quotes = listOf(deposit), trackedMintUrls = setOf(MintUrl),
+            quoteIdsWithTransactions = emptySet(), timestamps = mutableMapOf(), nowEpochMillis = 1,
+            previousTransactions = listOf(pending),
+        ).single()
+        assertEquals(42L, cached.amount)
+        assertEquals("txid", cached.preimage)
+        assertEquals(TransactionStatus.Pending, cached.status)
+        assertEquals(42L, rows(deposit.copy(amount = 0)).single().amount)
+        assertEquals(TransactionStatus.Completed, rows(deposit.copy(amountPaid = 42, amountIssued = 42)).single().status)
+        assertTrue(rows(owned = true).isEmpty())
     }
 
     private fun quote(

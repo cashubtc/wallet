@@ -1,37 +1,19 @@
 package com.cashu.me.Core
 
+import com.cashu.me.Models.MintInfo
 import java.net.URL
 
 internal fun normalizeUserMintUrl(
     rawUrl: String,
     allowCleartextLocalTestMints: Boolean = false,
 ): String? {
-    var url = rawUrl.trim()
-    if (url.isBlank()) return null
-
-    url = url.trim('"', '\'')
-    if (!url.startsWith("http://", ignoreCase = true) && !url.startsWith("https://", ignoreCase = true)) {
-        url = "https://$url"
-    }
-    url = url.trimEnd('/')
+    val value = rawUrl.trim().trim('"', '\'')
+    if (value.isBlank()) return null
+    val url = com.cashu.me.Models.MintUrlIdentity.withDefaultScheme(value)
     if (url.any { it.isWhitespace() }) return null
-
-    val parsed = runCatching { URL(url) }.getOrNull() ?: return null
-    if (parsed.host.isNullOrBlank()) return null
-    if (parsed.protocol != "https" &&
-        !(allowCleartextLocalTestMints && parsed.protocol == "http" && parsed.host.isLocalTestMintHost())
-    ) {
-        return null
-    }
+    if (com.cashu.me.Models.MintUrlIdentity.validationError(url, allowCleartextLocalTestMints) != null) return null
     return url
 }
-
-private fun String.isLocalTestMintHost(): Boolean =
-    this == "localhost" ||
-        this == "127.0.0.1" ||
-        this == "10.0.2.2" ||
-        this == "::1" ||
-        this == "[::1]"
 
 internal fun mintUrlCandidates(rawInput: String): List<String> =
     rawInput
@@ -40,6 +22,10 @@ internal fun mintUrlCandidates(rawInput: String): List<String> =
         .distinct()
 
 internal fun shortenMintUrl(url: String): String =
-    url.removePrefix("https://")
-        .removePrefix("http://")
-        .trimEnd('/')
+    com.cashu.me.Models.MintUrlIdentity.display(url)
+
+internal fun mintDisplayName(url: String, mints: List<MintInfo>): String =
+    mints.firstOrNull {
+        normalizedMintUrlForSelection(it.url) == normalizedMintUrlForSelection(url)
+    }?.name?.trim()?.takeIf { it.isNotEmpty() }
+        ?: shortenMintUrl(url.trim())

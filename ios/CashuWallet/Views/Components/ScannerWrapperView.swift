@@ -363,18 +363,6 @@ struct ScannerWrapperView: View {
         refreshCameraAuthorization()
     }
 
-    private static func isHumanReadableAddress(_ content: String) -> Bool {
-        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let atIndex = trimmed.firstIndex(of: "@") else { return false }
-        let user = trimmed[trimmed.startIndex..<atIndex]
-        let domain = trimmed[trimmed.index(after: atIndex)...]
-        return !user.isEmpty && domain.contains(".") && !domain.hasPrefix(".") && !domain.hasSuffix(".")
-    }
-
-    private static func parseLightningPaymentRequest(_ content: String) -> String? {
-        try? LightningRequestParser.parse(content).request
-    }
-
     private func handleScan(code: String) {
         guard scannerModel.isScanning else { return }
         
@@ -428,19 +416,12 @@ struct CashuRequestRouteExplanationRow: View {
     let explanation: CashuRequestRouteExplanation
 
     var body: some View {
-        HStack {
-            Text("Route")
-                .foregroundStyle(.secondary)
-            Spacer()
+        PaymentDetailPair(label: "Route") {
             Text(explanation.localizedValue)
-                .fontWeight(.medium)
-                .multilineTextAlignment(.trailing)
-                .lineLimit(2)
+                .fontWeight(.regular)
                 .truncationMode(.tail)
         }
-        .font(.subheadline)
-        .padding(.horizontal, 4)
-        .padding(.vertical, 14)
+        .paymentDetailRow()
         .accessibilityElement(children: .combine)
     }
 }
@@ -448,6 +429,8 @@ struct CashuRequestRouteExplanationRow: View {
 struct CashuPaymentRequestPayView: View {
     let request: CashuPaymentRequestSummary
     var onComplete: (() -> Void)?
+    /// Closes the sheet on the History tab, where an unconfirmed payment resolves.
+    var onViewHistory: (() -> Void)?
 
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var walletManager: WalletManager
@@ -461,6 +444,8 @@ struct CashuPaymentRequestPayView: View {
     /// Drives the full-screen processing → success → failure status screen.
     /// nil while the user is still on the confirm screen.
     @State private var paymentPhase: PaymentStatusView.Phase?
+    /// The failed payment left the wallet but the mint hasn't confirmed it yet.
+    @State private var paymentAwaitsMint = false
     @State private var activeRouteExplanation: CashuRequestRouteExplanation?
     @State private var showingMintPicker = false
     @State private var selectedMint: MintInfo?
@@ -495,26 +480,23 @@ struct CashuPaymentRequestPayView: View {
                 statusView(paymentPhase)
                     .transition(.opacity)
               } else {
-                // Family-style confirm layout. Fixed-amount any/multi-mint requests
-                // get a top mint pill (matching Pay Lightning); amountless requests
-                // keep their fee preview and source mint beside the amount controls,
-                // directly above the number pad (matching Android and the unified
-                // Send amount screen). A fixed-amount request pinned to one required
-                // mint keeps the centered mint-identity header above the amount.
-                // Read-only request facts sit beneath.
-                // Fixed-amount requests use the shared Pay-flow anchor so their facts
-                // remain aligned with processing / success. Amount entry instead
-                // centers the complete amount lockup in the non-scrolling space above
-                // the fixed fee, mint, and number-pad controls.
+                // Keep the source selector with the amount, as in Receive.
+                // Amount entry reserves its keypad in the footer.
                 PayFlowScaffold(
                     contentLayout: request.amount == nil ? .centered : .anchoredScrollable
                 ) {
-                    VStack(spacing: 12) {
+                    VStack(spacing: 8) {
                         if showsMintIdentityHeader {
                             mintHeader
                                 .padding(.horizontal)
                         }
                         amountSection
+                        if request.amount != nil,
+                           request.isSatUnit,
+                           let selected = pickerSelectedMint {
+                            paymentMintSelector(selected)
+                                .padding(.horizontal, NumberPadMetrics.gutter)
+                        }
                     }
                 } details: {
                     requestDetailsSection
@@ -555,7 +537,7 @@ struct CashuPaymentRequestPayView: View {
                         Button(action: payRequest) {
                             LoadingButtonLabel(title: payButtonTitle, isLoading: isPaying)
                         }
-                        .glassButton()
+                        .flatSheetSecondaryButton()
                         .disabled(!canPay)
                         .accessibilityLabel(payButtonTitle)
                         .accessibilityValue(isPaying ? "In progress" : "")
@@ -570,14 +552,6 @@ struct CashuPaymentRequestPayView: View {
                             }
                             .environmentObject(walletManager)
                         }
-                    }
-                } topAccessory: {
-                    if request.amount != nil,
-                       request.isSatUnit,
-                       let selected = pickerSelectedMint {
-                        paymentMintSelector(selected)
-                            .padding(.horizontal, NumberPadMetrics.gutter)
-                            .padding(.top, 8)
                     }
                 }
               }
@@ -656,14 +630,13 @@ struct CashuPaymentRequestPayView: View {
             useMaximumAmount(from: mint)
         } : nil
 
-        return MintSelectorRow(
+        return AmountEntryMintSelector(
             direction: .source,
             mint: mint,
-            balanceText: AmountFormatter.sats(
+            balanceText: isAmountEntry ? AmountFormatter.sats(
                 mint.balance,
                 useBitcoinSymbol: settings.useBitcoinSymbol
-            ),
-            showsBalance: isAmountEntry,
+            ) : nil,
             onUseMax: onUseMax,
             onChooseMint: candidateMints.count > 1 ? {
                 HapticFeedback.selection()
@@ -867,15 +840,10 @@ struct CashuPaymentRequestPayView: View {
     /// Fee row. "No fee" is exact (the mint charges no swap fee); a sat value is
     /// the exact fee for a fee-charging mint; "—" before an amount exists.
     private var feesRow: some View {
-        HStack {
-            Text("Fees")
-                .foregroundStyle(.secondary)
-            Spacer()
+        PaymentDetailPair(label: "Fees") {
             feeValueText
         }
-        .font(.subheadline)
-        .padding(.horizontal, 4)
-        .padding(.vertical, 14)
+        .paymentDetailRow()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Fees")
         .accessibilityValue(feeAccessibilityValue)
@@ -884,15 +852,10 @@ struct CashuPaymentRequestPayView: View {
     /// Compact, non-scrolling amount-entry metadata. It reserves its place while
     /// the debounced estimate is loading, so neither the mint row nor keypad jumps.
     private var amountEntryFeeRow: some View {
-        HStack {
-            Text("Estimated fee")
-                .foregroundStyle(.secondary)
-            Spacer()
+        PaymentDetailPair(label: "Estimated fee") {
             feeValueText
         }
-        .font(.subheadline)
-        .padding(.horizontal, 4)
-        .padding(.vertical, FlowRowMetrics.verticalPadding)
+        .paymentDetailRow()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Estimated fee")
         .accessibilityValue(feeAccessibilityValue)
@@ -903,16 +866,16 @@ struct CashuPaymentRequestPayView: View {
         if needsAcquire {
             // Funding the mint routes over Lightning, which always carries a fee;
             // the exact reserve is confirmed during the transfer and in History.
-            Text("Network fee").fontWeight(.medium).foregroundStyle(.secondary)
+            Text("Network fee").fontWeight(.regular).foregroundStyle(.secondary)
         } else {
             switch feeState {
             case .loading:
                 ProgressView().controlSize(.mini)
             case .free:
-                Text("No fee").fontWeight(.medium)
+                Text("No fee").fontWeight(.regular)
             case .amount(let fee):
                 Text(AmountFormatter.sats(fee, useBitcoinSymbol: settings.useBitcoinSymbol))
-                    .fontWeight(.medium)
+                    .fontWeight(.regular)
             case .idle:
                 Text("—").foregroundStyle(.secondary)
             case .unavailable:
@@ -986,19 +949,12 @@ struct CashuPaymentRequestPayView: View {
     /// (TransactionDetailView, CashuRequestDetailView). Memo text is prose, so it
     /// wraps once and tail-truncates rather than middle-truncating like an ID.
     private func detailRow(label: String, value: String) -> some View {
-        HStack {
-            Text(label)
-                .foregroundStyle(.secondary)
-            Spacer()
+        PaymentDetailPair(label: label) {
             Text(value)
-                .fontWeight(.medium)
-                .multilineTextAlignment(.trailing)
-                .lineLimit(2)
+                .fontWeight(.regular)
                 .truncationMode(.tail)
         }
-        .font(.subheadline)
-        .padding(.horizontal, 4)
-        .padding(.vertical, 14)
+        .paymentDetailRow()
         .accessibilityElement(children: .combine)
     }
 
@@ -1169,6 +1125,7 @@ struct CashuPaymentRequestPayView: View {
                 let walletMessage = error.walletMessage
                 errorMessage = walletMessage.text
                 errorSeverity = walletMessage.severity
+                paymentAwaitsMint = walletMessage.awaitsMintConfirmation
                 withAnimation(.smooth(duration: 0.3)) {
                     paymentPhase = .failure(
                         message: walletMessage.text,
@@ -1215,11 +1172,13 @@ struct CashuPaymentRequestPayView: View {
                 let text = "Still settling — your balance will update shortly. Try again in a moment."
                 errorMessage = text
                 errorSeverity = .caution
+                paymentAwaitsMint = false
                 withAnimation(.smooth(duration: 0.3)) { paymentPhase = .failure(message: text, isCaution: true) }
             } catch {
                 let walletMessage = error.walletMessage
                 errorMessage = walletMessage.text
                 errorSeverity = walletMessage.severity
+                paymentAwaitsMint = walletMessage.awaitsMintConfirmation
                 withAnimation(.smooth(duration: 0.3)) {
                     paymentPhase = .failure(
                         message: walletMessage.text,
@@ -1243,6 +1202,7 @@ struct CashuPaymentRequestPayView: View {
         var rows: [PaymentStatusView.DetailRow] = [
             .init(
                 label: "Amount",
+                isAmount: true,
                 value: paymentAmount.map { "\($0) sat" } ?? "",
                 isPending: paymentAmount == nil
             ),
@@ -1261,6 +1221,8 @@ struct CashuPaymentRequestPayView: View {
         return PaymentStatusView(
             details: rows,
             phase: phase,
+            awaitingMint: paymentAwaitsMint,
+            onViewHistory: onViewHistory,
             onDone: {
                 onComplete?()
                 dismiss()
@@ -1626,10 +1588,7 @@ struct CashuTopUpInvoiceSheet: View {
         // choreography) instead of popping per poll beat.
         switch phase {
         case .awaitingPayment:
-            Label("Waiting for payment…", systemImage: "clock")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .transition(.opacity)
+            EmptyView()
         case .paying:
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)

@@ -15,6 +15,7 @@ struct CashuRequestDetailView: View {
     let showsNavigationHeader: Bool
 
     @State private var requestId: String
+    @State private var showTechnicalDetails = false
     @State private var showMintPicker = false
     @State private var showAmountPicker = false
     @State private var showUnitPicker = false
@@ -94,6 +95,12 @@ struct CashuRequestDetailView: View {
                 }
             }
         }
+        .sheet(isPresented: $showTechnicalDetails) {
+            if let request {
+                RequestTechnicalDetailsView(request: request)
+                    .presentationDetents([.large])
+            }
+        }
         .sheet(isPresented: $showMintPicker) {
             CashuRequestMintPickerSheet(
                 currentMintUrl: request?.mints.first,
@@ -134,7 +141,7 @@ struct CashuRequestDetailView: View {
             guard let quoteID = monitoredQuoteID else { return }
             await walletManager.monitorDisplayedMintQuote(quoteID: quoteID, homeHaptic: false)
         }
-        .compactBottomSheetSurface()
+        .walletSheetSurface(fillsScreen: true)
     }
 
     /// Keep the current receipt stable; payments arriving during it are picked
@@ -171,6 +178,7 @@ struct CashuRequestDetailView: View {
         if let receivedAmount {
             rows.append(.init(
                 label: "Amount",
+                isAmount: true,
                 value: request.map { formatAmount(receivedAmount, unit: $0.unit) }
                     ?? AmountFormatter.sats(receivedAmount, useBitcoinSymbol: settings.useBitcoinSymbol)
             ))
@@ -248,7 +256,7 @@ struct CashuRequestDetailView: View {
                         }
                         detailRow(
                             label: "Created",
-                            value: request.createdAt.formatted(date: .abbreviated, time: .shortened)
+                            value: request.createdAt.formatted(date: .abbreviated, time: .omitted)
                         )
                         if request.totalReceived > 0 {
                             detailRow(
@@ -256,6 +264,18 @@ struct CashuRequestDetailView: View {
                                 value: formatAmount(request.totalReceived, unit: request.unit)
                             )
                         }
+                        Button { showTechnicalDetails = true } label: {
+                            HStack {
+                                Text("Details").foregroundStyle(.secondary)
+                                Spacer()
+                                Image(systemName: "chevron.right").foregroundStyle(.tertiary)
+                            }
+                            // Same inset column as the rows above it.
+                            .paymentDetailRow(isInteractive: true)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("cashu.history.details")
                     }
                     .padding(.horizontal, 4)
                 }
@@ -286,42 +306,16 @@ struct CashuRequestDetailView: View {
         }
     }
 
-    private var statusBadge: some View {
-        Group {
-            if paymentCount > 0 {
-                HStack(spacing: 6) {
-                    Image(systemName: "checkmark.circle.fill")
-                    Text(paymentCount == 1 ? "1 payment received" : "\(paymentCount) payments received")
-                }
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(.green)
-            } else {
-                HStack(spacing: 6) {
-                    Image(systemName: "clock")
-                        .foregroundStyle(.orange)
-                        .symbolEffect(.pulse, options: .repeating, isActive: !reduceMotion)
-                    Text("Waiting for payment…")
-                }
-                .font(.subheadline)
-                .foregroundStyle(.primary)
-            }
-        }
-        .animation(.easeInOut(duration: 0.2), value: paymentCount)
-    }
-
     @ViewBuilder
     private func deliveryStatus(for request: CashuRequest) -> some View {
-        if paymentCount > 0 || request.rail != .ecash {
-            statusBadge
-        } else if let notice = CashuRequestNostrReadiness.current().deliveryNotice {
+        if paymentCount == 0, request.rail == .ecash,
+                  let notice = CashuRequestNostrReadiness.current().deliveryNotice {
             InlineNotice(
                 message: notice.message,
                 title: notice.title,
                 severity: .caution
             )
             .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.98)))
-        } else {
-            statusBadge
         }
     }
 
@@ -353,19 +347,12 @@ struct CashuRequestDetailView: View {
     // MARK: - Detail rows
 
     private func detailRow(label: String, value: String) -> some View {
-        HStack {
-            Text(label)
-                .foregroundStyle(.secondary)
-            Spacer()
+        PaymentDetailPair(label: label) {
             Text(value)
-                .fontWeight(.medium)
-                .multilineTextAlignment(.trailing)
-                .lineLimit(1)
+                .fontWeight(.regular)
                 .truncationMode(.middle)
         }
-        .font(.subheadline)
-        .padding(.vertical, 12)
-        .padding(.horizontal, 4)
+        .paymentDetailRow()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
         .accessibilityValue(value)
@@ -373,23 +360,16 @@ struct CashuRequestDetailView: View {
 
     private func editableRow(label: String, value: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack {
-                Text(label)
-                    .foregroundStyle(.secondary)
-                Spacer()
+            PaymentDetailPair(label: label) {
                 Text(value)
-                    .fontWeight(.medium)
-                    .multilineTextAlignment(.trailing)
-                    .lineLimit(1)
+                    .fontWeight(.regular)
                     .truncationMode(.middle)
                 Image(systemName: "pencil")
                     .font(.footnote)
                     .foregroundStyle(.tertiary)
                     .padding(.leading, 4)
             }
-            .font(.subheadline)
-            .padding(.vertical, 12)
-            .padding(.horizontal, 4)
+            .paymentDetailRow(isInteractive: true)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

@@ -48,6 +48,8 @@ import com.cashu.me.ui.theme.withMonoDigits
  *
  * When no fiat price is available the control is omitted and the amount renders
  * plain in sats.
+ * [primaryScale] uses the shared amount lockup for display-only payment heroes,
+ * including unit alignment and proportional sizing for long amounts.
  */
 @Composable
 fun AmountFlipDisplay(
@@ -60,6 +62,7 @@ fun AmountFlipDisplay(
     modifier: Modifier = Modifier,
     entryRaw: String? = null,
     primaryTextStyle: TextStyle? = null,
+    primaryScale: AmountScale? = null,
     primaryAccessibilityPrefix: String? = null,
     color: Color = MaterialTheme.colorScheme.onSurface,
 ) {
@@ -159,19 +162,28 @@ fun AmountFlipDisplay(
                     currencyCode = currencyCode,
                     useBitcoinSymbol = useBitcoinSymbol,
                 )
-                AmountText(
-                    text = stateDisplay.primary,
-                    modifier = if (primaryAccessibilityPrefix != null) {
-                        Modifier.semantics {
-                            contentDescription =
-                                "$primaryAccessibilityPrefix: ${stateDisplay.primary}"
-                        }
-                    } else {
-                        Modifier
-                    },
-                    style = primaryStyle,
-                    color = color,
-                )
+                if (primaryScale != null) {
+                    AmountHero(
+                        parts = stateDisplay.primaryParts,
+                        scale = primaryScale,
+                        color = color,
+                        accessibilityPrefix = primaryAccessibilityPrefix,
+                    )
+                } else {
+                    AmountText(
+                        text = stateDisplay.primary,
+                        modifier = if (primaryAccessibilityPrefix != null) {
+                            Modifier.semantics {
+                                contentDescription =
+                                    "$primaryAccessibilityPrefix: ${stateDisplay.primary}"
+                            }
+                        } else {
+                            Modifier
+                        },
+                        style = primaryStyle,
+                        color = color,
+                    )
+                }
             }
         }
         if (secondary != null) {

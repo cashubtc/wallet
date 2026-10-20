@@ -15,6 +15,9 @@ struct WalletMessage {
     let text: String
     let severity: ErrorSeverity
     var recoverability: Recoverability = .retryable
+    /// The payment left the wallet but the mint hasn't confirmed its outcome, so
+    /// the funds are held rather than lost. The UI shows a waiting face, not a failure.
+    var awaitsMintConfirmation = false
 
     static func error(_ text: String) -> WalletMessage { .init(text: text, severity: .error) }
     static func caution(_ text: String) -> WalletMessage { .init(text: text, severity: .caution) }
@@ -22,7 +25,16 @@ struct WalletMessage {
 
     /// Mark this message as a permanent outcome that a retry cannot change.
     func terminal() -> WalletMessage {
-        WalletMessage(text: text, severity: severity, recoverability: .terminal)
+        var message = self
+        message.recoverability = .terminal
+        return message
+    }
+
+    /// Mark this message as a payment the mint still has to confirm.
+    func awaitingMintConfirmation() -> WalletMessage {
+        var message = self
+        message.awaitsMintConfirmation = true
+        return message
     }
 }
 
@@ -34,16 +46,14 @@ enum WalletErrorMessage {
         if let checkpointError = error as? WalletCheckpointError {
             return .error(checkpointError.localizedDescription)
         }
-        if let removalError = error as? MintRemovalPolicyError {
-            // Preserve app-owned safety guidance before generic CDK matching.
-            return .error(removalError.localizedDescription)
-        }
         if let meltRecoveryError = error as? MeltPaymentRecoveryError {
             switch meltRecoveryError {
             case .compensated:
                 return .error("The payment did not complete. Create a fresh quote and try again.")
             case .unresolved:
-                return .caution("The payment outcome is still being checked. Do not retry it yet.").terminal()
+                return .caution("The mint hasn't confirmed this payment yet. Your funds are held until it's paid or refunded.")
+                    .terminal()
+                    .awaitingMintConfirmation()
             }
         }
 
@@ -146,6 +156,25 @@ enum WalletErrorMessage {
 
         guard !normalized.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return nil
+        }
+
+        if normalized.hasPrefix("failed to parse lightning address:") {
+            return .error("That Lightning address does not look valid. Check it and try again.")
+        }
+        if normalized.hasPrefix("failed to request invoice from lightning address service:") {
+            let pattern = #"^Failed to request invoice from Lightning address service: (?:Failed to fetch pay request data: )?Http transport error Some\((\d{3})\):"#
+            if let expression = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
+               let match = expression.firstMatch(in: message, range: NSRange(message.startIndex..., in: message)),
+               let range = Range(match.range(at: 1), in: message) {
+                return .error("The recipient’s Lightning address service is unavailable (HTTP \(message[range])). Try again later.")
+            }
+            return .error("Couldn't get an invoice from the recipient’s Lightning address service. Check the address or try again later.")
+        }
+        if normalized.hasPrefix("failed to resolve bip353 address:")
+            || normalized.hasPrefix("failed to parse bip353 address:")
+            || normalized.hasPrefix("no bolt12 offer found in bip353")
+            || normalized.hasPrefix("failed to parse bip321 payment instruction:") {
+            return .error("Couldn't resolve the recipient’s BIP-353 address. Check the address or try again later.")
         }
 
         if normalized.contains("already being minted") {
@@ -275,6 +304,14 @@ enum WalletErrorMessage {
             || normalized.contains("amount key")
             || normalized.contains("no active keyset") {
             return .error("This mint can't issue ecash for that amount right now. Try another mint.")
+        }
+
+        // The mint refused NUT-05 amountless for this invoice. cdk-common renders the
+        // decoded response as "Amount Less Invoice is not allowed"; its wallet-side
+        // twin is "Amountless invoices are not supported for unit … and method …".
+        if normalized.contains("amount less invoice is not allowed")
+            || normalized.contains("amountless invoices are not supported") {
+            return .caution("This mint can't pay invoices without an amount. Choose another mint.")
         }
 
         if normalized.contains("invoice has no amount")

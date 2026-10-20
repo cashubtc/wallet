@@ -45,6 +45,9 @@ class LivePaymentUITestBase: UITestBase {
     override var mintURL: String { fixtureURL + "/sessions/" + fixtureSession + "/mint/" + backend }
 
     override func setUpWithError() throws {
+        // These journeys include onboarding, real receive/send requests and
+        // relaunch. Each transport can consume its own bounded deadline.
+        executionTimeAllowance = 360
         fixtureURL = ProcessInfo.processInfo.environment["PAYMENT_FIXTURE_URL"]
         try XCTSkipIf(fixtureURL == nil, "Local payment fixtures are required")
         fixtureSession = try fixtureCall("/sessions", method: "POST")["id"] as? String
@@ -52,6 +55,19 @@ class LivePaymentUITestBase: UITestBase {
     }
 
     override func tearDownWithError() throws {
+        if fixtureSession != nil, testRun?.hasSucceeded == false {
+            // Preserve transport outcomes before deleting the isolated session.
+            // The fixture records methods/statuses, never invoices or proofs.
+            if let state = try? fixtureCall("/sessions/" + fixtureSession),
+               let requests = state["requests"],
+               let data = try? JSONSerialization.data(withJSONObject: requests, options: [.prettyPrinted]),
+               let text = String(data: data, encoding: .utf8) {
+                let attachment = XCTAttachment(string: text)
+                attachment.name = "Payment fixture request outcomes"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
+        }
         try super.tearDownWithError()
         if fixtureSession != nil { _ = try fixtureCall("/sessions/" + fixtureSession, method: "DELETE") }
     }
@@ -93,7 +109,11 @@ class LivePaymentUITestBase: UITestBase {
         XCTAssertTrue(screen("receive-lightning-screen").waitForExistence(timeout: 15))
         for digit in ["1", "0", "0"] { tapWhenReady(app.buttons[digit]) }
         tapWhenReady(app.buttons["receive-lightning-create-request"])
-        XCTAssertTrue(app.staticTexts["Payment Received!"].waitForExistence(timeout: 30))
+        // The fixture permits 30 seconds per upstream request. Quote creation,
+        // status polling and issuance are separate operations, so a 30-second
+        // end-to-end deadline can expire while a valid status check is running.
+        XCTAssertTrue(app.staticTexts["Payment Received!"].waitForExistence(timeout: 90),
+                      "The live invoice must settle and issue ecash before continuing")
         tapWhenReady(app.buttons["Done"])
         waitForMainTab()
     }
@@ -132,6 +152,90 @@ class LivePaymentUITestBase: UITestBase {
 }
 
 final class LiveCdkPaymentUITests: LivePaymentUITestBase {
+    /// cashubtc/wallet#381: the hint Paste leaves must survive the field's own
+    /// change event. This CDK FakeWallet mint doesn't advertise NUT-05
+    /// `amountless`, so an amountless invoice lands on the caution instead of
+    /// the amount keypad. Android twin: `AmountlessInvoiceJourneyTest`.
+    func testPastedHintsStayVisible() throws {
+        createWalletWithMint()
+        receiveThroughUI()
+        // Send offers Paste only when the pasteboard already holds text as the
+        // sheet opens. Start empty, as CI simulators do, then fill it first.
+        UIPasteboard.general.items = []
+        UIPasteboard.general.string = Self.amountlessInvoice
+        tapWhenReady(app.buttons["wallet-action-send"])
+
+        paste(Self.amountlessInvoice)
+        let caution = app.staticTexts["None of your mints can pay invoices without an amount. Ask for one with the amount set."]
+        XCTAssertTrue(caution.waitForExistence(timeout: 10), "An amountless invoice no mint can pay must explain why")
+        assertStillShownAfterDebounce(caution)
+        let capture = XCTAttachment(screenshot: app.screenshot())
+        capture.name = "amountless-invoice-caution"
+        capture.lifetime = .keepAlways
+        add(capture)
+
+        tapWhenReady(app.buttons["Clear"])
+        paste("hello world")
+        let unrecognized = app.staticTexts["Unrecognized — try a Lightning address, invoice, Bitcoin address, or Cashu Request"]
+        XCTAssertTrue(unrecognized.waitForExistence(timeout: 10))
+        assertStillShownAfterDebounce(unrecognized)
+    }
+
+    /// Paste through the field's own button, as a user would. Reading another
+    /// app's pasteboard content raises the system paste prompt.
+    private func paste(_ text: String) {
+        UIPasteboard.general.string = text
+        tapWhenReady(app.buttons["Paste from clipboard"])
+        let allow = XCUIApplication(bundleIdentifier: "com.apple.springboard").buttons["Allow Paste"]
+        if allow.waitForExistence(timeout: 3) { allow.tap() }
+    }
+
+    /// Typing detection re-runs 400 ms after the field changes; a paste's hint
+    /// must still be there afterwards.
+    private func assertStillShownAfterDebounce(_ hint: XCUIElement) {
+        Thread.sleep(forTimeInterval: 1.2)
+        XCTAssertTrue(hint.exists, "The hint was cleared by the field's change event")
+    }
+
+    // BOLT #11 example: donation invoice with no amount in the HRP.
+    private static let amountlessInvoice = "lnbc1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdpl2pkx2ctnv5sxxmmwwd5kgetjypeh2ursdae8g6twvus8g6rfwvs8qun0dfjkxaq9qrsgq357wnc5r2ueh7ck6q93dj32dlqnls087fxdwk8qakdyafkq3yap9us6v52vjjsrvywa6rt52cm9r9zqt8r2t7mlcwspyetp5h2tztugp9lfyql"
+
+    func testQuoteAndPaymentUseSameProcessingLayout() throws {
+        createWalletWithMint()
+        receiveThroughUI()
+        let invoice = try fixtureCall("/sessions/" + fixtureSession + "/invoice", method: "POST", body: ["amount": 21])["invoice"] as! String
+        for path in ["/v1/melt/quote/bolt11", "/v1/melt/bolt11"] {
+            _ = try fixtureCall("/sessions/" + fixtureSession + "/faults", method: "POST", body: [
+                "method": "POST", "path": path, "action": "delay", "seconds": 15, "remaining": 1,
+            ])
+        }
+        tapWhenReady(app.buttons["wallet-action-send"])
+        let field = app.descendants(matching: .any).matching(identifier: "Address, invoice, or Cashu Request").firstMatch
+        tapWhenReady(field)
+        field.typeText(invoice)
+        let processing = app.staticTexts["Processing…"]
+        XCTAssertTrue(processing.waitForExistence(timeout: 10))
+        let quoteTitleTop = processing.frame.minY
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'From '")).firstMatch.exists)
+        let quoteCapture = XCTAttachment(screenshot: app.screenshot())
+        quoteCapture.name = "quote-processing"
+        quoteCapture.lifetime = .keepAlways
+        add(quoteCapture)
+
+        let pay = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Pay 21")).firstMatch
+        // 15 seconds of intentional delay plus the fixture's 30-second
+        // upstream deadline, with room for the UI to publish the response.
+        tapWhenReady(pay, timeout: 60)
+        XCTAssertTrue(processing.waitForExistence(timeout: 10))
+        XCTAssertEqual(processing.frame.minY, quoteTitleTop, accuracy: 1)
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'From '")).firstMatch.exists)
+        let paymentCapture = XCTAttachment(screenshot: app.screenshot())
+        paymentCapture.name = "payment-processing"
+        paymentCapture.lifetime = .keepAlways
+        add(paymentCapture)
+        XCTAssertTrue(app.staticTexts["Payment Sent!"].waitForExistence(timeout: 60))
+    }
+
     func testReceivePayAndRelaunch() throws { try receiveThenPayAndReopenHistory() }
 }
 

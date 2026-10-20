@@ -218,7 +218,9 @@ struct QRCodeView: View {
     }
 
     private func startTimer() {
-        guard encoder != nil else { return }
+        // Keep the initial encoded frame in deterministic UI journeys. Updating
+        // it every 100 ms prevents XCTest accessibility snapshots from settling.
+        guard !IntegrationTestConfig.shouldDisableAnimations, encoder != nil else { return }
 
         timer = Timer.scheduledTimer(withTimeInterval: speed.interval, repeats: true) { _ in
             if let part = try? encoder?.nextPart() {

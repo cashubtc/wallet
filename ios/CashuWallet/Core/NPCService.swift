@@ -2,6 +2,39 @@ import Foundation
 import SwiftUI
 import Cdk
 
+struct NPCPaymentReceipt: Equatable {
+    let quoteID: String
+    let address: String
+    let amount: UInt64
+    let paidAt: UInt64?
+
+    @MainActor
+    func belongsToReceiveSession(_ session: NPCReceiveSession) -> Bool {
+        guard amount > 0, address == session.address, let prior = session.priorPaidQuoteIDs else { return false }
+        return !prior.contains(quoteID)
+    }
+}
+
+/// Capture before exposing the QR; keep the baseline when the sheet resumes.
+@MainActor
+final class NPCReceiveSession: ObservableObject {
+    let address: String
+    @Published private(set) var priorPaidQuoteIDs: Set<String>?
+
+    init(address: String) { self.address = address }
+
+    func prepare(paidQuoteIDs: Set<String>) {
+        guard priorPaidQuoteIDs == nil else { return }
+        priorPaidQuoteIDs = paidQuoteIDs
+    }
+}
+
+struct NPCPaymentClaim: Equatable {
+    enum Phase { case claiming, failed }
+    let receipt: NPCPaymentReceipt
+    var phase: Phase
+}
+
 /// Service for NPubCash integration using CDK NpubCashClient
 /// Provides Lightning address functionality via Nostr identity
 @MainActor
@@ -52,6 +85,7 @@ class NPCService: ObservableObject {
     @Published var isLoading: Bool = false
     @Published var isConnected: Bool = false
     @Published var errorMessage: String?
+    @Published private(set) var paymentClaims: [String: NPCPaymentClaim] = [:]
     
     /// Whether the service has been initialized with keys
     var isInitialized: Bool {
@@ -70,14 +104,17 @@ class NPCService: ObservableObject {
     private var client: (any NpubCashClientProtocol)?
     private var suppressSettingsSideEffects = false
     private var connectionTask: Task<Void, Never>?
-    private var sessionID = UUID()
+    private(set) var sessionID = UUID()
     private let makeClient: (String, String) throws -> any NpubCashClientProtocol
     private var nostrSecretKey: String?
     private var nostrPubkey: String?
     private var refreshTimer: Timer?
-    private var paymentCheckInProgress = false
+    @Published private(set) var paymentCheckInProgress = false
     private let settingsStore: SettingsStore
     private let refreshInterval: TimeInterval
+    private let receiveRefreshInterval: TimeInterval
+    private var receiveSessions: [UUID: NPCReceiveSession] = [:]
+    private var observedPaidQuoteIDs: Set<String> = []
     private var shouldCheckIncomingInvoices: Bool {
         settingsStore.checkIncomingInvoices
     }
@@ -90,12 +127,14 @@ class NPCService: ObservableObject {
     init(
         settingsStore: SettingsStore = .shared,
         refreshInterval: TimeInterval = 120,
+        receiveRefreshInterval: TimeInterval = 2,
         makeClient: @escaping (String, String) throws -> any NpubCashClientProtocol = {
             try NpubCashClient(baseUrl: $0, nostrSecretKey: $1)
         }
     ) {
         self.settingsStore = settingsStore
         self.refreshInterval = refreshInterval
+        self.receiveRefreshInterval = receiveRefreshInterval
         self.makeClient = makeClient
         self.isEnabled = settingsStore.npcEnabled
         self.automaticClaim = settingsStore.npcAutomaticClaim
@@ -159,20 +198,8 @@ class NPCService: ObservableObject {
     
     /// Convert hex public key to bech32 npub format
     private func hexToNpub(_ hexPubkey: String) throws -> String {
-        // Convert hex string to bytes
-        var bytes = [UInt8]()
-        var hex = hexPubkey
-        while hex.count >= 2 {
-            let byteString = String(hex.prefix(2))
-            hex = String(hex.dropFirst(2))
-            guard let byte = UInt8(byteString, radix: 16) else {
-                throw NPCError.invalidResponse
-            }
-            bytes.append(byte)
-        }
-        
-        // Use Bech32 encoder from NostrService
-        return try Bech32.encode(hrp: "npub", data: Data(bytes))
+        guard let data = Data(hexString: hexPubkey) else { throw NPCError.invalidResponse }
+        return try Bech32.encode(hrp: "npub", data: data)
     }
     
     // MARK: - Connection
@@ -242,6 +269,9 @@ class NPCService: ObservableObject {
     /// Disconnect and stop background refresh
     func disconnect() {
         sessionID = UUID()
+        receiveSessions.removeAll()
+        observedPaidQuoteIDs.removeAll()
+        paymentClaims.removeAll()
         connectionTask?.cancel()
         connectionTask = nil
         isLoading = false
@@ -310,6 +340,10 @@ class NPCService: ObservableObject {
             lastCheck = Date()
             errorMessage = nil
             
+            observedPaidQuoteIDs.formUnion(quotes.filter { $0.isPaid || $0.state?.uppercased() == "ISSUED" }.map(\.id))
+            // Initialize receivers before starting claims for previously paid invoices.
+            for receiver in receiveSessions.values { receiver.prepare(paidQuoteIDs: observedPaidQuoteIDs) }
+
             // Process paid quotes
             let paidQuotes = quotes
                 .filter { $0.isPaid }
@@ -343,7 +377,9 @@ class NPCService: ObservableObject {
 
         var userInfo: [String: Any] = [
             "mintQuote": mintQuote,
-            "npcQuote": quote
+            "npcQuote": quote,
+            "sessionID": sessionID,
+            "address": lightningAddress
         ]
 
         if quote.locked == true, let p2pkPublicKey {
@@ -367,12 +403,64 @@ class NPCService: ObservableObject {
             object: nil,
             userInfo: [
                 "amount": quote.amount,
-                "quoteId": quote.id
+                "quoteId": quote.id,
+                "receipt": NPCPaymentReceipt(quoteID: quote.id, address: lightningAddress,
+                                             amount: quote.amount, paidAt: quote.paidAt)
             ]
         )
     }
     
     // MARK: - Background Refresh
+
+    /// Owned by the visible address sheet. Cancellation stops focused checks;
+    /// the app-lifetime wallet operation still finishes an already-started claim.
+    func monitorPayments(_ receiveSession: NPCReceiveSession) async {
+        let address = receiveSession.address
+        guard isEnabled, isInitialized, lightningAddress == address else { return }
+        let session = sessionID
+        let receiver = UUID()
+        receiveSessions[receiver] = receiveSession
+        defer { receiveSessions.removeValue(forKey: receiver) }
+        while !Task.isCancelled, isCurrentSession(session), lightningAddress == address {
+            await checkAndClaimPayments()
+            do {
+                try await Task.sleep(for: .seconds(receiveRefreshInterval))
+            } catch { return }
+        }
+    }
+
+    // Claim outcomes are separate from quote-fetch errors: a successful poll
+    // must not clear a failure to credit an already-paid invoice.
+    func updatePaymentClaim(_ receipt: NPCPaymentReceipt, phase: NPCPaymentClaim.Phase, session: UUID) {
+        guard isCurrentSession(session), receipt.address == lightningAddress else { return }
+        // Keep the recovery message stable during automatic background retries.
+        if phase == .claiming, paymentClaims[receipt.quoteID]?.phase == .failed { return }
+        paymentClaims[receipt.quoteID] = NPCPaymentClaim(receipt: receipt, phase: phase)
+    }
+
+    func finishPaymentClaim(quoteID: String, session: UUID) {
+        guard isCurrentSession(session) else { return }
+        paymentClaims.removeValue(forKey: quoteID)
+    }
+
+    func retryPayments() async {
+        guard !paymentCheckInProgress else { return }
+        paymentClaims = paymentClaims.filter { $0.value.phase != .failed }
+        await checkAndClaimPayments()
+    }
+
+    /// Publish only after issuance, balance refresh, and history refresh succeed.
+    /// Returns whether the address sheet owns the confirmation haptic.
+    @discardableResult
+    func publishReceivedPayment(_ receipt: NPCPaymentReceipt) -> Bool {
+        guard isEnabled, receipt.address == lightningAddress, receipt.amount > 0 else { return false }
+        let inFlow = receiveSessions.values.contains {
+            receipt.belongsToReceiveSession($0)
+        }
+        NotificationCenter.default.post(name: .npcPaymentReceived, object: self,
+                                        userInfo: ["receipt": receipt])
+        return inFlow
+    }
     
     func startBackgroundRefresh() {
         stopBackgroundRefresh()
@@ -432,30 +520,18 @@ class NPCService: ObservableObject {
 // MARK: - Error Types
 
 enum NPCError: LocalizedError {
-    case invalidURL
     case invalidResponse
-    case httpError(Int)
     case apiError(String)
     case notConnected
-    case authFailed
-    case notInitialized
     
     var errorDescription: String? {
         switch self {
-        case .invalidURL:
-            return "Invalid API URL"
         case .invalidResponse:
             return "Invalid response from server"
-        case .httpError(let code):
-            return "HTTP error: \(code)"
         case .apiError(let message):
             return message
         case .notConnected:
             return "Not connected to npub.cash"
-        case .authFailed:
-            return "Authentication failed"
-        case .notInitialized:
-            return "NPC service not initialized"
         }
     }
 }
@@ -465,6 +541,7 @@ enum NPCError: LocalizedError {
 extension Notification.Name {
     static let npcQuoteReceived = Notification.Name("npcQuoteReceived")
     static let npcPaymentPending = Notification.Name("npcPaymentPending")
+    static let npcPaymentReceived = Notification.Name("npcPaymentReceived")
 }
 
 private extension NpubCashQuote {

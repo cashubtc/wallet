@@ -249,7 +249,7 @@ struct MintDiscoverySheet: View {
                     }
                 }
         }
-        .flatBottomSheetSurface()
+        .walletSheetSurface(fillsScreen: true)
     }
 }
 

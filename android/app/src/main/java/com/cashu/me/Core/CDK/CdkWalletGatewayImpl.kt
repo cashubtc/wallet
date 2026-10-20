@@ -1,5 +1,8 @@
 package com.cashu.me.Core.CDK
 
+import com.cashu.me.Models.MintUrlIdentity
+import com.cashu.me.Core.toDomainUnit
+
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -130,7 +133,6 @@ class CdkWalletGatewayImpl : WalletGateway {
     private var database: CdkWalletSqliteDatabase? = null
     private var repository: CdkWalletRepository? = null
     private val operationMutex = Mutex()
-    private val lightningAddressResolver = LightningAddressResolver()
 
     override suspend fun initializeLogging(level: String) = cdkCall {
         initLogging(level)
@@ -219,24 +221,20 @@ class CdkWalletGatewayImpl : WalletGateway {
         ensureWalletUnlocked(mintUrl, cdkUnit(unit))
     }
 
-    override suspend fun removeWalletIfSingleUnit(mintUrl: String): Boolean = cdkCall {
+    override suspend fun removeWallets(mintUrl: String): Boolean = cdkCall {
         val repository = requireRepository()
         val registeredWallets = repository.getWallets()
             .filter { wallet ->
                 mintRemovalUrlsMatch(wallet.mintUrl().url, mintUrl)
             }
-        val registeredUnits = normalizedRegisteredWalletUnits(
-            registeredWallets.map { it.unit().toDomainUnit() },
-        )
-        if (registeredUnits.size > 1) {
-            throw MultiUnitWalletRemovalException(registeredUnits)
+        // CDK's removeWallet only drops the in-memory (mint, unit) entry;
+        // proofs stay in the database. Removing units one at a time cannot
+        // lose funds, and a failure part-way keeps the mint listed so a retry
+        // removes only the units still registered.
+        registeredWallets.forEach { wallet ->
+            repository.removeWallet(wallet.mintUrl(), wallet.unit())
         }
-        val registeredUnit = registeredUnits.singleOrNull() ?: return@cdkCall false
-        val wallet = registeredWallets.first { wallet ->
-            wallet.unit().toDomainUnit().trim().equals(registeredUnit, ignoreCase = true)
-        }
-        repository.removeWallet(wallet.mintUrl(), wallet.unit())
-        true
+        registeredWallets.isNotEmpty()
     }
 
     override suspend fun fetchMintInfo(mintUrl: String): MintInfo? = cdkCall {
@@ -251,6 +249,10 @@ class CdkWalletGatewayImpl : WalletGateway {
         ensureWalletUnlocked(mintUrl)
         val wallet = walletFor(mintUrl)
         val info = runCatching { wallet.fetchMintInfo() }.getOrNull()
+        wallet.recoverIncompleteSagas()
+        check(database?.getIncompleteSagas().orEmpty().isEmpty()) {
+            "An interrupted payment is still being recovered. Retry restore after it finishes."
+        }
         val restored = wallet.restore()
         RestoreMintResult(
             mintUrl = mintUrl,
@@ -289,10 +291,6 @@ class CdkWalletGatewayImpl : WalletGateway {
         checkNotNull(database).getBalance(CdkMintUrl(mintUrl), cdkUnit(unit), listOf(org.cashudevkit.ProofState.UNSPENT)).toLong()
     }
 
-    override suspend fun unitBalanceIfExists(mintUrl: String, unit: String): Long? = cdkCall {
-        runCatching { walletFor(mintUrl, cdkUnit(unit)).totalBalance().value.toLong() }.getOrNull()
-    }
-
     override suspend fun createMintQuote(amount: Long?, method: PaymentMethodKind, mintUrl: String, unit: String, description: String?): MintQuoteInfo = cdkCall {
         val cdkUnit = cdkUnit(unit)
         if (!unit.equals("sat", ignoreCase = true)) ensureWalletUnlocked(mintUrl, cdkUnit)
@@ -327,18 +325,46 @@ class CdkWalletGatewayImpl : WalletGateway {
         val wallet = walletFor(quote.mintUrl.url, quote.unit)
         val method = quote.paymentMethod.toDomain()
         val fallbackAmount = quote.amount?.value?.toLong()
-        val checkedQuote = if (method == PaymentMethodKind.Onchain) {
-            wallet.checkMintQuoteStatus(quoteId)
-        } else {
-            wallet.checkMintQuote(quoteId)
-        }
-        val refreshed = checkedQuote
-            .preservingLocalMetadataFrom(quote)
-            .withLocalMintQuoteMetadata(method, fallbackAmount)
-            .let { persistMintQuoteLocalMetadataIfNeeded(it, method, fallbackAmount = fallbackAmount) }
+        val checkedQuote = refreshPersistedMintQuote(
+            check = {
+                if (method == PaymentMethodKind.Onchain) wallet.checkMintQuoteStatus(quoteId)
+                else wallet.checkMintQuote(quoteId)
+            },
+            reload = { database?.getMintQuote(quoteId) },
+        )
+        val refreshed = persistMintQuoteLocalMetadataIfNeeded(checkedQuote, method, fallbackAmount)
         refreshed.toDomain(
             fallbackAmount = fallbackAmount,
             fallbackMethod = method,
+        )
+    }
+
+    override suspend fun recoverDepositKey(request: com.cashu.me.Core.DepositRecoveryRequest): com.cashu.me.Core.DepositRecoveryLookup = cdkCall {
+        val input = request.validated()
+        val unit = cdkUnit(input.unit)
+        val method = cdkPaymentMethod(input.method)
+        val existing = database?.getMintQuote(input.quoteId)
+        existing?.let { stored ->
+            require(mintRemovalUrlsMatch(stored.mintUrl.url, input.mintUrl) && stored.unit == unit && stored.paymentMethod == method) {
+                "This quote belongs to a different mint, currency, or payment method. Check the deposit details."
+            }
+        }
+        ensureWalletUnlocked(input.mintUrl, unit)
+        val wallet = walletFor(input.mintUrl, unit)
+        // Resynchronize lost proof-output counters before importing a quote
+        // that automatic recovery could issue after a restart.
+        wallet.restore()
+        val quote = wallet.fetchMintQuoteWithKeySearch(input.quoteId, method, input.searchLimit)
+        if (!mintRemovalUrlsMatch(quote.mintUrl.url, input.mintUrl) || quote.unit != unit || quote.paymentMethod != method) {
+            if (existing == null) database?.removeMintQuote(input.quoteId)
+            throw IllegalArgumentException("This quote belongs to a different mint, currency, or payment method. Check the deposit details.")
+        }
+        // Unmatched imports must not reach automatic issuance. Preserve every
+        // pre-existing row, key, counter, and saga on an unsuccessful search.
+        if (existing == null && quote.secretKey == null) database?.removeMintQuote(input.quoteId)
+        com.cashu.me.Core.DepositRecoveryLookup(
+            quote.toDomain(fallbackAmount = quote.amount?.value?.toLong(), fallbackMethod = input.method),
+            hasSigningKey = quote.secretKey != null,
         )
     }
 
@@ -402,14 +428,15 @@ class CdkWalletGatewayImpl : WalletGateway {
         val method = quote.paymentMethod.toDomain()
         val fallbackAmount = quote.amount?.value?.toLong()
         val currentQuote = if (method == PaymentMethodKind.Onchain) {
-            walletFor(quote.mintUrl.url, quote.unit)
-                .checkMintQuoteStatus(quoteId)
-                .preservingLocalMetadataFrom(quote)
+            refreshPersistedMintQuote(
+                check = { walletFor(quote.mintUrl.url, quote.unit).checkMintQuoteStatus(quoteId) },
+                reload = { database?.getMintQuote(quoteId) },
+            )
         } else {
             quote
         }
         val normalizedQuote = persistMintQuoteLocalMetadataIfNeeded(
-            quote = currentQuote.withLocalMintQuoteMetadata(method, fallbackAmount),
+            quote = currentQuote,
             method = method,
             fallbackAmount = fallbackAmount,
         )
@@ -442,7 +469,11 @@ class CdkWalletGatewayImpl : WalletGateway {
         val mintUrl = quote.mintUrl?.let(::normalizeMintUrl)
             ?: throw CdkGatewayUnavailable("npub.cash quote ${quote.id} has no mint URL.")
         ensureWalletUnlocked(mintUrl)
-        replaceStoredMintQuote(quote.toCdkMintQuote(mintUrl))
+        // Import only once. A retry must retain CDK's newer counters and saga
+        // reservation instead of replacing them with an external quote snapshot.
+        if (database?.getMintQuote(quote.id) == null) {
+            replaceStoredMintQuote(quote.toCdkMintQuote(mintUrl))
+        }
         val proofs = walletFor(mintUrl).mintUnified(
             quoteId = quote.id,
             amountSplitTarget = CdkSplitTarget.None,
@@ -462,33 +493,26 @@ class CdkWalletGatewayImpl : WalletGateway {
                 } catch (_: ArithmeticException) {
                     throw CdkGatewayUnavailable("Lightning address payment amount is too large.")
                 }
-                try {
-                    /*
-                     * CDK <= 0.17.3 rejects otherwise valid LNURL-pay invoices whose
-                     * description hash does not commit to the advertised metadata
-                     * (cashubtc/cdk#2235). Resolve and amount-check LNURL here, as iOS
-                     * does, then give CDK the BOLT11 invoice directly. Remove this
-                     * workaround once the Android binding includes upstream 7be1e2e7b8.
-                     */
-                    val invoice = lightningAddressResolver.resolveBolt11Invoice(
-                        address = decoded.address,
-                        amountMsat = amountMsat,
-                    )
-                    val quote = wallet.meltQuote(
-                        method = CdkPaymentMethod.Bolt11,
-                        request = invoice,
-                        options = null,
-                        extra = null,
-                    )
-                    return@cdkCall quote.toDomain(fallbackMethod = PaymentMethodKind.Bolt11)
-                } catch (_: LightningAddressResolutionException.Unavailable) {
-                    val quote = wallet.meltBip353Quote(
-                        bip353Address = decoded.address,
-                        amountMsat = amountMsat.toCdkAmount(),
-                        network = bitcoinNetworkFor(wallet.mintUrl().url),
-                    )
-                    return@cdkCall quote.toDomain(fallbackMethod = quote.paymentMethod.toDomain())
-                }
+                val quote = LightningAddressResolver.quote(
+                    lnurl = {
+                        wallet.meltLightningAddressQuote(
+                            lightningAddress = decoded.address,
+                            amountMsat = amountMsat.toCdkAmount(),
+                        )
+                    },
+                    bip353 = {
+                        val info = wallet.fetchMintInfo()
+                        if (info == null || PaymentMethodKind.Bolt12 !in info.nuts.reportedMeltMethods()) {
+                            throw CdkGatewayUnavailable("No mint supports BOLT12 payments required for this address.")
+                        }
+                        wallet.meltBip353Quote(
+                            bip353Address = decoded.address,
+                            amountMsat = amountMsat.toCdkAmount(),
+                            network = bitcoinNetworkFor(wallet.mintUrl().url),
+                        )
+                    },
+                )
+                return@cdkCall quote.toDomain(fallbackMethod = quote.paymentMethod.toDomain())
             }
             is PaymentRequestDecodeResult.Onchain -> {
                 val amount = requirePositiveAmount(amountSats, "On-chain payments require an amount.")
@@ -946,7 +970,7 @@ class CdkWalletGatewayImpl : WalletGateway {
         requireRepository().createWallet(CdkMintUrl(mintUrl), unit, null)
     }
 
-    private fun normalizeMintUrl(url: String): String = url.trim().trimEnd('/')
+    private fun normalizeMintUrl(url: String): String = MintUrlIdentity.normalized(url)
 
     private fun requireRepository(): CdkWalletRepository =
         repository ?: throw CdkGatewayUnavailable("Wallet repository is not initialized.")
@@ -1043,6 +1067,7 @@ class CdkWalletGatewayImpl : WalletGateway {
             supportedMintMethods = mintMethods,
             supportedMeltMethods = meltMethods,
             supportsBolt12MintDescription = nuts.reportsBolt12MintDescription(),
+            supportsAmountlessBolt11Melt = nuts.reportsAmountlessBolt11Melt(),
             contacts = contact.orEmpty().map { MintContact(method = it.method, info = it.info) },
             tosUrl = tosUrl,
             software = version?.let { MintSoftware(name = it.name, version = it.version) },
@@ -1062,14 +1087,6 @@ class CdkWalletGatewayImpl : WalletGateway {
         )
     }
 
-    private fun CdkCurrencyUnit.toDomainUnit(): String = when (this) {
-        CdkCurrencyUnit.Sat -> "sat"
-        CdkCurrencyUnit.Msat -> "msat"
-        CdkCurrencyUnit.Usd -> "usd"
-        CdkCurrencyUnit.Eur -> "eur"
-        CdkCurrencyUnit.Auth -> "auth"
-        is CdkCurrencyUnit.Custom -> unit
-    }
 
     private fun CdkMintQuote.toDomain(
         fallbackAmount: Long?,
@@ -1123,39 +1140,25 @@ class CdkWalletGatewayImpl : WalletGateway {
         else -> CdkQuoteState.UNPAID
     }
 
-    private suspend fun CdkMintQuote.clearingOrphanedReservationIfNeeded(): CdkMintQuote {
-        val operationId = usedByOperation ?: return this
-        val saga = runCatching { database?.getSaga(operationId) }.getOrNull()
-        if (saga != null) return this
-        return clearingReservation()
-    }
-
     private suspend fun replaceStoredMintQuote(quote: CdkMintQuote) {
-        val db = database ?: return
-        try {
-            db.addMintQuote(quote)
-        } catch (cancellation: CancellationException) {
-            throw cancellation
-        } catch (_: Throwable) {
-            db.removeMintQuote(quote.id)
-            db.addMintQuote(quote)
+        val db = database ?: throw CdkGatewayUnavailable("Wallet database is unavailable.")
+        val current = db.getMintQuote(quote.id)
+        if (current != null && (quote.version < current.version || quote.usedByOperation != current.usedByOperation)) {
+            throw CdkGatewayUnavailable("This receive request changed. Refresh it and try again.")
         }
+        db.addMintQuote(quote)
     }
 
     private suspend fun persistMintQuoteLocalMetadataIfNeeded(
         quote: CdkMintQuote,
         method: PaymentMethodKind,
         fallbackAmount: Long? = null,
-        clearOrphanedReservation: Boolean = true,
     ): CdkMintQuote {
-        val withLocalMetadata = quote.withLocalMintQuoteMetadata(method, fallbackAmount)
-        val normalized = if (clearOrphanedReservation) {
-            withLocalMetadata.clearingOrphanedReservationIfNeeded()
-        } else {
-            withLocalMetadata
-        }
-        if (normalized != quote) runCatching { replaceStoredMintQuote(normalized) }
-        return normalized
+        return persistMintQuoteMetadata(
+            quote, method, fallbackAmount,
+            save = ::replaceStoredMintQuote,
+            reload = { database?.getMintQuote(quote.id) },
+        )
     }
 
     private fun CdkMeltQuote.toDomain(fallbackMethod: PaymentMethodKind): MeltQuoteInfo = MeltQuoteInfo(
@@ -1194,9 +1197,9 @@ class CdkWalletGatewayImpl : WalletGateway {
             invoice = paymentRequest,
             fee = fee.value.toLong(),
             unit = unit,
-            paymentMethod = method,
             sagaId = sagaId,
             quoteId = quoteId,
+            paymentMethod = method,
         )
     }
 

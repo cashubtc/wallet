@@ -119,11 +119,6 @@ internal const val RestoreMintsEmptySearching = "Checking for a backup of your m
 internal const val RestoreMintsEmptyNoBackup =
     "No backup found. Add the mints you used before, then restore."
 
-/** Layout chrome for onboarding (large heavy titles) vs in-app settings. */
-enum class RestorePresentation {
-    Onboarding,
-    InApp,
-}
 
 sealed interface RestoreMintPhase {
     data object Pending : RestoreMintPhase
@@ -136,27 +131,9 @@ internal fun restoreMintFailurePhase(error: Throwable): RestoreMintPhase.Failed 
     RestoreMintPhase.Failed(error.userFacingWalletMessage)
 
 @Composable
-fun restoreOnboardingTitleStyle(): TextStyle =
-    CashuTheme.type.title
-
-// Single-line onboarding titles render at full display size and step down only
-// when the line would overflow (narrow devices / large font scales).
-private val OnboardingTitleAutoSize = TextAutoSize.StepBased(
-    minFontSize = 26.sp,
-    maxFontSize = 36.sp,
-    stepSize = 1.sp,
-)
-
-@Composable
 private fun restoreInAppTitleStyle(): TextStyle =
     MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.SemiBold)
 
-@Composable
-private fun restoreTitleStyle(presentation: RestorePresentation): TextStyle =
-    when (presentation) {
-        RestorePresentation.Onboarding -> restoreOnboardingTitleStyle()
-        RestorePresentation.InApp -> restoreInAppTitleStyle()
-    }
 
 // ---------------------------------------------------------------------------
 // Seed
@@ -268,7 +245,6 @@ fun RestoreSeedStageContent(
  */
 @Composable
 fun RestoreSeedStep(
-    presentation: RestorePresentation,
     restoring: Boolean,
     errorText: String?,
     onClearError: () -> Unit,
@@ -285,21 +261,9 @@ fun RestoreSeedStep(
     // choose between. What remains is the checksum, which both hosts enforce.
     val canContinue = seedState.isComplete && !seedState.isReviewing && !restoring
 
-    val titleAlign = if (presentation == RestorePresentation.InApp) {
-        Alignment.CenterHorizontally
-    } else {
-        Alignment.Start
-    }
-    val titleTextAlign = if (presentation == RestorePresentation.InApp) {
-        TextAlign.Center
-    } else {
-        TextAlign.Start
-    }
-    val title = if (presentation == RestorePresentation.InApp) {
-        "Restore Wallet"
-    } else {
-        "Restore wallet."
-    }
+    val titleAlign = Alignment.CenterHorizontally
+    val titleTextAlign = TextAlign.Center
+    val title = "Restore Wallet"
 
     Column(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -309,28 +273,18 @@ fun RestoreSeedStep(
                 .padding(top = CashuTheme.spacing.snug),
             horizontalAlignment = titleAlign,
             verticalArrangement = Arrangement.spacedBy(
-                if (presentation == RestorePresentation.InApp) {
-                    CashuTheme.spacing.micro
-                } else {
-                    CashuTheme.spacing.snug
-                },
+                CashuTheme.spacing.micro,
             ),
         ) {
             Text(
                 text = title,
-                style = restoreTitleStyle(presentation),
+                style = restoreInAppTitleStyle(),
                 color = MaterialTheme.colorScheme.onSurface,
                 textAlign = titleTextAlign,
-                maxLines = if (presentation == RestorePresentation.Onboarding) 1 else Int.MAX_VALUE,
-                autoSize = if (presentation == RestorePresentation.Onboarding) OnboardingTitleAutoSize else null,
             )
             Text(
                 text = "Enter your 12 words in order.",
-                style = if (presentation == RestorePresentation.InApp) {
-                    MaterialTheme.typography.bodyMedium
-                } else {
-                    MaterialTheme.typography.bodyLarge
-                },
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = titleTextAlign,
             )
@@ -721,35 +675,18 @@ fun RestoreMintsStageContent(
  */
 @Composable
 fun RestoreMintsStep(
-    presentation: RestorePresentation,
     walletManager: WalletManager,
     nostrMintBackupService: NostrMintBackupService,
     onBack: () -> Unit,
     onRestore: (List<String>, Map<String, MintInfo>) -> Unit,
-    showBottomBack: Boolean = presentation == RestorePresentation.Onboarding,
+    showBottomBack: Boolean = false,
 ) {
     val staging = rememberRestoreMintsStagingState(walletManager, nostrMintBackupService)
     val backupState by nostrMintBackupService.state.collectAsState()
 
-    val titleAlign = if (presentation == RestorePresentation.InApp) {
-        Alignment.CenterHorizontally
-    } else {
-        Alignment.Start
-    }
-    val titleTextAlign = if (presentation == RestorePresentation.InApp) {
-        TextAlign.Center
-    } else {
-        TextAlign.Start
-    }
-    // Onboarding renders its own header via OnboardingStepHeader and only calls
-    // RestoreMintsStageContent, so that arm is unreachable in production today.
-    // It stays keyed off the shared consts rather than being deleted here — the
-    // whole RestorePresentation split is dead across every Restore*Step and is
-    // worth removing in one pass, not piecemeal.
-    val (title, subtitle) = when (presentation) {
-        RestorePresentation.Onboarding -> RestoreMintsTitleOnboarding to RestoreMintsSubhead
-        RestorePresentation.InApp -> RestoreMintsTitleInApp to RestoreMintsSubhead
-    }
+    val titleAlign = Alignment.CenterHorizontally
+    val titleTextAlign = TextAlign.Center
+    val (title, subtitle) = RestoreMintsTitleInApp to RestoreMintsSubhead
 
     Column(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -763,19 +700,13 @@ fun RestoreMintsStep(
         ) {
             Text(
                 text = title,
-                style = restoreTitleStyle(presentation),
+                style = restoreInAppTitleStyle(),
                 color = MaterialTheme.colorScheme.onSurface,
                 textAlign = titleTextAlign,
-                maxLines = if (presentation == RestorePresentation.Onboarding) 1 else Int.MAX_VALUE,
-                autoSize = if (presentation == RestorePresentation.Onboarding) OnboardingTitleAutoSize else null,
             )
             Text(
                 text = subtitle,
-                style = if (presentation == RestorePresentation.InApp) {
-                    MaterialTheme.typography.bodyMedium
-                } else {
-                    MaterialTheme.typography.bodyLarge
-                },
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = titleTextAlign,
             )
@@ -1070,6 +1001,10 @@ fun rememberRestoreProgressState(
     val state = remember(walletManager, mintUrls) {
         RestoreProgressState(scope, walletManager, mintUrls)
     }
+    val walletState by walletManager.state.collectAsState()
+    LaunchedEffect(walletState.errorMessage) {
+        if (walletState.errorMessage != null) state.finishing = false
+    }
     LaunchedEffect(state) { state.restoreAll() }
     return state
 }
@@ -1152,31 +1087,22 @@ fun RestoreProgressRows(
  */
 @Composable
 fun RestoreProgressStep(
-    presentation: RestorePresentation,
     walletManager: WalletManager,
     mintUrls: List<String>,
     stagedPreviews: Map<String, MintInfo> = emptyMap(),
     onContinue: () -> Unit,
 ) {
     val state = rememberRestoreProgressState(walletManager, mintUrls)
+    val walletState by walletManager.state.collectAsState()
 
-    val titleAlign = if (presentation == RestorePresentation.InApp) {
-        Alignment.CenterHorizontally
-    } else {
-        Alignment.Start
-    }
-    val titleTextAlign = if (presentation == RestorePresentation.InApp) {
-        TextAlign.Center
-    } else {
-        TextAlign.Start
-    }
-    val title = when (presentation) {
-        RestorePresentation.Onboarding -> "Restoring wallet."
-        RestorePresentation.InApp ->
-            if (state.allSettled) "Restore complete" else "Restoring…"
-    }
+    val titleAlign = Alignment.CenterHorizontally
+    val titleTextAlign = TextAlign.Center
+    val title = if (state.allSettled) "Restore complete" else "Restoring…"
 
     Column(modifier = Modifier.fillMaxSize()) {
+        walletState.errorMessage?.let {
+            InlineNotice(text = it, severity = NoticeSeverity.Error)
+        }
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1188,26 +1114,20 @@ fun RestoreProgressStep(
         ) {
             Text(
                 text = title,
-                style = restoreTitleStyle(presentation),
+                style = restoreInAppTitleStyle(),
                 color = MaterialTheme.colorScheme.onSurface,
                 textAlign = titleTextAlign,
-                maxLines = if (presentation == RestorePresentation.Onboarding) 1 else Int.MAX_VALUE,
-                autoSize = if (presentation == RestorePresentation.Onboarding) OnboardingTitleAutoSize else null,
             )
             Text(
                 text = state.subhead,
-                style = if (presentation == RestorePresentation.InApp) {
-                    MaterialTheme.typography.bodyMedium
-                } else {
-                    MaterialTheme.typography.bodyLarge
-                },
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = titleTextAlign,
             )
             if (state.totalRecovered > 0L) {
                 RestoreRecoveredTotal(
                     totalRecovered = state.totalRecovered,
-                    centered = presentation == RestorePresentation.InApp,
+                    centered = true,
                 )
             }
         }
@@ -1232,12 +1152,19 @@ fun RestoreProgressStep(
             PrimaryButton(
                 text = "Continue",
                 onClick = {
+                    walletManager.clearError()
                     state.finishing = true
                     onContinue()
                 },
                 enabled = state.allSettled && !state.finishing,
                 loading = state.finishing,
                 colors = ButtonDefaults.filledTonalButtonColors(),
+            )
+            Text(
+                text = "If you restored a different seed, continuing replaces your previous wallet. Its backup is kept until you continue.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
             )
         }
     }
@@ -1379,7 +1306,7 @@ fun restoreSeedInstallErrorMessage(error: Throwable): String {
 
 /** iOS shortenUrl: strip scheme + trailing slash for display. */
 fun shortenMintUrl(url: String): String =
-    url.removePrefix("https://").removePrefix("http://").trimEnd('/')
+    com.cashu.me.Models.MintUrlIdentity.display(url)
 
 /** iOS normalizedMintUrl: quote-strip, https-default, trailing-slash trim. */
 fun normalizeMintUrl(raw: String): String? {

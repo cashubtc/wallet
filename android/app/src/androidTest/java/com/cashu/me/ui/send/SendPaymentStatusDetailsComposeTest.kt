@@ -51,6 +51,7 @@ class SendPaymentStatusDetailsComposeTest {
         compose.setCashuContent {
             PaymentStatusScreen(
                 phase = phase,
+                successAmount = "21 sat",
                 title = when (phase) {
                     PaymentStatusPhase.Processing -> "Sending payment…"
                     PaymentStatusPhase.Success -> "Payment sent"
@@ -61,6 +62,7 @@ class SendPaymentStatusDetailsComposeTest {
                         details = details,
                         formatter = AmountFormatter(Locale.US),
                         useBitcoinSymbol = false,
+                        showAmount = phase != PaymentStatusPhase.Success,
                     )
                 },
                 showRowsDuringProcessing = true,
@@ -69,7 +71,9 @@ class SendPaymentStatusDetailsComposeTest {
 
         assertFactsDisplayed()
         compose.runOnIdle { phase = PaymentStatusPhase.Success }
-        assertFactsDisplayed()
+        compose.onNodeWithContentDescription("Amount: 21 sat", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithText("Amount").assertDoesNotExist()
+        compose.onNodeWithText("Up to 3 sat").assertIsDisplayed()
         compose.runOnIdle { phase = PaymentStatusPhase.Failure }
         assertFactsDisplayed()
     }
@@ -81,6 +85,7 @@ class SendPaymentStatusDetailsComposeTest {
         compose.setCashuContent {
             PaymentStatusScreen(
                 phase = phase,
+                successAmount = "21 sat",
                 title = when (phase) {
                     PaymentStatusPhase.Processing -> "Processing"
                     PaymentStatusPhase.Success -> "Payment sent"

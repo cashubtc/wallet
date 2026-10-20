@@ -110,16 +110,22 @@ enum PaymentRequestDecodeResult: Equatable, Sendable {
 }
 
 extension PaymentRequestDecodeResult {
-    /// Clean caution copy for amountless request types this wallet still cannot
-    /// pay. BOLT12 offers are intentionally excluded: Send collects an amount
-    /// and passes it through CDK's amountless melt option.
-    var amountlessMeltCaution: String? {
-        switch self {
-        case .bolt11(let amountSats, _) where amountSats == nil:
-            return "This invoice doesn't set an amount. Ask the sender for one with the amount set."
-        default:
+    /// True for a BOLT11 invoice that leaves the amount to the payer. Send
+    /// collects the amount and passes it through CDK's amountless melt option,
+    /// exactly like an amountless BOLT12 offer.
+    var isAmountlessBolt11: Bool {
+        if case .bolt11(nil, _) = self { return true }
+        return false
+    }
+
+    /// Clean caution copy when none of `mints` can pay this amountless BOLT11
+    /// invoice (NUT-05 `amountless`). Nil for everything the wallet can route.
+    func amountlessMeltCaution(payableBy mints: [MintInfo]) -> String? {
+        guard isAmountlessBolt11,
+              !mints.contains(where: { $0.canMelt(.bolt11, amountless: true) }) else {
             return nil
         }
+        return "None of your mints can pay invoices without an amount. Ask for one with the amount set."
     }
 }
 
@@ -272,17 +278,6 @@ enum PaymentRequestDecoder {
         amountMsat / 1000 + (amountMsat % 1000 == 0 ? 0 : 1)
     }
 
-    /// True if the request carries an enforceable amount the user can't change
-    /// (BOLT11 with amount, amountful BOLT12). Triggers auto-quote on tap.
-    static func amountLocked(_ result: PaymentRequestDecodeResult) -> Bool {
-        switch result {
-        case .bolt11(let amount, _), .bolt12(let amount, _):
-            return amount != nil
-        case .lightningAddress, .onchain, .cashuPaymentRequest, .unrecognized:
-            return false
-        }
-    }
-
     /// SF Symbol for the result type. Used by chip + live feedback.
     static func iconName(_ result: PaymentRequestDecodeResult) -> String {
         switch result {
@@ -314,6 +309,27 @@ enum PaymentRequestDecoder {
         return "\(trimmed.prefix(8))…\(trimmed.suffix(6))"
     }
 
+    /// How a request reads in the Send "To" row: the fixed `prefix(8)…suffix(6)`
+    /// cut, with Lightning addresses whole. BOLT11, BOLT12 and bech32 addresses
+    /// are case-insensitive and QR codes carry them uppercase, so they show
+    /// lowercase; case-sensitive formats (base58 addresses, Cashu requests)
+    /// keep their case.
+    static func displayRequest(_ raw: String, result: PaymentRequestDecodeResult) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        switch result {
+        case .lightningAddress(let address):
+            return address
+        case .bolt11, .bolt12:
+            return middleTruncated(trimmed.lowercased())
+        case .onchain:
+            let lowered = trimmed.lowercased()
+            let isBech32 = ["bc1", "tb1", "bcrt1"].contains { lowered.hasPrefix($0) }
+            return middleTruncated(isBech32 ? lowered : trimmed)
+        case .cashuPaymentRequest, .unrecognized:
+            return middleTruncated(trimmed)
+        }
+    }
+
     /// Short representation for invoices and addresses; human-readable addresses are
     /// returned in full.
     static func shortRepresentation(_ raw: String, result: PaymentRequestDecodeResult) -> String {
@@ -332,16 +348,6 @@ enum PaymentRequestDecoder {
         return "\(amount) \(summary.unit ?? "sat")"
     }
 
-    static func suggestedMode(_ result: PaymentRequestDecodeResult) -> MeltView.MeltMode? {
-        switch result {
-        case .bolt11, .bolt12, .lightningAddress:
-            return .lightning
-        case .onchain:
-            return .onchain
-        case .cashuPaymentRequest, .unrecognized:
-            return nil
-        }
-    }
 
     static func unitDescription(_ unit: Cdk.CurrencyUnit) -> String {
         switch unit {

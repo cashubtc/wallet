@@ -108,11 +108,9 @@ struct LightningAddressSettingsSection: View {
                 }
             )
         }
-        .backdropSheet(isPresented: $showAddressQR) {
-            QRCodeDetailSheet(
-                title: "Lightning Address",
-                content: npcService.lightningAddress
-            )
+        .fullScreenCover(isPresented: $showAddressQR) {
+            LightningAddressReceiveView(address: npcService.lightningAddress)
+                .canvasSheetBackground()
         }
     }
 
@@ -138,58 +136,49 @@ struct LightningAddressSettingsSection: View {
     // MARK: - Address row
 
     private var addressRow: some View {
-        Button { HapticFeedback.selection(); showAddressQR = true } label: {
-            HStack(spacing: 12) {
-                Circle()
-                    .fill(statusColor)
-                    .frame(width: 7, height: 7)
-                    .accessibilityHidden(true)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(npcService.lightningAddress)
-                        .font(.system(.body, design: .monospaced))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Text(statusLabel)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+        HStack(spacing: 8) {
+            Button { HapticFeedback.selection(); showAddressQR = true } label: {
+                Text(npcService.lightningAddress)
+                    .font(.system(.body, design: .monospaced))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Lightning address: \(npcService.lightningAddress)")
+            .accessibilityHint("Shows QR code. Long-press for copy and share.")
+            .contextMenu {
+                Button(action: copyLightningAddress) {
+                    Label("Copy address", systemImage: "doc.on.doc")
                 }
-
-                Spacer(minLength: 8)
-
-                Image(systemName: "qrcode")
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(.secondary)
+                ShareLink(item: npcService.lightningAddress) {
+                    Label("Share address", systemImage: "square.and.arrow.up")
+                }
             }
-            .padding(.horizontal, 4)
-            .padding(.vertical, 14)
-            .contentShape(Rectangle())
+
+            HStack(spacing: 0) {
+                Button(action: copyLightningAddress) {
+                    Image(systemName: "doc.on.doc")
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel("Copy Lightning address")
+
+                Button { HapticFeedback.selection(); showAddressQR = true } label: {
+                    Image(systemName: "qrcode")
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel("Show Lightning address QR code")
+            }
+            .font(.body.weight(.medium))
+            .foregroundStyle(.secondary)
+            .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Lightning address: \(npcService.lightningAddress). \(statusLabel).")
-        .accessibilityHint("Shows QR code. Long-press for copy and share.")
-        .contextMenu {
-            Button {
-                copyLightningAddress()
-            } label: {
-                Label("Copy address", systemImage: "doc.on.doc")
-            }
-            ShareLink(item: npcService.lightningAddress) {
-                Label("Share address", systemImage: "square.and.arrow.up")
-            }
-        }
-    }
-
-    private var statusColor: Color {
-        if npcService.errorMessage != nil { return .red }
-        return npcService.isConnected ? .green : .orange
-    }
-
-    private var statusLabel: String {
-        if npcService.errorMessage != nil { return npcService.isConnected ? "Needs attention" : "Not connected" }
-        if npcService.isConnected { return "Connected" }
-        return npcService.isLoading ? "Connecting" : "Not connected"
+        .padding(.horizontal, 4)
+        .padding(.vertical, 14)
     }
 
     // MARK: - Receiving Mint row
@@ -301,5 +290,198 @@ struct LightningAddressSettingsSection: View {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .abbreviated
         return formatter.localizedString(for: date, relativeTo: Date())
+    }
+}
+
+/// Shared by Lightning settings and Receive Bitcoin; this modal owns
+/// focused polling, so copy/share and dismissal keep their existing behavior.
+struct LightningAddressReceiveView: View {
+    let address: String
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
+    @ObservedObject private var npcService: NPCService
+    @ObservedObject private var settings: SettingsManager
+    private let announce: (String) -> Void
+    @StateObject private var session: NPCReceiveSession
+    @State private var receipt: NPCPaymentReceipt?
+    @State private var pendingReceipt: NPCPaymentReceipt?
+
+    init(address: String, npcService: NPCService = .shared, settings: SettingsManager = .shared,
+         announce: @escaping (String) -> Void = { AccessibilityNotification.Announcement($0).post() }) {
+        self.address = address
+        self.npcService = npcService
+        self.settings = settings
+        self.announce = announce
+        _session = StateObject(wrappedValue: NPCReceiveSession(address: address))
+    }
+
+    var body: some View {
+        LightningAddressReceiveContent(
+            address: address,
+            receivedAmount: receipt.map { AmountFormatter.sats($0.amount, useBitcoinSymbol: settings.useBitcoinSymbol) },
+            statusMessage: statusMessage,
+            onRetry: canRetry ? { Task { await npcService.retryPayments() } } : nil,
+            retrying: npcService.paymentCheckInProgress,
+            preparing: settings.checkIncomingInvoices && session.priorPaidQuoteIDs == nil,
+            announce: announce
+        )
+        .task(id: scenePhase == .active && receipt == nil) {
+            guard scenePhase == .active, receipt == nil else { return }
+            await npcService.monitorPayments(session)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .npcPaymentReceived)) { notification in
+            guard receipt == nil, let payment = notification.userInfo?["receipt"] as? NPCPaymentReceipt,
+                  payment.belongsToReceiveSession(session) else { return }
+            receipt = payment
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .npcPaymentPending)) { notification in
+            guard let payment = notification.userInfo?["receipt"] as? NPCPaymentReceipt,
+                  payment.belongsToReceiveSession(session) else { return }
+            pendingReceipt = payment
+        }
+        .onChange(of: npcService.isEnabled) { _, enabled in if !enabled { dismiss() } }
+        .onChange(of: npcService.lightningAddress) { _, value in if value != address { dismiss() } }
+    }
+
+    private var activeClaim: NPCPaymentClaim? {
+        npcService.paymentClaims.values
+            .filter { $0.receipt.belongsToReceiveSession(session) }
+            .sorted { ($0.receipt.paidAt ?? 0) > ($1.receipt.paidAt ?? 0) }
+            .first
+    }
+
+    private var canRetry: Bool {
+        settings.checkIncomingInvoices && (activeClaim?.phase == .failed || npcService.errorMessage != nil)
+    }
+
+    private var statusMessage: String? {
+        if !settings.checkIncomingInvoices {
+            return "Payment checks are off in Privacy settings."
+        }
+        if activeClaim?.phase == .failed {
+            return "Payment detected, but it couldn't be added to your wallet."
+        }
+        if let error = npcService.errorMessage { return error }
+        if activeClaim?.phase == .claiming { return "Payment detected. Adding to your wallet…" }
+        if !npcService.automaticClaim {
+            if let pendingReceipt {
+                return "Payment detected: \(AmountFormatter.sats(pendingReceipt.amount, useBitcoinSymbol: settings.useBitcoinSymbol)). Auto-claim is off."
+            }
+            return "Auto-claim is off. Enable it in Lightning settings to add payments to your wallet."
+        }
+        return nil
+    }
+}
+
+/// The modal and its navigation chrome stay mounted while only the body changes.
+struct LightningAddressReceiveContent: View {
+    let address: String
+    var receivedAmount: String? = nil
+    var statusMessage: String? = nil
+    var onRetry: (() -> Void)? = nil
+    var retrying = false
+    var preparing = false
+    var announce: (String) -> Void = { AccessibilityNotification.Announcement($0).post() }
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if let receivedAmount {
+                    PaymentStatusView(
+                        details: [.init(label: "Amount", isAmount: true, value: receivedAmount)],
+                        phase: .success,
+                        successTitle: "Payment Received!",
+                        onDone: { dismiss() },
+                        onRetry: {}
+                    )
+                    .accessibilityIdentifier("lightning-address-payment-received")
+                    .transition(.opacity)
+                } else {
+                    waitingContent.transition(.opacity)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .animation(reduceMotion ? nil : .smooth(duration: 0.3), value: receivedAmount != nil)
+            .navigationTitle("Lightning Address")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) { SheetCloseButton() }
+            }
+        }
+        .onChange(of: statusMessage) { oldValue, newValue in
+            if receivedAmount == nil, let message = newValue, message != oldValue {
+                announce(message)
+            }
+        }
+        .onChange(of: receivedAmount) { _, amount in
+            if let amount {
+                announce("Payment received. \(amount)")
+            }
+        }
+    }
+
+    private var waitingContent: some View {
+        GeometryReader { geometry in
+            ScrollView {
+                VStack(spacing: 24) {
+                    if preparing {
+                        ProgressView("Preparing to receive…")
+                    } else {
+                        QRCodeView(content: address, showControls: false)
+                            .padding()
+                            .frame(width: min(280, geometry.size.width - 48),
+                                   height: min(280, geometry.size.width - 48))
+                            .background(Color.white)
+                            .clipShape(.rect(cornerRadius: 16))
+                    }
+                    Text(address)
+                        .font(.system(.subheadline, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .padding(.horizontal, 24)
+                        .accessibilityLabel("Lightning address")
+                        .accessibilityValue(address)
+                    if let statusMessage {
+                        Text(statusMessage)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.horizontal, 24)
+                    }
+                    if let onRetry {
+                        Button(action: onRetry) {
+                            Text("Try again")
+                                .font(.subheadline.weight(.medium))
+                                .frame(minHeight: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(retrying)
+                    }
+                }
+                .frame(maxWidth: .infinity, minHeight: geometry.size.height)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+        }
+        .safeAreaInset(edge: .bottom) {
+            if !preparing {
+                HStack(spacing: 12) {
+                    Button("Copy") {
+                        UIPasteboard.general.string = address
+                        ConfirmationToast.show("Copied lightning address")
+                    }
+                    .flatSheetSecondaryButton()
+                    ShareLink(item: address) { Text("Share") }
+                        .glassButton(prominent: true)
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 16)
+            }
+        }
     }
 }

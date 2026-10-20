@@ -128,7 +128,10 @@ fun CashuRequestRow(
                         .copy(fontWeight = FontWeight.Medium)
                         .withMonoDigits(),
                     color = if (received) {
-                        CashuTheme.colors.onReceivedContainer
+                        // Match TransactionRow / iOS CashuRequestAmountColumn's plain
+                        // .green — onReceivedContainer is the pale text-on-tinted-fill
+                        // role and reads as washed-out mint on the bare canvas here.
+                        CashuTheme.colors.received
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     },

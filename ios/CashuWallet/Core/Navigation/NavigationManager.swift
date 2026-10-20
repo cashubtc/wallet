@@ -11,12 +11,13 @@ enum WalletSheet: Identifiable {
     case receive
     case send(prefill: String?)
     case sendEdit(prefill: String)
-    case sendAmount(SendAmountDestination)
+    /// The payment steps (amount, confirm, status) for a locked destination.
+    /// Scans, NFC and Send's own input all land here, so there is one payment UI.
+    case sendAmount(SendAmountDestination, explanation: CashuRequestRouteExplanation? = nil)
     case cashuRequestPay(CashuPaymentRequestSummary)
     case scanner
     case sendEcash
     case receiveLightning
-    case meltInvoice(String)
     case connectMint
     case discoverMints
 
@@ -28,12 +29,13 @@ enum WalletSheet: Identifiable {
         // of tearing it down and re-presenting.
         case .send: return "send"
         case .sendEdit: return "sendEdit"
-        case .sendAmount: return "sendAmount"
+        // A new destination is a new sheet, never a stale one re-shown.
+        case .sendAmount(let destination, _):
+            return "sendAmount-\(Data(destination.rawInput.utf8).sha256().base64EncodedString())"
         case .cashuRequestPay(let summary): return "creq-\(Data(summary.encoded.utf8).sha256().base64EncodedString())"
         case .scanner: return "scanner"
         case .sendEcash: return "sendEcash"
         case .receiveLightning: return "receiveLightning"
-        case .meltInvoice(let invoice): return "meltInvoice-\(Data(invoice.utf8).sha256().base64EncodedString())"
         case .connectMint: return "connectMint"
         case .discoverMints: return "discoverMints"
         }
@@ -42,22 +44,15 @@ enum WalletSheet: Identifiable {
 
 /// The full-screen flow-page slot, bound by `ContentView`'s single
 /// `.fullScreenCover(item:)`: payment pages that read as a brand-new screen
-/// with nothing visible beneath (token claim, scan-routed melts, held approval).
+/// with nothing visible beneath (token claim, held approval).
 enum FlowCover: Identifiable {
     case receiveToken(String)
     case heldApproval(PendingReceiveToken)
-    case melt(
-        request: String,
-        mode: MeltView.MeltMode,
-        autoQuote: Bool,
-        explanation: CashuRequestRouteExplanation?
-    )
 
     var id: String {
         switch self {
         case .receiveToken(let token): return "token-\(Data(token.utf8).sha256().base64EncodedString())"
         case .heldApproval(let pending): return "held-\(pending.tokenId)"
-        case .melt(let request, let mode, _, _): return "melt-\(mode)-\(Data(request.utf8).sha256().base64EncodedString())"
         }
     }
 }
@@ -193,7 +188,14 @@ final class NavigationManager: ObservableObject {
             content,
             routeForCashuPaymentRequest: walletManager.routeForCashuPaymentRequest
         ) {
-        case .receiveToken, .cashuRequestPay, .melt:
+        case .send(let destination, _):
+            // Refuse inline what Send's own input would refuse on paste.
+            if case .melt(_, _, let decoded) = destination,
+               let caution = decoded.amountlessMeltCaution(payableBy: walletManager.mints) {
+                return .reject(message: caution)
+            }
+            return .accept
+        case .receiveToken, .cashuRequestPay:
             return .accept
         case .mintURL(let url):
             UIPasteboard.general.string = url
@@ -217,13 +219,8 @@ final class NavigationManager: ObservableObject {
             present(.cover(.receiveToken(token)))
         case .cashuRequestPay(let summary):
             present(.sheet(.cashuRequestPay(summary)))
-        case .melt(let request, let mode, let autoQuote, let explanation):
-            present(.cover(.melt(
-                request: request,
-                mode: mode,
-                autoQuote: autoQuote,
-                explanation: explanation
-            )))
+        case .send(let destination, let explanation):
+            present(.sheet(.sendAmount(destination, explanation: explanation)))
         case .mintURL, .unrecognized:
             break   // resolved inline by `classifyScannedPayload`
         }
@@ -245,12 +242,8 @@ enum ScanIntake: Equatable {
 enum ScannedPayloadRoute {
     case receiveToken(String)
     case cashuRequestPay(CashuPaymentRequestSummary)
-    case melt(
-        request: String,
-        mode: MeltView.MeltMode,
-        autoQuote: Bool,
-        explanation: CashuRequestRouteExplanation?
-    )
+    /// Straight into Send's amount or confirm step (Android `onSend` parity).
+    case send(SendAmountDestination, explanation: CashuRequestRouteExplanation?)
     case mintURL(String)
     case unrecognized
 }
@@ -275,10 +268,8 @@ enum ScanRouter {
             case .payWithEcash, .acquireThenPay:
                 return .cashuRequestPay(summary)
             case .payBolt11Fallback(let bolt11):
-                return .melt(
-                    request: bolt11,
-                    mode: .lightning,
-                    autoQuote: true,
+                return .send(
+                    .melt(request: bolt11, mode: .lightning, decoded: PaymentRequestDecoder.decode(bolt11)),
                     explanation: CashuRequestRouteExplanation(state: .lightningFallback)
                 )
             }
@@ -288,21 +279,14 @@ enum ScanRouter {
         case .bolt11, .bolt12:
             let request = PaymentRequestDecoder.encodedLightningRequest(from: trimmed)
                 ?? PaymentRequestParser.normalizeLightningRequest(trimmed)
-            return .melt(
-                request: request,
-                mode: .lightning,
-                autoQuote: PaymentRequestDecoder.amountLocked(decoded),
-                explanation: nil
-            )
+            return .send(.melt(request: request, mode: .lightning, decoded: decoded), explanation: nil)
         case .onchain:
-            return .melt(
-                request: PaymentRequestParser.normalizeBitcoinRequest(trimmed),
-                mode: .onchain,
-                autoQuote: false,
+            return .send(
+                .melt(request: PaymentRequestParser.normalizeBitcoinRequest(trimmed), mode: .onchain, decoded: decoded),
                 explanation: nil
             )
         case .lightningAddress:
-            return .melt(request: trimmed, mode: .lightning, autoQuote: false, explanation: nil)
+            return .send(.melt(request: trimmed, mode: .lightning, decoded: decoded), explanation: nil)
         case .cashuPaymentRequest, .unrecognized:
             if trimmed.lowercased().hasPrefix("https://"), trimmed.contains("mint") {
                 return .mintURL(trimmed)

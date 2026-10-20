@@ -25,6 +25,35 @@ class PaymentRecoveryJourneyTest {
     private fun launch(mode: FixtureMode = FixtureMode.FundedWithHistory, token: String? = null): LaunchedFixture =
         AppTestFixture.launch(mode, deepLink = token?.let { "cashu:$it" }).also { fixture = it }
 
+    @Test fun sameSeedRestorePreservesHistoryMintsAndOpenRepository() {
+        val app = launch(FixtureMode.FundedWithHistory)
+        robot.awaitTag(UiTestTags.WalletScreen)
+        val manager = app.container.walletManager
+        val before = manager.state.value
+        val fake = checkNotNull(app.fakeGateway)
+        fake.nextCloseFailure = IllegalStateException("Same-seed restore must not close the repository")
+        runBlocking { manager.initializeRestoredWallet(FakeWalletGateway.FixedMnemonic.uppercase()) }
+        assertEquals(before.transactions, manager.state.value.transactions)
+        assertEquals(before.mints, manager.state.value.mints)
+        assertEquals(before.balance, manager.state.value.balance)
+        // The failure remains armed because same-seed restore never replaced
+        // the native repository. Remove it before fixture teardown.
+        assertNotNull(fake.nextCloseFailure)
+        fake.nextCloseFailure = null
+    }
+
+    /** "View in history" from a payment the mint hasn't confirmed must ask the mint again. */
+    @Test fun openingHistoryRechecksHeldPayments() {
+        val app = launch()
+        val fake = checkNotNull(app.fakeGateway)
+        robot.awaitTag(UiTestTags.WalletScreen)
+        // The deterministic policy runs no startup maintenance or foreground poll,
+        // so opening History is the only thing that can start this check.
+        assertEquals(0, fake.sagaRecoveryCalls.get())
+        robot.tapText("History").awaitTag(UiTestTags.HistoryScreen)
+        compose.waitUntil(5_000) { fake.sagaRecoveryCalls.get() > 0 }
+    }
+
     @Test fun receiveLaterCanBeClaimedFromHistoryExactlyOnce() {
         val app = launch(FixtureMode.SeededWithMint, FakeWalletGateway.MemoDeterministicToken)
         robot.awaitTag(UiTestTags.ReceiveEcashDetail).tapText("Receive later").awaitTag(UiTestTags.WalletScreen)
@@ -125,6 +154,10 @@ class PaymentRecoveryJourneyTest {
         compose.waitUntil { fake.latestMintQuoteId != null }
         val quoteId = checkNotNull(fake.latestMintQuoteId)
         assertEquals(PaymentMethodKind.Onchain, runBlocking { fake.checkMintQuote(quoteId) }.paymentMethod)
+        // A stable Status row and the address as text; no checking flicker.
+        robot.awaitText("Waiting for deposit").awaitText("bcrt1qde…ddress")
+        compose.onNodeWithTag(UiTestTags.ReceiveOnchainStatus).assertIsDisplayed()
+        compose.onAllNodesWithText("Checking", substring = true).assertCountEquals(0)
         compose.runOnIdle { fake.markMintQuotePaid(quoteId, 21) }
         robot.awaitText("Payment Received!", timeoutMillis = 20_000).tapText("Done")
         assertEquals(21L, runBlocking { fake.totalBalance(FakeWalletGateway.TestMintUrl) })

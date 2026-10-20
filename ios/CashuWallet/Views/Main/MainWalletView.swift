@@ -494,7 +494,10 @@ struct MainWalletView: View {
             sectionHeader("Recent")
 
             ForEach(items) { item in
-                transactionRow(transaction: item)
+                TransactionRowView(transaction: item) {
+                    HapticFeedback.selection()
+                    selectedTransaction = item
+                }
             }
 
             Button(action: onViewAllHistory) {
@@ -523,7 +526,7 @@ struct MainWalletView: View {
             .padding(.bottom, 14)
     }
 
-    // MARK: - Recent completed payments
+    // MARK: - Recent payments
 
     private var recentItems: [WalletTransaction] {
         HomeActivity.recentTransactions(
@@ -533,103 +536,6 @@ struct MainWalletView: View {
     }
 
     // MARK: - Transaction row (slimmer than HistoryView's variant)
-
-    private func transactionRow(transaction: WalletTransaction) -> some View {
-        Button {
-            HapticFeedback.selection()
-            selectedTransaction = transaction
-        } label: {
-            HStack(spacing: 14) {
-                rowIcon(for: transaction)
-                    .frame(width: 36, height: 36)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(rowTitle(for: transaction))
-                        .font(.body.weight(.medium))
-                        .lineLimit(1)
-
-                    Text(formatRelativeDate(transaction.date))
-                        .cashuText(.metadata)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer(minLength: 8)
-
-                TransactionAmountColumn(transaction: transaction)
-            }
-            .padding(.horizontal, 4)
-            .padding(.vertical, 16)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(rowTitle(for: transaction)), \(formatAmount(transaction)), \(transaction.status == .completed ? "completed" : transaction.displayStatusText.lowercased()), \(formatRelativeDate(transaction.date))")
-        .accessibilityHint("Opens transaction details")
-    }
-
-    @ViewBuilder
-    private func rowIcon(for transaction: WalletTransaction) -> some View {
-        TransactionIcon(direction: transaction.type)
-    }
-
-    private func rowTitle(for transaction: WalletTransaction) -> String {
-        transaction.displayTitle
-    }
-
-    private func formatAmount(_ transaction: WalletTransaction) -> String {
-        let value = AmountFormatter.displayMintUnitAmount(
-            amount: transaction.amount,
-            unit: transaction.unit,
-            preferredPrimary: settings.homeBalancePrimary,
-            showFiat: settings.showFiatBalance,
-            btcPrice: priceService.btcPriceUSD,
-            currencyCode: settings.bitcoinPriceCurrency,
-            useBitcoinSymbol: settings.useBitcoinSymbol
-        ).primary
-        guard !transaction.isUnsettled else { return value }
-        return transaction.type == .incoming ? "+\(value)" : value
-    }
-
-    // MARK: - Relative date
-
-    private static let shortTimeFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateStyle = .none
-        f.timeStyle = .short
-        return f
-    }()
-
-    private static let sameYearDateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.setLocalizedDateFormatFromTemplate("MMMd")
-        return f
-    }()
-
-    private static let otherYearDateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.setLocalizedDateFormatFromTemplate("MMMdyyyy")
-        return f
-    }()
-
-    private func formatRelativeDate(_ date: Date) -> String {
-        let now = Date()
-        let delta = now.timeIntervalSince(date)
-        if delta < 60 { return "Now" }
-
-        let calendar = Calendar.current
-        if calendar.isDateInToday(date) {
-            if delta < 3600 {
-                let minutes = max(1, Int(delta / 60))
-                return "\(minutes) min ago"
-            }
-            return Self.shortTimeFormatter.string(from: date)
-        }
-        if calendar.isDateInYesterday(date) {
-            return "Yesterday \(Self.shortTimeFormatter.string(from: date))"
-        }
-        let sameYear = calendar.component(.year, from: date) == calendar.component(.year, from: now)
-        return (sameYear ? Self.sameYearDateFormatter : Self.otherYearDateFormatter).string(from: date)
-    }
 
     // MARK: - Helpers
 
@@ -683,9 +589,10 @@ struct MainWalletView: View {
                 initialDestination: prefill,
                 autoAdvanceInitialDestination: false
             )
-        case .sendAmount(let destination):
+        case .sendAmount(let destination, let explanation):
             unifiedSendSheet(
                 initialAmountDestination: destination,
+                initialRouteExplanation: explanation,
                 onEditDestination: {
                     navigationManager.present(
                         .sheet(.sendEdit(prefill: destination.rawInput))
@@ -695,12 +602,13 @@ struct MainWalletView: View {
         case .cashuRequestPay(let summary):
             CashuPaymentRequestPayView(
                 request: summary,
-                onComplete: { navigationManager.activeWalletSheet = nil }
+                onComplete: { navigationManager.activeWalletSheet = nil },
+                onViewHistory: viewHistoryFromSheet
             )
             .environmentObject(walletManager)
             .presentationDetents([.large])
             .presentationDragIndicator(.visible)
-            .flatBottomSheetSurface()
+            .walletSheetSurface(fillsScreen: true)
         case .scanner:
             // The scanner self-dismisses on a successful read and hands the
             // payload back; the routed surface presents only after this sheet
@@ -722,17 +630,10 @@ struct MainWalletView: View {
             SendView()
                 .environmentObject(walletManager)
                 .presentationDetents([.large])
-                .compactBottomSheetSurface()
         case .receiveLightning:
             ReceiveLightningView()
                 .environmentObject(walletManager)
                 .presentationDetents([.large])
-                .compactBottomSheetSurface()
-        case .meltInvoice(let invoice):
-            MeltViewWithInvoice(invoice: invoice)
-                .environmentObject(walletManager)
-                .presentationDetents([.large])
-                .flatBottomSheetSurface()
         case .connectMint:
             // Same surface the Send sheet shows when there are no mints — the
             // detents and canvas background live inside it.
@@ -741,7 +642,7 @@ struct MainWalletView: View {
         case .discoverMints:
             MintDiscoverySheet()
             .environmentObject(walletManager)
-            .flatBottomSheetSurface()
+            .walletSheetSurface(fillsScreen: true)
         }
     }
 
@@ -753,6 +654,7 @@ struct MainWalletView: View {
     private func unifiedSendSheet(
         initialDestination: String? = nil,
         initialAmountDestination: SendAmountDestination? = nil,
+        initialRouteExplanation: CashuRequestRouteExplanation? = nil,
         autoAdvanceInitialDestination: Bool = true,
         onEditDestination: (() -> Void)? = nil
     ) -> some View {
@@ -775,12 +677,21 @@ struct MainWalletView: View {
                 navigationManager.present(.cover(.receiveToken(token)))
             },
             onSendEcash: { navigationManager.activeWalletSheet = .sendEcash },
-            onRoutePayment: { destination in
-                navigationManager.present(.sheet(.sendAmount(destination)))
+            onRoutePayment: { destination, explanation in
+                navigationManager.present(.sheet(.sendAmount(destination, explanation: explanation)))
             },
-            onEditDestination: onEditDestination
+            onEditDestination: onEditDestination,
+            onViewHistory: viewHistoryFromSheet,
+            initialRouteExplanation: initialRouteExplanation
         )
         .environmentObject(walletManager)
+    }
+
+    /// Close the payment sheet on the History tab, where a payment the mint
+    /// hasn't confirmed yet shows as pending and resolves.
+    private func viewHistoryFromSheet() {
+        navigationManager.activeWalletSheet = nil
+        onViewAllHistory()
     }
 }
 

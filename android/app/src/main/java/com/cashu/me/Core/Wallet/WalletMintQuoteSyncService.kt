@@ -151,67 +151,88 @@ internal class WalletMintQuoteSyncService private constructor(
      * it. Reusable BOLT12 quotes can run through this method indefinitely.
      */
     suspend fun syncPendingMintQuote(quoteId: String, force: Boolean = false): MintQuoteSyncResult =
-        reconciliationMutex.withLock {
-            val cached = storedQuoteOrNull(quoteId)
-            if (!shouldAttempt(quoteId, force)) {
-                return@withLock MintQuoteSyncResult(quote = cached, retryStatus = retryStatus(quoteId))
-            }
-            val observed = try {
-                checkQuote(quoteId).also { rememberMintQuoteTimestamp(it.id) }
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Throwable) {
-                if (!isMissingQuoteError(error)) {
-                    logFailure("Failed to refresh pending quote $quoteId", error)
-                }
-                val local = storedQuoteOrNull(quoteId) ?: cached
-                val retryStatus = recordFailure(quoteId, local)
-                return@withLock MintQuoteSyncResult(
-                    quote = local,
-                    hadOutstandingPayment = local?.mintableAmount?.let { it > 0 } == true,
-                    retryStatus = retryStatus,
-                )
-            }
+        reconciliationMutex.withLock { syncPendingMintQuoteUnlocked(quoteId, force) }
 
-            if (observed.mintableAmount == 0L) {
-                recordObservation(observed)
-                return@withLock reconciledMintQuoteResult(observed, issuedBeforeCheck = cached?.amountIssued)
-            }
-
-            var mintedAmount = 0L
-            var mintError: Throwable? = null
-            try {
-                mintedAmount = mintQuote(quoteId)
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Throwable) {
-                mintError = error
-            }
-
-            // Always ask again. If POST /mint succeeded but its response was
-            // lost, amount_issued is the durable proof that issuance happened.
-            val verified = try {
-                checkQuote(quoteId).also { rememberMintQuoteTimestamp(it.id) }
-            } catch (error: CancellationException) {
-                throw error
-            } catch (_: Throwable) {
-                null
-            }
-            val result = reconciledMintQuoteResult(observed, mintedAmount, verified, cached?.amountIssued)
-
-            if (result.remainingAmount > 0L) {
-                val failure = mintError ?: IllegalStateException(
-                    "Mint quote made no verified issuance progress.",
-                )
-                logFailure(
-                    "Paid mint quote remains unissued: $quoteId remaining=${result.remainingAmount}",
-                    failure,
-                )
-                return@withLock result.copy(retryStatus = recordFailure(quoteId, result.quote))
-            }
-            recordObservation(checkNotNull(result.quote))
-            result
+    /** Keep import, local adoption, and the first issuance in the same lane so
+     * a background sweep cannot claim a just-recovered quote ahead of its UI. */
+    suspend fun recoverDeposit(
+        importQuote: suspend () -> DepositRecoveryLookup,
+        adopt: (MintQuoteInfo) -> Unit,
+    ): DepositRecoveryResult = reconciliationMutex.withLock {
+        val lookup = importQuote()
+        val quote = lookup.quote
+        if (quote.hasSettledPayment || quote.state == com.cashu.me.Models.MintQuoteState.Issued) {
+            return@withLock DepositRecoveryResult(DepositRecoveryStatus.AlreadyClaimed, quote.unit)
         }
+        if (!lookup.hasSigningKey) return@withLock DepositRecoveryResult(DepositRecoveryStatus.KeyNotFound, quote.unit)
+        adopt(quote)
+        val result = syncPendingMintQuoteUnlocked(quote.id, force = true)
+        DepositRecoveryResult.from(result.quote ?: quote, result.newlyIssued,
+            result.retryStatus.state != com.cashu.me.Models.MintQuoteRetryState.None)
+    }
+
+    private suspend fun syncPendingMintQuoteUnlocked(quoteId: String, force: Boolean): MintQuoteSyncResult {
+        val cached = storedQuoteOrNull(quoteId)
+        if (!shouldAttempt(quoteId, force)) {
+            return MintQuoteSyncResult(quote = cached, retryStatus = retryStatus(quoteId))
+        }
+        val observed = try {
+            checkQuote(quoteId).also { rememberMintQuoteTimestamp(it.id) }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            if (!isMissingQuoteError(error)) {
+                logFailure("Failed to refresh pending quote $quoteId", error)
+            }
+            val local = storedQuoteOrNull(quoteId) ?: cached
+            val retryStatus = recordFailure(quoteId, local)
+            return MintQuoteSyncResult(
+                quote = local,
+                hadOutstandingPayment = local?.mintableAmount?.let { it > 0 } == true,
+                retryStatus = retryStatus,
+            )
+        }
+
+        if (observed.mintableAmount == 0L) {
+            recordObservation(observed)
+            return reconciledMintQuoteResult(observed, issuedBeforeCheck = cached?.amountIssued)
+        }
+
+        var mintedAmount = 0L
+        var mintError: Throwable? = null
+        try {
+            mintedAmount = mintQuote(quoteId)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            mintError = error
+        }
+
+        // Always ask again. If POST /mint succeeded but its response was
+        // lost, amount_issued is the durable proof that issuance happened.
+        val verified = try {
+            checkQuote(quoteId).also { rememberMintQuoteTimestamp(it.id) }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Throwable) {
+            null
+        }
+        val result = reconciledMintQuoteResult(observed, mintedAmount, verified, cached?.amountIssued)
+
+        if (result.remainingAmount > 0L) {
+            val failure = mintError ?: IllegalStateException(
+                "Mint quote made no verified issuance progress.",
+            )
+            logFailure(
+                "Paid mint quote remains unissued: $quoteId remaining=${result.remainingAmount}",
+                failure,
+            )
+            return result.copy(retryStatus = recordFailure(quoteId, result.quote))
+        }
+        recordObservation(checkNotNull(result.quote))
+        return result
+    }
+
 
     private suspend fun storedQuoteOrNull(quoteId: String): MintQuoteInfo? = try {
         storedQuote(quoteId)

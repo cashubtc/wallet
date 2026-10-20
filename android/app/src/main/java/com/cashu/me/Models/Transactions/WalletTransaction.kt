@@ -20,7 +20,6 @@ data class WalletTransaction(
     val fee: Long = 0,
     /** Mint account unit for [amount] and [fee] (sat, usd, eur, or custom). */
     val unit: String = "sat",
-    val paymentMethod: PaymentMethodKind? = null,
     val paymentMethodLabel: String? = null,
     /**
      * CDK wallet-saga (operation) id backing this transaction, when the row
@@ -35,6 +34,11 @@ data class WalletTransaction(
     val isPendingReceiveToken: Boolean = false,
     /** BOLT11 mint quote still awaiting payment — titles the row "Lightning invoice". */
     val isUnpaidInvoice: Boolean = false,
+    /** On-chain deposit address nothing has reached yet — titles the row
+     * "Bitcoin address" and carries no amount until a deposit is seen. */
+    val isUnfundedAddress: Boolean = false,
+    /** Explicit CDK method; absent in older cached history. */
+    val paymentMethod: PaymentMethodKind? = null,
 ) {
     val displayDescription: String?
         get() = memo?.takeIf(String::isNotBlank) ?: PaymentRequestDecoder.description(invoice)

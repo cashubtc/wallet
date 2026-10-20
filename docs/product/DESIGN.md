@@ -134,8 +134,8 @@ components:
     backgroundColor: "transparent"
     textColor: "{colors.primary-text}"
     secondaryTextColor: "{colors.secondary-text}"
-    padding: "12px 8px"
-    typography: "{typography.body}"
+    padding: "8px 16px"
+    typography: "iOS footnote / Android bodyMedium"
     trailingHintSymbol: "pencil"
     leadingSymbol: null
     note: "Cashu Request detail. Label + value only, no leading field icon (Iconless-Row Rule). Tap opens a medium-detent sub-sheet."
@@ -187,11 +187,44 @@ What this system explicitly rejects, pulled verbatim from docs/product/PRODUCT.m
 - Motion is exponential ease-out, in the 180–350ms range. Seven named animations
   carry the full vocabulary: row stagger, badge symbol-replace, chooser cascade,
   press feedback, sheet cross-fade (in-sheet flow swap), payment-received
-  celebration, and waiting-pulse. Nothing decorative beyond that.
+  celebration, and active progress. Nothing decorative beyond that.
 - One inspector pattern for editable detail rows (Cashu Request → Mint, Amount):
-  secondary label + trailing value (medium weight, middle-truncated) + trailing
+  secondary label + trailing value (regular weight, adaptive wrapping) + trailing
   `pencil` hint glyph. Tap opens a `.medium`-detent sub-sheet rather than pushing
   a screen. No leading field icon — see The Iconless-Row Rule, §5.
+
+### Payment flow consistency
+
+- Full-height payment screens and Discover mints use the app canvas in both
+  themes: white in light mode and black in dark mode. Compact Send, Receive,
+  Add Mint, and content-fitting History sheets retain their elevated surface.
+- Every completed payment uses the shared large amount hero. Unit words such
+  as `sat` are vertically centered beside the numerals. Simple BOLT11 received
+  receipts omit Mint; applicable send receipts retain mint and settled fees.
+- Done is secondary. Cashu Request Pay is also secondary. Lightning Address
+  keeps secondary Copy and primary Share under the QR, with a truncated address
+  underneath the code. Its complete white QR card is at most 280pt/dp on both
+  platforms, including padding, and shrinks to fit narrow windows.
+- Mint selection uses the same centered, muted From/To treatment beside the
+  amount context across entry and confirmation routes. Outgoing entry retains
+  a separate available-balance line and Max. Single-mint wallets have no picker
+  chevron. The identity and Max retain native touch targets.
+- Payment facts use regular footnote/bodyMedium type, secondary labels, primary
+  values, 8pt/dp vertical padding, and a centered 320pt/dp maximum column width.
+  Editable rows retain at least 44pt/48dp touch height. At accessibility sizes,
+  labels stack above full values; both platforms also adapt when an ordinary-size
+  value cannot fit horizontally. Monetary values must remain readable.
+- History is a deliberate spacing exception: full-width facts, 12pt/dp vertical
+  padding, and native minimum row heights. Keep its compact elevated sheet;
+  do not apply the narrow payment column to History.
+- Idle QR screens have no waiting clock, glow, or label. Active claim progress,
+  actionable failures, expiry, and received totals remain. A failed Lightning
+  Address claim offers Retry and never claims success before credit. Meaningful
+  status updates are announced once through native accessibility facilities.
+  *On-chain exception (2026-10-02):* a deposit takes 10–60+ minutes, so the
+  on-chain sheet keeps an always-present **Status** row reading "Waiting for
+  deposit" — see **On-chain receive status**. It is a row value, never a
+  spinner, badge or animation.
 
 ### Unified activity detail sheets (2026-09-06)
 
@@ -207,8 +240,8 @@ Android, while retaining the existing payment-specific content and actions.
   Preserve adaptive QR sizing, compact amounts beside a QR, normal receipt amounts,
   and the existing rows and spacing. No QR disclosure or collapse animation.
 - Preserve the green check for completed receipts and red cross for failed
-  receipts, plus the lifecycle text. Reusable requests retain their payment-count
-  status and live QR after receiving payments.
+  receipts, plus the lifecycle text. Reusable requests retain their stored payments,
+  visible total received, and live QR after receiving payments.
 - Keep Copy, New Request, and inline Mint/Amount/Unit editing directly available
   on Cashu Requests. Reuse the existing request view and its delivery behavior.
 - Preserve pending outbound invoice/address QR and copy/share availability,
@@ -216,6 +249,30 @@ Android, while retaining the existing payment-specific content and actions.
   Settled one-shot codes retire as before.
 - Unclaimed incoming ecash opens the shared sheet with Receive to enter the
   claim flow. Keep action footers visible while long detail content scrolls.
+- **Details sheet** *(added 2026-10-02)*. Every transaction and receive-request receipt ends with a
+  quiet **Details ›** row (secondary label, trailing chevron, no value) that
+  opens a nested full-height sheet — the Description "Read more" precedent, so
+  the content-fit receipt never pushes. It holds the identifiers support and
+  developers need, in fixed sections: **Transaction** (ID, Method, Direction,
+  Status, Status detail while pending, Date with seconds, Amount, Fee, Mint URL,
+  Saga ID), **Quote** when the row has one (Quote ID, Type, Request, State, then
+  paid/issued amounts for a mint quote or amount/fee reserve for a melt quote,
+  Expiry, Last updated), and **Payment** (Payment Proof, or the on-chain
+  Transaction ID plus the block explorer row). Rows follow the receipt canon:
+  opaque references cut `prefix(8)…suffix(6)` with tap-to-copy of the full value;
+  the Mint URL wraps instead. App-synthesized rows (an unpaid quote, a held token)
+  omit the CDK ID. **Copy all** copies the sections as plain `Label: value` text
+  with untruncated values and ISO 8601 UTC dates, for pasting into a support
+  request. Details read local CDK snapshots only (no network), and never show a
+  quote's NUT-20 secret key or a spendable token. iOS closes with Done in the
+  navigation bar; Android with a bottom Done, like its description reader.
+  Transaction fields update while the sheet is open, including completion,
+  fees, and proof; cached quotes never replace the current transaction.
+  Receive-request Details retains the artifact's ID and method in **Request**,
+  reads its local **Quote** counters, and lists each linked payment's ID, amount,
+  and date. **Payment details** opens individual transaction Details without
+  adding duplicate History rows. The on-chain explorer targets the same
+  resolved txid shown in Details, including the stored melt-quote fallback.
 
 ## 2. Colors: The Inverted-Ink Palette
 
@@ -263,8 +320,10 @@ as a tinted background.
   directional arrow is always `.secondary` regardless of direction or state;
   only the received primary amount turns green on a ledger row.
 - **Pending Orange** (`Color.orange`, ≈ `#FF9500` / `#FF9F0A`): foreground for the
-  "Waiting for payment…" clock on a Cashu Request and the amber
-  `exclamationmark.triangle.fill` caution on `PaymentStatusView`. It does **not**
+  actionable caution and asynchronous settlement, including the amber
+  `exclamationmark.triangle.fill` on `PaymentStatusView`. Idle receive QR screens
+  have no orange clock, pulse, or waiting label (the on-chain Status row is a
+  plain monochrome row value). It does **not**
   appear on a transaction *row* — a pending row is the muted `.secondary` amount
   alone (amended 2026-06-01) — nor on the transaction detail sheet, whose pending
   state is a monochrome "Pending" `Status` row (2026-07-05(c)). When used as a
@@ -316,11 +375,11 @@ receipt in the fiat slot, with a `.success` haptic for background receipts.
 `checkmark.circle.fill` + "Received" **worded badge**, not green itself.* The brief
 2026-07-05(b) removal of the green check from `PaymentStatusView` and the detail
 sheet was **reverted**. `PaymentStatusView` success keeps its 64pt green
-`checkmark.circle.fill` (`.symbolEffect(.bounce)`) with the amount as a detail row
-— unchanged from before. The detail sheet regains a green check too, but as the
+`checkmark.circle.fill` (`.symbolEffect(.bounce)`) above the large amount hero.
+The amount is not repeated in the detail rows. The detail sheet regains a green check too, but as the
 **large** 64pt one (below); only the small worded "✓ Received" badge stays retired.
-`CashuRequestDetailView`'s green pills + "N payments received" seal are unchanged
-(their own later pass).
+`CashuRequestDetailView` omits the payment-count seal and shows Total received
+while retaining the request QR and stored payment records.
 
 The detail sheet (`TransactionDetailView`) is a **hero state slot above a crisp
 `.primary` amount hero**. A completed transaction opens as a compact native
@@ -349,7 +408,13 @@ values receive a trailing affordance. Remaining rows are conditional essentials 
 row stay dropped (`unitLabel` is always BTC/SAT; the live request is the QR/Copy).
 Opaque reference values, including **Payment Proof**, render as
 `prefix(8)…suffix(6)` while their Copy action preserves the full value.
-On-chain keeps **Address** / **Transaction ID** and its address QR. The **Type**
+On-chain keeps **Address** / **Transaction ID**, and its address QR only while
+the address is unfunded: once a deposit is seen the receipt is money in flight,
+not a request, so the QR (and its Share) retire while the Address row stays
+copyable and the receipt keeps checking. A pending incoming deposit's **Status**
+names its stage in the shared on-chain vocabulary — Waiting for deposit / In
+mempool / *n* confirmation(s) / Adding to wallet… / Retrying / Not added yet — and reads
+**Confirmed** once issued. The **Type**
 row stays omitted (the nav title names kind/direction).
 
 **The Settled-Ecash Receipt carve-out.** *Added 2026-07-05.* A **settled ecash
@@ -366,16 +431,24 @@ none). Received tokens are persisted at redeem time for this — Copy surfaces o
 on rows received/sent after this shipped, since older received tokens were
 discarded and can't be recovered.
 
+**Failed History rows.** On iOS and Android, show an X in the existing muted
+icon circle and use the same muted, unsigned primary amount as pending payments.
+Preserve the two-line title/date layout and row height, without a visible status
+label. The X distinguishes failure without relying on color. Accessibility
+continues to announce the transaction's failed status. Failed remains a terminal
+status, separate from pending and expired recovery behavior.
+
 **The Quiet Pending Rule.** *Amended 2026-06-01.* On **any list row** —
 transaction or Cashu Request — pending/waiting is conveyed by the muted
 `.secondary` amount **alone**: no badge, no icon, no orange. (The
 `arrow.triangle.2.circlepath` per-row refresh button *and* the waiting-request
 leading `clock` were both removed; manual re-check lives on History
 pull-to-refresh — `.refreshable { syncPendingMintQuotes(); checkAllPendingTokens() }`.)
-The muted-orange pending language survives only off the list, on the
-"Waiting for payment…" status clock inside `CashuRequestDetailView`. (The detail
-sheet's pending state is now a monochrome "Pending" `Status` row — no orange,
-2026-07-05(c).) Never a full-saturation pill, never a loud "PENDING" wordmark.
+Idle receive screens also omit the waiting clock and label (on-chain's
+always-present Status row is the one exception — **On-chain receive status**).
+Meaningful progress, claim errors, expiry, and received totals remain visible. History's pending state
+uses a monochrome "Pending" `Status` row. Never a full-saturation pill or loud
+"PENDING" wordmark.
 
 *Amended 2026-07-21: only a completed incoming row uses a sign: green `+amount`.
 Completed outgoing rows are unsigned and `.primary`; their title and upward arrow
@@ -516,11 +589,11 @@ receipt in the fiat slot, with a `.success` haptic for background receipts.
 `checkmark.circle.fill` + "Received" **worded badge**, not green itself.* The brief
 2026-07-05(b) removal of the green check from `PaymentStatusView` and the detail
 sheet was **reverted**. `PaymentStatusView` success keeps its 64pt green
-`checkmark.circle.fill` (`.symbolEffect(.bounce)`) with the amount as a detail row
-— unchanged from before. The detail sheet regains a green check too, but as the
+`checkmark.circle.fill` (`.symbolEffect(.bounce)`) above the large amount hero.
+The amount is not repeated in the detail rows. The detail sheet regains a green check too, but as the
 **large** 64pt one (below); only the small worded "✓ Received" badge stays retired.
-`CashuRequestDetailView`'s green pills + "N payments received" seal are unchanged
-(their own later pass).
+`CashuRequestDetailView` omits the payment-count seal and shows Total received
+while retaining the request QR and stored payment records.
 
 The detail sheet (`TransactionDetailView`) is a **hero state slot above a crisp
 `.primary` amount hero**. A completed transaction opens as a compact native
@@ -549,7 +622,13 @@ values receive a trailing affordance. Remaining rows are conditional essentials 
 row stay dropped (`unitLabel` is always BTC/SAT; the live request is the QR/Copy).
 Opaque reference values, including **Payment Proof**, render as
 `prefix(8)…suffix(6)` while their Copy action preserves the full value.
-On-chain keeps **Address** / **Transaction ID** and its address QR. The **Type**
+On-chain keeps **Address** / **Transaction ID**, and its address QR only while
+the address is unfunded: once a deposit is seen the receipt is money in flight,
+not a request, so the QR (and its Share) retire while the Address row stays
+copyable and the receipt keeps checking. A pending incoming deposit's **Status**
+names its stage in the shared on-chain vocabulary — Waiting for deposit / In
+mempool / *n* confirmation(s) / Adding to wallet… / Retrying / Not added yet — and reads
+**Confirmed** once issued. The **Type**
 row stays omitted (the nav title names kind/direction).
 
 **The Settled-Ecash Receipt carve-out.** *Added 2026-07-05.* A **settled ecash
@@ -572,10 +651,11 @@ transaction or Cashu Request — pending/waiting is conveyed by the muted
 `arrow.triangle.2.circlepath` per-row refresh button *and* the waiting-request
 leading `clock` were both removed; manual re-check lives on History
 pull-to-refresh — `.refreshable { syncPendingMintQuotes(); checkAllPendingTokens() }`.)
-The muted-orange pending language survives only off the list, on the
-"Waiting for payment…" status clock inside `CashuRequestDetailView`. (The detail
-sheet's pending state is now a monochrome "Pending" `Status` row — no orange,
-2026-07-05(c).) Never a full-saturation pill, never a loud "PENDING" wordmark.
+Idle receive screens also omit the waiting clock and label (on-chain's
+always-present Status row is the one exception — **On-chain receive status**).
+Meaningful progress, claim errors, expiry, and received totals remain visible. History's pending state
+uses a monochrome "Pending" `Status` row. Never a full-saturation pill or loud
+"PENDING" wordmark.
 
 *Amended 2026-07-21: only a completed incoming row uses a sign: green `+amount`.
 Completed outgoing rows are unsigned and `.primary`; their title and upward arrow
@@ -874,6 +954,14 @@ The canonical list pattern. Defined in
   only once the invoice is paid. "Received" must never assert money that hasn't
   arrived; this also covers the expired state, which keeps the invoice title.
   Mirrors the request-row precedent `CashuRequest.displayTitle`.)*
+  *(2026-10-02: the on-chain counterpart — a deposit address nothing has reached
+  yet titles as **"Bitcoin address"** — `isUnfundedAddress` — with no trailing
+  amount (the any-amount request-row precedent), flipping to "Bitcoin received"
+  once a deposit is seen in the mempool or credited by the mint. Like an unpaid
+  invoice it lists in History but not Home Recent, which only carries money in
+  motion; past its quote expiry it reads Expired and retires its QR. Its row
+  note and receipt Status use the shared on-chain vocabulary — see **On-chain
+  receive status**.)*
 - **Timestamp**: `.caption`, `Color.secondary`, immediately under the title.
   Formatted with `RelativeDateTimeFormatter(.abbreviated)` ("2 hr ago", "3 d ago").
 - **Trailing amount**: `.system(.body, design: .rounded).weight(.medium)
@@ -911,9 +999,9 @@ section. Defined in `HistoryView.swift` → `cashuRequestRow(request:, staggerIn
 - **Title**: "Cashu Request", `.body.weight(.medium)`, single line. Stays
   the same across all states; the badge carries status.
 - **Subtitle**: `formatRelativeDate(request.createdAt)`, `.caption`,
-  `.secondary` — matches transaction rows exactly. The payment count
-  ("3 payments received") is no longer surfaced on the row; it lives in
-  `CashuRequestDetailView`.
+  `.secondary` — matches transaction rows exactly. Payment counts
+  ("3 payments received") are not surfaced on the row or detail sheet;
+  `CashuRequestDetailView` shows Total received instead.
 - **Trailing amount** (`.body` medium primary with a `.subheadline` regular
   conversion, matching every other amount):
   - Fixed-amount + waiting: `amount` in `.secondary`, no indicator — the muted
@@ -1010,10 +1098,8 @@ Presentation styles:
   actions (remove mint, sign out). Never a custom alert sheet.
 - **Sheet background (carve-out, 2026-06-29)**: full-screen `.large` flows and
   `.fullScreenCover`s pin to the flat canvas via `canvasSheetBackground()` so they
-  read seamless with home. Bottom-sheet pickers, choosers, and inspectors
-  (`.medium` / `.height(...)` detents) instead keep SwiftUI's **default**
-  translucent sheet background — they should read as floating layers, not as the
-  home canvas.
+  read seamless with home. Compact bottom-sheet pickers, choosers, and History
+  receipts retain the shared elevated compact-sheet surface in both themes.
 
 ### Cashu Request Inspector
 
@@ -1035,20 +1121,63 @@ contexts.
 - **Amount**: when set, rendered through `CurrencyAmountDisplay` at
   `primarySize: 32` so it doesn't compete with the QR but still reads as the
   dominant numeric element.
-- **Status badge**: three exclusive states, all `.subheadline.weight(.medium)`,
-  no surrounding pill:
-  - Waiting → `clock` SF Symbol with `.symbolEffect(.pulse, options: .repeating)`
-    + "Waiting for payment…", `Color.orange`, no animation on appearance.
-  - Received (live) → `checkmark.circle.fill` with `.symbolEffect(.bounce)` +
-    "Payment received!", `Color.green`, slid in via
-    `.scale(scale: 0.9).combined(with: .opacity)` under `.spring(0.5, 0.7)`. Gated to the
-    on-screen request (the `.cashuTokenReceived` notification carries the
-    `requestId`). In the **receive flow** (watching a fresh request, `onClose`
-    set) it dwells ~1.2s then the sheet auto-dismisses — mirroring the Lightning
-    invoice. When **inspecting** an existing request from History it holds
-    2.5s then reverts to the persistent count (no dismiss).
-  - Received (persistent) → `checkmark.seal.fill` + "N payments received",
-    `Color.green`. Quiet — no symbol effect, no animation.
+- **Delivery state**: the idle QR has no waiting badge (on-chain excepted — its
+  Status row; see **On-chain receive status**). A detected payment can
+  show active claim progress or a recoverable error with Retry. Once credited,
+  use the shared success screen and large amount; Done is explicit and secondary.
+  Reusable requests retain their stored payment records and show Total received
+  when returning to the request.
+
+### On-chain receive status
+
+*Added 2026-10-02.* An on-chain deposit takes minutes to hours, so unlike the
+instant rails its sheet says, quietly and in place, what is happening.
+
+- **Rows, in order:** Status, Address, Mint, Created, explorer link. Nothing sits
+  above or below the rows: no amount hero, no status line, no expiry caption,
+  no notice.
+- **Status** is always mounted and only its value changes (an opacity
+  cross-fade, none under Reduce Motion), on one line except at accessibility
+  text sizes. Values: "Waiting for deposit" → "{amount} · in mempool" →
+  "{amount} · *n* confirmation(s)" → "Adding {amount} to wallet…" → the shared
+  success screen. "{amount} · retrying" while issuance retries automatically;
+  "{amount} · not added yet" once retries need attention (below);
+  "Expired" for an address past its quote expiry with nothing paid. The mint's
+  counters outrank the block explorer, and a sighting outranks expiry. Only the
+  confirmation count is shown, never "n of N" (a mint's threshold is not
+  reliably known). Each change is announced once (VoiceOver announcement,
+  TalkBack polite live region). One model — `OnchainDepositStatus` on both
+  platforms — feeds this row, the History row note and the receipt Status.
+- **The amount lives in the Status value**, in sats (₿ when that setting is on).
+- **The QR never resizes** from in-place changes: `PaymentDetailContent` latches
+  its size per quote; later growth scrolls.
+- **Address** shows the address in the standard 8…6 cut so it can be checked
+  against the sender's screen; tapping copies the full address. **Copy Address**
+  stays the primary button.
+- **Created** is the quote's creation time — the same date its History row
+  shows — never the time the sheet opened.
+- **Reuse:** Receive hands out the newest address at the mint that the mint has
+  not credited and that has not expired; once money arrives, the next Receive
+  gets a fresh address. A deposit still in the mempool does not block reuse —
+  the sheet then shows it.
+- **Needs attention** *(amended 2026-10-03: the notice was retired)*: after
+  repeated issuance failures the status itself carries it — no notice, no
+  warning glyph. The Status value reads "{amount} · not added yet" with a
+  trailing retry glyph (`arrow.clockwise` / `Refresh`, tertiary like the
+  Address row's copy glyph) set inline in the text, so a value that wraps at
+  large text sizes still ends with it, and the whole row becomes the
+  **Retry now** button. The row keeps the interactive height in every state, so gaining the
+  button never moves a row. The reassurance is spoken, not printed: "{amount},
+  not added to your wallet yet. It's safe and we'll keep trying." While an
+  attempt is in flight the value reads "Adding {amount} to wallet…". History
+  and the receipt say "Not added yet".
+- **Lightning** follows the same vocabulary on its status line under the
+  amount: "Adding to wallet…" in flight, "Payment received · retrying" while
+  retrying automatically, and "Payment received · not added yet" with the same
+  trailing retry glyph (the line is the button) once retries need attention.
+  Once an invoice is paid its "Expires in…" caption is gone: the expiry no
+  longer applies.
+
 - **Editable inspector rows** (Mint, Amount): see `row-inspector-editable`
   in the YAML frontmatter. Tap opens the appropriate `.medium`-detent
   sub-sheet. Selecting a value calls back into the parent which regenerates
@@ -1358,24 +1487,14 @@ code must be).
    discriminator. Use this whenever a sheet has two faces of the same task;
    the alternative (push navigation, modal stacking) breaks the "the sheet is
    the unit of intent" principle in docs/product/PRODUCT.md.
-6. **Payment-received celebration** — `paymentJustReceived` lights up the
-   Cashu Request status badge for 2.5s with `.spring(response: 0.5,
-   dampingFraction: 0.7)`. The checkmark uses `.symbolEffect(.bounce, value:)`
-   and the entire badge transitions in via `.scale(scale: 0.9).combined(with: .opacity)`
-   — a gentle grow-in, not a scale-from-zero pop (the `.symbolEffect(.bounce)` is the
-   single delight beat; the badge scale-in stays subtle so it doesn't compound).
-   Same pattern is mirrored in `ReceiveLightningView` for `isPaid`. *Amended
-   2026-07-05:* on the **home screen** the celebration is quieter — the hero
-   balance rolls up (`.contentTransition(.numericText())`) and a **monochrome**
-   `+amount` beat (`MainWalletView.receivedDeltaBeat`, no green, no checkmark)
-   takes over the fiat slot; the green `✓` was retired here as corny. The badge
-   instances share the *singular* allowed celebration vocabulary — never confetti,
-   never a haptic stronger than `.success`, never a sustained-color flash. **Resolution is
-   context-dependent:** in a receive flow (Lightning invoice, or a fresh Cashu
-   Request being watched) the badge dwells ~1.2s then the sheet slides down and
-   dismisses; when *inspecting* an existing Cashu Request it instead holds 2.5s
-   then steps back to the persistent line (N-payments-received). The home-balance
-   delta beat steps back to the fiat sub-amount. *Amended 2026-08-30:* a payment
+6. **Payment-received celebration** — completed payments use the shared status
+   screen: the fixed spinner slot becomes the green check with one restrained
+   bounce and one success haptic. The title and amount fade in together; receipt
+   details and the secondary Done action follow. The native modal stays mounted,
+   with no sideways navigation or dismiss-and-present sequence. Done is explicit;
+   successful payments do not auto-dismiss. Home keeps its quieter numeric balance
+   update and monochrome received delta for payments outside the active flow.
+   *Amended 2026-08-30:* a payment
    terminal **mounted directly at success** (a payment landing while a waiting
    face was up — receive invoice, token claim, ecash claimed) plays the same
    recipe as a **staged entrance**, because transitions and phase-keyed effects
@@ -1390,10 +1509,12 @@ code must be).
    instances never re-stage; Reduce Motion collapses the stage to today's
    single flat fade. The ≤8pt settle-rise is a *settle*, not a directional
    slide — it does not extend the chooser cascade's direction monopoly (#3).
-7. **Waiting-pulse** — `.symbolEffect(.pulse, options: .repeating)` on a
-   single SF Symbol while a system is waiting on external state: the empty-
-   state History bolt, the Cashu Request "Waiting for payment…" clock, the
-   ActivityOrb's rotating dotted-circle. Quiet, infinite, no scale change.
+7. **Active progress** — a native progress indicator represents work actually
+   in flight, such as adding a detected payment to the wallet. Idle QR screens
+   have no repeating waiting animation. A background poll or status check is
+   not user-visible work and never shows a spinner or "Checking…" (removed
+   2026-10-02: it flickered on every poll and jumped the layout). Reduce Motion retains clear state changes
+   with opacity and removes decorative spatial movement.
 
 **Allowed easings.** `.smooth(duration:)` for entrances and reflows.
 `.snappy(duration:)` for state flips and presses (.09 / .18 / .25 / .28 / .35
@@ -1657,8 +1778,13 @@ drags still scroll, so it adds nothing to either path's cost.
   fails the build on the Android side and the same rule holds on iOS.
 - **Don't** hand a pre-joined amount string to a hero. Pass `AmountParts` so the
   unit can be subordinated.
-- **Don't** reach for `.fullScreenCover` for a confirmation, a settings flow,
-  or any modal that is not the camera. Use a sheet with the right detent.
+- **Don't** create a new modal for each state of a payment. Lightning Address
+  intentionally uses one native full-screen modal for QR, claim feedback, and
+  success. Before showing the QR with checks enabled, capture the IDs of
+  invoices already paid or issued. Retain that baseline across foreground changes;
+  a positive credit for a new invoice at the same address can confirm receipt
+  regardless of the phone clock or an absent server timestamp. Other payment
+  flows retain their existing native presentation host.
 - **Don't** add bounce, elastic, or new `.spring` parameters outside the
   named seven (see § Motion Vocabulary). The single allowed spring is the
   payment-received celebration at `(0.5, 0.7)`; everything else lives in
@@ -1675,7 +1801,6 @@ drags still scroll, so it adds nothing to either path's cost.
   signature gradients, no holographic borders, no glowing rings. Money is not
   a game and the wallet should not fight iOS for attention.
 
-Reusable Invoice request details retain their QR, payment count, and total received.
-Their received-payment status uses native SwiftUI green on iOS and the matching
-received success color on Android. Individual settled payment receipts show the
-success checkmark and do not expose the reusable offer QR, Copy, or Share actions.
+Reusable Invoice request details retain their QR and total received. Stored
+payment records remain available, while the payment-count banner is omitted.
+Individual settled payment receipts show the success checkmark and do not expose the reusable offer QR, Copy, or Share actions.

@@ -2,6 +2,14 @@ import XCTest
 @testable import CashuWallet
 
 final class HistorySearchTests: XCTestCase {
+    func testFailedHistoryIconUsesXForBothDirections() {
+        for direction in [WalletTransaction.TransactionType.incoming, .outgoing] {
+            XCTAssertEqual(TransactionIcon(direction: direction, isFailed: true).symbolName, "xmark")
+        }
+        XCTAssertEqual(TransactionIcon(direction: .incoming).symbolName, "arrow.down")
+        XCTAssertEqual(TransactionIcon(direction: .outgoing).symbolName, "arrow.up")
+    }
+
 
     private func makeTransaction(
         amount: UInt64 = 210,

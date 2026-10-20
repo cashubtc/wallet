@@ -119,8 +119,11 @@ fun HistoryScreen(
         // Show the current ledger immediately, then quietly re-check pending
         // mint quotes (throttled) so a paid BOLT12 offer lands in history just
         // by opening the tab — no pull-to-refresh (iOS HistoryView parity).
+        // Held payments get the same check, so "View in history" from a
+        // payment the mint hasn't confirmed asks the mint right away.
         walletManager.loadTransactions()
         walletManager.syncPendingMintQuotesIfStale()
+        walletManager.syncPendingMeltQuotes()
     }
 
     // Unified, filtered, searched timeline merging transactions + Cashu Requests.
@@ -492,7 +495,7 @@ internal fun unifiedFiltered(
             is HistoryItem.Tx -> {
                 val tx = item.transaction
                 TransactionDisplay.title(tx).contains(normalizedQuery, ignoreCase = true) ||
-                    tx.amount.toString().contains(normalizedQuery) ||
+                    (!tx.isUnfundedAddress && tx.amount.toString().contains(normalizedQuery)) ||
                     tx.displayDescription?.contains(normalizedQuery, ignoreCase = true) == true
             }
             is HistoryItem.Req -> {

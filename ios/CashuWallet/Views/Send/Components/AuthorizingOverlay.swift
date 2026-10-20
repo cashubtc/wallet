@@ -26,6 +26,7 @@ struct PaymentStatusView: View {
     /// Label-only, matching the receipt rows in TransactionDetailView — no leading glyph.
     struct DetailRow: Identifiable {
         let label: String
+        var isAmount: Bool = false
         let value: String
         /// When true the value slot shows a mini spinner instead of `value`, so a row
         /// whose datum is still resolving keeps its slot reserved (no pop-in / reflow).
@@ -47,8 +48,17 @@ struct PaymentStatusView: View {
     /// still happening.
     var settlementPending: Bool = false
 
+    /// The payment left the wallet but the mint hasn't confirmed its outcome, so
+    /// the funds are held, not lost. The failure face then must not claim
+    /// failure: the glyph becomes the same pending clock, the title names what
+    /// it waits on, and the CTA points at History, where the payment resolves.
+    var awaitingMint: Bool = false
+
     /// Optional custom failure CTA (overrides the default Done / Try Again button).
     var failureCTA: FailureCTA? = nil
+
+    /// Opens History from the awaiting-mint face. When nil, that face offers Done.
+    var onViewHistory: (() -> Void)? = nil
 
     /// Success → dismiss/complete (Done tap). Failure → back to confirm (Try Again).
     let onDone: () -> Void
@@ -76,7 +86,9 @@ struct PaymentStatusView: View {
         successTitle: String = "Payment Sent!",
         failureTitle: String = "Payment Failed",
         settlementPending: Bool = false,
+        awaitingMint: Bool = false,
         failureCTA: FailureCTA? = nil,
+        onViewHistory: (() -> Void)? = nil,
         onDone: @escaping () -> Void,
         onRetry: @escaping () -> Void
     ) {
@@ -86,7 +98,9 @@ struct PaymentStatusView: View {
         self.successTitle = successTitle
         self.failureTitle = failureTitle
         self.settlementPending = settlementPending
+        self.awaitingMint = awaitingMint
         self.failureCTA = failureCTA
+        self.onViewHistory = onViewHistory
         self.onDone = onDone
         self.onRetry = onRetry
         // Failure and settlement-pending mounts stay deliberately still — the
@@ -105,11 +119,13 @@ struct PaymentStatusView: View {
         }
     }
 
+    private static let awaitingMintTitle = "Waiting for Mint"
+
     private var statusTitle: String {
         switch phase {
         case .processing: return processingTitle
         case .success:    return successTitle
-        case .failure:    return failureTitle
+        case .failure:    return awaitingMint ? Self.awaitingMintTitle : failureTitle
         }
     }
 
@@ -128,11 +144,18 @@ struct PaymentStatusView: View {
     /// band's own delayed animation supplies its cadence).
     private var bandVisible: Bool { !staged || entered }
 
+    private var successAmount: DetailRow? {
+        guard phase == .success, !settlementPending else { return nil }
+        return details.first { $0.isAmount && !$0.isPending && !$0.value.isEmpty }
+    }
+
+    private var receiptDetails: [DetailRow] {
+        details.filter { $0.id != successAmount?.id }
+    }
+
     var body: some View {
-        // Same vertical scaffold as the confirm screens (`PayFlowScaffold`), so the
-        // details block sits at the SAME Y across confirm → processing → success and
-        // never jumps as the state changes. The morphing icon + title occupy the hero
-        // band where the amount hero sits on the confirm screen.
+        // Reuse the payment scaffold. Completed payments promote the amount
+        // into the hero; the remaining receipt facts stay below it.
         PayFlowScaffold {
             VStack(spacing: 16) {
                 iconSlot
@@ -141,35 +164,54 @@ struct PaymentStatusView: View {
                 // landed. Inert (opacity 1, offset 0) outside a celebration
                 // mount, so the morph path renders byte-identically.
                 VStack(spacing: 8) {
-                    Text(statusTitle)
-                        .font(.title2.weight(.semibold))
-                        .contentTransition(.opacity)
-                        .multilineTextAlignment(.center)
+                    // Keep both titles centered during the crossfade. A Text
+                    // content transition interpolates their different widths,
+                    // sliding the outgoing title sideways as the amount arrives.
+                    ZStack {
+                        Text(statusTitle)
+                            .font(.title2.weight(.semibold))
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: .infinity)
+                            .id(statusTitle)
+                            .transition(.opacity)
+                    }
 
-                    // Reserved slot so success ↔ failure never nudges the icon above it.
-                    Text(statusMessage ?? " ")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .lineLimit(3)
-                        .opacity(statusMessage == nil ? 0 : 1)
-                        .padding(.horizontal, 32)
-                        .frame(minHeight: 44)
+                    if let amount = successAmount {
+                        AmountLockup(
+                            parts: AmountParts.parse(amount.value),
+                            role: .amountHero,
+                            accessibilityPrefix: amount.label
+                        )
+                        .padding(.horizontal, 24)
+                        .padding(.top, 16)
+                    } else {
+                        // Reserved slot so success ↔ failure never nudges the icon above it.
+                        Text(statusMessage ?? " ")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(3)
+                            .opacity(statusMessage == nil ? 0 : 1)
+                            .padding(.horizontal, 32)
+                            .frame(minHeight: 44)
+                    }
                 }
                 .opacity(bandVisible ? 1 : 0)
                 .offset(y: staged && !entered ? 8 : 0)
                 .animation(.smooth(duration: 0.3).delay(0.12), value: entered)
             }
+            .frame(minHeight: 220, alignment: .top)
         } details: {
             // Payment facts are terminal-only: processing shows just the spinner
             // and title, matching the claiming screen.
-            if !details.isEmpty, phase != .processing {
+            if !receiptDetails.isEmpty, phase != .processing {
                 VStack(spacing: 0) {
-                    ForEach(Array(details.enumerated()), id: \.element.id) { index, row in
+                    ForEach(receiptDetails) { row in
                         detailRow(row)
                     }
                 }
-                .padding(.horizontal)
+                .frame(maxWidth: PaymentDetailMetrics.maxWidth)
+                .padding(.horizontal, 24)
                 // Beat 3: the receipt settles in last. Opacity + a 6pt rise —
                 // never blur; these rows are money values.
                 .opacity(bandVisible ? 1 : 0)
@@ -247,9 +289,12 @@ struct PaymentStatusView: View {
                 // No `.symbolEffect(.bounce)` here — bounce is the payment-received
                 // celebration beat (DESIGN.md §6); a failure/caution glyph must not
                 // borrow it. It still scales + fades in, just without the delight.
-                Image(systemName: isCaution ? "exclamationmark.triangle.fill" : "xmark.circle.fill")
+                // An unconfirmed payment hasn't failed, so it wears the pending clock.
+                Image(systemName: awaitingMint
+                    ? "clock.fill"
+                    : (isCaution ? "exclamationmark.triangle.fill" : "xmark.circle.fill"))
                     .font(.statusGlyph)
-                    .foregroundStyle(isCaution ? .orange : .red)
+                    .foregroundStyle(awaitingMint || isCaution ? .orange : .red)
                     .transition(reduceMotion ? .opacity : .scale(scale: 0.92).combined(with: .opacity))
             }
         }
@@ -273,7 +318,17 @@ struct PaymentStatusView: View {
             Button(action: onDone) { Text("Done") }
                 .flatSheetSecondaryButton()
         case .failure(_, _, let isTerminal):
-            if let failureCTA {
+            if awaitingMint {
+                // The same quiet secondary as Done: nothing to retry, and
+                // History is where the held payment resolves.
+                if let onViewHistory {
+                    Button(action: onViewHistory) { Text("View in History") }
+                        .flatSheetSecondaryButton()
+                } else {
+                    Button(action: onDone) { Text("Done") }
+                        .flatSheetSecondaryButton()
+                }
+            } else if let failureCTA {
                 Button(action: failureCTA.action) { Text(failureCTA.title) }
                     .glassButton()
             } else if isTerminal {
@@ -288,10 +343,13 @@ struct PaymentStatusView: View {
     }
 
     private func detailRow(_ row: DetailRow) -> some View {
-        HStack {
-            Text(row.label)
-                .foregroundStyle(.secondary)
-            Spacer()
+        standardDetailRow(row)
+            .paymentDetailRow()
+            .accessibilityElement(children: .combine)
+    }
+
+    private func standardDetailRow(_ row: DetailRow) -> some View {
+        PaymentDetailPair(label: row.label) {
             if row.isPending {
                 // Value not resolved yet — hold the slot with a mini spinner (matches
                 // the confirm screen's loading-fee treatment) rather than dropping the
@@ -299,17 +357,11 @@ struct PaymentStatusView: View {
                 ProgressView().controlSize(.mini)
             } else {
                 Text(row.value)
-                    .fontWeight(.medium)
-                    .multilineTextAlignment(.trailing)
-                    .lineLimit(1)
+                    .fontWeight(.regular)
                     .truncationMode(.middle)
                     .contentTransition(.opacity)
             }
         }
-        .font(.subheadline)
-        .padding(.horizontal, 4)
-        .padding(.vertical, 14)
-        .accessibilityElement(children: .combine)
     }
 
     private func handlePhase(_ newPhase: Phase, announce: Bool) {
@@ -325,7 +377,7 @@ struct PaymentStatusView: View {
         case .failure(_, let isCaution, _):
             HapticFeedback.notification(isCaution ? .warning : .error)
             if announce {
-                AccessibilityNotification.Announcement(failureTitle).post()
+                AccessibilityNotification.Announcement(awaitingMint ? Self.awaitingMintTitle : failureTitle).post()
             }
         case .processing:
             break

@@ -16,11 +16,14 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.BaselineShift
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.em
 import com.cashu.me.Core.AmountParts
 import com.cashu.me.ui.theme.AmountScale
+import com.cashu.me.ui.theme.AmountUnitScale
 import com.cashu.me.ui.theme.BitcoinSymbol
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.asSubordinateUnit
@@ -116,22 +119,16 @@ private fun lockup(parts: AmountParts, style: TextStyle): AnnotatedString {
     val unitStyle = style.asSubordinateUnit()
     val secondary = MaterialTheme.colorScheme.onSurfaceVariant
 
-    // Baseline-aligned, not cap-aligned.
-    //
-    // Cap-aligning was tried and looks wrong: a unit word is lowercase, so its
-    // visual mass sits at x-height, far below the cap line the alignment
-    // targets. Raising it to the digits' cap line leaves it floating like a
-    // superscript rather than reading as part of the same amount — and the
-    // raised run also overflows the reserved line box, shearing the digits.
-    //
-    // Sitting the unit on the digits' baseline is what makes the two read as
-    // one object. Subordination is carried by size, weight and ink instead,
-    // which is enough. A currency *symbol* would be a different case — but a
-    // symbol takes the prefix path below and is not demoted at all.
+    // Center the unit beside the digits. Compose applies this shift against
+    // the parent font's ascent. Relative units also follow the numeral when
+    // auto-sizing reduces a long amount.
+    val fonts = CashuTheme.fonts
+    val unitRise = (1f - AmountUnitScale) * fonts.capHeightRatio / 2f
     val wordSpan = SpanStyle(
-        fontSize = unitStyle.fontSize,
+        fontSize = AmountUnitScale.em,
         fontWeight = unitStyle.fontWeight,
         color = secondary,
+        baselineShift = BaselineShift(unitRise / fonts.ascentRatio),
     )
     val gapSpan = SpanStyle(
         fontSize = 1.sp,

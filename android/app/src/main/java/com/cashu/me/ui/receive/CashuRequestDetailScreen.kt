@@ -1,18 +1,14 @@
 package com.cashu.me.ui.receive
 
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -20,16 +16,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.IosShare
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.CenterAlignedTopAppBar
-import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -52,6 +45,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.testTag
+import com.cashu.me.ui.testing.UiTestTags
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -84,6 +79,8 @@ import com.cashu.me.ui.components.InlineNotice
 import com.cashu.me.ui.components.InlineNoticeHost
 import com.cashu.me.ui.components.LocalConfirmationToastController
 import com.cashu.me.ui.components.DescriptionDetailRow
+import com.cashu.me.ui.history.RequestTechnicalDetailsSheet
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import com.cashu.me.ui.components.InspectorRow
 import com.cashu.me.ui.components.MintPickerSheet
 import com.cashu.me.ui.components.NumberPadFooter
@@ -97,7 +94,6 @@ import com.cashu.me.ui.components.SheetHeader
 import com.cashu.me.ui.components.TextButtonContext
 import com.cashu.me.ui.components.ToolbarIcon
 import com.cashu.me.ui.components.UnitPickerSheet
-import com.cashu.me.ui.components.WaitingForPaymentRow
 import com.cashu.me.ui.components.shareText
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.withMonoDigits
@@ -115,6 +111,7 @@ fun CashuRequestDetailScreen(
     nfcReceiveCoordinator: NfcReceiveCoordinator,
     requestId: String,
     onClose: () -> Unit,
+    onNfcSuccessDone: () -> Unit,
     asActivitySheet: Boolean = false,
     onBackdropVisibilityChanged: (Boolean) -> Unit = {},
 ) {
@@ -133,6 +130,10 @@ fun CashuRequestDetailScreen(
     val request = storeState.requests.firstOrNull { it.id == displayedRequestId }
     val requestReadiness = remember(settings, nostrState) {
         CashuRequestNostrReadiness.current(nostrService, settingsManager)
+    }
+    var technicalDetailsOpen by remember(displayedRequestId) { mutableStateOf(false) }
+    if (technicalDetailsOpen && request != null) {
+        RequestTechnicalDetailsSheet(request, walletManager, onDismissRequest = { technicalDetailsOpen = false })
     }
     var mintPickerOpen by remember { mutableStateOf(false) }
     var amountPickerOpen by remember { mutableStateOf(false) }
@@ -197,7 +198,6 @@ fun CashuRequestDetailScreen(
         }
     }
 
-    val paymentCount = request?.receivedPayments?.size ?: 0
     var observedPaymentIds by rememberSaveable(displayedRequestId) {
         mutableStateOf(request?.receivedPayments?.map { it.transactionId })
     }
@@ -364,11 +364,6 @@ fun CashuRequestDetailScreen(
                             detail = deliveryNotice.message,
                             severity = NoticeSeverity.Caution,
                         )
-                    } else {
-                        StatusBlock(
-                            received = request.receivedPayments.isNotEmpty(),
-                            paymentCount = paymentCount,
-                        )
                     }
 
                     Column(modifier = Modifier.fillMaxWidth()) {
@@ -408,7 +403,9 @@ fun CashuRequestDetailScreen(
                         }
                         InspectorRow(
                             label = "Created",
-                            value = formatDate(request.createdAtEpochMillis),
+                            value = DateFormat.getDateInstance(
+                                DateFormat.MEDIUM, LocalConfiguration.current.locales[0],
+                            ).format(Date(request.createdAtEpochMillis)),
                         )
                         if (request.totalReceived > 0L) {
                             InspectorRow(
@@ -418,6 +415,12 @@ fun CashuRequestDetailScreen(
                             )
                         }
 
+                        InspectorRow(
+                            label = "Details", value = "",
+                            onClick = { technicalDetailsOpen = true },
+                            trailingIcon = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                            modifier = Modifier.testTag(UiTestTags.HistoryTransactionDetails),
+                        )
                     }
 
                     InlineNoticeHost(
@@ -526,13 +529,16 @@ fun CashuRequestDetailScreen(
                 }
             }
             val nfcSuccessMintName = nfcState.settlementMint?.let { url ->
-                walletState.mints.firstOrNull { it.url == url }?.name ?: url
+                com.cashu.me.Core.mintDisplayName(url, walletState.mints)
             }
             NfcReceiveOverlay(
                 coordinator = nfcReceiveCoordinator,
                 successAmountLabel = nfcSuccessAmountLabel,
                 successMintName = nfcSuccessMintName,
-                onSuccessDone = ::finishPayment,
+                // Leaving disposes the NFC lifecycle and clears its session.
+                // Preserve the receipt during dismissal instead of reopening
+                // the reusable request underneath the outgoing screen.
+                onSuccessDone = onNfcSuccessDone,
             )
         }
         }
@@ -587,51 +593,6 @@ private fun NfcReceivePhase.isNfcTransferActive(): Boolean = this in setOf(
     NfcReceivePhase.Converting,
 )
 
-@Composable
-private fun StatusBlock(received: Boolean, paymentCount: Int) {
-    // Waiting → received swaps with the same fade + scale-in the terminal
-    // glyph uses, so an arriving payment reads as a morph, not a pop.
-    AnimatedContent(
-        targetState = received,
-        transitionSpec = {
-            (
-                fadeIn(tween(200)) + scaleIn(
-                    animationSpec = spring(
-                        dampingRatio = 0.7f,
-                        stiffness = Spring.StiffnessMediumLow,
-                    ),
-                    initialScale = 0.9f,
-                )
-                ) togetherWith fadeOut(tween(150))
-        },
-        label = "creq-status-block",
-    ) { isReceived ->
-        if (isReceived) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.CheckCircle,
-                    contentDescription = null,
-                    tint = CashuTheme.colors.received,
-                    modifier = Modifier.size(CashuTheme.spacing.loose),
-                )
-                Text(
-                    text = if (paymentCount == 1) "1 payment received" else "$paymentCount payments received",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = CashuTheme.colors.received,
-                )
-            }
-        } else {
-            WaitingForPaymentRow()
-        }
-    }
-}
-
-private fun formatDate(epochMillis: Long): String =
-    DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(epochMillis))
-
 /** Amount-only edit sheet for an existing Cashu Request (iOS
  *  `CashuRequestAmountPickerSheet` parity). An empty pad on Done naturally
  *  produces null ("Any") — no separate clear action needed. */
@@ -652,6 +613,7 @@ private fun CashuRequestAmountEditSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.background,
     ) {
         Column(
             modifier = Modifier
@@ -698,9 +660,10 @@ internal fun CashuRequestSuccessTerminal(
         modifier = modifier,
         phase = PaymentStatusPhase.Success,
         title = "Payment Received!",
+        successAmount = amountLabel,
         onDone = onDone,
         rows = {
-            CashuRequestReceiptRows(amountLabel = amountLabel, mintName = mintName)
+            CashuRequestReceiptRows(amountLabel = null, mintName = mintName)
         },
     )
 }

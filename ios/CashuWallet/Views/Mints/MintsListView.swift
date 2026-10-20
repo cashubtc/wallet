@@ -49,7 +49,7 @@ struct MintsListView: View {
             .backdropSheet(isPresented: $showDiscoverySheet) {
                 MintDiscoverySheet()
                     .environmentObject(walletManager)
-                    .flatBottomSheetSurface()
+                    .walletSheetSurface(fillsScreen: true)
             }
             .task {
                 await walletManager.refreshMintInfo()

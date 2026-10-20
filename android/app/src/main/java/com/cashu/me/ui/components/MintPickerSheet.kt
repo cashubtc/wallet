@@ -28,6 +28,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -79,7 +80,7 @@ fun MintPickerSheet(
                 // Keep mint identities crisp at rest. The header already supplies
                 // the breathing room above this list; an always-on fade only made
                 // the selected row look washed out.
-                LazyColumn(modifier = Modifier.weight(1f)) {
+                LazyColumn(modifier = Modifier.weight(1f).testTag("mintPickerList")) {
                     if (allowAnyMint) {
                         item(key = "any-mint") {
                             MintPickerAnyRow(

@@ -1,17 +1,6 @@
 import Foundation
 import Cdk
 
-enum MintRemovalPolicyError: LocalizedError {
-    case multipleUnits
-
-    var errorDescription: String? {
-        switch self {
-        case .multipleUnits:
-            return "This mint uses multiple currency units and cannot be removed safely yet. Keep it connected and try again after updating the app."
-        }
-    }
-}
-
 @MainActor
 enum MintRemovalPolicy {
     static func normalizedUnits(_ registeredUnits: [String]) -> [String] {
@@ -23,42 +12,38 @@ enum MintRemovalPolicy {
         return unique
     }
 
-    /// The native repository has no atomic multi-unit removal API. Refuse
-    /// before touching it rather than leave only part of a mint removed.
-    static func removalUnit(registeredUnits: [String]) throws -> String? {
-        let units = normalizedUnits(registeredUnits)
-        guard units.count <= 1 else { throw MintRemovalPolicyError.multipleUnits }
-        return units.first
-    }
-
     static func matches(_ lhs: String, _ rhs: String) -> Bool {
-        normalizedMintURL(lhs) == normalizedMintURL(rhs)
+        MintURLIdentity.normalized(lhs) == MintURLIdentity.normalized(rhs)
     }
 
     static func removingMint(withURL targetURL: String, from mints: [MintInfo]) -> [MintInfo] {
         mints.filter { !matches($0.url, targetURL) }
     }
 
-    private static func normalizedMintURL(_ url: String) -> String {
-        MintURLIdentity.normalized(url)
-    }
-
-    /// Commit local mint metadata only after the native removal succeeds.
+    /// Commit local mint metadata only after every registered unit wallet
+    /// has been removed natively.
     static func removeBeforeCommit(
         mint: MintInfo,
         registeredUnits: [String],
         removeWallet: @escaping (String, String) async throws -> Void,
         commitMetadata: () -> Void
     ) async throws {
-        let unit = try removalUnit(registeredUnits: registeredUnits)
+        let units = normalizedUnits(registeredUnits)
         try Task.checkCancellation()
-        if let unit {
+        if !units.isEmpty {
             // An unstructured child does not inherit later cancellation from
             // this caller. Once native removal begins, await its definite
             // result and mirror a success into metadata before cancellation
             // can escape across the commit boundary.
+            //
+            // CDK's removeWallet only drops the in-memory (mint, unit) entry;
+            // proofs stay in the database. Removing units one at a time cannot
+            // lose funds, and a failure part-way keeps the mint listed so a
+            // retry removes only the units still registered.
             let nativeRemoval = Task { @MainActor in
-                try await removeWallet(mint.url, unit)
+                for unit in units {
+                    try await removeWallet(mint.url, unit)
+                }
             }
             try await nativeRemoval.value
         }
@@ -172,19 +157,29 @@ class MintService: ObservableObject {
         }) else {
             throw WalletError.networkError("Mint is no longer tracked.")
         }
-        let registeredUnits = await repo.getWallets()
+        let registeredWalletUnits = await repo.getWallets()
             .filter { wallet in
                 MintRemovalPolicy.matches(wallet.mintUrl().url, mint.url)
             }
-            .map { PaymentRequestDecoder.unitDescription($0.unit()) }
+            .map { $0.unit() }
+        // Policy units are normalized strings; remove by the registered CDK
+        // unit so a custom unit's original casing still matches its wallet.
+        var walletUnitsByName: [String: CurrencyUnit] = [:]
+        for unit in registeredWalletUnits {
+            let names = MintRemovalPolicy.normalizedUnits([PaymentRequestDecoder.unitDescription(unit)])
+            if let name = names.first, walletUnitsByName[name] == nil {
+                walletUnitsByName[name] = unit
+            }
+        }
 
         try await MintRemovalPolicy.removeBeforeCommit(
             mint: mint,
-            registeredUnits: registeredUnits,
+            registeredUnits: registeredWalletUnits.map(PaymentRequestDecoder.unitDescription),
             removeWallet: { mintURL, unit in
                 try await repo.removeWallet(
                     mintUrl: MintUrl(url: mintURL),
-                    currencyUnit: PaymentRequestDecoder.currencyUnit(from: unit)
+                    currencyUnit: walletUnitsByName[unit]
+                        ?? PaymentRequestDecoder.currencyUnit(from: unit)
                 )
             },
             commitMetadata: {
@@ -319,7 +314,7 @@ class MintService: ObservableObject {
         guard !walletStore.isMintRemoved(url: normalized) else { return }
         if let index = mints.firstIndex(where: { MintRemovalPolicy.matches($0.url, normalized) }) {
             let unitName = PaymentRequestDecoder.unitDescription(unit)
-            if mints[index].name == "Unknown Mint", !mints[index].units.contains(unitName) {
+            if !mints[index].units.contains(unitName) {
                 mints[index].units.append(unitName)
                 saveMints()
                 if activeMint?.url == mints[index].url { activeMint = mints[index] }
@@ -566,6 +561,13 @@ class MintService: ObservableObject {
             mintInfo.supportsBolt12MintDescription = MintQuoteDomain.reportsBolt12MintDescription(
                 methods: fetchedInfo.nuts.nut04.methods.map {
                     (PaymentMethodKind.from($0.method), $0.description)
+                }
+            )
+
+            // Live NUT-05 advertisement is authoritative, including false.
+            mintInfo.supportsAmountlessBolt11Melt = MintInfo.reportsAmountlessBolt11Melt(
+                methods: fetchedInfo.nuts.nut05.methods.map {
+                    (PaymentMethodKind.from($0.method), $0.unit == .sat, $0.amountless)
                 }
             )
         }

@@ -64,10 +64,16 @@ extension WalletManager {
                   let userInfo = notification.userInfo,
                   let mintQuote = userInfo["mintQuote"] as? MintQuote else { return }
             let spendingConditions = userInfo["spendingConditions"] as? SpendingConditions
+            let npcQuote = userInfo["npcQuote"] as? NpubCashQuote
+            let address = userInfo["address"] as? String
+            let sessionID = userInfo["sessionID"] as? UUID
             Task {
                 await self.mintNPCQuote(
                     mintQuote: mintQuote,
-                    spendingConditions: spendingConditions
+                    spendingConditions: spendingConditions,
+                    npcQuote: npcQuote,
+                    address: address,
+                    sessionID: sessionID
                 )
             }
         }
@@ -75,11 +81,21 @@ extension WalletManager {
 
     func mintNPCQuote(
         mintQuote: MintQuote,
-        spendingConditions: SpendingConditions? = nil
+        spendingConditions: SpendingConditions? = nil,
+        npcQuote: NpubCashQuote? = nil,
+        address: String? = nil,
+        sessionID: UUID? = nil
     ) async {
         guard !processedQuotes.contains(mintQuote.id),
               !npcQuotesInFlight.contains(mintQuote.id) else { return }
 
+        let receipt = npcQuote.flatMap { quote in
+            address.map { NPCPaymentReceipt(quoteID: quote.id, address: $0,
+                                           amount: quote.amount, paidAt: quote.paidAt) }
+        }
+        if let receipt, let sessionID {
+            NPCService.shared.updatePaymentClaim(receipt, phase: .claiming, session: sessionID)
+        }
         npcQuotesInFlight.insert(mintQuote.id)
         defer {
             npcQuotesInFlight.remove(mintQuote.id)
@@ -117,17 +133,27 @@ extension WalletManager {
                         let totalAmount = proofs.reduce(UInt64(0)) { $0 + $1.amount.value }
 
                         self.markNPCQuoteProcessed(mintQuote.id)
+                        if let receipt, let sessionID {
+                            NPCService.shared.finishPaymentClaim(quoteID: receipt.quoteID, session: sessionID)
+                        }
 
                         await self.refreshBalanceAssumingWalletOperationLease()
                         await self.loadTransactionsAssumingWalletOperationLease()
+                        let inFlow: Bool
+                        if let npcQuote, let address {
+                            inFlow = NPCService.shared.publishReceivedPayment(NPCPaymentReceipt(
+                                quoteID: npcQuote.id, address: address,
+                                amount: totalAmount, paidAt: npcQuote.paidAt
+                            ))
+                        } else {
+                            inFlow = false
+                        }
                         SentryService.breadcrumb("NPC quote minted", category: "wallet.npc")
 
                         NotificationCenter.default.post(
                             name: .cashuTokenReceived,
                             object: nil,
-                            // Background receive: no receive sheet is up to confirm it, so
-                            // ask the home beat to fire the "sats landed" haptic.
-                            userInfo: ["amount": totalAmount, "source": "npub.cash", "homeHaptic": true]
+                            userInfo: ["amount": totalAmount, "source": "npub.cash", "homeHaptic": !inFlow]
                         )
                     } catch {
                         await self.captureWalletFailureDiagnostics(kind: .mint, quoteID: mintQuote.id)
@@ -143,7 +169,13 @@ extension WalletManager {
         } catch {
             if isAlreadyIssuedMintError(error) {
                 markNPCQuoteProcessed(mintQuote.id)
+                if let receipt, let sessionID {
+                    NPCService.shared.finishPaymentClaim(quoteID: receipt.quoteID, session: sessionID)
+                }
             } else {
+                if let receipt, let sessionID {
+                    NPCService.shared.updatePaymentClaim(receipt, phase: .failed, session: sessionID)
+                }
                 SentryService.capture(error)
             }
             AppLogger.wallet.error(

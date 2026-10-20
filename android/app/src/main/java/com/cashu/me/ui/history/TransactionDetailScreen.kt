@@ -1,17 +1,18 @@
 package com.cashu.me.ui.history
 
+import com.cashu.me.ui.components.PendingTokenClaimNotice
 import android.content.ClipData
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.ContentCopy
@@ -70,7 +71,9 @@ import com.cashu.me.ui.components.AmountText
 import com.cashu.me.ui.components.AmountHero
 import com.cashu.me.ui.components.ExplorerLinkRow
 import com.cashu.me.ui.components.DescriptionDetailRow
+import com.cashu.me.ui.components.DisclosureRow
 import com.cashu.me.ui.components.InspectorRow
+import com.cashu.me.ui.components.InspectorRowStyle
 import com.cashu.me.ui.components.InlineNotice
 import com.cashu.me.ui.components.LocalConfirmationToastController
 import com.cashu.me.ui.components.NoticeSeverity
@@ -85,6 +88,8 @@ import com.cashu.me.ui.theme.LeadingLabel
 import com.cashu.me.ui.theme.atSize
 import com.cashu.me.ui.theme.withMonoDigits
 import com.cashu.me.ui.testing.UiTestTags
+import androidx.compose.foundation.layout.Row
+import androidx.compose.material3.Text
 
 /**
  * Content-fitting bottom sheet for any transaction, settled or live. Every
@@ -136,6 +141,7 @@ fun TransactionReceiptSheet(
     val current = resolved ?: openSnapshot
 
     var checkingClaim by remember(transaction.id) { mutableStateOf(false) }
+    var showTechnicalDetails by remember(transaction.id) { mutableStateOf(false) }
     var manualCheckResult: PendingTokenClaimCheckResult? by remember(transaction.id) {
         mutableStateOf(null)
     }
@@ -145,7 +151,7 @@ fun TransactionReceiptSheet(
         if (!walletState.isRuntimeReady) return@LaunchedEffect
         val quoteId = transaction.mintQuoteIdForStatusRefresh ?: return@LaunchedEffect
         lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            if (TransactionDisplay.showsQr(transaction)) {
+            if (TransactionDisplay.monitorsWhileOpen(transaction)) {
                 walletManager.monitorDisplayedMintQuote(
                     quoteId, confirmationOwner = ReceiveConfirmationOwner.Home,
                 )
@@ -165,7 +171,9 @@ fun TransactionReceiptSheet(
     val fields = remember(current, walletState.mints) {
         TransactionDisplay.detailFields(current).filterNot { it.label == "Memo" }.map { field ->
             if (field.label == "Mint") {
-                field.copy(value = walletState.mints.firstOrNull { it.url == current.mintUrl }?.name ?: field.value)
+                field.copy(value = current.mintUrl?.let {
+                    com.cashu.me.Core.mintDisplayName(it, walletState.mints)
+                } ?: field.value)
             } else field
         }
     }
@@ -213,7 +221,8 @@ fun TransactionReceiptSheet(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.section),
         ) {
-            HeroAmount(
+            // An unfunded deposit address has no amount to show yet.
+            if (!current.isUnfundedAddress) HeroAmount(
                 transaction = current,
                 formatter = formatter,
                 preferredPrimary = settings.homeBalancePrimary,
@@ -227,11 +236,11 @@ fun TransactionReceiptSheet(
             Column(modifier = Modifier.fillMaxWidth()) {
                 fields.forEach { field ->
                     InspectorRow(
+                        style = InspectorRowStyle.History,
                         label = field.label,
-                        modifier = Modifier.heightIn(min = 48.dp),
                         value = field.value,
-                        valueMonospaced = field.value.length > 24 ||
-                            field.label in MonospacedLabels,
+                        valueMonospaced = field.label != "Mint" &&
+                            (field.value.length > 24 || field.label in MonospacedLabels),
                         onClick = field.copyValue?.let { full ->
                             {
                                 scope.launch {
@@ -247,39 +256,29 @@ fun TransactionReceiptSheet(
                         trailingIcon = field.copyValue?.let { Icons.Outlined.ContentCopy },
                     )
                     if (field.label == "Mint" && description != null) {
-                        DescriptionDetailRow(description)
+                        DescriptionDetailRow(description, style = InspectorRowStyle.History)
                     }
                 }
                 if (fields.none { it.label == "Mint" } && description != null) {
-                    DescriptionDetailRow(description)
+                    DescriptionDetailRow(description, style = InspectorRowStyle.History)
                 }
                 // Explorer link joins the detail rows (iOS parity) —
                 // it's reference material, not an action.
                 if (explorerUrl != null) {
-                    ExplorerLinkRow(onClick = { context.openInBrowser(explorerUrl) })
+                    ExplorerLinkRow(onClick = { context.openInBrowser(explorerUrl) }, style = InspectorRowStyle.History)
                 }
+                // Last row: the identifiers behind the payment (quote ID,
+                // request, proof) open in a nested full-height sheet, like the
+                // description reader (iOS parity).
+                DisclosureRow(
+                    label = "Details",
+                    onClick = { showTechnicalDetails = true },
+                    modifier = Modifier.testTag(UiTestTags.HistoryTransactionDetails),
+                )
             }
 
             if (offersManualClaimCheck) {
-                when (val outcome = manualCheckResult) {
-                    PendingTokenClaimCheckResult.NotClaimed -> InlineNotice(
-                        text = "Status checked",
-                        detail = "This token has not been claimed yet.",
-                        severity = NoticeSeverity.Info,
-                        modifier = Modifier.semantics {
-                            liveRegion = LiveRegionMode.Polite
-                        },
-                    )
-                    is PendingTokenClaimCheckResult.Failed -> InlineNotice(
-                        text = "Couldn't check status",
-                        detail = outcome.message.text,
-                        modifier = Modifier.semantics {
-                            liveRegion = LiveRegionMode.Polite
-                        },
-                        severity = NoticeSeverity.Caution,
-                    )
-                    PendingTokenClaimCheckResult.Claimed, null -> Unit
-                }
+                PendingTokenClaimNotice(manualCheckResult)
             }
         }
     }
@@ -351,6 +350,7 @@ fun TransactionReceiptSheet(
 
     ActivityDetailSheet(
         title = title,
+        fitsContent = !(showsQr && description != null),
         onDismissRequest = onDismissRequest,
         sheetState = sheetState,
         sheetGesturesEnabled = !dismiss.isDismissing,
@@ -360,6 +360,13 @@ fun TransactionReceiptSheet(
         } else null,
         modifier = Modifier.testTag(UiTestTags.TransactionReceiptSheet),
     ) {
+        if (showTechnicalDetails) {
+            TransactionTechnicalDetailsSheet(
+                transaction = current,
+                walletManager = walletManager,
+                onDismissRequest = { showTechnicalDetails = false },
+            )
+        }
         if (showsQr && description != null) {
             PaymentDetailContent(
                 modifier = Modifier.weight(1f, fill = false),
@@ -405,6 +412,8 @@ private fun copyConfirmationMessage(label: String): String = when (label) {
 // Static receipt amount pair — direction already lives in the sheet title, so
 // historical details keep the settled sat amount quiet and unsigned. Fiat is a
 // subordinate live reference, never an interactive display-mode control.
+
+
 @Composable
 private fun HeroAmount(
     transaction: WalletTransaction,
@@ -466,7 +475,7 @@ internal fun transactionReceiptAmountDisplay(
     useBitcoinSymbol = useBitcoinSymbol,
 )
 
-private fun WalletTransaction.explorerUrl(): String? {
+internal fun WalletTransaction.explorerUrl(): String? {
     if (kind != TransactionKind.Onchain) return null
     return preimage?.let {
         OnchainExplorer.transactionWebUrl(txid = it, address = invoice, mintUrl = mintUrl)

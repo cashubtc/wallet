@@ -7,6 +7,152 @@ import SQLite3
 final class WalletAuditRegressionTests: XCTestCase {
     private enum Failure: Error { case offline }
 
+    func testSharedBech32FramingAcceptsBothChecksumsAndRejectsCorruption() throws {
+        let classic = try Bech32.decodeWords("A12UEL5L")
+        XCTAssertEqual(classic.hrp, "a")
+        XCTAssertEqual(classic.checksum, 1)
+        XCTAssertTrue(classic.words.isEmpty)
+        let modern = try Bech32.decodeWords("A1LQFN3A")
+        XCTAssertEqual(modern.checksum, 0x2bc830a3)
+        for invalid in ["a12UEL5L", "A12UEL5Q", "1UEL5L", " a12uel5l", "a1!uel5l"] {
+            XCTAssertThrowsError(try Bech32.decodeWords(invalid), invalid)
+        }
+        let bytes = Data((0..<32).map(UInt8.init))
+        let npub = try Bech32.encode(hrp: "npub", data: bytes)
+        XCTAssertEqual(try Bech32.decode(hrp: "npub", bech32: npub), Array(bytes))
+        XCTAssertEqual(try Bech32.decode(hrp: "npub", bech32: npub.uppercased()), Array(bytes))
+        XCTAssertThrowsError(try Bech32.decode(hrp: "nsec", bech32: npub))
+        XCTAssertThrowsError(try Bech32.decode(hrp: "a", bech32: "A1LQFN3A"))
+    }
+
+
+    func testSharedHexCodecRoundTripsAllBytesAndRejectsMalformedInput() {
+        let bytes = Data((0...255).map(UInt8.init))
+        XCTAssertEqual(Data(hexString: bytes.hexEncodedString), bytes)
+        XCTAssertEqual(Data(hexString: bytes.hexEncodedString.uppercased()), bytes)
+        XCTAssertEqual(Data(hexString: ""), Data())
+        for malformed in ["0", "001", "gg", " 00", "00\n", "é0", "０0"] {
+            XCTAssertNil(Data(hexString: malformed), malformed)
+        }
+    }
+
+    func testP2PKComparisonSharesCompressedAndBareKeyIdentity() {
+        let xOnly = String(repeating: "ab", count: 32)
+        XCTAssertEqual(P2PKPublicKey.normalizedForComparison(" 02" + xOnly.uppercased() + "\n"), xOnly)
+        XCTAssertEqual(P2PKPublicKey.normalizedForComparison("03" + xOnly), xOnly)
+        XCTAssertEqual(P2PKPublicKey.normalizedForComparison(xOnly), xOnly)
+        // Only full compressed keys lose their prefix.
+        XCTAssertEqual(P2PKPublicKey.normalizedForComparison("02ab"), "02ab")
+    }
+
+
+    /// Run in a fresh test simulator: never replace an existing wallet fixture.
+    func testSameSeedRestoreKeepsNativeQuoteKeyCounterAndRepository() async throws {
+        let manager = WalletManager()
+        guard try manager.keychainService.loadMnemonic() == nil else {
+            throw XCTSkip("This integration regression requires an empty test wallet container.")
+        }
+        let phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+        try await manager.initializeRestoredWallet(mnemonic: phrase)
+        let database = try XCTUnwrap(manager.db)
+        let signingKey = SecretKey(hex: String(repeating: "0", count: 63) + "1")
+        let quote = MintQuote(
+            id: "same-seed-quote", amount: nil, unit: .sat, request: "test-offer",
+            state: .paid, expiry: 0, mintUrl: MintUrl(url: "https://mint.example"),
+            amountIssued: Amount(value: 0), amountPaid: Amount(value: 12), updatedAt: 0,
+            estimatedBlocks: nil, paymentMethod: .bolt12, secretKey: signingKey.hex,
+            usedByOperation: nil, version: 0
+        )
+        try await database.addMintQuote(quote: quote)
+        let beforeCounter = try await database.incrementDerivationCounter(namespace: "nut20_quote", count: 17)
+        try await manager.initializeRestoredWallet(mnemonic: phrase.uppercased())
+        XCTAssertTrue(manager.db === database)
+        let retained = try await database.getMintQuote(quoteId: quote.id)
+        XCTAssertEqual(retained?.secretKey, signingKey.hex)
+        XCTAssertEqual(retained?.amountPaid.value, 12)
+        let afterCounter = try await database.incrementDerivationCounter(namespace: "nut20_quote", count: 0)
+        XCTAssertEqual(afterCounter, beforeCounter)
+        // Finish the isolated fixture explicitly so no staged journal leaks into
+        // the other tests; there was no previous wallet to discard.
+        let completed = await manager.completeRestore()
+        XCTAssertTrue(completed)
+        try await manager.deleteWallet()
+    }
+
+    func testRestoreIdentityPreservesSameSeedAndIsolatesDifferentSeed() throws {
+        let phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+        let other = "legal winner thank year wave sausage worth useful legal winner thank yellow"
+        let entropy = Data(try Cdk.mnemonicToEntropy(mnemonic: phrase))
+        XCTAssertTrue(WalletRestorePolicy.reusesExistingWallet(previousEntropy: entropy, restoredEntropy: entropy))
+        XCTAssertFalse(WalletRestorePolicy.reusesExistingWallet(previousEntropy: nil, restoredEntropy: entropy))
+        XCTAssertFalse(WalletRestorePolicy.reusesExistingWallet(previousEntropy: entropy, restoredEntropy: Data(try Cdk.mnemonicToEntropy(mnemonic: other))))
+    }
+
+    func testStagedRestoreRetainsQuoteKeysAndRecoveredFundsAcrossRelaunch() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let db = directory.appendingPathComponent("wallet.db")
+        try Data("old quote keys and counters".utf8).write(to: db)
+        let storage = ReplacementJournalStorage()
+        let journal = DurableWalletReplacement(storage: storage, urls: [db])
+        try journal.begin(state: Data("old state".utf8))
+        try Data("newly recovered funds".utf8).write(to: db)
+        try journal.stageRestore()
+        for _ in 0..<3 {
+            try DurableWalletReplacement(storage: storage, urls: [db]).recover { _ in XCTFail("Do not roll back staged funds") }
+        }
+        XCTAssertEqual(try Data(contentsOf: db), Data("newly recovered funds".utf8))
+        let backup = URL(fileURLWithPath: db.path + ".replacement-backup-v1")
+        XCTAssertEqual(try Data(contentsOf: backup), Data("old quote keys and counters".utf8))
+        XCTAssertThrowsError(try journal.requireNoStagedRestore())
+        try journal.finishRestore()
+        try journal.finishRestore()
+        try journal.recover { _ in XCTFail("Finished restore must not roll back") }
+        try journal.finishRestore()
+        XCTAssertEqual(try Data(contentsOf: db), Data("newly recovered funds".utf8))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: backup.path))
+        XCTAssertFalse(storage.hasSecret(forKey: DurableWalletReplacement.key))
+    }
+
+    func testFailedRestoreCompletionRetainsBackupsAndRetries() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let db = directory.appendingPathComponent("wallet.db")
+        try Data("old".utf8).write(to: db)
+        let storage = ReplacementJournalStorage()
+        let journal = DurableWalletReplacement(storage: storage, urls: [db])
+        try journal.begin(state: Data())
+        try Data("recovered".utf8).write(to: db)
+        try journal.stageRestore()
+        storage.failWrite = 4 // preparing, installing, staging, then failed commit
+        XCTAssertThrowsError(try journal.finishRestore())
+        try journal.recover { _ in XCTFail("Staged wallet must remain active") }
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: db.path + ".replacement-backup-v1")), Data("old".utf8))
+        try journal.finishRestore()
+        try journal.recover { _ in XCTFail("Committed restore must not roll back") }
+        XCTAssertEqual(try Data(contentsOf: db), Data("recovered".utf8))
+    }
+
+    func testMissingStagedBackupDoesNotDiscardRecoveredWallet() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let db = directory.appendingPathComponent("wallet.db")
+        try Data("old".utf8).write(to: db)
+        let storage = ReplacementJournalStorage()
+        let journal = DurableWalletReplacement(storage: storage, urls: [db])
+        try journal.begin(state: Data())
+        try Data("recovered".utf8).write(to: db)
+        try journal.stageRestore()
+        try FileManager.default.removeItem(at: URL(fileURLWithPath: db.path + ".replacement-backup-v1"))
+        XCTAssertThrowsError(try journal.finishRestore())
+        XCTAssertThrowsError(try journal.recover { _ in XCTFail("Do not roll back recovered funds") })
+        XCTAssertEqual(try Data(contentsOf: db), Data("recovered".utf8))
+        XCTAssertTrue(storage.hasSecret(forKey: DurableWalletReplacement.key))
+    }
+
     func testReplacementCheckpointPreservesSqliteWalContents() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -255,7 +401,10 @@ final class WalletAuditRegressionTests: XCTestCase {
     func testPaymentSurfacesDistinguishPayloadsWithIdenticalPrefixes() {
         let prefix = String(repeating: "a", count: 80)
         XCTAssertNotEqual(FlowCover.receiveToken(prefix + "1").id, FlowCover.receiveToken(prefix + "2").id)
-        XCTAssertNotEqual(WalletSheet.meltInvoice(prefix + "1").id, WalletSheet.meltInvoice(prefix + "2").id)
+        let sheet = { (invoice: String) in
+            WalletSheet.sendAmount(.melt(request: invoice, mode: .lightning, decoded: .bolt11(amountSats: 21, description: nil)))
+        }
+        XCTAssertNotEqual(sheet(prefix + "1").id, sheet(prefix + "2").id)
     }
 
     func testMintIdentitiesPreserveSchemePathAndHostBoundaries() {
@@ -340,6 +489,197 @@ final class WalletAuditRegressionTests: XCTestCase {
         XCTAssertEqual(stored?.request, original.request)
     }
 
+    func testPaidOnchainStatusReloadAllowsRepeatedMetadataWrites() async throws {
+        let database = try WalletSqliteDatabase.newInMemory()
+        let original = onchainQuote()
+        try await database.addMintQuote(quote: original)
+        let service = LightningService(walletRepository: { nil }, walletDatabase: { database }, getActiveMint: { nil })
+
+        for _ in 0..<3 {
+            let before = try await database.getMintQuote(quoteId: original.id)!
+            let refreshed = try await MintQuoteRecovery.refresh(
+                check: {
+                    // CDK 0.18 persists the update, then returns its pre-write version.
+                    try await database.addMintQuote(quote: before)
+                    return before
+                },
+                reload: { try await database.getMintQuote(quoteId: original.id) }
+            )
+            XCTAssertGreaterThan(refreshed.version, before.version)
+            XCTAssertEqual(refreshed.amountPaid.value, 1_000)
+            XCTAssertEqual(refreshed.amountIssued.value, 0)
+            // The original status result is rejected by this same guard.
+            // Using the reloaded result lets reconciliation proceed to issuance.
+            try await service.replaceStoredMintQuote(refreshed, in: database)
+        }
+    }
+
+    func testConfirmedOnchainReceiveReachesMintingAndIssuedState() async throws {
+        let database = try WalletSqliteDatabase.newInMemory()
+        let original = onchainQuote()
+        try await database.addMintQuote(quote: original)
+        let wallet = try OnchainStatusWallet(database: database)
+        let repository = try OnchainStatusRepository(wallet: wallet, database: database)
+        let service = LightningService(walletRepository: { repository }, walletDatabase: { database }, getActiveMint: { nil })
+
+        for _ in 0..<3 {
+            let checked = try await service.checkMintQuote(quoteId: original.id)
+            XCTAssertEqual(checked.state, .paid)
+            XCTAssertEqual(checked.mintableAmount, 1_000)
+        }
+        let received = try await service.mintTokens(quoteId: original.id)
+        XCTAssertEqual(received, 1_000)
+        XCTAssertEqual(wallet.mintCalls, 1)
+        let settled = try await service.checkMintQuote(quoteId: original.id)
+        XCTAssertEqual(settled.state, .issued)
+        XCTAssertEqual(settled.mintableAmount, 0)
+    }
+
+    func testOnchainStatusReloadKeepsCdkRecoveryReservationChanges() async throws {
+        let database = try WalletSqliteDatabase.newInMemory()
+        let original = onchainQuote()
+        try await database.addMintQuote(quote: original)
+        let operationID = UUID().uuidString.lowercased()
+        try await database.reserveMintQuote(quoteId: original.id, operationId: operationID)
+        let reserved = try await database.getMintQuote(quoteId: original.id)!
+        let refreshed = try await MintQuoteRecovery.refresh(
+            check: {
+                try await database.releaseMintQuote(operationId: operationID)
+                return reserved
+            },
+            reload: { try await database.getMintQuote(quoteId: original.id) }
+        )
+        XCTAssertNil(refreshed.usedByOperation)
+        XCTAssertEqual(refreshed.secretKey, original.secretKey)
+        XCTAssertEqual(refreshed.amountPaid.value, 1_000)
+    }
+
+    func testOnchainStatusReloadFailsClosedWhenStoredQuoteIsMissing() async {
+        do {
+            _ = try await MintQuoteRecovery.refresh(check: { self.onchainQuote() }, reload: { nil })
+            XCTFail("Must not fall back to the stale status result")
+        } catch { }
+    }
+
+    func testOnchainStatusReloadPropagatesDatabaseFailure() async {
+        do {
+            _ = try await MintQuoteRecovery.refresh(
+                check: { self.onchainQuote() }, reload: { throw Failure.offline }
+            )
+            XCTFail("Must not continue with stale quote ownership")
+        } catch { XCTAssertTrue(error is Failure) }
+    }
+
+    private func onchainQuote() -> MintQuote {
+        MintQuote(
+            id: "onchain-quote", amount: nil, unit: .sat, request: "bc1qexample", state: .paid,
+            expiry: 0, mintUrl: MintUrl(url: "https://mint.example"),
+            amountIssued: Amount(value: 0), amountPaid: Amount(value: 1_000), updatedAt: 1,
+            estimatedBlocks: nil, paymentMethod: .onchain, secretKey: nil,
+            usedByOperation: nil, version: 0
+        )
+    }
+
+    func testOnchainStatusCheckAdoptsCdkStoredQuote() async throws {
+        let database = try WalletSqliteDatabase.newInMemory()
+        let address = "bc1qexampledepositaddress"
+        try await database.addMintQuote(quote: onchainQuote(request: address, paid: 0, version: 0))
+        let beforeCheckRow = try await database.getMintQuote(quoteId: "onchain-quote")
+        let beforeCheck = try XCTUnwrap(beforeCheckRow)
+        // CDK's status check stores the mint's counters, then returns its
+        // pre-write copy, which is one version behind the stored row.
+        let checked = onchainQuote(request: address, paid: 300_000, version: beforeCheck.version)
+        try await database.addMintQuote(quote: checked)
+        let service = LightningService(walletRepository: { nil }, walletDatabase: { database }, getActiveMint: { nil })
+
+        do {
+            try await service.replaceStoredMintQuote(checked, in: database)
+            XCTFail("The stale copy must still be rejected by the version guard")
+        } catch { }
+
+        let refreshed = try await service.storedMintQuoteAfterStatusCheck(
+            quoteId: checked.id, paymentMethod: .onchain, fallbackAmount: nil
+        )
+        XCTAssertEqual(refreshed.amountPaid.value, 300_000)
+        XCTAssertEqual(refreshed.amountIssued.value, 0)
+        XCTAssertEqual(refreshed.amount?.value, 300_000)
+        XCTAssertEqual(refreshed.request, address)
+        let storedRow = try await database.getMintQuote(quoteId: "onchain-quote")
+        let stored = try XCTUnwrap(storedRow)
+        XCTAssertEqual(stored.amountPaid.value, 300_000)
+        XCTAssertEqual(stored.amount?.value, 300_000)
+        XCTAssertGreaterThan(stored.version, checked.version)
+    }
+
+    func testStatusCheckWithoutLocalNormalizationLeavesCdkRowUntouched() async throws {
+        let database = try WalletSqliteDatabase.newInMemory()
+        try await database.addMintQuote(quote: onchainQuote(request: "bc1qexample", paid: 0, version: 0))
+        let beforeCheckRow = try await database.getMintQuote(quoteId: "onchain-quote")
+        let beforeCheck = try XCTUnwrap(beforeCheckRow)
+        let service = LightningService(walletRepository: { nil }, walletDatabase: { database }, getActiveMint: { nil })
+
+        let refreshed = try await service.storedMintQuoteAfterStatusCheck(
+            quoteId: beforeCheck.id, paymentMethod: .onchain, fallbackAmount: nil
+        )
+        XCTAssertNil(refreshed.amount)
+        let storedRow = try await database.getMintQuote(quoteId: "onchain-quote")
+        let stored = try XCTUnwrap(storedRow)
+        XCTAssertEqual(stored.version, beforeCheck.version)
+    }
+
+    func testLightningStatusCheckDoesNotRewriteCurrentBolt11Quote() async throws {
+        let database = try WalletSqliteDatabase.newInMemory()
+        let checked = MintQuote(
+            id: "bolt11-status", amount: Amount(value: 21), unit: .sat, request: "invoice",
+            state: .paid, expiry: 1_900_000_000, mintUrl: MintUrl(url: "https://mint.example"),
+            amountIssued: Amount(value: 0), amountPaid: Amount(value: 21), updatedAt: 1,
+            estimatedBlocks: nil, paymentMethod: .bolt11, secretKey: nil,
+            usedByOperation: nil, version: 0
+        )
+        try await database.addMintQuote(quote: checked)
+        try await database.addMintQuote(quote: checked)
+        let before = try await database.getMintQuote(quoteId: checked.id)!
+        let service = LightningService(walletRepository: { nil }, walletDatabase: { database }, getActiveMint: { nil })
+        let refreshed = try await service.storedMintQuoteAfterStatusCheck(
+            quoteId: checked.id, paymentMethod: .bolt11, fallbackAmount: 21
+        )
+        let after = try await database.getMintQuote(quoteId: checked.id)!
+        XCTAssertEqual(refreshed.version, before.version)
+        XCTAssertEqual(after.version, before.version)
+        XCTAssertEqual(refreshed.amountPaid.value, 21)
+    }
+
+    func testLightningStatusCheckNormalizesBolt12ExpiryOnlyOnce() async throws {
+        let database = try WalletSqliteDatabase.newInMemory()
+        let checked = quote(reservation: nil)
+        try await database.addMintQuote(quote: checked)
+        try await database.addMintQuote(quote: checked)
+        let before = try await database.getMintQuote(quoteId: checked.id)!
+        let service = LightningService(walletRepository: { nil }, walletDatabase: { database }, getActiveMint: { nil })
+        let refreshed = try await service.storedMintQuoteAfterStatusCheck(
+            quoteId: checked.id, paymentMethod: .bolt12, fallbackAmount: nil
+        )
+        XCTAssertEqual(refreshed.expiry, 253_402_300_799)
+        XCTAssertEqual(refreshed.version, before.version + 1)
+        let repeated = try await service.storedMintQuoteAfterStatusCheck(
+            quoteId: checked.id, paymentMethod: .bolt12, fallbackAmount: nil
+        )
+        XCTAssertEqual(repeated.version, refreshed.version)
+        XCTAssertEqual(repeated.amountPaid, refreshed.amountPaid)
+        XCTAssertEqual(repeated.usedByOperation, refreshed.usedByOperation)
+    }
+
+    func testLightningStatusCheckRejectsMissingStoredQuote() async throws {
+        let database = try WalletSqliteDatabase.newInMemory()
+        let service = LightningService(walletRepository: { nil }, walletDatabase: { database }, getActiveMint: { nil })
+        do {
+            _ = try await service.storedMintQuoteAfterStatusCheck(
+                quoteId: "missing", paymentMethod: .bolt11, fallbackAmount: 21
+            )
+            XCTFail("Must not continue with a stale status result")
+        } catch { }
+    }
+
     func testNWCRejectsLimitThatWouldOverflowMillisatoshis() throws {
         XCTAssertNil(try NWCManager.paymentLimitMsat(nil))
         XCTAssertEqual(try NWCManager.paymentLimitMsat(100), 100_000)
@@ -410,6 +750,71 @@ final class WalletAuditRegressionTests: XCTestCase {
             usedByOperation: reservation, version: 0
         )
     }
+    private func onchainQuote(request: String, paid: UInt64, version: UInt32) -> MintQuote {
+        MintQuote(
+            id: "onchain-quote", amount: nil, unit: .sat, request: request, state: .unpaid,
+            expiry: 0, mintUrl: MintUrl(url: "https://mint.example"),
+            amountIssued: Amount(value: 0), amountPaid: Amount(value: paid), updatedAt: 0,
+            estimatedBlocks: nil, paymentMethod: .onchain, secretKey: nil,
+            usedByOperation: nil, version: version
+        )
+    }
+}
+
+/// Emulates CDK 0.18's status contract over its real SQLite backend: save the
+/// updated quote, then return the object with the pre-write version.
+private final class OnchainStatusWallet: Wallet, @unchecked Sendable {
+    private let database: WalletSqliteDatabase
+    private(set) var mintCalls = 0
+
+    init(database: WalletSqliteDatabase) throws {
+        self.database = database
+        // CDK 0.18's NoHandle initializer still frees handle zero on teardown.
+        let native = try Wallet(
+            mintUrl: "https://mint.example", unit: .sat, mnemonic: generateMnemonic(),
+            store: customWalletStore(db: database), config: WalletConfig(targetProofCount: nil)
+        )
+        super.init(unsafeFromHandle: native.uniffiCloneHandle())
+    }
+
+    required init(unsafeFromHandle handle: UInt64) { fatalError("Test double only") }
+
+    override func checkMintQuoteStatus(quoteId: String) async throws -> MintQuote {
+        let current = try await database.getMintQuote(quoteId: quoteId)!
+        let checked = MintQuote(
+            id: current.id, amount: current.amount, unit: current.unit, request: current.request,
+            state: mintCalls == 0 ? .paid : .issued, expiry: current.expiry, mintUrl: current.mintUrl,
+            amountIssued: mintCalls == 0 ? current.amountIssued : current.amountPaid,
+            amountPaid: current.amountPaid, updatedAt: current.updatedAt,
+            estimatedBlocks: current.estimatedBlocks, paymentMethod: current.paymentMethod,
+            secretKey: current.secretKey, usedByOperation: current.usedByOperation, version: current.version
+        )
+        try await database.addMintQuote(quote: checked)
+        return checked
+    }
+
+    override func mintUnified(
+        quoteId: String, amountSplitTarget: SplitTarget, spendingConditions: SpendingConditions?
+    ) async throws -> [Proof] {
+        mintCalls += 1
+        return [Proof(amount: Amount(value: 1_000), secret: "test-secret",
+            c: "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+            keysetId: "001234567890abcd", witness: nil, dleq: nil, p2pkE: nil)]
+    }
+}
+
+private final class OnchainStatusRepository: WalletRepository, @unchecked Sendable {
+    private let wallet: Wallet
+
+    init(wallet: Wallet, database: WalletSqliteDatabase) throws {
+        self.wallet = wallet
+        let native = try WalletRepository(mnemonic: generateMnemonic(), store: customWalletStore(db: database))
+        super.init(unsafeFromHandle: native.uniffiCloneHandle())
+    }
+
+    required init(unsafeFromHandle handle: UInt64) { fatalError("Test double only") }
+
+    override func getWallet(mintUrl: MintUrl, unit: Cdk.CurrencyUnit) async throws -> Wallet { wallet }
 }
 
 private final class ReplacementJournalStorage: SecureStorageProtocol {

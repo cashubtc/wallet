@@ -1,4 +1,5 @@
 import Foundation
+import Cdk
 
 /// Pure mint-quote domain rules (Android `MintQuoteDomain.kt` parity) —
 /// extracted for unit testing.
@@ -43,5 +44,29 @@ enum MintQuoteDomain {
             quoteMintUrl == activeMintUrl &&
             quoteUnit.lowercased() == unit.lowercased() &&
             storedMemo == description
+    }
+
+    /// The deposit address Receive hands out again: the newest on-chain quote
+    /// at this mint that the mint has not credited and that has not expired.
+    /// Once money arrives the next Receive gets a fresh address. A deposit
+    /// still in the mempool does not block reuse — the sheet then shows it.
+    static func reusableOnchainAddress(
+        in quotes: [MintQuote],
+        mintURL: String,
+        now: Date = Date()
+    ) -> MintQuote? {
+        let mint = MintURLIdentity.normalized(mintURL)
+        let nowSeconds = now.timeIntervalSince1970
+        func isReusable(_ quote: MintQuote) -> Bool {
+            guard PaymentMethodKind.from(quote.paymentMethod) == .onchain,
+                  MintURLIdentity.normalized(quote.mintUrl.url) == mint,
+                  quote.amountPaid.value == 0,
+                  quote.amountIssued.value == 0 else { return false }
+            return quote.expiry == 0 || TimeInterval(quote.expiry) > nowSeconds
+        }
+        func isOlder(_ lhs: MintQuote, _ rhs: MintQuote) -> Bool {
+            lhs.updatedAt != rhs.updatedAt ? lhs.updatedAt < rhs.updatedAt : lhs.id < rhs.id
+        }
+        return quotes.filter(isReusable).max(by: isOlder)
     }
 }

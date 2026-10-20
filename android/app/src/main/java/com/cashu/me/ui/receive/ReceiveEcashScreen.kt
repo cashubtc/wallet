@@ -113,6 +113,7 @@ fun ReceiveEcashScreen(
     prefilledPayload: String? = null,
     onPrefilledConsumed: () -> Unit = {},
     allowAutomaticClipboardRead: Boolean = true,
+    onCompactSheetChanged: (Boolean) -> Unit = {},
 ) {
     val walletState by walletManager.state.collectAsState()
     val hasCustomMethods = walletState.mints.any { mint -> mint.effectiveMintMethods.any { it.isCustom } }
@@ -221,6 +222,7 @@ fun ReceiveEcashScreen(
         onPrefilledConsumed()
     }
 
+    LaunchedEffect(requestFailure == null) { onCompactSheetChanged(requestFailure == null) }
     val failure = requestFailure
     if (failure != null) {
         Column(

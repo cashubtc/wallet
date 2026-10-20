@@ -35,21 +35,7 @@ struct CashuRequestMintPickerSheet: View {
 
                 ForEach(walletManager.mints) { mint in
                     Button(action: { select(mint.url) }) {
-                        HStack(spacing: 12) {
-                            mintIcon(for: mint)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(mint.name)
-                                    .font(.body.weight(.medium))
-                                Text(SettingsManager.shared.formatAmountBalance(mint.balance) + " sat")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            if currentMintUrl == mint.url {
-                                Image(systemName: "checkmark")
-                                    .foregroundStyle(Color.accentColor)
-                            }
-                        }
+                        MintPickerRow(mint: mint, subtitle: SettingsManager.shared.formatAmountBalance(mint.balance) + " sat", isSelected: currentMintUrl == mint.url)
                     }
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
@@ -84,85 +70,17 @@ struct CashuRequestMintPickerSheet: View {
             )
     }
 
-    @ViewBuilder
-    private func mintIcon(for mint: MintInfo) -> some View {
-        if let iconUrl = mint.iconUrl, let url = URL(string: iconUrl) {
-            CachedAsyncImage(url: url) { image in
-                image.resizable().aspectRatio(contentMode: .fill)
-            } placeholder: {
-                mintIconPlaceholder
-            }
-            .frame(width: 40, height: 40)
-            .clipShape(Circle())
-        } else {
-            mintIconPlaceholder
-        }
-    }
 
-    private var mintIconPlaceholder: some View {
-        Circle()
-            .fill(.quaternary)
-            .frame(width: 40, height: 40)
-            .overlay(
-                Image(systemName: "bitcoinsign.bank.building")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            )
-    }
 }
 
 /// Unit chooser for a Cashu request the user created. Lists the units the
 /// request's mint advertises; selecting one re-encodes the request in that unit.
 struct CashuRequestUnitPickerSheet: View {
-    @Environment(\.dismiss) private var dismiss
-
     let units: [String]
     let currentUnit: String
     let onSelect: (String) -> Void
 
     var body: some View {
-        NavigationStack {
-            List(units, id: \.self) { unit in
-                Button(action: { select(unit) }) {
-                    HStack(spacing: 12) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(unit.uppercased())
-                                .font(.body.weight(.medium))
-                            if let subtitle = unitSubtitle(unit) {
-                                Text(subtitle)
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        Spacer()
-                        if currentUnit == unit {
-                            Image(systemName: "checkmark")
-                                .foregroundStyle(Color.accentColor)
-                        }
-                    }
-                    .contentShape(Rectangle())
-                }
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
-                .buttonStyle(.plain)
-            }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
-            .background(Color.clear)
-            .navigationTitle("Unit")
-            .navigationBarTitleDisplayMode(.inline)
-        }
-        .compactBottomSheetSurface()
-    }
-
-    private func select(_ unit: String) {
-        HapticFeedback.selection()
-        onSelect(unit)
-        dismiss()
-    }
-
-    private func unitSubtitle(_ unit: String) -> String? {
-        let name = CurrencyRegistry.currency(forMintUnit: unit).displayName
-        return name.uppercased() == unit.uppercased() ? nil : name
+        UnitSelectorSheet(units: units, selectedUnit: currentUnit, onSelect: onSelect, title: "Unit", usesList: true)
     }
 }

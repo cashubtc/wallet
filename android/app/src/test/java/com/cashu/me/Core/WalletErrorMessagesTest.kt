@@ -9,15 +9,6 @@ import org.junit.Test
 /** iOS parity: `WalletErrorMessageTests.swift`. */
 class WalletErrorMessagesTest {
 
-    @Test
-    fun multiUnitRemovalPreservesSafetyGuidanceInsteadOfSuggestingNetworkRetry() {
-        val error = com.cashu.me.Core.CDK.MultiUnitWalletRemovalException(listOf("sat", "usd"))
-        assertEquals(
-            "This mint uses multiple currency units and cannot be removed safely yet. Keep it connected and try again after updating the app.",
-            WalletErrorMessages.classify(error).text,
-        )
-    }
-
     private val mintLimitsCopy =
         "This amount is outside the mint's limits. Try a different amount."
 
@@ -50,6 +41,27 @@ class WalletErrorMessagesTest {
         ).forEach { raw ->
             assertEquals(raw, mintLimitsCopy, WalletErrorMessages.classifyMessage(raw).text)
         }
+    }
+
+    /**
+     * A mint that refuses NUT-05 amountless must point at another mint, not tell
+     * the user the invoice is at fault.
+     */
+    @Test
+    fun `mint amountless rejection points at another mint`() {
+        listOf(
+            "Amount Less Invoice is not allowed",
+            "Amountless invoices are not supported for unit `sat` and method `bolt11`",
+        ).forEach { raw ->
+            val message = WalletErrorMessages.classifyMessage(raw)
+            assertEquals(raw, "This mint can't pay invoices without an amount. Choose another mint.", message.text)
+            assertEquals(raw, WalletMessageSeverity.Caution, message.severity)
+        }
+
+        assertEquals(
+            "This invoice doesn't set an amount. Ask the sender for one with the amount set.",
+            WalletErrorMessages.classifyMessage("Invoice Amount undefined").text,
+        )
     }
 
     /**

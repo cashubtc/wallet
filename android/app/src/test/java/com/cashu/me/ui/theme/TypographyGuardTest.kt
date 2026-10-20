@@ -18,6 +18,15 @@ import org.junit.Test
  * rather than relying on a reviewer noticing.
  */
 class TypographyGuardTest {
+    @Test fun `scaling a seed role preserves its line box and tracking proportions`() {
+        val role = TextStyle().atSize(20.sp, leading = 1.4f, trackingEm = -0.02f)
+        val scaled = role.scaledBy(0.75f)
+        assertEquals(15.sp, scaled.fontSize)
+        assertEquals(21.sp, scaled.lineHeight)
+        assertEquals(-0.3f, scaled.letterSpacing.value, 0.0001f)
+        assertEquals(role.lineHeightStyle, scaled.lineHeightStyle)
+    }
+
 
     private val uiRoot: File =
         sequenceOf(File("src/main/java/com/cashu/me/ui"), File("app/src/main/java/com/cashu/me/ui"))

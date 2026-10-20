@@ -502,32 +502,35 @@ class SettingsManager internal constructor(
         mutableState.value = loadState()
     }
 
-    private fun loadState(): SettingsState = SettingsState(
-        useBitcoinSymbol = settingsStore.useBitcoinSymbol,
-        showFiatBalance = settingsStore.showFiatBalance,
-        bitcoinPriceCurrency = settingsStore.bitcoinPriceCurrency,
-        checkPendingOnStartup = settingsStore.checkPendingOnStartup,
-        checkSentTokens = settingsStore.checkSentTokens,
-        autoPasteEcashReceive = settingsStore.autoPasteEcashReceive,
-        useWebsockets = settingsStore.useWebsockets,
-        enablePaymentRequests = settingsStore.enablePaymentRequests,
-        receivePaymentRequestsAutomatically = settingsStore.receivePaymentRequestsAutomatically,
-        showP2PKButtonInDrawer = settingsStore.showP2PKButtonInDrawer,
-        amountDisplayPrimary = AmountDisplayPrimary.fromRaw(settingsStore.amountDisplayPrimary).rawValue,
-        homeBalancePrimary = AmountDisplayPrimary.fromRaw(settingsStore.homeBalancePrimary).rawValue,
-        homeBalanceUnit = settingsStore.homeBalanceUnit,
-        sentryEnabled = settingsStore.sentryEnabled,
-        appLockEnabled = settingsStore.appLockEnabled,
-        checkIncomingInvoices = settingsStore.checkIncomingInvoices,
-        periodicallyCheckIncomingInvoices = settingsStore.periodicallyCheckIncomingInvoices,
-        nostrSignerType = settingsStore.nostrSignerType,
-        nostrRelays = settingsStore.nostrRelays,
-        nostrMintBackupEnabled = settingsStore.nostrMintBackupEnabled,
-        p2pkKeys = p2pkStore.keys,
-        p2pkUnavailableKeyIds = p2pkStore.keys
-            .filter { availableP2PKPrivateKey(it) == null }
-            .mapTo(mutableSetOf()) { it.id },
-    )
+    private fun loadState(): SettingsState = settingsStore.withReadSnapshot {
+        val keys = p2pkStore.keys
+        SettingsState(
+            useBitcoinSymbol = settingsStore.useBitcoinSymbol,
+            showFiatBalance = settingsStore.showFiatBalance,
+            bitcoinPriceCurrency = settingsStore.bitcoinPriceCurrency,
+            checkPendingOnStartup = settingsStore.checkPendingOnStartup,
+            checkSentTokens = settingsStore.checkSentTokens,
+            autoPasteEcashReceive = settingsStore.autoPasteEcashReceive,
+            useWebsockets = settingsStore.useWebsockets,
+            enablePaymentRequests = settingsStore.enablePaymentRequests,
+            receivePaymentRequestsAutomatically = settingsStore.receivePaymentRequestsAutomatically,
+            showP2PKButtonInDrawer = settingsStore.showP2PKButtonInDrawer,
+            amountDisplayPrimary = AmountDisplayPrimary.fromRaw(settingsStore.amountDisplayPrimary).rawValue,
+            homeBalancePrimary = AmountDisplayPrimary.fromRaw(settingsStore.homeBalancePrimary).rawValue,
+            homeBalanceUnit = settingsStore.homeBalanceUnit,
+            sentryEnabled = settingsStore.sentryEnabled,
+            appLockEnabled = settingsStore.appLockEnabled,
+            checkIncomingInvoices = settingsStore.checkIncomingInvoices,
+            periodicallyCheckIncomingInvoices = settingsStore.periodicallyCheckIncomingInvoices,
+            nostrSignerType = settingsStore.nostrSignerType,
+            nostrRelays = settingsStore.nostrRelays,
+            nostrMintBackupEnabled = settingsStore.nostrMintBackupEnabled,
+            p2pkKeys = keys,
+            p2pkUnavailableKeyIds = keys
+                .filter { availableP2PKPrivateKey(it) == null }
+                .mapTo(mutableSetOf()) { it.id },
+        )
+    }
 
     private fun normalizeP2PKForComparison(pubkey: String): String {
         return normalizeP2PKPublicKeyForComparison(pubkey)

@@ -4,7 +4,8 @@ import SwiftUI
 // Renders the configured primary amount plus its optional conversion —
 // trailing-aligned.
 // Amount styling is the ledger signal: received = green with a plus, sent =
-// primary with no sign, pending/expired = muted with no sign. No row badge;
+// primary with no sign, failed/pending/expired = muted with no sign.
+// No status line or row badge;
 // re-check lives on History pull-to-refresh. See DESIGN.md — The Received
 // Amount Rule, The Quiet Pending Rule,
 // The Fiat Sub-Amount Rule.
@@ -16,7 +17,16 @@ struct TransactionAmountColumn: View {
     @ObservedObject var settings: SettingsManager = .shared
     @ObservedObject var priceService: PriceService = .shared
 
+    @ViewBuilder
     var body: some View {
+        // An unfunded deposit address has no amount yet: no trailing element,
+        // like an any-amount Cashu Request that is still waiting.
+        if !transaction.isUnfundedAddress {
+            amountStack
+        }
+    }
+
+    private var amountStack: some View {
         ZStack(alignment: .trailing) {
             VStack(alignment: .trailing, spacing: 2) {
                 // The Row rung of the amount ladder. It carries the tabular figures,
@@ -41,17 +51,17 @@ struct TransactionAmountColumn: View {
     }
 
     // Received value is the only green element in the row. Sent value stays
-    // primary; unsettled (pending or expired) stays muted.
+    // primary; failed, pending, and expired share the same muted amount ink.
     private var amountColor: Color {
-        if transaction.isUnsettled { return .secondary }
+        if transaction.isUnsettled || transaction.status == .failed { return .secondary }
         return transaction.type == .incoming ? .green : .primary
     }
 
-    // Only a settled receipt gets a sign. Sent, pending, and expired rows stay
-    // unsigned; direction remains explicit in the title and arrow.
+    // Only a settled receipt gets a sign. Sent, pending, expired, and failed rows stay
+    // unsigned; direction remains explicit in the title.
     private var formattedAmount: String {
         let value = amountDisplay.primary
-        guard !transaction.isUnsettled, transaction.type == .incoming else { return value }
+        guard transaction.status == .completed, transaction.type == .incoming else { return value }
         return "+\(value)"
     }
 

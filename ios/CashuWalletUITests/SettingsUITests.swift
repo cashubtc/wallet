@@ -3,16 +3,199 @@ import XCTest
 /// UI tests for wallet-header Settings navigation and basic interactions.
 final class SettingsUITests: UITestBase {
     override var launchMode: LaunchMode { .seededWallet }
+    override var launchesAppAutomatically: Bool { false }
 
     // MARK: - Helpers
 
     private func navigateToSettings() {
+        // Custom mint/authentication/locale tests launch with their settings
+        // already applied. Other tests start lazily on their first navigation.
+        if app.state == .notRunning { app.launch() }
         waitForMainTab()
         let settings = app.buttons["wallet-settings-button"]
         tapWhenReady(settings)
     }
 
     // MARK: - Tests
+
+    func testDepositRecoveryConfirmationHasContentOnFirstTapWithoutOpeningOptions() {
+        navigateToSettings()
+        tapWhenReady(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Backup & Restore")).firstMatch)
+        tapWhenReady(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Recover a deposit")).firstMatch)
+        let mint = app.textFields["depositRecoveryMintURL"]
+        tapWhenReady(mint)
+        mint.typeText("https://mint.example")
+        let quote = app.textFields["depositRecoveryQuoteID"]
+        tapWhenReady(quote)
+        quote.typeText("first-quote\n")
+        tapWhenReady(app.buttons["recoverDepositButton"])
+        let confirmation = app.staticTexts["Recover this deposit?"]
+        XCTAssertTrue(confirmation.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Claim this deposit at mint.example using this wallet's seed phrase."].exists)
+        XCTAssertTrue(app.buttons["Recover"].exists)
+        recoveryScreenshot("ios-first-tap-confirmation")
+        tapWhenReady(app.buttons["Cancel"])
+        XCTAssertTrue(confirmation.waitForNonExistence(timeout: 5))
+
+        // A new presentation must carry the newly validated request.
+        tapWhenReady(mint)
+        let value = mint.value as? String ?? ""
+        mint.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: value.count) + "https://other.mint.example\n")
+        tapWhenReady(app.buttons["recoverDepositButton"])
+        XCTAssertTrue(confirmation.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Claim this deposit at other.mint.example using this wallet's seed phrase."].exists)
+        tapWhenReady(app.buttons["Cancel"])
+    }
+
+    /// Opt-in local Bitcoin regtest journey. The fixture pays a NUT-20 quote
+    /// but never mints. The app starts with only the original seed, no mint or DB.
+    func testPaidUnmintedOnchainQuoteRecoversThroughUIAndSurvivesRelaunch() throws {
+        guard (try? regtestCall("/health")) != nil else {
+            throw XCTSkip("Requires CI/quote-recovery-regtest.py")
+        }
+        let paid = try regtestCall("/new")
+        let quoteID = try XCTUnwrap(paid["quote"] as? String)
+        let mintURL = try XCTUnwrap(paid["mint_url"] as? String)
+        XCTAssertEqual(paid["amount_paid"] as? Int, 21_000)
+        XCTAssertEqual(paid["amount_issued"] as? Int, 0)
+        XCTAssertGreaterThanOrEqual(try XCTUnwrap(paid["confirmations"] as? Int), 3)
+        app.launchEnvironment["UITEST_SEED_MNEMONIC"] = try XCTUnwrap(paid["mnemonic"] as? String)
+        navigateToSettings()
+        openOnchainRecovery(mintURL: mintURL, quoteID: quoteID)
+        let result = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Recovered ")).firstMatch
+        XCTAssertTrue(result.waitForExistence(timeout: 60), "The paid deposit should recover on its first attempt")
+        recoveryScreenshot("ios-regtest-recovered")
+        let issued = try regtestCall("/quote/" + quoteID)
+        XCTAssertEqual(issued["amount_issued"] as? Int, 21_000)
+        XCTAssertEqual(issued["amount_paid"] as? Int, 21_000)
+
+        relaunchPreservingWallet()
+        navigateToSettings()
+        openOnchainRecovery(mintURL: mintURL, quoteID: quoteID)
+        XCTAssertTrue(app.staticTexts["Already claimed. Use Restore to recover the ecash."].waitForExistence(timeout: 60))
+        let repeated = try regtestCall("/quote/" + quoteID)
+        XCTAssertEqual(repeated["amount_issued"] as? Int, 21_000, "Retry must not issue a second time")
+        recoveryScreenshot("ios-regtest-already-claimed")
+    }
+
+    private func openOnchainRecovery(mintURL: String, quoteID: String) {
+        tapWhenReady(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Backup & Restore")).firstMatch)
+        tapWhenReady(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Recover a deposit")).firstMatch)
+        let mint = app.textFields["depositRecoveryMintURL"]
+        tapWhenReady(mint)
+        mint.typeText(mintURL)
+        let quote = app.textFields["depositRecoveryQuoteID"]
+        tapWhenReady(quote)
+        quote.typeText(quoteID + "\n")
+        tapWhenReady(app.buttons["depositRecoveryOptions"])
+        tapWhenReady(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Payment method")).firstMatch)
+        tapWhenReady(app.buttons["On-chain address"])
+        tapWhenReady(app.buttons["depositRecoveryOptions"])
+        let recover = app.buttons["recoverDepositButton"]
+        if !recover.isHittable { app.swipeUp() }
+        tapWhenReady(recover)
+        XCTAssertTrue(app.staticTexts["Recover this deposit?"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Claim this deposit at 127.0.0.1")).firstMatch.exists)
+        recoveryScreenshot("ios-regtest-first-confirmation")
+        tapWhenReady(app.buttons["Recover"])
+    }
+
+    private func regtestCall(_ path: String) throws -> [String: Any] {
+        var request = URLRequest(url: URL(string: "http://127.0.0.1:3340" + path)!)
+        request.timeoutInterval = path == "/health" ? 2 : 115
+        let done = expectation(description: "Local regtest fixture")
+        var result: Result<[String: Any], Error>!
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            defer { done.fulfill() }
+            result = Result {
+                if let error { throw error }
+                guard let response = response as? HTTPURLResponse, response.statusCode == 200, let data else {
+                    throw NSError(domain: "RegtestFixture", code: 1)
+                }
+                return try JSONSerialization.jsonObject(with: data) as! [String: Any]
+            }
+        }.resume()
+        wait(for: [done], timeout: 120)
+        return try XCTUnwrap(result).get()
+    }
+
+    func testDepositRecoveryCanChooseAnEmptyInactiveMint() {
+        app.launchEnvironment["UITEST_SEED_MINT"] = "1"
+        app.launchEnvironment["UITEST_SEED_MINT_URL"] = "https://mint.example"
+        app.launchEnvironment["UITEST_SEED_EXTRA_MINT_URLS"] = "https://harbor.mint.example,https://north.mint.example"
+        navigateToSettings()
+        tapWhenReady(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Backup & Restore")).firstMatch)
+        tapWhenReady(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Recover a deposit")).firstMatch)
+        tapWhenReady(app.buttons["depositRecoveryMintPicker"])
+        let picker = app.navigationBars["Choose mint"]
+        XCTAssertTrue(picker.waitForExistence(timeout: 5))
+        for host in ["mint.example", "harbor.mint.example", "north.mint.example"] {
+            XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", host)).firstMatch.exists)
+        }
+        recoveryScreenshot("ios-mint-picker")
+        tapWhenReady(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "harbor.mint.example")).firstMatch)
+        XCTAssertTrue(picker.waitForNonExistence(timeout: 5))
+        let mint = app.textFields["depositRecoveryMintURL"]
+        XCTAssertEqual(mint.value as? String, "https://harbor.mint.example")
+        let quote = app.textFields["depositRecoveryQuoteID"]
+        tapWhenReady(quote)
+        quote.typeText("deposit-2026-001\n")
+        tapWhenReady(app.buttons["depositRecoveryOptions"])
+        let search = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Search depth")).firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        recoveryScreenshot("ios-options")
+        tapWhenReady(app.buttons["recoverDepositButton"])
+        let confirmation = app.staticTexts["Recover this deposit?"]
+        XCTAssertTrue(confirmation.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Claim this deposit at harbor.mint.example")).firstMatch.exists)
+        recoveryScreenshot("ios-confirmation")
+        tapWhenReady(app.buttons["Cancel"])
+        XCTAssertTrue(confirmation.waitForNonExistence(timeout: 5))
+        XCTAssertEqual(mint.value as? String, "https://harbor.mint.example")
+        XCTAssertFalse(app.descendants(matching: .any)["depositRecoveryResult"].exists)
+    }
+
+    private func recoveryScreenshot(_ name: String) {
+        // Let the native presentation and symbol transitions settle for capture.
+        Thread.sleep(forTimeInterval: 0.4)
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    func testDepositRecoveryHasSeparateEntryAndRequiresConfirmation() {
+        navigateToSettings()
+        tapWhenReady(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Backup & Restore")).firstMatch)
+        tapWhenReady(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Recover a deposit")).firstMatch)
+        let mint = app.textFields["depositRecoveryMintURL"]
+        tapWhenReady(mint)
+        mint.typeText("https://mint.example")
+        let quote = app.textFields["depositRecoveryQuoteID"]
+        tapWhenReady(quote)
+        quote.typeText("saved-quote-id\n")
+        XCTAssertFalse(app.buttons["Search depth"].exists)
+        tapWhenReady(app.buttons["depositRecoveryOptions"])
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Search depth")).firstMatch.exists)
+        tapWhenReady(app.buttons["depositRecoveryOptions"])
+        let recover = app.buttons["recoverDepositButton"]
+        for _ in 0..<6 {
+            if recover.isHittable { break }
+            app.swipeUp()
+        }
+        XCTAssertTrue(recover.isEnabled)
+        tapWhenReady(recover)
+        let confirmation = app.staticTexts["Recover this deposit?"]
+        XCTAssertTrue(confirmation.waitForExistence(timeout: 5))
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Deposit recovery confirmation"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        tapWhenReady(app.buttons["Cancel"])
+        XCTAssertTrue(confirmation.waitForNonExistence(timeout: 5))
+        XCTAssertEqual(quote.value as? String, "saved-quote-id")
+        XCTAssertFalse(app.descendants(matching: .any)["depositRecoveryResult"].exists)
+    }
 
     func testCurrencyNamesRemainAccessibleAtLargeTextSizes() {
         for (language, locale) in [("en", "en_US"), ("de", "de_DE")] {
@@ -189,11 +372,18 @@ final class SettingsUITests: UITestBase {
     }
 
     func testUnavailableAuthenticationCannotEnableAppLock() {
+        // Reproduce the persisted setting left by the successful-auth test.
+        launchWithAuthentication("allow")
+        navigateToSettings()
+        tapWhenReady(app.buttons["App Lock"])
+        setSwitch(app.switches.firstMatch, toOn: true)
+        XCTAssertEqual(app.switches.firstMatch.value as? String, "1")
+
         launchWithAuthentication("unavailable")
         navigateToSettings()
         tapWhenReady(app.buttons["App Lock"])
         let toggle = app.switches.firstMatch
-        setSwitch(toggle, toOn: false)
+        XCTAssertEqual(toggle.value as? String, "0", "A fresh test wallet must reset App Lock")
         tapSwitchControl(toggle)
         XCTAssertTrue(app.staticTexts["Authentication failed. App Lock was not enabled. Try turning it on again."]
             .waitForExistence(timeout: 5))
@@ -403,16 +593,48 @@ final class SettingsUITests: UITestBase {
     }
 
     private func setSwitch(_ element: XCUIElement, toOn: Bool) {
+        XCTAssertTrue(element.waitUntilEnabledAndHittable(timeout: 10))
         let isOn = (element.value as? String) == "1"
         if isOn != toOn {
             tapSwitchControl(element)
         }
+        let expectedValue = toOn ? "1" : "0"
+        let changed = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", expectedValue),
+            object: element
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [changed], timeout: 5), .completed,
+                       "Switch must reach the requested state before continuing")
     }
 
-    /// SwiftUI Toggle outside a List only responds on the switch control at the
-    /// trailing edge; a center tap lands on the label and does nothing.
+    /// SwiftUI can replace the nested native switch while the settings page
+    /// settles. Wait for its geometry to stabilize before delivering a touch.
     private func tapSwitchControl(_ element: XCUIElement) {
-        element.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+        XCTAssertTrue(element.waitUntilEnabledAndHittable(timeout: 10))
+        let control = element.switches.firstMatch
+        let target = control.exists ? control : element
+        XCTAssertTrue(target.waitUntilEnabledAndHittable(timeout: 10))
+        var previousFrame = CGRect.null
+        var stableSince = Date()
+        let settled = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            guard target.exists, target.isEnabled, target.isHittable else {
+                previousFrame = .null
+                stableSince = Date()
+                return false
+            }
+            let frame = target.frame
+            guard !frame.isEmpty, !frame.isInfinite, frame == previousFrame else {
+                previousFrame = frame
+                stableSince = Date()
+                return false
+            }
+            return Date().timeIntervalSince(stableSince) >= 0.5
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [settled], timeout: 10), .completed,
+                       "Switch must settle before interaction")
+        // A short press gives the enclosing scroll view time to deliver the
+        // touch to the switch. Never retry: a second touch could toggle it back.
+        target.press(forDuration: 0.1)
     }
 
     func testWebSocketsToggleStaysEnabledWhenPollingDisabled() throws {

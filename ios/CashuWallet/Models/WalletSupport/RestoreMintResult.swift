@@ -23,5 +23,3 @@ enum MintRestorePhase {
     case recovered(RestoreMintResult)
     case failed(String)            // user-facing message
 }
-
-/// Token parsed information

@@ -101,6 +101,18 @@ final class CustomPaymentMethodTests: XCTestCase {
         XCTAssertEqual(transaction.unit, "bux")
     }
 
+    func testCustomReceiptDetailsKeepMethodUnitAndProof() {
+        var transaction = WalletTransaction(id: "payment", amount: 21, type: .outgoing, kind: .custom,
+            date: Date(), status: .completed, preimage: "payment-proof", quoteId: "quote")
+        transaction.paymentMethod = branch
+        transaction.unit = "bux"
+        let details = TransactionTechnicalDetails(transaction: transaction)
+        let rows = details.sections.flatMap(\.rows)
+        XCTAssertEqual(rows.first { $0.label == "Method" }?.value, "Branch")
+        XCTAssertEqual(rows.first { $0.label == "Amount" }?.value, "21 BUX")
+        XCTAssertEqual(rows.first { $0.label == "Payment Proof" }?.fullValue, "payment-proof")
+    }
+
     /// Opt in with a loopback CDK 0.18 fakewallet mint advertising branch/bux.
     func testLiveCustomDepositRestartAndWithdrawalStayInTheirUnit() async throws {
         guard let url = ProcessInfo.processInfo.environment["CUSTOM_METHOD_MINT_URL"] else {

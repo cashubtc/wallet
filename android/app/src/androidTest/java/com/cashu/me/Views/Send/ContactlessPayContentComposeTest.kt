@@ -9,6 +9,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
@@ -99,7 +100,7 @@ class ContactlessPayContentComposeTest {
         }
 
         compose.onNodeWithText("Payment sent").assertIsDisplayed()
-        compose.onNodeWithText("₿42").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Amount: 42 sats", useUnmergedTree = true).assertIsDisplayed()
         compose.onNodeWithText("Done").performClick()
         compose.runOnIdle { assertEquals(1, doneClicks) }
     }

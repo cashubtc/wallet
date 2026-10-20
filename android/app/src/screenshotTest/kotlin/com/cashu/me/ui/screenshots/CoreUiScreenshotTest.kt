@@ -246,7 +246,7 @@ fun paymentSuccessScreenshot() {
         PaymentStatusScreen(
             phase = PaymentStatusPhase.Success,
             title = "Payment Received!",
-            detail = "2,500 sat",
+            successAmount = "2,500 sat",
             onDone = {},
         )
     }
@@ -262,6 +262,22 @@ fun paymentFailureScreenshot() {
             title = "Payment failed",
             detail = "The mint is temporarily unavailable. Try again.",
             doneLabel = "Try again",
+            onDone = {},
+        )
+    }
+}
+
+@PreviewTest
+@Preview(name = "payment-awaiting-mint", widthDp = 390, heightDp = 640, showBackground = true)
+@Composable
+fun paymentAwaitingMintScreenshot() {
+    PreviewFrame(contentPadding = 0.dp) {
+        PaymentStatusScreen(
+            phase = PaymentStatusPhase.Failure,
+            title = "Waiting for mint",
+            detail = "The mint hasn't confirmed this payment yet. Your funds are held until it's paid or refunded.",
+            awaitingMint = true,
+            doneLabel = "View in history",
             onDone = {},
         )
     }

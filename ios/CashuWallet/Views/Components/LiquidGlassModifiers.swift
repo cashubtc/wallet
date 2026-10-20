@@ -69,11 +69,6 @@ extension View {
             }
     }
 
-    /// Applies Liquid Glass on iOS 26+; falls back to the given material.
-    func liquidGlassMaterial<S: InsettableShape>(in shape: S, material: Material = .ultraThinMaterial) -> some View {
-        modifier(AdaptiveGlassSurface(shape: shape, interactive: false, fallbackMaterial: material))
-    }
-
     /// Full-width CTA capsule. Outside a flat bottom sheet it matches the
     /// home-screen's neutral Liquid Glass action; inside one it becomes a
     /// solid inverse-ink primary action.
@@ -119,17 +114,6 @@ extension View {
         modifier(CanvasSheetBackground())
     }
 
-    /// Applies ``canvasSheetBackground()`` only to sheets that fill the screen.
-    ///
-    /// A full-height sheet replaces the background, so matching the canvas is
-    /// right. A sheet that hugs its content floats *over* the canvas and must
-    /// keep the system's elevated background to read as a separate layer —
-    /// forcing the canvas colour there resolves to the same black as the screen
-    /// behind it in dark mode, leaving only a rounded corner to separate them.
-    func canvasSheetBackground(whenFillingScreen fillsScreen: Bool) -> some View {
-        modifier(ConditionalCanvasSheetBackground(fillsScreen: fillsScreen))
-    }
-
     /// Gives an app-designed bottom sheet the same opaque, adaptive surface as
     /// the mint selector. The environment flag also converts shared glass
     /// controls contained by this presentation into quiet semantic fills.
@@ -143,10 +127,20 @@ extension View {
     /// perimeter catches a restrained amount of light without replacing the
     /// native sheet's shape, detents, dimming, or gesture behavior.
     func compactBottomSheetSurface() -> some View {
+        walletSheetSurface(fillsScreen: false)
+    }
+
+    /// Full-height flows share Home's canvas; compact sheets retain their
+    /// elevated surface. Controls and native presentation behavior stay the same.
+    func walletSheetSurface(fillsScreen: Bool) -> some View {
         self
             .environment(\.bottomSheetSurfaceStyle, .compact)
             .presentationBackground {
-                CompactSheetBackground()
+                if fillsScreen {
+                    WalletCanvasBackground()
+                } else {
+                    CompactSheetBackground()
+                }
             }
     }
 
@@ -476,32 +470,23 @@ private struct ScreenEntryFade: ViewModifier {
 /// Pins a modal's presentation background to the *base*-elevation `systemBackground`.
 /// Inside a sheet the plain semantic resolves to the elevated gray, so we resolve it
 /// at base level (for the current color scheme) to match the home canvas exactly.
-private struct ConditionalCanvasSheetBackground: ViewModifier {
-    let fillsScreen: Bool
-
-    @ViewBuilder
+private struct CanvasSheetBackground: ViewModifier {
     func body(content: Content) -> some View {
-        if fillsScreen {
-            content.canvasSheetBackground()
-        } else {
-            content
-        }
+        content.presentationBackground { WalletCanvasBackground() }
     }
 }
 
-private struct CanvasSheetBackground: ViewModifier {
+private struct WalletCanvasBackground: View {
     @Environment(\.colorScheme) private var colorScheme
 
-    func body(content: Content) -> some View {
-        content.presentationBackground {
-            Color(uiColor: UIColor.systemBackground.resolvedColor(
-                with: UITraitCollection(traitsFrom: [
-                    UITraitCollection(userInterfaceStyle: colorScheme == .dark ? .dark : .light),
-                    UITraitCollection(userInterfaceLevel: .base),
-                ])
-            ))
-            .ignoresSafeArea()
-        }
+    var body: some View {
+        Color(uiColor: UIColor.systemBackground.resolvedColor(
+            with: UITraitCollection(traitsFrom: [
+                UITraitCollection(userInterfaceStyle: colorScheme == .dark ? .dark : .light),
+                UITraitCollection(userInterfaceLevel: .base),
+            ])
+        ))
+        .ignoresSafeArea()
     }
 }
 

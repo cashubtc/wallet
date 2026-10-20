@@ -1,6 +1,6 @@
 # Generic custom payment methods — assessment and implementation plan
 
-Status: implemented in both native apps, retaining CDK 0.18.0. The baseline
+Status: implemented in both native apps, now using upstream's CDK 0.18.2 bindings. The baseline
 assessment below was made at wallet commit `50431e31` on 2026-09-13.
 
 Unknown custom units are whole integers (for example, `100 bux`); fractional

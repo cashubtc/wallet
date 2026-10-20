@@ -27,7 +27,7 @@ android {
         applicationId = "com.cashu.me"
         minSdk = 26
         targetSdk = 36
-        versionCode = 5
+        versionCode = 7
         versionName = "1.0"
         testInstrumentationRunner = "com.cashu.me.test.CashuUiTestRunner"
         testInstrumentationRunnerArguments["clearPackageData"] = "true"
@@ -83,6 +83,8 @@ android {
         }
     }
 
+    sourceSets.getByName("androidTest").assets.srcDir("../../CI/fixtures")
+
     testOptions {
         execution = "ANDROIDX_TEST_ORCHESTRATOR"
         animationsDisabled = true
@@ -96,12 +98,6 @@ android {
                     // memory/CPU pressure on GitHub-hosted runners and making the
                     // long managed-device run less prone to losing ADB.
                     systemImageSource = "aosp-atd"
-                }
-                create("compactApi26") {
-                    device = "Pixel 2"
-                    apiLevel = 26
-                    // ATD images are not published for API 26.
-                    systemImageSource = "aosp"
                 }
                 create("modernApi36") {
                     device = "Pixel 6"

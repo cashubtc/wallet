@@ -1,6 +1,6 @@
 import Foundation
 import SwiftUI
-import CryptoKit
+import Security
 import P256K
 
 // MARK: - Signer Type
@@ -106,7 +106,7 @@ class NostrService: ObservableObject {
             let pubKeyBytes = xonlyPubKey.bytes
             
             // Set public key hex
-            self.publicKeyHex = pubKeyBytes.map { String(format: "%02x", $0) }.joined()
+            self.publicKeyHex = Data(pubKeyBytes).hexEncodedString
             
             // Convert to bech32 npub
             self.npub = try Bech32.encode(hrp: "npub", data: Data(pubKeyBytes))
@@ -144,7 +144,7 @@ class NostrService: ObservableObject {
         }
         
         // Save to keychain
-        let hexKey = randomBytes.map { String(format: "%02x", $0) }.joined()
+        let hexKey = Data(randomBytes).hexEncodedString
         try keychain.saveNostrPrivateKey(hexKey)
         
         // Set as current key
@@ -163,7 +163,7 @@ class NostrService: ObservableObject {
         }
         
         // Save to keychain
-        let hexKey = privateKeyBytes.map { String(format: "%02x", $0) }.joined()
+        let hexKey = Data(privateKeyBytes).hexEncodedString
         try keychain.saveNostrPrivateKey(hexKey)
         
         // Set as current key
@@ -225,188 +225,18 @@ class NostrService: ObservableObject {
         nsec = ""
         isInitialized = false
     }
-    
-    /// Get the current nsec for copying
-    func getNsec() -> String {
-        return nsec
-    }
-    
+
+    /// Current signing key in its copyable Nostr representation.
+    func getNsec() -> String { nsec }
+
     /// Get private key hex (for internal use)
     func getPrivateKeyHex() -> String? {
         guard let privKey = privateKey else { return nil }
         // Get raw bytes from the private key
         let bytes = privKey.dataRepresentation
-        return bytes.map { String(format: "%02x", $0) }.joined()
+        return Data(bytes).hexEncodedString
     }
     
-    /// Get the npub Lightning address for a given domain
-    func getLightningAddress(domain: String) -> String {
-        guard isInitialized else { return "" }
-        return "\(npub)@\(domain)"
-    }
-    
-    // MARK: - NIP-98 HTTP Auth
-    
-    /// Generate NIP-98 authorization header for HTTP requests
-    /// NIP-98 uses kind 27235 events with URL and method tags
-    func generateNIP98AuthHeader(url: String, method: String) throws -> String {
-        guard let privKey = privateKey else {
-            throw NostrError.notInitialized
-        }
-        
-        // Build the NIP-98 event
-        let createdAt = Int(Date().timeIntervalSince1970)
-        
-        // Tags array - method should match exactly what will be sent in HTTP
-        let httpMethod = method.uppercased()
-        let tags: [[String]] = [["u", url], ["method", httpMethod]]
-        
-        // Calculate event ID (SHA256 of serialized event array)
-        // Format: [0, pubkey, created_at, kind, tags, content]
-        let eventId = try calculateEventId(
-            pubkey: publicKeyHex,
-            createdAt: createdAt,
-            kind: 27235,
-            tags: tags,
-            content: ""
-        )
-        
-        // Sign the event ID using BIP-340 Schnorr
-        guard let eventIdData = Data(hexString: eventId), eventIdData.count == 32 else {
-            throw NostrError.signingFailed
-        }
-        
-        // Create Schnorr signature using P256K
-        var messageBytes = Array(eventIdData)
-        
-        // Generate auxiliary randomness for signing (32 bytes)
-        var auxRand = Array(repeating: UInt8(0), count: 32)
-        let status = SecRandomCopyBytes(kSecRandomDefault, 32, &auxRand)
-        if status != errSecSuccess {
-            // Fallback: use zeros if random generation fails
-            auxRand = Array(repeating: UInt8(0), count: 32)
-        }
-        
-        let signature = try privKey.signature(message: &messageBytes, auxiliaryRand: &auxRand)
-        let sigBytes = signature.dataRepresentation
-        
-        // Signature must be exactly 64 bytes
-        guard sigBytes.count == 64 else {
-            throw NostrError.signingFailed
-        }
-        
-        let signatureHex = sigBytes.map { String(format: "%02x", $0) }.joined()
-        
-        // Build the signed event JSON manually to ensure exact field ordering
-        // Field order matches NIP-98 spec: id, pubkey, content, kind, created_at, tags, sig
-        // Use .withoutEscapingSlashes to prevent URLs from being escaped (https:// not https:\/\/)
-        let tagsJson = try JSONSerialization.data(withJSONObject: tags, options: [.withoutEscapingSlashes])
-        let tagsString = String(data: tagsJson, encoding: .utf8) ?? "[]"
-        
-        let jsonString = """
-{"id":"\(eventId)","pubkey":"\(publicKeyHex)","content":"","kind":27235,"created_at":\(createdAt),"tags":\(tagsString),"sig":"\(signatureHex)"}
-"""
-        
-        guard let jsonData = jsonString.data(using: .utf8) else {
-            throw NostrError.signingFailed
-        }
-
-        return jsonData.base64EncodedString()
-    }
-    
-    // MARK: - Event ID Calculation
-    
-    /// Calculate Nostr event ID as SHA256 of serialized event array
-    /// Format: [0, pubkey, created_at, kind, tags, content]
-    /// This MUST match the exact format specified in NIP-01
-    private func calculateEventId(
-        pubkey: String,
-        createdAt: Int,
-        kind: Int,
-        tags: [[String]],
-        content: String
-    ) throws -> String {
-        // Build the commitment array matching nostr-tools exactly:
-        // JSON.stringify([0, evt.pubkey, evt.created_at, evt.kind, evt.tags, evt.content])
-        
-        // We need to serialize this as a JSON array with the exact format
-        let commitment = NostrCommitment(
-            zero: 0,
-            pubkey: pubkey,
-            createdAt: createdAt,
-            kind: kind,
-            tags: tags,
-            content: content
-        )
-        
-        // Encode as JSON array
-        // CRITICAL: Use .withoutEscapingSlashes to match nostr-tools behavior
-        // Without this, URLs like "https://..." become "https:\/\/..." which changes the hash
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = .withoutEscapingSlashes
-        let commitmentData = try encoder.encode(commitment)
-        
-        // SHA256 hash
-        let hash = SHA256.hash(data: commitmentData)
-        return hash.map { String(format: "%02x", $0) }.joined()
-    }
-}
-
-// MARK: - Nostr Event Structures
-
-/// Represents a signed Nostr event
-/// Field order matches NIP-01/NIP-98: id, pubkey, content, kind, created_at, tags, sig
-struct NostrEvent: Encodable {
-    let id: String
-    let pubkey: String
-    let content: String
-    let kind: Int
-    let createdAt: Int
-    let tags: [[String]]
-    let sig: String
-    
-    enum CodingKeys: String, CodingKey {
-        case id
-        case pubkey
-        case content
-        case kind
-        case createdAt = "created_at"
-        case tags
-        case sig
-    }
-    
-    // Custom encoding to ensure exact field order
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(id, forKey: .id)
-        try container.encode(pubkey, forKey: .pubkey)
-        try container.encode(content, forKey: .content)
-        try container.encode(kind, forKey: .kind)
-        try container.encode(createdAt, forKey: .createdAt)
-        try container.encode(tags, forKey: .tags)
-        try container.encode(sig, forKey: .sig)
-    }
-}
-
-/// Helper for encoding the commitment array
-/// Format: [0, pubkey, created_at, kind, tags, content]
-struct NostrCommitment: Encodable {
-    let zero: Int
-    let pubkey: String
-    let createdAt: Int
-    let kind: Int
-    let tags: [[String]]
-    let content: String
-    
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.unkeyedContainer()
-        try container.encode(zero)
-        try container.encode(pubkey)
-        try container.encode(createdAt)
-        try container.encode(kind)
-        try container.encode(tags)
-        try container.encode(content)
-    }
 }
 
 // MARK: - Error Types
@@ -471,57 +301,43 @@ enum Bech32 {
     
     /// Decode a bech32 string to raw bytes
     static func decode(hrp expectedHrp: String, bech32: String) throws -> [UInt8] {
-        let lowercased = bech32.lowercased()
-        
-        // Find the separator (last '1' in the string)
-        guard let separatorIndex = lowercased.lastIndex(of: "1") else {
-            throw NostrError.bech32DecodingFailed
-        }
-        
-        let hrp = String(lowercased[..<separatorIndex])
-        guard hrp == expectedHrp else {
-            throw NostrError.bech32DecodingFailed
-        }
-        
-        let dataPartStart = lowercased.index(after: separatorIndex)
-        let dataPart = String(lowercased[dataPartStart...])
-        
-        // Decode characters to 5-bit values
-        var values: [UInt8] = []
-        for char in dataPart {
-            guard let index = charset.firstIndex(of: char) else {
-                throw NostrError.bech32DecodingFailed
-            }
-            values.append(UInt8(charset.distance(from: charset.startIndex, to: index)))
-        }
-        
-        // Verify checksum
-        guard verifyChecksum(hrp: hrp, data: values) else {
-            throw NostrError.bech32DecodingFailed
-        }
-        
-        // Remove checksum (last 6 bytes)
-        let dataWithoutChecksum = Array(values.dropLast(6))
-        
-        // Convert from 5-bit to 8-bit
-        let result = try convertBits(data: dataWithoutChecksum, fromBits: 5, toBits: 8, pad: false)
-        
-        return result
+        // Nostr key import historically accepts mixed case; Bitcoin framing stays strict.
+        let decoded = try decodeWords(bech32.lowercased())
+        guard decoded.hrp == expectedHrp, decoded.checksum == 1 else { throw NostrError.bech32DecodingFailed }
+        return try convertBits(data: decoded.words, fromBits: 5, toBits: 8, pad: false)
     }
-    
-    private static func verifyChecksum(hrp: String, data: [UInt8]) -> Bool {
-        let values = hrpExpand(hrp) + data
-        return polymod(values) == 1
+
+    /// Validates Bech32/Bech32m framing while preserving the five-bit payload
+    /// for protocols such as SegWit that include a version word.
+    static func decodeWords(_ encoded: String) throws -> (hrp: String, words: [UInt8], checksum: UInt32) {
+        let scalars = encoded.unicodeScalars
+        guard scalars.allSatisfy({ (33...126).contains($0.value) }),
+              encoded == encoded.lowercased() || encoded == encoded.uppercased() else { throw NostrError.bech32DecodingFailed }
+        let lowered = encoded.lowercased()
+        guard let separator = lowered.lastIndex(of: "1"), separator != lowered.startIndex else { throw NostrError.bech32DecodingFailed }
+        let hrp = String(lowered[..<separator])
+        let payload = lowered[lowered.index(after: separator)...]
+        guard payload.count >= 6 else { throw NostrError.bech32DecodingFailed }
+        var words: [UInt8] = []
+        for character in payload {
+            guard let index = charset.firstIndex(of: character) else { throw NostrError.bech32DecodingFailed }
+            words.append(UInt8(charset.distance(from: charset.startIndex, to: index)))
+        }
+        let checksum = polymod(hrpExpand(hrp) + words)
+        guard checksum == 1 || checksum == 0x2bc830a3 else { throw NostrError.bech32DecodingFailed }
+        return (hrp, Array(words.dropLast(6)), checksum)
     }
-    
-    private static func convertBits(data: [UInt8], fromBits: Int, toBits: Int, pad: Bool) throws -> [UInt8] {
+
+    static func convertBits(data: [UInt8], fromBits: Int, toBits: Int, pad: Bool) throws -> [UInt8] {
         var acc = 0
         var bits = 0
         var result: [UInt8] = []
         let maxv = (1 << toBits) - 1
+        let maxAccumulator = (1 << (fromBits + toBits - 1)) - 1
         
         for value in data {
-            acc = (acc << fromBits) | Int(value)
+            guard (Int(value) >> fromBits) == 0 else { throw NostrError.bech32DecodingFailed }
+            acc = ((acc << fromBits) | Int(value)) & maxAccumulator
             bits += fromBits
             while bits >= toBits {
                 bits -= toBits
@@ -579,26 +395,5 @@ enum Bech32 {
             result.append(UInt8((polymod >> (5 * (5 - i))) & 31))
         }
         return result
-    }
-}
-
-// MARK: - Data Hex Extension
-
-extension Data {
-    init?(hexString: String) {
-        let len = hexString.count / 2
-        var data = Data(capacity: len)
-        var index = hexString.startIndex
-        
-        for _ in 0..<len {
-            let nextIndex = hexString.index(index, offsetBy: 2)
-            guard let byte = UInt8(hexString[index..<nextIndex], radix: 16) else {
-                return nil
-            }
-            data.append(byte)
-            index = nextIndex
-        }
-        
-        self = data
     }
 }

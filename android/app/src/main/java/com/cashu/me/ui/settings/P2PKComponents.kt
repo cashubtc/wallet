@@ -39,9 +39,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -66,6 +64,9 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -76,6 +77,7 @@ import com.cashu.me.Core.AppLockManager
 import com.cashu.me.Core.Bech32
 import com.cashu.me.ui.components.LocalConfirmationToastController
 import com.cashu.me.ui.components.PrimaryButton
+import com.cashu.me.ui.components.CashuModalBottomSheet
 import com.cashu.me.ui.components.QrCard
 import com.cashu.me.ui.components.SecondaryButton
 import com.cashu.me.ui.components.SheetHeader
@@ -204,7 +206,7 @@ fun KeyCard(
                 )
                 val statusText = status.text
                 if (statusText != null) {
-                    Row(
+                      Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.micro),
                     ) {
@@ -350,27 +352,15 @@ fun KeyCard(
     }
 }
 
-/** Shared expanded QR sheet with visible copy/share actions (iOS QRCodeDetailSheet parity). */
+/** Shared expanded QR sheet with native copy/share actions. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun QrDetailSheet(
-    title: String,
-    content: String,
-    onDismiss: () -> Unit,
-) {
-    val sheetState = rememberBottomSheetState(
-        initialValue = SheetValue.Hidden,
-        enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
-    )
+fun QrDetailSheet(title: String, content: String, onDismiss: () -> Unit) {
     val clipboard = LocalClipboard.current
     val clipboardScope = rememberCoroutineScope()
     val context = LocalContext.current
     val confirmationToastController = LocalConfirmationToastController.current
-
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-    ) {
+    CashuModalBottomSheet(onDismissRequest = onDismiss) {
         Box(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier
@@ -386,17 +376,12 @@ fun QrDetailSheet(
                 Spacer(Modifier.height(CashuTheme.spacing.snug))
                 QrCard(
                     content = content,
-                    // 248 code + 16 cushion = the 280 card iOS draws, so both
-                    // sheets carry the same code-to-sheet proportion.
                     size = 248.dp,
                     staticOnly = true,
                     shareSubject = title,
                     confirmationMessage = "Copied ${title.lowercase()}",
                 )
                 Spacer(Modifier.height(CashuTheme.spacing.comfortable))
-                // One middle-truncated line at full body size and primary ink —
-                // the sheet's second focal point, not a footnote. The full
-                // value travels via Copy/Share.
                 Text(
                     text = content,
                     style = CashuTheme.type.monoDisplay,

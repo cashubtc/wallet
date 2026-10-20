@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
@@ -43,6 +44,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalInspectionMode
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -51,6 +53,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.cashu.me.Core.AmountParts
+import com.cashu.me.ui.theme.AmountScale
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.rememberReducedMotion
 
@@ -97,6 +101,11 @@ fun PaymentStatusScreen(
     // completion: the glyph becomes a pending clock instead of the green
     // check, with no celebration bounce (iOS parity).
     settlementPending: Boolean = false,
+    // The payment left the wallet but the mint hasn't confirmed its outcome,
+    // so the funds are held, not lost. The failure face then must not claim
+    // failure: the glyph becomes the same pending clock (iOS parity).
+    awaitingMint: Boolean = false,
+    successAmount: String? = null,
 ) {
     val haptics = LocalHapticFeedback.current
     val inspectionMode = LocalInspectionMode.current
@@ -191,7 +200,7 @@ fun PaymentStatusScreen(
                         .fillMaxWidth()
                         .heightIn(min = StatusHeroMinHeight),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
+                    verticalArrangement = Arrangement.Top,
                 ) {
                     AnimatedContent(
                         targetState = phase,
@@ -218,13 +227,13 @@ fun PaymentStatusScreen(
                         label = "payment-status-glyph",
                     ) { current ->
                         Box(
-                            modifier = Modifier.size(StatusIconSlotSize),
+                            modifier = Modifier.size(StatusIconSlotSize).testTag("payment-status-icon"),
                             contentAlignment = Alignment.Center,
                         ) {
                             when (current) {
                                 PaymentStatusPhase.Processing -> SpinnerRing(
                                     size = SpinnerSize,
-                                    color = MaterialTheme.colorScheme.primary,
+                                    color = MaterialTheme.colorScheme.onSurface,
                                 )
                                 PaymentStatusPhase.Success -> if (settlementPending) {
                                     // Async settlement isn't the celebration
@@ -280,12 +289,22 @@ fun PaymentStatusScreen(
                                             ),
                                     )
                                 }
-                                PaymentStatusPhase.Failure -> StatusCircleGlyph(
-                                    kind = StatusGlyphKind.Failure,
-                                    contentDescription = "Failed",
-                                    tint = failureTint,
-                                    modifier = Modifier.size(StatusGlyphSize),
-                                )
+                                PaymentStatusPhase.Failure -> if (awaitingMint) {
+                                    // Unconfirmed, not failed: the pending clock.
+                                    StatusCircleGlyph(
+                                        kind = StatusGlyphKind.Pending,
+                                        contentDescription = "Pending",
+                                        tint = CashuTheme.colors.pending,
+                                        modifier = Modifier.size(StatusGlyphSize),
+                                    )
+                                } else {
+                                    StatusCircleGlyph(
+                                        kind = StatusGlyphKind.Failure,
+                                        contentDescription = "Failed",
+                                        tint = failureTint,
+                                        modifier = Modifier.size(StatusGlyphSize),
+                                    )
+                                }
                             }
                         }
                     }
@@ -313,6 +332,8 @@ fun PaymentStatusScreen(
                     ) {
                         AnimatedContent(
                             targetState = title,
+                            modifier = Modifier.fillMaxWidth(),
+                            contentAlignment = Alignment.Center,
                             transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(150)) },
                             label = "payment-status-title",
                         ) { currentTitle ->
@@ -323,30 +344,58 @@ fun PaymentStatusScreen(
                                 ),
                                 color = MaterialTheme.colorScheme.onSurface,
                                 textAlign = TextAlign.Center,
-                                modifier = Modifier.padding(horizontal = CashuTheme.spacing.page),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = CashuTheme.spacing.page),
                             )
                         }
-                        Spacer(Modifier.height(CashuTheme.spacing.snug))
-                        Text(
-                            text = detail ?: " ",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center,
-                            maxLines = 3,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = StatusDescriptionMinHeight)
-                                .padding(horizontal = StatusDescriptionHorizontalPadding)
-                                .graphicsLayer { alpha = if (detail == null) 0f else 1f },
-                        )
+                        AnimatedContent(
+                            targetState = successAmount?.takeIf {
+                                phase == PaymentStatusPhase.Success && !settlementPending && it.isNotBlank()
+                            },
+                            transitionSpec = {
+                                (fadeIn(tween(200)) togetherWith fadeOut(tween(150))).using(null)
+                            },
+                            label = "payment-status-amount",
+                        ) { amount ->
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                if (amount != null) {
+                                    Spacer(Modifier.height(CashuTheme.spacing.comfortable))
+                                    AmountHero(
+                                        parts = AmountParts.parse(amount),
+                                        scale = AmountScale.Hero,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        animated = false,
+                                        accessibilityPrefix = "Amount",
+                                        modifier = Modifier.padding(horizontal = CashuTheme.spacing.page),
+                                    )
+                                } else {
+                                    Spacer(Modifier.height(CashuTheme.spacing.snug))
+                                    Text(
+                                        text = detail ?: " ",
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        textAlign = TextAlign.Center,
+                                        maxLines = 3,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .heightIn(min = StatusDescriptionMinHeight)
+                                            .padding(horizontal = StatusDescriptionHorizontalPadding)
+                                            .graphicsLayer { alpha = if (detail == null) 0f else 1f },
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
                 if (rows != null && (phase != PaymentStatusPhase.Processing || showRowsDuringProcessing)) {
                     Column(
                         modifier = Modifier
+                            .align(Alignment.CenterHorizontally)
+                            .padding(horizontal = CashuTheme.spacing.comfortable)
+                            .widthIn(max = PaymentDetailMaxWidth)
                             .fillMaxWidth()
                             .padding(top = CashuTheme.spacing.snug)
-                            .padding(horizontal = CashuTheme.spacing.comfortable)
                             .graphicsLayer {
                                 alpha = if (showRowsDuringProcessing) 1f else terminalAlpha
                                 // Beat 3's settle-rise — opacity + 6dp only,
@@ -355,7 +404,9 @@ fun PaymentStatusScreen(
                                     translationY = 6.dp.toPx() * (1f - terminalAlpha)
                                 }
                             },
-                    ) { rows() }
+                    ) {
+                        rows()
+                    }
                 }
             }
 

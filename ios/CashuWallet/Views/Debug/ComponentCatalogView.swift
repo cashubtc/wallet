@@ -20,10 +20,17 @@ struct ComponentCatalogView: View {
     /// Which page to render. Split in two so each fits one screenshot without
     /// scrolling, and so each pairs with its Android counterpart.
     enum Page {
-        case matrix, variants, activity
+        case matrix, variants, activity, history, onchainStatus, awaitingMint
 
         init(rawValue: String?) {
-            self = rawValue == "activity" ? .activity : rawValue == "variants" ? .variants : .matrix
+            switch rawValue {
+            case "activity": self = .activity
+            case "history": self = .history
+            case "variants": self = .variants
+            case "onchain-status": self = .onchainStatus
+            case "awaiting-mint": self = .awaitingMint
+            default: self = .matrix
+            }
         }
     }
 
@@ -37,15 +44,22 @@ struct ComponentCatalogView: View {
             switch page {
             case .activity:
                 ActivityDetailCatalog()
+            case .history:
+                ActivityDetailCatalog(historyRows: true)
+            case .onchainStatus:
+                OnchainStatusCatalog()
             case .matrix:
                 noticeMatrix
                 bannerSection
             case .variants:
                 handRolledVariants
+            case .awaitingMint:
+                AwaitingMintCatalog()
             }
             Spacer(minLength: 0)
         }
-        .padding(16)
+        // The status face fills the screen; page padding would inset it.
+        .padding(page == .awaitingMint ? 0 : 16)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -149,11 +163,79 @@ struct ComponentCatalogView: View {
     }
 }
 
+/// Steps the on-chain Status row through every value so a UI test can check
+/// the row never changes size (DESIGN.md → On-chain receive status).
+private struct OnchainStatusCatalog: View {
+    @State private var index = 0
+    @State private var retries = 0
+    private let statuses: [OnchainDepositStatus] = [
+        .waiting,
+        .inMempool(amount: 2_317),
+        .confirming(amount: 2_317, confirmations: 1),
+        .confirming(amount: 300_000, confirmations: 45),
+        .adding(amount: 300_000),
+        .retrying(amount: 300_000, needsAttention: false),
+        .retrying(amount: 300_000, needsAttention: true),
+        .expired,
+    ]
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Text("On-chain status").font(.title)
+            OnchainDepositStatusRow(status: statuses[index], useBitcoinSymbol: true) { retries += 1 }
+            Button("Next status") { index = (index + 1) % statuses.count }
+                .accessibilityIdentifier("next-onchain-status")
+            Text("Retries: \(retries)")
+                .accessibilityIdentifier("onchain-status-retries")
+        }
+    }
+}
+
+/// The send status face for a payment the mint hasn't confirmed, driven by the
+/// real unresolved-melt error, so a UI test can check it without a stuck mint.
+private struct AwaitingMintCatalog: View {
+    @State private var viewedHistory = false
+
+    private let message = MeltPaymentRecoveryError.unresolved(
+        quoteID: "catalog-quote",
+        mintURL: "https://testnut.cashu.space",
+        operationID: "catalog-operation"
+    ).walletMessage
+
+    var body: some View {
+        PaymentStatusView(
+            details: [
+                .init(label: "Method", value: "BOLT11"),
+                .init(label: "Amount", isAmount: true, value: "2,500 sat"),
+                .init(label: "Network fee", value: "10 sat"),
+                .init(label: "Mint", value: "Testnut"),
+            ],
+            phase: .failure(
+                message: message.text,
+                isCaution: message.severity == .caution,
+                isTerminal: message.recoverability == .terminal
+            ),
+            awaitingMint: message.awaitsMintConfirmation,
+            onViewHistory: { viewedHistory = true },
+            onDone: {},
+            onRetry: {}
+        )
+        .overlay(alignment: .top) {
+            if viewedHistory {
+                Text("Viewed history")
+                    .accessibilityIdentifier("awaiting-mint-viewed-history")
+            }
+        }
+    }
+}
+
 /// Deterministic receipts for native UI checks; no wallet initialization or mint is needed.
 private struct ActivityDetailCatalog: View {
+    var historyRows = false
     @EnvironmentObject private var walletManager: WalletManager
     @State private var selectedTransaction: WalletTransaction?
     @State private var selectedRequest: CashuRequest?
+    @State private var showUpdatingDetails = false
     private let date = Date(timeIntervalSince1970: 1_788_768_000)
 
     private var transactions: [WalletTransaction] {
@@ -166,7 +248,9 @@ private struct ActivityDetailCatalog: View {
                   mintUrl: "https://mint.example", invoice: "lnbc1test"),
             .init(id: "sent-lightning", amount: 2100, type: .outgoing, kind: .lightning,
                   date: date, status: .completed, mintUrl: "https://mint.example",
-                  preimage: "0123456789abcdef0123456789abcdef", fee: 2),
+                  preimage: "0123456789abcdef0123456789abcdef", invoice: "lnbc21u1pcatalogfixtureinvoice",
+                  fee: 2, sagaId: "6f2d3c4b-1a2b-4c3d-8e9f-0a1b2c3d4e5f", paymentMethod: .bolt11,
+                  quoteId: "melt-quote-catalog-fixture"),
             .init(id: "failed-lightning", amount: 2100, type: .outgoing, kind: .lightning,
                   date: date, status: .failed, mintUrl: "https://mint.example"),
             .init(id: "pending-ecash", amount: 2100, type: .outgoing, kind: .ecash,
@@ -176,15 +260,39 @@ private struct ActivityDetailCatalog: View {
             .init(id: "received-bitcoin", amount: 2100, type: .incoming, kind: .onchain,
                   date: date, status: .completed, mintUrl: "https://mint.example",
                   preimage: "0123456789abcdef0123456789abcdef", invoice: "bc1qfixture"),
+            onchainDeposit(id: "unfunded-bitcoin", amount: 0, note: "Waiting for deposit", funded: false),
+            onchainDeposit(id: "mempool-bitcoin", amount: 2317, note: "In mempool", funded: true),
         ]
+    }
+
+    private func onchainDeposit(id: String, amount: UInt64, note: String, funded: Bool) -> WalletTransaction {
+        var deposit = WalletTransaction(
+            id: id, amount: amount, type: .incoming, kind: .onchain, date: date, status: .pending,
+            statusNote: note, mintUrl: "https://mint.example",
+            preimage: funded ? "0123456789abcdef0123456789abcdef" : nil, invoice: "bc1qfixtureaddress"
+        )
+        deposit.quoteId = id
+        deposit.isUnfundedAddress = !funded
+        return deposit
     }
 
     var body: some View {
         VStack(spacing: 16) {
             Text("Activity details").font(.title)
-            ForEach(transactions) { transaction in
-                Button(transaction.displayTitle) { selectedTransaction = transaction }
+            if ProcessInfo.processInfo.environment["UITEST_DETAILS_UPDATES"] == "1" {
+                Button("Updating payment") { showUpdatingDetails = true }
+                    .accessibilityIdentifier("updating-payment")
+            }
+            ForEach(transactions.filter { !historyRows || ["sent-lightning", "failed-lightning"].contains($0.id) }) { transaction in
+                if historyRows {
+                    HistoryTransactionRow(transaction: transaction, timestamp: "Today", amountAccessibilityText: "2,100 sat") {
+                        selectedTransaction = transaction
+                    }
                     .accessibilityIdentifier(transaction.id)
+                } else {
+                    Button(transaction.displayTitle) { selectedTransaction = transaction }
+                        .accessibilityIdentifier(transaction.id)
+                }
             }
             Button("Reusable Invoice") { openRequest(rail: .bolt12) }
                 .accessibilityIdentifier("reusable-invoice")
@@ -195,6 +303,7 @@ private struct ActivityDetailCatalog: View {
             Button("Cashu Request · USD") { openRequest(rail: .ecash, paid: true, unit: "usd") }
                 .accessibilityIdentifier("cashu-request-usd")
         }
+        .sheet(isPresented: $showUpdatingDetails) { TechnicalDetailsUpdateCatalog() }
         .sheet(item: $selectedTransaction) { TransactionDetailView(transaction: $0) }
         .sheet(item: $selectedRequest) { CashuRequestReceiptView(request: $0) }
         .onAppear {
@@ -219,9 +328,15 @@ private struct ActivityDetailCatalog: View {
         store.delete(id: id)
         let request = store.create(
             id: id, rail: rail, encoded: rail == .ecash ? "creqAfixture" : "lno1fixture",
-            unit: unit, mints: ["https://mint.example"], memo: "Coffee tips", reusable: true
+            unit: unit, mints: ["https://mint.example"], memo: "Coffee tips",
+            quoteId: rail == .bolt12 ? "catalog-offer-quote" : nil, reusable: true
         )
         if rail == .bolt12 {
+            walletManager.transactionService.transactions = [
+                .init(id: "fixture-payment", amount: 2100, type: .incoming, kind: .lightning,
+                      date: date, status: .completed, mintUrl: "https://mint.example",
+                      invoice: "lno1fixture", paymentMethod: .bolt12, quoteId: "catalog-offer-quote")
+            ]
             store.attachPayment(requestId: id, transactionId: "fixture-payment", amount: 2100)
         } else if paid {
             store.attachPayment(requestId: id, transactionId: "fixture-payment-1", amount: 1200)
@@ -230,6 +345,24 @@ private struct ActivityDetailCatalog: View {
         selectedRequest = store.request(withId: id) ?? request
     }
 
+}
+
+/// Explicit UI-test-only scenario: the same receipt updates while Details stays open.
+private struct TechnicalDetailsUpdateCatalog: View {
+    @State private var transaction = WalletTransaction(
+        id: "updating-payment", amount: 21, type: .outgoing, kind: .lightning,
+        date: Date(timeIntervalSince1970: 1_788_768_000), status: .pending, mintUrl: "https://mint.example"
+    )
+    var body: some View {
+        VStack {
+            Button("Complete payment") {
+                transaction.status = .completed
+                transaction.fee = 2
+                transaction.preimage = String(repeating: "b", count: 64)
+            }
+            TransactionTechnicalDetailsView(transaction: transaction)
+        }
+    }
 }
 
 #Preview("Inline error catalog — matrix") {

@@ -52,6 +52,22 @@ extension WalletManager {
         }
     }
 
+    /// One explorer look at the deposit address on screen. No wallet lease:
+    /// it never touches CDK, only the block explorer and local evidence.
+    func observeOnchainDeposit(quote: MintQuoteInfo) async -> OnchainPaymentObservation? {
+        guard quote.paymentMethod == .onchain else { return nil }
+        return await transactionService.observeOnchainDeposit(
+            quoteId: quote.id,
+            address: quote.request,
+            mintURL: quote.mintURL,
+            createdAt: quote.updatedAt ?? Date()
+        )
+    }
+
+    func storedOnchainObservation(quoteId: String) -> OnchainPaymentObservation? {
+        transactionService.storedOnchainObservation(quoteId: quoteId)
+    }
+
     func checkMintQuote(quoteId: String) async throws -> MintQuoteInfo {
         return try await operationCoordinator.perform(
             kind: .mintQuote,
@@ -198,7 +214,10 @@ extension WalletManager {
         } catch let recoveryError as MeltPaymentRecoveryError {
             // CDK persists the melt saga and its Pending transaction, so an
             // unresolved outcome needs no local record: startup recovery and
-            // the foreground poll reconcile it.
+            // the foreground poll reconcile it. Refresh so held funds leave the
+            // balance and the pending payment shows in History (Android parity).
+            await refreshBalance()
+            await loadTransactions()
             throw recoveryError
         }
         let result = confirmation.result

@@ -32,12 +32,10 @@ interface CdkWalletGateway {
     suspend fun ensureWallet(mintUrl: String, unit: String = "sat")
 
     /**
-     * Atomically inspects the native repository and removes [mintUrl] only when
-     * it has at most one registered unit. Returns false when no native wallet
-     * existed and throws [MultiUnitWalletRemovalException] before changing the
-     * repository when multiple units are registered.
+     * Removes every unit wallet registered for [mintUrl] from the native
+     * repository. Returns false when no native wallet existed.
      */
-    suspend fun removeWalletIfSingleUnit(mintUrl: String): Boolean
+    suspend fun removeWallets(mintUrl: String): Boolean
     suspend fun fetchMintInfo(mintUrl: String): MintInfo?
     suspend fun restoreMint(mintUrl: String): RestoreMintResult
     /** Local CDK accounts, independent of the mint's current advertisements. */
@@ -48,14 +46,12 @@ interface CdkWalletGateway {
     /** Balance of the (mint, unit) wallet, registering the unit wallet if needed. */
     suspend fun unitBalance(mintUrl: String, unit: String): Long
 
-    /**
-     * Balance of the (mint, unit) wallet WITHOUT creating it — null when the
-     * wallet was never registered. Used by refreshBalance so advertising a unit
-     * never registers keysets/counters the user hasn't touched.
-     */
-    suspend fun unitBalanceIfExists(mintUrl: String, unit: String): Long?
     suspend fun createMintQuote(amount: Long?, method: PaymentMethodKind, mintUrl: String, unit: String = "sat", description: String? = null): MintQuoteInfo
     suspend fun checkMintQuote(quoteId: String): MintQuoteInfo
+
+    /** Explicitly approved recovery; never invoked by ordinary seed restore. */
+    suspend fun recoverDepositKey(request: com.cashu.me.Core.DepositRecoveryRequest): com.cashu.me.Core.DepositRecoveryLookup =
+        throw UnsupportedOperationException("Deposit recovery is not available.")
 
     /** Last durable local quote snapshot, without contacting the mint. */
     suspend fun storedMintQuote(quoteId: String): MintQuoteInfo? = null
@@ -138,23 +134,15 @@ interface CdkWalletGateway {
     suspend fun pendingSendTokenFromSaga(operationId: String): String?
 }
 
-class MultiUnitWalletRemovalException(
-    val registeredUnits: List<String>,
-) : IllegalStateException(
-    "This mint uses multiple currency units and cannot be removed safely yet. Keep it connected and try again after updating the app.",
-)
-
-internal fun normalizedRegisteredWalletUnits(units: List<String>): List<String> =
-    units
-        .map { it.trim().lowercase() }
-        .filter(String::isNotEmpty)
-        .distinct()
-
 internal fun mintRemovalUrlsMatch(lhs: String, rhs: String): Boolean {
     fun identity(raw: String): List<Any?>? = runCatching {
         val uri = URI(raw.trim())
         val scheme = uri.scheme?.lowercase() ?: return@runCatching null
-        val authority = uri.rawAuthority?.lowercase() ?: return@runCatching null
+        var authority = uri.rawAuthority?.lowercase() ?: return@runCatching null
+        // Match iOS mint identity while preserving the original URL for DB reads.
+        if ((scheme == "https" && uri.port == 443) || (scheme == "http" && uri.port == 80)) {
+            authority = authority.substringBeforeLast(':')
+        }
         var path = uri.rawPath.orEmpty()
         while (path.length > 1 && path.endsWith('/')) path = path.dropLast(1)
         if (path == "/") path = ""

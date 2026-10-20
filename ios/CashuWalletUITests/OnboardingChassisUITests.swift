@@ -124,24 +124,28 @@ final class OnboardingChassisUITests: UITestBase {
         // `showMnemonicStage` (and Android's `SeedGrid`) — a UI test is
         // black-box, so it cannot share the app's constant.
         let mask = app.staticTexts["••••••"]
-        let reveal = app.staticTexts["Tap to reveal"]
+        let reveal = app.buttons["Reveal seed phrase"]
 
         XCTAssertTrue(reveal.waitForExistence(timeout: 10), "Seed should start hidden")
         XCTAssertTrue(
             mask.exists,
             "A hidden phrase must publish masks, not the real words, to the accessibility tree"
         )
-        reveal.tap()
+        tapWhenReady(reveal, timeout: 10)
 
-        let firstIndex = app.staticTexts["01"]
+        // Word numbers exist in the masked grid too, so waiting for "01"
+        // does not establish that the tap revealed the phrase. Wait for both
+        // hidden-state elements to leave the accessibility tree instead.
         XCTAssertTrue(
-            firstIndex.waitForExistence(timeout: 5),
-            "Tapping the card should reveal the numbered words"
+            reveal.waitForNonExistence(timeout: 5),
+            "The reveal control should go away once revealed"
         )
-        XCTAssertFalse(reveal.exists, "The reveal prompt should go away once revealed")
-        XCTAssertFalse(mask.exists, "Revealing should swap the masks for the real words")
-
-        firstIndex.tap()
+        XCTAssertTrue(
+            mask.waitForNonExistence(timeout: 5),
+            "Revealing should swap the masks for the real words"
+        )
+        let firstIndex = app.staticTexts["01"]
+        tapWhenReady(firstIndex, timeout: 5)
 
         XCTAssertTrue(
             reveal.waitForExistence(timeout: 5),
@@ -166,9 +170,9 @@ final class OnboardingChassisUITests: UITestBase {
         let saved = app.buttons["onboarding-saved-seed"]
         XCTAssertTrue(saved.waitForExistence(timeout: 15), "Seed step should appear")
 
-        let reveal = app.staticTexts["Tap to reveal"]
+        let reveal = app.buttons["Reveal seed phrase"]
         XCTAssertTrue(reveal.waitForExistence(timeout: 10), "Seed should start hidden")
-        reveal.tap()
+        tapWhenReady(reveal, timeout: 10)
         XCTAssertTrue(
             reveal.waitForNonExistence(timeout: 5),
             "Tapping the card should reveal the phrase"
@@ -281,6 +285,17 @@ final class OnboardingChassisUITests: UITestBase {
             app.buttons["Find my mints"].waitForExistence(timeout: 30),
             "The lookup chip should settle back to its resting label"
         )
+
+        // This test leaves a durable restore in progress. A fresh fixture
+        // launch must clear that journal as well as its seed, so subsequent
+        // onboarding tests can install a different wallet.
+        app.terminate()
+        app.launch()
+        tapWhenReady(app.buttons["onboarding-create-wallet"], timeout: 30)
+        XCTAssertTrue(
+            app.buttons["onboarding-saved-seed"].waitForExistence(timeout: 15),
+            "Explicit fixture reset should allow wallet creation after a staged restore"
+        )
     }
 
     /// The rail scrubs: press-and-hold, then drag runs through the words with
@@ -325,4 +340,84 @@ final class OnboardingChassisUITests: UITestBase {
             "Tapping the top tick should jump back to word 1, got \(String(describing: rail.value))"
         )
     }
+
+    func testVerifiedSeedRemainsScrubbable() {
+        app.terminate()
+        app.launchEnvironment["UITEST_DISABLE_ANIMATIONS"] = "0"
+        app.launch()
+        tapWhenReady(app.buttons["Restore Wallet"], timeout: 30)
+        tapWhenReady(app.buttons["Use Seed Phrase"], timeout: 10)
+        let field = app.textFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        // This journey exercises verified-word scrubbing. Explicitly focus
+        // after the animated entrance; autofocus has separate coverage above.
+        focusTextField(field)
+        // Rapid keyboard input must not replay a committed word before the
+        // next SwiftUI render pass, even while word transitions animate.
+        field.typeText(Array(repeating: "abandon", count: 11).joined(separator: " ") + " about ")
+        XCTAssertTrue(app.staticTexts["All 12 words verified."].waitForExistence(timeout: 5))
+        let rail = app.otherElements["Seed word progress"]
+        let top = rail.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.04))
+        let bottom = rail.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.96))
+        bottom.press(forDuration: 0.6, thenDragTo: top)
+        let atStart = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == 'Word 1 of 12'"), object: rail
+        )
+        XCTAssertEqual(XCTWaiter().wait(for: [atStart], timeout: 5), .completed)
+        XCTAssertEqual(field.value as? String, "abandon")
+        top.press(forDuration: 0.6, thenDragTo: bottom)
+        let atEnd = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == 'Word 12 of 12'"), object: rail
+        )
+        XCTAssertEqual(XCTWaiter().wait(for: [atEnd], timeout: 5), .completed)
+        XCTAssertEqual(field.value as? String, "about")
+        XCTAssertTrue(app.staticTexts["All 12 words verified."].exists)
+    }
+
+    func testCustomMintKeyboardSubmitCompletesInterruptedURL() {
+        createWalletThroughSeed()
+        tapWhenReady(app.buttons["onboarding-add-custom-mint"])
+        let field = app.textFields["onboarding-custom-mint-field"]
+        // Verify the exact partial edit before testing interruption. XCTest
+        // can drop a setup character while the keyboard settles.
+        enterMintURL("ht", into: field)
+        XCTAssertEqual(field.value as? String, "ht")
+
+        // Preserve a partial edit across an interruption rather than starting
+        // a new wallet. The entry helper must append only the missing suffix.
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        XCTAssertEqual(field.value as? String, "ht")
+        enterMintURL(mintURL, into: field)
+        XCTAssertEqual(field.value as? String, mintURL)
+
+        // Retain explicit coverage of the keyboard's submit action even though
+        // the shared lifecycle setup now uses the app's Add mint button.
+        focusTextField(field)
+        tapWhenReady(app.keyboards.buttons["Done"], timeout: 10)
+        XCTAssertTrue(field.waitForNonExistence(timeout: 5))
+        let action = app.buttons["onboarding-continue"]
+        XCTAssertTrue(action.waitForExistence(timeout: 5))
+        XCTAssertEqual(action.label, "Continue")
+        XCTAssertTrue(action.isEnabled)
+        XCTAssertFalse(app.buttons["Wallet"].exists)
+    }
+
+    func testAddingCustomMintStaysOnMintSelection() {
+        createWalletThroughSeed()
+        tapWhenReady(app.buttons["onboarding-add-custom-mint"])
+        let field = app.textFields["onboarding-custom-mint-field"]
+        enterMintURL(mintURL, into: field)
+        let action = app.buttons["onboarding-continue"]
+        XCTAssertEqual(action.label, "Add mint")
+        tapWhenReady(action)
+        XCTAssertTrue(action.waitForExistence(timeout: 5))
+        XCTAssertEqual(action.label, "Continue")
+        XCTAssertTrue(app.buttons["onboarding-skip-mint"].exists)
+        XCTAssertFalse(app.buttons["Wallet"].exists)
+        tapWhenReady(action)
+        waitForMainTab(timeout: 60)
+    }
+
 }

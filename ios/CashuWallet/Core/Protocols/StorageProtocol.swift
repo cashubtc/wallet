@@ -93,15 +93,17 @@ enum StorageKeys {
     static let pendingReceiveTokens = "wallet.pendingReceiveTokens"
     static let savedTokens = "wallet.savedTokens"
     static let paymentPreimages = "wallet.paymentPreimages"
+    static let onchainPaymentObservations = "wallet.onchainPaymentObservations"
     static let mintQuoteTimestamps = "wallet.mintQuoteTimestamps"
     static let mintQuoteSchedules = "wallet.mintQuoteSchedules.v1"
     static let mintKeysetRefreshTimestamps = "wallet.mintKeysetRefreshTimestamps"
     static let processedNPCQuotes = "wallet.processedNPCQuotes"
     static let nostrMintBackupLastBackupDate = "wallet.nostrMintBackup.lastBackupDate"
+    static let pendingICloudRestoreMintURLs = "wallet.pendingICloudRestoreMintURLs"
 
     // Onboarding completion marker. Written `false` when a wallet is installed
     // and `true` only when onboarding is fully passed; absent on installs that
-    // predate the marker (treated as completed at launch).
+    // predate the marker (migrated only when a local database still exists).
     static let onboardingCompleted = "cashu.local.onboardingCompleted"
 
     // Cashu Requests (receive intents shown in History). Key names predate the
@@ -227,11 +229,13 @@ enum StorageKeys {
         pendingReceiveTokens,
         savedTokens,
         paymentPreimages,
+        onchainPaymentObservations,
         mintQuoteTimestamps,
         mintQuoteSchedules,
         mintKeysetRefreshTimestamps,
         processedNPCQuotes,
         nostrMintBackupLastBackupDate,
+        pendingICloudRestoreMintURLs,
         cashuRequests,
         cashuRequestsCurrentId,
         cashuRequestsProcessedNIP17Ids,
@@ -287,5 +291,38 @@ enum StorageKeys {
     enum Secure {
         static let mnemonic = "wallet_mnemonic"
         static let nostrPrivateKey = "nostr_private_key"
+    }
+}
+
+
+extension StorageProtocol {
+    func migratedValue<T: Codable>(forKey key: String, legacyKeys: [String]) -> T? {
+        if let value: T = try? get(forKey: key) { return value }
+        for legacyKey in legacyKeys {
+            if let value: T = try? get(forKey: legacyKey) {
+                saveValue(value, forKey: key)
+                return value
+            }
+        }
+        return nil
+    }
+
+    func saveValue<T: Codable>(_ value: T, forKey key: String) {
+        do { try set(value, forKey: key) }
+        catch { AppLogger.wallet.error("Failed to save \(key): \(error)") }
+    }
+
+    func saveOptionalValue<T: Codable>(_ value: T?, forKey key: String) {
+        do {
+            if let value { try set(value, forKey: key) }
+            else { try remove(forKey: key) }
+        } catch { AppLogger.wallet.error("Failed to update \(key): \(error)") }
+    }
+
+    func removeValues(keys: [String]) {
+        for key in Set(keys) {
+            do { try remove(forKey: key) }
+            catch { AppLogger.wallet.error("Failed to remove \(key): \(error)") }
+        }
     }
 }

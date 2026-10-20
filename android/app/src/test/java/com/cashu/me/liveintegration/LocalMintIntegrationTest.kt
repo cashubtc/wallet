@@ -1,6 +1,7 @@
 package com.cashu.me.liveintegration
 
 import java.net.HttpURLConnection
+import java.net.SocketTimeoutException
 import java.net.URL
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -270,7 +271,9 @@ class LocalMintIntegrationTest {
         val connection = (URL("$mintUrl$path").openConnection() as HttpURLConnection).apply {
             requestMethod = method
             connectTimeout = 3_000
-            readTimeout = 5_000
+            // Quote creation includes backend work, not just a loopback read.
+            // Match the payment fixture's bounded upstream request timeout.
+            readTimeout = 30_000
             if (body != null) {
                 doOutput = true
                 setRequestProperty("Content-Type", "application/json")
@@ -288,6 +291,8 @@ class LocalMintIntegrationTest {
                 connection.responseCode in 200..299,
             )
             return json.parseToJsonElement(responseBody).jsonObject
+        } catch (error: SocketTimeoutException) {
+            throw AssertionError("$method $path exceeded the local mint request deadline", error)
         } finally {
             connection.disconnect()
         }

@@ -31,7 +31,6 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.cashu.me.App.AppContainer
-import com.cashu.me.Core.Platform.ConnectivityState
 import com.cashu.me.Models.CashuRequest
 import com.cashu.me.Models.WalletTransaction
 import com.cashu.me.ui.history.CashuRequestReceiptSheet
@@ -45,6 +44,7 @@ import com.cashu.me.ui.settings.AdvancedKeysScreen
 import com.cashu.me.ui.settings.AppLockScreen
 import com.cashu.me.ui.settings.BackupRestoreScreen
 import com.cashu.me.ui.settings.RestoreWalletScreen
+import com.cashu.me.ui.settings.RecoverDepositScreen
 import com.cashu.me.ui.settings.DeviceKeyDetailScreen
 import com.cashu.me.ui.settings.LightningScreen
 import com.cashu.me.ui.settings.NostrScreen
@@ -69,12 +69,10 @@ import java.nio.charset.StandardCharsets
 fun CashuNavHost(
     navController: NavHostController,
     container: AppContainer,
-    connectivityState: ConnectivityState,
     contentPadding: PaddingValues,
     onScan: () -> Unit,
     onReceiveEcash: () -> Unit,
     onAddMint: () -> Unit,
-    onReceiveLightning: () -> Unit,
     onSend: () -> Unit,
     pendingMintScan: String?,
     onPendingMintScanConsumed: () -> Unit,
@@ -84,6 +82,13 @@ fun CashuNavHost(
     var receiptTransaction by remember { mutableStateOf<WalletTransaction?>(null) }
     var receiptRequest by remember { mutableStateOf<CashuRequest?>(null) }
     var receiptBackdropVisible by remember { mutableStateOf(false) }
+    fun finishNfcReceive() {
+        receiptRequest = null
+        navController.navigate(Routes.HOME) {
+            popUpTo(Routes.HOME)
+            launchSingleTop = true
+        }
+    }
     LaunchedEffect(receiptTransaction, receiptRequest) {
         receiptBackdropVisible = receiptTransaction != null || receiptRequest != null
     }
@@ -109,12 +114,10 @@ fun CashuNavHost(
         tabDestinations(
             navController = navController,
             container = container,
-            connectivityState = connectivityState,
             contentPadding = contentPadding,
             onScan = onScan,
             onReceiveEcash = onReceiveEcash,
             onAddMint = onAddMint,
-            onReceiveLightning = onReceiveLightning,
             onSend = onSend,
             pendingMintScan = pendingMintScan,
             onPendingMintScanConsumed = onPendingMintScanConsumed,
@@ -154,6 +157,7 @@ fun CashuNavHost(
                 nfcReceiveCoordinator = container.nfcReceiveCoordinator,
                 requestId = requestId,
                 onClose = { navController.popBackStack() },
+                onNfcSuccessDone = ::finishNfcReceive,
             )
         }
 
@@ -184,7 +188,11 @@ fun CashuNavHost(
                 appLockManager = container.appLockManager,
                 onClose = { navController.popBackStack() },
                 onOpenRestore = { navController.navigate(Routes.SETTINGS_RESTORE) },
+                onOpenRecoverDeposit = { navController.navigate(Routes.SETTINGS_RECOVER_DEPOSIT) },
             )
+        }
+        composable(Routes.SETTINGS_RECOVER_DEPOSIT) {
+            RecoverDepositScreen(walletManager = container.walletManager, onClose = { navController.popBackStack() })
         }
         composable(Routes.SETTINGS_RESTORE) {
             RestoreWalletScreen(
@@ -282,6 +290,7 @@ fun CashuNavHost(
             nfcReceiveCoordinator = container.nfcReceiveCoordinator,
             store = container.cashuRequestStore,
             onDismissRequest = { receiptRequest = null },
+            onNfcSuccessDone = ::finishNfcReceive,
             onBackdropVisibilityChanged = { receiptBackdropVisible = it },
         )
     }
@@ -316,12 +325,10 @@ internal fun cashuRequestDetailRouteFor(requestId: String): String {
 private fun NavGraphBuilder.tabDestinations(
     navController: NavHostController,
     container: AppContainer,
-    connectivityState: ConnectivityState,
     contentPadding: PaddingValues,
     onScan: () -> Unit,
     onReceiveEcash: () -> Unit,
     onAddMint: () -> Unit,
-    onReceiveLightning: () -> Unit,
     onSend: () -> Unit,
     pendingMintScan: String?,
     onPendingMintScanConsumed: () -> Unit,

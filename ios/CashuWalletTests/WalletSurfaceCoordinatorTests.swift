@@ -101,7 +101,7 @@ final class WalletSurfaceCoordinatorTests: XCTestCase {
 
         nav.sheetDidDismiss()
 
-        XCTAssertEqual(nav.activeWalletSheet?.id, "sendAmount")
+        XCTAssertEqual(nav.activeWalletSheet?.id, WalletSheet.sendAmount(destination).id)
     }
 
     func testCashuRequestPayWaitsForScannerThenOpensAsSheet() {

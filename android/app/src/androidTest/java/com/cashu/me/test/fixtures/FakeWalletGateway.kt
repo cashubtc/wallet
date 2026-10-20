@@ -2,7 +2,6 @@ package com.cashu.me.test.fixtures
 
 import com.cashu.me.Core.CDK.ForeignNfcSettlement
 import com.cashu.me.Core.CDK.MeltConfirmation
-import com.cashu.me.Core.CDK.MultiUnitWalletRemovalException
 import com.cashu.me.Core.CDK.NfcReceiveReceipt
 import com.cashu.me.Core.CDK.NwcServiceHandle
 import com.cashu.me.Core.CDK.SagaRecoveryReport
@@ -38,6 +37,7 @@ class FakeWalletGateway(
     initialTransactions: List<WalletTransaction> = emptyList(),
     private val supportedMintMethods: List<PaymentMethodKind> = listOf(PaymentMethodKind.Bolt11),
     private val supportedUnits: List<String> = listOf("sat"),
+    private val supportsAmountlessBolt11Melt: Boolean? = null,
 ) : WalletGateway {
     private val sequence = AtomicInteger(1)
     private val walletUrls = linkedSetOf<String>()
@@ -51,6 +51,10 @@ class FakeWalletGateway(
         private set
     var lastSentAmount: Long? = null
         private set
+    var beforeNPCMint: suspend () -> Unit = {}
+    var beforeMeltQuote: suspend () -> Unit = {}
+    var lastMeltQuoteAmountSats: Long? = null
+    var beforeMeltPayment: suspend () -> Unit = {}
     var pendingSendClaimed = false
     private val transactions = initialTransactions.toMutableList()
     private val mintQuotes = linkedMapOf<String, MutableStateFlow<MintQuoteInfo>>()
@@ -59,11 +63,23 @@ class FakeWalletGateway(
 
     var receiveCandidates = emptyList<com.cashu.me.Core.CDK.ReceiveRecoveryCandidate>()
     var receiveRecoveryCalls = 0
+    val depositRecoveryCalls = AtomicInteger()
+    override suspend fun recoverDepositKey(request: com.cashu.me.Core.DepositRecoveryRequest): com.cashu.me.Core.DepositRecoveryLookup {
+        depositRecoveryCalls.incrementAndGet()
+        return com.cashu.me.Core.DepositRecoveryLookup(
+            MintQuoteInfo(id = request.quoteId, request = "test-invoice", amount = 21,
+                paymentMethod = request.method, state = MintQuoteState.Paid, expiryEpochSeconds = null,
+                mintUrl = request.mintUrl, unit = request.unit, amountPaid = 21),
+            hasSigningKey = false,
+        )
+    }
     var metadataFetches = 0
     var metadataFailure: Throwable? = null
     var onMetadataFetch: (() -> Unit)? = null
+    var beforeStoredAccountBalance: (suspend () -> Unit)? = null
     var nextFailure: Throwable? = null
     var nextCloseFailure: Throwable? = null
+    var removeWalletFailure: Throwable? = null
     val latestMintQuoteId: String?
         get() = mintQuotes.keys.lastOrNull()
 
@@ -81,6 +97,8 @@ class FakeWalletGateway(
         transactions.removeAll { it.id == transaction.id }
         transactions += transaction
     }
+
+    fun addStoredMintQuote(quote: MintQuoteInfo) { mintQuotes[quote.id] = MutableStateFlow(quote) }
 
     fun markMintQuotePaid(quoteId: String, amountPaid: Long? = null) {
         val flow = checkNotNull(mintQuotes[quoteId]) { "Unknown fake quote $quoteId" }
@@ -136,12 +154,11 @@ class FakeWalletGateway(
         mintInfo.putIfAbsent(normalized, defaultMint(normalized))
     }
 
-    override suspend fun removeWalletIfSingleUnit(mintUrl: String): Boolean {
+    override suspend fun removeWallets(mintUrl: String): Boolean {
+        removeWalletFailure?.let { throw it }
         failIfRequested()
         val normalized = normalize(mintUrl)
-        val registeredUnits = walletUnits[normalized].orEmpty().toList()
-        if (registeredUnits.size > 1) throw MultiUnitWalletRemovalException(registeredUnits)
-        if (registeredUnits.isEmpty()) return false
+        if (walletUnits[normalized].isNullOrEmpty()) return false
         walletUrls -= normalized
         walletUnits -= normalized
         mintInfo -= normalized
@@ -174,17 +191,16 @@ class FakeWalletGateway(
         units.map { com.cashu.me.Core.CDK.WalletAccountReference(url, it) }
     } + transactions.mapNotNull { tx -> tx.mintUrl?.let { com.cashu.me.Core.CDK.WalletAccountReference(it, tx.unit) } }
 
-    override suspend fun storedAccountBalance(account: com.cashu.me.Core.CDK.WalletAccountReference): Long =
-        unitBalance(account.mintUrl, account.unit)
+    override suspend fun storedAccountBalance(account: com.cashu.me.Core.CDK.WalletAccountReference): Long {
+        beforeStoredAccountBalance?.invoke()
+        return unitBalance(account.mintUrl, account.unit)
+    }
 
     override suspend fun totalBalance(mintUrl: String): Long =
         balances[normalize(mintUrl)] ?: 0
 
     override suspend fun unitBalance(mintUrl: String, unit: String): Long =
         if (unit.equals("sat", ignoreCase = true)) totalBalance(mintUrl) else nonSatBalances[normalize(mintUrl) to unit] ?: 0
-
-    override suspend fun unitBalanceIfExists(mintUrl: String, unit: String): Long? =
-        if (unit.equals("sat", ignoreCase = true)) totalBalance(mintUrl) else nonSatBalances[normalize(mintUrl) to unit]
 
     override suspend fun createMintQuote(
         amount: Long?,
@@ -214,6 +230,8 @@ class FakeWalletGateway(
         mintQuotes[id] = MutableStateFlow(quote)
         return quote
     }
+
+    override suspend fun storedMintQuote(quoteId: String): MintQuoteInfo? = mintQuotes[quoteId]?.value
 
     override suspend fun checkMintQuote(quoteId: String): MintQuoteInfo =
         checkNotNull(mintQuotes[quoteId]) { "Unknown fake quote $quoteId" }.value
@@ -256,8 +274,13 @@ class FakeWalletGateway(
     }
 
     override suspend fun mintNPCQuote(quote: NPCQuote, p2pkPubkey: String?): Long {
+        beforeNPCMint()
         val mintUrl = normalize(checkNotNull(quote.mintUrl))
         balances[mintUrl] = (balances[mintUrl] ?: 0) + quote.amount
+        addTransaction(WalletTransaction(id = quote.id, quoteId = quote.id, amount = quote.amount,
+            type = TransactionType.Incoming, kind = TransactionKind.Lightning,
+            dateEpochMillis = System.currentTimeMillis(), status = TransactionStatus.Completed,
+            mintUrl = mintUrl))
         return quote.amount
     }
 
@@ -266,7 +289,9 @@ class FakeWalletGateway(
         amountSats: Long?,
         preferredMintURL: String?,
     ): MeltQuoteInfo {
+        beforeMeltQuote()
         failIfRequested()
+        lastMeltQuoteAmountSats = amountSats
         val mintUrl = normalize(preferredMintURL ?: walletUrls.first())
         val quote = MeltQuoteInfo(
             id = "melt-quote-${sequence.getAndIncrement()}",
@@ -289,6 +314,7 @@ class FakeWalletGateway(
     override suspend fun listMeltQuotes(): List<MeltQuoteInfo> = meltQuotes.values.toList()
 
     override suspend fun meltTokens(quoteId: String, mintUrl: String?): MeltConfirmation {
+        beforeMeltPayment()
         failIfRequested()
         val quote = checkNotNull(meltQuotes[quoteId]) { "Unknown fake melt quote $quoteId" }
         val total = quote.amount + quote.feeReserve
@@ -335,8 +361,11 @@ class FakeWalletGateway(
         return SagaRecoveryReport(0, 0, 0, 0)
     }
 
-    override suspend fun recoverIncompleteSagas(mintUrl: String): SagaRecoveryReport =
-        SagaRecoveryReport(recovered = 0, compensated = 0, skipped = 0, failed = 0)
+    val sagaRecoveryCalls = AtomicInteger()
+    override suspend fun recoverIncompleteSagas(mintUrl: String): SagaRecoveryReport {
+        sagaRecoveryCalls.incrementAndGet()
+        return SagaRecoveryReport(recovered = 0, compensated = 0, skipped = 0, failed = 0)
+    }
 
     override suspend fun sendEcashToken(
         amount: Long,
@@ -463,6 +492,7 @@ class FakeWalletGateway(
         supportedMintMethods = supportedMintMethods,
         units = supportedUnits,
         mintUnits = supportedUnits,
+        supportsAmountlessBolt11Melt = supportsAmountlessBolt11Melt,
         name = if (url == TestMintUrl) "Nutshell UI Test Mint" else "Test Mint",
         description = "Deterministic instrumented-test mint",
         nutSupport = NutSupport(

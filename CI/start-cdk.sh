@@ -32,8 +32,9 @@ PORT=${PORT:-3339}
 echo "🚀 Starting CDK mint on port ${PORT}..."
 
 cd "$WORK_DIR"
-nohup "$MINTD_BIN" --work-dir "$WORK_DIR" --enable-logging > "$LOG_FILE" 2>&1 &
+nohup "$MINTD_BIN" --work-dir "$WORK_DIR" --enable-logging > "$LOG_FILE" 2>&1 < /dev/null &
 MINT_PID=$!
+disown "$MINT_PID" 2>/dev/null || true
 echo "$MINT_PID" > "$PID_FILE"
 
 echo "✅ CDK started (PID: $MINT_PID)"

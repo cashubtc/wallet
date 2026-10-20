@@ -8,6 +8,7 @@ import com.cashu.me.test.UiFailureArtifactsRule
 import com.cashu.me.test.WalletJourneyRobot
 import com.cashu.me.test.fixtures.*
 import com.cashu.me.ui.testing.UiTestTags
+import kotlinx.coroutines.CompletableDeferred
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -69,6 +70,37 @@ class AdvancedSettingsJourneyTest {
         compose.onAllNodesWithContentDescription("Remove relay")
             .assertCountEquals(before.size + 1)[before.size].performClick()
         compose.waitUntil { app.container.settingsManager.state.value.nostrRelays == before }
+    }
+
+    @Test fun lightningAddressReceiptWaitsForWalletCreditAndHistoryRefresh() {
+        var quotes = emptyList<NPCQuote>()
+        fixture = AppTestFixture.launch(FixtureMode.SeededWithMint, npcQuotes = { quotes })
+        val app = fixture!!
+        val creditReady = CompletableDeferred<Unit>()
+        val claimStarted = CompletableDeferred<Unit>()
+        app.fakeGateway!!.beforeNPCMint = { claimStarted.complete(Unit); creditReady.await() }
+        robot.awaitTag(UiTestTags.WalletScreen).tapDescription("Settings").tapText("Lightning")
+        compose.onNode(hasText("Enable Lightning Address") and isToggleable()).performClick()
+        compose.waitUntil { app.container.npcService.state.value.isConnected }
+        robot.tapDescription("Show Lightning address QR code").awaitText("Copy")
+        compose.runOnIdle {
+            quotes = listOf(NPCQuote(id = "address-receipt", amount = 21,
+                mintUrl = FakeWalletGateway.TestMintUrl, state = "PAID", locked = false,
+                createdAtEpochSeconds = 0, paidAtEpochSeconds = null))
+        }
+        compose.waitUntil(10_000) { claimStarted.isCompleted }
+        compose.onNodeWithText("Payment Received!", useUnmergedTree = true).assertDoesNotExist()
+        assertEquals(0L, app.container.walletManager.state.value.balance)
+        compose.runOnIdle { creditReady.complete(Unit) }
+        robot.awaitTag("lightning-address-payment-received")
+        compose.onNodeWithContentDescription("Amount: 21 sats", useUnmergedTree = true).assertIsDisplayed()
+        assertEquals(21L, app.container.walletManager.state.value.balance)
+        assertTrue(app.container.walletManager.state.value.transactions.any { it.quoteId == "address-receipt" })
+        compose.onNodeWithText("Copy").assertDoesNotExist()
+        robot.tapText("Done")
+        compose.onNodeWithText("Check for payments").performScrollTo().performClick()
+        compose.waitUntil { !app.container.npcService.state.value.isCheckingPayments }
+        assertEquals(21L, app.container.walletManager.state.value.balance)
     }
 
     @Test fun lightningAddressManualCheckClaimsPaymentOnlyOnce() {

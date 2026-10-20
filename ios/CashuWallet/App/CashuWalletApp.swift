@@ -42,6 +42,14 @@ struct CashuWalletApp: App {
         if IntegrationTestConfig.shouldDisableAnimations {
             UIView.setAnimationsEnabled(false)
         }
+        #if DEBUG
+        // A fresh UI-test wallet must not inherit App Lock from a previous
+        // test. Reset before either settings or the lock manager is created;
+        // persistence relaunches omit RESET_WALLET and keep the saved setting.
+        if IntegrationTestConfig.isEnabled && IntegrationTestConfig.shouldResetWallet {
+            SettingsStore.shared.appLockEnabled = false
+        }
+        #endif
         _walletManager = StateObject(wrappedValue: WalletManager())
         _navigationManager = StateObject(wrappedValue: NavigationManager())
         _appLockManager = StateObject(wrappedValue: AppLockManager.shared)
@@ -100,7 +108,6 @@ struct CashuWalletApp: App {
                 guard IntegrationTestConfig.shouldRunPaymentServices else { return }
                 switch newPhase {
                 case .active:
-                    appLockManager.appBecameActive()
                     CashuRequestListener.shared.requestStart()
                     if SettingsManager.shared.checkSentTokens {
                         Task { await walletManager.checkAllPendingTokens() }
@@ -117,10 +124,8 @@ struct CashuWalletApp: App {
                     }
                     walletManager.startPendingQuoteForegroundPolling()
                 case .inactive:
-                    // The app-switcher snapshot is taken here, before `.background`.
-                    appLockManager.appResignedActive()
+                    break
                 case .background:
-                    appLockManager.appResignedActive()
                     CashuRequestListener.shared.requestStop()
                     // Quiesce the timers so no fresh mint network + wallet-DB write kicks
                     // off during the brief background-transition window before suspension.

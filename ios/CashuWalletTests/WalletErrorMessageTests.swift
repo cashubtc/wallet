@@ -11,13 +11,6 @@ private struct RawMintError: Error, CustomStringConvertible {
 
 final class WalletErrorMessageTests: XCTestCase {
 
-    func testMultiUnitRemovalPreservesSafetyGuidance() {
-        XCTAssertEqual(
-            MintRemovalPolicyError.multipleUnits.userFacingWalletMessage,
-            "This mint uses multiple currency units and cannot be removed safely yet. Keep it connected and try again after updating the app."
-        )
-    }
-
     func testCheckpointBusyPreservesRetryGuidance() {
         let message = WalletCheckpointError.busy.walletMessage
         XCTAssertEqual(message.text, "Wallet database is still busy. Try again in a moment.")
@@ -59,6 +52,28 @@ final class WalletErrorMessageTests: XCTestCase {
                 "raw: \(raw)"
             )
         }
+    }
+
+    /// A mint that refuses NUT-05 amountless must point at another mint, not tell
+    /// the user the invoice is at fault.
+    func testMintAmountlessRejectionPointsAtAnotherMint() {
+        for raw in [
+            "Amount Less Invoice is not allowed",
+            "Amountless invoices are not supported for unit `sat` and method `bolt11`",
+        ] {
+            let message = RawMintError(description: raw).walletMessage
+            XCTAssertEqual(
+                message.text,
+                "This mint can't pay invoices without an amount. Choose another mint.",
+                "raw: \(raw)"
+            )
+            XCTAssertEqual(message.severity, .caution)
+        }
+
+        XCTAssertEqual(
+            RawMintError(description: "Invoice Amount undefined").userFacingWalletMessage,
+            "This invoice doesn't set an amount. Ask the sender for one with the amount set."
+        )
     }
 
     /// `TransactionUnbalanced` is rebuilt as `(0, 0, 0)` by the same decoder, so it

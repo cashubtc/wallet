@@ -164,4 +164,53 @@ class PaymentRequestDecoderTest {
         const val AmountlessBolt12Offer =
             "lno1pgqpvggr25nht4nyqrgtnhxltctkdsfrf3myhj008f6fyulf4tplmarx8hxq"
     }
+
+    // iOS parity: `PaymentRequestDisplayTests` in ScanRouterTests.swift.
+    @Test
+    fun caseInsensitiveRequestsFromUppercaseQrCodesShowLowercase() {
+        assertEquals(
+            "lnbc1p4t…u02s3t",
+            PaymentRequestDecoder.displayRequest(
+                " LNBC1P4T40C2PP5ARHNG9C7QPU02S3T ",
+                PaymentRequestDecodeResult.Bolt11(amountSats = null, description = null),
+            ),
+        )
+        assertEquals(
+            "lno1pgqpvggr",
+            PaymentRequestDecoder.displayRequest(
+                "LNO1PGQPVGGR",
+                PaymentRequestDecodeResult.Bolt12(amountSats = null, description = null),
+            ),
+        )
+        val address = "BC1QW508D6QEJXTDG4Y5R3ZARVARY0C5XW7KV8F3T4"
+        assertEquals(
+            "bc1qw508…v8f3t4",
+            PaymentRequestDecoder.displayRequest(address, PaymentRequestDecodeResult.Onchain(address)),
+        )
+    }
+
+    @Test
+    fun caseSensitiveRequestsKeepTheirCase() {
+        val base58 = "1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2"
+        assertEquals(
+            "1BvBMSEY…JaNVN2",
+            PaymentRequestDecoder.displayRequest(base58, PaymentRequestDecodeResult.Onchain(base58)),
+        )
+        assertEquals(
+            "creqApAy…9ydHOB",
+            PaymentRequestDecoder.displayRequest(
+                "creqApAyloADebbdfhZHRyYW5zcG9ydHOB",
+                PaymentRequestDecodeResult.Unrecognized,
+            ),
+        )
+    }
+
+    @Test
+    fun lightningAddressesStayWhole() {
+        val address = "Satoshi.Nakamoto@lightning.example.com"
+        assertEquals(
+            address,
+            PaymentRequestDecoder.displayRequest(address, PaymentRequestDecodeResult.LightningAddress(address)),
+        )
+    }
 }

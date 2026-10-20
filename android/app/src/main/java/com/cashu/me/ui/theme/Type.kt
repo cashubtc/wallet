@@ -62,6 +62,13 @@ fun TextStyle.atSize(
     ),
 )
 
+/** Scale an existing role while preserving its leading and tracking. */
+fun TextStyle.scaledBy(scale: Float): TextStyle = copy(
+    fontSize = fontSize * scale,
+    lineHeight = if (lineHeight.isSp) lineHeight * scale else lineHeight,
+    letterSpacing = if (letterSpacing.isSp) letterSpacing * scale else letterSpacing,
+)
+
 /** Retrack without resizing. Em-relative, so it survives a size change. */
 fun TextStyle.tracked(em: Float): TextStyle =
     copy(letterSpacing = (fontSize.value * em).sp)

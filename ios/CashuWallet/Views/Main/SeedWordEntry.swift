@@ -447,41 +447,10 @@ private struct SeedWordReviewGrid: View {
     let words: [String]
     let onSelect: (Int) -> Void
 
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-
-    private var columns: [GridItem] {
-        let count = dynamicTypeSize >= .accessibility3
-            ? 1
-            : (dynamicTypeSize.isAccessibilitySize ? 2 : 3)
-        return Array(repeating: GridItem(.flexible(), spacing: 12), count: count)
-    }
-
     var body: some View {
-        LazyVGrid(columns: columns, spacing: 14) {
-            ForEach(Array(words.enumerated()), id: \.offset) { index, word in
-                Button { onSelect(index) } label: {
-                    HStack(spacing: 6) {
-                        Text(String(format: "%02d", index + 1))
-                            .font(.system(.footnote, design: .monospaced))
-                            .foregroundStyle(.tertiary)
-                            .frame(width: SeedEntryMetrics.ordinalWidth, alignment: .trailing)
-
-                        Text(word)
-                            .font(.system(.body, design: .monospaced).weight(.medium))
-                            .foregroundStyle(.primary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .frame(minHeight: 44)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(PressableButtonStyle())
-                .accessibilityLabel("Word \(index + 1), \(word)")
-                .accessibilityHint("Double-tap to edit.")
-            }
-        }
-        .padding(SeedEntryMetrics.cardPadding)
-        .liquidGlassInput(in: RoundedRectangle(cornerRadius: SeedEntryMetrics.cardRadius))
+        RecoveryWordGrid(words: words, onSelect: onSelect)
+            .padding(SeedEntryMetrics.cardPadding)
+            .liquidGlassInput(in: RoundedRectangle(cornerRadius: SeedEntryMetrics.cardRadius))
     }
 }
 
@@ -634,6 +603,10 @@ private struct SeedWordTextField: UIViewRepresentable {
 
         @objc func editingChanged(_ field: UITextField) {
             parent.text = field.text ?? ""
+            // A space can advance to a new word. Apply the resulting draft
+            // before the next key event, rather than waiting for SwiftUI's
+            // render pass and feeding the previous word into the new slot.
+            if field.text != parent.text { field.text = parent.text }
         }
 
         func textFieldShouldReturn(_ field: UITextField) -> Bool {
@@ -675,5 +648,93 @@ private final class BackspaceReportingTextField: UITextField {
             return
         }
         super.deleteBackward()
+    }
+}
+
+/// Recovery words stay whole. Fewer columns are used before reducing type on
+/// exceptionally narrow layouts; hidden and revealed phrases use the same widths.
+struct RecoveryWordGrid: View {
+    let words: [String]
+    var boxed = false
+    var onSelect: ((Int) -> Void)? = nil
+
+    @ScaledMetric(relativeTo: .body) private var bodySize: CGFloat = 17
+    @ScaledMetric(relativeTo: .caption2) private var captionSize: CGFloat = 11
+
+    private var pointSize: CGFloat { boxed ? captionSize : bodySize }
+    private var wordWidth: CGFloat {
+        let count = max(8, words.map(\.count).max() ?? 8)
+        return ceil((String(repeating: "m", count: count) as NSString).size(
+            withAttributes: [.font: UIFont.monospacedSystemFont(ofSize: pointSize, weight: .medium)]
+        ).width)
+    }
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            grid(columns: 3).fixedSize(horizontal: true, vertical: false)
+            grid(columns: 2).fixedSize(horizontal: true, vertical: false)
+            VStack(alignment: .leading, spacing: 14) {
+                ForEach(Array(words.enumerated()), id: \.offset) { index, word in
+                    cell(index: index, word: word, reserveWidth: false)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func grid(columns: Int) -> some View {
+        Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 14) {
+            ForEach(0..<((words.count + columns - 1) / columns), id: \.self) { row in
+                GridRow {
+                    ForEach(0..<columns, id: \.self) { column in
+                        let index = row * columns + column
+                        if index < words.count {
+                            cell(index: index, word: words[index], reserveWidth: true)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func cell(index: Int, word: String, reserveWidth: Bool) -> some View {
+        if let onSelect {
+            Button { onSelect(index) } label: {
+                wordLabel(index: index, word: word, reserveWidth: reserveWidth)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(PressableButtonStyle())
+            .accessibilityHint("Double-tap to edit.")
+        } else {
+            wordLabel(index: index, word: word, reserveWidth: reserveWidth)
+        }
+    }
+
+    private func wordLabel(index: Int, word: String, reserveWidth: Bool) -> some View {
+        HStack(spacing: 6) {
+            Text(String(format: "%02d", index + 1))
+                .foregroundStyle(.tertiary)
+            Text(word)
+                .fontWeight(.medium)
+                .frame(minWidth: reserveWidth ? wordWidth : nil, alignment: .leading)
+        }
+        .font(boxed ? .system(.caption2, design: .monospaced) : .system(.body, design: .monospaced))
+        .lineLimit(1)
+        .minimumScaleFactor(0.5)
+        .padding(.horizontal, boxed ? 12 : 0)
+        .frame(maxWidth: reserveWidth ? nil : .infinity, minHeight: boxed ? 48 : nil, alignment: .leading)
+        .background {
+            if boxed {
+                RoundedRectangle(cornerRadius: 12).fill(.quaternary.opacity(0.55))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color(uiColor: .separator), lineWidth: 0.5)
+                    }
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Word \(index + 1), \(word)")
     }
 }

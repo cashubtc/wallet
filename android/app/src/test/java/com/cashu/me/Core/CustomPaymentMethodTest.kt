@@ -55,6 +55,17 @@ class CustomPaymentMethodTest {
     }
 
     @Test
+    fun customReceiptDetailsKeepMethodUnitAndProof() {
+        val transaction = WalletTransaction("payment", 21, TransactionType.Outgoing, TransactionKind.Custom,
+            1_000, status = TransactionStatus.Completed, preimage = "payment-proof", quoteId = "quote",
+            paymentMethod = branch, unit = "bux")
+        val rows = TransactionTechnicalDetails.sections(transaction).flatMap { it.rows }
+        assertEquals("Branch", rows.first { it.label == "Method" }.value)
+        assertEquals("21 BUX", rows.first { it.label == "Amount" }.value)
+        assertEquals("payment-proof", rows.first { it.label == "Payment Proof" }.fullValue)
+    }
+
+    @Test
     fun partialIssuanceStaysPendingAndMonitoringReachesFullAmount() = runBlocking {
         val partial = MintQuoteInfo("quote", "opaque request", 100, paymentMethod = branch, state = MintQuoteState.Issued,
             expiryEpochSeconds = 1, mintUrl = "https://mint.example", amountPaid = 40, amountIssued = 40, unit = "bux")

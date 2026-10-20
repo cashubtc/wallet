@@ -281,48 +281,19 @@ final class SettingsStore {
     }
 
     private func value<T: Codable>(_ key: String, legacyKeys: [String]) -> T? {
-        if let value: T = try? storage.get(forKey: key) {
-            return value
-        }
-
-        for legacyKey in legacyKeys {
-            if let value: T = try? storage.get(forKey: legacyKey) {
-                set(value, forKey: key)
-                return value
-            }
-        }
-
-        return nil
+        storage.migratedValue(forKey: key, legacyKeys: legacyKeys)
     }
 
     private func set<T: Codable>(_ value: T, forKey key: String) {
-        do {
-            try storage.set(value, forKey: key)
-        } catch {
-            AppLogger.wallet.error("Failed to save \(key): \(error)")
-        }
+        storage.saveValue(value, forKey: key)
     }
 
     private func setOptional<T: Codable>(_ value: T?, forKey key: String) {
-        do {
-            if let value {
-                try storage.set(value, forKey: key)
-            } else {
-                try storage.remove(forKey: key)
-            }
-        } catch {
-            AppLogger.wallet.error("Failed to update \(key): \(error)")
-        }
+        storage.saveOptionalValue(value, forKey: key)
     }
 
     private func remove(keys: [String]) {
-        for key in Set(keys) {
-            do {
-                try storage.remove(forKey: key)
-            } catch {
-                AppLogger.wallet.error("Failed to remove \(key): \(error)")
-            }
-        }
+        storage.removeValues(keys: keys)
     }
 }
 

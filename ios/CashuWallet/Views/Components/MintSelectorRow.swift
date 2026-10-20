@@ -32,164 +32,78 @@ enum FlowRowMetrics {
     static let hitSlop: CGFloat = 12
 }
 
-extension View {
-    /// Grow a control's touch target beyond its drawn box: pad, claim the
-    /// padded region as the hit shape, then undo the padding's layout cost.
-    /// Lets a small glyph sit on the margin while still being comfortably
-    /// tappable.
-    func hitSlop(_ inset: CGFloat) -> some View {
-        self
-            .padding(.horizontal, inset)
-            .contentShape(Rectangle())
-            .padding(.horizontal, -inset)
-    }
-}
-
-/// The one mint selector for every value flow, on both platforms: a quiet mint
-/// identity with an optional "Send Max" action and picker chevron. The row
-/// deliberately has no fill, border, or divider so the amount remains the
-/// screen's focal point.
-///
-/// The direction label is not drawn — the mint name, balance and chevron say
-/// what the row is. It survives in the accessibility label, so `direction` is
-/// still required and a receiving flow cannot describe its mint as a source.
-///
-/// `onChooseMint` is nil when the wallet holds a single mint. In that state the
-/// chevron disappears and the identity becomes information rather than a
-/// control. `showsBalance` is reserved for amount-entry screens.
-struct MintSelectorRow: View {
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-
+/// Amount entry groups the mint with the amount it qualifies. The picker is a
+/// single centered target; spending context and Max occupy a quieter second line.
+struct AmountEntryMintSelector: View {
     let direction: MintSelectorDirection
     let mint: MintInfo
-    let balanceText: String
-    var showsBalance: Bool
-    var onUseMax: (() -> Void)?
-    var onChooseMint: (() -> Void)?
-
-    init(
-        direction: MintSelectorDirection,
-        mint: MintInfo,
-        balanceText: String,
-        showsBalance: Bool = false,
-        onUseMax: (() -> Void)? = nil,
-        onChooseMint: (() -> Void)? = nil
-    ) {
-        self.direction = direction
-        self.mint = mint
-        self.balanceText = balanceText
-        self.showsBalance = showsBalance
-        self.onUseMax = onUseMax
-        self.onChooseMint = onChooseMint
-    }
+    var balanceText: String? = nil
+    var onUseMax: (() -> Void)? = nil
+    var onChooseMint: (() -> Void)? = nil
 
     var body: some View {
-        VStack(alignment: .leading, spacing: dynamicTypeSize.isAccessibilitySize ? 2 : 0) {
-            HStack(spacing: 0) {
-                identity()
-                if let onUseMax {
-                    sendMaxAction(action: onUseMax)
-                }
-                if let onChooseMint {
-                    chevron(action: onChooseMint)
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func identityContent() -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: FlowRowMetrics.gap) {
-            if showsBalance && dynamicTypeSize.isAccessibilitySize {
-                VStack(alignment: .leading, spacing: 2) {
-                    mintName
-                    balance
-                }
+        VStack(spacing: 0) {
+            if let onChooseMint {
+                Button(action: onChooseMint) { identity }
+                    .buttonStyle(.plain)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("\(direction.label) \(mint.name)")
+                    .accessibilityHint("Choose a different mint")
             } else {
-                HStack(alignment: .firstTextBaseline, spacing: FlowRowMetrics.gap) {
-                    mintName
-                    if showsBalance {
-                        balance
-                            .fixedSize(horizontal: true, vertical: false)
-                    }
+                identity
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("\(direction.label) \(mint.name)")
+            }
+            if let balanceText {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 12) { availableBalance(balanceText); maxAction }
+                    VStack(spacing: 0) { availableBalance(balanceText); maxAction }
                 }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity)
     }
 
-    // The row speaks in one voice: mint name, balance and Send Max all share
-    // `.textLink` + semibold + primary ink, so the whole row is a single
-    // treatment rather than three competing ones. Mirrors Android's
-    // MintSelectorRow.
-    private var mintName: some View {
-        Text(mint.name)
-            .cashuText(.textLink)
-            .fontWeight(.semibold)
-            .lineLimit(1)
-            .truncationMode(.tail)
+    private var identity: some View {
+        HStack(spacing: 6) {
+            Text("\(direction.label) \(mint.name)")
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+            if onChooseMint != nil {
+                Image(systemName: "chevron.down")
+                    .font(.caption)
+                    .accessibilityHidden(true)
+            }
+        }
+        .font(.subheadline)
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 8)
+        .frame(minHeight: 48)
+        .contentShape(Rectangle())
     }
 
-    private var balance: some View {
-        Text(balanceText)
-            .cashuText(.textLink)
-            .fontWeight(.semibold)
-            .lineLimit(1)
-            .truncationMode(.tail)
+    private func availableBalance(_ text: String) -> some View {
+        Text("\(text) available")
+            .font(.subheadline)
+            .monospacedDigit()
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .multilineTextAlignment(.center)
     }
 
     @ViewBuilder
-    private func identity() -> some View {
-        let content = identityContent()
-            .padding(.vertical, FlowRowMetrics.verticalPadding)
-            .frame(minHeight: FlowRowMetrics.minHeight)
-            .contentShape(Rectangle())
-
-        if let onChooseMint {
-            Button(action: onChooseMint) { content }
-                .buttonStyle(.plain)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(accessibilityLabel)
-                .accessibilityHint("Double-tap to choose a different mint")
-        } else {
-            content
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(accessibilityLabel)
+    private var maxAction: some View {
+        if let onUseMax {
+            Button(action: onUseMax) {
+                Text("Max")
+                    .font(.subheadline.weight(.medium))
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Send maximum")
+            .accessibilityHint("Fill the amount with your full mint balance")
         }
-    }
-
-    private func sendMaxAction(action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text("Send Max")
-                .cashuText(.textLink)
-                .fontWeight(.semibold)
-                .lineLimit(1)
-                .padding(.leading, FlowRowMetrics.actionInset)
-                .frame(minHeight: FlowRowMetrics.minHeight)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Send maximum")
-        .accessibilityHint("Fill the amount with your full mint balance")
-    }
-
-    private func chevron(action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: "chevron.down")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: FlowRowMetrics.chevronBox, height: FlowRowMetrics.minHeight)
-                .hitSlop(FlowRowMetrics.hitSlop)
-        }
-        .buttonStyle(.plain)
-        // The identity already exposes the picker as one coherent control.
-        .accessibilityHidden(true)
-    }
-
-    private var accessibilityLabel: String {
-        if showsBalance {
-            return "\(direction.label) \(mint.name), balance \(balanceText)"
-        }
-        return "\(direction.label) \(mint.name)"
     }
 }

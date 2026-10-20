@@ -94,12 +94,20 @@ final class ContactlessPaymentCoordinator {
                 session.invalidate()
 
             case .bolt11(let invoice):
+                let decoded = PaymentRequestDecoder.decode(invoice)
+                // Refuse on the NFC sheet what Send's own input would refuse.
+                if let caution = decoded.amountlessMeltCaution(payableBy: walletManager.mints) {
+                    session.invalidate(errorMessage: caution)
+                    return
+                }
                 session.alertMessage = "Lightning request found"
                 session.invalidate()
                 // The Send sheet already closed when the NFC session started,
-                // so the pre-filled melt sheet presents as soon as the system
-                // NFC surface yields.
-                navigationManager.present(.sheet(.meltInvoice(invoice)))
+                // so Send's payment steps present as soon as the system NFC
+                // surface yields — the same UI a pasted invoice gets.
+                navigationManager.present(.sheet(.sendAmount(
+                    .melt(request: invoice, mode: .lightning, decoded: decoded)
+                )))
             }
         } catch let error as NFCPaymentError {
             session.invalidate(errorMessage: error.localizedDescription)

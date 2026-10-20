@@ -76,7 +76,10 @@ object PaymentRequestBuilder {
     }
 
     fun makeNprofile(pubkeyHex: String, relays: List<String>): String {
-        val pubkey = NIP44.hexToBytes(pubkeyHex)
+        require(pubkeyHex.length == 64 && pubkeyHex.all { it.digitToIntOrNull(16) != null }) {
+            "Nostr public key must be 32 hex-encoded bytes."
+        }
+        val pubkey = pubkeyHex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
         require(pubkey.size == 32) { "Invalid Nostr public key." }
         val tlv = mutableListOf<Byte>()
         tlv += 0x00.toByte()

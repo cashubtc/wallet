@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
@@ -33,14 +34,15 @@ fun ExplorerLinkRow(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     label: String = "View in block explorer",
+    style: InspectorRowStyle = InspectorRowStyle.Payment,
 ) {
     Row(
-        modifier = modifier
-            .fillMaxWidth()
+        modifier = (if (style == InspectorRowStyle.Payment) modifier.paymentDetailWidth() else modifier.fillMaxWidth())
+            .heightIn(min = 48.dp)
             .clickable(onClick = onClick)
             .padding(
                 horizontal = CashuTheme.spacing.comfortable,
-                vertical = CashuTheme.spacing.snug,
+                vertical = if (style == InspectorRowStyle.Payment) CashuTheme.spacing.snug else CashuTheme.spacing.default,
             ),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),

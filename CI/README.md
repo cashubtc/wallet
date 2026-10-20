@@ -33,8 +33,8 @@ This directory contains the complete CI infrastructure for running end-to-end in
 
 CDK setup uses release binaries instead of compiling Rust in CI:
 
-- **CDK**: Downloads and verifies `cdk-mintd 0.17.3-rc.0`, including the native Apple Silicon binary
-- **Nutshell**: Installs via `pip install cashu` from PyPI (exposes the `mint` binary)
+- **CDK**: Downloads and verifies official stable `cdk-mintd 0.18.2`, including the native Apple Silicon binary, and initializes its database-backed configuration
+- **Nutshell**: Installs official stable `cashu==0.21.0` from PyPI (exposes the `mint` binary)
 
 ## Quick Start
 
@@ -89,6 +89,47 @@ new scenario-isolated fault proxy, controlled fee/no-fee mints, native payment
 suites, live UI journeys, required-test manifest, known regression, and prioritized
 remaining gaps. Both platform workflows run core payment cases on PRs and the
 expanded request/NWC/unit matrix nightly.
+
+## Direct iOS and Android interoperability
+
+Build the current iOS test products and start both mints plus payment fixtures.
+With one booted iOS simulator and one Android emulator, run:
+
+```sh
+python3 CI/run-native-interop.py \
+  --xctestrun "$XCTESTRUN" --ios-device "$SIMULATOR_UDID" \
+  --android-sdk "$ANDROID_HOME" --output "$RUN_RESULTS/native-interop"
+```
+
+The runner pairs one mint at a time and preserves existing ADB reverse mappings.
+It exchanges real ecash and P2PK tokens in both directions, rejects incorrect
+keys and replay, reopens durable stores, and checks the combined 128-sat balance.
+Fresh random wallet seeds and separate databases are used; no seed is exported.
+Run this separately from other instrumentation/UI commands on the same devices.
+The direct mint subscription suites also exercise the native subscription APIs.
+
+To compare nonzero fees on CDK as well as the controlled Nutshell fee fixture:
+
+```sh
+CDK_TEST_WORK_DIR="$FEE_WORKDIR" ./CI/setup-cdk.sh 3346 android 1000
+CI/.cdk-bin/cdk-mintd --work-dir "$FEE_WORKDIR" --enable-logging
+```
+
+Keep that auxiliary mint running. Set `TEST_RUNNER_CDK_FEE_MINT_URL` to its
+loopback URL for iOS, and `cashu.cdkFeeMintUrl` plus an ADB reverse mapping for
+Android. Select the `CdkFeeCharging` / `cdkFeeCharging` and
+`CdkCashuRequestReceiverFeeRegression` / `cdkCashuRequestReceiverFeeRegression`
+tests. Retain the expected 21-sat credit assertion when reproducing the known
+request-fee defect. Ordinary send-max redemption fees are expected and are
+checked separately from that underpayment.
+
+The opt-in BOLT12 description UI journey needs an **unpaid** offer: an immediate
+FakeWallet receipt can correctly close the receive flow while the editor is open.
+Provision a separate delayed-payment fixture with
+`CDK_TEST_WORK_DIR="$UNPAID_WORKDIR" CDK_FAKE_DELAY_SECONDS=3600 ./CI/setup-cdk.sh 3348 android`,
+run that work directory with `cdk-mintd`, and point
+`TEST_RUNNER_BOLT12_DESCRIPTION_MINT_URL` at it for iOS. Android enables its journey
+with `cashu.liveBolt12Descriptions=true` and its fixture mint URL argument.
 
 ## Test Coverage
 
@@ -189,18 +230,51 @@ requests and pushes to main/develop. Native UI coverage is described in the
 `./CI/setup-cdk.sh 3339 android` to enable the shared SAT/USD profile needed by
 the multi-currency UI journey; the historical profile name is used by both apps.
 
-1. Checks out code
-2. Setups Python 3.11 and Xcode
-3. Restores the Swift package cache
-4. Builds the iOS test products while the simulator boots
-5. Sets up and starts Nutshell and CDK in parallel
-6. Runs unit/protocol tests, followed by serial native UI journeys
-7. Exercises local-mint payments, restore, onboarding, and settings
-8. Uploads test results and both mint logs on failure
+1. Builds the app and both test bundles once on macOS with Xcode 26.5.
+2. Archives `Build/Products`, including the `.xctestrun` file, using tar to
+   preserve executable permissions and framework symlinks.
+3. Runs four jobs on separate macOS runners using those exact products:
+   unit/mint integration, lifecycle UI, settings UI, and all remaining UI tests.
+   Each job owns one simulator and its own local mint/fixture processes.
+4. Exports test results and timing summaries on every run, including successful
+   runs. Failed jobs also upload full `.xcresult` bundles and diagnostic logs.
+5. Aggregates exported JSON on Linux, requires every job to succeed, and checks
+   the unchanged payment coverage manifest across all four reports. The final
+   check keeps the existing `iOS Unit, Mint Integration & UI Tests` name.
 
-UI tests run once so first-attempt failures remain visible. The UI step has a
-30-minute bound inside the 45-minute job, leaving time for cleanup and failed
-test diagnostics; duration depends on hosted-runner load and cache state.
+`CI/run-ios-test-shard.sh` defines the partitions. The remaining-UI partition
+includes the entire UI target and excludes only the two explicitly assigned
+classes, so new UI classes run automatically. The groups were chosen from a
+successful baseline: lifecycle took about 11 minutes, settings 9 minutes, and
+remaining UI tests 12 minutes. Unit/integration tests took about 3 minutes.
+Tests run once and serially within each runner; matrix fail-fast is disabled so
+one failure does not cancel the other groups. A test step has a 25-minute bound
+inside a 35-minute job, leaving time for cleanup and diagnostics. Existing
+per-test UI allowances remain in place, including three minutes for lifecycle
+journeys. This reduces elapsed time by using more macOS runner capacity; queue
+and artifact-transfer times must be included when comparing runs.
+
+Swift package downloads and mint runtimes use separate caches. Compiled products
+are shared only within a workflow run, not restored from an older revision.
+Settings tests configure their first launch before starting the app. Live
+lifecycle journeys retain onboarding and real mint provisioning: the existing
+seeded-mint helper is a UI placeholder, not a funded integration fixture.
+Fresh test launches clear App Lock; persistence relaunches keep it. Disabled
+animations also hold animated QR codes on their initial frame so accessibility
+queries can settle during clipboard journeys.
+
+For timing comparisons, inspect the build/test job durations, each test job's
+summary, and the `ios-reports-*` artifacts (test trees plus summary JSON). Compare
+both total elapsed time and runner minutes, including cold-cache runs. Full UI
+coverage remains enabled for PRs; the existing payment `pr`/`full` tiers are
+unchanged.
+
+Validate the shard selection/failure propagation and report aggregation locally:
+
+```bash
+python3 -m unittest discover -s CI/tests -v
+python3 -m unittest discover -s CI/payment-tests -p test_coverage.py -v
+```
 
 ## Manual Testing
 

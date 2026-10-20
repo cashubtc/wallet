@@ -3,10 +3,30 @@ import XCTest
 /// Full app journeys against the local FakeWallet mint started by CI.
 /// Setup itself follows onboarding; all money-moving operations use real CDK.
 final class WalletLifecycleUITests: UITestBase {
-    func testAddDuplicateSwitchAndRefuseMultiUnitRemovalPersists() {
+    override func setUpWithError() throws {
+        // These journeys include onboarding, live mint settlement, and wallet
+        // relaunches. Keep a bound without killing a successful round trip as
+        // it reaches its final balance assertion on slower hosted runners.
+        // A slow runner has stretched the two-relaunch mint journey (~90 s
+        // normally) past 3 minutes, so allow 5, under CI's 6-minute maximum.
+        // Individual waits stay short and bounded.
+        executionTimeAllowance = 300
+        try super.setUpWithError()
+    }
+
+    func testAddDuplicateSwitchAndRemoveMultiUnitMintPersists() {
         createWalletWithMint()
         tapTab("Mints")
         addMint(url: mintURL + "/")
+        // Duplicate detection queues behind wallet startup/mint operations.
+        // Wait for the submitted operation to settle before inspecting its
+        // result; the error's visibility is not a ten-second network deadline.
+        let duplicateFinished = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "isEnabled == true"),
+            object: app.buttons["mints-add-submit-button"]
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [duplicateFinished], timeout: 30), .completed,
+                       "Duplicate mint validation should finish before checking its error")
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "already")).firstMatch
             .waitForExistence(timeout: 10))
         tapWhenReady(app.buttons["mints-add-clear-button"])
@@ -15,12 +35,18 @@ final class WalletLifecycleUITests: UITestBase {
         let second = mintRow(url: cdkMintURL)
         tapWhenReady(second, timeout: 30)
         scrollTo("Set as Default")
-        tapWhenReady(app.buttons["Set as Default"])
+        let setDefault = app.buttons["Set as Default"]
+        tapWhenReady(setDefault)
+        // The update queues behind mint loading. A successful tap can leave
+        // this button showing a spinner; wait for the active mint to change
+        // before leaving the detail screen or relaunching the wallet.
+        XCTAssertTrue(setDefault.waitForNonExistence(timeout: 30),
+                      "Setting the default mint should finish before navigating back")
         tapWhenReady(app.navigationBars.buttons.element(boundBy: 0))
-        XCTAssertEqual(second.value as? String, "Default mint")
+        assertDefaultMint(second)
         relaunchPreservingWallet()
         tapTab("Mints")
-        XCTAssertEqual(second.value as? String, "Default mint")
+        assertDefaultMint(second)
         tapWhenReady(second)
         scrollTo("Remove mint")
         tapWhenReady(app.buttons["Remove mint"])
@@ -28,13 +54,29 @@ final class WalletLifecycleUITests: UITestBase {
         XCTAssertTrue(app.buttons["Remove mint"].exists)
         tapWhenReady(app.buttons["Remove mint"])
         tapWhenReady(app.buttons["Remove"])
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "multiple currency units")).firstMatch
-            .waitForExistence(timeout: 15))
+        // The CDK mint registers more than one unit; removal must still finish
+        // and dismiss the detail screen before the process is killed.
+        XCTAssertTrue(app.buttons["Remove mint"].waitForNonExistence(timeout: 30))
+        XCTAssertTrue(second.waitForNonExistence(timeout: 15))
+        assertDefaultMint(mintRow(url: mintURL))
         relaunchPreservingWallet()
         tapTab("Mints")
-        XCTAssertTrue(second.waitForExistence(timeout: 10))
-        XCTAssertEqual(second.value as? String, "Default mint")
         XCTAssertTrue(mintRow(url: mintURL).waitForExistence(timeout: 10))
+        XCTAssertFalse(second.exists)
+        assertDefaultMint(mintRow(url: mintURL))
+    }
+
+    private func assertDefaultMint(
+        _ row: XCUIElement,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let updated = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == true AND value == %@", "Default mint"),
+            object: row
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [updated], timeout: 10), .completed,
+                       "The mint row should identify the persisted default mint", file: file, line: line)
     }
 
     func testRemovingLastMintReturnsToEmptyWalletAfterRelaunch() {
@@ -45,6 +87,10 @@ final class WalletLifecycleUITests: UITestBase {
         tapWhenReady(app.buttons["Remove mint"])
         XCTAssertTrue(app.staticTexts["Remove mint?"].waitForExistence(timeout: 5))
         tapWhenReady(app.buttons["Remove"])
+        // The list row is already absent while its detail screen is open.
+        // Wait for successful removal to dismiss that screen before killing
+        // the process; otherwise the pending operation can be interrupted.
+        XCTAssertTrue(app.buttons["Remove mint"].waitForNonExistence(timeout: 30))
         XCTAssertTrue(mintRow(url: mintURL).waitForNonExistence(timeout: 15))
         relaunchPreservingWallet()
         XCTAssertTrue(app.staticTexts["Add a mint to get started"].waitForExistence(timeout: 10))

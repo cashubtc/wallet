@@ -84,6 +84,7 @@ import com.cashu.me.ui.components.DestructiveTextButton
 import com.cashu.me.ui.components.GhostButton
 import com.cashu.me.ui.components.InlineNotice
 import com.cashu.me.ui.components.InspectorRow
+import com.cashu.me.ui.components.InspectorRowStyle
 import com.cashu.me.ui.components.LocalConfirmationToastController
 import com.cashu.me.ui.components.MintAvatar
 import com.cashu.me.ui.components.NoticeSeverity
@@ -186,6 +187,7 @@ fun MintDetailScreen(
 
             Column(modifier = Modifier.fillMaxWidth()) {
                 InspectorRow(
+                    style = InspectorRowStyle.Standard,
                     label = "Balance",
                     value = "${mint.balance} sat",
                     // iOS parity: the fiat conversion rides beneath the sat
@@ -202,6 +204,7 @@ fun MintDetailScreen(
                 )
                 nonSatUnits.forEach { unit ->
                     InspectorRow(
+                        style = InspectorRowStyle.Standard,
                         label = "Balance (${unit.uppercase()})",
                         value = unitBalances[unit]?.let {
                             CurrencyAmount(it, CurrencyRegistry.currencyForMintUnit(unit)).formatted()
@@ -319,6 +322,7 @@ fun MintDetailScreen(
                 Column(modifier = Modifier.fillMaxWidth()) {
                     if (receiveMethods.isNotEmpty()) {
                         InspectorRow(
+                            style = InspectorRowStyle.Standard,
                             label = "Receive",
                             value = receiveMethods.joinToString(" · ") { it.displayName },
                             leadingIcon = Icons.Outlined.ArrowDownward,
@@ -326,6 +330,7 @@ fun MintDetailScreen(
                     }
                     if (sendMethods.isNotEmpty()) {
                         InspectorRow(
+                            style = InspectorRowStyle.Standard,
                             label = "Send",
                             value = sendMethods.joinToString(" · ") { it.displayName },
                             leadingIcon = Icons.Outlined.ArrowUpward,
@@ -347,6 +352,7 @@ fun MintDetailScreen(
                 Column(modifier = Modifier.fillMaxWidth()) {
                     contactRows.forEachIndexed { index, (contact, link) ->
                         InspectorRow(
+                            style = InspectorRowStyle.Standard,
                             label = contact.method.replaceFirstChar { it.uppercase() },
                             value = contact.info,
                             leadingIcon = mintContactIcon(contact.method),
@@ -366,18 +372,21 @@ fun MintDetailScreen(
             Column(modifier = Modifier.fillMaxWidth()) {
                 if (software != null) {
                     InspectorRow(
+                        style = InspectorRowStyle.Standard,
                         label = "Software",
                         value = "${software.name} ${software.version}",
                         leadingIcon = Icons.Outlined.Inventory2,
                     )
                 }
                 InspectorRow(
+                    style = InspectorRowStyle.Standard,
                     label = "Units",
                     value = mint.units.joinToString(", ").ifBlank { "sat" },
                     leadingIcon = Icons.Outlined.Straighten,
                 )
                 if (tosUrl != null) {
                     InspectorRow(
+                        style = InspectorRowStyle.Standard,
                         label = "Terms of Service",
                         value = externalUrlHost(tosUrl) ?: tosUrl,
                         leadingIcon = Icons.Outlined.Description,

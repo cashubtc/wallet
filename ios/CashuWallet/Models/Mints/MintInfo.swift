@@ -43,6 +43,12 @@ struct MintInfo: Identifiable, Equatable, Codable {
     /// (the Description row stays hidden until a live fetch advertises true).
     var supportsBolt12MintDescription: Bool = false
 
+    /// NUT-05 bolt11 `amountless` option for the sat unit: the mint can pay an
+    /// invoice that leaves the amount to the payer. Nil until a live fetch has
+    /// read it — records persisted before this landed stay eligible and let the
+    /// mint decide, since mint info only refreshes from the Mints list.
+    var supportsAmountlessBolt11Melt: Bool? = nil
+
     /// Required on-chain confirmations for minting, if advertised by the mint
     var onchainMintConfirmations: Int? = nil
     
@@ -59,6 +65,16 @@ struct MintPreviewInfo {
 }
 
 extension MintInfo {
+    static func displayName(for url: String, in mints: [MintInfo]) -> String {
+        func normalized(_ value: String) -> String {
+            MintURLIdentity.normalized(value)
+        }
+        let name = mints.first { normalized($0.url) == normalized(url) }?.name
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if let name, !name.isEmpty { return name }
+        return URL(string: url)?.host ?? normalized(url)
+    }
+
     /// True when the mint advertises more than one unit, so a unit chooser is
     /// worth surfacing. Single-unit mints hide the selector entirely.
     var supportsMultipleUnits: Bool { units.count > 1 }
@@ -91,6 +107,24 @@ extension MintInfo {
         guard let unit, mintUnits.contains(unit) else { return defaultMintUnit }
         return unit
     }
+
+    // MARK: - Melt capability (NUT-05)
+
+    /// Whether this mint can pay a request of `method`. A BOLT11 invoice that
+    /// leaves the amount to the payer also needs the mint's NUT-05 `amountless`
+    /// option; BOLT12 offers are amountless by design and need nothing extra.
+    func canMelt(_ method: PaymentMethodKind, amountless: Bool = false) -> Bool {
+        guard supportedMeltMethods.contains(method) else { return false }
+        return !(amountless && method == .bolt11) || supportsAmountlessBolt11Melt != false
+    }
+
+    /// True when a sat-unit NUT-05 bolt11 method advertises `amountless: true`.
+    /// Null or false on every such method (or none at all) fails closed.
+    static func reportsAmountlessBolt11Melt(
+        methods: [(method: PaymentMethodKind?, isSatUnit: Bool, amountless: Bool?)]
+    ) -> Bool {
+        methods.contains { $0.method == .bolt11 && $0.isSatUnit && $0.amountless == true }
+    }
 }
 
 extension MintInfo {
@@ -107,6 +141,7 @@ extension MintInfo {
         case supportedMeltMethods
         case mintMethodSettings, meltMethodSettings
         case supportsBolt12MintDescription
+        case supportsAmountlessBolt11Melt
         case onchainMintConfirmations
         case lastUpdated
     }
@@ -128,6 +163,7 @@ extension MintInfo {
         mintMethodSettings = try container.decodeIfPresent([AdvertisedPaymentMethod].self, forKey: .mintMethodSettings)
         meltMethodSettings = try container.decodeIfPresent([AdvertisedPaymentMethod].self, forKey: .meltMethodSettings)
         supportsBolt12MintDescription = try container.decodeIfPresent(Bool.self, forKey: .supportsBolt12MintDescription) ?? false
+        supportsAmountlessBolt11Melt = try container.decodeIfPresent(Bool.self, forKey: .supportsAmountlessBolt11Melt)
         onchainMintConfirmations = try container.decodeIfPresent(Int.self, forKey: .onchainMintConfirmations)
         lastUpdated = try container.decodeIfPresent(Date.self, forKey: .lastUpdated) ?? Date()
     }
@@ -147,12 +183,11 @@ extension MintInfo {
         try container.encodeIfPresent(mintMethodSettings, forKey: .mintMethodSettings)
         try container.encodeIfPresent(meltMethodSettings, forKey: .meltMethodSettings)
         try container.encode(supportsBolt12MintDescription, forKey: .supportsBolt12MintDescription)
+        try container.encodeIfPresent(supportsAmountlessBolt11Melt, forKey: .supportsAmountlessBolt11Melt)
         try container.encodeIfPresent(onchainMintConfirmations, forKey: .onchainMintConfirmations)
         try container.encode(lastUpdated, forKey: .lastUpdated)
     }
 }
-
-// Extension for notifications
 
 /// A method belongs to one mint, direction, and unit. Names never determine identity.
 struct AdvertisedPaymentMethod: Codable, Equatable, Hashable, Identifiable {
@@ -172,5 +207,51 @@ struct AdvertisedPaymentMethod: Codable, Equatable, Hashable, Identifiable {
 
     func accepts(_ amount: UInt64) -> Bool {
         amount > 0 && amount >= (minAmount ?? 0) && amount <= (maxAmount ?? .max)
+    }
+}
+
+/// Shared mint identity filtering and payment selection. Callers choose whether
+/// an explicit preference is binding; NFC may fall back, while send confirms it.
+enum MintSelection {
+    static func matching(_ mints: [MintInfo], requestedURLs: [String]) -> [MintInfo] {
+        guard !requestedURLs.isEmpty else { return mints }
+        let identities = Set(requestedURLs.map(MintURLIdentity.normalized))
+        return mints.filter { identities.contains(MintURLIdentity.normalized($0.url)) }
+    }
+
+    static func select(
+        from mints: [MintInfo], requestedURLs: [String], amount: UInt64,
+        preferredURL: String?, activeURL: String? = nil,
+        requiresPreferredBalance: Bool = false
+    ) throws -> MintInfo {
+        let candidates = matching(mints, requestedURLs: requestedURLs)
+        guard !candidates.isEmpty else { throw NFCPaymentError.noMatchingMint(requestedMints: requestedURLs) }
+        if let preferredURL,
+           let mint = candidates.first(where: { MintURLIdentity.normalized($0.url) == MintURLIdentity.normalized(preferredURL) }) {
+            if mint.balance >= amount { return mint }
+            if requiresPreferredBalance { throw NFCPaymentError.insufficientBalance(required: amount, available: mint.balance) }
+        }
+        if let activeURL,
+           let mint = candidates.first(where: { MintURLIdentity.normalized($0.url) == MintURLIdentity.normalized(activeURL) }),
+           mint.balance >= amount { return mint }
+        guard let mint = candidates.first(where: { $0.balance >= amount }) else {
+            throw NFCPaymentError.insufficientBalance(required: amount, available: candidates.map(\.balance).max() ?? 0)
+        }
+        return mint
+    }
+
+    static func sorted(_ mints: [MintInfo], selectedID: String? = nil, minimumAmount: UInt64? = nil) -> [MintInfo] {
+        mints.sorted { lhs, rhs in
+            let lhsSelected = lhs.id == selectedID
+            let rhsSelected = rhs.id == selectedID
+            if lhsSelected != rhsSelected { return lhsSelected }
+            if let minimumAmount {
+                let lhsCanPay = lhs.balance >= minimumAmount
+                let rhsCanPay = rhs.balance >= minimumAmount
+                if lhsCanPay != rhsCanPay { return lhsCanPay }
+            }
+            if lhs.balance == rhs.balance { return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending }
+            return lhs.balance > rhs.balance
+        }
     }
 }

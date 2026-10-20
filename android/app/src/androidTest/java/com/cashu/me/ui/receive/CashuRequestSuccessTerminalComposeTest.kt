@@ -31,8 +31,7 @@ class CashuRequestSuccessTerminalComposeTest {
 
         compose.onNodeWithContentDescription("Success").assertIsDisplayed()
         compose.onNodeWithText("Payment Received!").assertIsDisplayed()
-        compose.onNodeWithText("Amount").assertIsDisplayed()
-        compose.onNodeWithText("19 sat").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Amount: 19 sat", useUnmergedTree = true).assertIsDisplayed()
         compose.onNodeWithText("Mint").assertIsDisplayed()
         compose.onNodeWithText("Minibits mint").assertIsDisplayed()
 

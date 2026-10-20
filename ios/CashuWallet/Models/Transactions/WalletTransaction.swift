@@ -46,13 +46,15 @@ struct WalletTransaction: Identifiable {
 
     /// Mint account unit for `amount` ("sat", "usd", "eur", or custom).
     var unit: String = "sat"
-    var paymentMethod: PaymentMethodKind? = nil
     var paymentMethodLabel: String? = nil
 
     /// CDK wallet-saga (operation) id backing this transaction, when the row
     /// came from CDK. Pending sent tokens use it for `checkSendStatus` /
     /// `revokeSend`; nil for app-synthesized rows (quotes, held receives).
     var sagaId: String? = nil
+
+    /// Explicit CDK method; do not infer one-time invoices from an amount.
+    var paymentMethod: PaymentMethodKind? = nil
 
     /// Incoming ecash the user hasn't claimed yet (a "Receive Later" token or
     /// a NUT-18 payment held for approval). Its receipt offers the claim flow.
@@ -71,6 +73,10 @@ struct WalletTransaction: Identifiable {
     /// BOLT11 mint quote still awaiting payment — titles the row
     /// "Lightning invoice" until the invoice settles.
     var isUnpaidInvoice: Bool = false
+
+    /// On-chain deposit address nothing has reached yet — titles the row
+    /// "Bitcoin address" and carries no amount until a deposit is seen.
+    var isUnfundedAddress: Bool = false
 
     /// The Quiet Pending treatment (bare, muted amount) covers expired too:
     /// an expired invoice never credited the balance.
@@ -106,8 +112,18 @@ struct WalletTransaction: Identifiable {
             guard let invoice, !invoice.isEmpty else { return false }
             return status == .pending
         case .onchain:
-            return status == .pending && invoice?.isEmpty == false
+            // A deposit address is a live request only until money is seen;
+            // a funded address is not handed out again (DESIGN.md → On-chain
+            // receive status), so its receipt retires the QR.
+            guard status == .pending, invoice?.isEmpty == false else { return false }
+            return type == .outgoing || isUnfundedAddress
         }
+    }
+
+    /// Keep re-checking the quote while this receipt is open. Separate from the
+    /// QR: a deposit in the mempool has no QR but is still on its way.
+    var monitorsMintQuoteWhileOpen: Bool {
+        mintQuoteIdForStatusRefresh != nil && status == .pending
     }
 
     var displayStatusText: String {
@@ -132,6 +148,7 @@ struct WalletTransaction: Identifiable {
                 : status == .expired ? "expired" : type == .incoming ? "received" : "paid"
             return "\(label) \(action)"
         }
+        if isUnfundedAddress { return "Bitcoin address" }
         switch (kind, type) {
         case (.ecash,     .incoming): return "Ecash received"
         case (.ecash,     .outgoing): return "Ecash sent"
@@ -202,15 +219,19 @@ extension Array where Element == WalletTransaction {
     }
 }
 
-/// Home is a compact settled-ledger view, not an operational queue. Generated
-/// receive artifacts and every non-completed state remain available in History.
+/// Recent includes completed payments and on-chain payments awaiting settlement.
 enum HomeActivity {
     static func recentTransactions(
         from transactions: [WalletTransaction],
         limit: Int
     ) -> [WalletTransaction] {
         transactions
-            .filter { $0.status == .completed }
+            // An in-flight deposit is money moving; an address nothing has
+            // reached yet is only a request, like an unpaid invoice.
+            .filter {
+                $0.status == .completed
+                    || ($0.kind == .onchain && $0.status == .pending && !$0.isUnfundedAddress)
+            }
             .sorted { $0.date > $1.date }
             .prefix(max(0, limit))
             .map { $0 }
@@ -226,22 +247,13 @@ enum SagaTransactionId {
     static func transactionIdHex(operationId: String) -> String? {
         let simple = operationId.lowercased().replacingOccurrences(of: "-", with: "")
         guard simple.count == 32, simple.allSatisfy({ $0.isHexDigit }) else { return nil }
-        return Data(simple.utf8).map { String(format: "%02x", $0) }.joined()
+        return Data(simple.utf8).hexEncodedString
     }
 
     /// CDK transaction id hex → operation (saga) UUID string, as accepted by
     /// `checkSendStatus` / `revokeSend` (UUID parsing tolerates the simple form).
     static func operationId(fromTransactionIdHex txId: String) -> String? {
-        var bytes = [UInt8]()
-        bytes.reserveCapacity(txId.count / 2)
-        var index = txId.startIndex
-        while index < txId.endIndex {
-            let next = txId.index(index, offsetBy: 2, limitedBy: txId.endIndex) ?? txId.endIndex
-            guard let byte = UInt8(txId[index..<next], radix: 16) else { return nil }
-            bytes.append(byte)
-            index = next
-        }
-        guard bytes.count == 32 else { return nil }
+        guard let bytes = Data(hexString: txId), bytes.count == 32 else { return nil }
         let simple = String(decoding: bytes, as: UTF8.self)
         guard simple.count == 32, simple.allSatisfy({ $0.isHexDigit }) else { return nil }
         return simple
@@ -261,5 +273,42 @@ extension WalletTransaction {
         var transaction = self
         transaction.memo = displayDescription ?? request?.displayDescription
         return transaction
+    }
+}
+
+/// A BOLT11 receipt represents one quote, while CDK stores every mint attempt.
+/// Project retries only; the database and recovery operations remain untouched.
+enum MintReceiptProjection {
+    private struct Key: Hashable {
+        let mint: String
+        let unit: String
+        let quote: String
+    }
+
+    static func project(_ transactions: [WalletTransaction]) -> [WalletTransaction] {
+        var groups: [Key: [Int]] = [:]
+        for (index, tx) in transactions.enumerated() {
+            guard tx.type == .incoming, tx.kind == .lightning,
+                  tx.paymentMethod == .bolt11, tx.sagaId != nil,
+                  let mint = tx.mintUrl, !mint.isEmpty,
+                  let quote = tx.quoteId, !quote.isEmpty else { continue }
+            groups[Key(mint: mint, unit: tx.unit.lowercased(), quote: quote), default: []].append(index)
+        }
+        var hidden = Set<Int>()
+        for indices in groups.values where indices.count > 1 {
+            let completed = indices.filter { transactions[$0].status == .completed }
+            // Conflicting settlements or payloads need investigation, not concealment.
+            let invoices = Set(indices.compactMap { transactions[$0].invoice?.lowercased() })
+            guard completed.count <= 1, invoices.count <= 1,
+                  Set(indices.map { transactions[$0].amount }).count == 1 else { continue }
+            let pending = indices.filter { transactions[$0].status == .pending }
+            let candidates = !completed.isEmpty ? completed : (!pending.isEmpty ? pending : indices)
+            let winner = candidates.max {
+                let lhs = transactions[$0], rhs = transactions[$1]
+                return lhs.date == rhs.date ? lhs.id < rhs.id : lhs.date < rhs.date
+            }!
+            hidden.formUnion(indices.filter { $0 != winner })
+        }
+        return transactions.enumerated().filter { !hidden.contains($0.offset) }.map(\.element)
     }
 }

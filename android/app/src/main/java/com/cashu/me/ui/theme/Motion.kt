@@ -34,12 +34,6 @@ object CashuMotion {
     /** Per-index delay for staggered entrances (chooser cascade, onboarding rise). */
     const val StaggerStepMs = 70
 
-    /** Period of the looping "waiting" alpha pulse (clock/pending glyphs). */
-    const val PulsePeriodMs = 1100
-
-    /** Resting alpha for the waiting pulse's low point. */
-    const val PulseMinAlpha = 0.4f
-
     /** One full rotation of the processing spinner ring (iOS SpinnerRing). */
     const val SpinnerPeriodMs = 900
 
