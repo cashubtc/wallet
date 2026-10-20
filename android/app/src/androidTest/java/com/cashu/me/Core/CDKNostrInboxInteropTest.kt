@@ -123,7 +123,8 @@ class CDKNostrInboxInteropTest {
         private fun serve(socket: Socket) {
             socket.soTimeout = 30_000
             val input = DataInputStream(socket.getInputStream())
-            val output = DataOutputStream(socket.getOutputStream())
+            // Flush complete handshakes and frames instead of writing their headers byte by byte.
+            val output = DataOutputStream(socket.getOutputStream().buffered())
             val header = StringBuilder()
             while (!header.endsWith("\r\n\r\n")) header.append(input.readUnsignedByte().toChar())
             val key = header.lines().first { it.startsWith("Sec-WebSocket-Key:", ignoreCase = true) }

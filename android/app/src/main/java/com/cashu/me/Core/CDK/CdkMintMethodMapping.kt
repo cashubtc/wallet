@@ -1,5 +1,6 @@
 package com.cashu.me.Core.CDK
 
+import com.cashu.me.Core.toDomainUnit
 import com.cashu.me.Models.PaymentMethodKind
 import com.cashu.me.Models.AdvertisedPaymentMethod
 import org.cashudevkit.CurrencyUnit as CdkCurrencyUnit
@@ -13,7 +14,7 @@ internal fun CdkNuts.reportedMintMethods(): List<PaymentMethodKind> =
 internal fun CdkNuts.reportedMintSettings(): List<AdvertisedPaymentMethod> =
     if (nut04.disabled) emptyList() else nut04.methods.mapNotNull { entry ->
         entry.method.toKnownPaymentMethodKind()?.let { method ->
-            AdvertisedPaymentMethod(method, entry.unit.toStringUnit(), entry.methodName,
+            AdvertisedPaymentMethod(method, entry.unit.toDomainUnit(), entry.methodName,
                 entry.minAmount?.value?.coerceAtMost(Long.MAX_VALUE.toULong())?.toLong(),
                 entry.maxAmount?.value?.coerceAtMost(Long.MAX_VALUE.toULong())?.toLong())
         }
@@ -22,20 +23,11 @@ internal fun CdkNuts.reportedMintSettings(): List<AdvertisedPaymentMethod> =
 internal fun CdkNuts.reportedMeltSettings(): List<AdvertisedPaymentMethod> =
     if (nut05.disabled) emptyList() else nut05.methods.mapNotNull { entry ->
         entry.method.toKnownPaymentMethodKind()?.let { method ->
-            AdvertisedPaymentMethod(method, entry.unit.toStringUnit(), entry.methodName,
+            AdvertisedPaymentMethod(method, entry.unit.toDomainUnit(), entry.methodName,
                 entry.minAmount?.value?.coerceAtMost(Long.MAX_VALUE.toULong())?.toLong(),
                 entry.maxAmount?.value?.coerceAtMost(Long.MAX_VALUE.toULong())?.toLong())
         }
     }.distinctBy { it.method to it.unit }
-
-private fun CdkCurrencyUnit.toStringUnit(): String = when (this) {
-    CdkCurrencyUnit.Sat -> "sat"
-    CdkCurrencyUnit.Msat -> "msat"
-    CdkCurrencyUnit.Usd -> "usd"
-    CdkCurrencyUnit.Eur -> "eur"
-    CdkCurrencyUnit.Auth -> "auth"
-    is CdkCurrencyUnit.Custom -> unit
-}
 
 /**
  * True when any NUT-04 bolt12 method advertises `description: true`. Null or

@@ -73,6 +73,7 @@ class CustomPaymentMethodTest {
         assertFalse(MintQuoteSchedulePolicy.observed(null, partial, 2_000).isComplete)
         val pending = pendingMintQuoteTransactions(listOf(partial), setOf("https://mint.example"), emptySet(), mutableMapOf(), 2_000).single()
         assertEquals(TransactionStatus.Pending, pending.status)
+        assertEquals(60L, pending.amount)
         assertEquals(TransactionKind.Custom, pending.kind)
         assertEquals("bux", pending.unit)
         assertEquals("quote", pending.mintQuoteIdForStatusRefresh)
@@ -85,5 +86,18 @@ class CustomPaymentMethodTest {
         }, sleep = {})
         assertEquals(2, checks)
         assertTrue(MintQuoteSchedulePolicy.observed(null, partial.copy(amountPaid = 100, amountIssued = 100), 2_000).isComplete)
+    }
+
+    @Test
+    fun customRemaindersIncludeUnissuedOverpaymentsAndDisappearWhenSettled() {
+        for ((paid, issued, remaining) in listOf(Triple(70L, 70L, 30L), Triple(130L, 120L, 10L), Triple(100L, 100L, 0L))) {
+            val quote = MintQuoteInfo("quote", "request", 100, paymentMethod = branch, state = MintQuoteState.Issued,
+                expiryEpochSeconds = 1, mintUrl = "https://mint.example", amountPaid = paid, amountIssued = issued)
+            val pending = pendingMintQuoteTransactions(listOf(quote), setOf("https://mint.example"), emptySet(), mutableMapOf(), 2_000)
+            if (remaining == 0L) assertTrue(pending.isEmpty()) else {
+                assertEquals(remaining, pending.single().amount)
+                assertEquals(TransactionStatus.Pending, pending.single().status)
+            }
+        }
     }
 }

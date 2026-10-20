@@ -1404,7 +1404,7 @@ struct ReceiveLightningView: View {
             if expiryTimeRemaining <= 0 {
                 isExpired = true
                 expiryTimer?.invalidate()
-                if quote.paymentMethod != .onchain, (mintQuote?.mintableAmount ?? 0) == 0 {
+                if !(mintQuote ?? quote).shouldMonitorAfterExpiry {
                     quoteStatusTask?.cancel()
                 }
             }
@@ -1524,8 +1524,7 @@ struct ReceiveLightningView: View {
             try? await Task.sleep(nanoseconds: interval * 1_000_000_000)
 
             guard !Task.isCancelled, !isPaid, mintQuote?.id == quoteId,
-                  !isExpired || mintQuote?.paymentMethod == .onchain || mintQuote?.paymentMethod.isCustom == true ||
-                    (mintQuote?.mintableAmount ?? 0) > 0 else { break }
+                  !isExpired || mintQuote?.shouldMonitorAfterExpiry == true else { break }
             await refreshMintQuoteStatus()
 
             if interval < maxInterval {
@@ -1537,7 +1536,7 @@ struct ReceiveLightningView: View {
     @MainActor
     private func refreshMintQuoteStatus(force: Bool = false) async {
         guard let quote = mintQuote, !isPaid, !isMinting, !isCheckingPayment,
-              force || !isExpired || quote.paymentMethod == .onchain || quote.paymentMethod.isCustom || quote.mintableAmount > 0 else { return }
+              force || !isExpired || quote.shouldMonitorAfterExpiry else { return }
 
         isCheckingPayment = true
         isMinting = quote.mintableAmount > 0 && (force || walletManager.shouldAttemptMintQuote(quoteID: quote.id))

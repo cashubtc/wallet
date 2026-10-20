@@ -54,6 +54,7 @@ final class CustomPaymentMethodTests: XCTestCase {
         let partial = MintQuoteInfo(id: "quote", request: "opaque request", amount: 100, isAmountless: false,
             paymentMethod: branch, state: .issued, expiry: 1, createdAt: nil, unit: "bux", amountPaid: 40, amountIssued: 40)
         XCTAssertFalse(partial.hasSettledPayment)
+        XCTAssertTrue(partial.shouldMonitorAfterExpiry)
         XCTAssertFalse(MintQuoteSchedulePolicy.observed(previous: nil, quote: partial, now: Date()).isComplete)
         var full = partial
         full.amountPaid = 100
@@ -77,15 +78,29 @@ final class CustomPaymentMethodTests: XCTestCase {
         XCTAssertEqual(transaction.displayTitle, "Branch failed")
     }
 
-    func testPartialCustomQuoteRemainsDiscoverableInTheDatabase() async throws {
+    func testExpiryOnlyStopsUnpaidLightningMonitoring() {
+        for method in [PaymentMethodKind.bolt11, .onchain, branch] {
+            var quote = MintQuoteInfo(id: "quote", request: "request", amount: 100, isAmountless: false,
+                paymentMethod: method, state: .pending, expiry: 1, createdAt: nil)
+            XCTAssertTrue(quote.isExpired)
+            XCTAssertEqual(quote.shouldMonitorAfterExpiry, method != .bolt11)
+            quote.amountPaid = 40
+            XCTAssertTrue(quote.shouldMonitorAfterExpiry)
+        }
+    }
+
+    func testCustomInstallmentsKeepOnlyTheRemainingAmountPendingInHistory() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let database = try LifecycleSafeWalletDatabase(filePath: directory.appendingPathComponent("wallet.sqlite").path)
-        let quote = Cdk.MintQuote(id: "partial", amount: Amount(value: 100), unit: .custom(unit: "bux"),
+        func storedQuote(issued: UInt64, version: UInt32 = 0) -> Cdk.MintQuote { Cdk.MintQuote(
+            id: "partial", amount: Amount(value: 100), unit: .custom(unit: "bux"),
             request: "opaque", state: .issued, expiry: 1, mintUrl: MintUrl(url: "https://mint.example"),
-            amountIssued: Amount(value: 40), amountPaid: Amount(value: 40), updatedAt: 1, estimatedBlocks: nil,
-            paymentMethod: branch.cdkMethod, secretKey: nil, usedByOperation: nil, version: 0)
+            amountIssued: Amount(value: issued), amountPaid: Amount(value: issued), updatedAt: 1, estimatedBlocks: nil,
+            paymentMethod: branch.cdkMethod, secretKey: nil, usedByOperation: nil, version: version)
+        }
+        let quote = storedQuote(issued: 40)
         try await database.addMintQuote(quote: quote)
         let cdkCandidates = try await database.getUnissuedMintQuotes()
         XCTAssertFalse(cdkCandidates.contains { $0.id == quote.id })
@@ -94,11 +109,40 @@ final class CustomPaymentMethodTests: XCTestCase {
         let repository = try WalletRepository(mnemonic: generateMnemonic(), store: customWalletStore(db: database))
         let service = TransactionService(walletRepository: { repository }, walletDatabase: { database },
             getTrackedMintUrls: { ["https://mint.example"] }, walletStore: WalletStore(storage: InMemoryStorage()))
-        await service.loadTransactions(includeRemoteObservations: false)
-        let transaction = try XCTUnwrap(service.transactions.first)
-        XCTAssertEqual(transaction.kind, .custom)
-        XCTAssertEqual(transaction.status, .pending)
-        XCTAssertEqual(transaction.unit, "bux")
+        var issued: UInt64 = 0
+        for (index, installment) in [UInt64(40), 30, 30].enumerated() {
+            let sagaID = UUID().uuidString
+            func receipt(_ status: Cdk.TransactionStatus) -> Cdk.Transaction { Cdk.Transaction(
+                id: TransactionId(hex: String(repeating: String(index + 1), count: 64)), mintUrl: quote.mintUrl,
+                direction: .incoming, amount: Amount(value: installment), fee: Amount(value: 0),
+                unit: quote.unit, ys: [], timestamp: UInt64(index + 2), memo: nil, metadata: [:],
+                quoteId: quote.id, paymentRequest: quote.request, paymentProof: nil,
+                paymentMethod: branch.cdkMethod, sagaId: sagaID, status: status
+            ) }
+            try await database.addTransaction(transaction: receipt(.pending))
+            await service.loadTransactions(includeRemoteObservations: false)
+            XCTAssertFalse(service.transactions.contains { $0.id == quote.id }, "The in-flight mint already monitors this quote")
+
+            issued += installment
+            try await database.addTransaction(transaction: receipt(.completed))
+            let stored = try await database.getMintQuote(quoteId: quote.id)
+            let version = try XCTUnwrap(stored).version
+            try await database.addMintQuote(quote: storedQuote(issued: issued, version: version))
+            await service.loadTransactions(includeRemoteObservations: false)
+            let pending = service.transactions.first { $0.id == quote.id }
+            XCTAssertEqual(service.transactions.filter { $0.status == .completed }.reduce(0) { $0 + $1.amount }, issued)
+            XCTAssertEqual(service.transactions.reduce(0) { $0 + $1.amount }, 100)
+            if issued < 100 {
+                let pending = try XCTUnwrap(pending)
+                XCTAssertEqual(pending.amount, 100 - issued)
+                XCTAssertEqual(pending.kind, .custom)
+                XCTAssertEqual(pending.status, .pending)
+                XCTAssertEqual(pending.unit, "bux")
+                XCTAssertTrue(pending.monitorsMintQuoteWhileOpen)
+            } else {
+                XCTAssertNil(pending)
+            }
+        }
     }
 
     func testCustomReceiptDetailsKeepMethodUnitAndProof() {

@@ -24,6 +24,69 @@ import org.junit.Test
 class StoredAccountProjectionInstrumentedTest {
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
 
+    @Test fun customInstallmentsKeepOnlyTheRemainingAmountPendingAfterReopen() = runBlocking {
+        val directory = File(context.cacheDir, UUID.randomUUID().toString()).apply { mkdirs() }
+        val path = File(directory, "wallet.db").path
+        val mint = MintUrl("https://offline.example")
+        val gateway = CdkWalletGatewayImpl()
+        var quote = MintQuote(
+            id = "partial", amount = Amount(100u), unit = CurrencyUnit.Custom("bux"), request = "opaque",
+            state = QuoteState.ISSUED, expiry = 1u, mintUrl = mint, amountIssued = Amount(40u),
+            amountPaid = Amount(40u), updatedAt = 1u, estimatedBlocks = null,
+            paymentMethod = PaymentMethod.Custom("branch"), secretKey = null, usedByOperation = null, version = 0u,
+        )
+        try {
+            val mnemonic = gateway.generateMnemonic()
+            val store = WalletStore(context, "custom_installments_" + UUID.randomUUID())
+            suspend fun load(): List<WalletTransaction> {
+                gateway.openWalletRepository(mnemonic, path)
+                return try {
+                    WalletTransactionLoader(store, gateway).load(listOf(MintInfo(mint.url)), false).transactions
+                } finally {
+                    gateway.closeWalletRepository()
+                }
+            }
+            WalletSqliteDatabase(path).use { it.addMintQuote(quote) }
+            var issued = 0L
+            for ((index, installment) in listOf(40L, 30L, 30L).withIndex()) {
+                val receipt = Transaction(
+                    id = TransactionId((index + 1).toString().repeat(64)), mintUrl = mint,
+                    direction = TransactionDirection.INCOMING, amount = Amount(installment.toULong()), fee = Amount(0u),
+                    unit = quote.unit, ys = emptyList(), timestamp = (index + 2).toULong(), memo = null,
+                    metadata = emptyMap(), quoteId = quote.id, paymentRequest = quote.request,
+                    paymentProof = null, paymentMethod = quote.paymentMethod,
+                    sagaId = UUID.randomUUID().toString(), status = TransactionStatus.PENDING,
+                )
+                WalletSqliteDatabase(path).use { it.addTransaction(receipt) }
+                assertFalse("The in-flight mint already monitors this quote", load().any { it.id == quote.id })
+
+                issued += installment
+                quote = quote.copy(amountPaid = Amount(issued.toULong()), amountIssued = Amount(issued.toULong()))
+                WalletSqliteDatabase(path).use {
+                    it.addTransaction(receipt.copy(status = TransactionStatus.COMPLETED))
+                    quote = quote.copy(version = requireNotNull(it.getMintQuote(quote.id)).version)
+                    it.addMintQuote(quote)
+                }
+                val rows = load()
+                assertEquals(issued, rows.filter { it.status == AppTransactionStatus.Completed }.sumOf { it.amount })
+                assertEquals(100L, rows.sumOf { it.amount })
+                if (issued < 100) {
+                    val pending = rows.single { it.id == quote.id }
+                    assertEquals(100 - issued, pending.amount)
+                    assertEquals(TransactionKind.Custom, pending.kind)
+                    assertEquals(AppTransactionStatus.Pending, pending.status)
+                    assertEquals("bux", pending.unit)
+                    assertTrue(TransactionDisplay.monitorsWhileOpen(pending))
+                } else {
+                    assertFalse(rows.any { it.id == quote.id })
+                }
+            }
+        } finally {
+            gateway.closeWalletRepository()
+            directory.deleteRecursively()
+        }
+    }
+
     @Test fun unconfirmedOnchainDepositsObserveEquivalentMintUrlsAfterReopen() = runBlocking {
         val directory = File(context.cacheDir, UUID.randomUUID().toString()).apply { mkdirs() }
         val path = File(directory, "wallet.db").path

@@ -24,8 +24,8 @@ internal data class WalletTransactionLoadResult(
  * failed) with stable saga-derived ids, including in-flight sends, melts, and
  * mints, so this loader is a thin projection: CDK rows + token strings from
  * the txId-keyed token store + synthesized rows for quotes that have no
- * transaction yet (unpaid invoices, paid-not-yet-minted quotes) + incoming
- * ecash held for user approval.
+ * transaction yet (unpaid invoices, paid-not-yet-minted quotes) + custom
+ * deposit remainders + incoming ecash held for user approval.
  */
 internal class WalletTransactionLoader(
     private val walletStore: WalletStore,
@@ -136,7 +136,11 @@ internal class WalletTransactionLoader(
                 transaction
             }
         }
-        val quoteIdsWithTransactions = remoteWithStages.mapNotNull { it.quoteId }.toSet()
+        // A custom receipt covers one installment. Keep its remaining quote,
+        // unless CDK already has an in-flight mint to monitor.
+        val quoteIdsWithTransactions = remoteWithStages.filter {
+            it.kind != TransactionKind.Custom || it.status == TransactionStatus.Pending
+        }.mapNotNull { it.quoteId }.toSet()
         val mintQuoteTimestamps = walletStore.loadMintQuoteTimestamps().toMutableMap()
         val quoteRead = runCatching { gateway.listUnissuedMintQuotes() }
         quoteRead.exceptionOrNull()?.let { if (it is kotlinx.coroutines.CancellationException) throw it }
@@ -187,8 +191,8 @@ internal class WalletTransactionLoader(
         val requests = walletStore.loadCashuRequests()
         val receiveTokenTransactions = pendingReceiveTokenTransactions(pendingReceiveTokens)
         // Row id spaces are disjoint by construction (saga-derived tx ids,
-        // mint-issued quote ids, random pending-receive ids) and quote-backed
-        // rows are skipped once CDK owns a transaction for the quote.
+        // mint-issued quote ids, random pending-receive ids). Custom quote rows
+        // contain only the amount still awaiting issuance.
         // ID dedupe removes repeated reads. BOLT11 attempts additionally project
         // to one receipt without modifying CDK records.
         val merged = (remoteWithStages + pendingQuoteTransactions + retainedQuotes + receiveTokenTransactions)

@@ -38,6 +38,10 @@ struct MintQuoteInfo: Identifiable {
         amountPaid > amountIssued ? amountPaid - amountIssued : 0
     }
 
+    var shouldMonitorAfterExpiry: Bool {
+        paymentMethod == .onchain || paymentMethod.isCustom || mintableAmount > 0
+    }
+
     var hasSettledPayment: Bool {
         amountPaid > 0 && amountIssued >= amountPaid &&
             (!paymentMethod.isCustom || amountIssued >= (amount ?? .max))
