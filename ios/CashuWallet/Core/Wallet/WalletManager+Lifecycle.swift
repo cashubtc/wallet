@@ -530,9 +530,8 @@ extension WalletManager {
 
             // Perform NUT-09 restore - this derives proofs from the seed and checks their state with the mint
             _ = try await wallet.recoverIncompleteSagas()
-            if let db = self.db, !(try await db.getIncompleteSagas()).isEmpty {
-                throw WalletError.networkError("An interrupted payment is still being recovered. Retry restore after it finishes.")
-            }
+            guard let db = self.db else { throw WalletError.notInitialized }
+            try await MintRestoreSafety.requireSafe(database: db, mintURL: normalizedUrl)
             let restored = try await wallet.restore()
 
             // Ensure mint is in our saved list

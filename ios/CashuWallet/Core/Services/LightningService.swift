@@ -358,6 +358,8 @@ class LightningService: ObservableObject {
         }
 
         let wallet = try await repo.getWallet(mintUrl: mintUrl, unit: quoteUnit)
+        guard let database = walletDatabase() else { throw WalletError.notInitialized }
+        try await MintRestoreSafety.prepareEmptyAccount(database: database, wallet: wallet, mintURL: mintUrl.url)
         let proofs = try await wallet.mintUnified(
             quoteId: quoteId,
             amountSplitTarget: amountSplitTarget,
