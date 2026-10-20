@@ -151,6 +151,12 @@ class TokenService: ObservableObject {
         // Ensure the mint is added with the correct unit
         try await repo.createWallet(mintUrl: tokenMintUrl, unit: tokenUnit, targetProofCount: nil)
 
+        // Reject known-spent tokens before journaling another receive. A failed
+        // state query remains an error, never evidence of spendable ecash.
+        if try await checkTokenSpent(token: tokenString, mintUrl: tokenMintUrl.url) {
+            throw TokenServiceError.alreadySpent
+        }
+
         // Offer the full signing set (primary seed-derived key + stored keys) so a
         // token locked to the user's own identity is redeemable.
         let localP2PKSigningKeys = SettingsManager.shared.allP2PKSigningKeyHexes().map { SecretKey(hex: $0) }
@@ -371,11 +377,14 @@ class TokenService: ObservableObject {
 }
 
 enum TokenServiceError: LocalizedError {
+    case alreadySpent
     case invalidP2PKPubkey
     case missingP2PKSigningKey
 
     var errorDescription: String? {
         switch self {
+        case .alreadySpent:
+            return "This ecash has already been spent."
         case .invalidP2PKPubkey:
             return "That key isn't valid. Use a 66-character hex key (02/03 prefix)."
         case .missingP2PKSigningKey:

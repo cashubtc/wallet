@@ -1,5 +1,26 @@
 import Foundation
 
+extension Array where Element == WalletTransaction {
+    func terminalOutgoingMelt(quoteId: String, mintUrl: String) -> WalletTransaction? {
+        first {
+            $0.type == .outgoing && $0.kind != .ecash && $0.quoteId == quoteId &&
+            $0.mintUrl?.trimmingCharacters(in: CharacterSet(charactersIn: "/")) ==
+                mintUrl.trimmingCharacters(in: CharacterSet(charactersIn: "/")) &&
+            $0.unit.lowercased() == "sat" && ($0.status == .completed || $0.status == .failed)
+        }
+    }
+
+    func isClaimedSend(transactionId: String?, token: String, mintUrl: String, unit: String) -> Bool {
+        contains { transaction in
+            transaction.type == .outgoing && transaction.kind == .ecash && transaction.status == .completed &&
+            transaction.mintUrl?.trimmingCharacters(in: CharacterSet(charactersIn: "/")) ==
+                mintUrl.trimmingCharacters(in: CharacterSet(charactersIn: "/")) &&
+            transaction.unit.lowercased() == unit.lowercased() &&
+            (transactionId.map { id in transaction.id == id } ?? (transaction.token == token))
+        }
+    }
+}
+
 struct WalletTransaction: Identifiable {
     let id: String
     let amount: UInt64

@@ -43,6 +43,8 @@ func meltOptionsForLightningRequest(
 /// Handles minting (receiving via Lightning) and melting (paying via Lightning).
 @MainActor
 class LightningService: ObservableObject {
+    private var reviewedMeltFees: [String: UInt64] = [:]
+
     static func requiredMeltAmount(amount: UInt64, feeReserve: UInt64) throws -> UInt64 {
         let total = amount.addingReportingOverflow(feeReserve)
         guard !total.overflow else {
@@ -431,7 +433,7 @@ class LightningService: ObservableObject {
                 extra: nil
             )
 
-            return meltQuoteInfo(from: quote, paymentMethod: paymentMethod, fallbackMintUrl: mint.url)
+            return try await meltQuoteInfo(from: quote, paymentMethod: paymentMethod, fallbackMintUrl: mint.url)
         }
     }
     
@@ -515,7 +517,7 @@ class LightningService: ObservableObject {
                 amountMsat: Amount(value: amount * 1000)
             )
 
-            return meltQuoteInfo(from: quote, paymentMethod: .bolt11, fallbackMintUrl: mint.url)
+            return try await meltQuoteInfo(from: quote, paymentMethod: .bolt11, fallbackMintUrl: mint.url)
         }
     }
 
@@ -550,7 +552,7 @@ class LightningService: ObservableObject {
             )
 
             let paymentMethod = PaymentMethodKind.from(quote.paymentMethod) ?? .bolt12
-            return meltQuoteInfo(from: quote, paymentMethod: paymentMethod, fallbackMintUrl: mint.url)
+            return try await meltQuoteInfo(from: quote, paymentMethod: paymentMethod, fallbackMintUrl: mint.url)
         }
     }
 
@@ -594,7 +596,7 @@ class LightningService: ObservableObject {
             }
 
             let quote = try await wallet.selectOnchainMeltQuote(quote: quoteOption)
-            return meltQuoteInfo(from: quote, paymentMethod: .onchain, fallbackMintUrl: mint.url)
+            return try await meltQuoteInfo(from: quote, paymentMethod: .onchain, fallbackMintUrl: mint.url)
         }
     }
 
@@ -845,7 +847,7 @@ class LightningService: ObservableObject {
             result: MeltPaymentResult(
                 preimage: nil,
                 amount: storedMeltQuote?.amount.value ?? 0,
-                feePaid: storedMeltQuote?.feeReserve.value ?? 0,
+                feePaid: storedMeltQuote.flatMap { reviewedMeltFees[$0.id] } ?? storedMeltQuote?.feeReserve.value ?? 0,
                 mintUrl: mintURLString,
                 settlement: .pending
             ),
@@ -911,6 +913,13 @@ class LightningService: ObservableObject {
             )
         }
 
+        if let reviewed = reviewedMeltFees[quoteId] {
+            let current = (storedMeltQuote?.feeReserve.value ?? 0).addingReportingOverflow(preparedMelt.totalFeeWithSwap().value)
+            if current.overflow || current.partialValue > reviewed {
+                try await preparedMelt.cancel()
+                throw WalletError.networkError("Payment fees changed. Review the payment again.")
+            }
+        }
         let operationID = preparedMelt.operationId()
         AppLogger.wallet.info(
             "wallet-op melt prepared operation=\(WalletOperationCoordinator.privacySafeIdentifier(operationID), privacy: .public) quote=\(WalletOperationCoordinator.privacySafeIdentifier(quoteId), privacy: .public)"
@@ -1185,12 +1194,19 @@ class LightningService: ObservableObject {
         from quote: MeltQuote,
         paymentMethod: PaymentMethodKind,
         fallbackMintUrl: String
-    ) -> MeltQuoteInfo {
-        MeltQuoteInfo(
+    ) async throws -> MeltQuoteInfo {
+        guard let repo = walletRepository() else { throw WalletError.notInitialized }
+        let wallet = try await repo.getWallet(mintUrl: MintUrl(url: quote.mintUrl?.url ?? fallbackMintUrl), unit: .sat)
+        let prepared = try await wallet.prepareMelt(quoteId: quote.id)
+        let fee = quote.feeReserve.value.addingReportingOverflow(prepared.totalFeeWithSwap().value)
+        try await prepared.cancel()
+        guard !fee.overflow else { throw WalletError.networkError("Payment fees exceed the supported amount.") }
+        reviewedMeltFees[quote.id] = fee.partialValue
+        return MeltQuoteInfo(
             id: quote.id,
             mintUrl: quote.mintUrl?.url ?? fallbackMintUrl,
             amount: quote.amount.value,
-            feeReserve: quote.feeReserve.value,
+            feeReserve: fee.partialValue,
             paymentMethod: paymentMethod,
             state: MeltQuoteState(quote.state),
             expiry: displayExpiry(quote.expiry)

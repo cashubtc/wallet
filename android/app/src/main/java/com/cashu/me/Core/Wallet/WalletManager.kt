@@ -788,7 +788,6 @@ class WalletManager(
      *   it preempts cooldown gating (explicit user intent).
      */
     suspend fun syncPendingMintQuotes(force: Boolean = false): Int {
-        if (!force && focusedMintQuoteMonitor.isActive) return 0
         // Passive triggers collapse while an existing pass is active. An
         // explicit user refresh waits its turn instead of being silently
         // discarded — this makes `force` real rather than a documentation-only
@@ -808,19 +807,19 @@ class WalletManager(
             // quote instead of silently dropping an older/migrated offer.
             val intentQuoteIds = cashuRequestStore.state.value.requests.mapNotNull { it.quoteId }
             val quoteIds = (databaseQuotes.map { it.id } + intentQuoteIds).distinct().sorted()
-            if (!force && focusedMintQuoteMonitor.isActive) return 0
             val selectedQuoteIds = mintQuoteSyncService.selectQuoteIdsForSync(
                 quoteIds,
                 force,
                 unsettledOnchainQuoteIds = databaseQuotes.filter {
                     it.paymentMethod == PaymentMethodKind.Onchain && it.amountIssued == 0L
                 }.map { it.id }.toSet(),
+                excludedQuoteIds = if (force) emptySet() else quoteIds.filter(focusedMintQuoteMonitor::isMonitoring).toSet(),
             )
             if (selectedQuoteIds.isEmpty()) return 0
 
             var mintedQuotes = 0
             for (quoteId in selectedQuoteIds) {
-                if (!force && focusedMintQuoteMonitor.isActive) break
+                if (!force && focusedMintQuoteMonitor.isMonitoring(quoteId)) continue
                 val result = mintQuoteSyncService.syncPendingMintQuote(quoteId, force)
                 result.receivedAmount?.let { amount ->
                     mintedQuotes += 1
@@ -1323,11 +1322,9 @@ class WalletManager(
 
         return withLoadingResult {
             var claimedCount = 0
-            var foundPending = false
             transactionUnitsByMint(mutableState.value.mints).forEach { (mintUrl, units) ->
                 units.forEach { unit ->
                     gateway.listPendingSendOperationIds(mintUrl, unit).forEach { operationId ->
-                        foundPending = true
                         val claimed = runCatching {
                             gateway.checkPendingSendClaimed(mintUrl, operationId, unit)
                         }.getOrDefault(false)
@@ -1339,7 +1336,9 @@ class WalletManager(
             if (claimedCount > 0) {
                 refreshBalance()
                 loadTransactions()
-            } else if (foundPending) {
+            } else {
+                // Reconciliation can complete a send before getPendingSends
+                // enumerates it. Publish those terminal rows as well.
                 loadTransactions()
             }
             claimedCount

@@ -132,6 +132,7 @@ internal fun meltOptionsForLightningRequest(
 class CdkWalletGatewayImpl : WalletGateway {
     private var database: CdkWalletSqliteDatabase? = null
     private var repository: CdkWalletRepository? = null
+    private val reviewedMeltFees = mutableMapOf<String, Long>()
     private val operationMutex = Mutex()
 
     override suspend fun initializeLogging(level: String) = cdkCall {
@@ -497,7 +498,7 @@ class CdkWalletGatewayImpl : WalletGateway {
                         )
                     },
                 )
-                return@cdkCall quote.toDomain(fallbackMethod = quote.paymentMethod.toDomain())
+                return@cdkCall previewMeltQuote(wallet, quote, quote.paymentMethod.toDomain())
             }
             is PaymentRequestDecodeResult.Onchain -> {
                 val amount = requirePositiveAmount(amountSats, "On-chain payments require an amount.")
@@ -508,7 +509,7 @@ class CdkWalletGatewayImpl : WalletGateway {
                 )
                 val selected = options.firstOrNull()
                     ?: throw CdkGatewayUnavailable("Mint returned no on-chain fee options.")
-                return@cdkCall wallet.selectOnchainMeltQuote(selected).toDomain(fallbackMethod = PaymentMethodKind.Onchain)
+                return@cdkCall previewMeltQuote(wallet, wallet.selectOnchainMeltQuote(selected), PaymentMethodKind.Onchain)
             }
             else -> Unit
         }
@@ -521,7 +522,18 @@ class CdkWalletGatewayImpl : WalletGateway {
             options = options,
             extra = null,
         )
-        quote.toDomain(fallbackMethod = method)
+        previewMeltQuote(wallet, quote, method)
+    }
+
+    private suspend fun previewMeltQuote(wallet: CdkWallet, quote: CdkMeltQuote, method: PaymentMethodKind): MeltQuoteInfo {
+        val prepared = wallet.prepareMelt(quote.id)
+        val fee = try {
+            Math.addExact(quote.feeReserve.value.toLong(), prepared.totalFeeWithSwap().value.toLong())
+        } finally {
+            prepared.cancel()
+        }
+        reviewedMeltFees[quote.id] = fee
+        return quote.toDomain(fallbackMethod = method).copy(feeReserve = fee)
     }
 
     override suspend fun listMeltQuotes(): List<MeltQuoteInfo> = cdkCall {
@@ -540,6 +552,18 @@ class CdkWalletGatewayImpl : WalletGateway {
                 catch (_: Exception) { throw MeltPaymentRecoveryException(quoteId, null, unresolved = true) }
             val operation = stored?.usedByOperation ?: throw failure
             return@cdkCall resolveMeltFailure(wallet, quoteId, operation)
+        }
+        reviewedMeltFees[quoteId]?.let { reviewed ->
+            val current = try {
+                Math.addExact(quote?.feeReserve?.value?.toLong() ?: 0, prepared.totalFeeWithSwap().value.toLong())
+            } catch (failure: ArithmeticException) {
+                prepared.cancel()
+                throw failure
+            }
+            if (current > reviewed) {
+                prepared.cancel()
+                throw CdkGatewayUnavailable("Payment fees changed. Review the payment again.")
+            }
         }
         try {
             // `respond-async` lets the mint accept the payment and pay out in the
@@ -600,7 +624,7 @@ class CdkWalletGatewayImpl : WalletGateway {
                             result = MeltPaymentResult(
                                 preimage = null,
                                 amount = quote?.amount?.value?.toLong() ?: 0,
-                                feePaid = quote?.feeReserve?.value?.toLong() ?: 0,
+                                feePaid = reviewedMeltFees[quoteId] ?: quote?.feeReserve?.value?.toLong() ?: 0,
                                 mintUrl = wallet.mintUrl().url,
                                 paymentMethod = quote?.paymentMethod?.toDomain(),
                                 request = quote?.request,
@@ -736,7 +760,12 @@ class CdkWalletGatewayImpl : WalletGateway {
         // the sat wallet.
         val tokenUnit = token.unit() ?: CdkCurrencyUnit.Sat
         ensureWalletUnlocked(mintUrl, tokenUnit)
-        val amount = walletFor(mintUrl, tokenUnit).receive(
+        val wallet = walletFor(mintUrl, tokenUnit)
+        val proofs = token.proofs(wallet.keysets(null).map { it.toKeySetInfo() })
+        if (wallet.checkProofsSpent(proofs).any { it }) {
+            throw CdkGatewayUnavailable("This ecash has already been spent.")
+        }
+        val amount = wallet.receive(
             token = token,
             options = CdkReceiveOptions(
                 amountSplitTarget = CdkSplitTarget.None,
@@ -897,7 +926,13 @@ class CdkWalletGatewayImpl : WalletGateway {
     }
 
     override suspend fun listPendingSendOperationIds(mintUrl: String, unit: String): List<String> = cdkCall {
-        runCatching { walletFor(mintUrl, cdkUnit(unit)).getPendingSends() }.getOrDefault(emptyList())
+        // Advertised mint units need not have a local wallet account yet.
+        // Skip only that absence; reconciliation failures must still surface.
+        val wallet = requireRepository().getWallets().firstOrNull {
+            mintRemovalUrlsMatch(it.mintUrl().url, mintUrl) && it.unit() == cdkUnit(unit)
+        } ?: return@cdkCall emptyList()
+        wallet.checkAllPendingProofs()
+        wallet.getPendingSends()
     }
 
     override suspend fun checkPendingSendClaimed(mintUrl: String, operationId: String, unit: String): Boolean = cdkCall {

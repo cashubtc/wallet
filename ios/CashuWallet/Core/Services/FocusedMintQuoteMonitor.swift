@@ -4,8 +4,10 @@ import Foundation
 /// the focus, allowing ordinary wallet maintenance to resume.
 @MainActor
 final class FocusedMintQuoteMonitor {
-    private var sessions: Set<UUID> = []
+    private var sessions: [UUID: String] = [:]
     var isActive: Bool { !sessions.isEmpty }
+
+    func isMonitoring(_ quoteID: String) -> Bool { sessions.values.contains(quoteID) }
 
     func monitor(
         quoteID: String,
@@ -14,8 +16,8 @@ final class FocusedMintQuoteMonitor {
     ) async {
         guard !Task.isCancelled else { return }
         let session = UUID()
-        sessions.insert(session)
-        defer { sessions.remove(session) }
+        sessions[session] = quoteID
+        defer { sessions.removeValue(forKey: session) }
 
         while !Task.isCancelled {
             // Direct reconciliation bypasses the passive batch/age schedule,

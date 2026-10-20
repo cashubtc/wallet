@@ -281,13 +281,13 @@ class FunctionalWalletJourneyTest {
             .awaitTag(UiTestTags.SendSheet)
             .typeIntoTag(UiTestTags.SendDestination, FixedBolt11Invoice)
             .awaitTag(UiTestTags.SendPaymentSubmit)
-            .awaitText("Network fee")
+            .awaitText("Fees (up to)")
             // The confirm's fee/total rows honour the ₿-symbol setting now,
             // same as the status terminal below.
             .awaitText("₿2")
             .tapTag(UiTestTags.SendPaymentSubmit)
             .awaitText("Payment sent")
-            .awaitText("Network fee")
+            .awaitText("Fees")
             .awaitText("₿2")
 
         assertEquals(477L, runBlocking { fake.totalBalance(FakeWalletGateway.TestMintUrl) })
@@ -303,6 +303,64 @@ class FunctionalWalletJourneyTest {
             .tapText("History")
             .awaitTag(UiTestTags.HistoryScreen)
             .awaitTag(UiTestTags.transactionRow(paidTransaction.id))
+    }
+
+    @Test
+    fun generatedEcashSheetFollowsCompletedLedgerWithoutPolling() {
+        val fixture = launch(FixtureMode.FundedWithHistory)
+        fixture.container.settingsManager.setCheckSentTokens(false)
+        robot.awaitTag(UiTestTags.WalletScreen).tapTag(UiTestTags.WalletSend)
+            .tapDescription("Ecash. Create ecash").awaitTag(UiTestTags.SendEcashScreen)
+            .tapDescription("2").tapDescription("5").tapTag(UiTestTags.SendEcashSubmit)
+            .awaitText("Pending Ecash")
+        val fake = checkNotNull(fixture.fakeGateway)
+        fake.addTransaction(com.cashu.me.Models.WalletTransaction(
+            id = "claimed-send", amount = 25, fee = 1, type = TransactionType.Outgoing,
+            kind = TransactionKind.Ecash, dateEpochMillis = 1,
+            status = com.cashu.me.Models.TransactionStatus.Completed,
+            token = FakeWalletGateway.DeterministicToken, mintUrl = FakeWalletGateway.TestMintUrl,
+        ))
+        runBlocking { fixture.container.walletManager.loadTransactions() }
+        robot.awaitText("Claimed Ecash").awaitText("Claimed")
+        compose.onNodeWithText("Pending Ecash").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Share").assertDoesNotExist()
+        robot.tapText("Done").awaitTag(UiTestTags.WalletScreen)
+    }
+
+    @Test
+    fun pendingMeltSheetFollowsCompletedLedgerAndActualFee() = followsMeltResolution(failed = false)
+
+    @Test
+    fun unresolvedMeltSheetFollowsFailedLedgerWithoutOfferingRetry() = followsMeltResolution(failed = true)
+
+    private fun followsMeltResolution(failed: Boolean) {
+        val fixture = launch(FixtureMode.FundedWithHistory)
+        val fake = checkNotNull(fixture.fakeGateway)
+        if (failed) {
+            fake.beforeMeltPayment = {
+                throw com.cashu.me.Core.CDK.MeltPaymentRecoveryException(
+                    fake.listMeltQuotes().last().id, null, unresolved = true)
+            }
+        } else {
+            fake.meltSettlement = com.cashu.me.Models.MeltSettlement.Pending
+        }
+        robot.awaitTag(UiTestTags.WalletScreen).tapTag(UiTestTags.WalletSend)
+            .typeIntoTag(UiTestTags.SendDestination, FixedBolt11Invoice)
+            .awaitTag(UiTestTags.SendPaymentSubmit).tapTag(UiTestTags.SendPaymentSubmit)
+            .awaitText(if (failed) "Waiting for mint" else "Payment processing")
+        val quote = runBlocking { fake.listMeltQuotes().last() }
+        fake.addTransaction(com.cashu.me.Models.WalletTransaction(
+            id = "resolved-melt", quoteId = quote.id, amount = quote.amount, fee = 1,
+            type = TransactionType.Outgoing, kind = TransactionKind.Lightning,
+            dateEpochMillis = 1, mintUrl = quote.mintUrl,
+            status = if (failed) com.cashu.me.Models.TransactionStatus.Failed else com.cashu.me.Models.TransactionStatus.Completed,
+        ))
+        runBlocking { fixture.container.walletManager.loadTransactions() }
+        robot.awaitText(if (failed) "Payment failed" else "Payment sent").awaitText("₿1")
+        compose.onNodeWithText("Waiting for mint").assertDoesNotExist()
+        compose.onNodeWithText("Payment processing").assertDoesNotExist()
+        compose.onNodeWithText("Try again").assertDoesNotExist()
+        robot.tapText("Done").awaitTag(UiTestTags.WalletScreen)
     }
 
     @Test

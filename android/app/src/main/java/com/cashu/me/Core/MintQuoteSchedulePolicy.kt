@@ -38,6 +38,7 @@ internal object MintQuoteSchedulePolicy {
         nowEpochMillis: Long,
         force: Boolean,
         unsettledOnchainQuoteIds: Set<String> = emptySet(),
+        excludedQuoteIds: Set<String> = emptySet(),
     ): Selection {
         val uniqueIds = quoteIds.asSequence().filter(String::isNotBlank).toSet()
         val records = existing
@@ -62,7 +63,7 @@ internal object MintQuoteSchedulePolicy {
         val selected = uniqueIds.asSequence()
             .filter { quoteId ->
                 val record = checkNotNull(records[quoteId])
-                !record.isComplete && (force || record.nextAttemptAtEpochMillis <= nowEpochMillis)
+                quoteId !in excludedQuoteIds && !record.isComplete && (force || record.nextAttemptAtEpochMillis <= nowEpochMillis)
             }
             .sortedWith(
                 compareBy<String> { records[it]?.lastAttemptAtEpochMillis ?: Long.MIN_VALUE }
@@ -108,7 +109,7 @@ internal object MintQuoteSchedulePolicy {
             expiredInvoice || quote.state == MintQuoteState.Issued || quote.hasSettledPayment
         )
         val age = (nowEpochMillis - record.firstObservedAtEpochMillis).coerceAtLeast(0)
-        val nextInterval = if (age < RECENT_QUOTE_WINDOW_MS) {
+        val nextInterval = if (reusable || age < RECENT_QUOTE_WINDOW_MS) {
             RECENT_QUOTE_INTERVAL_MS
         } else {
             IDLE_QUOTE_INTERVAL_MS

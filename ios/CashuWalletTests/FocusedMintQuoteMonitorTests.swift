@@ -27,6 +27,8 @@ final class FocusedMintQuoteMonitorTests: XCTestCase {
         var intervals: [Duration] = []
         await monitor.monitor(quoteID: "displayed", refresh: { id in
             XCTAssertTrue(monitor.isActive)
+            XCTAssertTrue(monitor.isMonitoring(id))
+            XCTAssertFalse(monitor.isMonitoring("other"))
             ids.append(id)
             return self.quote(method: .bolt11, paid: 21, issued: ids.count == 1 ? 0 : 21)
         }, sleep: { interval in

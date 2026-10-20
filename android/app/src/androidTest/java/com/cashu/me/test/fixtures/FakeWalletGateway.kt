@@ -55,6 +55,7 @@ class FakeWalletGateway(
     var beforeMeltQuote: suspend () -> Unit = {}
     var lastMeltQuoteAmountSats: Long? = null
     var beforeMeltPayment: suspend () -> Unit = {}
+    var meltSettlement = MeltSettlement.Settled
     var pendingSendClaimed = false
     private val transactions = initialTransactions.toMutableList()
     private val mintQuotes = linkedMapOf<String, MutableStateFlow<MintQuoteInfo>>()
@@ -331,7 +332,7 @@ class FakeWalletGateway(
                 TransactionKind.Lightning
             },
             dateEpochMillis = System.currentTimeMillis(),
-            status = TransactionStatus.Completed,
+            status = if (meltSettlement == MeltSettlement.Pending) TransactionStatus.Pending else TransactionStatus.Completed,
             mintUrl = quote.mintUrl,
             fee = quote.feeReserve,
             invoice = quote.request,
@@ -344,7 +345,7 @@ class FakeWalletGateway(
                 mintUrl = quote.mintUrl,
                 paymentMethod = quote.paymentMethod,
                 request = quote.request,
-                settlement = MeltSettlement.Settled,
+                settlement = meltSettlement,
             ),
             pendingMelt = null,
         )

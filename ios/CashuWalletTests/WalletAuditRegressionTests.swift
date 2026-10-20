@@ -7,6 +7,40 @@ import SQLite3
 final class WalletAuditRegressionTests: XCTestCase {
     private enum Failure: Error { case offline }
 
+    func testOpenMeltResolvesOnlyMatchingTerminalOutgoingAccount() {
+        let row = WalletTransaction(id: "send", amount: 21, type: .outgoing, kind: .lightning,
+            date: Date(), status: .completed, mintUrl: "https://mint.example", fee: 1, quoteId: "quote")
+        XCTAssertEqual([row].terminalOutgoingMelt(quoteId: "quote", mintUrl: "https://mint.example/")?.fee, 1)
+        var unrelated = row
+        unrelated.status = .pending
+        XCTAssertNil([unrelated].terminalOutgoingMelt(quoteId: "quote", mintUrl: "https://mint.example"))
+        unrelated = row; unrelated.unit = "usd"
+        XCTAssertNil([unrelated].terminalOutgoingMelt(quoteId: "quote", mintUrl: "https://mint.example"))
+        XCTAssertNil([row].terminalOutgoingMelt(quoteId: "other", mintUrl: "https://mint.example"))
+        XCTAssertNil([row].terminalOutgoingMelt(quoteId: "quote", mintUrl: "https://other.example"))
+        let incoming = WalletTransaction(id: "receive", amount: 21, type: .incoming, kind: .lightning,
+            date: Date(), status: .completed, mintUrl: "https://mint.example", quoteId: "quote")
+        XCTAssertNil([incoming].terminalOutgoingMelt(quoteId: "quote", mintUrl: "https://mint.example"))
+        unrelated = row; unrelated.status = .failed
+        XCTAssertEqual([unrelated].terminalOutgoingMelt(quoteId: "quote", mintUrl: "https://mint.example")?.status, .failed)
+    }
+
+    func testOpenEcashClaimRequiresMatchingOutgoingTokenAccount() {
+        let row = WalletTransaction(id: "send", amount: 21, type: .outgoing, kind: .ecash,
+            date: Date(), status: .completed, mintUrl: "https://mint.example", token: "token")
+        XCTAssertTrue([row].isClaimedSend(transactionId: "send", token: "token", mintUrl: "https://mint.example/", unit: "sat"))
+        XCTAssertTrue([row].isClaimedSend(transactionId: nil, token: "token", mintUrl: "https://mint.example", unit: "sat"))
+        XCTAssertFalse([row].isClaimedSend(transactionId: "other", token: "token", mintUrl: "https://mint.example", unit: "sat"))
+        XCTAssertFalse([row].isClaimedSend(transactionId: nil, token: "other", mintUrl: "https://mint.example", unit: "sat"))
+        XCTAssertFalse([row].isClaimedSend(transactionId: "send", token: "token", mintUrl: "https://mint.example", unit: "usd"))
+        var pending = row; pending.status = .pending
+        XCTAssertFalse([pending].isClaimedSend(transactionId: "send", token: "token", mintUrl: "https://mint.example", unit: "sat"))
+        let incoming = WalletTransaction(id: "send", amount: 21, type: .incoming, kind: .ecash,
+            date: Date(), status: .completed, mintUrl: "https://mint.example", token: "token")
+        XCTAssertFalse([incoming].isClaimedSend(transactionId: "send", token: "token", mintUrl: "https://mint.example", unit: "sat"))
+    }
+
+
     func testSharedBech32FramingAcceptsBothChecksumsAndRejectsCorruption() throws {
         let classic = try Bech32.decodeWords("A12UEL5L")
         XCTAssertEqual(classic.hrp, "a")

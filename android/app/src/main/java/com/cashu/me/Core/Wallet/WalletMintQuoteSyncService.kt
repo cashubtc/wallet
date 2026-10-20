@@ -121,6 +121,7 @@ internal class WalletMintQuoteSyncService private constructor(
         quoteIds: Collection<String>,
         force: Boolean,
         unsettledOnchainQuoteIds: Set<String> = emptySet(),
+        excludedQuoteIds: Set<String> = emptySet(),
     ): List<String> =
         synchronized(scheduleMonitor) {
             val selection = MintQuoteSchedulePolicy.select(
@@ -129,6 +130,7 @@ internal class WalletMintQuoteSyncService private constructor(
                 nowEpochMillis = nowEpochMillis(),
                 force = force,
                 unsettledOnchainQuoteIds = unsettledOnchainQuoteIds,
+                excludedQuoteIds = excludedQuoteIds,
             )
             persistSchedulesLocked(selection.records)
             selection.quoteIds

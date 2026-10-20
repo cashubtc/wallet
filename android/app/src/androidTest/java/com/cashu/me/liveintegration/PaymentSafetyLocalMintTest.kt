@@ -208,11 +208,32 @@ class PaymentSafetyLocalMintTest : PaymentFixtureTest() {
         })
     }
 
+    @Test fun pendingSendMaintenanceSkipsUnopenedCurrencyAccounts() = runBlocking {
+        val sender = wallet("controlled")
+        sender.fund()
+        val recipient = wallet("controlled")
+        val token = sender.send(21).token
+        assertTrue(sender.gateway.listPendingSendOperationIds(sender.url, "usd").isEmpty())
+        val operation = sender.gateway.listPendingSendOperationIds(sender.url, "sat").single()
+        assertEquals(21, recipient.receive(token))
+        sender.gateway.listPendingSendOperationIds(sender.url, "sat")
+        assertTrue(sender.gateway.checkPendingSendClaimed(sender.url, operation))
+        val sent = sender.gateway.listTransactions(mapOf(sender.url to listOf("sat"))).single {
+            it.sagaId == operation
+        }
+        assertEquals(com.cashu.me.Models.TransactionStatus.Completed, sent.status)
+        assertEquals(79, sender.balance())
+    }
+
     @Test fun insufficientFundsAndOfflineQuoteDoNotDebit() = runBlocking {
         val wallet = wallet("controlled")
         wallet.fund()
-        val quote = wallet.gateway.createMeltQuote(invoice(101), null, wallet.url)
-        val rejected = runCatching { wallet.gateway.meltTokens(quote.id, wallet.url) }.exceptionOrNull()
+        val rejected = runCatching {
+            // Fee preview prepares/cancels the melt, so insufficient funds
+            // should already reject quote creation before Pay is available.
+            val quote = wallet.gateway.createMeltQuote(invoice(101), null, wallet.url)
+            wallet.gateway.meltTokens(quote.id, wallet.url)
+        }.exceptionOrNull()
         assertNotNull("The oversized payment must be rejected", rejected)
         if (rejected is MeltPaymentRecoveryException) {
             // CDK 0.18.2 may journal preparation before discovering the shortfall.

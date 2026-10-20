@@ -94,6 +94,7 @@ data class MeltQuoteInfo(
     val id: String,
     val mintUrl: String,
     val amount: Long,
+    // Confirmation upper bound includes preparation, input and network fees.
     val feeReserve: Long,
     val paymentMethod: PaymentMethodKind,
     val state: MeltQuoteState,
