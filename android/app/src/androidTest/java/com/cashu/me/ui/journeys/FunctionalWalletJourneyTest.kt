@@ -323,6 +323,7 @@ class FunctionalWalletJourneyTest {
         runBlocking { fixture.container.walletManager.loadTransactions() }
         robot.awaitText("Claimed Ecash").awaitText("Claimed")
         compose.onNodeWithText("Pending Ecash").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Share").assertDoesNotExist()
         robot.tapText("Done").awaitTag(UiTestTags.WalletScreen)
     }
 

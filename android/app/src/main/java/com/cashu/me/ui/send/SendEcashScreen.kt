@@ -363,7 +363,7 @@ fun SendEcashScreen(
             },
             actions = {
                 val current = face
-                if (current is SendFace.Generated) {
+                if (current is SendFace.Generated && !generatedClaimed) {
                     IconButton(onClick = {
                         context.shareText(current.result.token, subject = "Cashu token")
                     }) {
