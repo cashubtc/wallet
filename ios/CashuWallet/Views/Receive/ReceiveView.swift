@@ -220,10 +220,10 @@ struct UnifiedReceiveView: View {
             )
 
             MethodActionRow(
-                icon: "bitcoinsign",
-                title: "Bitcoin",
-                subtitle: "Lightning or on-chain",
-                accessibilityLabel: "Bitcoin. Receive over Lightning or on-chain",
+                icon: hasCustomMethods ? "creditcard" : "bitcoinsign",
+                title: hasCustomMethods ? "Payment" : "Bitcoin",
+                subtitle: hasCustomMethods ? "Choose a payment method" : "Lightning or on-chain",
+                accessibilityLabel: hasCustomMethods ? "Payment. Choose a payment method" : "Bitcoin. Receive over Lightning or on-chain",
                 accessibilityIdentifier: "wallet-flow-receiveLightning",
                 enabled: walletManager.activeMint != nil,
                 status: walletManager.activeMint == nil ? "Mint needed" : nil
@@ -235,6 +235,10 @@ struct UnifiedReceiveView: View {
     }
 
     // MARK: Routing out
+
+    private var hasCustomMethods: Bool {
+        walletManager.mints.contains { $0.supportedMintMethods.contains(where: \.isCustom) }
+    }
 
     @ViewBuilder
     private func routeView(_ route: ReceiveRoute) -> some View {

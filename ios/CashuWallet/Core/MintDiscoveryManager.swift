@@ -81,8 +81,8 @@ enum MintDiscoveryPreviewParser {
         }
         let mintSettings = document.nuts?["4"]?.activeMethods ?? []
         let meltSettings = document.nuts?["5"]?.activeMethods ?? []
-        let reported = (mintSettings + meltSettings).compactMap { PaymentMethodKind(rawValue: $0.method.lowercased()) }
-        let methods = PaymentMethodKind.allCases.filter(reported.contains)
+        let reported = (mintSettings + meltSettings).compactMap { PaymentMethodKind(rawValue: $0.method) }
+        let methods = PaymentMethodKind.ordered(reported)
         return MintDiscoveryPreview(
             name: document.name?.nonBlank,
             description: document.description,

@@ -35,6 +35,7 @@ struct TransactionDetailView: View {
 
     /// Returns the content to display as a QR code.
     private var qrContent: String? {
+        if transaction.kind == .custom { return transaction.quoteId }
         if let token = transaction.token { return token }
         if let invoice = transaction.invoice { return invoice }
         return nil
@@ -76,6 +77,7 @@ struct TransactionDetailView: View {
         case .ecash:     return "token"
         case .lightning: return "request"
         case .onchain:   return "address"
+        case .custom:    return "quote ID"
         }
     }
 
@@ -84,6 +86,7 @@ struct TransactionDetailView: View {
         case .ecash:     return "ecash token"
         case .lightning: return "payment request"
         case .onchain:   return "bitcoin address"
+        case .custom:    return "quote ID"
         }
     }
 
@@ -167,6 +170,9 @@ struct TransactionDetailView: View {
 
     private var receiptDetails: some View {
         VStack(spacing: 24) {
+            if transaction.kind == .custom, let quoteID = transaction.quoteId {
+                QuoteReferenceDetails(quoteID: quoteID, request: transaction.invoice ?? "")
+            }
             // Receipt amounts use the same primary/secondary ordering
             // as Home and History. The glyph above carries state colour.
             // An unfunded deposit address has no amount to show yet.
@@ -335,6 +341,7 @@ struct TransactionDetailView: View {
             case .ecash:     return "Claimed"
             case .lightning: return "Paid"
             case .onchain:   return "Confirmed"
+            case .custom:    return "Paid"
             }
         case .pending:
             // An incoming deposit names its stage — the same words its History

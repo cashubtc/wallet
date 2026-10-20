@@ -28,6 +28,12 @@ object UnitAmountEntry {
     /** Keeps `10^(MAX_INTEGER_DIGITS + decimals)` inside Long for any unit. */
     private const val MAX_DECIMALS = 6
 
+    /** Text fields reject fractions for integer-only units, including pasted input. */
+    fun validatedBaseUnits(raw: String, decimals: Int): Long? {
+        val pattern = if (decimals == 0) "[0-9]{1,12}" else "[0-9]{1,12}(\\.[0-9]{1,$decimals})?"
+        return raw.takeIf { Regex(pattern).matches(it) }?.let { baseUnits(it, decimals) }
+    }
+
     /** Parse the raw entry string into base (minor) units. "5" @2 → 500. */
     fun baseUnits(raw: String, decimals: Int): Long {
         if (raw.isBlank()) return 0

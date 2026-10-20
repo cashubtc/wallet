@@ -9,8 +9,8 @@ import Cdk
 /// failed) in its own store, including in-flight sends, melts, and mints, so
 /// history is a thin projection over `wallet.listTransactions()`. The only
 /// rows still synthesized app-side are unpaid/expired Lightning invoices and
-/// on-chain quotes (a quote exists before any transaction does) and incoming
-/// ecash held for user approval ("Receive Later" / NUT-18).
+/// on-chain quotes, custom deposit remainders, and incoming ecash held for user
+/// approval ("Receive Later" / NUT-18).
 @MainActor
 class TransactionService: ObservableObject {
 
@@ -28,6 +28,7 @@ class TransactionService: ObservableObject {
     private let walletDatabase: () -> WalletSqliteDatabase?
     private let getTrackedMintUrls: () -> [String]
     private let walletStore: WalletStore
+    private let getMints: () -> [MintInfo]
     private let observeOnchainPayment: (String, String?, UInt64, Date) async -> OnchainPaymentObservation?
 
     // MARK: - Initialization
@@ -37,6 +38,7 @@ class TransactionService: ObservableObject {
         walletDatabase: @escaping () -> WalletSqliteDatabase?,
         getTrackedMintUrls: @escaping () -> [String],
         walletStore: WalletStore = WalletStore(),
+        getMints: @escaping () -> [MintInfo] = { [] },
         observeOnchainPayment: @escaping (String, String?, UInt64, Date) async -> OnchainPaymentObservation? = {
             await OnchainExplorer.observePayment(for: $0, mintURL: $1, expectedAmount: $2, createdAfter: $3)
         }
@@ -45,6 +47,7 @@ class TransactionService: ObservableObject {
         self.walletDatabase = walletDatabase
         self.getTrackedMintUrls = getTrackedMintUrls
         self.walletStore = walletStore
+        self.getMints = getMints
         self.observeOnchainPayment = observeOnchainPayment
     }
 
@@ -65,7 +68,6 @@ class TransactionService: ObservableObject {
         // lifecycle status. BOLT11 retries project to one receipt below;
         // CDK retains the individual attempts for recovery and diagnostics.
         var allTransactions: [WalletTransaction] = []
-        var quoteIdsWithTransactions: Set<String> = []
         let retryStates = onchainRetryStates()
         let trackedMintUrls = Set(getTrackedMintUrls().filter { !$0.isEmpty }.map(MintURLIdentity.normalized))
         let previous = transactions.filter {
@@ -86,7 +88,6 @@ class TransactionService: ObservableObject {
             // tokens, whose stores may be available even when discovery fails.
             accounts = []
             allTransactions = previousAccountTransactions
-            quoteIdsWithTransactions.formUnion(previousAccountTransactions.compactMap(\.quoteId))
             AppLogger.wallet.error("Unable to discover stored transaction accounts")
         }
         for account in accounts {
@@ -96,10 +97,6 @@ class TransactionService: ObservableObject {
                 do {
                     let txs = try await database.listTransactions(mintUrl: MintUrl(url: mintUrlString), direction: nil, unit: currencyUnit)
                     var walletTxs: [WalletTransaction] = txs.map { tx in
-                        if let quoteId = tx.quoteId {
-                            quoteIdsWithTransactions.insert(quoteId)
-                        }
-
                         let paymentMethod = tx.paymentMethod.flatMap(PaymentMethodKind.from)
                         let kind: WalletTransaction.TransactionKind
 
@@ -108,6 +105,8 @@ class TransactionService: ObservableObject {
                             kind = .onchain
                         case .bolt11, .bolt12:
                             kind = .lightning
+                        case .some:
+                            kind = .custom
                         case nil:
                             kind = tx.paymentRequest != nil ? .lightning : .ecash
                         }
@@ -132,6 +131,9 @@ class TransactionService: ObservableObject {
                         walletTransaction.quoteId = tx.quoteId
                         walletTransaction.sagaId = tx.sagaId
                         walletTransaction.paymentMethod = paymentMethod
+                        walletTransaction.paymentMethodLabel = getMints().first { $0.url == mintUrlString }?.methodName(
+                            paymentMethod ?? .bolt11, unit: unitString, melt: tx.direction == .outgoing
+                        )
                         walletTransaction.unit = PaymentRequestDecoder.unitDescription(tx.unit)
                         // CDK records a deposit's mint while it is in flight:
                         // the mint has credited it and the ecash is landing.
@@ -170,20 +172,24 @@ class TransactionService: ObservableObject {
                         $0.unit == unitString && $0.mintUrl == mintUrlString
                     }
                     allTransactions.append(contentsOf: retained)
-                    quoteIdsWithTransactions.formUnion(retained.compactMap(\.quoteId))
                     AppLogger.wallet.error(
                         "Failed to load transactions for mint \(mintUrlString), unit \(unitString): \(error)"
                     )
                 }
         }
 
+        // A custom receipt covers one installment. Keep its remaining quote,
+        // unless CDK already has an in-flight mint to monitor.
+        let quoteIdsWithTransactions = Set(allTransactions.filter {
+            $0.kind != .custom || $0.status == .pending
+        }.compactMap(\.quoteId))
         if let walletDatabase = walletDatabase() {
             do {
                 // A Lightning invoice / on-chain quote exists before CDK creates
                 // any transaction for it (that happens once minting starts), so
                 // unpaid and paid-not-yet-minted quotes still get synthesized
-                // rows. Quotes that already have a transaction are skipped.
-                let pendingMintQuotes = try await walletDatabase.getUnissuedMintQuotes()
+                // rows, including the remainder of a custom deposit.
+                let pendingMintQuotes = try await walletDatabase.getRecoverableMintQuotes()
                 let pendingQuoteTransactions = await pendingTransactions(
                     from: pendingMintQuotes,
                     trackedMintUrls: trackedMintUrls,
@@ -377,11 +383,8 @@ class TransactionService: ObservableObject {
                 continue
             }
 
-            // Once CDK has a transaction for this quote — pending while a mint
-            // is in flight, completed afterwards — the CDK row is authoritative
-            // and the quote-backed row would only duplicate it. (BOLT12 offers
-            // always stay in `getUnissuedMintQuotes()` because the SQL filter is
-            // `amount_issued = 0 OR payment_method = 'bolt12'`.)
+            // Finished custom installments are excluded from this set:
+            // their remaining quote still needs monitoring.
             if quoteIdsWithTransactions.contains(quote.id) {
                 continue
             }
@@ -434,6 +437,9 @@ class TransactionService: ObservableObject {
                 amount = quote.amountPaid.value > 0
                     ? quote.amountPaid.value
                     : (quote.amountIssued.value > 0 ? quote.amountIssued.value : nil)
+            } else if paymentMethod.isCustom {
+                let total = max(quote.amount?.value ?? 0, quote.amountPaid.value)
+                amount = total > quote.amountIssued.value ? total - quote.amountIssued.value : 0
             } else {
                 amount = quote.amount.flatMap { $0.value > 0 ? $0.value : nil }
                     ?? (quote.amountPaid.value > 0 ? quote.amountPaid.value : nil)
@@ -450,10 +456,12 @@ class TransactionService: ObservableObject {
             let isUnpaidBolt11 = paymentMethod == .bolt11 && !isPaid
             let isPastExpiry = quote.expiry > 0 && Date().timeIntervalSince1970 > Double(quote.expiry)
             let isExpiredUnpaidRequest = (isUnpaidBolt11 || isUnfundedAddress) && isPastExpiry
+            let isIssued = !paymentMethod.isCustom &&
+                (quote.state == .issued || quote.amountIssued.value >= amount)
             let status: WalletTransaction.TransactionStatus =
                 isExpiredUnpaidRequest ? .expired
                 : isUnfundedAddress ? .pending
-                : quote.state == .issued || quote.amountIssued.value >= amount ? .completed
+                : isIssued ? .completed
                 : .pending
 
             var storedPaymentProof = lastOnchainObservation?.txid ?? getPreimage(quoteId: quote.id)
@@ -478,7 +486,7 @@ class TransactionService: ObservableObject {
                 id: quote.id,
                 amount: amount,
                 type: .incoming,
-                kind: paymentMethod == .onchain ? .onchain : .lightning,
+                kind: paymentMethod.isCustom ? .custom : paymentMethod == .onchain ? .onchain : .lightning,
                 date: createdAt,
                 memo: nil,
                 status: status,
@@ -489,7 +497,11 @@ class TransactionService: ObservableObject {
                 invoice: quote.request,
                 quoteId: quote.id
             )
+            transaction.paymentMethod = paymentMethod
             transaction.unit = PaymentRequestDecoder.unitDescription(quote.unit)
+            transaction.paymentMethodLabel = getMints().first { $0.url == quote.mintUrl.url }?.methodName(
+                paymentMethod, unit: transaction.unit
+            )
             transaction.isUnpaidInvoice = isUnpaidBolt11
             transaction.isUnfundedAddress = isUnfundedAddress
             transactions.append(transaction)

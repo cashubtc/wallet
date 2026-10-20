@@ -723,14 +723,14 @@ struct MintDetailView: View {
     private var receiveMethods: [PaymentMethodKind] {
         let kinds = cdkInfo?.nuts.nut04.methods.compactMap { PaymentMethodKind.from($0.method) }
             ?? liveMint.supportedMintMethods
-        return PaymentMethodKind.allCases.filter { kinds.contains($0) }
+        return PaymentMethodKind.ordered(kinds)
     }
 
     /// Deduped send rails (see `receiveMethods`).
     private var sendMethods: [PaymentMethodKind] {
         let kinds = cdkInfo?.nuts.nut05.methods.compactMap { PaymentMethodKind.from($0.method) }
             ?? liveMint.supportedMeltMethods
-        return PaymentMethodKind.allCases.filter { kinds.contains($0) }
+        return PaymentMethodKind.ordered(kinds)
     }
 
     // MARK: - Actions

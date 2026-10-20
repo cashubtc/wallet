@@ -98,7 +98,7 @@ struct RecoverDepositView: View {
                     VStack(spacing: 0) {
                         Menu {
                             Picker("Payment method", selection: $method) {
-                                ForEach(PaymentMethodKind.allCases, id: \.self) { Text($0.friendlyTitle).tag($0) }
+                                ForEach([PaymentMethodKind.bolt11, .bolt12, .onchain], id: \.self) { Text($0.friendlyTitle).tag($0) }
                             }
                         } label: { optionRow("Payment method", value: method.friendlyTitle) }
                         Menu {

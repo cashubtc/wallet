@@ -190,12 +190,12 @@ class TransactionDisplayTest {
                     val tx = transaction(kind = kind, type = direction,
                         token = if (kind == TransactionKind.Ecash) "cashu-token" else null,
                         invoice = if (kind == TransactionKind.Ecash) null else "one-shot-request",
-                    ).copy(status = status)
+                    ).copy(status = status, quoteId = if (kind == TransactionKind.Custom) "quote-id" else null)
                     // An incoming deposit address keeps its QR only while
                     // unfunded (covered above); a funded one is never reused.
-                    val expected = status == TransactionStatus.Pending &&
+                    val expected = kind == TransactionKind.Custom || (status == TransactionStatus.Pending &&
                         if (kind == TransactionKind.Lightning) true
-                        else direction == TransactionType.Outgoing
+                        else direction == TransactionType.Outgoing)
                     assertEquals("$kind $direction $status", expected, TransactionDisplay.showsQr(tx))
                 }
             }

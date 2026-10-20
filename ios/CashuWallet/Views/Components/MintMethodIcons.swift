@@ -54,6 +54,7 @@ private extension PaymentMethodKind {
         case .bolt11: return "bolt.fill"
         case .bolt12: return "arrow.2.squarepath"
         case .onchain: return "bitcoinsign"
+        default: return "creditcard"
         }
     }
 }

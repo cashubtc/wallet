@@ -106,7 +106,7 @@ struct TransactionTechnicalDetails: Equatable {
         let proof = transaction.preimage.flatMap { $0.isEmpty ? nil : $0 }
             ?? meltQuote?.paymentProof.flatMap { $0.isEmpty ? nil : $0 }
         switch transaction.kind {
-        case .lightning:
+        case .lightning, .custom:
             if let proof {
                 sections.append(Section(title: "Payment", rows: [Self.reference("Payment Proof", proof)]))
             }
@@ -228,6 +228,8 @@ struct TransactionTechnicalDetails: Equatable {
             return "Ecash"
         case .onchain:
             return "On-chain"
+        case .custom:
+            return transaction.paymentMethodLabel ?? (transaction.paymentMethod ?? quoteMethod)?.displayName ?? "Payment"
         case .lightning:
             let request = transaction.invoice?.lowercased() ?? ""
             let inferred: PaymentMethodKind? = request.hasPrefix("lno") ? .bolt12
@@ -236,7 +238,7 @@ struct TransactionTechnicalDetails: Equatable {
             switch transaction.paymentMethod ?? quoteMethod ?? inferred {
             case .bolt11: return "Lightning (BOLT11)"
             case .bolt12: return "Lightning (BOLT12)"
-            case .onchain, nil: return "Lightning"
+            default: return "Lightning"
             }
         }
     }

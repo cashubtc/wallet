@@ -8,6 +8,31 @@ enum NumberPadMetrics {
     static let gutter: CGFloat = 24
 }
 
+/// Shared mint/melt quote entry: amount above the mint row, keypad, and action.
+struct QuoteAmountEntry<Hero: View, Details: View, Keypad: View, Action: View>: View {
+    @ViewBuilder let hero: () -> Hero
+    @ViewBuilder let details: () -> Details
+    @ViewBuilder let keypad: () -> Keypad
+    @ViewBuilder let action: () -> Action
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Spacer()
+            hero()
+            Spacer()
+            details()
+                .padding(.horizontal, NumberPadMetrics.gutter)
+                .padding(.bottom, 8)
+            keypad()
+                .padding(.horizontal, NumberPadMetrics.gutter)
+            action()
+                .padding(.horizontal)
+                .padding(.top, 16)
+                .padding(.bottom, 16)
+        }
+    }
+}
+
 /// Family-style digit-only number pad.
 ///
 /// Used to drive a `UInt64`-shaped amount string for both Ecash and Melt flows.

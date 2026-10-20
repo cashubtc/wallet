@@ -215,6 +215,10 @@ fun UnifiedSendScreen(
             android.nfc.NfcAdapter.getDefaultAdapter(context) != null
     }
 
+    var customDestination by remember { mutableStateOf<Pair<MintInfo, com.cashu.me.Models.AdvertisedPaymentMethod>?>(null) }
+    customDestination?.let { (mint, method) ->
+        CustomMeltSheet(walletManager, mint, method, onClose = { customDestination = null })
+    }
     var step by remember { mutableStateOf(SendStep.Input) }
     var status by remember { mutableStateOf<SendStatus?>(null) }
     var destination by remember { mutableStateOf("") }
@@ -773,6 +777,16 @@ fun UnifiedSendScreen(
                                 onSendEcash = onSendEcash,
                                 onContactless = onContactless,
                                 onReceive = onReceive,
+                                customMethods = {
+                                    walletState.mints.forEach { mint ->
+                                        mint.meltMethodSettings.orEmpty().filter { it.method.isCustom }.forEach { method ->
+                                            MethodActionRow(icon = Icons.Outlined.Payments, title = method.displayName,
+                                                subtitle = "${mint.name} · ${method.unit.uppercase()}",
+                                                accessibilityLabel = "${method.displayName}. ${mint.name}. ${method.unit}",
+                                                onClick = { customDestination = mint to method })
+                                        }
+                                    }
+                                },
                             )
 
                             SendStep.Amount -> AmountFace(
@@ -1033,6 +1047,7 @@ private fun InputFace(
     onSendEcash: () -> Unit,
     onContactless: () -> Unit,
     onReceive: () -> Unit,
+    customMethods: @Composable () -> Unit,
 ) {
     // The no-mints case never reaches here — UnifiedSendScreen swaps the whole
     // body (header included) for the connect-a-mint surface.
@@ -1111,6 +1126,7 @@ private fun InputFace(
         )
         Spacer(Modifier.height(CashuTheme.spacing.section))
         Column(verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default)) {
+            customMethods()
             MethodActionRow(
                 icon = Icons.Outlined.QrCodeScanner,
                 title = "Scan",

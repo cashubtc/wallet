@@ -71,7 +71,7 @@ object TransactionTechnicalDetails {
             ?: meltQuote?.paymentProof?.takeIf { it.isNotEmpty() }
         if (proof != null) {
             when (transaction.kind) {
-                TransactionKind.Lightning ->
+                TransactionKind.Lightning, TransactionKind.Custom ->
                     add(TechnicalDetailSection("Payment", listOf(reference("Payment Proof", proof))))
                 TransactionKind.Onchain ->
                     add(TechnicalDetailSection("Payment", listOf(reference("Transaction ID", proof))))
@@ -164,6 +164,8 @@ object TransactionTechnicalDetails {
         when (transaction.kind) {
             TransactionKind.Ecash -> "Ecash"
             TransactionKind.Onchain -> "On-chain"
+            TransactionKind.Custom ->
+                transaction.paymentMethodLabel ?: (transaction.paymentMethod ?: quoteMethod)?.displayName ?: "Payment"
             TransactionKind.Lightning -> {
                 val request = transaction.invoice?.lowercase().orEmpty()
                 val inferred = when {
@@ -174,7 +176,7 @@ object TransactionTechnicalDetails {
                 when (transaction.paymentMethod ?: quoteMethod ?: inferred) {
                     PaymentMethodKind.Bolt11 -> "Lightning (BOLT11)"
                     PaymentMethodKind.Bolt12 -> "Lightning (BOLT12)"
-                    PaymentMethodKind.Onchain, null -> "Lightning"
+                    else -> "Lightning"
                 }
             }
         }

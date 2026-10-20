@@ -73,6 +73,7 @@ fun RecoverDepositScreen(walletManager: WalletManager, onClose: () -> Unit) {
     var quoteId by rememberSaveable { mutableStateOf("") }
     var methodRaw by rememberSaveable { mutableStateOf("bolt11") }
     val method = PaymentMethodKind.fromRaw(methodRaw) ?: PaymentMethodKind.Bolt11
+    val recoveryMethods = listOf(PaymentMethodKind.Bolt11, PaymentMethodKind.Bolt12, PaymentMethodKind.Onchain)
     var unit by rememberSaveable { mutableStateOf("sat") }
     var searchLimit by rememberSaveable { mutableStateOf(1_000) }
     var showOptions by rememberSaveable { mutableStateOf(false) }
@@ -125,8 +126,8 @@ fun RecoverDepositScreen(walletManager: WalletManager, onClose: () -> Unit) {
                 onClick = { focus.clearFocus(); showOptions = !showOptions })
             Column(Modifier.animateContentSize()) {
                 if (showOptions) {
-                    RecoveryChoice("Payment method", method.friendlyTitle, PaymentMethodKind.entries.map { it.friendlyTitle }, !working) {
-                        methodRaw = PaymentMethodKind.entries[it].rawValue; clearResult()
+                    RecoveryChoice("Payment method", method.friendlyTitle, recoveryMethods.map { it.friendlyTitle }, !working) {
+                        methodRaw = recoveryMethods[it].rawValue; clearResult()
                     }
                     RecoveryChoice("Currency", unitLabel,
                         DepositRecoveryRequest.units.map { if (it == "sat") "Sats" else it.uppercase() }, !working) {
