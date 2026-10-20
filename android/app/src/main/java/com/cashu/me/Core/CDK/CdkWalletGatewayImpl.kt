@@ -926,7 +926,11 @@ class CdkWalletGatewayImpl : WalletGateway {
     }
 
     override suspend fun listPendingSendOperationIds(mintUrl: String, unit: String): List<String> = cdkCall {
-        val wallet = walletFor(mintUrl, cdkUnit(unit))
+        // Advertised mint units need not have a local wallet account yet.
+        // Skip only that absence; reconciliation failures must still surface.
+        val wallet = requireRepository().getWallets().firstOrNull {
+            mintRemovalUrlsMatch(it.mintUrl().url, mintUrl) && it.unit() == cdkUnit(unit)
+        } ?: return@cdkCall emptyList()
         wallet.checkAllPendingProofs()
         wallet.getPendingSends()
     }

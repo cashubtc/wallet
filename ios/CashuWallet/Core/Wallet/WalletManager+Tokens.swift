@@ -369,14 +369,12 @@ extension WalletManager {
         do {
             try await operationCoordinator.performIfIdle(kind: .pendingTokenCheck) {
                 var claimedAny = false
-                var foundPending = false
 
                 walletSweep: for wallet in await self.trackedWalletsAssumingWalletOperationLease() {
                     guard !Task.isCancelled else { break }
                     do {
                         _ = try await wallet.checkAllPendingProofs()
                         for operationId in try await wallet.getPendingSends() {
-                            foundPending = true
                             do {
                                 if try await wallet.checkSendStatus(operationId: operationId) {
                                     claimedAny = true
@@ -399,11 +397,11 @@ extension WalletManager {
                     }
                 }
 
-                // No local rows to merge anymore: only a claim changes history.
+                // The reconciliation sweep may complete a send before enumeration.
                 if claimedAny {
                     await self.refreshBalanceAssumingWalletOperationLease()
                     await self.loadTransactionsAssumingWalletOperationLease()
-                } else if foundPending {
+                } else {
                     await self.loadTransactionsAssumingWalletOperationLease()
                 }
             }

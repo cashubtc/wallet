@@ -96,6 +96,7 @@ import com.cashu.me.Core.WalletManager
 import com.cashu.me.Core.rememberWalletHaptics
 import com.cashu.me.Core.runPendingTokenClaimCheck
 import com.cashu.me.Models.SendTokenResult
+import com.cashu.me.Models.isClaimedSend
 import com.cashu.me.Views.Components.ScannerQuickAction
 import com.cashu.me.ui.components.SectionHeader
 import com.cashu.me.ui.components.AmountEntryHero
@@ -212,6 +213,13 @@ fun SendEcashScreen(
     val haptics = rememberWalletHaptics()
 
     var face: SendFace by remember { mutableStateOf(SendFace.Input) }
+    var claimedToken by remember { mutableStateOf<String?>(null) }
+    val generated = face as? SendFace.Generated
+    val generatedClaimed = generated?.let {
+        claimedToken == it.result.token || walletState.transactions.isClaimedSend(
+            it.result.transactionId, it.result.token, it.mintUrl, it.unit,
+        )
+    } == true
     var amount by remember { mutableStateOf(initialDraft?.amount ?: "") }
     var sending by remember { mutableStateOf(false) }
     var errorText by remember { mutableStateOf<String?>(null) }
@@ -337,7 +345,7 @@ fun SendEcashScreen(
         SheetHeader(
             title = when (face) {
                 SendFace.Input -> "Send Ecash"
-                is SendFace.Generated -> "Pending Ecash"
+                is SendFace.Generated -> if (generatedClaimed) "Claimed Ecash" else "Pending Ecash"
                 is SendFace.Failure -> "Send Ecash"
             },
             navigationIcon = if (face is SendFace.Failure) {
@@ -495,6 +503,8 @@ fun SendEcashScreen(
                     mintName = com.cashu.me.Core.mintDisplayName(current.mintUrl, walletState.mints),
                     unit = current.unit,
                     pollingEnabled = settings.checkSentTokens,
+                    claimed = generatedClaimed,
+                    onClaimed = { claimedToken = current.result.token },
                     amountPresentation = paymentConfirmationAmountPresentation(
                         amount = current.amount,
                         unit = current.unit,
@@ -863,6 +873,8 @@ private fun GeneratedFace(
     mintName: String,
     unit: String,
     pollingEnabled: Boolean,
+    claimed: Boolean,
+    onClaimed: () -> Unit,
     amountPresentation: PaymentConfirmationAmountPresentation,
     fiatLabel: String?,
     onDone: () -> Unit,
@@ -878,7 +890,14 @@ private fun GeneratedFace(
     // iOS startClaimPolling: the spinner shows for the whole watch session
     // (flipping Pending↔Checking per probe made the row flicker), intervals
     // back off 5s → 15s, and after 10 checks the row rests at Pending.
-    LaunchedEffect(result.token, mintUrl, pollingEnabled) {
+    LaunchedEffect(claimState) {
+        if (claimState == ClaimState.Claimed) onClaimed()
+    }
+    LaunchedEffect(result.token, mintUrl, pollingEnabled, claimed) {
+        if (claimed) {
+            claimState = ClaimState.Claimed
+            return@LaunchedEffect
+        }
         if (!pollingEnabled) {
             if (claimState != ClaimState.Claimed) claimState = ClaimState.Pending
             return@LaunchedEffect

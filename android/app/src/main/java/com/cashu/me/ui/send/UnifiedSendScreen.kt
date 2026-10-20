@@ -97,6 +97,9 @@ import com.cashu.me.Models.MintInfo
 import com.cashu.me.Models.MintQuoteInfo
 import com.cashu.me.Models.MintQuoteState
 import com.cashu.me.Models.PaymentMethodKind
+import com.cashu.me.Models.WalletTransaction
+import com.cashu.me.Models.TransactionStatus
+import com.cashu.me.Models.terminalOutgoingMelt
 import com.cashu.me.R
 import com.cashu.me.ui.components.AmountFlipDisplay
 import com.cashu.me.ui.components.AmountText
@@ -160,6 +163,25 @@ internal sealed interface SendStatus {
         override val details: SendPaymentDetails,
         val message: WalletMessage,
     ) : SendStatus
+}
+
+internal fun SendStatus.reconciledWith(transaction: WalletTransaction): SendStatus {
+    val awaiting = (this is SendStatus.Sent && result?.settlement == MeltSettlement.Pending) ||
+        (this is SendStatus.Failed && message.awaitsMintConfirmation)
+    if (!awaiting) return this
+    val result = MeltPaymentResult(
+        preimage = transaction.preimage, amount = transaction.amount, feePaid = transaction.fee,
+        mintUrl = transaction.mintUrl.orEmpty(), paymentMethod = transaction.paymentMethod,
+        request = transaction.invoice, settlement = MeltSettlement.Settled,
+    )
+    return when (transaction.status) {
+        TransactionStatus.Completed -> SendStatus.Sent(details.withMeltResult(result), result)
+        TransactionStatus.Failed -> SendStatus.Failed(details.withMeltResult(result), WalletMessage(
+            text = "The payment failed. See History for the final balance and fees.",
+            title = "Payment failed", severity = WalletMessageSeverity.Caution, isTerminal = true,
+        ))
+        else -> this
+    }
 }
 
 private data class CashuRequestTopUpContext(
@@ -230,6 +252,7 @@ fun UnifiedSendScreen(
     var cashuTargetMintPreviews by remember { mutableStateOf<List<MintInfo>>(emptyList()) }
     var selectedCashuTargetMintUrl by remember { mutableStateOf<String?>(null) }
     var meltQuote by remember { mutableStateOf<MeltQuoteInfo?>(null) }
+    var submittedMeltQuote by remember { mutableStateOf<MeltQuoteInfo?>(null) }
     var topUpContext by remember { mutableStateOf<CashuRequestTopUpContext?>(null) }
     var quoteError by remember { mutableStateOf<String?>(null) }
     // Structured companion to quoteError: whether the failure was the mint
@@ -406,6 +429,7 @@ fun UnifiedSendScreen(
                 when (rail) {
                     is LockedRail.Melt -> {
                         val quote = meltQuote ?: error("No quote.")
+                        submittedMeltQuote = quote
                         val result = walletManager.meltTokens(quote.id, activeMintUrl)
                         paymentDetails = paymentDetails.withMeltResult(result)
                         status = SendStatus.Sent(paymentDetails, result)
@@ -429,6 +453,7 @@ fun UnifiedSendScreen(
                                         }?.name ?: quote.mintUrl,
                                     )
                                 status = SendStatus.Sending(paymentDetails)
+                                submittedMeltQuote = quote
                                 val result = walletManager.meltTokens(quote.id, activeMintUrl)
                                 paymentDetails = paymentDetails.withMeltResult(result)
                                 status = SendStatus.Sent(paymentDetails, result)
@@ -625,6 +650,12 @@ fun UnifiedSendScreen(
 
     // Block sheet dismissal while the melt is in flight — a stray swipe must
     // not tear down the coroutine mid-payment.
+    val terminalMelt = submittedMeltQuote?.let {
+        walletState.transactions.terminalOutgoingMelt(it.id, it.mintUrl)
+    }
+    LaunchedEffect(status, terminalMelt) {
+        if (terminalMelt != null) status = status?.reconciledWith(terminalMelt)
+    }
     LaunchedEffect(status) { onDismissLockChanged(status is SendStatus.Sending) }
 
     // Dismissal contract: system back = swipe = abandon to the wallet, so the

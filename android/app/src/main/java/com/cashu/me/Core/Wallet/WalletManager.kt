@@ -1322,11 +1322,9 @@ class WalletManager(
 
         return withLoadingResult {
             var claimedCount = 0
-            var foundPending = false
             transactionUnitsByMint(mutableState.value.mints).forEach { (mintUrl, units) ->
                 units.forEach { unit ->
                     gateway.listPendingSendOperationIds(mintUrl, unit).forEach { operationId ->
-                        foundPending = true
                         val claimed = runCatching {
                             gateway.checkPendingSendClaimed(mintUrl, operationId, unit)
                         }.getOrDefault(false)
@@ -1338,7 +1336,9 @@ class WalletManager(
             if (claimedCount > 0) {
                 refreshBalance()
                 loadTransactions()
-            } else if (foundPending) {
+            } else {
+                // Reconciliation can complete a send before getPendingSends
+                // enumerates it. Publish those terminal rows as well.
                 loadTransactions()
             }
             claimedCount

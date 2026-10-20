@@ -36,6 +36,7 @@ struct SendView: View {
 
     // Token claim detection
     @State private var isCheckingClaim = false
+    @State private var generatedTransactionId: String?
     @State private var tokenClaimed = false
     @State private var checkingTask: Task<Void, Never>?
     @State private var manualClaimCheckResult: PendingTokenClaimCheckResult?
@@ -48,6 +49,12 @@ struct SendView: View {
     @State private var showLockScanner = false
 
     @ObservedObject private var priceService = PriceService.shared
+
+    private var claimedInHistory: Bool {
+        guard let token = generatedToken, let mint = generatedTokenMintURL else { return false }
+        return walletManager.transactions.isClaimedSend(transactionId: generatedTransactionId,
+            token: token, mintUrl: mint, unit: generatedTokenUnit)
+    }
 
     var body: some View {
         NavigationStack {
@@ -84,7 +91,7 @@ struct SendView: View {
             .animation(.smooth(duration: 0.3), value: tokenClaimed)
             .animation(.smooth(duration: 0.3), value: tokenCreationFailure != nil)
             .navigationBarTitleDisplayMode(.inline)
-            .navigationTitle(generatedToken != nil ? "Pending Ecash" : "Send Ecash")
+            .navigationTitle(tokenClaimed ? "Claimed Ecash" : generatedToken != nil ? "Pending Ecash" : "Send Ecash")
             // Match the Lightning Invoice screen: float the title + chrome
             // over the black canvas, no secondary gray strip.
             .toolbarBackground(.hidden, for: .navigationBar)
@@ -169,6 +176,11 @@ struct SendView: View {
                 .canvasSheetBackground()
             }
             .onDisappear {
+                checkingTask?.cancel()
+            }
+            .onChange(of: claimedInHistory, initial: true) {
+                guard claimedInHistory else { return }
+                tokenClaimed = true
                 checkingTask?.cancel()
             }
             .onChange(of: entryUnit) { oldUnit, newUnit in
@@ -858,6 +870,7 @@ struct SendView: View {
                     mintUrl: mint.url,
                     unit: unit
                 )
+                generatedTransactionId = result.transactionId
                 generatedToken = result.token
                 generatedTokenMintURL = mint.url
                 generatedTokenUnit = unit
@@ -1415,6 +1428,8 @@ struct UnifiedSendView: View {
                 .flatBottomSheetSurface()
             }
             .onChange(of: destination) { handleDestinationChange() }
+            .onChange(of: liveMeltRevision, initial: true) { reconcileMeltStatus() }
+            .onChange(of: step) { reconcileMeltStatus() }
             .onChange(of: entryUnit) { oldUnit, newUnit in
                 amountString = AmountFormatter.entryConverted(raw: amountString, from: oldUnit, to: newUnit)
             }
@@ -2197,6 +2212,32 @@ struct UnifiedSendView: View {
                 }
             }
         )
+    }
+
+    private var liveMeltRevision: String? {
+        guard let quote = meltQuote,
+              let transaction = walletManager.transactions.terminalOutgoingMelt(
+                  quoteId: quote.id, mintUrl: quote.mintUrl) else { return nil }
+        return "\(transaction.id):\(transaction.status):\(transaction.fee)"
+    }
+
+    private func reconcileMeltStatus() {
+        guard (step == .sent && meltSettlementPending) || (step == .failed && errorAwaitsMint),
+              let quote = meltQuote,
+              let transaction = walletManager.transactions.terminalOutgoingMelt(
+                  quoteId: quote.id, mintUrl: quote.mintUrl) else { return }
+        meltSettlementPending = false
+        settledMeltFee = transaction.fee
+        if transaction.status == .completed {
+            errorMessage = nil
+            errorAwaitsMint = false
+            step = .sent
+        } else {
+            // A failed ledger row is not proof that every reservation was released.
+            presentError("The payment failed. See History for the final balance and fees.", severity: .caution)
+            errorIsTerminal = true
+            step = .failed
+        }
     }
 
     // MARK: Melt quote + pay

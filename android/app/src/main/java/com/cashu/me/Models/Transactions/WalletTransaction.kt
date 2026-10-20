@@ -129,6 +129,24 @@ internal fun List<WalletTransaction>.liveDetail(
     firstOrNull { it.id == openId }
         ?: firstOrNull { it.quoteId != null && it.quoteId == openQuoteId }
 
+/** Only authoritative terminal rows for this outgoing payment resolve its open sheet. */
+internal fun List<WalletTransaction>.terminalOutgoingMelt(quoteId: String, mintUrl: String): WalletTransaction? =
+    firstOrNull {
+        it.type == TransactionType.Outgoing && it.kind != TransactionKind.Ecash &&
+            it.quoteId == quoteId && it.mintUrl?.trimEnd('/') == mintUrl.trimEnd('/') &&
+            it.unit.equals("sat", ignoreCase = true) &&
+            (it.status == TransactionStatus.Completed || it.status == TransactionStatus.Failed)
+    }
+
+internal fun List<WalletTransaction>.isClaimedSend(
+    transactionId: String?, token: String, mintUrl: String, unit: String,
+): Boolean = any {
+    it.type == TransactionType.Outgoing && it.kind == TransactionKind.Ecash &&
+        it.status == TransactionStatus.Completed && it.mintUrl?.trimEnd('/') == mintUrl.trimEnd('/') &&
+        it.unit.equals(unit, ignoreCase = true) &&
+        (if (transactionId != null) it.id == transactionId else it.token == token)
+}
+
 /** CDK may omit a mint transaction's memo and request after settlement. */
 internal fun WalletTransaction.restoringDescription(requests: List<CashuRequest>): WalletTransaction {
     val description = displayDescription ?: requests.firstOrNull { request ->
