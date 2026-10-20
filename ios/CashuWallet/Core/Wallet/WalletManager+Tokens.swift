@@ -374,6 +374,7 @@ extension WalletManager {
                 walletSweep: for wallet in await self.trackedWalletsAssumingWalletOperationLease() {
                     guard !Task.isCancelled else { break }
                     do {
+                        _ = try await wallet.checkAllPendingProofs()
                         for operationId in try await wallet.getPendingSends() {
                             foundPending = true
                             do {

@@ -24,6 +24,8 @@ class FocusedMintQuoteMonitorTest {
         val intervals = mutableListOf<Long>()
         monitor.monitor("displayed", refresh = { id ->
             assertTrue(monitor.isActive)
+            assertTrue(monitor.isMonitoring(id))
+            assertFalse(monitor.isMonitoring("other"))
             ids += id
             quote(PaymentMethodKind.Bolt11, paid = 21, issued = if (ids.size == 1) 0 else 21)
         }, sleep = { intervals += it })

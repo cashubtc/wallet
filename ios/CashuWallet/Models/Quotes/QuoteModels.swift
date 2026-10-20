@@ -143,7 +143,8 @@ enum MintQuoteSchedulePolicy {
         existing: [String: MintQuoteScheduleRecord],
         now: Date,
         force: Bool,
-        unsettledOnchainQuoteIDs: Set<String> = []
+        unsettledOnchainQuoteIDs: Set<String> = [],
+        excludedQuoteIDs: Set<String> = []
     ) -> Selection {
         let nowValue = now.timeIntervalSince1970
         var records = existing.filter { quoteIDs.contains($0.key) }
@@ -161,7 +162,7 @@ enum MintQuoteSchedulePolicy {
         let selected = quoteIDs
             .filter { quoteID in
                 guard let record = records[quoteID] else { return false }
-                return !record.isComplete && (force || record.nextAttemptAt <= nowValue)
+                return !excludedQuoteIDs.contains(quoteID) && !record.isComplete && (force || record.nextAttemptAt <= nowValue)
             }
             .sorted { lhs, rhs in
                 guard let left = records[lhs], let right = records[rhs] else {
@@ -202,7 +203,7 @@ enum MintQuoteSchedulePolicy {
         let expiredInvoice = quote.paymentMethod == .bolt11 && expired
         let complete = !reusable && (expiredInvoice || quote.state == .issued || quote.hasSettledPayment)
         let age = max(0, nowValue - record.firstObservedAt)
-        let interval = age < recentQuoteWindow ? recentQuoteInterval : idleQuoteInterval
+        let interval = reusable || age < recentQuoteWindow ? recentQuoteInterval : idleQuoteInterval
 
         record.lastAttemptAt = nowValue
         record.nextAttemptAt = complete ? .greatestFiniteMagnitude : nowValue + interval
@@ -299,6 +300,7 @@ struct MeltQuoteInfo: Identifiable {
     let id: String
     let mintUrl: String
     let amount: UInt64
+    // Confirmation upper bound includes preparation, input and network fees.
     let feeReserve: UInt64
     let paymentMethod: PaymentMethodKind
     var state: MeltQuoteState

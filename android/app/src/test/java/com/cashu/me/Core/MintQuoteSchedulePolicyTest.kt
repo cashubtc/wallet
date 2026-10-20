@@ -12,6 +12,20 @@ import org.junit.Test
 
 class MintQuoteSchedulePolicyTest {
     @Test
+    fun `old reusable offer stays prompt while another quote is focused`() {
+        val record = MintQuoteSchedulePolicy.observed(
+            MintQuoteScheduleRecord(firstObservedAtEpochMillis = 1),
+            quote(PaymentMethodKind.Bolt12, MintQuoteState.Issued, 100, 100), 1_000_000)
+        assertEquals(1_010_000L, record.nextAttemptAtEpochMillis)
+        val focused = MintQuoteSchedulePolicy.failed(null, 1_000_000, true, true)
+        val selection = MintQuoteSchedulePolicy.select(listOf("focused", "other"),
+            mapOf("focused" to focused, "other" to record), 1_010_000, false,
+            excludedQuoteIds = setOf("focused"))
+        assertEquals(listOf("other"), selection.quoteIds)
+        assertEquals(focused, selection.records["focused"])
+    }
+
+    @Test
     fun `onchain deposits remain eligible after expiry and old schedules reopen`() {
         val pending = quote(PaymentMethodKind.Onchain, MintQuoteState.Pending, 0, 0)
             .copy(expiryEpochSeconds = 100)

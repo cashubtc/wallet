@@ -166,7 +166,7 @@ private fun buildMeltDetails(
     add(
         SendPaymentDetailRow(
             key = SendPaymentDetailKey.NetworkFee,
-            label = "Network fee",
+            label = "Fees",
             value = quote?.let {
                 SendPaymentDetailValue.Sats(it.feeReserve, isUpperBound = true)
             } ?: SendPaymentDetailValue.Pending,
@@ -203,7 +203,7 @@ private fun buildCashuRequestDetails(
     add(
         SendPaymentDetailRow(
             key = if (networkRoute) SendPaymentDetailKey.NetworkFee else SendPaymentDetailKey.InputFee,
-            label = if (networkRoute) "Network fee" else "Input fee",
+            label = if (networkRoute) "Fees" else "Input fee",
             value = if (networkRoute) {
                 SendPaymentDetailValue.Pending
             } else {

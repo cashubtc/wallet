@@ -120,7 +120,6 @@ extension WalletManager {
     /// - Parameter force: `false` (poll / startup / History open) only runs
     ///   when the repository lane is idle; `true` (pull-to-refresh) preempts.
     func syncPendingMintQuotes(force: Bool = false) async {
-        guard force || !focusedMintQuoteMonitor.isActive else { return }
         if force {
             do {
                 try await operationCoordinator.perform(kind: .quotePoll) {
@@ -143,7 +142,6 @@ extension WalletManager {
 
     private func mintUnissuedQuotesAcrossWallets(force: Bool) async {
         guard walletRepository != nil else { return }
-        guard force || !focusedMintQuoteMonitor.isActive else { return }
         lastMintQuoteSyncAt = Date()
 
         // The CDK database is the durable ledger. Union it with app-level
@@ -166,13 +164,13 @@ extension WalletManager {
             }
         }
 
-        guard force || !focusedMintQuoteMonitor.isActive else { return }
         let selection = MintQuoteSchedulePolicy.select(
             quoteIDs: quoteIDs,
             existing: walletStore.loadMintQuoteSchedules(),
             now: Date(),
             force: force,
-            unsettledOnchainQuoteIDs: unsettledOnchainQuoteIDs
+            unsettledOnchainQuoteIDs: unsettledOnchainQuoteIDs,
+            excludedQuoteIDs: force ? [] : quoteIDs.filter { focusedMintQuoteMonitor.isMonitoring($0) }
         )
         walletStore.saveMintQuoteSchedules(selection.records)
         guard !selection.quoteIDs.isEmpty else { return }
@@ -180,7 +178,7 @@ extension WalletManager {
         var mintedAny = false
         for quoteID in selection.quoteIDs {
             guard !Task.isCancelled else { break }
-            guard force || !focusedMintQuoteMonitor.isActive else { break }
+            if !force && focusedMintQuoteMonitor.isMonitoring(quoteID) { continue }
             guard let result = await reconcileMintQuoteAssumingLease(quoteId: quoteID, force: force) else { continue }
             if result.newlyIssued > 0 {
                 mintedAny = true

@@ -1428,7 +1428,7 @@ private fun ConfirmFace(
                 }
                 quote?.let {
                     InspectorRow(
-                        label = "Network fee",
+                        label = "Fees (up to)",
                         value = formatter.formatWalletSats(it.feeReserve, useBitcoinSymbol),
                         valueMonospaced = true,
                     )

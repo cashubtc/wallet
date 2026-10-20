@@ -276,6 +276,24 @@ final class MintQuoteReconcilerTests: XCTestCase {
 }
 
 final class MintQuoteSchedulePolicyTests: XCTestCase {
+    func testOldReusableOfferRemainsPromptAndFocusedQuoteDoesNotStarveOthers() {
+        let quote = MintQuoteInfo(id: "other", request: "lno1", amount: nil,
+            isAmountless: true, paymentMethod: .bolt12, state: .issued,
+            expiry: nil, createdAt: nil, amountPaid: 100, amountIssued: 100)
+        let record = MintQuoteSchedulePolicy.observed(
+            previous: MintQuoteScheduleRecord(firstObservedAt: 1), quote: quote,
+            now: Date(timeIntervalSince1970: 1000))
+        XCTAssertEqual(record.nextAttemptAt, 1010)
+        let focused = MintQuoteSchedulePolicy.failed(previous: nil,
+            now: Date(timeIntervalSince1970: 1000), hadOutstandingPayment: true, isReusable: true)
+        let selection = MintQuoteSchedulePolicy.select(quoteIDs: ["focused", "other"],
+            existing: ["focused": focused, "other": record],
+            now: Date(timeIntervalSince1970: 1010), force: false, excludedQuoteIDs: ["focused"])
+        XCTAssertEqual(selection.quoteIDs, ["other"])
+        XCTAssertEqual(selection.records["focused"]?.consecutiveFailures, focused.consecutiveFailures)
+        XCTAssertEqual(selection.records["focused"]?.nextAttemptAt, focused.nextAttemptAt)
+    }
+
     func testOnchainDepositRemainsEligibleAfterExpiryAndOldScheduleReopens() {
         let pending = MintQuoteInfo(
             id: "pending-confirmation", request: "address", amount: nil,

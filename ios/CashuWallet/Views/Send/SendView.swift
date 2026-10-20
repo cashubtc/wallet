@@ -1134,6 +1134,7 @@ struct UnifiedSendView: View {
     /// True when the mint accepted the melt for asynchronous (NUT-05) settlement —
     /// typical for on-chain — so the success screen says "processing", not "sent".
     @State private var meltSettlementPending = false
+    @State private var settledMeltFee: UInt64?
 
     // Cashu-request live fee (ported from CashuPaymentRequestPayView)
     @State private var feeState: FeeState = .idle
@@ -2038,7 +2039,7 @@ struct UnifiedSendView: View {
                 CashuRequestRouteExplanationRow(explanation: explanation)
             }
             creqDetailRow(
-                label: "Network fee",
+                label: "Fees (up to)",
                 value: AmountFormatter.sats(quote.feeReserve, useBitcoinSymbol: settings.useBitcoinSymbol)
             )
             creqDetailRow(
@@ -2134,8 +2135,8 @@ struct UnifiedSendView: View {
                     ))
                 }
                 rows.append(.init(
-                    label: "Network fee",
-                    value: AmountFormatter.sats(quote.feeReserve, useBitcoinSymbol: settings.useBitcoinSymbol)
+                    label: settledMeltFee == nil ? "Fees (up to)" : "Fees",
+                    value: AmountFormatter.sats(settledMeltFee ?? quote.feeReserve, useBitcoinSymbol: settings.useBitcoinSymbol)
                 ))
                 if let mint = mintInfo(for: quote) ?? activeMeltMint {
                     rows.append(.init(label: "Mint", value: mint.name))
@@ -2258,11 +2259,13 @@ struct UnifiedSendView: View {
         HapticFeedback.impact(.medium)
         errorMessage = nil
         meltRetryNeedsFreshQuote = false
+        settledMeltFee = nil
         withAnimation(.smooth(duration: 0.3)) { step = .sending }
         Task { @MainActor in
             do {
                 let result = try await walletManager.meltTokens(quoteId: quote.id, mintUrl: quote.mintUrl)
                 meltSettlementPending = result.settlement == .pending
+                settledMeltFee = meltSettlementPending ? nil : result.feePaid
                 withAnimation(.smooth(duration: 0.3)) { step = .sent }
             } catch {
                 // Keep errorMessage set so the confirm screen's notice + switch-mint
@@ -2673,7 +2676,7 @@ struct UnifiedSendView: View {
     /// acquiring a mint routes over Lightning, whose reserve is confirmed later.
     private var creqStatusFeeRow: PaymentStatusView.DetailRow {
         if needsAcquire {
-            return .init(label: "Fees", value: "Network fee")
+            return .init(label: "Fees", value: "Fees")
         }
         switch feeState {
         case .loading:
@@ -2813,7 +2816,7 @@ struct UnifiedSendView: View {
         if needsAcquire {
             // Funding the mint routes over Lightning, which always carries a fee;
             // the exact reserve is confirmed during the transfer and in History.
-            Text("Network fee").fontWeight(.regular).foregroundStyle(.secondary)
+            Text("Fees").fontWeight(.regular).foregroundStyle(.secondary)
         } else {
             switch feeState {
             case .loading:
