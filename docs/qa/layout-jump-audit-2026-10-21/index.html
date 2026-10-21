@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Layout-jump audit — cashu.me native</title>
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1a1a1a; --muted: #5c5c5c; --line: #e3e3e3; --card: #f6f6f6;
+    --high: #b71c1c; --medium: #8a4b00; --low: #1b5e20; --info: #0d47a1; --accent: #0d47a1; --badge-fg: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg: #121212; --fg: #ececec; --muted: #b5b5b5; --line: #2a2a2a; --card: #1c1c1c;
+      --high: #ef9a9a; --medium: #ffcc80; --low: #a5d6a7; --info: #90caf9; --accent: #90caf9; --badge-fg: #111111; }
+  }
+  :root[data-theme="dark"] { --bg: #121212; --fg: #ececec; --muted: #b5b5b5; --line: #2a2a2a; --card: #1c1c1c;
+    --high: #ef9a9a; --medium: #ffcc80; --low: #a5d6a7; --info: #90caf9; --accent: #90caf9; --badge-fg: #111111; }
+  html { background: var(--bg); }
+  body { margin: 0; padding: 0 16px 80px; background: var(--bg); color: var(--fg);
+    font: 16px/1.55 -apple-system, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif; }
+  main { max-width: 1120px; margin: 0 auto; }
+  h1 { font-size: 30px; line-height: 1.2; margin: 40px 0 8px; letter-spacing: -0.3px; }
+  h2 { font-size: 22px; margin: 48px 0 12px; padding-top: 16px; border-top: 1px solid var(--line); }
+  h3 { font-size: 18px; margin: 36px 0 8px; }
+  p, li { max-width: 78ch; }
+  .meta { color: var(--muted); font-size: 14px; margin-bottom: 24px; }
+  .meta code { font-size: 13px; }
+  code { font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--card); padding: 1px 5px; border-radius: 4px; }
+  pre { background: var(--card); padding: 12px 14px; border-radius: 8px; overflow-x: auto; font-size: 13px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; margin: 12px 0 20px; }
+  th, td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .sev { display: inline-block; font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px; color: var(--badge-fg); }
+  .sev.high { background: var(--high); } .sev.medium { background: var(--medium); } .sev.low { background: var(--low); } .sev.info { background: var(--info); }
+  .plat { display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 4px; background: var(--card); border: 1px solid var(--line); }
+  figure { margin: 16px 0 24px; }
+  figure img { max-width: 100%; height: auto; border: 1px solid var(--line); border-radius: 8px; display: block; background: #000; }
+  figcaption { color: var(--muted); font-size: 13px; margin-top: 8px; max-width: 90ch; }
+  .finding { padding: 8px 0 8px; }
+  .kv { display: grid; grid-template-columns: 140px 1fr; gap: 4px 16px; font-size: 14px; margin: 10px 0 14px; }
+  .kv dt { color: var(--muted); } .kv dd { margin: 0; }
+  .toc { background: var(--card); border-radius: 10px; padding: 14px 18px; font-size: 14px; }
+  .toc ol { margin: 6px 0 0; padding-left: 20px; } .toc li { margin: 3px 0; }
+  a { color: var(--accent); }
+  .note { padding: 10px 16px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; margin: 14px 0; max-width: 90ch; }
+  .ok { }
+  .small { font-size: 13px; color: var(--muted); }
+  @media (max-width: 600px) { .kv { grid-template-columns: 1fr; } h1 { font-size: 24px; } }
+</style>
+</head>
+<body>
+<main>
+
+<h1>Layout-jump audit: cashu.me native (iOS + Android)</h1>
+<p class="meta">
+  Audit date 2026-10-21 · source <code>main @ 86f4242d</code> · branch <code>qa/layout-jump-audit</code> ·
+  scope: every animated transition reachable in onboarding, Receive, Send, Send Ecash, tabs, pushes and sheets, recorded on
+  both platforms and inspected frame by frame.
+</p>
+
+<div class="toc">
+  <strong>Contents</strong>
+  <ol>
+    <li><a href="#summary">Summary</a></li>
+    <li><a href="#table">All findings at a glance</a></li>
+    <li><a href="#android">Android findings (A1–A11)</a></li>
+    <li><a href="#device">Pixel 7a confirmation</a></li>
+    <li><a href="#ios">iOS findings (I1–I6)</a></li>
+    <li><a href="#ok">Transitions that looked right</a></li>
+    <li><a href="#method">Method, environments and caveats</a></li>
+  </ol>
+</div>
+
+<h2 id="summary">1. Summary</h2>
+<p>
+  The suspicion about Android "enter an amount and hit next" is confirmed, and the same pattern exists on iOS.
+  On both platforms the amount-entry screens hide the <em>mint selector row</em> the moment the primary action is tapped
+  (while the request is in flight). The row is removed with a plain <code>if</code>, so the hero amount re-centres and drops
+  by 28–64 dp in a single frame, then pops back up when the row returns for the exit fade. This happens in
+  Receive Lightning ("Create invoice") and Send Ecash ("Send") on Android (<a href="#A2">A2</a>, <a href="#A3">A3</a>) and in
+  Receive Lightning on iOS (<a href="#I3">I3</a>).
+</p>
+<p>
+  The second large class is <em>container jumps around the Send flow</em>: on Android the compact Send sheet snaps to full
+  height in one frame when a destination resolves (<a href="#A1">A1</a>, title moves 749 px with no in-between frame); on iOS
+  the Send sheet is dismissed and a new one presented, so the wallet home is fully visible for about 0.6 s between
+  the two faces (<a href="#I1">I1</a>).
+</p>
+<p>
+  Third, two <em>face swaps that are meant to be cross-fades land as single-frame cuts</em> on iOS: the quote arriving on the
+  Send confirm step (<a href="#I2">I2</a>) and the keypad → invoice swap in Receive Lightning (<a href="#I3">I3</a>).
+  Android cross-fades both of these correctly.
+</p>
+<p>
+  Everything else is smaller: a one-frame scrim, a one-frame status-line flicker, and the onboarding handoff showing the wallet
+  for 150 ms before the curtain covers it.
+</p>
+<p>
+  <strong>Device check:</strong> the same release build was then run on a Pixel 7a (Android 17) and recorded at 90 fps.
+  Rendering is healthy there (2–5 % janky frames, p50 12–14 ms), so the emulator slowness noted in <a href="#A10">A10</a>
+  is an emulator artefact. The jumps themselves reproduce on the phone exactly as on the emulator:
+  <a href="#A1">A1</a>, <a href="#A2">A2</a>, <a href="#A4">A4</a> and <a href="#A8">A8</a> were re-captured on hardware
+  (<a href="#device">section 4</a>).
+</p>
+
+<h2 id="table">2. All findings at a glance</h2>
+<table>
+  <thead><tr><th>ID</th><th>Platform</th><th>Flow · step</th><th>What jumps</th><th>Size</th><th>Severity</th></tr></thead>
+  <tbody>
+    <tr><td><a href="#A1">A1</a></td><td><span class="plat">Android</span></td><td>Send · destination resolves → amount face</td><td>Compact sheet becomes full height with no height animation; header/To row appear instantly</td><td>title 749 px, field 306 px in 1 frame</td><td><span class="sev high">High</span></td></tr>
+    <tr><td><a href="#A2">A2</a></td><td><span class="plat">Android</span></td><td>Receive Lightning · Create invoice</td><td>Mint selector row removed while creating; amount drops, then pops back before the QR face</td><td>+77 px (28 dp), 1 frame; reverts 0.4 s later</td><td><span class="sev high">High</span></td></tr>
+    <tr><td><a href="#A3">A3</a></td><td><span class="plat">Android</span></td><td>Send Ecash · Send</td><td>Both selector rows removed while sending; amount drops, then pops back before the token face</td><td>+176 px (64 dp), 1 frame; reverts 0.4 s later</td><td><span class="sev high">High</span></td></tr>
+    <tr><td><a href="#A4">A4</a></td><td><span class="plat">Android</span></td><td>Send · Continue → quote → confirm</td><td>Back chevron and pinned "To" row vanish during the quote wait; hero amount sits 117 dp lower and smaller on the confirm face</td><td>321 px, cross-faded</td><td><span class="sev medium">Medium</span></td></tr>
+    <tr><td><a href="#A5">A5</a></td><td><span class="plat">Android</span></td><td>Send · destination field wraps</td><td>Compact sheet re-measures and snaps taller</td><td>66 px (24 dp), 1 frame</td><td><span class="sev low">Low</span></td></tr>
+    <tr><td><a href="#A7">A7</a></td><td><span class="plat">Android</span></td><td>History · transaction detail sheet</td><td>Scrim reaches full opacity in one frame while the sheet is still sliding</td><td>1 frame</td><td><span class="sev low">Low</span></td></tr>
+    <tr><td><a href="#A8">A8</a></td><td><span class="plat">Android</span></td><td>Receive Lightning · payment arrives</td><td>Status line flips "Adding to wallet…" → "Expires in 9m 59s" for one frame before the success face</td><td>1 frame (~50 ms)</td><td><span class="sev low">Low</span></td></tr>
+    <tr><td><a href="#A9">A9</a></td><td><span class="plat">Android</span></td><td>Onboarding · Add mint → wallet</td><td>Wallet home shows through for ~150 ms, fades out, curtain holds 2 s, wallet fades in again</td><td>double reveal</td><td><span class="sev medium">Medium</span></td></tr>
+    <tr><td><a href="#A10">A10</a></td><td><span class="plat">Android</span></td><td>Any screen with blur (API 31+)</td><td>Emulator renders 1–3 frames per transition on API 36; same build is 60 fps on API 29. Checked on a Pixel 7a: not an issue on hardware</td><td>emulator only</td><td><span class="sev low">Closed</span></td></tr>
+    <tr><td><a href="#A11">A11</a></td><td><span class="plat">Android</span></td><td>Onboarding · Create Wallet</td><td>Caution + checkbox accessory slides in from off-screen left and is clipped by the screen edge</td><td>~150 ms</td><td><span class="sev low">Low</span></td></tr>
+    <tr><td><a href="#I1">I1</a></td><td><span class="plat">iOS</span></td><td>Send · destination resolves → amount face</td><td>Send sheet is dismissed and a new sheet presented; wallet home fully visible in between</td><td>~0.6 s of home</td><td><span class="sev high">High</span></td></tr>
+    <tr><td><a href="#I2">I2</a></td><td><span class="plat">iOS</span></td><td>Send · Continue → quote → confirm</td><td>"Processing…" → confirm face is a single-frame cut; To row and chevron snap back</td><td>8.2 % of pixels, 1 frame @60 fps</td><td><span class="sev high">High</span></td></tr>
+    <tr><td><a href="#I3">I3</a></td><td><span class="plat">iOS</span></td><td>Receive Lightning · Create invoice</td><td>Toolbar chips and "To Testnut mint" removed instantly, amount drops; 0.46 s later keypad → invoice is a cut</td><td>+84 px (28 pt); 23.7 % cut</td><td><span class="sev high">High</span></td></tr>
+    <tr><td><a href="#I4">I4</a></td><td><span class="plat">iOS</span></td><td>Receive Lightning · payment arrives</td><td>QR face vanishes in one frame; success face then materialises over 0.5 s</td><td>28 % of pixels, 1 frame</td><td><span class="sev medium">Medium</span></td></tr>
+    <tr><td><a href="#I5">I5</a></td><td><span class="plat">iOS</span></td><td>Onboarding · Continue → wallet</td><td>Mint list vanishes in one frame before the curtain, then the wallet fades in</td><td>8.4 % + 4.3 %</td><td><span class="sev low">Low</span></td></tr>
+    <tr><td><a href="#I6">I6</a></td><td><span class="plat">iOS</span></td><td>Mints · mint detail</td><td>Async rows (connection, about text) reflow the page after the push</td><td>content load</td><td><span class="sev low">Low</span></td></tr>
+  </tbody>
+</table>
+
+<h2 id="android">3. Android findings</h2>
+<p class="small">Captured on the release build (R8) on an API 29 emulator, Pixel 5 profile, 1080×2340 at 440 dpi (2.75 px/dp), light theme (the AVD ignored the night-mode switch). See <a href="#method">method</a> for why API 29.</p>
+
+<section class="finding" id="A1">
+<h3>A1 · Send: the compact sheet snaps to full height when a destination resolves <span class="sev high">High</span></h3>
+<dl class="kv">
+  <dt>Repro</dt><dd>Home → Send → type or paste a destination that needs an amount (amountless BOLT12 offer used here). The input face auto-advances to the amount face.</dd>
+  <dt>Observed</dt><dd>Frame 235 → 236 (50 ms apart): the sheet goes from its compact height to full height with no in-between frame. The "Send" title moves 749 px up, the destination field 306 px. The back chevron and the "To …" row appear in the same frame. Only after that does the input face fade out and the amount face slide in.</dd>
+  <dt>Measured</dt><dd>title y=990 → 241; field y=1212 → 906; next 4 frames: shared-axis face swap (animated).</dd>
+  <dt>Cause</dt><dd><code>UnifiedSendScreen.kt:643-644</code> flips <code>prefersCompactSheet</code> when the step leaves <code>Input</code>; <code>CashuApp.kt:308/590</code> passes it as <code>compactContent</code>, and <code>WalletFlowSheetHost</code> switches the content from <code>fillMaxWidth()</code> to <code>fillMaxHeight()</code>. Material 3 <code>ModalBottomSheet</code> re-anchors to a new content height with a snap, not an animation. The header swap (<code>FlowSheetTitle</code> → <code>SheetHeader</code> with chevron) and the "To" row are also plain <code>if</code>s on the step.</dd>
+  <dt>Suggested fix</dt><dd>Keep the sheet full height from the moment a destination is pasted and let the <em>content</em> animate (or animate the content height with <code>animateContentSize</code> on a wrapper so the sheet's anchor interpolates); fade the chevron/To row in with the face swap instead of switching them on the same recomposition.</dd>
+</dl>
+<figure><img src="img/and-send-sheet-snap.jpg" alt="Android Send sheet before and after the one-frame snap to full height"><figcaption>Consecutive frames. Red: "Send" title; blue: destination field. Everything above the field is re-laid out in one frame.</figcaption></figure>
+<figure><img src="img/and-send-sheet-snap-strip.jpg" alt="Filmstrip of the Android Send sheet snapping to full height, then the face swap"><figcaption>Filmstrip (frames 235–243, 50 ms apart). The container jumps first, then the faces cross-fade.</figcaption></figure>
+</section>
+
+<section class="finding" id="A2">
+<h3>A2 · Receive Lightning: "Create invoice" removes the mint row, the amount drops, then pops back <span class="sev high">High</span></h3>
+<dl class="kv">
+  <dt>Repro</dt><dd>Home → Receive → Bitcoin → type 1000 → Create invoice.</dd>
+  <dt>Observed</dt><dd>On the tap, the "To Testnut mint" row disappears and the hero amount drops 77 px (28 dp) in a single frame. About 0.4 s later, as the keypad face starts its exit fade, the row comes back and the amount pops up again; then the invoice face fades in. The user sees the amount bounce down and up around the transition.</dd>
+  <dt>Measured</dt><dd>amount top y=651 → 728 (frame 325 → 340), back to 651 at frame 344, keypad rows unchanged.</dd>
+  <dt>Cause</dt><dd><code>ReceiveLightningScreen.kt:1365</code>: <code>if (!creating &amp;&amp; mint != null) { AmountEntryMintSelector(…) }</code> inside the weight-balanced column of <code>InputFace</code>. Removing the row re-balances the two <code>Spacer(weight(1f))</code>s around the hero. When the quote lands, <code>creating</code> flips back to false while the outgoing face is still composed for its exit, so the row returns mid-transition.</dd>
+  <dt>Suggested fix</dt><dd>Keep the selector composed while creating (disable it instead of removing it), or wrap it in <code>AnimatedVisibility</code> with the hero in a fixed-height slot so its presence never moves the amount.</dd>
+</dl>
+<figure><img src="img/and-receive-create-invoice.jpg" alt="Android Receive Lightning amount before and after tapping Create invoice"><figcaption>Red: hero amount top. Blue: the mint row position. The keypad does not move; only the content above it re-centres.</figcaption></figure>
+<figure><img src="img/and-receive-create-invoice-strip.jpg" alt="Filmstrip of the Android Create invoice transition"><figcaption>Down (340), up again (344), then the cross-fade to the invoice face (346–348).</figcaption></figure>
+</section>
+
+<section class="finding" id="A3">
+<h3>A3 · Send Ecash: "Send" removes both selector rows, the amount drops 64 dp, then pops back <span class="sev high">High</span></h3>
+<dl class="kv">
+  <dt>Repro</dt><dd>Home → Send → Ecash → type 50 → Send.</dd>
+  <dt>Observed</dt><dd>Same mechanism as A2, with two rows ("From Testnut mint" and "₿1,976 available · Max"), so the drop is larger: 176 px (64 dp) in one frame, restored 0.4 s later as the face exits, then the token face fades in.</dd>
+  <dt>Measured</dt><dd>amount top y=541 → 717 (frame 96 → 97), back to 541 at frame 100.</dd>
+  <dt>Cause</dt><dd><code>SendEcashScreen.kt:711</code>: <code>if (!sending &amp;&amp; activeMint != null) { AmountEntryMintSelector(…) }</code>.</dd>
+  <dt>Suggested fix</dt><dd>As A2. Unified Send's amount face (<code>UnifiedSendScreen.kt:1271</code>) keeps its selector composed during Continue and does not jump, so it is the reference implementation.</dd>
+</dl>
+<figure><img src="img/and-sendecash-submit.jpg" alt="Android Send Ecash amount before and after tapping Send"><figcaption>Consecutive frames. Both selector rows are gone and the amount has re-centred 176 px lower.</figcaption></figure>
+<figure><img src="img/and-sendecash-submit-strip.jpg" alt="Filmstrip of the Android Send Ecash submit transition"><figcaption>Frames 96–103.</figcaption></figure>
+</section>
+
+<section class="finding" id="A4">
+<h3>A4 · Send: Continue hides the chrome during the quote wait; the hero changes position between faces <span class="sev medium">Medium</span></h3>
+<dl class="kv">
+  <dt>Repro</dt><dd>Send → amount face → Continue.</dd>
+  <dt>Observed</dt><dd>While the melt quote is fetched, the whole form (header chevron, pinned "To" row, face) is replaced by the status terminal, so the chevron and "To" row fade out and come back ~300 ms later with the confirm face. The amount itself cross-fades from the entry position to a position 321 px (117 dp) lower and at a smaller size, rather than moving. The cross-fades are fine; the jump is in the chrome and the hero position.</dd>
+  <dt>Measured</dt><dd>amount top y=635 (entry, 151 px tall glyphs) → 956 (confirm, 101 px tall).</dd>
+  <dt>Cause</dt><dd><code>UnifiedSendScreen.kt:660-686</code>: the <code>unified-send-terminal</code> <code>AnimatedContent</code> wraps the header and the "To" row as well as the faces, so <code>quotePending</code> swaps everything. The confirm face places the hero at <code>ConfirmTopFraction</code> of the scaffold (<code>ConfirmFace</code>), unrelated to where the entry hero sits.</dd>
+  <dt>Suggested fix</dt><dd>Keep the header and "To" row outside the terminal swap (the source comment already calls the "To" row the step swap's fixed anchor); consider animating the hero from the entry position to the confirm position instead of cross-fading two positions.</dd>
+</dl>
+<figure><img src="img/and-send-continue-hero.jpg" alt="Android Send amount face versus confirm face hero positions"><figcaption>Amount face vs confirm face. The "To" row (blue) is present on both but disappears in between.</figcaption></figure>
+<figure><img src="img/and-send-continue-strip.jpg" alt="Filmstrip of the Android Continue transition"><figcaption>Frame 510: spinner only, no chevron, no "To" row. Frame 513: everything fades back.</figcaption></figure>
+</section>
+
+<section class="finding" id="A5">
+<h3>A5 · Send: the compact sheet snaps taller when the destination wraps to two lines <span class="sev low">Low</span></h3>
+<dl class="kv">
+  <dt>Observed</dt><dd>When the typed destination wraps, the sheet grows 66 px (24 dp) in one frame. Small, but it is the same "sheet height is not animated" mechanism as A1 and is visible while pasting long payloads.</dd>
+  <dt>Suggested fix</dt><dd><code>animateContentSize()</code> on the sheet content column, or a fixed two-line field height.</dd>
+</dl>
+<figure><img src="img/and-send-field-wrap.jpg" alt="Android Send compact sheet top edge before and after the field wraps"><figcaption>Sheet top edge (red) across two consecutive frames.</figcaption></figure>
+</section>
+
+<section class="finding" id="A7">
+<h3>A7 · Transaction detail sheet: scrim reaches full opacity before the sheet arrives <span class="sev low">Low</span></h3>
+<p>History → tap a row. The scrim is at full darkness in the first frame of the transition while the sheet is still a third of the way up; the sheet itself slides over ~200 ms. The Receive/Send sheets show the same one-frame scrim.</p>
+<figure><img src="img/and-txdetail-scrim-strip.jpg" alt="Filmstrip of the Android transaction detail sheet opening"><figcaption>Frames 924–928.</figcaption></figure>
+</section>
+
+<section class="finding" id="A8">
+<h3>A8 · Receive Lightning: status line flickers for one frame when the payment arrives <span class="sev low">Low</span></h3>
+<p>The invoice face shows "Adding to wallet…", flips back to "Expires in 9m 59s" for a single frame, then fades to the success face. Cosmetic, but it reads as a glitch right at the moment of success.</p>
+<figure><img src="img/and-receive-status-flicker-strip.jpg" alt="Three consecutive frames of the Android invoice status line"><figcaption>Cropped to the status line, frames 407–409.</figcaption></figure>
+</section>
+
+<section class="finding" id="A9">
+<h3>A9 · Onboarding handoff: the wallet shows through before the curtain covers it <span class="sev medium">Medium</span></h3>
+<p>
+  After "Add mint", the wallet home (balance, Receive/Send, empty state, tab bar) appears at partial opacity for about 150 ms,
+  fades out again under the ASCII-field curtain, the curtain holds for roughly 2 s, and then the wallet fades in a second time.
+  iOS shows the curtain first and the wallet once (<a href="#I5">I5</a>). Suspect the curtain's fade-in starts after the
+  destination mounts (<code>OnboardingHandoff.kt</code>) rather than before it.
+</p>
+<figure><img src="img/and-onboarding-handoff-strip.jpg" alt="Filmstrip of the Android onboarding handoff"><figcaption>Frames 838–930: wallet shows through (839), fades out (841–843), curtain, wallet again (930).</figcaption></figure>
+</section>
+
+<section class="finding" id="A10">
+<h3>A10 · API 31+ blur effects starve the frame budget on the emulator <span class="sev low">Closed: emulator only</span></h3>
+<div class="note ok">
+  <p><strong>Checked on a Pixel 7a (Android 17, same release APK):</strong> Create Wallet rendered 150 frames at 4 % janky
+  (p50 14 ms, p90 19 ms, p99 61 ms); Receive's Create invoice 215 frames at 3 % janky (p50 13 ms); Send's destination
+  resolve 93 frames at 2 % janky (p50 12 ms); Continue 57 frames at 5 % janky (p50 12 ms). The blur effects cost nothing
+  noticeable on hardware. Nothing to fix.</p>
+</div>
+<p>
+  The first Android pass was recorded on an API 36 emulator (Pixel 8 profile, host GPU). Every app transition rendered as one
+  or two frames, while system animations (keyboard) ran at 60 fps. <code>dumpsys gfxinfo</code> during Send's Continue on the
+  debug build: 31 frames, 93 % janky, p50 69 ms, p90 250 ms, p99 1.5 s. The release build was no better on API 36
+  (Create Wallet: 27 frames, 100 % janky, p50 300 ms). The same release APK on API 29, where <code>RenderEffect</code> does
+  not exist and all blur modifiers are no-ops, rendered Create Wallet at 71 frames, 41 % janky, p50 10 ms, p90 23 ms.
+</p>
+<p>
+  The blur sites are the full-screen backdrop blur behind every flow sheet (<code>CashuApp.kt:467</code>,
+  <code>.blur(sheetBackdropBlur)</code>), <code>Modifier.riseIn</code> (<code>Motion.kt</code>) and
+  <code>morphBlur</code>/<code>materializeBlur</code> (<code>Materialize.kt</code>). The emulator's GL translator is slower than a
+  phone GPU, so this may be fine on hardware, but a full-screen blur re-rendered on every frame of a sheet animation is worth
+  a quick <code>gfxinfo</code> check on the Pixel 7a. If it is slow there, every transition in this report looks like a cut to users.
+</p>
+<figure><img src="img/and-api36-onboarding-cta-jump.jpg" alt="API 36 debug build: the onboarding CTA moves 103 px between two consecutive frames"><figcaption>API 36 debug build: the chassis CTA moves 103 px with no frame in between, while the same transition on API 29 shows the spring (below).</figcaption></figure>
+<figure><img src="img/and-onboarding-create-strip.jpg" alt="Android onboarding Create Wallet on API 29: the CTA pill animates with overshoot"><figcaption>API 29 release build: the chassis reflow is animated (label morph, Restore fading, pill springing with overshoot). The onboarding chassis itself is not a jump source.</figcaption></figure>
+</section>
+
+<section class="finding" id="A11">
+<h3>A11 · Onboarding: the caution accessory slides in from off-screen left <span class="sev low">Low</span></h3>
+<p>On Create Wallet, the "Never share these words" caution and the checkbox enter horizontally from beyond the left edge and are clipped for ~150 ms. iOS fades the same block in place. Looks like the shared-axis slide is applied to the chassis accessory as well as the stage content.</p>
+<figure><img src="img/and-onboarding-accessory-strip.jpg" alt="Filmstrip of the Android onboarding caution block sliding in clipped"><figcaption>Cropped to the chassis, frames 103–106.</figcaption></figure>
+</section>
+
+<h2 id="device">4. Pixel 7a confirmation</h2>
+<p class="small">Same release APK on a Pixel 7a, Android 17, 1080×2400 at 420 dpi (2.625 px/dp), dark theme, recorded on the device at 90 fps. The strips below show every recorded frame around each transition; frames here are 11 ms apart.</p>
+
+<h3>A1 on the phone: the sheet still snaps to full height, in one 90 fps frame <span class="sev high">Confirmed</span></h3>
+<p>With the keyboard open the compact sheet already sits near the top, so the snap is small. Dismiss the keyboard first (Back) and the compact sheet drops to the bottom; when the destination then resolves, the sheet goes from compact to full height with no recorded frame in between (frames 185 → 187, 43 ms apart, nothing changed in between). The "Send" title moves from y=1172 to y=168 (1004 px) and the destination field from y=1384 to y=947 (437 px) in that one step.</p>
+<figure><img src="img/pixel-send-sheet-snap-strip.jpg" alt="Pixel 7a filmstrip of the Send sheet snapping to full height"><figcaption>Pixel 7a, frames 183–200.</figcaption></figure>
+
+<h3>A2 on the phone: Create invoice drops the amount, then it pops back <span class="sev high">Confirmed</span></h3>
+<p>Frame 225 → 227: the "To Testnut mint" row is gone and the amount top moves from y=765 to y=838 (73 px = 28 dp on this density) in a single frame. It stays there for 0.3 s, pops back at frame 255 as the header swaps, then the invoice face fades in.</p>
+<figure><img src="img/pixel-receive-create-invoice-strip.jpg" alt="Pixel 7a filmstrip of the Receive Lightning Create invoice transition"><figcaption>Pixel 7a, frames 225–262.</figcaption></figure>
+
+<h3>A4 on the phone: chevron and "To" row vanish during the quote wait <span class="sev medium">Confirmed</span></h3>
+<figure><img src="img/pixel-send-continue-strip.jpg" alt="Pixel 7a filmstrip of the Send Continue transition"><figcaption>Pixel 7a, frames 280–326. The cross-fades are smooth; the chrome disappears for ~0.35 s and the amount lands lower and smaller.</figcaption></figure>
+
+<h3>A8 on the phone: the status line flickers for two frames <span class="sev low">Confirmed</span></h3>
+<figure><img src="img/pixel-receive-status-flicker-strip.jpg" alt="Pixel 7a status line frames before the success face"><figcaption>Pixel 7a, frames 352–357, cropped to the status line.</figcaption></figure>
+
+<p class="small">Not re-captured on the phone: A3 (same code path as A2), A5, A7, A9 and A11. The onboarding recording on the phone was interrupted by use of the device during the capture, so it was discarded.</p>
+
+<h2 id="ios">5. iOS findings</h2>
+<p class="small">Captured on the iPhone 17 Pro simulator, iOS 26.0, Xcode 27.1, 1206×2622 at 3× (402×874 pt), debug build, dark appearance, recorded at 60 fps.</p>
+
+<section class="finding" id="I1">
+<h3>I1 · Send: the sheet is dismissed and re-presented when a destination resolves <span class="sev high">High</span></h3>
+<dl class="kv">
+  <dt>Repro</dt><dd>Home → Send → type or paste an amountless destination.</dd>
+  <dt>Observed</dt><dd>The Send sheet drops away, the wallet home is fully visible with its tab bar for about 0.6 s, then a second sheet rises with the amount face. Timeline: sheet dismissing at 283.26 s, home only 283.34–283.92 s, new sheet rising 283.96–284.20 s.</dd>
+  <dt>Cause</dt><dd><code>MainWalletView.swift:680-681</code>: <code>onRoutePayment</code> calls <code>navigationManager.present(.sheet(.sendAmount(…)))</code>. <code>NavigationManager.present</code> parks the surface, dismisses the open sheet and presents the parked one from <code>onDismiss</code>. <code>WalletSheet.id</code> hashes the destination into the identity ("A new destination is a new sheet, never a stale one re-shown"), so SwiftUI cannot morph the open sheet in place.</dd>
+  <dt>Suggested fix</dt><dd>Route the resolved destination into the already-open Send sheet (the <code>.send(prefill:)</code> case keeps a stable id for exactly this reason) and advance its step with the existing shared-axis animation; reserve the dismiss-then-present path for surfaces that really are different (camera, full-screen claim).</dd>
+</dl>
+<figure><img src="img/ios-send-represent-strip.jpg" alt="Filmstrip of the iOS Send sheet dismissing, the home screen, and a new sheet rising"><figcaption>Frames 1958–2035 (60 fps). The home screen is the only thing on screen in 1972 and 1999.</figcaption></figure>
+</section>
+
+<section class="finding" id="I2">
+<h3>I2 · Send: the confirm face lands as a single-frame cut after the quote <span class="sev high">High</span></h3>
+<dl class="kv">
+  <dt>Repro</dt><dd>Send → amount face → Continue.</dd>
+  <dt>Observed</dt><dd>The amount face fades to the "Processing…" spinner correctly. When the quote arrives, the spinner is replaced by the confirm face (amount, fee rows, Pay button) in one 60 fps frame (8.2 % of pixels change between frames 2184 and 2185, 8 ms apart, with nothing changing on either side). The dimmed "To" row and the chevron snap back to full opacity in the same frame.</dd>
+  <dt>Measured</dt><dd>spinner top y=739 → amount top y=1007; entry-face amount was at y=755, so the hero also ends 84 pt lower than where it was typed.</dd>
+  <dt>Cause</dt><dd><code>SendView.swift:2239</code> sets <code>meltQuote = quote</code> and <code>:2215</code> clears <code>isWorking</code> in a <code>defer</code>, both outside any <code>withAnimation</code>. Only the error path (<code>:2245</code>) is animated. The rule from the Transfer fix on 2026-10-18 applies here: a body-read state change outside <code>withAnimation</code> in the same update turns the face swap into a cut.</dd>
+  <dt>Suggested fix</dt><dd>Apply the quote and clear <code>isWorking</code> inside one <code>withAnimation(.smooth(duration: 0.3))</code>; the Transfer screen already does this.</dd>
+</dl>
+<figure><img src="img/ios-send-continue-cut.jpg" alt="iOS Send: Processing spinner frame and the confirm face in the next frame"><figcaption>Consecutive 60 fps frames.</figcaption></figure>
+<figure><img src="img/ios-send-continue-strip.jpg" alt="Filmstrip of the iOS Continue transition"><figcaption>Frames 2167–2185: fade into the spinner, then the cut.</figcaption></figure>
+</section>
+
+<section class="finding" id="I3">
+<h3>I3 · Receive Lightning: "Create invoice" drops the amount, then cuts to the invoice face <span class="sev high">High</span></h3>
+<dl class="kv">
+  <dt>Repro</dt><dd>Home → Receive → Bitcoin → type 1000 → Create invoice.</dd>
+  <dt>Observed</dt><dd>Two jumps. (1) On the tap, the toolbar method/unit chips and the "To Testnut mint" row are removed instantly and the amount re-centres 84 px (28 pt) lower. (2) 0.46 s later the keypad face is replaced by the invoice face (QR, amount, expiry, Copy invoice) in one frame; 23.7 % of pixels change between frames 1532 and 1533.</dd>
+  <dt>Cause</dt><dd><code>ReceiveLightningView.swift:179</code> and <code>:203</code> gate the toolbar items on <code>!isCreatingRequest</code>, <code>:472</code> gates the "To" row, and <code>:1152</code> sets <code>isCreatingRequest = true</code> with no animation. The quote landing that swaps the face is likewise applied outside <code>withAnimation</code>.</dd>
+  <dt>Suggested fix</dt><dd>Keep the chips and the "To" row in place (disabled) while creating, or animate their removal; wrap the quote assignment in <code>withAnimation</code> so the face swap uses its <code>.transition(.opacity)</code>.</dd>
+</dl>
+<figure><img src="img/ios-receive-create-invoice-drop.jpg" alt="iOS Receive Lightning before and after tapping Create invoice"><figcaption>Consecutive frames. Amber: toolbar chips; blue: "To Testnut mint"; red: hero amount.</figcaption></figure>
+<figure><img src="img/ios-receive-create-invoice-cut.jpg" alt="iOS Receive Lightning keypad face and invoice face in consecutive frames"><figcaption>Frames 1532 → 1533: the whole face changes in one frame.</figcaption></figure>
+</section>
+
+<section class="finding" id="I4">
+<h3>I4 · Receive Lightning: the QR face vanishes in one frame when the payment arrives <span class="sev medium">Medium</span></h3>
+<p>The invoice face disappears in a single frame (28 % of pixels, frame 1581), the screen is blank for two frames, then the green check materialises and "Payment Received!" fades in over about 0.5 s. The entrance is choreographed; the exit is a cut. Android fades the invoice face out over three frames here.</p>
+<figure><img src="img/ios-receive-paid-strip.jpg" alt="Filmstrip of the iOS payment received transition"><figcaption>Frames 1579–1611.</figcaption></figure>
+</section>
+
+<section class="finding" id="I5">
+<h3>I5 · Onboarding handoff: the mint list is removed in one frame before the curtain <span class="sev low">Low</span></h3>
+<p>Continue on the mint step: the title, list and buttons vanish in one frame (8.4 % of pixels), a second step 0.23 s later removes the rest (4.3 %), the ASCII field holds, and the wallet fades in over 1.3 s. If the cut to the curtain is intentional it is fine; if the content was meant to fade under the curtain, it does not.</p>
+<figure><img src="img/ios-onboarding-handoff-strip.jpg" alt="Filmstrip of the iOS onboarding handoff"><figcaption>Frames 1002–1072.</figcaption></figure>
+</section>
+
+<section class="finding" id="I6">
+<h3>I6 · Mint detail: rows reflow as async data lands <span class="sev low">Low</span></h3>
+<p>After the push, "Balance (USD)" goes from "…" to "$0.00", "Connection" from "Checking…" to "Online", and the About text grows from one line to the full description, pushing "Message from the mint" and "Capabilities" down without animation. Android's mint detail shows the same loading reflow. Reserving the final heights (or animating them) would stop the page settling in steps.</p>
+</section>
+
+<h2 id="ok">6. Transitions that looked right</h2>
+<div class="note ok">
+<p><strong>Android (API 29, release):</strong> Receive and Send sheet presentation; Receive sheet → Bitcoin growth and face swap (shared axis, no jump); keypad entry; Continue → spinner → confirm cross-fades; Pay → "Processing…" → "Payment sent" morph; tab fade-through; mint detail push/pop and settings push/pop; onboarding Create → seed (chassis pill springs, label morphs), seed → mint, keyboard show/hide on the mint URL step (23 frames at 60 fps on API 36).</p>
+<p><strong>iOS:</strong> onboarding Create → seed (pill moves ~48 pt over ~150 ms, Restore fades), seed → mint, mint → URL with keyboard; Receive sheet open/close; Receive → Bitcoin; Pay → "Processing…" → "Payment Sent!" (both cross-fades land in place); tab switches; mint detail push/pop; Settings push/pop.</p>
+</div>
+
+<h2 id="method">7. Method, environments and caveats</h2>
+<p>
+  Each flow was driven by a script while the screen was recorded, then every recorded frame was diffed against the previous
+  one. A transition that animates shows many small per-frame changes; a layout jump shows a single frame with a large change
+  bracketed by still frames, or an element whose position differs between two consecutive frames with no intermediate
+  position. Candidates were inspected on filmstrips, and element positions were measured on full-resolution frames
+  (the y values quoted above are device pixels from those frames).
+</p>
+<dl class="kv">
+  <dt>iOS</dt><dd>iPhone 17 Pro simulator, iOS 26.0, Xcode 27.1, debug build, dark appearance. Driven by a throwaway XCUITest that does not disable animations (the repo's <code>UITestBase</code> does), recorded with <code>simctl io recordVideo</code> at 60 fps. Frame times were taken from the container DTS because the PTS in the h264 output are scrambled.</dd>
+  <dt>Android</dt><dd>Release build (R8, debug-signed) on the API 29 Google APIs emulator, Pixel 5 profile, host GPU. Driven with <code>adb input</code> and UI Automator, recorded with the emulator's host-side recorder (steady ~20 fps). A 300 ms animation therefore shows about six distinct frames; "one frame" in this report means no intermediate state was captured within 50 ms, and every such case was cross-checked against the source for a missing animation.</dd>
+  <dt>Why API 29</dt><dd>On API 36 (and on the release build) the emulator rendered every app transition as 1–3 frames (see <a href="#A10">A10</a>). API 29 has no <code>RenderEffect</code>, so the blur modifiers are no-ops and the same APK renders at 60 fps. Blur aesthetics are therefore not covered; layout and timing are.</dd>
+  <dt>Wallet state</dt><dd>Fresh wallets on both platforms, connected to the public Testnut mint (FakeWallet: invoices auto-pay). Send used an amountless BOLT12 offer so the amount step is exercised; the quote and payment completed against Testnut.</dd>
+  <dt>Pixel 7a</dt><dd>Same release APK, Android 17, dark theme, on-device <code>screenrecord</code> (90 fps, frames written on change) and <code>dumpsys gfxinfo</code> around each transition. Used to close A10 and to confirm A1, A2, A4 and A8 on hardware.</dd>
+  <dt>Not covered</dt><dd>A physical iPhone; reduce-motion; large text; landscape; the restore flow; NFC; iOS onboarding's first tap was delayed ~2 min by XCUITest snapshotting the ASCII field, which froze the welcome screen during the capture but not the transition that followed.</dd>
+</dl>
+<div class="note">
+  The Android emulator numbers are a lower bound on smoothness. Anything reported as a one-frame change on Android was
+  confirmed in the source as a non-animated state change (A1, A2, A3, A5) or shown with the surrounding animated frames
+  (A4, A7, A8, A9). The iOS simulator renders the app's own animations faithfully at 60 fps.
+</div>
+
+</main>
+</body>
+</html>
