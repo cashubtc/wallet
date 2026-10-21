@@ -131,6 +131,48 @@ like a port, make the Android-native choice instead.
   and no gesture momentum preceded it.
 - Lists animate placement (`Modifier.animateItem()` — History, Home recent,
   Mint discovery), reveals expand/shrink, page dots stretch into pills.
+- **Route swap (Transfer, 2026-09-30)**: *(the original recipe in this first
+  paragraph is retired; the dated notes after it describe what ships: no
+  avatars, no travel, an in-place morph.)* The arrow between the From and To
+  mints makes the two identities (avatar + name) travel to each other's slot on
+  `defaultSpatialSpec`; the balance lines belong to the slots and change in
+  place, and the arrow turns once and lands pointing down again. It is the one
+  place two elements exchange positions, so the travel is what says which mint
+  went where. A mint picked from the list has no old place to travel from and
+  fades in. Reduced motion cross-fades the identities where they sit.
+  Transfer rows use avatar rows instead of the pay screens' centered From/To
+  line (`MintTransferRouteBlock.kt`; see `docs/product/DESIGN.md`).
+  *(2026-10-01: each slot carries a `labelMedium` "From" / "To" caption that
+  stays with the slot, so the control is now the symmetric `SwapVert` and makes
+  a half turn on `slowEffectsSpec`, which is critically damped: the Expressive
+  spatial springs overshoot a half turn visibly. The identity rows keep the standard bounded
+  ripple. On Review, predictive back previews and then returns to the amount
+  face instead of closing the sheet, as UX_SPEC.md's two-face rule asks.)*
+  *(2026-10-01, retired: the swap no longer animates. The mints change places
+  instantly; the press morph and the tick are the feedback. The slots show
+  the mint's name and balance only, no avatar. iOS parity: DESIGN.md §6
+  animation 8.)*
+  *(2026-10-01, reinstated at the user's request: when a different mint
+  takes a slot, its name and balance line morph in place through
+  `AnimatedContent` keyed to the mint URL: `fadeIn(defaultEffectsSpec)
+  togetherWith fadeOut(fastEffectsSpec)`, unclipped, with a 4dp `morphBlur`
+  mask, so the outgoing mint blurs out as the incoming one comes into focus
+  (iOS `.blurReplace`). Nothing travels between the slots. Beside the press
+  morph, the `SwapVert` glyph makes a half turn on
+  `spring(DampingRatioNoBouncy, StiffnessLow)`, matched to iOS
+  `.smooth(duration: 0.4)`: the motion scheme's effects specs run faster and
+  its Expressive spatial specs overshoot a half turn visibly. Reduce motion
+  holds the glyph still; it and API 26–30 drop the blur and keep the fade.)*
+  *(2026-10-18: Transfer's status screen is no longer a third `TwoFaceScreen`
+  face. Like `UnifiedSendScreen`, it sits in an outer `AnimatedContent` over
+  the faces with the standard `fadeIn(200)/fadeOut(150)` pair and one content
+  key, so commit and Try Again fade instead of sliding. The review's quote
+  states and its button fade with the same pair. Later the same day the status
+  rows became the review's own (From, To, Network fee, Total): at success the
+  Total row leaves with `fadeOut(150) + shrinkVertically()` while the fee row
+  cross-fades, and a terminal that shows its rows while processing
+  (`showRowsDuringProcessing`) enters with the fade alone, without the 0.96
+  settle, so those rows land where the review's were.)*
 - **Numbers are quiet**: `AmountText` cross-fades the whole string on change
   (`Spring.StiffnessMedium`, no per-digit slide) — the same restrained
   transition every other amount swap uses (`AmountFlipDisplay`, `BalanceDisplay`).

@@ -123,6 +123,18 @@ Two corollaries worth stating explicitly:
 - **Never a raw coloured string.** Every error goes through a component. This is
   the contract `InlineNotice`'s own KDoc already claims ("Screens never render
   raw red text") and which 17 call sites break.
+- **Under an amount being entered, the note takes the conversion line.** On the
+  Send and Transfer amount screens, a note about the amount ("Insufficient
+  balance", "Not enough left for the fee. Use Max.", a failed Max quote) is
+  said in the fiat line's place, as words with no glyph: red for `error` and
+  `caution` alike, secondary for `info`. Orange text fails contrast on a light
+  background, so the tiers share red; iOS uses the red it shows under Increase
+  Contrast in light mode, since the standard red is short of 4.5:1 on white.
+  The line is already there, so the note costs no room and the amount does not
+  move. It wraps rather than truncating. The component is `AmountNoteLine`,
+  reached through `CurrencyAmountDisplay(note:)` on iOS and
+  `AmountFlipDisplay(note =)` on Android. VoiceOver announces it with its
+  severity; TalkBack hears it through a polite live region.
 
 ### 1c. Copy
 
@@ -347,7 +359,7 @@ Grouped by screen. Phase numbers refer to §5.
 | Screen | Sites | Channel | Phase |
 |---|---|---|---|
 | Add Mint sheet, Onboarding first mint, Restore seed, Nostr relay/nsec, P2PK import, Send recipient | 8 (§3c table) | **Field-adjacent** | 2 |
-| Send amount — insufficient balance | `SendEcashScreen.kt:656`, `UnifiedSendScreen.kt:935` | **In-context** | 1 |
+| Send amount — insufficient balance | `SendEcashScreen.kt`, `UnifiedSendScreen.kt` | **In-context**, as an amount note (§1b) | 1 |
 | Unified Send confirm — routing/quote states | `UnifiedSendScreen.kt:1092–1155` | **In-context** | 1 |
 | Receive — token hints, unknown-mint trust | `ReceiveEcashScreen.kt:278,307`, `ReceiveEcashDetailScreen.kt:305` | **In-context** | 1 |
 | Cashu Request readiness | `CashuRequestDetailScreen.kt:340` | **In-context** | 1 |
@@ -366,7 +378,7 @@ Grouped by screen. Phase numbers refer to §5.
 | Screen | Sites | Channel | Phase |
 |---|---|---|---|
 | Add Mint, Connect Mint, Nostr relay/nsec, P2PK import, Onboarding first mint, Restore seed | `AddMintSheet.swift:75`, `ConnectMintView.swift:82`, `NostrSettingsSection.swift:277`, `SettingsView.swift:1330,1700`, `OnboardingView.swift:851`, `SettingsView.swift:653`, `OnboardingView.swift:1129` | **Field-adjacent** | 2 |
-| Send — insufficient balance (`sendInputNotice`) | `SendView.swift:242,248,294` | **In-context** | 3 |
+| Send — insufficient balance (`sendInputNote`) | `SendView.swift` | **In-context**, as an amount note (§1b) | 3 |
 | Unified Send / Melt confirm | `SendView.swift:1473,1852,1861,2292,2301,3217,3227,3382,3391` | **In-context** | 1 |
 | Receive — hints, unknown-mint trust, request readiness | `ReceiveView.swift:102`, `ReceiveTokenDetailView.swift:227,237`, `CashuRequestDetailView.swift:215,318` | **In-context** | 1 |
 | Mint detail — fetch failed | `MintDetailView.swift:55` | **Screen-level** → `ContentUnavailableView` | 5 |

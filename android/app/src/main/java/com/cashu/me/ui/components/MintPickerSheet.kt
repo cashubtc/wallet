@@ -27,6 +27,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -42,11 +43,16 @@ private val AvatarSize = 40.dp
 // Keep the picker stable as mints are added: this fits its title and roughly
 // four selection rows. The list below owns any overflow scrolling.
 private val MintPickerSheetHeight = 360.dp
+private const val UnavailableRowAlpha = 0.38f
 
 /**
  * Mint chooser bottom sheet — mirrors iOS `MintSelectorSheet` /
  * `CashuRequestMintPickerSheet`: avatar + name + balance per row, optional
  * "Any mint" entry, checkmark on the active selection.
+ *
+ * [unavailableReason] keeps a mint that can't be chosen in the list, dimmed
+ * and inert, with the reason in place of its balance, so the user can see why
+ * (iOS `MintTransferMintPicker`). Null for every mint by default.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -58,6 +64,7 @@ fun MintPickerSheet(
     title: String = "Choose mint",
     allowAnyMint: Boolean = false,
     mintSubtitle: ((MintInfo) -> String)? = null,
+    unavailableReason: ((MintInfo) -> String?)? = null,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val dismiss = rememberSheetDismissAction(sheetState)
@@ -89,12 +96,20 @@ fun MintPickerSheet(
                             )
                         }
                     }
-                    items(mints, key = { it.url }) { mint ->
+                    // Mints that can't be chosen go after the ones that can,
+                    // each group in its own order (iOS `MintSelectorSheet`).
+                    val listed = unavailableReason?.let { reasonFor ->
+                        mints.sortedBy { reasonFor(it) != null }
+                    } ?: mints
+                    items(listed, key = { it.url }) { mint ->
+                        val reason = unavailableReason?.invoke(mint)
                         MintPickerMintRow(
                             mint = mint,
-                            balanceText = mintSubtitle?.invoke(mint)
+                            balanceText = reason
+                                ?: mintSubtitle?.invoke(mint)
                                 ?: formatter.formatSats(mint.balance),
                             selected = mint.url == activeMintUrl,
+                            enabled = reason == null,
                             onClick = { dismiss { onSelect(mint) } },
                         )
                     }
@@ -160,15 +175,17 @@ private fun MintPickerMintRow(
     balanceText: String,
     selected: Boolean,
     onClick: () -> Unit,
+    enabled: Boolean = true,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(
                 horizontal = CashuTheme.spacing.snug,
                 vertical = CashuTheme.spacing.default,
-            ),
+            )
+            .alpha(if (enabled) 1f else UnavailableRowAlpha),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
     ) {

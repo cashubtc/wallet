@@ -10,6 +10,7 @@ import com.cashu.me.Core.Protocols.StorageKeys
 import com.cashu.me.Models.CashuRequest
 import com.cashu.me.Models.MintInfo
 import com.cashu.me.Models.MintQuoteScheduleRecord
+import com.cashu.me.Models.MintTransferRecord
 import com.cashu.me.Models.PendingReceiveToken
 import com.cashu.me.Models.WalletTransaction
 
@@ -78,6 +79,12 @@ class WalletStore(
         loadMap(StorageKeys.walletMintQuoteSchedules, MintQuoteScheduleRecord.serializer())
     fun saveMintQuoteSchedules(schedules: Map<String, MintQuoteScheduleRecord>) =
         saveMap(StorageKeys.walletMintQuoteSchedules, MintQuoteScheduleRecord.serializer(), schedules)
+
+    /** Links between the two quotes of each transfer between held mints. */
+    fun loadMintTransfers(): List<MintTransferRecord> =
+        loadList(StorageKeys.walletMintTransfers, MintTransferRecord.serializer())
+    fun saveMintTransfers(records: List<MintTransferRecord>) =
+        saveList(StorageKeys.walletMintTransfers, MintTransferRecord.serializer(), records)
 
     fun loadProcessedNPCQuotes(): List<String> = loadList(StorageKeys.walletProcessedNPCQuotes, String.serializer())
     fun saveProcessedNPCQuotes(quotes: List<String>) =

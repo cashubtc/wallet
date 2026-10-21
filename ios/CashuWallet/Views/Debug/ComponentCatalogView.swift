@@ -20,7 +20,7 @@ struct ComponentCatalogView: View {
     /// Which page to render. Split in two so each fits one screenshot without
     /// scrolling, and so each pairs with its Android counterpart.
     enum Page {
-        case matrix, variants, activity, history, onchainStatus, awaitingMint
+        case matrix, variants, activity, history, onchainStatus, transfer, awaitingMint
 
         init(rawValue: String?) {
             switch rawValue {
@@ -28,6 +28,7 @@ struct ComponentCatalogView: View {
             case "history": self = .history
             case "variants": self = .variants
             case "onchain-status": self = .onchainStatus
+            case "transfer": self = .transfer
             case "awaiting-mint": self = .awaitingMint
             default: self = .matrix
             }
@@ -48,6 +49,8 @@ struct ComponentCatalogView: View {
                 ActivityDetailCatalog(historyRows: true)
             case .onchainStatus:
                 OnchainStatusCatalog()
+            case .transfer:
+                MintTransferCatalog()
             case .matrix:
                 noticeMatrix
                 bannerSection
@@ -191,6 +194,30 @@ private struct OnchainStatusCatalog: View {
     }
 }
 
+/// The transfer sheet over fixture mints. Choosing mints, entering an amount and
+/// swapping direction need no wallet; only quoting does.
+private struct MintTransferCatalog: View {
+    @EnvironmentObject private var walletManager: WalletManager
+    @State private var showsTransfer = false
+
+    var body: some View {
+        Button("Transfer") { showsTransfer = true }
+            .accessibilityIdentifier("transfer")
+            .sheet(isPresented: $showsTransfer) {
+                MintTransferView()
+                    .environmentObject(walletManager)
+            }
+            .onAppear {
+                walletManager.mints = [
+                    MintInfo(url: "https://alpine.example", name: "Alpine Mint", isActive: true, balance: 12_345),
+                    MintInfo(url: "https://harbor.example", name: "Harbor Mint", isActive: false, balance: 2_100),
+                    MintInfo(url: "https://meadow.example", name: "Meadow Mint", isActive: false, balance: 0),
+                ]
+                showsTransfer = true
+            }
+    }
+}
+
 /// The send status face for a payment the mint hasn't confirmed, driven by the
 /// real unresolved-melt error, so a UI test can check it without a stuck mint.
 private struct AwaitingMintCatalog: View {
@@ -237,6 +264,10 @@ private struct ActivityDetailCatalog: View {
     @State private var selectedRequest: CashuRequest?
     @State private var showUpdatingDetails = false
     private let date = Date(timeIntervalSince1970: 1_788_768_000)
+    private let transferLeg = MintTransferLeg(
+        recordID: "transfer", sourceMintURL: "https://mint.example",
+        destinationMintURL: "https://other.example", destinationQuoteID: "transfer-quote"
+    )
 
     private var transactions: [WalletTransaction] {
         [
@@ -253,6 +284,12 @@ private struct ActivityDetailCatalog: View {
                   quoteId: "melt-quote-catalog-fixture"),
             .init(id: "failed-lightning", amount: 2100, type: .outgoing, kind: .lightning,
                   date: date, status: .failed, mintUrl: "https://mint.example"),
+            .init(id: "transfer", amount: 2100, type: .outgoing, kind: .lightning,
+                  date: date, status: .completed, mintUrl: "https://mint.example", fee: 2,
+                  transfer: transferLeg),
+            .init(id: "arriving-transfer", amount: 2100, type: .outgoing, kind: .lightning,
+                  date: date, status: .pending, statusNote: "Arriving at other.example",
+                  mintUrl: "https://mint.example", fee: 2, transfer: transferLeg),
             .init(id: "pending-ecash", amount: 2100, type: .outgoing, kind: .ecash,
                   date: date, status: .pending, mintUrl: "https://mint.example", token: "cashu-token"),
             .init(id: "received-ecash", amount: 2100, type: .incoming, kind: .ecash,
@@ -290,7 +327,8 @@ private struct ActivityDetailCatalog: View {
                     }
                     .accessibilityIdentifier(transaction.id)
                 } else {
-                    Button(transaction.displayTitle) { selectedTransaction = transaction }
+                    // Titled as History titles it, so a transfer names its mint.
+                    Button(transaction.displayTitle(mints: walletManager.mints)) { selectedTransaction = transaction }
                         .accessibilityIdentifier(transaction.id)
                 }
             }

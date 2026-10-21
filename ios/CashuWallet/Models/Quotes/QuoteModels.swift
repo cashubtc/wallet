@@ -143,16 +143,17 @@ enum MintQuoteSchedulePolicy {
         existing: [String: MintQuoteScheduleRecord],
         now: Date,
         force: Bool,
-        unsettledOnchainQuoteIDs: Set<String> = []
+        reopenedQuoteIDs: Set<String> = []
     ) -> Selection {
         let nowValue = now.timeIntervalSince1970
         var records = existing.filter { quoteIDs.contains($0.key) }
         for quoteID in quoteIDs where !quoteID.isEmpty && records[quoteID] == nil {
             records[quoteID] = MintQuoteScheduleRecord(firstObservedAt: nowValue)
         }
-        // Older schedules treated expiry as terminal even while an on-chain
-        // deposit was waiting for confirmations. The durable quote reopens it.
-        for quoteID in unsettledOnchainQuoteIDs where records[quoteID]?.isComplete == true {
+        // Expiry is not always terminal: an on-chain deposit can still be
+        // waiting for confirmations, and a transfer's Lightning payment can
+        // settle after its invoice expired. The durable quote reopens those.
+        for quoteID in reopenedQuoteIDs where records[quoteID]?.isComplete == true {
             records[quoteID]?.isComplete = false
             records[quoteID]?.nextAttemptAt = 0
         }

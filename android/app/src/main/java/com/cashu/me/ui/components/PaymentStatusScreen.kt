@@ -27,6 +27,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Warning
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -54,6 +57,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.cashu.me.Core.AmountParts
+import com.cashu.me.Core.WalletHaptic
+import com.cashu.me.Core.rememberWalletHaptics
 import com.cashu.me.ui.theme.AmountScale
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.rememberReducedMotion
@@ -106,8 +111,18 @@ fun PaymentStatusScreen(
     // failure: the glyph becomes the same pending clock (iOS parity).
     awaitingMint: Boolean = false,
     successAmount: String? = null,
+    // For a caller that narrates its stages in [detail] while processing: each
+    // new line fades in with the amount slot's fade instead of replacing the
+    // last in place.
+    fadesProcessingDetail: Boolean = false,
+    // A failure that spent nothing and only asks the user to look again (a
+    // quote that lapsed, a mint that can't take part): the orange triangle
+    // instead of the red X, with the warning haptic rather than Reject (iOS
+    // `isCaution`). Failure only.
+    caution: Boolean = false,
 ) {
     val haptics = LocalHapticFeedback.current
+    val walletHaptics = rememberWalletHaptics()
     val inspectionMode = LocalInspectionMode.current
     val reducedMotion = rememberReducedMotion()
     // Celebration-mount gate (DESIGN.md §6 animation 6): a terminal MOUNTED
@@ -133,7 +148,11 @@ fun PaymentStatusScreen(
             PaymentStatusPhase.Success -> if (!staged) {
                 haptics.performHapticFeedback(HapticFeedbackType.Confirm)
             }
-            PaymentStatusPhase.Failure -> haptics.performHapticFeedback(HapticFeedbackType.Reject)
+            PaymentStatusPhase.Failure -> if (caution) {
+                walletHaptics.perform(WalletHaptic.Warning)
+            } else {
+                haptics.performHapticFeedback(HapticFeedbackType.Reject)
+            }
             PaymentStatusPhase.Processing -> Unit
         }
     }
@@ -173,10 +192,14 @@ fun PaymentStatusScreen(
                     // here buried the glyph beat under a double exposure.
                     Modifier
                 } else {
+                    // Rows shown while processing take over the same rows on
+                    // the face below at the same place, so the settle would
+                    // only slide them; that entrance is a fade alone.
+                    val settles = !reducedMotion && !showRowsDuringProcessing
                     Modifier.graphicsLayer {
                         alpha = entranceAlpha
-                        scaleX = if (reducedMotion) 1f else entranceScale
-                        scaleY = if (reducedMotion) 1f else entranceScale
+                        scaleX = if (settles) entranceScale else 1f
+                        scaleY = if (settles) entranceScale else 1f
                     }
                 },
             ),
@@ -297,6 +320,15 @@ fun PaymentStatusScreen(
                                         tint = CashuTheme.colors.pending,
                                         modifier = Modifier.size(StatusGlyphSize),
                                     )
+                                } else if (caution) {
+                                    // The review's caution glyph (ConfirmCautionFace),
+                                    // entering like the failure X: no bounce.
+                                    Icon(
+                                        imageVector = Icons.Rounded.Warning,
+                                        contentDescription = "Warning",
+                                        tint = CashuTheme.colors.onPendingContainer,
+                                        modifier = Modifier.size(StatusGlyphSize),
+                                    )
                                 } else {
                                     StatusCircleGlyph(
                                         kind = StatusGlyphKind.Failure,
@@ -350,14 +382,22 @@ fun PaymentStatusScreen(
                             )
                         }
                         AnimatedContent(
-                            targetState = successAmount?.takeIf {
-                                phase == PaymentStatusPhase.Success && !settlementPending && it.isNotBlank()
-                            },
+                            targetState = StatusSubline(
+                                amount = successAmount?.takeIf {
+                                    phase == PaymentStatusPhase.Success && !settlementPending && it.isNotBlank()
+                                },
+                                processingDetail = detail.takeIf {
+                                    fadesProcessingDetail && phase == PaymentStatusPhase.Processing
+                                },
+                            ),
                             transitionSpec = {
                                 (fadeIn(tween(200)) togetherWith fadeOut(tween(150))).using(null)
                             },
                             label = "payment-status-amount",
-                        ) { amount ->
+                        ) { subline ->
+                            val amount = subline.amount
+                            // The outgoing stage line keeps its own words while it fades.
+                            val shownDetail = subline.processingDetail ?: detail
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 if (amount != null) {
                                     Spacer(Modifier.height(CashuTheme.spacing.comfortable))
@@ -372,7 +412,7 @@ fun PaymentStatusScreen(
                                 } else {
                                     Spacer(Modifier.height(CashuTheme.spacing.snug))
                                     Text(
-                                        text = detail ?: " ",
+                                        text = shownDetail ?: " ",
                                         style = MaterialTheme.typography.bodyLarge,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         textAlign = TextAlign.Center,
@@ -381,7 +421,7 @@ fun PaymentStatusScreen(
                                             .fillMaxWidth()
                                             .heightIn(min = StatusDescriptionMinHeight)
                                             .padding(horizontal = StatusDescriptionHorizontalPadding)
-                                            .graphicsLayer { alpha = if (detail == null) 0f else 1f },
+                                            .graphicsLayer { alpha = if (shownDetail == null) 0f else 1f },
                                     )
                                 }
                             }
@@ -426,6 +466,13 @@ fun PaymentStatusScreen(
         }
     }
 }
+
+/**
+ * What sits under the title: the settled amount, or a detail line. A
+ * processing detail is carried only when the caller opts into fading it, so it
+ * keys the transition; otherwise the line reads the current detail as before.
+ */
+private data class StatusSubline(val amount: String?, val processingDetail: String?)
 
 private enum class StatusGlyphKind { Success, Failure, Pending }
 

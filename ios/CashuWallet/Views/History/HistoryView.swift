@@ -415,7 +415,7 @@ struct HistoryView: View {
     private func matchesSearch(_ item: HistoryItem) -> Bool {
         switch item {
         case .transaction(let tx):
-            return HistorySearch.matches(query: searchText, transaction: tx)
+            return HistorySearch.matches(query: searchText, transaction: tx, mints: walletManager.mints)
         case .request(let req):
             return HistorySearch.matches(
                 query: searchText,
@@ -544,6 +544,7 @@ struct HistoryView: View {
     private func transactionRow(transaction: WalletTransaction) -> some View {
         TransactionRowView(
             transaction: transaction,
+            mints: walletManager.mints,
             horizontalPadding: rowHorizontalPadding,
             verticalPadding: rowVerticalPadding,
             accessibilityHint: transaction.isPendingReceiveToken ? "Opens receive review" : "Opens transaction details"
@@ -572,10 +573,12 @@ struct HistoryView: View {
 /// raw value (Android `unifiedFiltered` parity — memos included for both
 /// transactions and Cashu Requests).
 enum HistorySearch {
-    static func matches(query: String, transaction: WalletTransaction) -> Bool {
+    /// `mints` names a transfer's destination in its title, so a transfer is
+    /// found by the mint it went to as well as by "transfer".
+    static func matches(query: String, transaction: WalletTransaction, mints: [MintInfo] = []) -> Bool {
         let query = normalized(query)
         guard !query.isEmpty else { return true }
-        if transaction.displayTitle.lowercased().contains(query) { return true }
+        if transaction.displayTitle(mints: mints).lowercased().contains(query) { return true }
         if !transaction.isUnfundedAddress, "\(transaction.amount)".contains(query) { return true }
         if let memo = transaction.displayDescription, memo.lowercased().contains(query) { return true }
         return false

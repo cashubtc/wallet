@@ -77,6 +77,10 @@ extension WalletManager {
         errorMessage = nil
         do {
             try await operationCoordinator.perform(kind: .removeMint) {
+                // Removing either end would drop the wallet that finishes it.
+                guard !self.walletStore.loadMintTransfers().hasUnfinishedTransfer(referencing: mint.url) else {
+                    throw MintRemovalPolicyError.transferInProgress
+                }
                 try await self.mintService.removeMint(mint)
                 ICloudRestoreState.removePendingMint(mint.url)
             }

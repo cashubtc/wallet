@@ -494,7 +494,7 @@ struct MainWalletView: View {
             sectionHeader("Recent")
 
             ForEach(items) { item in
-                TransactionRowView(transaction: item) {
+                TransactionRowView(transaction: item, mints: walletManager.mints) {
                     HapticFeedback.selection()
                     selectedTransaction = item
                 }

@@ -120,7 +120,7 @@ internal class WalletMintQuoteSyncService private constructor(
     fun selectQuoteIdsForSync(
         quoteIds: Collection<String>,
         force: Boolean,
-        unsettledOnchainQuoteIds: Set<String> = emptySet(),
+        reopenedQuoteIds: Set<String> = emptySet(),
     ): List<String> =
         synchronized(scheduleMonitor) {
             val selection = MintQuoteSchedulePolicy.select(
@@ -128,7 +128,7 @@ internal class WalletMintQuoteSyncService private constructor(
                 existing = schedulesLocked(),
                 nowEpochMillis = nowEpochMillis(),
                 force = force,
-                unsettledOnchainQuoteIds = unsettledOnchainQuoteIds,
+                reopenedQuoteIds = reopenedQuoteIds,
             )
             persistSchedulesLocked(selection.records)
             selection.quoteIds

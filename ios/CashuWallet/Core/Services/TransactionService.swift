@@ -183,7 +183,11 @@ class TransactionService: ObservableObject {
                 // any transaction for it (that happens once minting starts), so
                 // unpaid and paid-not-yet-minted quotes still get synthesized
                 // rows. Quotes that already have a transaction are skipped.
+                // A transfer's destination quote is paid by the wallet itself,
+                // so it is never an invoice the user is waiting on.
+                let transferQuoteIDs = walletStore.loadMintTransfers().ownedMintQuoteIDs
                 let pendingMintQuotes = try await walletDatabase.getUnissuedMintQuotes()
+                    .filter { !transferQuoteIDs.contains($0.id) }
                 let pendingQuoteTransactions = await pendingTransactions(
                     from: pendingMintQuotes,
                     trackedMintUrls: trackedMintUrls,
@@ -231,8 +235,16 @@ class TransactionService: ObservableObject {
 
         // Restore from durable request metadata each load, even after payment/relaunch.
         let requests = walletStore.loadCashuRequests()
-        transactions = MintReceiptProjection.project(allTransactions).map { $0.restoringDescription(from: requests) }
+        let rows = MintReceiptProjection.project(allTransactions).map { $0.restoringDescription(from: requests) }
             .sorted { $0.date > $1.date }
+        // Rows retained from a failed read may already be folded. The
+        // projection leaves those as they are, so nothing is folded twice.
+        let mints = walletStore.loadMints()
+        transactions = MintTransferProjection.project(
+            rows,
+            records: walletStore.loadMintTransfers(),
+            mintName: { MintInfo.displayName(for: $0, in: mints) }
+        )
 
         // Post notification that transactions were updated
         NotificationCenter.default.post(name: .cashuTransactionsUpdated, object: nil)

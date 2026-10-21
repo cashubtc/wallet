@@ -21,6 +21,7 @@ import com.cashu.me.ui.theme.AmountScale
  * @param unit     effective unit code for non-sat mints (e.g. "USD")
  * @param fiatCurrencyCode applies the saved fiat symbol instead of a mint-unit suffix
  * @param color    dims to `onSurfaceVariant` on insufficient balance (Send Ecash)
+ * @param scale    the rung; a short amount cell steps it down to keep its note line
  */
 @Composable
 fun AmountEntryHero(
@@ -31,6 +32,7 @@ fun AmountEntryHero(
     formatter: AmountFormatter,
     fiatCurrencyCode: String? = null,
     color: Color = MaterialTheme.colorScheme.onSurface,
+    scale: AmountScale = AmountScale.Hero,
 ) {
     // Entry is whole-number-first, so an untouched pad reads "0" in every unit —
     // the fraction only exists once the user presses the decimal key.
@@ -41,7 +43,7 @@ fun AmountEntryHero(
         } else {
             formatter.entryParts(raw, isSat, unit, useBitcoinSymbol)
         },
-        scale = AmountScale.Hero,
+        scale = scale,
         color = color,
     )
 }

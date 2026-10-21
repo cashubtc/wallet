@@ -1,6 +1,18 @@
 import Foundation
 import Cdk
 
+enum MintRemovalPolicyError: LocalizedError {
+    /// A transfer into or out of the mint has been paid for and not finished.
+    case transferInProgress
+
+    var errorDescription: String? {
+        switch self {
+        case .transferInProgress:
+            return "A transfer involving this mint is still settling. Keep it connected until the transfer finishes."
+        }
+    }
+}
+
 @MainActor
 enum MintRemovalPolicy {
     static func normalizedUnits(_ registeredUnits: [String]) -> [String] {
@@ -561,6 +573,19 @@ class MintService: ObservableObject {
                 methods: fetchedInfo.nuts.nut05.methods.map {
                     (PaymentMethodKind.from($0.method), isSatUnit($0.unit), $0.amountless)
                 }
+            )
+
+            // Likewise authoritative: a mint that pauses a direction or drops
+            // the rail must stop being offered for transfers.
+            mintInfo.bolt11Sat = Bolt11SatCapability.reported(
+                mint: fetchedInfo.nuts.nut04.methods.map {
+                    (PaymentMethodKind.from($0.method), isSatUnit($0.unit), $0.minAmount?.value, $0.maxAmount?.value)
+                },
+                mintingDisabled: fetchedInfo.nuts.nut04.disabled,
+                melt: fetchedInfo.nuts.nut05.methods.map {
+                    (PaymentMethodKind.from($0.method), isSatUnit($0.unit), $0.minAmount?.value, $0.maxAmount?.value)
+                },
+                meltingDisabled: fetchedInfo.nuts.nut05.disabled
             )
         }
 
