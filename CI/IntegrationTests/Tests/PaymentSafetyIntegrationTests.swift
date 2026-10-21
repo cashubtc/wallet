@@ -57,12 +57,12 @@ class PaymentFixtureTestCase: XCTestCase {
     var root: String { "/sessions/\(sessionID!)" }
     func mintURL(_ mint: String) -> String { fixture + root + "/mint/" + mint }
 
-    func makeWallet(_ mint: String, unit: CurrencyUnit = .sat) async throws -> Wallet {
+    func makeWallet(_ mint: String, unit: CurrencyUnit = .sat, absoluteURL: String? = nil) async throws -> Wallet {
         let seed = try generateMnemonic()
         let path = NSTemporaryDirectory() + "payment-\(UUID().uuidString).sqlite"
         let repo = try WalletRepository(mnemonic: seed, store: .sqlite(path: path))
         stores.append((repo, path, seed))
-        let url = MintUrl(url: mintURL(mint))
+        let url = MintUrl(url: absoluteURL ?? mintURL(mint))
         try await repo.createWallet(mintUrl: url, unit: unit, targetProofCount: nil)
         let wallet = try await repo.getWallet(mintUrl: url, unit: unit)
         walletHandles.append(wallet)
@@ -179,6 +179,101 @@ class PaymentFixtureTestCase: XCTestCase {
     }
 }
 
+/// Run alongside CrossPlatformInteropTest on Android, sharing a fixture session.
+/// Tokens retain the same loopback mint URL on both devices (ADB reverse required).
+final class CrossPlatformIntegrationTests: PaymentFixtureTestCase {
+    func testCdkNativePlatformInteroperability() async throws { try await exchange("cdk", port: 3339) }
+    func testNutshellNativePlatformInteroperability() async throws { try await exchange("nutshell", port: 3338) }
+
+    private func exchange(_ mint: String, port: Int) async throws {
+        try XCTSkipIf(ProcessInfo.processInfo.environment["INTEROP_SESSION_ID"] == nil,
+                      "Run with the paired Android interoperability suite")
+        let shared = try XCTUnwrap(ProcessInfo.processInfo.environment["INTEROP_SESSION_ID"],
+                                  "Run the paired native interoperability suite")
+        let bridge = "/sessions/\(shared)"
+        let wallet = try await makeWallet(mint, absoluteURL: "http://127.0.0.1:\(port)")
+        let key = nostrGenerateSecretKey()
+        let pubkey = try "02" + nostrGetPubkey(nostrSecretKey: key)
+        _ = try await call(bridge + "/receive", method: "POST", body: ["stage": "\(mint)-ios-key", "key": pubkey])
+        let peer = try await waitFor("\(mint)-android-key", bridge: bridge)
+        let peerKey = try XCTUnwrap(peer["key"] as? String)
+        try await fund(wallet, amount: 128)
+        let plain = try await send(wallet, amount: 31).confirm(memo: nil)
+        let locked = try await send(wallet, amount: 7, key: peerKey).confirm(memo: nil)
+        let sentBalance = try await balance(wallet)
+        XCTAssertEqual(sentBalance, 90)
+        _ = try await call(bridge + "/receive", method: "POST", body: [
+            "stage": "\(mint)-ios-tokens", "plain": plain.encode(), "locked": locked.encode()])
+        let reply = try await waitFor("\(mint)-android-tokens", bridge: bridge)
+        let incoming = try Token.decode(encodedToken: XCTUnwrap(reply["plain"] as? String))
+        let incomingLocked = try Token.decode(encodedToken: XCTUnwrap(reply["locked"] as? String))
+        let creditedPlain = try await receive(wallet, token: incoming)
+        XCTAssertEqual(creditedPlain, 13)
+        await expectError(["key", "signature", "witness", "sign", "p2pk"]) {
+            _ = try await self.receive(wallet, token: incomingLocked, keys: [nostrGenerateSecretKey()])
+        }
+        let creditedLocked = try await receive(wallet, token: incomingLocked, keys: [key])
+        XCTAssertEqual(creditedLocked, 5)
+        await expectError(["spent", "used", "11001", "already"]) {
+            _ = try await self.receive(wallet, token: incoming)
+        }
+        let reopened = try await reopen(wallet)
+        let finalBalance = try await balance(reopened)
+        XCTAssertEqual(finalBalance, 108)
+        XCTAssertEqual((reply["balance"] as? NSNumber)?.uint64Value, 20)
+        XCTAssertEqual(finalBalance + ((reply["balance"] as? NSNumber)?.uint64Value ?? 0), 128)
+        _ = try await call(bridge + "/receive", method: "POST", body: [
+            "stage": "\(mint)-ios-complete", "balance": finalBalance, "total": 128])
+    }
+
+    private func waitFor(_ stage: String, bridge: String) async throws -> [String: Any] {
+        for _ in 0..<480 {
+            let state = try await call(bridge)
+            if let delivery = (state["deliveries"] as? [[String: Any]])?.first(where: { $0["stage"] as? String == stage }) {
+                return delivery
+            }
+            try await Task.sleep(nanoseconds: 500_000_000)
+        }
+        throw NSError(domain: "NativeInterop", code: 1,
+                      userInfo: [NSLocalizedDescriptionKey: "Timed out waiting for \(stage)"])
+    }
+}
+
+final class LiveMintSubscriptionIntegrationTests: PaymentFixtureTestCase {
+    private var subscriptions: [ActiveSubscription] = []
+
+    override func tearDown() {
+        subscriptions.removeAll()
+        super.tearDown()
+    }
+
+    func testCdkQuoteSubscriptionAndIssuance() async throws { try await observeAndMint("cdk", port: 3339) }
+    func testNutshellQuoteSubscriptionAndIssuance() async throws { try await observeAndMint("nutshell", port: 3338) }
+
+    private func observeAndMint(_ mint: String, port: Int) async throws {
+        let wallet = try await makeWallet(mint, absoluteURL: "http://127.0.0.1:\(port)")
+        let quote = try await paidQuote(wallet, amount: 21)
+        let subscription = try await wallet.subscribeMintQuoteState(quoteIds: [quote.id], paymentMethod: .bolt11)
+        subscriptions.append(subscription)
+        var observed = false
+        for _ in 0..<200 {
+            if let payload = try await subscription.tryRecv(),
+               case .mintQuoteUpdate(let update) = payload,
+               update.quote == quote.id, update.state == .paid {
+                observed = true
+                break
+            }
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+        XCTAssertTrue(observed, "A native subscription must deliver the paid quote")
+        let proofs = try await wallet.mint(quoteId: quote.id, amountSplitTarget: .none, spendingConditions: nil)
+        XCTAssertEqual(proofs.reduce(UInt64(0)) { $0 + $1.amount.value }, 21)
+        let reopened = try await reopen(wallet)
+        let restoredBalance = try await balance(reopened)
+        XCTAssertEqual(restoredBalance, 21)
+    }
+}
+
 final class PaymentSafetyIntegrationTests: PaymentFixtureTestCase {
     func testControlledQuoteIsUnpaidUntilExplicitPaymentAndIssuesOnlyOnce() async throws {
         let wallet = try await makeWallet("controlled")
@@ -264,8 +359,16 @@ final class PaymentSafetyIntegrationTests: PaymentFixtureTestCase {
     }
 
     func testLostMintResponseRecoversPaidQuoteExactlyOnce() async throws {
-        let wallet = try await makeWallet("controlled")
-        let quote = try await paidQuote(wallet, amount: 42, controlled: "controlled")
+        try await assertLostMintResponse(mint: "controlled")
+    }
+
+    func testCdkLostMintResponseRecoversPaidQuoteExactlyOnce() async throws {
+        try await assertLostMintResponse(mint: "cdk")
+    }
+
+    private func assertLostMintResponse(mint: String) async throws {
+        let wallet = try await makeWallet(mint)
+        let quote = try await paidQuote(wallet, amount: 42, controlled: mint == "controlled" ? mint : nil)
         try await arm("/v1/mint/bolt11", action: "lose_response")
         do { _ = try await wallet.mint(quoteId: quote.id, amountSplitTarget: .none, spendingConditions: nil) } catch { }
         let recovered = try await reopen(wallet)
@@ -364,9 +467,19 @@ final class PaymentSafetyIntegrationTests: PaymentFixtureTestCase {
     }
 
     func testFeeChargingMintMaxSendAndReceiveConserveValue() async throws {
-        let sender = try await makeWallet("fees")
-        let receiver = try await makeWallet("fees")
-        try await fund(sender, controlled: "fees")
+        try await assertFeeChargingMintMaxSendAndReceive(mint: "fees")
+    }
+
+    func testCdkFeeChargingMintMaxSendAndReceiveConserveValue() async throws {
+        let url = ProcessInfo.processInfo.environment["CDK_FEE_MINT_URL"]
+        try XCTSkipIf(url == nil, "Start the optional CDK 1000-ppk fixture")
+        try await assertFeeChargingMintMaxSendAndReceive(mint: "cdk", absoluteURL: url)
+    }
+
+    private func assertFeeChargingMintMaxSendAndReceive(mint: String, absoluteURL: String? = nil) async throws {
+        let sender = try await makeWallet(mint, absoluteURL: absoluteURL)
+        let receiver = try await makeWallet(mint, absoluteURL: absoluteURL)
+        try await fund(sender, controlled: mint == "fees" ? mint : nil)
         let prepared = try await send(sender, amount: 100)
         XCTAssertEqual(prepared.fee().value, 0, "Send max transfers existing proofs without a swap")
         let token = try await prepared.confirm(memo: nil)
@@ -399,10 +512,18 @@ final class PaymentSafetyIntegrationTests: PaymentFixtureTestCase {
     }
 
     func testConcurrentReceiversCannotDoubleCredit() async throws {
-        let sender = try await makeWallet("controlled")
-        let a = try await makeWallet("controlled")
-        let b = try await makeWallet("controlled")
-        try await fund(sender, controlled: "controlled")
+        try await assertConcurrentReceivers(mint: "controlled")
+    }
+
+    func testCdkConcurrentReceiversCannotDoubleCredit() async throws {
+        try await assertConcurrentReceivers(mint: "cdk")
+    }
+
+    private func assertConcurrentReceivers(mint: String) async throws {
+        let sender = try await makeWallet(mint)
+        let a = try await makeWallet(mint)
+        let b = try await makeWallet(mint)
+        try await fund(sender, controlled: mint == "controlled" ? mint : nil)
         let token = try await send(sender, amount: 21).confirm(memo: nil)
         async let first = attemptReceive(a, token: token)
         async let second = attemptReceive(b, token: token)
@@ -605,6 +726,10 @@ final class PaymentExtendedIntegrationTests: PaymentFixtureTestCase {
         try await assertRequestDelivery(mint: "controlled")
     }
 
+    func testCdkCashuRequestFixedAndAmountlessHttpDelivery() async throws {
+        try await assertRequestDelivery(mint: "cdk")
+    }
+
     // Opt-in reproduction: CDK 0.18 delivers 19 instead of 21 at 1000 ppk.
     // Keep the intended assertion; do not make underpayment a passing contract.
     func testCashuRequestReceiverFeeRegression() async throws {
@@ -613,12 +738,18 @@ final class PaymentExtendedIntegrationTests: PaymentFixtureTestCase {
         try await assertRequestDelivery(mint: "fees")
     }
 
-    private func assertRequestDelivery(mint: String) async throws {
+    func testCdkCashuRequestReceiverFeeRegression() async throws {
+        let url = ProcessInfo.processInfo.environment["CDK_FEE_MINT_URL"]
+        try XCTSkipIf(url == nil, "Start the optional CDK 1000-ppk fixture")
+        try await assertRequestDelivery(mint: "cdk", absoluteURL: url)
+    }
+
+    private func assertRequestDelivery(mint: String, absoluteURL: String? = nil) async throws {
         for amount: UInt64? in [21, nil] {
-            let payer = try await makeWallet(mint)
-            let receiver = try await makeWallet(mint)
-            try await fund(payer, controlled: mint)
-            var config: [String: Any] = ["target": fixture + root + "/receive", "mints": [mintURL(mint)]]
+            let payer = try await makeWallet(mint, absoluteURL: absoluteURL)
+            let receiver = try await makeWallet(mint, absoluteURL: absoluteURL)
+            try await fund(payer, controlled: ["fees", "controlled"].contains(mint) ? mint : nil)
+            var config: [String: Any] = ["target": fixture + root + "/receive", "mints": [absoluteURL ?? mintURL(mint)]]
             if let amount { config["amount"] = amount }
             let encoded = try await call(root + "/request", method: "POST", body: config)["request"] as! String
             let request = try PaymentRequest.fromString(encoded: encoded)
@@ -628,9 +759,19 @@ final class PaymentExtendedIntegrationTests: PaymentFixtureTestCase {
             XCTAssertEqual(delivered["id"] as? String, sessionID)
             let token = try Token.decode(encodedToken: delivered["token"] as! String)
             let credited = try await receive(receiver, token: token)
+            if mint == "fees" || absoluteURL != nil {
+                let state = try await call(root)
+                let payload = (state["deliveries"] as? [[String: Any]])?.last
+                let proofs = payload?["proofs"] as? [[String: Any]] ?? []
+                let gross = proofs.reduce(UInt64(0)) { $0 + (($1["amount"] as? NSNumber)?.uint64Value ?? 0) }
+                let proofCount = proofs.count
+                let denominations = proofs.compactMap { ($0["amount"] as? NSNumber)?.uint64Value }.sorted()
+                let remaining = try await balance(payer)
+                print("REQUEST_FEE_DIAGNOSTIC mint=\(mint) fixed=\(amount != nil) requested=21 gross=\(gross) proofs=\(proofCount) denominations=\(denominations) planned_input_fee=\(prepared.inputFee().value) planned_debit=\(prepared.totalAmount().value) credited=\(credited) sender_remaining=\(remaining)")
+            }
             XCTAssertEqual(credited, 21, "A payment request includes the receiver's redemption fee")
             let left = try await balance(payer)
-            if mint == "controlled" {
+            if mint == "controlled" || (mint == "cdk" && absoluteURL == nil) {
                 XCTAssertEqual(left, 79, "A zero-fee request must debit exactly the requested amount")
             } else {
                 XCTAssertLessThanOrEqual(left, 79)

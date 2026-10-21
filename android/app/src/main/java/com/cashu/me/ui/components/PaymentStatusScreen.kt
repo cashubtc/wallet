@@ -106,6 +106,10 @@ fun PaymentStatusScreen(
     // completion: the glyph becomes a pending clock instead of the green
     // check, with no celebration bounce (iOS parity).
     settlementPending: Boolean = false,
+    // The payment left the wallet but the mint hasn't confirmed its outcome,
+    // so the funds are held, not lost. The failure face then must not claim
+    // failure: the glyph becomes the same pending clock (iOS parity).
+    awaitingMint: Boolean = false,
     successAmount: String? = null,
     // For a caller that narrates its stages in [detail] while processing: each
     // new line fades in with the amount slot's fade instead of replacing the
@@ -308,9 +312,17 @@ fun PaymentStatusScreen(
                                             ),
                                     )
                                 }
-                                // The review's caution glyph (ConfirmCautionFace),
-                                // entering like the failure X: no bounce.
-                                PaymentStatusPhase.Failure -> if (caution) {
+                                PaymentStatusPhase.Failure -> if (awaitingMint) {
+                                    // Unconfirmed, not failed: the pending clock.
+                                    StatusCircleGlyph(
+                                        kind = StatusGlyphKind.Pending,
+                                        contentDescription = "Pending",
+                                        tint = CashuTheme.colors.pending,
+                                        modifier = Modifier.size(StatusGlyphSize),
+                                    )
+                                } else if (caution) {
+                                    // The review's caution glyph (ConfirmCautionFace),
+                                    // entering like the failure X: no bounce.
                                     Icon(
                                         imageVector = Icons.Rounded.Warning,
                                         contentDescription = "Warning",

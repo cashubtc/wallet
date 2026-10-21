@@ -514,12 +514,7 @@ struct SendView: View {
             return activeCandidate
         }
 
-        return candidates.sorted { lhs, rhs in
-            if lhs.balance == rhs.balance {
-                return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
-            }
-            return lhs.balance > rhs.balance
-        }.first
+        return MintSelection.sorted(candidates).first
     }
 
     private func selectSendMint(_ mint: MintInfo) {
@@ -595,9 +590,7 @@ struct SendView: View {
     }
 
     private func normalizeForCompare(_ pubkey: String) -> String {
-        let s = pubkey.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if s.count == 66, s.hasPrefix("02") || s.hasPrefix("03") { return String(s.dropFirst(2)) }
-        return s
+        P2PKPublicKey.normalizedForComparison(pubkey)
     }
 
     // MARK: - Token Display View
@@ -870,23 +863,7 @@ struct SendView: View {
     /// hex key, or bare 64-char hex (auto-prefixed `02`). Returns nil for anything
     /// else — including Nostr `npub`s, which this scheme can't lock to.
     static func normalizeP2PKPubkey(_ raw: String) -> String? {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !trimmed.isEmpty else { return nil }
-
-        let hexChars = CharacterSet(charactersIn: "0123456789abcdef")
-        let allHex = trimmed.unicodeScalars.allSatisfy { hexChars.contains($0) }
-
-        if trimmed.count == 64 && allHex {
-            return "02\(trimmed)"
-        }
-
-        guard trimmed.count == 66,
-              (trimmed.hasPrefix("02") || trimmed.hasPrefix("03")),
-              allHex else {
-            return nil
-        }
-
-        return trimmed
+        P2PKPublicKey.validatedCompressed(raw)
     }
 
     // MARK: - Lock Ecash
@@ -1102,6 +1079,8 @@ struct UnifiedSendView: View {
     let onRoutePayment: (SendAmountDestination, CashuRequestRouteExplanation?) -> Void
     /// Present only when this instance started as the routed amount sheet.
     private let onEditDestination: (() -> Void)?
+    /// Closes the sheet on the History tab, where an unconfirmed payment resolves.
+    private let onViewHistory: (() -> Void)?
     /// True for the routed payment sheet (`initialAmountDestination != nil`):
     /// a fixed `.large` modal wearing the Receive convention's chrome — X to
     /// abandon, back arrow from confirm when an amount step sits behind it.
@@ -1146,6 +1125,8 @@ struct UnifiedSendView: View {
     @State private var errorSeverity: ErrorSeverity = .error
     @State private var errorShowsMintAction = false
     @State private var errorIsTerminal = false
+    /// The payment left the wallet but the mint hasn't confirmed it yet.
+    @State private var errorAwaitsMint = false
     @State private var meltRetryNeedsFreshQuote = false
     /// Persisted across confirmation → processing/success/failure so a
     /// rail-changing or recovery route cannot disappear as wallet state updates.
@@ -1168,6 +1149,7 @@ struct UnifiedSendView: View {
         errorSeverity = severity
         errorShowsMintAction = false
         errorIsTerminal = false
+        errorAwaitsMint = false
     }
 
     private func presentError(from error: Error) {
@@ -1176,6 +1158,7 @@ struct UnifiedSendView: View {
         errorSeverity = walletMessage.severity
         errorShowsMintAction = error.isInsufficientBalanceError
         errorIsTerminal = walletMessage.recoverability == .terminal
+        errorAwaitsMint = walletMessage.awaitsMintConfirmation
     }
 
     /// Secondary line under an insufficient-balance notice: what's actually here.
@@ -1247,6 +1230,7 @@ struct UnifiedSendView: View {
         onSendEcash: @escaping () -> Void,
         onRoutePayment: @escaping (SendAmountDestination, CashuRequestRouteExplanation?) -> Void,
         onEditDestination: (() -> Void)? = nil,
+        onViewHistory: (() -> Void)? = nil,
         initialRouteExplanation: CashuRequestRouteExplanation? = nil
     ) {
         self.initialDestination = initialDestination
@@ -1258,6 +1242,7 @@ struct UnifiedSendView: View {
         self.onSendEcash = onSendEcash
         self.onRoutePayment = onRoutePayment
         self.onEditDestination = onEditDestination
+        self.onViewHistory = onViewHistory
 
         routedPresentation = initialAmountDestination != nil
         startedAtConfirm = initialAmountDestination?.carriesAmount ?? false
@@ -2158,7 +2143,9 @@ struct UnifiedSendView: View {
             // yet: the mint took the payment and pays out in the background.
             successTitle: meltSettlementPending ? "Payment Processing" : "Payment Sent!",
             settlementPending: meltSettlementPending,
+            awaitingMint: errorAwaitsMint,
             failureCTA: meltSwitchMintCTA,
+            onViewHistory: onViewHistory,
             onDone: onClose,
             onRetry: {
                 withAnimation(.smooth(duration: 0.3)) { step = .confirm }
@@ -2326,11 +2313,7 @@ struct UnifiedSendView: View {
         if let active = walletManager.activeMint, candidates.contains(where: { $0.id == active.id }) {
             return active
         }
-        return candidates.sorted { lhs, rhs in
-            lhs.balance == rhs.balance
-                ? lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
-                : lhs.balance > rhs.balance
-        }.first
+        return MintSelection.sorted(candidates).first
     }
 
     private func mintInfo(for quote: MeltQuoteInfo) -> MintInfo? {
@@ -2540,9 +2523,7 @@ struct UnifiedSendView: View {
 
     private var candidateMints: [MintInfo] {
         guard let creq = currentCreq else { return [] }
-        guard !creq.mints.isEmpty else { return walletManager.mints }
-        let requested = Set(creq.mints.map(normalizedMintURL))
-        return walletManager.mints.filter { requested.contains(normalizedMintURL($0.url)) }
+        return MintSelection.matching(walletManager.mints, requestedURLs: creq.mints)
     }
 
     private var selectedPaymentMint: MintInfo? {
@@ -2564,16 +2545,10 @@ struct UnifiedSendView: View {
         if let active = walletManager.activeMint, let match = candidates.first(where: { $0.id == active.id }) {
             return match
         }
-        return candidates.sorted { lhs, rhs in
-            lhs.balance == rhs.balance
-                ? lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
-                : lhs.balance > rhs.balance
-        }.first
+        return MintSelection.sorted(candidates).first
     }
 
-    private func normalizedMintURL(_ urlString: String) -> String {
-        MintURLIdentity.normalized(urlString)
-    }
+
 
     private func extractMintHost(_ url: String) -> String { URL(string: url)?.host ?? url }
 
@@ -2928,64 +2903,80 @@ struct UnitSelectorSheet: View {
     let units: [String]
     let selectedUnit: String
     let onSelect: (String) -> Void
+    var title = "Select Unit"
+    var usesList = false
 
     /// Measured height of the rows, driving a content-fit detent so the sheet
     /// hugs its units instead of stretching to `.medium`. Mirrors `AddMintToPaySheet`.
     @State private var rowsHeight: CGFloat = 0
 
-    /// Fixed sheet chrome around the measured rows: drag indicator + inline nav
-    /// bar + a little bottom breathing room.
-    private static let navChrome: CGFloat = 96
-
-    private var detentHeight: CGFloat {
-        let rows = rowsHeight > 0 ? rowsHeight : CGFloat(units.count) * 68
-        return rows + Self.navChrome
-    }
-
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 0) {
-                    ForEach(units, id: \.self) { unit in
-                        Button(action: { select(unit) }) {
-                            HStack(spacing: 12) {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(unit.uppercased())
-                                        .font(.body.weight(.medium))
-                                    if let subtitle = unitSubtitle(unit) {
-                                        Text(subtitle)
-                                            .font(.subheadline)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
+            Group {
+                if usesList {
+                    List(units, id: \.self) { unit in
+                        Button(action: { select(unit) }) { unitRow(unit) }
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                            .buttonStyle(.plain)
+                    }
+                    .listStyle(.plain)
+                    .scrollContentBackground(.hidden)
+                    .background(Color.clear)
+                } else {
+                    scrollRows
+                }
+            }
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+        }
+        .contentFitDetent(rowsHeight, enabled: !usesList)
+        .presentationDragIndicator(.visible)
+        .compactBottomSheetSurface()
+    }
 
-                                Spacer()
-
-                                if unit == selectedUnit {
-                                    Image(systemName: "checkmark")
-                                        .foregroundStyle(Color.accentColor)
-                                }
-                            }
+    private var scrollRows: some View {
+        ScrollView {
+            VStack(spacing: 0) {
+                ForEach(units, id: \.self) { unit in
+                    Button(action: { select(unit) }) {
+                        unitRow(unit)
                             .padding(.horizontal, 20)
                             .padding(.vertical, 12)
                             .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
                     }
-                }
-                .onGeometryChange(for: CGFloat.self) { proxy in
-                    proxy.size.height
-                } action: { newHeight in
-                    rowsHeight = newHeight
+                    .buttonStyle(.plain)
                 }
             }
-            .scrollBounceBehavior(.basedOnSize)
-            .navigationTitle("Select Unit")
-            .navigationBarTitleDisplayMode(.inline)
+            .onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.size.height
+            } action: { newHeight in
+                rowsHeight = newHeight
+            }
         }
-        .presentationDetents([.height(detentHeight)])
-        .presentationDragIndicator(.visible)
-        .compactBottomSheetSurface()
+        .scrollBounceBehavior(.basedOnSize)
+    }
+
+    private func unitRow(_ unit: String) -> some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(unit.uppercased())
+                    .font(.body.weight(.medium))
+                if let subtitle = unitSubtitle(unit) {
+                    Text(subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Spacer()
+
+            if unit == selectedUnit {
+                Image(systemName: "checkmark")
+                    .foregroundStyle(Color.accentColor)
+            }
+        }
+        .contentShape(Rectangle())
     }
 
     private func select(_ unit: String) {
@@ -3088,29 +3079,12 @@ struct MintSelectorSheet: View {
             filteredMints = sourceMints
         }
 
-        return filteredMints
-            .sorted { lhs, rhs in
-                let lhsSelected = selectedMint?.id == lhs.id
-                let rhsSelected = selectedMint?.id == rhs.id
-                if lhsSelected != rhsSelected { return lhsSelected }
-
-                if let unavailableReason {
-                    let lhsAvailable = unavailableReason(lhs) == nil
-                    let rhsAvailable = unavailableReason(rhs) == nil
-                    if lhsAvailable != rhsAvailable { return lhsAvailable }
-                }
-
-                if let minimumAmount {
-                    let lhsCanPay = lhs.balance >= minimumAmount
-                    let rhsCanPay = rhs.balance >= minimumAmount
-                    if lhsCanPay != rhsCanPay { return lhsCanPay }
-                }
-
-                if lhs.balance == rhs.balance {
-                    return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
-                }
-                return lhs.balance > rhs.balance
-            }
+        return MintSelection.sorted(
+            filteredMints,
+            selectedID: selectedMint?.id,
+            isAvailable: unavailableReason.map { reason in { (mint: MintInfo) in reason(mint) == nil } },
+            minimumAmount: minimumAmount
+        )
     }
 
     private var sourceMints: [MintInfo] {
@@ -3123,35 +3097,7 @@ struct MintSelectorSheet: View {
                 ForEach(displayMints) { mint in
                     let reason = unavailableReason?(mint)
                     Button(action: { selectMint(mint) }) {
-                        HStack(spacing: 12) {
-                            mintIcon(for: mint)
-                                .overlay(alignment: .bottomTrailing) {
-                                    if selectedMint?.id == mint.id {
-                                        Circle()
-                                            .fill(.green)
-                                            .frame(width: 12, height: 12)
-                                            .overlay(
-                                                Circle().stroke(Color(.systemBackground), lineWidth: 2)
-                                            )
-                                            .offset(x: 2, y: 2)
-                                    }
-                                }
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(mint.name)
-                                    .font(.body.weight(.medium))
-                                Text(reason ?? mintSubtitle(for: mint))
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                            }
-
-                            Spacer()
-
-                            if selectedMint?.id == mint.id {
-                                Image(systemName: "checkmark")
-                                    .foregroundStyle(Color.accentColor)
-                            }
-                        }
+                        MintPickerRow(mint: mint, subtitle: reason ?? mintSubtitle(for: mint), isSelected: selectedMint?.id == mint.id, showsSelectionBadge: true)
                         .padding(.horizontal, 20)
                         .padding(.vertical, 12)
                         .contentShape(Rectangle())
@@ -3180,32 +3126,6 @@ struct MintSelectorSheet: View {
             .map(\.displayName)
             .joined(separator: ", ")
         return "\(balance) - \(methods)"
-    }
-
-    @ViewBuilder
-    private func mintIcon(for mint: MintInfo) -> some View {
-        if let iconUrl = mint.iconUrl, let url = URL(string: iconUrl) {
-            CachedAsyncImage(url: url) { image in
-                image.resizable().aspectRatio(contentMode: .fill)
-            } placeholder: {
-                mintIconPlaceholder
-            }
-            .frame(width: 40, height: 40)
-            .clipShape(Circle())
-        } else {
-            mintIconPlaceholder
-        }
-    }
-
-    private var mintIconPlaceholder: some View {
-        Circle()
-            .fill(.quaternary)
-            .frame(width: 40, height: 40)
-            .overlay(
-                Image(systemName: "bitcoinsign.bank.building")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            )
     }
 
     private func selectMint(_ mint: MintInfo) {

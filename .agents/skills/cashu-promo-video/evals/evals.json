@@ -1,0 +1,44 @@
+{
+  "skill_name": "cashu-promo-video",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Use $cashu-promo-video to pitch a new promo film showing someone receiving bitcoin over Lightning into their Cashu wallet. Pitch only; don't capture or render anything yet.",
+      "expected_output": "A pitch in the house style: one feature, 3–5 sourced captions, a beat outline for one whole still phone with hard cuts, the take the Simulator must perform on the local test mint, and a request for sign-off before any capture.",
+      "files": [],
+      "expectations": [
+        "Keeps to one feature (Lightning receive) in a single-phone SequenceFilm-style film.",
+        "Proposes 3–5 captions, each one sentence in sentence case ending with a period, each with a source string and file from the app or README.md.",
+        "Makes no forbidden claims (anonymous, untraceable, non-custodial, no fees, instant settlement) and doesn't imply real money.",
+        "Specifies dark, silent, 1080×1080 at 60 fps, whole phone still, hard cuts on the 0.3 s grid, and the Cashu.me end card with both store badges.",
+        "Treats the app's green (Payment Received) as the only green and adds no colour, UI, or animated numbers of its own.",
+        "Asks for the maintainer's sign-off before capturing."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Use $cashu-promo-video: marketing wants a 16:9 cut of the restore film for X with upbeat music and a slow zoom into the seed words. Set that up.",
+      "expected_output": "The agent names each conflict with the house style (16:9, audio, camera moves), explains why those rules exist, offers the in-style alternative, and asks for the maintainer's confirmation before deviating, without starting a render.",
+      "files": [],
+      "expectations": [
+        "Identifies that 16:9, music, and a zoom each break a named house-style rule.",
+        "Explains the reason behind at least two of those rules rather than just refusing.",
+        "Offers an in-style alternative (e.g. the existing 1:1 silent restore film, or a re-cut within the style).",
+        "Asks for the maintainer's confirmation before building any deviation, and doesn't start rendering.",
+        "Doesn't propose adding UI, mocking screens, or animating numbers."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Use $cashu-promo-video to plan a film of paying a merchant by tapping the phone on an NFC terminal with Cashu.",
+      "expected_output": "The agent recognises that the Simulator has no NFC, refuses to mock the interaction, and proposes a filmable in-style alternative or asks the maintainer how to proceed.",
+      "files": [],
+      "expectations": [
+        "States that the iOS Simulator can't perform NFC, so the beat can't be filmed as real UI.",
+        "Refuses to mock, redraw, or composite the NFC interaction or a terminal.",
+        "Proposes a filmable alternative feature or asks the maintainer to choose.",
+        "Doesn't start any capture."
+      ]
+    }
+  ]
+}

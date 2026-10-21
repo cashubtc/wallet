@@ -333,5 +333,3 @@ struct MeltPaymentResult {
     let mintUrl: String
     var settlement: Settlement = .settled
 }
-
-/// Wallet transaction

@@ -12,15 +12,6 @@ import org.junit.Test
 /** iOS parity: `WalletErrorMessageTests.swift`. */
 class WalletErrorMessagesTest {
 
-    @Test
-    fun multiUnitRemovalPreservesSafetyGuidanceInsteadOfSuggestingNetworkRetry() {
-        val error = com.cashu.me.Core.CDK.MultiUnitWalletRemovalException(listOf("sat", "usd"))
-        assertEquals(
-            "This mint uses multiple currency units and cannot be removed safely yet. Keep it connected and try again after updating the app.",
-            WalletErrorMessages.classify(error).text,
-        )
-    }
-
     /** A one-line slot shows {what broke} and drops {what to try next}. */
     @Test
     fun headlineIsTheFirstSentence() {
@@ -36,8 +27,8 @@ class WalletErrorMessagesTest {
     }
 
     /**
-     * Same trap as multi-unit removal: the guidance says "connected", which
-     * the network matcher would turn into a connection error.
+     * The guidance says "connected", which the network matcher would turn
+     * into a connection error.
      */
     @Test
     fun transferInProgressRemovalPreservesSafetyGuidanceInsteadOfSuggestingNetworkRetry() {

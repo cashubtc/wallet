@@ -177,11 +177,7 @@ extension WalletManager {
     }
 
     private func normalizePreviewMintUrl(_ url: String) -> String {
-        var normalized = url.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !normalized.contains("://") {
-            normalized = "https://" + normalized
-        }
-        return normalized.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        MintURLIdentity.fromUserInput(url)
     }
 
     // MARK: - Balance Operations

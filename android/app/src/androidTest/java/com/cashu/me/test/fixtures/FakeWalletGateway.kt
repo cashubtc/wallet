@@ -3,7 +3,6 @@ package com.cashu.me.test.fixtures
 import com.cashu.me.Core.CDK.CrossMintQuotes
 import com.cashu.me.Core.CDK.ForeignNfcSettlement
 import com.cashu.me.Core.CDK.MeltConfirmation
-import com.cashu.me.Core.CDK.MultiUnitWalletRemovalException
 import com.cashu.me.Core.CDK.NfcReceiveReceipt
 import com.cashu.me.Core.CDK.NwcServiceHandle
 import com.cashu.me.Core.CDK.SagaRecoveryReport
@@ -78,8 +77,10 @@ class FakeWalletGateway(
     var metadataFetches = 0
     var metadataFailure: Throwable? = null
     var onMetadataFetch: (() -> Unit)? = null
+    var beforeStoredAccountBalance: (suspend () -> Unit)? = null
     var nextFailure: Throwable? = null
     var nextCloseFailure: Throwable? = null
+    var removeWalletFailure: Throwable? = null
     val latestMintQuoteId: String?
         get() = mintQuotes.keys.lastOrNull()
 
@@ -154,12 +155,11 @@ class FakeWalletGateway(
         mintInfo.putIfAbsent(normalized, defaultMint(normalized))
     }
 
-    override suspend fun removeWalletIfSingleUnit(mintUrl: String): Boolean {
+    override suspend fun removeWallets(mintUrl: String): Boolean {
+        removeWalletFailure?.let { throw it }
         failIfRequested()
         val normalized = normalize(mintUrl)
-        val registeredUnits = walletUnits[normalized].orEmpty().toList()
-        if (registeredUnits.size > 1) throw MultiUnitWalletRemovalException(registeredUnits)
-        if (registeredUnits.isEmpty()) return false
+        if (walletUnits[normalized].isNullOrEmpty()) return false
         walletUrls -= normalized
         walletUnits -= normalized
         mintInfo -= normalized
@@ -192,17 +192,16 @@ class FakeWalletGateway(
         units.map { com.cashu.me.Core.CDK.WalletAccountReference(url, it) }
     } + transactions.mapNotNull { tx -> tx.mintUrl?.let { com.cashu.me.Core.CDK.WalletAccountReference(it, tx.unit) } }
 
-    override suspend fun storedAccountBalance(account: com.cashu.me.Core.CDK.WalletAccountReference): Long =
-        unitBalance(account.mintUrl, account.unit)
+    override suspend fun storedAccountBalance(account: com.cashu.me.Core.CDK.WalletAccountReference): Long {
+        beforeStoredAccountBalance?.invoke()
+        return unitBalance(account.mintUrl, account.unit)
+    }
 
     override suspend fun totalBalance(mintUrl: String): Long =
         balances[normalize(mintUrl)] ?: 0
 
     override suspend fun unitBalance(mintUrl: String, unit: String): Long =
         if (unit.equals("sat", ignoreCase = true)) totalBalance(mintUrl) else nonSatBalances[normalize(mintUrl) to unit] ?: 0
-
-    override suspend fun unitBalanceIfExists(mintUrl: String, unit: String): Long? =
-        if (unit.equals("sat", ignoreCase = true)) totalBalance(mintUrl) else nonSatBalances[normalize(mintUrl) to unit]
 
     override suspend fun createMintQuote(
         amount: Long?,
@@ -398,8 +397,11 @@ class FakeWalletGateway(
         return SagaRecoveryReport(0, 0, 0, 0)
     }
 
-    override suspend fun recoverIncompleteSagas(mintUrl: String): SagaRecoveryReport =
-        SagaRecoveryReport(recovered = 0, compensated = 0, skipped = 0, failed = 0)
+    val sagaRecoveryCalls = AtomicInteger()
+    override suspend fun recoverIncompleteSagas(mintUrl: String): SagaRecoveryReport {
+        sagaRecoveryCalls.incrementAndGet()
+        return SagaRecoveryReport(recovered = 0, compensated = 0, skipped = 0, failed = 0)
+    }
 
     override suspend fun sendEcashToken(
         amount: Long,

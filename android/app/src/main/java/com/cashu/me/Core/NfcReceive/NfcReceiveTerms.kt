@@ -1,5 +1,6 @@
 package com.cashu.me.Core.NfcReceive
 
+import com.cashu.me.Models.MintUrlIdentity
 import com.cashu.me.Models.CashuRequest
 
 internal enum class NfcSettlementRoute { Direct, Foreign }
@@ -34,4 +35,4 @@ internal fun validateNfcReceiveTerms(
     return NfcSettlementRoute.Foreign
 }
 
-internal fun normalizeNfcMint(url: String): String = url.trim().trimEnd('/')
+internal fun normalizeNfcMint(url: String): String = MintUrlIdentity.normalized(url)

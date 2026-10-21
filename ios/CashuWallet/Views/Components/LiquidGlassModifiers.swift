@@ -69,11 +69,6 @@ extension View {
             }
     }
 
-    /// Applies Liquid Glass on iOS 26+; falls back to the given material.
-    func liquidGlassMaterial<S: InsettableShape>(in shape: S, material: Material = .ultraThinMaterial) -> some View {
-        modifier(AdaptiveGlassSurface(shape: shape, interactive: false, fallbackMaterial: material))
-    }
-
     /// Full-width CTA capsule. Outside a flat bottom sheet it matches the
     /// home-screen's neutral Liquid Glass action; inside one it becomes a
     /// solid inverse-ink primary action.
@@ -117,17 +112,6 @@ extension View {
     /// content of every `.sheet`/`.fullScreenCover` (frosted HUDs excluded).
     func canvasSheetBackground() -> some View {
         modifier(CanvasSheetBackground())
-    }
-
-    /// Applies ``canvasSheetBackground()`` only to sheets that fill the screen.
-    ///
-    /// A full-height sheet replaces the background, so matching the canvas is
-    /// right. A sheet that hugs its content floats *over* the canvas and must
-    /// keep the system's elevated background to read as a separate layer —
-    /// forcing the canvas colour there resolves to the same black as the screen
-    /// behind it in dark mode, leaving only a rounded corner to separate them.
-    func canvasSheetBackground(whenFillingScreen fillsScreen: Bool) -> some View {
-        modifier(ConditionalCanvasSheetBackground(fillsScreen: fillsScreen))
     }
 
     /// Gives an app-designed bottom sheet the same opaque, adaptive surface as
@@ -486,19 +470,6 @@ private struct ScreenEntryFade: ViewModifier {
 /// Pins a modal's presentation background to the *base*-elevation `systemBackground`.
 /// Inside a sheet the plain semantic resolves to the elevated gray, so we resolve it
 /// at base level (for the current color scheme) to match the home canvas exactly.
-private struct ConditionalCanvasSheetBackground: ViewModifier {
-    let fillsScreen: Bool
-
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if fillsScreen {
-            content.canvasSheetBackground()
-        } else {
-            content
-        }
-    }
-}
-
 private struct CanvasSheetBackground: ViewModifier {
     func body(content: Content) -> some View {
         content.presentationBackground { WalletCanvasBackground() }

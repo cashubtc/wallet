@@ -1,5 +1,8 @@
 package com.cashu.me.Core.NfcReceive
 
+import com.cashu.me.Core.toDomainUnit
+import com.cashu.me.Core.TokenParser
+
 import android.content.Context
 import android.content.pm.PackageManager
 import android.nfc.NfcAdapter
@@ -197,7 +200,7 @@ class NfcReceiveCoordinator(
         mutableState.value = NfcReceiveState(NfcReceivePhase.Validating, "Checking payment")
         val token = CdkToken.decode(tokenString)
         val sourceMint = normalizeNfcMint(token.mintUrl().url)
-        val unit = token.unit()?.toUnitString() ?: "sat"
+        val unit = token.unit()?.toDomainUnit() ?: "sat"
         val grossAmount = token.value().value.toLong()
         val route = validateNfcReceiveTerms(
             request = session.request,
@@ -238,8 +241,9 @@ class NfcReceiveCoordinator(
             .map(value::indexOf)
             .filter { it >= 0 }
             .minOrNull() ?: return null
-        return value.substring(start).takeWhile { it.isLetterOrDigit() || it == '-' || it == '_' || it == '=' }
-            .takeIf { it.startsWith("cashu") || it.startsWith("craw") }
+        val candidate = value.substring(start).takeWhile { it.isLetterOrDigit() || it == '-' || it == '_' || it == '=' }
+        // Numo also carries raw crawB tokens, which ordinary wallet input does not accept.
+        return TokenParser.extractToken(candidate) ?: candidate.takeIf { it.startsWith("crawB") }
     }
 
     private fun tokenFingerprint(token: String): String = "nfc:" + MessageDigest.getInstance("SHA-256")
@@ -247,12 +251,4 @@ class NfcReceiveCoordinator(
         .take(16)
         .joinToString("") { "%02x".format(it) }
 
-    private fun org.cashudevkit.CurrencyUnit.toUnitString(): String = when (this) {
-        is org.cashudevkit.CurrencyUnit.Sat -> "sat"
-        is org.cashudevkit.CurrencyUnit.Msat -> "msat"
-        is org.cashudevkit.CurrencyUnit.Usd -> "usd"
-        is org.cashudevkit.CurrencyUnit.Eur -> "eur"
-        is org.cashudevkit.CurrencyUnit.Custom -> unit
-        else -> toString().lowercase()
-    }
 }

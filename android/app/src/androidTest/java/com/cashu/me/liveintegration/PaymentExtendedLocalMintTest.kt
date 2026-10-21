@@ -15,6 +15,10 @@ class PaymentExtendedLocalMintTest : PaymentFixtureTest() {
         assertRequestDelivery("controlled")
     }
 
+    @Test fun cdkCashuRequestFixedAndAmountlessHttpDelivery() = runBlocking {
+        assertRequestDelivery("cdk")
+    }
+
     // Runnable reproduction, excluded from the required manifest until CDK is fixed.
     @Test fun cashuRequestReceiverFeeRegression() = runBlocking {
         assumeTrue("Known CDK 0.18 receiver-fee regression; see CI/payment-tests/README.md",
@@ -22,10 +26,17 @@ class PaymentExtendedLocalMintTest : PaymentFixtureTest() {
         assertRequestDelivery("fees")
     }
 
-    private suspend fun assertRequestDelivery(mint: String) {
+    @Test fun cdkCashuRequestReceiverFeeRegression() = runBlocking {
+        val url = InstrumentationRegistry.getArguments().getString("cashu.cdkFeeMintUrl")
+        assumeTrue("Start the optional CDK 1000-ppk fixture", url != null)
+        assertRequestDelivery("cdk", url)
+    }
+
+    private suspend fun assertRequestDelivery(mint: String, absoluteUrl: String? = null) {
+        val credits = mutableListOf<Long>()
         for (amount in listOf(21L, null)) {
-            val payer = wallet(mint)
-            val receiver = wallet(mint)
+            val payer = wallet(mint, absoluteUrl)
+            val receiver = wallet(mint, absoluteUrl)
             payer.fund()
             val encoded = call("$root/request", "POST", buildJsonObject {
                 put("target", "$fixture$root/receive")
@@ -35,14 +46,18 @@ class PaymentExtendedLocalMintTest : PaymentFixtureTest() {
             payer.gateway.payCashuPaymentRequest(encoded, if (amount == null) 21 else null, payer.url)
             val delivered = call("$root/received-token")
             assertEquals(id, delivered.getValue("id").jsonPrimitive.content)
-            assertEquals("Payment request must include the receiver's redemption fee", 21,
-                receiver.receive(delivered.getValue("token").jsonPrimitive.content))
-            if (mint == "controlled") {
+            val credited = receiver.receive(delivered.getValue("token").jsonPrimitive.content)
+            credits += credited
+            if (mint == "fees" || absoluteUrl != null) {
+                println("REQUEST_FEE_DIAGNOSTIC mint=$mint fixed=${amount != null} requested=21 credited=$credited sender_remaining=${payer.balance()}")
+            }
+            if (mint == "controlled" || (mint == "cdk" && absoluteUrl == null)) {
                 assertEquals("A zero-fee request must debit exactly the requested amount", 79, payer.balance())
             } else {
                 assertTrue(payer.balance() <= 79)
             }
         }
+        assertTrue("Fixed and amountless requests must both credit 21 sats; actual=$credits", credits.all { it == 21L })
     }
 
     @Test fun cashuRequestDeliveryFailureLeavesReclaimableToken() = runBlocking {

@@ -64,16 +64,18 @@ class MintSafetyJourneyTest {
         assertEquals(FakeWalletGateway.TestMintUrl, app.container.walletManager.state.value.activeMint?.url)
     }
 
-    @Test fun multiUnitRemovalRefusalKeepsMintAndBalance() {
+    @Test fun multiUnitMintRemovalRemovesEveryUnitAfterRecreation() {
         val app = launch(FixtureMode.FundedWithHistory)
-        runBlocking { checkNotNull(app.fakeGateway).ensureWallet(FakeWalletGateway.TestMintUrl, "eur") }
+        val gateway = checkNotNull(app.fakeGateway)
+        runBlocking { gateway.ensureWallet(FakeWalletGateway.TestMintUrl, "eur") }
         openRemoval()
-        robot.tapText("Remove").awaitTag(UiTestTags.MintDetailScreen)
-        // Wait for the operation's visible failure before checking retained state.
-        robot.awaitText("multiple currency units", substring = true)
-        assertEquals(500L, app.container.walletManager.state.value.balance)
-        assertEquals(1, app.container.walletManager.state.value.mints.size)
-        robot.tapDescription("Back").awaitTag(UiTestTags.mintRow(FakeWalletGateway.TestMintUrl))
+        robot.tapText("Remove").awaitTag(UiTestTags.MintsScreen)
+            .assertTagDoesNotExist(UiTestTags.mintRow(FakeWalletGateway.TestMintUrl))
+        assertTrue(app.container.walletManager.state.value.mints.isEmpty())
+        assertFalse(runBlocking { gateway.hasWallets() })
+        app.scenario.recreate()
+        robot.awaitTag(UiTestTags.MintsScreen)
+            .assertTagDoesNotExist(UiTestTags.mintRow(FakeWalletGateway.TestMintUrl))
     }
 
     private fun openRemoval() {

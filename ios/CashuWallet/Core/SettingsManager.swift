@@ -691,19 +691,11 @@ class SettingsManager: ObservableObject {
         }
 
         let privateKey = try P256K.Schnorr.PrivateKey(dataRepresentation: privateKeyBytes)
-        let privateKeyHex = privateKey.dataRepresentation.map { String(format: "%02x", $0) }.joined()
-        let publicKeyHex = privateKey.xonly.bytes.map { String(format: "%02x", $0) }.joined()
+        let privateKeyHex = Data(privateKey.dataRepresentation).hexEncodedString
+        let publicKeyHex = Data(privateKey.xonly.bytes).hexEncodedString
         let p2pkPublicKey = "02\(publicKeyHex)"
 
         return P2PKKey(publicKey: p2pkPublicKey, privateKey: privateKeyHex, used: false, usedCount: 0)
-    }
-
-    private func generateKeypairHex() throws -> (privateKeyHex: String, publicKeyHex: String) {
-        let privateKeyBytes = try generateRandomPrivateKeyBytes()
-        let privateKey = try P256K.Schnorr.PrivateKey(dataRepresentation: privateKeyBytes)
-        let privateKeyHex = privateKey.dataRepresentation.map { String(format: "%02x", $0) }.joined()
-        let publicKeyHex = privateKey.xonly.bytes.map { String(format: "%02x", $0) }.joined()
-        return (privateKeyHex: privateKeyHex, publicKeyHex: publicKeyHex)
     }
 
     private static func hasUsablePrivateKey(_ key: P2PKKey) -> Bool {
@@ -712,29 +704,18 @@ class SettingsManager: ObservableObject {
 
     private static func hasUsablePrivateKey(publicKey: String, privateKey: String) -> Bool {
         guard privateKey.count == 64 else { return false }
-        var bytes: [UInt8] = []
-        bytes.reserveCapacity(32)
-        var offset = privateKey.startIndex
-        for _ in 0..<32 {
-            let next = privateKey.index(offset, offsetBy: 2)
-            guard let byte = UInt8(privateKey[offset..<next], radix: 16) else { return false }
-            bytes.append(byte)
-            offset = next
-        }
+        guard let data = Data(hexString: privateKey) else { return false }
+        let bytes = Array(data)
         guard let secret = try? P256K.Schnorr.PrivateKey(dataRepresentation: bytes) else {
             return false
         }
-        let derivedPublicKey = "02" + secret.xonly.bytes.map { String(format: "%02x", $0) }.joined()
+        let derivedPublicKey = "02" + Data(secret.xonly.bytes).hexEncodedString
         return normalizeP2PKPublicKeyForComparison(derivedPublicKey)
             == normalizeP2PKPublicKeyForComparison(publicKey)
     }
 
     private static func normalizeP2PKPublicKeyForComparison(_ publicKey: String) -> String {
-        let normalized = publicKey.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if normalized.count == 66, normalized.hasPrefix("02") || normalized.hasPrefix("03") {
-            return String(normalized.dropFirst(2))
-        }
-        return normalized
+        P2PKPublicKey.normalizedForComparison(publicKey)
     }
 
     private func normalizeP2PKPublicKeyForComparison(_ publicKey: String) -> String {

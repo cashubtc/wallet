@@ -16,46 +16,12 @@ class KeychainService: SecureStorageProtocol {
     
     /// Load mnemonic from Keychain
     func loadMnemonic() throws -> String? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: serviceName,
-            kSecAttrAccount as String: mnemonicKey,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
-        ]
-        
-        var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-        
-        if status == errSecItemNotFound {
-            return nil
-        }
-        
-        guard status == errSecSuccess else {
-            throw KeychainError.loadFailed(status)
-        }
-        
-        guard let data = result as? Data,
-              let mnemonic = String(data: data, encoding: .utf8) else {
-            throw KeychainError.decodingFailed
-        }
-        
-        return mnemonic
+        try loadSecret(forKey: mnemonicKey)
     }
     
     /// Delete mnemonic from Keychain
     func deleteMnemonic() throws {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: serviceName,
-            kSecAttrAccount as String: mnemonicKey
-        ]
-        
-        let status = SecItemDelete(query as CFDictionary)
-        
-        guard status == errSecSuccess || status == errSecItemNotFound else {
-            throw KeychainError.deleteFailed(status)
-        }
+        try deleteSecret(forKey: mnemonicKey)
     }
     
     /// Check if mnemonic exists
@@ -92,19 +58,25 @@ class KeychainService: SecureStorageProtocol {
     // MARK: - Generic Secure Storage
 
     func saveSecret(_ secret: String, forKey key: String) throws {
+        try saveSecret(secret, forKey: key, synchronizable: false)
+    }
+
+    private func saveSecret(_ secret: String, forKey key: String, synchronizable: Bool) throws {
         guard let data = secret.data(using: .utf8) else {
             throw KeychainError.encodingFailed
         }
 
-        let query: [String: Any] = [
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
             kSecAttrAccount as String: key
         ]
 
+        if synchronizable { query[kSecAttrSynchronizable as String] = kCFBooleanTrue! }
+
         let update: [String: Any] = [
             kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+            kSecAttrAccessible as String: (synchronizable ? kSecAttrAccessibleAfterFirstUnlock : kSecAttrAccessibleWhenUnlockedThisDeviceOnly)
         ]
 
         let updateStatus = SecItemUpdate(query as CFDictionary, update as CFDictionary)
@@ -118,7 +90,7 @@ class KeychainService: SecureStorageProtocol {
 
         var addQuery = query
         addQuery[kSecValueData as String] = data
-        addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        addQuery[kSecAttrAccessible as String] = (synchronizable ? kSecAttrAccessibleAfterFirstUnlock : kSecAttrAccessibleWhenUnlockedThisDeviceOnly)
 
         let status = SecItemAdd(addQuery as CFDictionary, nil)
 
@@ -128,7 +100,11 @@ class KeychainService: SecureStorageProtocol {
     }
 
     func loadSecret(forKey key: String) throws -> String? {
-        let query: [String: Any] = [
+        try loadSecret(forKey: key, synchronizable: false)
+    }
+
+    private func loadSecret(forKey key: String, synchronizable: Bool) throws -> String? {
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
             kSecAttrAccount as String: key,
@@ -136,6 +112,8 @@ class KeychainService: SecureStorageProtocol {
             kSecMatchLimit as String: kSecMatchLimitOne
         ]
         
+        if synchronizable { query[kSecAttrSynchronizable as String] = kCFBooleanTrue! }
+
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
         
@@ -156,12 +134,18 @@ class KeychainService: SecureStorageProtocol {
     }
 
     func deleteSecret(forKey key: String) throws {
-        let query: [String: Any] = [
+        try deleteSecret(forKey: key, synchronizable: false)
+    }
+
+    private func deleteSecret(forKey key: String, synchronizable: Bool) throws {
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
             kSecAttrAccount as String: key
         ]
         
+        if synchronizable { query[kSecAttrSynchronizable as String] = kCFBooleanTrue! }
+
         let status = SecItemDelete(query as CFDictionary)
         
         guard status == errSecSuccess || status == errSecItemNotFound else {
@@ -182,78 +166,15 @@ class KeychainService: SecureStorageProtocol {
     private let iCloudMnemonicKey = "wallet_mnemonic_icloud"
 
     func saveSynchronizableMnemonic(_ mnemonic: String) throws {
-        guard let data = mnemonic.data(using: .utf8) else {
-            throw KeychainError.encodingFailed
-        }
-
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: serviceName,
-            kSecAttrAccount as String: iCloudMnemonicKey,
-            kSecAttrSynchronizable as String: kCFBooleanTrue!
-        ]
-
-        let update: [String: Any] = [
-            kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock
-        ]
-
-        let updateStatus = SecItemUpdate(query as CFDictionary, update as CFDictionary)
-        if updateStatus == errSecSuccess { return }
-
-        guard updateStatus == errSecItemNotFound else {
-            throw KeychainError.saveFailed(updateStatus)
-        }
-
-        var addQuery = query
-        addQuery[kSecValueData as String] = data
-        addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
-
-        let status = SecItemAdd(addQuery as CFDictionary, nil)
-        guard status == errSecSuccess else {
-            throw KeychainError.saveFailed(status)
-        }
+        try saveSecret(mnemonic, forKey: iCloudMnemonicKey, synchronizable: true)
     }
 
     func loadSynchronizableMnemonic() throws -> String? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: serviceName,
-            kSecAttrAccount as String: iCloudMnemonicKey,
-            kSecAttrSynchronizable as String: kCFBooleanTrue!,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
-        ]
-
-        var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-
-        if status == errSecItemNotFound { return nil }
-
-        guard status == errSecSuccess else {
-            throw KeychainError.loadFailed(status)
-        }
-
-        guard let data = result as? Data,
-              let mnemonic = String(data: data, encoding: .utf8) else {
-            throw KeychainError.decodingFailed
-        }
-
-        return mnemonic
+        try loadSecret(forKey: iCloudMnemonicKey, synchronizable: true)
     }
 
     func deleteSynchronizableMnemonic() throws {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: serviceName,
-            kSecAttrAccount as String: iCloudMnemonicKey,
-            kSecAttrSynchronizable as String: kCFBooleanTrue!
-        ]
-
-        let status = SecItemDelete(query as CFDictionary)
-        guard status == errSecSuccess || status == errSecItemNotFound else {
-            throw KeychainError.deleteFailed(status)
-        }
+        try deleteSecret(forKey: iCloudMnemonicKey, synchronizable: true)
     }
 
     func hasSynchronizableMnemonic() -> Bool {

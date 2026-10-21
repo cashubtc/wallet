@@ -3,7 +3,6 @@ package com.cashu.me.Core
 import java.math.BigInteger
 import java.security.MessageDigest
 import java.security.SecureRandom
-import java.util.Base64
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -113,8 +112,6 @@ class NostrService(
 
     fun hasCustomPrivateKey(): Boolean = secureStorage.contains(StorageKeys.secureNostrPrivateKey)
 
-    fun lightningAddress(domain: String): String = state.value.npub.takeIf { it.isNotBlank() }?.let { "$it@$domain" }.orEmpty()
-
     fun hasSeedDerivedKey(): Boolean = seedPrivateKeyBytes != null
 
     fun seedDerivedPublicKeyHex(): String =
@@ -125,36 +122,6 @@ class NostrService(
 
     fun seedDerivedNpub(): String =
         seedPrivateKeyBytes?.let { Bech32.encode("npub", publicKeyXOnly(it)) }.orEmpty()
-
-    fun seedDerivedLightningAddress(domain: String): String =
-        seedDerivedNpub().takeIf { it.isNotBlank() }?.let { "$it@$domain" }.orEmpty()
-
-    fun generateNip98AuthHeader(url: String, method: String): String {
-        val key = privateKeyBytes ?: throw IllegalStateException("Nostr key is not initialized.")
-        return generateNip98AuthHeader(key, url, method)
-    }
-
-    fun generateSeedNip98AuthHeader(url: String, method: String): String {
-        val key = seedPrivateKeyBytes ?: throw IllegalStateException("Nostr seed key is not initialized.")
-        return generateNip98AuthHeader(key, url, method)
-    }
-
-    private fun generateNip98AuthHeader(key: ByteArray, url: String, method: String): String {
-        val publicKey = publicKeyXOnly(key).toHex()
-        val createdAt = System.currentTimeMillis() / 1000
-        val tags = nip98Tags(url, method)
-        val eventId = calculateEventId(publicKey, createdAt, 27235, tags, "")
-        val auxRand = ByteArray(32).also(secureRandom::nextBytes)
-        val signature = schnorrSign(hexToBytes(eventId), key, auxRand).toHex()
-        val json = signedNip98EventJson(
-            eventId = eventId,
-            publicKey = publicKey,
-            createdAt = createdAt,
-            tags = tags,
-            signature = signature,
-        )
-        return Base64.getEncoder().encodeToString(json.toByteArray(Charsets.UTF_8))
-    }
 
     fun resetForWalletBoundary(deleteStoredKey: Boolean) {
         if (deleteStoredKey) secureStorage.delete(StorageKeys.secureNostrPrivateKey)
@@ -230,34 +197,6 @@ class NostrService(
         private val two = BigInteger.valueOf(2)
 
         fun publicKeyHex(privateKeyHex: String): String = publicKeyXOnly(hexToBytes(privateKeyHex)).toHex()
-
-        internal fun nip98Tags(url: String, method: String): List<List<String>> =
-            listOf(listOf("u", url), listOf("method", method.uppercase()))
-
-        internal fun eventCommitmentJson(
-            pubkey: String,
-            createdAt: Long,
-            kind: Int,
-            tags: List<List<String>>,
-            content: String,
-        ): String = """[0,"${pubkey.escapeJson()}",$createdAt,$kind,${tags.toJsonArray()},"${content.escapeJson()}"]"""
-
-        internal fun calculateEventId(
-            pubkey: String,
-            createdAt: Long,
-            kind: Int,
-            tags: List<List<String>>,
-            content: String,
-        ): String = sha256(eventCommitmentJson(pubkey, createdAt, kind, tags, content).toByteArray(Charsets.UTF_8)).toHex()
-
-        internal fun signedNip98EventJson(
-            eventId: String,
-            publicKey: String,
-            createdAt: Long,
-            tags: List<List<String>>,
-            signature: String,
-        ): String =
-            """{"id":"${eventId.escapeJson()}","pubkey":"${publicKey.escapeJson()}","content":"","kind":27235,"created_at":$createdAt,"tags":${tags.toJsonArray()},"sig":"${signature.escapeJson()}"}"""
 
         fun publicKeyXOnly(secret: ByteArray): ByteArray {
             val point = generator.multiply(secret.toPositiveBigInteger()).normalize()
@@ -340,31 +279,5 @@ class NostrService(
 
         private fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it) }
 
-        private fun List<List<String>>.toJsonArray(): String =
-            joinToString(separator = ",", prefix = "[", postfix = "]") { row ->
-                row.joinToString(separator = ",", prefix = "[", postfix = "]") { "\"${it.escapeJson()}\"" }
-            }
-
-        private fun String.escapeJson(): String = buildString {
-            this@escapeJson.forEach { char ->
-                when (char) {
-                    '\\' -> append("\\\\")
-                    '"' -> append("\\\"")
-                    '\b' -> append("\\b")
-                    '\u000C' -> append("\\f")
-                    '\n' -> append("\\n")
-                    '\r' -> append("\\r")
-                    '\t' -> append("\\t")
-                    else -> {
-                        if (char < ' ') {
-                            append("\\u")
-                            append(char.code.toString(16).padStart(4, '0'))
-                        } else {
-                            append(char)
-                        }
-                    }
-                }
-            }
-        }
     }
 }

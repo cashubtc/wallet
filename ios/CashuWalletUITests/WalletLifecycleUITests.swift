@@ -14,10 +14,19 @@ final class WalletLifecycleUITests: UITestBase {
         try super.setUpWithError()
     }
 
-    func testAddDuplicateSwitchAndRefuseMultiUnitRemovalPersists() {
+    func testAddDuplicateSwitchAndRemoveMultiUnitMintPersists() {
         createWalletWithMint()
         tapTab("Mints")
         addMint(url: mintURL + "/")
+        // Duplicate detection queues behind wallet startup/mint operations.
+        // Wait for the submitted operation to settle before inspecting its
+        // result; the error's visibility is not a ten-second network deadline.
+        let duplicateFinished = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "isEnabled == true"),
+            object: app.buttons["mints-add-submit-button"]
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [duplicateFinished], timeout: 30), .completed,
+                       "Duplicate mint validation should finish before checking its error")
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "already")).firstMatch
             .waitForExistence(timeout: 10))
         tapWhenReady(app.buttons["mints-add-clear-button"])
@@ -45,13 +54,16 @@ final class WalletLifecycleUITests: UITestBase {
         XCTAssertTrue(app.buttons["Remove mint"].exists)
         tapWhenReady(app.buttons["Remove mint"])
         tapWhenReady(app.buttons["Remove"])
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "multiple currency units")).firstMatch
-            .waitForExistence(timeout: 15))
+        // The CDK mint registers more than one unit; removal must still finish
+        // and dismiss the detail screen before the process is killed.
+        XCTAssertTrue(app.buttons["Remove mint"].waitForNonExistence(timeout: 30))
+        XCTAssertTrue(second.waitForNonExistence(timeout: 15))
+        assertDefaultMint(mintRow(url: mintURL))
         relaunchPreservingWallet()
         tapTab("Mints")
-        XCTAssertTrue(second.waitForExistence(timeout: 10))
-        assertDefaultMint(second)
         XCTAssertTrue(mintRow(url: mintURL).waitForExistence(timeout: 10))
+        XCTAssertFalse(second.exists)
+        assertDefaultMint(mintRow(url: mintURL))
     }
 
     private func assertDefaultMint(

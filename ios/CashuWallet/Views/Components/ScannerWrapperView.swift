@@ -363,18 +363,6 @@ struct ScannerWrapperView: View {
         refreshCameraAuthorization()
     }
 
-    private static func isHumanReadableAddress(_ content: String) -> Bool {
-        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let atIndex = trimmed.firstIndex(of: "@") else { return false }
-        let user = trimmed[trimmed.startIndex..<atIndex]
-        let domain = trimmed[trimmed.index(after: atIndex)...]
-        return !user.isEmpty && domain.contains(".") && !domain.hasPrefix(".") && !domain.hasSuffix(".")
-    }
-
-    private static func parseLightningPaymentRequest(_ content: String) -> String? {
-        try? LightningRequestParser.parse(content).request
-    }
-
     private func handleScan(code: String) {
         guard scannerModel.isScanning else { return }
         
@@ -441,6 +429,8 @@ struct CashuRequestRouteExplanationRow: View {
 struct CashuPaymentRequestPayView: View {
     let request: CashuPaymentRequestSummary
     var onComplete: (() -> Void)?
+    /// Closes the sheet on the History tab, where an unconfirmed payment resolves.
+    var onViewHistory: (() -> Void)?
 
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var walletManager: WalletManager
@@ -454,6 +444,8 @@ struct CashuPaymentRequestPayView: View {
     /// Drives the full-screen processing → success → failure status screen.
     /// nil while the user is still on the confirm screen.
     @State private var paymentPhase: PaymentStatusView.Phase?
+    /// The failed payment left the wallet but the mint hasn't confirmed it yet.
+    @State private var paymentAwaitsMint = false
     @State private var activeRouteExplanation: CashuRequestRouteExplanation?
     @State private var showingMintPicker = false
     @State private var selectedMint: MintInfo?
@@ -1133,6 +1125,7 @@ struct CashuPaymentRequestPayView: View {
                 let walletMessage = error.walletMessage
                 errorMessage = walletMessage.text
                 errorSeverity = walletMessage.severity
+                paymentAwaitsMint = walletMessage.awaitsMintConfirmation
                 withAnimation(.smooth(duration: 0.3)) {
                     paymentPhase = .failure(
                         message: walletMessage.text,
@@ -1179,11 +1172,13 @@ struct CashuPaymentRequestPayView: View {
                 let text = "Still settling — your balance will update shortly. Try again in a moment."
                 errorMessage = text
                 errorSeverity = .caution
+                paymentAwaitsMint = false
                 withAnimation(.smooth(duration: 0.3)) { paymentPhase = .failure(message: text, isCaution: true) }
             } catch {
                 let walletMessage = error.walletMessage
                 errorMessage = walletMessage.text
                 errorSeverity = walletMessage.severity
+                paymentAwaitsMint = walletMessage.awaitsMintConfirmation
                 withAnimation(.smooth(duration: 0.3)) {
                     paymentPhase = .failure(
                         message: walletMessage.text,
@@ -1226,6 +1221,8 @@ struct CashuPaymentRequestPayView: View {
         return PaymentStatusView(
             details: rows,
             phase: phase,
+            awaitingMint: paymentAwaitsMint,
+            onViewHistory: onViewHistory,
             onDone: {
                 onComplete?()
                 dismiss()

@@ -95,11 +95,15 @@ final class ScanRouterTests: XCTestCase {
     func testCashuRequestBolt11FallbackRoutesToMeltWithExplanation() throws {
         // A NUT-18 creq the wallet can't pay with held ecash falls back to its
         // bundled bolt11 — the injected policy stands in for that decision.
-        let creq = "creqApayload"
+        let creq = try PaymentRequestBuilder.build(
+            id: "scanner-fallback", amount: 21, unit: "sat", mints: [],
+            description: nil, nostrPubkeyHex: String(repeating: "b", count: 64),
+            relays: ["wss://relay.example.com"]
+        )
         guard case .cashuPaymentRequest = PaymentRequestDecoder.decode(
             creq, includeCashuPaymentRequests: true, preferCashuPaymentRequests: true
         ) else {
-            throw XCTSkip("fixture does not decode as a Cashu request in this build")
+            return XCTFail("Generated Cashu request must decode before testing its fallback route")
         }
         let routed = ScanRouter.route(creq) { _, _ in .payBolt11Fallback("lnbcfallback") }
         guard let send = sendRoute(routed) else {

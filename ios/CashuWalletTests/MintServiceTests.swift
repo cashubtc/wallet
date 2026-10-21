@@ -173,27 +173,45 @@ final class MintServiceTests: XCTestCase {
         )
     }
 
-    func testMultiUnitRemovalRefusesBeforeNativeCallOrMetadataCommit() async {
+    func testMultiUnitRemovalRemovesEveryUnitBeforeMetadataCommit() async throws {
         var multiUnitMint = mint("https://mint.example.com", name: "Test")
-        multiUnitMint.units = ["sat", " EUR ", "eur"]
+        multiUnitMint.units = ["sat", "eur"]
+        var events: [String] = []
+
+        try await MintRemovalPolicy.removeBeforeCommit(
+            mint: multiUnitMint,
+            registeredUnits: ["sat", " EUR ", "eur"],
+            removeWallet: { _, unit in events.append("remove:\(unit)") },
+            commitMetadata: { events.append("commit") }
+        )
+
+        XCTAssertEqual(events, ["remove:sat", "remove:eur", "commit"])
+    }
+
+    func testMultiUnitRemovalFailurePartWayPreservesMetadata() async {
+        var multiUnitMint = mint("https://mint.example.com", name: "Test")
+        multiUnitMint.units = ["sat", "usd"]
         var nativeCalls: [String] = []
         var metadataCommitted = false
 
         do {
             try await MintRemovalPolicy.removeBeforeCommit(
                 mint: multiUnitMint,
-                registeredUnits: ["sat", " EUR ", "eur"],
-                removeWallet: { _, unit in nativeCalls.append(unit) },
+                registeredUnits: ["sat", "usd"],
+                removeWallet: { _, unit in
+                    nativeCalls.append(unit)
+                    if unit == "usd" { throw RepositoryFailure.unavailable }
+                },
                 commitMetadata: { metadataCommitted = true }
             )
-            XCTFail("Expected multi-unit removal to be refused")
-        } catch MintRemovalPolicyError.multipleUnits {
-            // Expected: validation runs before the repository is touched.
+            XCTFail("Expected repository failure")
+        } catch RepositoryFailure.unavailable {
+            // Expected: the mint stays listed so a retry can finish.
         } catch {
             XCTFail("Unexpected error: \(error)")
         }
 
-        XCTAssertTrue(nativeCalls.isEmpty)
+        XCTAssertEqual(nativeCalls, ["sat", "usd"])
         XCTAssertFalse(metadataCommitted)
     }
 

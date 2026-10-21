@@ -196,6 +196,8 @@ fun UnifiedSendScreen(
     onPrefilledConsumed: () -> Unit = {},
     onDismissLockChanged: (Boolean) -> Unit = {},
     onCompactSheetChanged: (Boolean) -> Unit = {},
+    // Closes the flow on the History tab, where an unconfirmed payment resolves.
+    onViewHistory: (() -> Unit)? = null,
 ) {
     val walletState by walletManager.state.collectAsState()
     val settings by settingsManager.state.collectAsState()
@@ -677,6 +679,7 @@ fun UnifiedSendScreen(
                         useBitcoinSymbol = settings.useBitcoinSymbol,
                         onClose = onClose,
                         onRetry = { status = null },
+                        onViewHistory = onViewHistory,
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -909,6 +912,7 @@ private fun SendStatusTerminal(
     useBitcoinSymbol: Boolean,
     onClose: () -> Unit,
     onRetry: () -> Unit,
+    onViewHistory: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     // An async-accepted (NUT-05) melt — typical for on-chain — isn't settled
@@ -919,6 +923,10 @@ private fun SendStatusTerminal(
     // A terminal outcome (already paid) can't be retried — offer Done;
     // anything else returns to the confirm step.
     val failure = (status as? SendStatus.Failed)?.message
+    // The mint hasn't confirmed the payment: nothing to retry, and History is
+    // where it resolves.
+    val awaitingMint = failure?.awaitsMintConfirmation == true
+    val viewHistory = onViewHistory?.takeIf { awaitingMint }
     val successAmount = if (status is SendStatus.Sent && !settlementPending) {
         status.details.rows.firstOrNull { it.key == SendPaymentDetailKey.Amount }
             ?.takeIf { it.value is SendPaymentDetailValue.Sats || it.value is SendPaymentDetailValue.Text }
@@ -945,12 +953,17 @@ private fun SendStatusTerminal(
             else -> null
         },
         settlementPending = settlementPending,
-        doneLabel = if (failure != null && !failure.isTerminal) "Try again" else "Done",
+        awaitingMint = awaitingMint,
+        doneLabel = when {
+            viewHistory != null -> "View in history"
+            failure != null && !failure.isTerminal -> "Try again"
+            else -> "Done"
+        },
         onDone = when (status) {
             is SendStatus.Sending -> null
             is SendStatus.Sent -> onClose
-            is SendStatus.Failed -> {
-                { if (status.message.isTerminal) onClose() else onRetry() }
+            is SendStatus.Failed -> viewHistory ?: {
+                if (status.message.isTerminal) onClose() else onRetry()
             }
         },
         rows = { SendPaymentDetailRows(status.details, formatter, useBitcoinSymbol, showAmount = successAmount == null) },

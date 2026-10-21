@@ -31,7 +31,6 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.cashu.me.App.AppContainer
-import com.cashu.me.Core.Platform.ConnectivityState
 import com.cashu.me.Models.CashuRequest
 import com.cashu.me.Models.WalletTransaction
 import com.cashu.me.ui.history.CashuRequestReceiptSheet
@@ -70,13 +69,11 @@ import java.nio.charset.StandardCharsets
 fun CashuNavHost(
     navController: NavHostController,
     container: AppContainer,
-    connectivityState: ConnectivityState,
     contentPadding: PaddingValues,
     onScan: () -> Unit,
     onReceiveEcash: () -> Unit,
     onAddMint: () -> Unit,
     onTransfer: (fromMintUrl: String?) -> Unit,
-    onReceiveLightning: () -> Unit,
     onSend: () -> Unit,
     pendingMintScan: String?,
     onPendingMintScanConsumed: () -> Unit,
@@ -118,13 +115,11 @@ fun CashuNavHost(
         tabDestinations(
             navController = navController,
             container = container,
-            connectivityState = connectivityState,
             contentPadding = contentPadding,
             onScan = onScan,
             onReceiveEcash = onReceiveEcash,
             onAddMint = onAddMint,
             onTransfer = onTransfer,
-            onReceiveLightning = onReceiveLightning,
             onSend = onSend,
             pendingMintScan = pendingMintScan,
             onPendingMintScanConsumed = onPendingMintScanConsumed,
@@ -332,13 +327,11 @@ internal fun cashuRequestDetailRouteFor(requestId: String): String {
 private fun NavGraphBuilder.tabDestinations(
     navController: NavHostController,
     container: AppContainer,
-    connectivityState: ConnectivityState,
     contentPadding: PaddingValues,
     onScan: () -> Unit,
     onReceiveEcash: () -> Unit,
     onAddMint: () -> Unit,
     onTransfer: (fromMintUrl: String?) -> Unit,
-    onReceiveLightning: () -> Unit,
     onSend: () -> Unit,
     pendingMintScan: String?,
     onPendingMintScanConsumed: () -> Unit,

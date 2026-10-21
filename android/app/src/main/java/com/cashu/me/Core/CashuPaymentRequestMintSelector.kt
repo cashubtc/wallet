@@ -103,7 +103,5 @@ internal fun routeForCashuPaymentRequest(
     )
 }
 
-internal fun normalizedMintUrlForSelection(url: String?): String? {
-    val trimmed = url?.trim()?.trimEnd('/') ?: return null
-    return trimmed.lowercase().takeIf { it.isNotBlank() }
-}
+internal fun normalizedMintUrlForSelection(url: String?): String? =
+    com.cashu.me.Models.MintUrlIdentity.comparisonKey(url)

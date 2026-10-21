@@ -287,7 +287,7 @@ class NwcManager internal constructor(
     }
 
     private fun normalizedMintUrl(value: String?): String? =
-        value?.trim()?.trimEnd('/')?.takeIf(String::isNotEmpty)
+        com.cashu.me.Models.MintUrlIdentity.comparisonKey(value)
 
     companion object {
         internal const val MaxBudgetSats = 999_999_999_999L

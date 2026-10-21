@@ -1,8 +1,8 @@
 package com.cashu.me.Views.Send
 
+import com.cashu.me.ui.components.findActivity
 import android.app.Activity
 import android.content.Context
-import android.content.ContextWrapper
 import android.content.Intent
 import android.nfc.NdefMessage
 import android.nfc.NfcAdapter
@@ -319,12 +319,7 @@ private fun writeTextRecord(tag: Tag, record: android.nfc.NdefRecord) {
     }
 }
 
-private tailrec fun Context.findActivity(): Activity? =
-    when (this) {
-        is Activity -> this
-        is ContextWrapper -> baseContext.findActivity()
-        else -> null
-    }
+
 
 private fun Context.openNfcSettings() {
     runCatching { startActivity(Intent(Settings.ACTION_NFC_SETTINGS)) }

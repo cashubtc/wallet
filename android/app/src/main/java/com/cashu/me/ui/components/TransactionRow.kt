@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -21,6 +22,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -48,7 +50,8 @@ data class TransactionRowModel(
  * Canonical timeline row. Leading muted directional arrow (direction is the
  * arrow's orientation, never colour); kind is named in the title. The amount is
  * the ledger signal: received is green with a plus, sent is primary with no
- * sign, and pending/expired is muted with no sign.
+ * sign, and failed/pending/expired are muted with no sign. Failed uses an X.
+ * Status remains in accessibility semantics without adding another visible line.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -64,12 +67,12 @@ fun TransactionRow(
     val isTransfer = tx.transfer != null
     val unsettled = tx.isUnsettled
     val amountColor = when {
-        unsettled -> MaterialTheme.colorScheme.onSurfaceVariant
+        unsettled || tx.status == TransactionStatus.Failed -> MaterialTheme.colorScheme.onSurfaceVariant
         // Match iOS TransactionAmountColumn's .green ledger amounts.
         incoming -> CashuTheme.colors.received
         else -> MaterialTheme.colorScheme.onSurface
     }
-    val amountText = if (!unsettled && incoming) "+${model.primaryAmount}" else model.primaryAmount
+    val amountText = if (tx.status == TransactionStatus.Completed && incoming) "+${model.primaryAmount}" else model.primaryAmount
     // An unfunded deposit address has no amount yet: no trailing element, like
     // an any-amount Cashu Request that is still waiting.
     val showsAmount = !tx.isUnfundedAddress
@@ -100,7 +103,7 @@ fun TransactionRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
     ) {
-        DirectionIcon(incoming = incoming, isTransfer = isTransfer)
+        DirectionIcon(incoming = incoming, isTransfer = isTransfer, isFailed = tx.status == TransactionStatus.Failed)
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = model.title,
@@ -139,13 +142,15 @@ fun TransactionRow(
 }
 
 /**
- * Always-muted directional arrow on a soft neutral circle (iOS TransactionIcon).
- * A transfer between the user's own mints is neither received nor sent, so it
- * takes a two-way arrow.
+ * Muted directional arrow, or failure X, on a soft neutral circle (iOS
+ * TransactionIcon). A transfer between the user's own mints is neither
+ * received nor sent, so it takes a two-way arrow.
  */
 @Composable
-internal fun DirectionIcon(incoming: Boolean, isTransfer: Boolean = false) {
+internal fun DirectionIcon(incoming: Boolean, isTransfer: Boolean = false, isFailed: Boolean = false) {
     val (glyph, description) = when {
+        // The row already announces failure; keep the X decorative.
+        isFailed -> Icons.Filled.Close to null
         // The title already opens with "Transfer"; the glyph adds nothing to hear.
         isTransfer -> Icons.Filled.SwapHoriz to null
         incoming -> Icons.Filled.ArrowDownward to "Incoming"
@@ -164,7 +169,8 @@ internal fun DirectionIcon(incoming: Boolean, isTransfer: Boolean = false) {
             imageVector = glyph,
             contentDescription = description,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(DirectionIconSize),
+            modifier = Modifier.size(DirectionIconSize)
+                .then(if (isFailed) Modifier.testTag("transaction-failure-icon") else Modifier),
         )
     }
 }

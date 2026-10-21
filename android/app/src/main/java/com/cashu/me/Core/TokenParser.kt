@@ -63,12 +63,4 @@ object TokenParser {
         else -> token
     }
 
-    private fun CdkCurrencyUnit.toDomainUnit(): String = when (this) {
-        CdkCurrencyUnit.Sat -> "sat"
-        CdkCurrencyUnit.Msat -> "msat"
-        CdkCurrencyUnit.Usd -> "usd"
-        CdkCurrencyUnit.Eur -> "eur"
-        CdkCurrencyUnit.Auth -> "auth"
-        is CdkCurrencyUnit.Custom -> unit
-    }
 }

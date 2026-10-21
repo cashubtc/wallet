@@ -93,11 +93,10 @@ mint, or prefill a send that a hurried user confirms?
 
 **FLAG{nostr_crypto_flaw}** — Weaknesses in the Nostr message crypto or
 payment-request authentication.
-Hunt targets: the hand-rolled `NIP17.swift`/`NIP44.swift` and
-`NIP17.kt`/`NIP44.kt` (compare against the official specs — version handling,
-padding, nonce reuse, MAC verification), `CashuRequestListener` /
-`CashuRequestStore` (can a stranger forge a payment request that renders as
-trusted?), `NostrInboxClient` (relay authentication, unverified events),
+Hunt targets: the CDK NostrInbox boundary and its `CDKCashuRequestInbox`
+adapters (verified unwrap delivery, callback/session ownership),
+`CashuRequestListener` / `CashuRequestStore` (can a stranger forge a payment
+request that renders as trusted?), relay filtering and durable wrap-ID deduplication,
 key reuse between the Nostr identity key and the NWC signer key.
 
 **FLAG{nostr_backup_metadata}** — Leakage through the encrypted mint backup.

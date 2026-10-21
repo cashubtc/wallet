@@ -108,7 +108,6 @@ struct CashuWalletApp: App {
                 guard IntegrationTestConfig.shouldRunPaymentServices else { return }
                 switch newPhase {
                 case .active:
-                    appLockManager.appBecameActive()
                     CashuRequestListener.shared.requestStart()
                     if SettingsManager.shared.checkSentTokens {
                         Task { await walletManager.checkAllPendingTokens() }
@@ -125,10 +124,8 @@ struct CashuWalletApp: App {
                     }
                     walletManager.startPendingQuoteForegroundPolling()
                 case .inactive:
-                    // The app-switcher snapshot is taken here, before `.background`.
-                    appLockManager.appResignedActive()
+                    break
                 case .background:
-                    appLockManager.appResignedActive()
                     CashuRequestListener.shared.requestStop()
                     // Quiesce the timers so no fresh mint network + wallet-DB write kicks
                     // off during the brief background-transition window before suspension.

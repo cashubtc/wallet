@@ -1,5 +1,8 @@
 package com.cashu.me.Core.CDK
 
+import com.cashu.me.Models.MintUrlIdentity
+import com.cashu.me.Core.toDomainUnit
+
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -138,7 +141,6 @@ class CdkWalletGatewayImpl : WalletGateway {
     private var database: CdkWalletSqliteDatabase? = null
     private var repository: CdkWalletRepository? = null
     private val operationMutex = Mutex()
-    private val lightningAddressResolver = LightningAddressResolver()
 
     // Confirmations that outlived their cap. They hold the native wallet and
     // store, so the repository must not close under them.
@@ -234,24 +236,20 @@ class CdkWalletGatewayImpl : WalletGateway {
         ensureWalletUnlocked(mintUrl, cdkUnit(unit))
     }
 
-    override suspend fun removeWalletIfSingleUnit(mintUrl: String): Boolean = cdkCall {
+    override suspend fun removeWallets(mintUrl: String): Boolean = cdkCall {
         val repository = requireRepository()
         val registeredWallets = repository.getWallets()
             .filter { wallet ->
                 mintRemovalUrlsMatch(wallet.mintUrl().url, mintUrl)
             }
-        val registeredUnits = normalizedRegisteredWalletUnits(
-            registeredWallets.map { it.unit().toDomainUnit() },
-        )
-        if (registeredUnits.size > 1) {
-            throw MultiUnitWalletRemovalException(registeredUnits)
+        // CDK's removeWallet only drops the in-memory (mint, unit) entry;
+        // proofs stay in the database. Removing units one at a time cannot
+        // lose funds, and a failure part-way keeps the mint listed so a retry
+        // removes only the units still registered.
+        registeredWallets.forEach { wallet ->
+            repository.removeWallet(wallet.mintUrl(), wallet.unit())
         }
-        val registeredUnit = registeredUnits.singleOrNull() ?: return@cdkCall false
-        val wallet = registeredWallets.first { wallet ->
-            wallet.unit().toDomainUnit().trim().equals(registeredUnit, ignoreCase = true)
-        }
-        repository.removeWallet(wallet.mintUrl(), wallet.unit())
-        true
+        registeredWallets.isNotEmpty()
     }
 
     override suspend fun fetchMintInfo(mintUrl: String): MintInfo? = cdkCall {
@@ -304,10 +302,6 @@ class CdkWalletGatewayImpl : WalletGateway {
 
     override suspend fun unitBalance(mintUrl: String, unit: String): Long = cdkCall {
         checkNotNull(database).getBalance(CdkMintUrl(mintUrl), cdkUnit(unit), listOf(org.cashudevkit.ProofState.UNSPENT)).toLong()
-    }
-
-    override suspend fun unitBalanceIfExists(mintUrl: String, unit: String): Long? = cdkCall {
-        runCatching { walletFor(mintUrl, cdkUnit(unit)).totalBalance().value.toLong() }.getOrNull()
     }
 
     override suspend fun createMintQuote(amount: Long?, method: PaymentMethodKind, mintUrl: String, unit: String, description: String?): MintQuoteInfo = cdkCall {
@@ -499,33 +493,26 @@ class CdkWalletGatewayImpl : WalletGateway {
                 } catch (_: ArithmeticException) {
                     throw CdkGatewayUnavailable("Lightning address payment amount is too large.")
                 }
-                try {
-                    /*
-                     * CDK <= 0.17.3 rejects otherwise valid LNURL-pay invoices whose
-                     * description hash does not commit to the advertised metadata
-                     * (cashubtc/cdk#2235). Resolve and amount-check LNURL here, as iOS
-                     * does, then give CDK the BOLT11 invoice directly. Remove this
-                     * workaround once the Android binding includes upstream 7be1e2e7b8.
-                     */
-                    val invoice = lightningAddressResolver.resolveBolt11Invoice(
-                        address = decoded.address,
-                        amountMsat = amountMsat,
-                    )
-                    val quote = wallet.meltQuote(
-                        method = CdkPaymentMethod.Bolt11,
-                        request = invoice,
-                        options = null,
-                        extra = null,
-                    )
-                    return@cdkCall quote.toDomain(fallbackMethod = PaymentMethodKind.Bolt11)
-                } catch (_: LightningAddressResolutionException.Unavailable) {
-                    val quote = wallet.meltBip353Quote(
-                        bip353Address = decoded.address,
-                        amountMsat = amountMsat.toCdkAmount(),
-                        network = bitcoinNetworkFor(wallet.mintUrl().url),
-                    )
-                    return@cdkCall quote.toDomain(fallbackMethod = quote.paymentMethod.toDomain())
-                }
+                val quote = LightningAddressResolver.quote(
+                    lnurl = {
+                        wallet.meltLightningAddressQuote(
+                            lightningAddress = decoded.address,
+                            amountMsat = amountMsat.toCdkAmount(),
+                        )
+                    },
+                    bip353 = {
+                        val info = wallet.fetchMintInfo()
+                        if (info == null || PaymentMethodKind.Bolt12 !in info.nuts.reportedMeltMethods()) {
+                            throw CdkGatewayUnavailable("No mint supports BOLT12 payments required for this address.")
+                        }
+                        wallet.meltBip353Quote(
+                            bip353Address = decoded.address,
+                            amountMsat = amountMsat.toCdkAmount(),
+                            network = bitcoinNetworkFor(wallet.mintUrl().url),
+                        )
+                    },
+                )
+                return@cdkCall quote.toDomain(fallbackMethod = quote.paymentMethod.toDomain())
             }
             is PaymentRequestDecodeResult.Onchain -> {
                 val amount = requirePositiveAmount(amountSats, "On-chain payments require an amount.")
@@ -1091,7 +1078,7 @@ class CdkWalletGatewayImpl : WalletGateway {
         requireRepository().createWallet(CdkMintUrl(mintUrl), unit, null)
     }
 
-    private fun normalizeMintUrl(url: String): String = url.trim().trimEnd('/')
+    private fun normalizeMintUrl(url: String): String = MintUrlIdentity.normalized(url)
 
     private fun requireRepository(): CdkWalletRepository =
         repository ?: throw CdkGatewayUnavailable("Wallet repository is not initialized.")
@@ -1206,14 +1193,6 @@ class CdkWalletGatewayImpl : WalletGateway {
         )
     }
 
-    private fun CdkCurrencyUnit.toDomainUnit(): String = when (this) {
-        CdkCurrencyUnit.Sat -> "sat"
-        CdkCurrencyUnit.Msat -> "msat"
-        CdkCurrencyUnit.Usd -> "usd"
-        CdkCurrencyUnit.Eur -> "eur"
-        CdkCurrencyUnit.Auth -> "auth"
-        is CdkCurrencyUnit.Custom -> unit
-    }
 
     private fun CdkMintQuote.toDomain(
         fallbackAmount: Long?,

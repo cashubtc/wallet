@@ -33,8 +33,8 @@ This directory contains the complete CI infrastructure for running end-to-end in
 
 CDK setup uses release binaries instead of compiling Rust in CI:
 
-- **CDK**: Downloads and verifies `cdk-mintd 0.17.3-rc.0`, including the native Apple Silicon binary
-- **Nutshell**: Installs via `pip install cashu` from PyPI (exposes the `mint` binary)
+- **CDK**: Downloads and verifies official stable `cdk-mintd 0.18.2`, including the native Apple Silicon binary, and initializes its database-backed configuration
+- **Nutshell**: Installs official stable `cashu==0.21.0` from PyPI (exposes the `mint` binary)
 
 ## Quick Start
 
@@ -89,6 +89,47 @@ new scenario-isolated fault proxy, controlled fee/no-fee mints, native payment
 suites, live UI journeys, required-test manifest, known regression, and prioritized
 remaining gaps. Both platform workflows run core payment cases on PRs and the
 expanded request/NWC/unit matrix nightly.
+
+## Direct iOS and Android interoperability
+
+Build the current iOS test products and start both mints plus payment fixtures.
+With one booted iOS simulator and one Android emulator, run:
+
+```sh
+python3 CI/run-native-interop.py \
+  --xctestrun "$XCTESTRUN" --ios-device "$SIMULATOR_UDID" \
+  --android-sdk "$ANDROID_HOME" --output "$RUN_RESULTS/native-interop"
+```
+
+The runner pairs one mint at a time and preserves existing ADB reverse mappings.
+It exchanges real ecash and P2PK tokens in both directions, rejects incorrect
+keys and replay, reopens durable stores, and checks the combined 128-sat balance.
+Fresh random wallet seeds and separate databases are used; no seed is exported.
+Run this separately from other instrumentation/UI commands on the same devices.
+The direct mint subscription suites also exercise the native subscription APIs.
+
+To compare nonzero fees on CDK as well as the controlled Nutshell fee fixture:
+
+```sh
+CDK_TEST_WORK_DIR="$FEE_WORKDIR" ./CI/setup-cdk.sh 3346 android 1000
+CI/.cdk-bin/cdk-mintd --work-dir "$FEE_WORKDIR" --enable-logging
+```
+
+Keep that auxiliary mint running. Set `TEST_RUNNER_CDK_FEE_MINT_URL` to its
+loopback URL for iOS, and `cashu.cdkFeeMintUrl` plus an ADB reverse mapping for
+Android. Select the `CdkFeeCharging` / `cdkFeeCharging` and
+`CdkCashuRequestReceiverFeeRegression` / `cdkCashuRequestReceiverFeeRegression`
+tests. Retain the expected 21-sat credit assertion when reproducing the known
+request-fee defect. Ordinary send-max redemption fees are expected and are
+checked separately from that underpayment.
+
+The opt-in BOLT12 description UI journey needs an **unpaid** offer: an immediate
+FakeWallet receipt can correctly close the receive flow while the editor is open.
+Provision a separate delayed-payment fixture with
+`CDK_TEST_WORK_DIR="$UNPAID_WORKDIR" CDK_FAKE_DELAY_SECONDS=3600 ./CI/setup-cdk.sh 3348 android`,
+run that work directory with `cdk-mintd`, and point
+`TEST_RUNNER_BOLT12_DESCRIPTION_MINT_URL` at it for iOS. Android enables its journey
+with `cashu.liveBolt12Descriptions=true` and its fixture mint URL argument.
 
 ## Test Coverage
 

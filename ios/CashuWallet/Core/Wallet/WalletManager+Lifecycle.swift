@@ -18,11 +18,6 @@ private enum WalletStartupInstrumentation {
     static let signposter = OSSignposter(subsystem: "com.cashu.me", category: "wallet.startup")
 }
 
-struct WalletFileBackup: Equatable {
-    let originalURL: URL
-    let backupURL: URL
-}
-
 struct WalletReplacementFileOperations {
     let fileExists: (URL) -> Bool
     let moveItem: (URL, URL) throws -> Void
@@ -37,211 +32,6 @@ struct WalletReplacementFileOperations {
     }
 
     static let live = WalletReplacementFileOperations.using(.default)
-}
-
-enum WalletReplacementFiles {
-    private struct StagedReplacement {
-        let originalURL: URL
-        let displacedURL: URL
-    }
-
-    static func backup(
-        urls: [URL],
-        operations: WalletReplacementFileOperations = .live,
-        backupURL: (URL) -> URL
-    ) throws -> [WalletFileBackup] {
-        var backups: [WalletFileBackup] = []
-
-        do {
-            for originalURL in urls where operations.fileExists(originalURL) {
-                let candidate = backupURL(originalURL)
-                if operations.fileExists(candidate) {
-                    try operations.removeItem(candidate)
-                }
-
-                let backup = WalletFileBackup(
-                    originalURL: originalURL,
-                    backupURL: candidate
-                )
-                do {
-                    try operations.moveItem(originalURL, candidate)
-                    backups.append(backup)
-                } catch {
-                    // A move implementation may report failure after the item
-                    // reached its destination. Track the observed state so the
-                    // current item participates in partial-backup rollback.
-                    if operations.fileExists(candidate) {
-                        backups.append(backup)
-                    }
-                    throw error
-                }
-            }
-        } catch {
-            for backup in backups.reversed() where operations.fileExists(backup.backupURL) {
-                do {
-                    if operations.fileExists(backup.originalURL) {
-                        try operations.removeItem(backup.originalURL)
-                    }
-                    try operations.moveItem(backup.backupURL, backup.originalURL)
-                } catch {
-                    AppLogger.wallet.error("Failed to roll back a partial wallet database backup: \(error)")
-                    SentryService.capture(error)
-                }
-            }
-            throw error
-        }
-
-        return backups
-    }
-
-    static func restore(
-        at urls: [URL],
-        _ backups: [WalletFileBackup],
-        operations: WalletReplacementFileOperations = .live,
-        displacedURL: (URL) -> URL,
-        beforeCommit: () throws -> Void = {},
-        onRollback: () throws -> Void = {}
-    ) throws {
-        guard backups.allSatisfy({ operations.fileExists($0.backupURL) }) else {
-            performExternalRollback(onRollback)
-            throw CocoaError(.fileNoSuchFile)
-        }
-
-        let restorationOrder = Array(backups.reversed())
-        var stagedReplacements: [StagedReplacement] = []
-        let restorationURLs = uniqueURLs(urls + backups.map(\.originalURL))
-
-        do {
-            for originalURL in restorationURLs where operations.fileExists(originalURL) {
-                let displaced = displacedURL(originalURL)
-                if operations.fileExists(displaced) {
-                    try operations.removeItem(displaced)
-                }
-                let replacement = StagedReplacement(
-                    originalURL: originalURL,
-                    displacedURL: displaced
-                )
-                do {
-                    try operations.moveItem(originalURL, displaced)
-                    stagedReplacements.append(replacement)
-                } catch {
-                    // Account for moves that completed before reporting an
-                    // error, just as the backup-restoration phase does below.
-                    if operations.fileExists(displaced) {
-                        stagedReplacements.append(replacement)
-                    }
-                    throw error
-                }
-            }
-        } catch {
-            restoreStagedReplacements(stagedReplacements, operations: operations)
-            performExternalRollback(onRollback)
-            throw error
-        }
-
-        var restoredBackups: [WalletFileBackup] = []
-        do {
-            for backup in restorationOrder {
-                do {
-                    try operations.moveItem(backup.backupURL, backup.originalURL)
-                    restoredBackups.append(backup)
-                } catch {
-                    // FileManager moves are atomic, but injected or future
-                    // implementations may report failure after moving. Include
-                    // that backup in state-based rollback when its live path
-                    // appeared before the error surfaced.
-                    if operations.fileExists(backup.originalURL) {
-                        restoredBackups.append(backup)
-                    }
-                    throw error
-                }
-            }
-
-            // Keep every replacement file displaced until the previous seed
-            // has committed. If this throws, the catch below rolls the files
-            // forward to the replacement wallet before compensating its seed.
-            try beforeCommit()
-        } catch {
-            rollBackRestoredBackups(restoredBackups, operations: operations)
-            restoreStagedReplacements(stagedReplacements, operations: operations)
-            performExternalRollback(onRollback)
-            throw error
-        }
-
-        for replacement in stagedReplacements where operations.fileExists(replacement.displacedURL) {
-            do {
-                try operations.removeItem(replacement.displacedURL)
-            } catch {
-                AppLogger.wallet.error("Failed to remove a displaced replacement database: \(error)")
-                SentryService.capture(error)
-            }
-        }
-    }
-
-    private static func uniqueURLs(_ urls: [URL]) -> [URL] {
-        var paths: Set<String> = []
-        return urls.filter { paths.insert($0.standardizedFileURL.path).inserted }
-    }
-
-    private static func rollBackRestoredBackups(
-        _ backups: [WalletFileBackup],
-        operations: WalletReplacementFileOperations
-    ) {
-        for backup in backups.reversed() where operations.fileExists(backup.originalURL) {
-            do {
-                if operations.fileExists(backup.backupURL) {
-                    // A move implementation may have copied before throwing.
-                    // The backup already survives, so remove only the restored
-                    // live copy before putting the replacement back.
-                    try operations.removeItem(backup.originalURL)
-                } else {
-                    try operations.moveItem(backup.originalURL, backup.backupURL)
-                }
-            } catch {
-                AppLogger.wallet.error("Failed to roll back a restored wallet database backup: \(error)")
-                SentryService.capture(error)
-            }
-        }
-    }
-
-    private static func restoreStagedReplacements(
-        _ replacements: [StagedReplacement],
-        operations: WalletReplacementFileOperations
-    ) {
-        for replacement in replacements.reversed()
-        where operations.fileExists(replacement.displacedURL) {
-            do {
-                if operations.fileExists(replacement.originalURL) {
-                    // A copy-style move may leave both paths present before
-                    // throwing. The live replacement already survives.
-                    try operations.removeItem(replacement.displacedURL)
-                } else {
-                    try operations.moveItem(replacement.displacedURL, replacement.originalURL)
-                }
-            } catch {
-                AppLogger.wallet.error("Failed to restore a displaced replacement database: \(error)")
-                SentryService.capture(error)
-            }
-        }
-    }
-
-    private static func performExternalRollback(_ rollback: () throws -> Void) {
-        do {
-            try rollback()
-        } catch {
-            AppLogger.wallet.error("Failed to restore the replacement wallet seed: \(error)")
-            SentryService.capture(error)
-        }
-    }
-
-    static func removeBackups(
-        _ backups: [WalletFileBackup],
-        operations: WalletReplacementFileOperations = .live
-    ) throws {
-        for backup in backups where operations.fileExists(backup.backupURL) {
-            try operations.removeItem(backup.backupURL)
-        }
-    }
 }
 
 struct WalletFileMove: Equatable {
@@ -717,8 +507,7 @@ extension WalletManager {
             throw WalletError.notInitialized
         }
 
-        let normalizedUrl = url.trimmingCharacters(in: .whitespacesAndNewlines)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let normalizedUrl = MintURLIdentity.normalized(url)
 
         return try await operationCoordinator.perform(
             kind: .restore,
@@ -803,11 +592,6 @@ extension WalletManager {
         startDeferredStartupMaintenance()
         CashuRequestListener.shared.attach(walletManager: self)
         CashuRequestListener.shared.requestStart()
-    }
-
-    /// Legacy entry point. Mint recovery and explicit completion are still required.
-    func restoreWallet(mnemonic: String) async throws {
-        try await initializeRestoredWallet(mnemonic: mnemonic)
     }
 
     func deleteWallet() async throws {
@@ -1049,9 +833,7 @@ extension WalletManager {
             return
         }
 
-        let normalizedURL = rawURL
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let normalizedURL = MintURLIdentity.normalized(rawURL)
 
         let mint = MintInfo(
             url: normalizedURL,
@@ -1070,7 +852,7 @@ extension WalletManager {
         let extraURLs = ProcessInfo.processInfo.environment["UITEST_SEED_EXTRA_MINT_URLS"]?
             .split(separator: ",").map(String.init) ?? []
         let extraMints = extraURLs.enumerated().map { index, url in
-            MintInfo(url: url.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/")),
+            MintInfo(url: MintURLIdentity.normalized(url),
                 name: "Cashu mint \(index + 2)", isActive: false, balance: 0)
         }
         mints = [mint] + extraMints
@@ -1212,16 +994,6 @@ extension WalletManager {
         }
     }
 
-    private func restoreWalletBoundaryDefaults(_ snapshot: UserDefaultsSnapshot) {
-        for key in snapshot.keys {
-            if let value = snapshot.values[key] {
-                UserDefaults.standard.set(value, forKey: key)
-            } else {
-                UserDefaults.standard.removeObject(forKey: key)
-            }
-        }
-    }
-
     private func walletDatabaseBoundaryURLs() throws -> [URL] {
         let walletDirectoryURL = try walletDirectoryURL(create: false)
         let legacyDatabaseURL = legacyWalletDatabaseURL()
@@ -1245,29 +1017,16 @@ extension WalletManager {
         mnemonic: String,
         databaseURL: URL
     ) throws -> (db: WalletSqliteDatabase, repository: WalletRepository) {
-        do {
-            return try createRepository(mnemonic: mnemonic, databaseURL: databaseURL)
-        } catch {
-            guard shouldAttemptDatabaseRecovery(after: error, databaseURL: databaseURL) else {
-                throw error
-            }
-            
-            let backupURL = try backupCorruptedDatabase(at: databaseURL)
-            AppLogger.wallet.info("Wallet DB recovery: moved corrupted database to \(backupURL.path)")
-            return try createRepository(mnemonic: mnemonic, databaseURL: databaseURL)
-        }
+        let runtime = try Self.initializeLaunchRuntimeWithRecovery(mnemonic: mnemonic, databaseURL: databaseURL, databaseFilename: walletDatabaseFilename)
+        return (runtime.db, runtime.repository)
     }
 
     private func createRepository(
         mnemonic: String,
         databaseURL: URL
     ) throws -> (db: WalletSqliteDatabase, repository: WalletRepository) {
-        let database = try LifecycleSafeWalletDatabase(filePath: databaseURL.path)
-        let repository = try WalletRepository(
-            mnemonic: mnemonic,
-            store: customWalletStore(db: database)
-        )
-        return (database, repository)
+        let runtime = try Self.createLaunchRuntime(mnemonic: mnemonic, databaseURL: databaseURL)
+        return (runtime.db, runtime.repository)
     }
 
     nonisolated private static func prepareLaunchRuntime(
@@ -1302,6 +1061,13 @@ extension WalletManager {
             fileManager: fileManager
         )
 
+        return try initializeLaunchRuntimeWithRecovery(mnemonic: mnemonic, databaseURL: databaseURL, databaseFilename: databaseFilename)
+    }
+
+    nonisolated private static func initializeLaunchRuntimeWithRecovery(
+        mnemonic: String, databaseURL: URL, databaseFilename: String
+    ) throws -> WalletLaunchRuntime {
+        let fileManager = FileManager.default
         do {
             return try createLaunchRuntime(mnemonic: mnemonic, databaseURL: databaseURL)
         } catch {
@@ -1403,43 +1169,6 @@ extension WalletManager {
         try WalletFileMoves.move(
             moves,
             operations: .using(fileManager),
-            displacedURL: walletMoveDisplacedURL
-        )
-        return backupURL
-    }
-
-    private func shouldAttemptDatabaseRecovery(after error: Error, databaseURL: URL) -> Bool {
-        guard FileManager.default.fileExists(atPath: databaseURL.path) else {
-            return false
-        }
-        
-        return WalletDatabaseRecoveryPolicy.shouldRecover(
-            errorDescription: String(describing: error)
-        )
-    }
-
-    private func backupCorruptedDatabase(at databaseURL: URL) throws -> URL {
-        let timestamp = Int(Date().timeIntervalSince1970)
-        let backupURL = databaseURL.deletingLastPathComponent()
-            .appendingPathComponent("\(walletDatabaseFilename).corrupt.\(timestamp)")
-        var moves = [
-            WalletFileMove(sourceURL: databaseURL, destinationURL: backupURL)
-        ]
-
-        for suffix in ["-wal", "-shm", "-journal"] {
-            let sidecarURL = URL(fileURLWithPath: databaseURL.path + suffix)
-            guard FileManager.default.fileExists(atPath: sidecarURL.path) else { continue }
-            let sidecarBackupURL = URL(fileURLWithPath: backupURL.path + suffix)
-            moves.append(
-                WalletFileMove(
-                    sourceURL: sidecarURL,
-                    destinationURL: sidecarBackupURL
-                )
-            )
-        }
-
-        try WalletFileMoves.move(
-            moves,
             displacedURL: walletMoveDisplacedURL
         )
         return backupURL
@@ -1618,7 +1347,6 @@ extension WalletManager {
         await mintService.ensureMintTracked(url: tokenMintUrl)
     }
 }
-
 
 /// Crash recovery journal is kept in the device-only Keychain. Database backups remain
 /// intact throughout replay; even an interrupted rollback can be repeated on the next launch.

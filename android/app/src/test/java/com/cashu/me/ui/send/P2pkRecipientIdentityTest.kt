@@ -10,9 +10,9 @@ class P2pkRecipientIdentityTest {
     @Test
     fun primaryCompressedKeyIsRecognizedAsOwnRecipient() {
         assertTrue(
-            isOwnP2pkRecipient(
+            isPrimaryP2pkRecipient(
                 recipient = "02$xOnlyKey",
-                ownPublicKeys = listOf("02$xOnlyKey"),
+                primaryPublicKey = "02$xOnlyKey",
             ),
         )
     }
@@ -20,9 +20,9 @@ class P2pkRecipientIdentityTest {
     @Test
     fun storedXOnlyKeyIsRecognizedAsOwnRecipient() {
         assertTrue(
-            isOwnP2pkRecipient(
+            isPrimaryP2pkRecipient(
                 recipient = "03$xOnlyKey",
-                ownPublicKeys = listOf(xOnlyKey),
+                primaryPublicKey = xOnlyKey,
             ),
         )
     }
@@ -30,9 +30,9 @@ class P2pkRecipientIdentityTest {
     @Test
     fun externalKeyIsNotMarkedAsOwnRecipient() {
         assertFalse(
-            isOwnP2pkRecipient(
+            isPrimaryP2pkRecipient(
                 recipient = "02${"b".repeat(64)}",
-                ownPublicKeys = listOf("02$xOnlyKey", "c".repeat(64)),
+                primaryPublicKey = "02$xOnlyKey",
             ),
         )
     }

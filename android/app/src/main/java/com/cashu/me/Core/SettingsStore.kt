@@ -35,6 +35,8 @@ class SettingsStore(
     private val store = DataStorePreferenceStore(context.applicationContext, storeName)
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
+    internal fun <T> withReadSnapshot(block: () -> T): T = store.withReadSnapshot(block)
+
     var useBitcoinSymbol: Boolean
         get() = store.boolean(StorageKeys.settingsUseBitcoinSymbol, true)
         set(value) = store.putBoolean(StorageKeys.settingsUseBitcoinSymbol, value)
@@ -207,10 +209,7 @@ class SettingsStore(
         )
     }
 
-    internal fun snapshotWalletScopedData(): PreferenceSnapshot {
-        val prefixKeys = store.keys().filter { it.startsWith(StorageKeys.npcDataPrefix) }
-        return store.snapshot(walletScopedKeys + prefixKeys)
-    }
+    internal fun snapshotWalletScopedData(): PreferenceSnapshot = store.snapshot(walletScopedKeys)
 
     internal fun restoreWalletScopedData(snapshot: PreferenceSnapshot) {
         store.restore(snapshot)
@@ -218,7 +217,7 @@ class SettingsStore(
 
     fun clearWalletScopedData() {
         store.removeKeys(walletScopedKeys)
-        store.removePrefix(listOf(StorageKeys.npcDataPrefix, StorageKeys.nwcDataPrefix))
+        store.removePrefix(listOf(StorageKeys.nwcDataPrefix))
     }
 
     fun resetNostrRelaysToDefault() {
@@ -290,10 +289,6 @@ class SettingsStore(
         StorageKeys.settingsNostrMintBackupEnabled,
         StorageKeys.cashuRequestsProcessedNip17Ids,
         StorageKeys.walletNostrMintBackupLastBackupDate,
-        StorageKeys.npcEnabled,
-        StorageKeys.npcAutomaticClaim,
-        StorageKeys.npcSelectedMint,
-        StorageKeys.npcLastCheck,
         StorageKeys.nwcEnabled,
         StorageKeys.nwcSelectedMint,
         StorageKeys.nwcBudgetSats,

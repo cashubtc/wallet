@@ -20,14 +20,16 @@ struct ComponentCatalogView: View {
     /// Which page to render. Split in two so each fits one screenshot without
     /// scrolling, and so each pairs with its Android counterpart.
     enum Page {
-        case matrix, variants, activity, onchainStatus, transfer
+        case matrix, variants, activity, history, onchainStatus, transfer, awaitingMint
 
         init(rawValue: String?) {
             switch rawValue {
             case "activity": self = .activity
+            case "history": self = .history
             case "variants": self = .variants
             case "onchain-status": self = .onchainStatus
             case "transfer": self = .transfer
+            case "awaiting-mint": self = .awaitingMint
             default: self = .matrix
             }
         }
@@ -43,6 +45,8 @@ struct ComponentCatalogView: View {
             switch page {
             case .activity:
                 ActivityDetailCatalog()
+            case .history:
+                ActivityDetailCatalog(historyRows: true)
             case .onchainStatus:
                 OnchainStatusCatalog()
             case .transfer:
@@ -52,10 +56,13 @@ struct ComponentCatalogView: View {
                 bannerSection
             case .variants:
                 handRolledVariants
+            case .awaitingMint:
+                AwaitingMintCatalog()
             }
             Spacer(minLength: 0)
         }
-        .padding(16)
+        // The status face fills the screen; page padding would inset it.
+        .padding(page == .awaitingMint ? 0 : 16)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -211,8 +218,47 @@ private struct MintTransferCatalog: View {
     }
 }
 
+/// The send status face for a payment the mint hasn't confirmed, driven by the
+/// real unresolved-melt error, so a UI test can check it without a stuck mint.
+private struct AwaitingMintCatalog: View {
+    @State private var viewedHistory = false
+
+    private let message = MeltPaymentRecoveryError.unresolved(
+        quoteID: "catalog-quote",
+        mintURL: "https://testnut.cashu.space",
+        operationID: "catalog-operation"
+    ).walletMessage
+
+    var body: some View {
+        PaymentStatusView(
+            details: [
+                .init(label: "Method", value: "BOLT11"),
+                .init(label: "Amount", isAmount: true, value: "2,500 sat"),
+                .init(label: "Network fee", value: "10 sat"),
+                .init(label: "Mint", value: "Testnut"),
+            ],
+            phase: .failure(
+                message: message.text,
+                isCaution: message.severity == .caution,
+                isTerminal: message.recoverability == .terminal
+            ),
+            awaitingMint: message.awaitsMintConfirmation,
+            onViewHistory: { viewedHistory = true },
+            onDone: {},
+            onRetry: {}
+        )
+        .overlay(alignment: .top) {
+            if viewedHistory {
+                Text("Viewed history")
+                    .accessibilityIdentifier("awaiting-mint-viewed-history")
+            }
+        }
+    }
+}
+
 /// Deterministic receipts for native UI checks; no wallet initialization or mint is needed.
 private struct ActivityDetailCatalog: View {
+    var historyRows = false
     @EnvironmentObject private var walletManager: WalletManager
     @State private var selectedTransaction: WalletTransaction?
     @State private var selectedRequest: CashuRequest?
@@ -274,10 +320,17 @@ private struct ActivityDetailCatalog: View {
                 Button("Updating payment") { showUpdatingDetails = true }
                     .accessibilityIdentifier("updating-payment")
             }
-            ForEach(transactions) { transaction in
-                // Titled as History titles it, so a transfer names its mint.
-                Button(transaction.displayTitle(mints: walletManager.mints)) { selectedTransaction = transaction }
+            ForEach(transactions.filter { !historyRows || ["sent-lightning", "failed-lightning"].contains($0.id) }) { transaction in
+                if historyRows {
+                    HistoryTransactionRow(transaction: transaction, timestamp: "Today", amountAccessibilityText: "2,100 sat") {
+                        selectedTransaction = transaction
+                    }
                     .accessibilityIdentifier(transaction.id)
+                } else {
+                    // Titled as History titles it, so a transfer names its mint.
+                    Button(transaction.displayTitle(mints: walletManager.mints)) { selectedTransaction = transaction }
+                        .accessibilityIdentifier(transaction.id)
+                }
             }
             Button("Reusable Invoice") { openRequest(rail: .bolt12) }
                 .accessibilityIdentifier("reusable-invoice")

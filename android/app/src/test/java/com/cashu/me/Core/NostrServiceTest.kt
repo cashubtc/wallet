@@ -137,48 +137,6 @@ class NostrServiceTest {
         assertTrue(NostrService.verifySchnorr(message, publicKey, signature))
     }
 
-    @Test
-    fun nip98CommitmentJsonMatchesSwiftFieldOrderAndSlashEscaping() {
-        val publicKey = "a".repeat(64)
-        val tags = NostrService.nip98Tags("https://mint.example.com/api/v1?x=1", "post")
-
-        val commitment = NostrService.eventCommitmentJson(
-            pubkey = publicKey,
-            createdAt = 1_710_000_000,
-            kind = 27235,
-            tags = tags,
-            content = "",
-        )
-
-        assertEquals(
-            """[0,"$publicKey",1710000000,27235,[["u","https://mint.example.com/api/v1?x=1"],["method","POST"]],""]""",
-            commitment,
-        )
-        assertFalse(commitment.contains("""\/"""))
-    }
-
-    @Test
-    fun signedNip98EventJsonMatchesSwiftFieldOrderAndEscapesQuotesOnly() {
-        val eventId = "b".repeat(64)
-        val publicKey = "a".repeat(64)
-        val signature = "c".repeat(128)
-        val tags = NostrService.nip98Tags("""https://mint.example.com/a"b""", "get")
-
-        val json = NostrService.signedNip98EventJson(
-            eventId = eventId,
-            publicKey = publicKey,
-            createdAt = 1_710_000_001,
-            tags = tags,
-            signature = signature,
-        )
-
-        assertEquals(
-            """{"id":"$eventId","pubkey":"$publicKey","content":"","kind":27235,"created_at":1710000001,"tags":[["u","https://mint.example.com/a\"b"],["method","GET"]],"sig":"$signature"}""",
-            json,
-        )
-        assertFalse(json.contains("""\/"""))
-    }
-
     private fun privateKey(value: Int): ByteArray = ByteArray(32).also { it[31] = value.toByte() }
 
     private fun ByteArray.toHexString(): String = joinToString("") { "%02x".format(it) }

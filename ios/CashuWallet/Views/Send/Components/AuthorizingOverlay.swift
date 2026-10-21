@@ -64,8 +64,17 @@ struct PaymentStatusView: View {
     /// tonal (Transfer: moving between your own mints is no payment).
     var quietRetry: Bool = false
 
+    /// The payment left the wallet but the mint hasn't confirmed its outcome, so
+    /// the funds are held, not lost. The failure face then must not claim
+    /// failure: the glyph becomes the same pending clock, the title names what
+    /// it waits on, and the CTA points at History, where the payment resolves.
+    var awaitingMint: Bool = false
+
     /// Optional custom failure CTA (overrides the default Done / Try Again button).
     var failureCTA: FailureCTA? = nil
+
+    /// Opens History from the awaiting-mint face. When nil, that face offers Done.
+    var onViewHistory: (() -> Void)? = nil
 
     /// Success → dismiss/complete (Done tap). Failure → back to confirm (Try Again).
     let onDone: () -> Void
@@ -97,7 +106,9 @@ struct PaymentStatusView: View {
         processingMessage: String? = nil,
         showsDetailsWhileProcessing: Bool = false,
         quietRetry: Bool = false,
+        awaitingMint: Bool = false,
         failureCTA: FailureCTA? = nil,
+        onViewHistory: (() -> Void)? = nil,
         onDone: @escaping () -> Void,
         onRetry: @escaping () -> Void
     ) {
@@ -111,7 +122,9 @@ struct PaymentStatusView: View {
         self.processingMessage = processingMessage
         self.showsDetailsWhileProcessing = showsDetailsWhileProcessing
         self.quietRetry = quietRetry
+        self.awaitingMint = awaitingMint
         self.failureCTA = failureCTA
+        self.onViewHistory = onViewHistory
         self.onDone = onDone
         self.onRetry = onRetry
         // Failure and settlement-pending mounts stay deliberately still — the
@@ -130,11 +143,13 @@ struct PaymentStatusView: View {
         }
     }
 
+    private static let awaitingMintTitle = "Waiting for Mint"
+
     private var statusTitle: String {
         switch phase {
         case .processing: return processingTitle
         case .success:    return successTitle
-        case .failure:    return failureTitle
+        case .failure:    return awaitingMint ? Self.awaitingMintTitle : failureTitle
         }
     }
 
@@ -322,9 +337,12 @@ struct PaymentStatusView: View {
                 // No `.symbolEffect(.bounce)` here — bounce is the payment-received
                 // celebration beat (DESIGN.md §6); a failure/caution glyph must not
                 // borrow it. It still scales + fades in, just without the delight.
-                Image(systemName: isCaution ? "exclamationmark.triangle.fill" : "xmark.circle.fill")
+                // An unconfirmed payment hasn't failed, so it wears the pending clock.
+                Image(systemName: awaitingMint
+                    ? "clock.fill"
+                    : (isCaution ? "exclamationmark.triangle.fill" : "xmark.circle.fill"))
                     .font(.statusGlyph)
-                    .foregroundStyle(isCaution ? .orange : .red)
+                    .foregroundStyle(awaitingMint || isCaution ? .orange : .red)
                     .transition(reduceMotion ? .opacity : .scale(scale: 0.92).combined(with: .opacity))
             }
         }
@@ -348,7 +366,17 @@ struct PaymentStatusView: View {
             Button(action: onDone) { Text("Done") }
                 .flatSheetSecondaryButton()
         case .failure(_, _, let isTerminal):
-            if let failureCTA {
+            if awaitingMint {
+                // The same quiet secondary as Done: nothing to retry, and
+                // History is where the held payment resolves.
+                if let onViewHistory {
+                    Button(action: onViewHistory) { Text("View in History") }
+                        .flatSheetSecondaryButton()
+                } else {
+                    Button(action: onDone) { Text("Done") }
+                        .flatSheetSecondaryButton()
+                }
+            } else if let failureCTA {
                 Button(action: failureCTA.action) { Text(failureCTA.title) }
                     .glassButton()
             } else if isTerminal {
@@ -400,7 +428,7 @@ struct PaymentStatusView: View {
         case .failure(_, let isCaution, _):
             HapticFeedback.notification(isCaution ? .warning : .error)
             if announce {
-                AccessibilityNotification.Announcement(failureTitle).post()
+                AccessibilityNotification.Announcement(awaitingMint ? Self.awaitingMintTitle : failureTitle).post()
             }
         case .processing:
             break

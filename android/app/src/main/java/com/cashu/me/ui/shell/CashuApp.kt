@@ -356,7 +356,6 @@ private fun AuthenticatedShell(container: AppContainer) {
     }
 
     val pendingDeepLink by container.navigationManager.pendingDeepLink.collectAsState()
-    val connectivityState by container.connectivityObserver.state.collectAsState()
     val appLockState by container.appLockManager.state.collectAsState()
     val cashuRequestListenerState by container.cashuRequestListener.state.collectAsState()
 
@@ -470,10 +469,8 @@ private fun AuthenticatedShell(container: AppContainer) {
     ) {
         WalletScaffold(
             container = container,
-            connectivityState = connectivityState,
             onScan = { scannerTarget = ScannerTarget.Auto },
             onReceiveEcash = { openPaymentFlow(WalletFlow.ReceiveEcash) },
-            onReceiveLightning = { openPaymentFlow(WalletFlow.ReceiveLightning) },
             onSend = { openPaymentFlow(WalletFlow.Send) },
             onAddMint = { openPaymentFlow(WalletFlow.ConnectMint) },
             onTransfer = { fromMintUrl -> openPaymentFlow(WalletFlow.Transfer(fromMintUrl)) },
@@ -684,6 +681,9 @@ private fun AuthenticatedShell(container: AppContainer) {
                 mintDiscoveryManager = container.mintDiscoveryManager,
                 allowCleartextLocalTestMints = container.runtimePolicy.allowCleartextLocalTestMints,
                 onDismissLockChanged = { flowDismissLocked = it },
+                onViewHistory = {
+                    flowHandoff.request(FlowHandoffDestination.NavTab(TopTab.History), close)
+                },
             )
 
             WalletFlow.SendEcash -> SendEcashScreen(

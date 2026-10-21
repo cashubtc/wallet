@@ -13,12 +13,17 @@ enum class WalletMessageSeverity { Error, Caution, Info }
  *
  * `isTerminal` marks a permanent outcome (already spent / already paid) where a
  * retry is futile, so the UI can offer "Done" instead of "Try again".
+ *
+ * `awaitsMintConfirmation` marks a payment that left the wallet but the mint
+ * hasn't confirmed, so the funds are held rather than lost. The UI shows a
+ * waiting face, not a failure.
  */
 data class WalletMessage(
     val text: String,
     val severity: WalletMessageSeverity = WalletMessageSeverity.Error,
     val isTerminal: Boolean = false,
     val title: String? = null,
+    val awaitsMintConfirmation: Boolean = false,
 ) {
     val isRetryable: Boolean get() = !isTerminal
 
@@ -56,11 +61,9 @@ object WalletErrorMessages {
         "The wallet couldn't finish that action. Try again in a moment."
 
     fun classify(error: Throwable): WalletMessage {
-        // These are application safety policies, not transport failures. Their
-        // guidance contains "connected", which the raw network matcher catches.
-        if (error is com.cashu.me.Core.CDK.MultiUnitWalletRemovalException ||
-            error is com.cashu.me.Core.MintTransferInProgressException
-        ) {
+        // An application safety policy, not a transport failure. Its guidance
+        // contains "connected", which the raw network matcher catches.
+        if (error is com.cashu.me.Core.MintTransferInProgressException) {
             return WalletMessage(checkNotNull(error.message))
         }
         if (error is MintTransferException) return transferMessage(error)
@@ -69,10 +72,15 @@ object WalletErrorMessages {
                 text = checkNotNull(error.message),
                 severity = WalletMessageSeverity.Caution,
                 isTerminal = true,
-                title = if (error.unresolved) "Payment status unknown" else "Payment returned",
+                title = if (error.unresolved) "Waiting for mint" else "Payment returned",
+                awaitsMintConfirmation = error.unresolved,
             )
         }
-        val raw = error.message ?: error.toString()
+        val raw = when (error) {
+            is org.cashudevkit.FfiException.Cdk -> error.errorMessage
+            is org.cashudevkit.FfiException.Internal -> error.errorMessage
+            else -> error.message ?: error.toString()
+        }
 
         classifyRawMessage(raw)?.let { return it }
 
@@ -127,6 +135,23 @@ object WalletErrorMessages {
         fun has(vararg needles: String): Boolean = needles.any { normalized.contains(it) }
 
         return when {
+            normalized.startsWith("failed to parse lightning address:") ->
+                error("That Lightning address does not look valid. Check it and try again.")
+
+            normalized.startsWith("failed to request invoice from lightning address service:") -> {
+                val status = Regex("^failed to request invoice from lightning address service: (?:failed to fetch pay request data: )?http transport error Some\\((\\d{3})\\):", RegexOption.IGNORE_CASE)
+                    .find(extractCdkMessage(rawMessage))?.groupValues?.get(1)
+                error(if (status != null)
+                    "The recipient’s Lightning address service is unavailable (HTTP $status). Try again later."
+                else "Couldn't get an invoice from the recipient’s Lightning address service. Check the address or try again later.")
+            }
+
+            normalized.startsWith("failed to resolve bip353 address:") ||
+                normalized.startsWith("failed to parse bip353 address:") ||
+                normalized.startsWith("no bolt12 offer found in bip353") ||
+                normalized.startsWith("failed to parse bip321 payment instruction:") ->
+                error("Couldn't resolve the recipient’s BIP-353 address. Check the address or try again later.")
+
             has("already being minted") ->
                 error("This payment is already being claimed. Give it a moment and refresh.")
 

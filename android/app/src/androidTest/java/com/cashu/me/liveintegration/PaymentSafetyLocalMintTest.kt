@@ -66,11 +66,11 @@ open class PaymentFixtureTest {
     }
 
     fun mintUrl(mint: String) = "$fixture$root/mint/$mint"
-    suspend fun wallet(mint: String): TestWallet = TestWallet(mint).also { it.open(); wallets += it }
+    suspend fun wallet(mint: String, absoluteUrl: String? = null): TestWallet = TestWallet(mint, absoluteUrl).also { it.open(); wallets += it }
 
-    inner class TestWallet(val mint: String) {
+    inner class TestWallet(val mint: String, absoluteUrl: String? = null) {
         var gateway = CdkWalletGatewayImpl()
-        val url = mintUrl(mint)
+        val url = absoluteUrl ?: mintUrl(mint)
         private val path = File(directory, "${UUID.randomUUID()}.db").absolutePath
         private lateinit var seed: String
         suspend fun open() {
@@ -187,7 +187,15 @@ class PaymentSafetyLocalMintTest : PaymentFixtureTest() {
     }
 
     @Test fun lostMintResponseRecoversPaidQuoteExactlyOnce() = runBlocking {
-        val wallet = wallet("controlled")
+        assertLostMintResponse("controlled")
+    }
+
+    @Test fun cdkLostMintResponseRecoversPaidQuoteExactlyOnce() = runBlocking {
+        assertLostMintResponse("cdk")
+    }
+
+    private suspend fun assertLostMintResponse(mint: String) {
+        val wallet = wallet(mint)
         val quote = wallet.pay(wallet.quote(42))
         arm("/v1/mint/bolt11", "lose_response")
         runCatching { wallet.gateway.mintTokens(quote.id) }
@@ -279,8 +287,18 @@ class PaymentSafetyLocalMintTest : PaymentFixtureTest() {
     }
 
     @Test fun feeChargingMintMaxSendAndReceiveConserveValue() = runBlocking {
-        val sender = wallet("fees")
-        val receiver = wallet("fees")
+        assertFeeChargingMintMaxSendAndReceive("fees")
+    }
+
+    @Test fun cdkFeeChargingMintMaxSendAndReceiveConserveValue() = runBlocking {
+        val url = InstrumentationRegistry.getArguments().getString("cashu.cdkFeeMintUrl")
+        assumeTrue("Start the optional CDK 1000-ppk fixture", url != null)
+        assertFeeChargingMintMaxSendAndReceive("cdk", url)
+    }
+
+    private suspend fun assertFeeChargingMintMaxSendAndReceive(mint: String, absoluteUrl: String? = null) {
+        val sender = wallet(mint, absoluteUrl)
+        val receiver = wallet(mint, absoluteUrl)
         sender.fund()
         val sent = sender.send(100)
         assertEquals(0, sent.fee)
@@ -307,9 +325,17 @@ class PaymentSafetyLocalMintTest : PaymentFixtureTest() {
     }
 
     @Test fun concurrentReceiversCannotDoubleCredit() = runBlocking {
-        val sender = wallet("controlled")
-        val a = wallet("controlled")
-        val b = wallet("controlled")
+        assertConcurrentReceivers("controlled")
+    }
+
+    @Test fun cdkConcurrentReceiversCannotDoubleCredit() = runBlocking {
+        assertConcurrentReceivers("cdk")
+    }
+
+    private suspend fun assertConcurrentReceivers(mint: String) {
+        val sender = wallet(mint)
+        val a = wallet(mint)
+        val b = wallet(mint)
         sender.fund()
         val token = sender.send(21).token
         val results = coroutineScope {

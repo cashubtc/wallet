@@ -885,6 +885,7 @@ final class WalletOperationCoordinatorTests: XCTestCase {
         let message = error.walletMessage
 
         XCTAssertTrue(error.retryRequiresFreshQuote)
+        XCTAssertFalse(message.awaitsMintConfirmation)
         if case .retryable = message.recoverability {
             // Expected.
         } else {
@@ -909,6 +910,10 @@ final class WalletOperationCoordinatorTests: XCTestCase {
             XCTFail("An unknown payment outcome must block immediate retry")
         }
         XCTAssertEqual(error.walletOperationFailureOutcome, .ambiguousFailure)
+        // Held, not failed: the UI shows the waiting face and says the funds are held.
+        XCTAssertTrue(message.awaitsMintConfirmation)
+        XCTAssertEqual(message.severity, .caution)
+        XCTAssertTrue(message.text.contains("held"))
     }
 
     private func eventually(

@@ -1,12 +1,11 @@
 import Foundation
 import SwiftUI
+import Cdk
 
 protocol CashuRequestInboxClient: AnyObject, Sendable {
-    func start() async
+    func start() async throws
     func stop() async
 }
-
-extension NostrInboxClient: CashuRequestInboxClient {}
 
 /// Preserves the latest lifecycle intent even when the unstructured task for
 /// an earlier scene or setting transition has not started yet.
@@ -76,7 +75,7 @@ final class CashuRequestListenerClientSlot {
 
     @discardableResult
     func start(
-        makeClient: (UInt) -> any CashuRequestInboxClient
+        makeClient: (UInt) throws -> any CashuRequestInboxClient
     ) async -> Bool {
         guard !Task.isCancelled, client == nil else { return false }
         await waitUntilRetired()
@@ -84,10 +83,25 @@ final class CashuRequestListenerClientSlot {
 
         generation &+= 1
         let startGeneration = generation
-        let candidate = makeClient(startGeneration)
+        let candidate: any CashuRequestInboxClient
+        do {
+            candidate = try makeClient(startGeneration)
+        } catch {
+            AppLogger.wallet.error("CashuRequestListener: inbox creation failed")
+            return false
+        }
         client = candidate
 
-        await candidate.start()
+        do {
+            try await candidate.start()
+        } catch {
+            if owns(startGeneration) {
+                let displaced = invalidate()
+                await retireAndWaitForAll(displaced)
+            }
+            AppLogger.wallet.error("CashuRequestListener: inbox start failed")
+            return false
+        }
 
         let stillOwnsCandidate: Bool
         if let current = client {
@@ -301,7 +315,7 @@ final class ProcessedNIP17EventTracker {
 }
 
 /// NUT-18 receive-side listener. Foreground-only: opens a NIP-17 relay subscription
-/// at app launch, decrypts gift wraps, parses PaymentRequestPayload from the inner
+/// at app launch via CDK, parses PaymentRequestPayload from the unwrapped
 /// rumor, and forwards to the auto-claim path in WalletManager.
 ///
 /// Payments that can't claim silently (auto-claim off, or the mint isn't
@@ -390,8 +404,7 @@ final class CashuRequestListener: ObservableObject {
         let nostr = NostrService.shared
         guard nostr.isInitialized,
               !nostr.publicKeyHex.isEmpty,
-              let privHex = nostr.getPrivateKeyHex(),
-              let privateKey = Data(hex: privHex) else {
+              let privHex = nostr.getPrivateKeyHex() else {
             AppLogger.wallet.error("CashuRequestListener: NostrService not initialized")
             return
         }
@@ -407,14 +420,13 @@ final class CashuRequestListener: ObservableObject {
         let pubkeyHex = nostr.publicKeyHex
         let started = await clientSlot.start { generation in
             processedEvents.reload()
-            return NostrInboxClient(
-                pubkeyHex: pubkeyHex,
+            return try CDKCashuRequestInbox(
+                secretKey: privHex,
                 relays: relays,
-                since: since
+                since: UInt64(max(0, since))
             ) { [weak self] event in
                 await self?.handleTracked(
                     event: event,
-                    recipientPrivateKey: privateKey,
                     generation: generation
                 )
             }
@@ -475,57 +487,41 @@ final class CashuRequestListener: ObservableObject {
     // MARK: - Event handling
 
     private func handleTracked(
-        event: NostrIncomingEvent,
-        recipientPrivateKey: Data,
+        event: NostrInboxEvent,
         generation: UInt
     ) async {
         guard clientSlot.owns(generation), workGate.begin() else { return }
         defer { workGate.end() }
         await handle(
             event: event,
-            recipientPrivateKey: recipientPrivateKey,
             generation: generation
         )
     }
 
     private func handle(
-        event: NostrIncomingEvent,
-        recipientPrivateKey: Data,
+        event: NostrInboxEvent,
         generation: UInt
     ) async {
         guard clientSlot.owns(generation) else { return }
-        guard event.kind == 1059 else { return }
-        guard processedEvents.begin(event.id) else { return }
+        guard processedEvents.begin(event.wrapId) else { return }
         var terminalOutcome = false
         defer {
             processedEvents.finish(
-                event.id,
+                event.wrapId,
                 terminalOutcome: terminalOutcome && clientSlot.owns(generation)
             )
         }
         AppLogger.wallet.notice(
-            "CashuRequestListener: gift wrap received event=\(WalletOperationCoordinator.privacySafeIdentifier(event.id), privacy: .public) created_at=\(event.createdAt, privacy: .public)"
+            "CashuRequestListener: gift wrap received event=\(WalletOperationCoordinator.privacySafeIdentifier(event.wrapId), privacy: .public) created_at=\(event.wrapCreatedAt, privacy: .public)"
         )
 
-        let rumor: NostrRumor
-        do {
-            rumor = try NIP17.unwrap(giftWrap: event, recipientPrivateKey: recipientPrivateKey)
-        } catch {
-            // Not encrypted for us (or an unrelated DM) — it can never succeed,
-            // so mark it handled and stop reconsidering it.
-            AppLogger.wallet.notice(
-                "CashuRequestListener: NIP-17 unwrap failed event=\(WalletOperationCoordinator.privacySafeIdentifier(event.id), privacy: .public) error_type=\(String(reflecting: type(of: error)), privacy: .public)"
-            )
-            terminalOutcome = true
-            return
-        }
-        guard rumor.kind == 14 else {
+        guard event.rumorKind == 14 else {
             terminalOutcome = true
             return
         }
         switch await tryClaim(
-            rumorContent: rumor.content,
-            eventId: event.id,
+            rumorContent: event.rumorContent,
+            eventId: event.wrapId,
             generation: generation
         ) {
         case .claimed, .unclaimable, .held:

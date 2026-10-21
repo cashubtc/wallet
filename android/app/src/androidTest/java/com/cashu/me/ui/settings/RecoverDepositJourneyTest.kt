@@ -9,6 +9,7 @@ import com.cashu.me.test.fixtures.FixtureMode
 import com.cashu.me.ui.testing.UiTestTags
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.core.graphics.writeToTestStorage
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -23,7 +24,10 @@ class RecoverDepositJourneyTest {
         AppTestFixture.launch(FixtureMode.SeededWithMint).use { fixture ->
             val manager = fixture.container.walletManager
             val activeBefore = manager.state.value.activeMint?.url
-            runBlocking {
+            // Match AddMintSheet's main-thread scope. Background restores also
+            // publish mint balances there; mutating from the instrumentation
+            // thread can overwrite their state with a stale mint list.
+            runBlocking(Dispatchers.Main) {
                 manager.addMint("https://harbor.mint.example")
                 manager.addMint("https://north.mint.example")
             }
@@ -56,6 +60,8 @@ class RecoverDepositJourneyTest {
             recoveryScreenshot("android-confirmation")
             compose.onNodeWithText("Cancel").performClick()
             assertEquals(0, fixture.fakeGateway!!.depositRecoveryCalls.get())
+            assertEquals(hosts.map { "https://$it" }.toSet(), manager.state.value.mints.map { it.url }.toSet())
+            assertEquals(hosts.map { "https://$it" }.toSet(), fixture.container.walletStore.loadMints().map { it.url }.toSet())
             assertEquals(activeBefore, manager.state.value.activeMint?.url)
             assertEquals(0L, manager.state.value.balance)
         }

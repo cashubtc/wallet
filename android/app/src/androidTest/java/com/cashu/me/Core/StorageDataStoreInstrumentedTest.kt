@@ -30,6 +30,33 @@ class StorageDataStoreInstrumentedTest {
     private val json = Json { encodeDefaults = true }
 
     @Test
+    fun removeClearsEverySupportedPreferenceType() {
+        val store = DataStorePreferenceStore(context, uniqueStoreName("dynamic_removal"))
+        val values = mapOf<String, Any>(
+            "text" to "value", "flag" to true, "long" to 2L,
+            "int" to 3, "float" to 4f, "set" to setOf("a", "b"),
+        )
+        store.restore(PreferenceSnapshot(values.keys, values))
+        values.keys.forEach(store::remove)
+        assertTrue(store.all().isEmpty())
+    }
+
+    @Test
+    fun settingsReadSnapshotIsStableAndReleasedAfterFailure() {
+        val store = DataStorePreferenceStore(context, uniqueStoreName("read_snapshot"))
+        store.putString("value", "before")
+        runCatching {
+            store.withReadSnapshot {
+                store.putString("value", "after")
+                assertEquals("before", store.string("value"))
+                store.withReadSnapshot { assertEquals("before", store.string("value")) }
+                error("leave the snapshot")
+            }
+        }
+        assertEquals("after", store.string("value"))
+    }
+
+    @Test
     fun mintRemovalSurvivesReloadAndWalletRollbackButNotWalletDeletion() {
         val storeName = uniqueStoreName("removed_mints")
         val store = WalletStore(context, storeName)

@@ -82,5 +82,3 @@ struct PendingReceiveToken: Codable, Identifiable, Equatable {
         try container.encodeIfPresent(memo, forKey: .memo)
     }
 }
-
-/// Result of restoring proofs from a single mint via NUT-09

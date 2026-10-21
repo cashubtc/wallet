@@ -11,13 +11,6 @@ private struct RawMintError: Error, CustomStringConvertible {
 
 final class WalletErrorMessageTests: XCTestCase {
 
-    func testMultiUnitRemovalPreservesSafetyGuidance() {
-        XCTAssertEqual(
-            MintRemovalPolicyError.multipleUnits.userFacingWalletMessage,
-            "This mint uses multiple currency units and cannot be removed safely yet. Keep it connected and try again after updating the app."
-        )
-    }
-
     /// A one-line slot shows {what broke} and drops {what to try next}.
     func testHeadlineIsTheFirstSentence() {
         XCTAssertEqual(

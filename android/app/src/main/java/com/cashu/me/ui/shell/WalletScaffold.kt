@@ -32,7 +32,6 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.cashu.me.App.AppContainer
-import com.cashu.me.Core.Platform.ConnectivityState
 import com.cashu.me.ui.components.CanvasDivider
 import com.cashu.me.ui.navigation.CashuNavHost
 import com.cashu.me.ui.navigation.Routes
@@ -42,12 +41,10 @@ import com.cashu.me.ui.theme.CashuTheme
 @Composable
 fun WalletScaffold(
     container: AppContainer,
-    connectivityState: ConnectivityState,
     onScan: () -> Unit,
     onReceiveEcash: () -> Unit,
     onAddMint: () -> Unit,
     onTransfer: (fromMintUrl: String?) -> Unit,
-    onReceiveLightning: () -> Unit,
     onSend: () -> Unit,
     pendingMintScan: String?,
     onPendingMintScanConsumed: () -> Unit,
@@ -87,13 +84,11 @@ fun WalletScaffold(
         CashuNavHost(
             navController = navController,
             container = container,
-            connectivityState = connectivityState,
             contentPadding = padding,
             onScan = onScan,
             onReceiveEcash = onReceiveEcash,
             onAddMint = onAddMint,
             onTransfer = onTransfer,
-            onReceiveLightning = onReceiveLightning,
             onSend = onSend,
             pendingMintScan = pendingMintScan,
             onPendingMintScanConsumed = onPendingMintScanConsumed,
