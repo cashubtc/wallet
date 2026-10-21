@@ -68,6 +68,7 @@
     <li><a href="#ios">iOS findings (I1–I6)</a></li>
     <li><a href="#ok">Transitions that looked right</a></li>
     <li><a href="#method">Method, environments and caveats</a></li>
+    <li><a href="#fixes">Fixes on this branch</a></li>
   </ol>
 </div>
 
@@ -96,6 +97,11 @@
   for 150 ms before the curtain covers it.
 </p>
 <p>
+  <strong>Update, same day:</strong> eleven of the sixteen findings are fixed on this branch and re-verified on the Pixel 7a and
+  the iOS simulator; see <a href="#fixes">section 8</a>. The five left open are either library behaviour (A7), a deliberate
+  navigation design on iOS (I1), or cosmetic (I5, I6); A10 needed no change.
+</p>
+<p>
   <strong>Device check:</strong> the same release build was then run on a Pixel 7a (Android 17) and recorded at 90 fps.
   Rendering is healthy there (2–5 % janky frames, p50 12–14 ms), so the emulator slowness noted in <a href="#A10">A10</a>
   is an emulator artefact. The jumps themselves reproduce on the phone exactly as on the emulator:
@@ -105,24 +111,24 @@
 
 <h2 id="table">2. All findings at a glance</h2>
 <table>
-  <thead><tr><th>ID</th><th>Platform</th><th>Flow · step</th><th>What jumps</th><th>Size</th><th>Severity</th></tr></thead>
+  <thead><tr><th>ID</th><th>Platform</th><th>Flow · step</th><th>What jumps</th><th>Size</th><th>Severity</th><th>Status</th></tr></thead>
   <tbody>
-    <tr><td><a href="#A1">A1</a></td><td><span class="plat">Android</span></td><td>Send · destination resolves → amount face</td><td>Compact sheet becomes full height with no height animation; header/To row appear instantly</td><td>title 749 px, field 306 px in 1 frame</td><td><span class="sev high">High</span></td></tr>
-    <tr><td><a href="#A2">A2</a></td><td><span class="plat">Android</span></td><td>Receive Lightning · Create invoice</td><td>Mint selector row removed while creating; amount drops, then pops back before the QR face</td><td>+77 px (28 dp), 1 frame; reverts 0.4 s later</td><td><span class="sev high">High</span></td></tr>
-    <tr><td><a href="#A3">A3</a></td><td><span class="plat">Android</span></td><td>Send Ecash · Send</td><td>Both selector rows removed while sending; amount drops, then pops back before the token face</td><td>+176 px (64 dp), 1 frame; reverts 0.4 s later</td><td><span class="sev high">High</span></td></tr>
-    <tr><td><a href="#A4">A4</a></td><td><span class="plat">Android</span></td><td>Send · Continue → quote → confirm</td><td>Back chevron and pinned "To" row vanish during the quote wait; hero amount sits 117 dp lower and smaller on the confirm face</td><td>321 px, cross-faded</td><td><span class="sev medium">Medium</span></td></tr>
-    <tr><td><a href="#A5">A5</a></td><td><span class="plat">Android</span></td><td>Send · destination field wraps</td><td>Compact sheet re-measures and snaps taller</td><td>66 px (24 dp), 1 frame</td><td><span class="sev low">Low</span></td></tr>
-    <tr><td><a href="#A7">A7</a></td><td><span class="plat">Android</span></td><td>History · transaction detail sheet</td><td>Scrim reaches full opacity in one frame while the sheet is still sliding</td><td>1 frame</td><td><span class="sev low">Low</span></td></tr>
-    <tr><td><a href="#A8">A8</a></td><td><span class="plat">Android</span></td><td>Receive Lightning · payment arrives</td><td>Status line flips "Adding to wallet…" → "Expires in 9m 59s" for one frame before the success face</td><td>1 frame (~50 ms)</td><td><span class="sev low">Low</span></td></tr>
-    <tr><td><a href="#A9">A9</a></td><td><span class="plat">Android</span></td><td>Onboarding · Add mint → wallet</td><td>Wallet home shows through for ~150 ms, fades out, curtain holds 2 s, wallet fades in again</td><td>double reveal</td><td><span class="sev medium">Medium</span></td></tr>
-    <tr><td><a href="#A10">A10</a></td><td><span class="plat">Android</span></td><td>Any screen with blur (API 31+)</td><td>Emulator renders 1–3 frames per transition on API 36; same build is 60 fps on API 29. Checked on a Pixel 7a: not an issue on hardware</td><td>emulator only</td><td><span class="sev low">Closed</span></td></tr>
-    <tr><td><a href="#A11">A11</a></td><td><span class="plat">Android</span></td><td>Onboarding · Create Wallet</td><td>Caution + checkbox accessory slides in from off-screen left and is clipped by the screen edge</td><td>~150 ms</td><td><span class="sev low">Low</span></td></tr>
-    <tr><td><a href="#I1">I1</a></td><td><span class="plat">iOS</span></td><td>Send · destination resolves → amount face</td><td>Send sheet is dismissed and a new sheet presented; wallet home fully visible in between</td><td>~0.6 s of home</td><td><span class="sev high">High</span></td></tr>
-    <tr><td><a href="#I2">I2</a></td><td><span class="plat">iOS</span></td><td>Send · Continue → quote → confirm</td><td>"Processing…" → confirm face is a single-frame cut; To row and chevron snap back</td><td>8.2 % of pixels, 1 frame @60 fps</td><td><span class="sev high">High</span></td></tr>
-    <tr><td><a href="#I3">I3</a></td><td><span class="plat">iOS</span></td><td>Receive Lightning · Create invoice</td><td>Toolbar chips and "To Testnut mint" removed instantly, amount drops; 0.46 s later keypad → invoice is a cut</td><td>+84 px (28 pt); 23.7 % cut</td><td><span class="sev high">High</span></td></tr>
-    <tr><td><a href="#I4">I4</a></td><td><span class="plat">iOS</span></td><td>Receive Lightning · payment arrives</td><td>QR face vanishes in one frame; success face then materialises over 0.5 s</td><td>28 % of pixels, 1 frame</td><td><span class="sev medium">Medium</span></td></tr>
-    <tr><td><a href="#I5">I5</a></td><td><span class="plat">iOS</span></td><td>Onboarding · Continue → wallet</td><td>Mint list vanishes in one frame before the curtain, then the wallet fades in</td><td>8.4 % + 4.3 %</td><td><span class="sev low">Low</span></td></tr>
-    <tr><td><a href="#I6">I6</a></td><td><span class="plat">iOS</span></td><td>Mints · mint detail</td><td>Async rows (connection, about text) reflow the page after the push</td><td>content load</td><td><span class="sev low">Low</span></td></tr>
+    <tr><td><a href="#A1">A1</a></td><td><span class="plat">Android</span></td><td>Send · destination resolves → amount face</td><td>Compact sheet becomes full height with no height animation; header/To row appear instantly</td><td>title 749 px, field 306 px in 1 frame</td><td><span class="sev high">High</span></td><td><a href="#fix-A1"><span class="sev low">Fixed</span></a></td></tr>
+    <tr><td><a href="#A2">A2</a></td><td><span class="plat">Android</span></td><td>Receive Lightning · Create invoice</td><td>Mint selector row removed while creating; amount drops, then pops back before the QR face</td><td>+77 px (28 dp), 1 frame; reverts 0.4 s later</td><td><span class="sev high">High</span></td><td><a href="#fix-A2"><span class="sev low">Fixed</span></a></td></tr>
+    <tr><td><a href="#A3">A3</a></td><td><span class="plat">Android</span></td><td>Send Ecash · Send</td><td>Both selector rows removed while sending; amount drops, then pops back before the token face</td><td>+176 px (64 dp), 1 frame; reverts 0.4 s later</td><td><span class="sev high">High</span></td><td><a href="#fix-A3"><span class="sev low">Fixed</span></a></td></tr>
+    <tr><td><a href="#A4">A4</a></td><td><span class="plat">Android</span></td><td>Send · Continue → quote → confirm</td><td>Back chevron and pinned "To" row vanish during the quote wait; hero amount sits 117 dp lower and smaller on the confirm face</td><td>321 px, cross-faded</td><td><span class="sev medium">Medium</span></td><td><a href="#fix-A4"><span class="sev low">Fixed</span></a></td></tr>
+    <tr><td><a href="#A5">A5</a></td><td><span class="plat">Android</span></td><td>Send · destination field wraps</td><td>Compact sheet re-measures and snaps taller</td><td>66 px (24 dp), 1 frame</td><td><span class="sev low">Low</span></td><td><a href="#fix-A5"><span class="sev low">Fixed</span></a></td></tr>
+    <tr><td><a href="#A7">A7</a></td><td><span class="plat">Android</span></td><td>History · transaction detail sheet</td><td>Scrim reaches full opacity in one frame while the sheet is still sliding</td><td>1 frame</td><td><span class="sev low">Low</span></td><td><span class="sev info">Open</span></td></tr>
+    <tr><td><a href="#A8">A8</a></td><td><span class="plat">Android</span></td><td>Receive Lightning · payment arrives</td><td>Status line flips "Adding to wallet…" → "Expires in 9m 59s" for one frame before the success face</td><td>1 frame (~50 ms)</td><td><span class="sev low">Low</span></td><td><a href="#fix-A8"><span class="sev low">Fixed</span></a></td></tr>
+    <tr><td><a href="#A9">A9</a></td><td><span class="plat">Android</span></td><td>Onboarding · Add mint → wallet</td><td>Wallet home shows through for ~150 ms, fades out, curtain holds 2 s, wallet fades in again</td><td>double reveal</td><td><span class="sev medium">Medium</span></td><td><a href="#fix-A9"><span class="sev low">Fixed</span></a></td></tr>
+    <tr><td><a href="#A10">A10</a></td><td><span class="plat">Android</span></td><td>Any screen with blur (API 31+)</td><td>Emulator renders 1–3 frames per transition on API 36; same build is 60 fps on API 29. Checked on a Pixel 7a: not an issue on hardware</td><td>emulator only</td><td><span class="sev low">Closed</span></td><td><span class="sev info">n/a</span></td></tr>
+    <tr><td><a href="#A11">A11</a></td><td><span class="plat">Android</span></td><td>Onboarding · Create Wallet</td><td>Caution + checkbox accessory slides in from off-screen left and is clipped by the screen edge</td><td>~150 ms</td><td><span class="sev low">Low</span></td><td><a href="#fix-A11"><span class="sev low">Fixed</span></a></td></tr>
+    <tr><td><a href="#I1">I1</a></td><td><span class="plat">iOS</span></td><td>Send · destination resolves → amount face</td><td>Send sheet is dismissed and a new sheet presented; wallet home fully visible in between</td><td>~0.6 s of home</td><td><span class="sev high">High</span></td><td><span class="sev info">Open</span></td></tr>
+    <tr><td><a href="#I2">I2</a></td><td><span class="plat">iOS</span></td><td>Send · Continue → quote → confirm</td><td>"Processing…" → confirm face is a single-frame cut; To row and chevron snap back</td><td>8.2 % of pixels, 1 frame @60 fps</td><td><span class="sev high">High</span></td><td><a href="#fix-I2"><span class="sev low">Fixed</span></a></td></tr>
+    <tr><td><a href="#I3">I3</a></td><td><span class="plat">iOS</span></td><td>Receive Lightning · Create invoice</td><td>Toolbar chips and "To Testnut mint" removed instantly, amount drops; 0.46 s later keypad → invoice is a cut</td><td>+84 px (28 pt); 23.7 % cut</td><td><span class="sev high">High</span></td><td><a href="#fix-I3"><span class="sev low">Fixed</span></a></td></tr>
+    <tr><td><a href="#I4">I4</a></td><td><span class="plat">iOS</span></td><td>Receive Lightning · payment arrives</td><td>QR face vanishes in one frame; success face then materialises over 0.5 s</td><td>28 % of pixels, 1 frame</td><td><span class="sev medium">Medium</span></td><td><a href="#fix-I4"><span class="sev low">Fixed</span></a></td></tr>
+    <tr><td><a href="#I5">I5</a></td><td><span class="plat">iOS</span></td><td>Onboarding · Continue → wallet</td><td>Mint list vanishes in one frame before the curtain, then the wallet fades in</td><td>8.4 % + 4.3 %</td><td><span class="sev low">Low</span></td><td><span class="sev info">Open</span></td></tr>
+    <tr><td><a href="#I6">I6</a></td><td><span class="plat">iOS</span></td><td>Mints · mint detail</td><td>Async rows (connection, about text) reflow the page after the push</td><td>content load</td><td><span class="sev low">Low</span></td><td><span class="sev info">Open</span></td></tr>
   </tbody>
 </table>
 
@@ -342,6 +348,97 @@
   <dt>Pixel 7a</dt><dd>Same release APK, Android 17, dark theme, on-device <code>screenrecord</code> (90 fps, frames written on change) and <code>dumpsys gfxinfo</code> around each transition. Used to close A10 and to confirm A1, A2, A4 and A8 on hardware.</dd>
   <dt>Not covered</dt><dd>A physical iPhone; reduce-motion; large text; landscape; the restore flow; NFC; iOS onboarding's first tap was delayed ~2 min by XCUITest snapshotting the ASCII field, which froze the welcome screen during the capture but not the transition that followed.</dd>
 </dl>
+
+<h2 id="fixes">8. Fixes on this branch</h2>
+<p>
+  Each fix was re-captured the same way as the original finding: the Pixel 7a at 90 fps for Android, the iPhone 17 Pro
+  simulator at 60 fps for iOS. "Animated" below means the change spreads over 10 or more consecutive recorded frames with no
+  single frame carrying the bulk of it.
+</p>
+
+<h3 id="fix-A1"><span id="fix-A5"></span>A1, A5 · Send sheet grows instead of snapping (Android) <span class="sev low">Fixed</span></h3>
+<p>
+  The sheet content column now carries <code>animateContentSize</code> as its outermost modifier, so the Material sheet's
+  anchor follows an animated height instead of re-anchoring to a new one in a single frame. The container colour
+  (compact grey → full-height background) animates with it, in <code>WalletFlowHost</code>. The same modifier covers the
+  one-line growth when a pasted payload wraps (A5). The modifier order matters: placed inside <code>fillMaxHeight</code> it
+  animated the content while the sheet still jumped, which is what the first attempt did.
+</p>
+<figure><img src="img/fixed-pixel-send-sheet-grow-strip.jpg" alt="Pixel 7a filmstrip of the Send sheet growing to full height over several frames"><figcaption>Pixel 7a after the fix: compact → full height over ~180 ms (frames 205–226); the input face fades under the growth, the amount face slides in after it.</figcaption></figure>
+
+<h3 id="fix-A2"><span id="fix-A3"></span>A2, A3 · Mint selector stays mounted during the request (Android) <span class="sev low">Fixed</span></h3>
+<p>
+  <code>ReceiveLightningScreen</code> and <code>SendEcashScreen</code> keep the selector composed while a request is in flight
+  and only withdraw its picker and Max actions, so the column's weights do not change and the hero amount stays where it is.
+  Unified Send already worked this way and was the reference.
+</p>
+<figure><img src="img/fixed-pixel-receive-create-invoice-strip.jpg" alt="Pixel 7a filmstrip of Create invoice with the mint row staying in place"><figcaption>Pixel 7a after the fix: "To Testnut mint" stays under the amount through the creation spinner; the only motion is the face cross-fade.</figcaption></figure>
+
+<h3 id="fix-A4">A4 · Send chrome stays through the quote wait (Android) <span class="sev low">Fixed</span></h3>
+<p>
+  The sheet header and the pinned "To" row moved out of the body <code>AnimatedContent</code> in <code>UnifiedSendScreen</code>,
+  so the status terminal swaps underneath them. The back chevron fades in and out (<code>SheetHeader</code> now animates its
+  leading control) and the "To" row expands in once a destination is locked and shrinks out only on the final result face. The
+  hero's position difference between the amount and confirm faces is unchanged; it is a cross-fade between two layouts and
+  reads as intended now that the chrome around it holds still.
+</p>
+<figure><img src="img/fixed-pixel-send-continue-strip.jpg" alt="Pixel 7a filmstrip of Continue with the chevron and To row staying in place"><figcaption>Pixel 7a after the fix: chevron and "To" row never leave; amount face → spinner → confirm cross-fade beneath them.</figcaption></figure>
+
+<h3 id="fix-A8">A8 · Status line no longer flickers (Android) <span class="sev low">Fixed</span></h3>
+<p>
+  Once a one-shot invoice has shown "Adding to wallet…", the settlement state is latched until the success face takes over,
+  so the frame between issuance clearing and the paid swap landing can no longer fall back to the expiry countdown.
+</p>
+<figure><img src="img/fixed-pixel-receive-status-strip.jpg" alt="Pixel 7a status line frames showing Adding to wallet until the success face"><figcaption>Pixel 7a after the fix, cropped to the status line.</figcaption></figure>
+
+<h3 id="fix-A9">A9 · Wallet no longer shows through before the curtain (Android) <span class="sev low">Fixed</span></h3>
+<p>
+  <code>WalletManager.addMint</code> no longer clears <code>needsOnboarding</code> by itself; it preserves the current value, and
+  the handoff's <code>completeOnboarding()</code> flips the gate once the curtain has full cover, as the handoff was designed
+  to. Outside onboarding the flag is already false, so adding a mint from the Mints tab is unaffected. Not re-captured on the
+  phone (the onboarding path needs a wallet reset); verified by reading the only two callers.
+</p>
+
+<h3 id="fix-A11">A11 · Chassis accessory no longer enters from off-screen (Android) <span class="sev low">Fixed</span></h3>
+<p>
+  The empty branches of the chassis accessory and the chassis slots now render a zero-height, full-width spacer instead of
+  nothing, so the size spring opens them vertically only. An empty 0×0 content made the spring grow the width from zero too,
+  which with bottom-centre alignment entered the incoming block from beyond the left edge.
+</p>
+
+<h3 id="fix-I2">I2 · Confirm face fades in after the quote (iOS) <span class="sev low">Fixed</span></h3>
+<p>
+  In <code>SendView.fetchMeltQuote</code> the quote, the resolved mint and <code>isWorking</code> are now applied inside one
+  <code>withAnimation</code>, instead of leaving the flag to the Task's <code>defer</code>. The error path got the same treatment.
+</p>
+<figure><img src="img/fixed-ios-send-continue-strip.jpg" alt="iOS filmstrip of the spinner cross-fading into the confirm face"><figcaption>Simulator after the fix: spinner → confirm over ~130 ms with the Pay button and fee rows fading in (frames 1452–1465).</figcaption></figure>
+
+<h3 id="fix-I3">I3 · Create invoice keeps the chrome and fades to the invoice (iOS) <span class="sev low">Fixed</span></h3>
+<p>
+  The toolbar method and unit buttons and the "To" row stay mounted while the request is created (disabled rather than
+  removed), so the amount no longer drops. The three quote landings in <code>ReceiveLightningView</code> apply the quote and
+  clear <code>isCreatingRequest</code> inside one <code>withAnimation</code>, so the keypad → invoice swap uses its transition.
+</p>
+<figure><img src="img/fixed-ios-receive-create-invoice-strip.jpg" alt="iOS filmstrip of Create invoice with the To row staying and the invoice fading in"><figcaption>Simulator after the fix: "To Testnut mint" holds its place; the invoice face fades in over the keypad (frames 709–721).</figcaption></figure>
+
+<h3 id="fix-I4">I4 · QR face fades out when the payment lands (iOS) <span class="sev low">Fixed</span></h3>
+<p>
+  <code>completeReceivedQuote</code> now sets the paid flag, the monitor state and the wallet's received-payment notification
+  inside one <code>withAnimation</code>, and the quote refresh that precedes it is animated when it carries a settled payment.
+  Two attempts were needed: animating only <code>isPaid</code> still cut, because the notification the home screen observes
+  was posted in the same update outside the animation.
+</p>
+<figure><img src="img/fixed-ios-receive-paid-strip.jpg" alt="iOS filmstrip of the QR face fading out as the success check materialises"><figcaption>Simulator after the fix: the QR dims over ~180 ms while the check materialises on top (frames 686–709).</figcaption></figure>
+
+<h3>Left open</h3>
+<ul>
+  <li><strong>A7</strong> (scrim at full opacity on the first frame): Material 3's <code>ModalBottomSheet</code> fades its scrim on its own clock; changing it means replacing the scrim. Low value for a one-frame effect.</li>
+  <li><strong>I1</strong> (iOS Send sheet dismissed and re-presented): deliberate in <code>UnifiedSendView</code> ("every locked destination leaves the compact input sheet and reopens in the dedicated large payment sheet", to avoid the detent + keyboard race). Keeping the sheet open and animating the step is a navigation-model change that should be decided on its own, not slipped into an animation pass.</li>
+  <li><strong>I5</strong> (mint list cut before the curtain) and <strong>I6</strong> (mint detail rows reflow on load): cosmetic, not changed.</li>
+  <li><strong>A10</strong>: nothing to fix; emulator only.</li>
+</ul>
+<p class="small">Verification on this branch: Android unit tests (808, all passing), Compose screenshot validation and lint pass; the iOS unit target was run after the changes. The throwaway iOS capture test was restored, so no test files changed.</p>
+
 <div class="note">
   The Android emulator numbers are a lower bound on smoothness. Anything reported as a one-frame change on Android was
   confirmed in the source as a non-animated state change (A1, A2, A3, A5) or shown with the surrounding animated frames
