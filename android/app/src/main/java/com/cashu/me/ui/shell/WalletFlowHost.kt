@@ -8,8 +8,12 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.exclude
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.SnackbarHost
@@ -141,12 +145,22 @@ fun WalletFlowSheetHost(
         animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
         label = "wallet-sheet-container",
     )
+    // Send is keyboard-blind at the sheet level: its input face pads for the
+    // IME itself, and its full-height faces must measure against the whole
+    // window even while the keyboard is still on its way out. With the IME in
+    // the sheet's insets, the full-height column grew again as the keyboard
+    // left, and the bottom-anchored sheet dipped and climbed while its
+    // animated height caught up.
+    val sheetInsets = BottomSheetDefaults.modalWindowInsets
+    val imeInsets = WindowInsets.ime
+    val keyboardBlind = flow == WalletFlow.Send
     CashuModalBottomSheet(
         onDismissRequest = onDismissed,
         sheetState = sheetState,
         sheetGesturesEnabled = !dismiss.isDismissing,
         containerColor = containerColor,
         onBackdropVisibilityChanged = onBackdropVisibilityChanged,
+        contentWindowInsets = { if (keyboardBlind) sheetInsets.exclude(imeInsets) else sheetInsets },
     ) {
         CompactSheetContent {
             Box(modifier = Modifier.fillMaxWidth()) {

@@ -60,6 +60,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.graphicsLayer
@@ -645,6 +647,18 @@ fun UnifiedSendScreen(
     // amount/confirm/status need the full sheet for the keypad and pay scaffold.
     val prefersCompactSheet = status == null && step == SendStep.Input
     LaunchedEffect(prefersCompactSheet) { onCompactSheetChanged(prefersCompactSheet) }
+    // The keyboard leaves the moment the input face does, so its exit runs
+    // alongside the sheet's growth instead of after it. The outgoing field
+    // would otherwise keep focus until its face is disposed, and the keyboard
+    // would only start down once the sheet had already settled.
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+    LaunchedEffect(prefersCompactSheet) {
+        if (!prefersCompactSheet) {
+            focusManager.clearFocus()
+            keyboardController?.hide()
+        }
+    }
     Column(
         modifier = Modifier
             // The compact input sheet grows into the full-height payment sheet
@@ -653,8 +667,11 @@ fun UnifiedSendScreen(
             // with a snap, so the height change is animated here and the sheet
             // follows it frame by frame instead of jumping. Outermost on
             // purpose: placed inside `fillMaxHeight` it would only animate the
-            // content while the sheet still saw the full height at once.
-            .animateContentSize(animationSpec = spring(stiffness = Spring.StiffnessMediumLow))
+            // content while the sheet still saw the full height at once. The
+            // sheet host keeps this flow's insets keyboard-blind, so the only
+            // IME-driven size here is the input face's own padding; a medium
+            // spring keeps that within a few frames of the keyboard.
+            .animateContentSize(animationSpec = spring(stiffness = Spring.StiffnessMedium))
             .then(
                 if (prefersCompactSheet) {
                     Modifier.fillMaxWidth()

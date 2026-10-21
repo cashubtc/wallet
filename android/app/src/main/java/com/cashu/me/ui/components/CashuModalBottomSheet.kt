@@ -2,6 +2,7 @@ package com.cashu.me.ui.components
 
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -34,6 +35,13 @@ fun CashuModalBottomSheet(
     containerColor: Color = BottomSheetDefaults.ContainerColor,
     sheetGesturesEnabled: Boolean = true,
     onBackdropVisibilityChanged: (Boolean) -> Unit = {},
+    /**
+     * Insets the sheet pads its content by. The default includes the IME, so
+     * the whole sheet rides above the keyboard. A flow whose faces pad for the
+     * keyboard themselves passes a set without it, which keeps the sheet's
+     * own height keyboard-blind (see WalletFlowSheetHost).
+     */
+    contentWindowInsets: @Composable () -> WindowInsets = { BottomSheetDefaults.modalWindowInsets },
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val backdropVisibilityChanged by rememberUpdatedState(onBackdropVisibilityChanged)
@@ -58,6 +66,7 @@ fun CashuModalBottomSheet(
             sheetState = sheetState,
             containerColor = containerColor,
             sheetGesturesEnabled = sheetGesturesEnabled,
+            contentWindowInsets = contentWindowInsets,
         ) {
             val columnScope = this
             // Buttons and content transitions retain the normal effects springs.
