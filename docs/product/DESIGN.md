@@ -583,7 +583,7 @@ Defined in `ios/CashuWallet/DesignSystem/CashuTextRole.swift`.
 
 | Role | Size | Weight | Tracking | Notes |
 |---|---|---|---|---|
-| `amountHero` | 52pt, scaled vs `.largeTitle`, capped 70 | semibold | −0.015em | balance **and** amount entry |
+| `amountHero` | 52pt, scaled vs `.largeTitle`, capped 70 | semibold | −0.015em | balance, amount entry, payment review and success |
 | `amountConfirm` | 40pt, vs `.title`, capped 56 | semibold | −0.010em | transaction detail |
 | `amountCompact` | 28pt, vs `.title2`, capped 40 | semibold | −0.005em | Lightning, Cashu Request, QR-adjacent |
 | `amountRow` | `.body` | medium | 0 | list rows, fee lines, sub-balances |
@@ -790,7 +790,7 @@ Defined in `ios/CashuWallet/DesignSystem/CashuTextRole.swift`.
 
 | Role | Size | Weight | Tracking | Notes |
 |---|---|---|---|---|
-| `amountHero` | 52pt, scaled vs `.largeTitle`, capped 70 | semibold | −0.015em | balance **and** amount entry |
+| `amountHero` | 52pt, scaled vs `.largeTitle`, capped 70 | semibold | −0.015em | balance, amount entry, payment review and success |
 | `amountConfirm` | 40pt, vs `.title`, capped 56 | semibold | −0.010em | transaction detail |
 | `amountCompact` | 28pt, vs `.title2`, capped 40 | semibold | −0.005em | Lightning, Cashu Request, QR-adjacent |
 | `amountRow` | `.body` | medium | 0 | list rows, fee lines, sub-balances |
