@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.TextAutoSize
@@ -211,6 +212,14 @@ fun OnboardingChassis(
                 ) {
                     shown()
                 }
+            } else {
+                // Zero height, full width: the empty state must contribute no
+                // height (see above), but it must keep the slot's width. An
+                // empty 0×0 content makes the size spring grow the width from
+                // zero too, and with BottomCenter alignment the incoming block
+                // is centred in a container narrower than itself — it enters
+                // from off-screen left, clipped by the window edge.
+                Spacer(Modifier.fillMaxWidth())
             }
         }
 
@@ -339,6 +348,10 @@ private fun ChassisSlot(action: ChassisAction?, topPadding: Dp) {
                     )
                 }
             }
+        } else {
+            // Zero height, full width — see the accessory's empty branch: the
+            // slot must open vertically only, never from a zero width.
+            Spacer(Modifier.fillMaxWidth())
         }
     }
 }

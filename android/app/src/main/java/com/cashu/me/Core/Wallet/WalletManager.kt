@@ -395,7 +395,11 @@ class WalletManager(
             walletStore.setMintRemoved(normalized, removed = false)
             walletStore.saveMints(updated)
             if (mutableState.value.activeMint == null) walletStore.activeMintURL = fetched.url
-            loadCachedState(needsOnboarding = false)
+            // Adding a mint never ends onboarding by itself: the first-mint
+            // step hands off through the ASCII curtain, which calls
+            // completeOnboarding() once it has full cover. Flipping the gate
+            // here let the wallet show through for the curtain's first frames.
+            loadCachedState(needsOnboarding = mutableState.value.needsOnboarding)
             addedMintUrl = fetched.url
         }
 

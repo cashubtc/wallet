@@ -2236,13 +2236,23 @@ struct UnifiedSendView: View {
                     }
                 }
                 guard !Task.isCancelled, step == .confirm else { return }
-                meltQuote = quote
-                if let resolved = mintInfo(for: quote) { selectedMint = resolved }
+                // Every body-read change of this landing goes inside one
+                // animation. Left to the Task's `defer`, `isWorking` cleared
+                // outside it in the same update and the waiting → confirm swap
+                // rendered as a single-frame cut (see Transfer's Max path).
+                withAnimation(.smooth(duration: 0.3)) {
+                    meltQuote = quote
+                    if let resolved = mintInfo(for: quote) { selectedMint = resolved }
+                    isWorking = false
+                }
             } catch {
                 guard !Task.isCancelled else { return }
                 // Quote creation is a preflight, not a payment. Keep its failure inline
                 // on confirm so it can never be presented as a failed melt.
-                withAnimation(.smooth(duration: 0.3)) { presentError(from: error) }
+                withAnimation(.smooth(duration: 0.3)) {
+                    presentError(from: error)
+                    isWorking = false
+                }
             }
         }
     }

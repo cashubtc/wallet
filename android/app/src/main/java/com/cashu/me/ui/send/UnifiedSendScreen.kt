@@ -3,6 +3,9 @@ package com.cashu.me.ui.send
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -47,6 +50,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -103,7 +107,6 @@ import com.cashu.me.ui.components.AmountText
 import com.cashu.me.ui.components.CashuTextField
 import com.cashu.me.ui.components.EmptyState
 import com.cashu.me.ui.components.EmptyStateSize
-import com.cashu.me.ui.components.FlowSheetTitle
 import com.cashu.me.ui.components.GhostButton
 import com.cashu.me.ui.components.InlineNotice
 import com.cashu.me.ui.components.InlineNoticeHost
@@ -643,15 +646,65 @@ fun UnifiedSendScreen(
     val prefersCompactSheet = status == null && step == SendStep.Input
     LaunchedEffect(prefersCompactSheet) { onCompactSheetChanged(prefersCompactSheet) }
     Column(
-        modifier = (
-            if (prefersCompactSheet) {
-                Modifier.fillMaxWidth()
-            } else {
-                Modifier.fillMaxHeight()
-            }
-            ).testTag(UiTestTags.SendSheet),
+        modifier = Modifier
+            // The compact input sheet grows into the full-height payment sheet
+            // when a destination resolves (and by a line when a long payload
+            // wraps). The Material sheet re-anchors to a new content height
+            // with a snap, so the height change is animated here and the sheet
+            // follows it frame by frame instead of jumping. Outermost on
+            // purpose: placed inside `fillMaxHeight` it would only animate the
+            // content while the sheet still saw the full height at once.
+            .animateContentSize(animationSpec = spring(stiffness = Spring.StiffnessMediumLow))
+            .then(
+                if (prefersCompactSheet) {
+                    Modifier.fillMaxWidth()
+                } else {
+                    Modifier.fillMaxHeight()
+                },
+            )
+            .testTag(UiTestTags.SendSheet),
     ) {
-        // Status terminal replaces the form body but retains the sheet title,
+        // The sheet chrome lives above the body swap so it never fades out
+        // with a face or with the status terminal: the title stays put, the
+        // back chevron fades in on the later steps and out while money moves,
+        // and the pinned "To" row expands in once a destination is locked and
+        // stays through the quote wait and the payment itself.
+        val showsConnectMint = status == null && step == SendStep.Input && walletState.mints.isEmpty()
+        if (!showsConnectMint) {
+            SheetHeader(
+                title = if (creqFromScan) "Pay Cashu Request" else "Send",
+                navigationIcon = Icons.AutoMirrored.Outlined.ArrowBack
+                    .takeIf { status == null && step != SendStep.Input },
+                navigationContentDescription = "Back",
+                onNavigationClick = ::goBack,
+            )
+            val recipient = if (step != SendStep.Input && !creqFromScan) {
+                when (val rail = locked) {
+                    is LockedRail.Melt -> PaymentRequestDecoder.displayRequest(rail.raw, rail.decoded)
+                    is LockedRail.Creq -> PaymentRequestDecoder.displayRequest(rail.raw, rail.decoded)
+                    null -> PaymentRequestDecoder.middleTruncated(destination)
+                }
+            } else {
+                ""
+            }
+            // Keep the last recipient for the row's exit so it never fades
+            // out empty.
+            var lastRecipient by remember { mutableStateOf("") }
+            SideEffect { if (recipient.isNotBlank()) lastRecipient = recipient }
+            AnimatedVisibility(
+                visible = recipient.isNotBlank() &&
+                    status !is SendStatus.Sent && status !is SendStatus.Failed,
+                enter = fadeIn(tween(200)) + expandVertically(tween(200)),
+                exit = fadeOut(tween(150)) + shrinkVertically(tween(150)),
+                label = "unified-send-to-row",
+            ) {
+                ToRow(
+                    destination = recipient.ifBlank { lastRecipient },
+                    modifier = Modifier.padding(horizontal = CashuTheme.spacing.comfortable),
+                )
+            }
+        }
+        // Status terminal replaces the form body under the chrome above,
         // matching the toolbar-owned iOS PaymentStatusView slot.
         // One content key for every status value keeps a single
         // PaymentStatusScreen mounted across Sending → Sent/Failed, so the
@@ -672,9 +725,6 @@ fun UnifiedSendScreen(
         ) { current ->
             if (current != null) {
                 Column(modifier = Modifier.fillMaxSize()) {
-                    FlowSheetTitle(
-                        title = if (creqFromScan) "Pay Cashu Request" else "Send",
-                    )
                     SendStatusTerminal(
                         status = current,
                         formatter = formatter,
@@ -707,35 +757,10 @@ fun UnifiedSendScreen(
                         Modifier.fillMaxSize()
                     },
                 ) {
-                    if (step == SendStep.Input) {
-                        FlowSheetTitle(
-                            title = if (creqFromScan) "Pay Cashu Request" else "Send",
-                        )
-                    } else {
-                        SheetHeader(
-                            title = if (creqFromScan) "Pay Cashu Request" else "Send",
-                            navigationIcon = Icons.AutoMirrored.Outlined.ArrowBack,
-                            navigationContentDescription = "Back",
-                            onNavigationClick = ::goBack,
-                        )
-                    }
-                    // The pinned "To" row is shared by the amount AND confirm
-                    // faces, rendered once up here so the recipient is the step
-                    // swap's fixed anchor — it never slides with the faces
-                    // (iOS parity).
-                    if (step != SendStep.Input && !creqFromScan) {
-                        val recipient = when (val rail = locked) {
-                            is LockedRail.Melt -> PaymentRequestDecoder.displayRequest(rail.raw, rail.decoded)
-                            is LockedRail.Creq -> PaymentRequestDecoder.displayRequest(rail.raw, rail.decoded)
-                            null -> PaymentRequestDecoder.middleTruncated(destination)
-                        }
-                        if (recipient.isNotBlank()) {
-                            ToRow(
-                                destination = recipient,
-                                modifier = Modifier.padding(horizontal = CashuTheme.spacing.comfortable),
-                            )
-                        }
-                    }
+                    // The header and the pinned "To" row sit above this swap
+                    // (see the chrome at the top of the sheet), so the
+                    // recipient is the step swap's fixed anchor — it never
+                    // slides with the faces (iOS parity).
                     TwoFaceScreen(
                         targetState = step,
                         modifier = if (step == SendStep.Input) {

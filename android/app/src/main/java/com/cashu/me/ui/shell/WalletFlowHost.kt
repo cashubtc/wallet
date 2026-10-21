@@ -1,6 +1,7 @@
 package com.cashu.me.ui.shell
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
@@ -131,12 +132,20 @@ fun WalletFlowSheetHost(
     )
     val dismiss = rememberSheetDismissAction(sheetState)
     val close: () -> Unit = { dismiss(onDismissed) }
+    // The compact and full-height sheets wear different grounds; a flow that
+    // grows from one into the other (Send, once a destination resolves) used
+    // to switch colour in the same frame it grew.
+    val containerColor by animateColorAsState(
+        targetValue = if (compactContent) CashuTheme.colors.compactSheetContainer
+            else MaterialTheme.colorScheme.background,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "wallet-sheet-container",
+    )
     CashuModalBottomSheet(
         onDismissRequest = onDismissed,
         sheetState = sheetState,
         sheetGesturesEnabled = !dismiss.isDismissing,
-        containerColor = if (compactContent) CashuTheme.colors.compactSheetContainer
-            else MaterialTheme.colorScheme.background,
+        containerColor = containerColor,
         onBackdropVisibilityChanged = onBackdropVisibilityChanged,
     ) {
         CompactSheetContent {
