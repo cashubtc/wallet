@@ -43,10 +43,21 @@ cross-fade, and the Receive toolbar and "To" row stay mounted during creation.
    and the keypad face slides in after the growth.
 4. Fail if: the sheet is at full height in one step, the header or "To" row
    pop in, or the grey/black ground switches abruptly.
-5. Also try with the keyboard still open. The growth is small in that case;
-   just confirm nothing flashes.
-6. Also try a long destination that wraps to two lines while typing: the
+5. Also with the keyboard still open: type a Lightning address
+   (`erik@primal.net` resolves in under a second) and do not press Back.
+   Expect one rise of the sheet to the top while the keyboard slides down
+   beside it, and the keypad face fading in underneath. Fail if the sheet rises,
+   drops back part-way and rises again (this was the first version of the fix),
+   or if the keyboard lingers over the keypad after the sheet has settled.
+6. Keyboard opening on the compact sheet: tap the destination field from a
+   closed keyboard. The sheet should ride up with the keyboard and the field
+   should never be covered.
+7. Also try a long destination that wraps to two lines while typing: the
    sheet should grow by a line smoothly, not hop.
+8. Send with no mints (fresh wallet, skip the mint step): the connect-mint
+   form inside the Send sheet must still lift its URL field above the
+   keyboard; it now pads for the keyboard itself because the Send sheet no
+   longer does.
 
 ### 2. Send: back from the amount face
 
@@ -199,7 +210,9 @@ Needs a fresh install or "delete wallet".
 | File | What to check |
 | --- | --- |
 | `ui/send/UnifiedSendScreen.kt` | Header + "To" row hoisted above the body `AnimatedContent`; `animateContentSize` is the **outermost** modifier on the sheet column. |
-| `ui/shell/WalletFlowHost.kt` | Container colour animated between compact and full. |
+| `ui/shell/WalletFlowHost.kt` | Container colour animated between compact and full; Send's sheet insets exclude the IME (keyboard-blind height). |
+| `ui/components/CashuModalBottomSheet.kt` | New `contentWindowInsets` parameter, default unchanged. |
+| `ui/mints/ConnectMintSheetContent.kt` | The custom-URL form pads for the keyboard itself (needed inside Send). |
 | `ui/components/SheetHeader.kt` | Leading icon is now `AnimatedVisibility`; keeps the last icon for the exit. |
 | `ui/receive/ReceiveLightningScreen.kt` | Selector no longer gated on `creating`; settlement state latch for BOLT11. |
 | `ui/send/SendEcashScreen.kt` | Selector no longer gated on `sending`; Max/picker withdrawn instead. |

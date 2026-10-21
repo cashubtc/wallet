@@ -364,6 +364,18 @@
   one-line growth when a pasted payload wraps (A5). The modifier order matters: placed inside <code>fillMaxHeight</code> it
   animated the content while the sheet still jumped, which is what the first attempt did.
 </p>
+<p>
+  <strong>Keyboard still open when the destination resolves</strong> (typing a Lightning address, which resolves before you
+  put the keyboard away): the first version of this fix made the sheet rise, dip by ~320 px and rise again, because the
+  Material sheet includes the keyboard in its content insets, so the full-height column grew a second time as the keyboard
+  left and the animated height lagged behind it. The Send flow now keeps its sheet insets keyboard-blind
+  (<code>WalletFlowHost</code> passes <code>contentWindowInsets</code> without the IME; the input face and the connect-mint form
+  pad for the keyboard themselves) and hides the keyboard the moment the input face leaves, so the growth is one motion
+  while the keyboard slides down beside it. Re-verified on the Pixel 7a with a Lightning address: handle 300 → 176 px in
+  one rise, no dip, and the compact sheet still tracks the keyboard as it opens.
+</p>
+<figure><img src="img/pixel-send-lnaddress-keyboard-dip-strip.jpg" alt="Pixel 7a filmstrip of the first fix: the sheet rises, drops and rises again as the keyboard leaves"><figcaption>First version of the fix, Lightning address typed with the keyboard open: full height, then a 320 px drop as the keyboard leaves, then a climb back (frames 172–219).</figcaption></figure>
+<figure><img src="img/fixed-pixel-send-lnaddress-keyboard-strip.jpg" alt="Pixel 7a filmstrip of the keyboard-blind fix: one rise while the keyboard slides down"><figcaption>Keyboard-blind version: one rise to the top while the keyboard slides down beside it (frames 174–193).</figcaption></figure>
 <figure><img src="img/fixed-pixel-send-sheet-grow-strip.jpg" alt="Pixel 7a filmstrip of the Send sheet growing to full height over several frames"><figcaption>Pixel 7a after the fix: compact → full height over ~180 ms (frames 205–226); the input face fades under the growth, the amount face slides in after it.</figcaption></figure>
 
 <h3 id="fix-A2"><span id="fix-A3"></span>A2, A3 · Mint selector stays mounted during the request (Android) <span class="sev low">Fixed</span></h3>
