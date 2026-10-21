@@ -223,6 +223,9 @@ fun UnifiedSendScreen(
             android.nfc.NfcAdapter.getDefaultAdapter(context) != null
     }
 
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+
     var step by remember { mutableStateOf(SendStep.Input) }
     var status by remember { mutableStateOf<SendStatus?>(null) }
     var destination by remember { mutableStateOf("") }
@@ -375,7 +378,14 @@ fun UnifiedSendScreen(
                     step = SendStep.Confirm
                 }
             }
-            is SendDestinationResolution.EcashToken -> onOpenReceiveToken(resolution.token)
+            is SendDestinationResolution.EcashToken -> {
+                // The claim page replaces this sheet; take the keyboard along
+                // so it does not hang over the home screen until the sheet's
+                // window is torn down (see ReceiveEcashScreen.routeInput).
+                focusManager.clearFocus()
+                keyboardController?.hide()
+                onOpenReceiveToken(resolution.token)
+            }
             SendDestinationResolution.Unrecognized -> {
                 if (showUnrecognizedHint) {
                     inputHint =
@@ -654,8 +664,6 @@ fun UnifiedSendScreen(
     // alongside the sheet's growth instead of after it. The outgoing field
     // would otherwise keep focus until its face is disposed, and the keyboard
     // would only start down once the sheet had already settled.
-    val keyboardController = LocalSoftwareKeyboardController.current
-    val focusManager = LocalFocusManager.current
     LaunchedEffect(prefersCompactSheet) {
         if (!prefersCompactSheet) {
             focusManager.clearFocus()

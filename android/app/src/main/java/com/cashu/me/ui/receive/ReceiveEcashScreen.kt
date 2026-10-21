@@ -1,8 +1,11 @@
 package com.cashu.me.ui.receive
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -37,6 +40,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
@@ -60,6 +65,7 @@ import com.cashu.me.ui.components.PaymentStatusScreen
 import com.cashu.me.ui.components.TextButtonContext
 import com.cashu.me.ui.send.SendDestinationResolution
 import com.cashu.me.ui.send.resolveSendDestination
+import com.cashu.me.ui.theme.CashuMotion
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.rememberReducedMotion
 import com.cashu.me.ui.testing.UiTestTags
@@ -118,6 +124,8 @@ fun ReceiveEcashScreen(
     val walletState by walletManager.state.collectAsState()
     val settings by settingsManager.state.collectAsState()
     val clipboard = LocalClipboardManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
 
     var input by remember { mutableStateOf("") }
     var inputHint by remember { mutableStateOf<String?>(null) }
@@ -161,14 +169,23 @@ fun ReceiveEcashScreen(
         val trimmed = raw.trim()
         if (trimmed.isEmpty() || routed) return
         inputHint = null
+        // Leaving this sheet takes its keyboard along: the IME belongs to the
+        // sheet's window and otherwise hangs over the home screen until the
+        // claim page lands, then vanishes in one frame with the window.
+        fun leaveWithKeyboardDown() {
+            focusManager.clearFocus()
+            keyboardController?.hide()
+        }
         when (val res = resolveSendDestination(trimmed, walletState.mints)) {
             is SendDestinationResolution.EcashToken -> {
                 routed = true
+                leaveWithKeyboardDown()
                 onOpenReceiveToken(res.token)
             }
             is SendDestinationResolution.Melt,
             is SendDestinationResolution.CashuRequest -> {
                 routed = true
+                leaveWithKeyboardDown()
                 onSendPayable(trimmed)
             }
             is SendDestinationResolution.Hint -> inputHint = res.message
@@ -244,7 +261,13 @@ fun ReceiveEcashScreen(
     }
 
     Column(
+        // Outermost on purpose: the sheet re-anchors to whatever height this
+        // reports, so a wrapping token line or the keyboard padding below grows
+        // it over the shared-axis duration instead of hopping a line at a time.
         modifier = Modifier
+            .animateContentSize(
+                animationSpec = tween(CashuMotion.SharedAxisDurationMs, easing = FastOutSlowInEasing),
+            )
             .fillMaxWidth()
             .testTag(UiTestTags.ReceiveSheet),
     ) {

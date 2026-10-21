@@ -164,7 +164,10 @@ fun WalletFlowSheetHost(
     // animated height caught up.
     val sheetInsets = BottomSheetDefaults.modalWindowInsets
     val imeInsets = WindowInsets.ime
-    val keyboardBlind = flow == WalletFlow.Send
+    // Receive's token field has the same shape: keyboard-aware sheet insets
+    // snapped the compact sheet to the top in one frame before the keyboard
+    // had even started to slide; its content pads for the keyboard itself.
+    val keyboardBlind = flow == WalletFlow.Send || flow == WalletFlow.ReceiveEcash
     CashuModalBottomSheet(
         onDismissRequest = onDismissed,
         sheetState = sheetState,

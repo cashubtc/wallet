@@ -3,12 +3,15 @@ package com.cashu.me.ui.send
 import com.cashu.me.ui.components.PendingTokenClaimNotice
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -953,9 +956,21 @@ private fun GeneratedFace(
                 shareSubject = "Cashu token",
                 confirmationMessage = "Copied ecash token",
             )
-            PaymentConfirmationAmount(presentation = amountPresentation, generatedReceipt = true)
-            if (claimState == ClaimState.Checking) {
-                ClaimStatusRow(claimState = claimState)
+            // The amount and its status line share one slot so "Checking…" can
+            // grow in and shrink away (with its own gap) when polling starts or
+            // gives up; removing it outright hopped the rows below up a line.
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                PaymentConfirmationAmount(presentation = amountPresentation, generatedReceipt = true)
+                AnimatedVisibility(
+                    visible = claimState == ClaimState.Checking,
+                    enter = fadeIn(tween(220)) + expandVertically(tween(220)),
+                    exit = fadeOut(tween(220)) + shrinkVertically(tween(220)),
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Spacer(Modifier.height(CashuTheme.spacing.loose))
+                        ClaimStatusRow(claimState = ClaimState.Checking)
+                    }
+                }
             }
             if (!pollingEnabled) {
                 PendingTokenClaimNotice(manualCheckResult)

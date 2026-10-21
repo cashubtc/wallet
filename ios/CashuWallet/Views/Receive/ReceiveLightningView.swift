@@ -1176,6 +1176,12 @@ struct ReceiveLightningView: View {
                     description: advertisedOfferDescription
                 )
                 guard !Task.isCancelled else { return }
+                // `createMintQuote` reloads History (published, unanimated)
+                // right before it returns; landing in that run-loop pass folds
+                // this animated write into the unanimated update and the swap
+                // renders as a cut. Give the landing a pass of its own.
+                try? await Task.sleep(for: .milliseconds(1))
+                guard !Task.isCancelled else { return }
                 // The face swap carries `.transition(.opacity)`; it only plays
                 // when every body-read change of the landing is inside one
                 // animation, including the flag the Task's `defer` would
@@ -1281,6 +1287,9 @@ struct ReceiveLightningView: View {
                     )
                 }
                 guard !Task.isCancelled else { return }
+                // Own run-loop pass for the landing; see the BOLT11 path above.
+                try? await Task.sleep(for: .milliseconds(1))
+                guard !Task.isCancelled else { return }
                 withAnimation(.smooth(duration: 0.3)) {
                     quoteCreatedAt = quote.updatedAt ?? Date()
                     mintQuote = quote
@@ -1351,6 +1360,9 @@ struct ReceiveLightningView: View {
                         description: requestMethod == .bolt12 ? advertisedOfferDescription : nil
                     )
                 }
+                guard !Task.isCancelled else { return }
+                // Own run-loop pass for the landing; see the BOLT11 path above.
+                try? await Task.sleep(for: .milliseconds(1))
                 guard !Task.isCancelled else { return }
                 // A reused address keeps the date it was made, the same date
                 // its History row shows.
@@ -1456,6 +1468,7 @@ struct ReceiveLightningView: View {
             expiryTimer?.invalidate()
             // The refreshed quote lands in the same update as `isPaid`; set
             // outside the animation it would turn the QR face's exit into a cut.
+            try? await Task.sleep(for: .milliseconds(1))
             withAnimation(.smooth(duration: 0.3)) { mintQuote = result.quote }
             await completeReceivedQuote(receivedAmount: result.quote.amountIssued)
             return
@@ -1567,7 +1580,11 @@ struct ReceiveLightningView: View {
         if result.hasSettledPayment {
             // A settled refresh is followed by the paid swap in the same
             // update; every body-read change of that update must sit inside
-            // the animation or the QR face's exit renders as a cut.
+            // the animation or the QR face's exit renders as a cut. The
+            // status check may have published wallet state as it returned,
+            // so the swap first takes a run-loop pass of its own.
+            try? await Task.sleep(for: .milliseconds(1))
+            guard !Task.isCancelled, mintQuote?.id == quote.id else { return }
             withAnimation(.smooth(duration: 0.3)) {
                 mintQuote = result.quote
                 mintRetryStatus = result.retryStatus

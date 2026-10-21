@@ -593,16 +593,16 @@ fun MintTransferScreen(
                 }
             } else {
                 Column(modifier = Modifier.fillMaxSize()) {
-                    if (step == TransferStep.Review) {
-                        SheetHeader(
-                            title = "Transfer",
-                            navigationIcon = Icons.AutoMirrored.Outlined.ArrowBack,
-                            navigationContentDescription = "Back",
-                            onNavigationClick = ::backToEntry,
-                        )
-                    } else {
-                        FlowSheetTitle(title = "Transfer")
-                    }
+                    // One header for both steps: SheetHeader fades its chevron
+                    // in and out, whereas swapping it for FlowSheetTitle popped
+                    // the chevron in one frame on Continue and on Back.
+                    SheetHeader(
+                        title = "Transfer",
+                        navigationIcon = Icons.AutoMirrored.Outlined.ArrowBack
+                            .takeIf { step == TransferStep.Review },
+                        navigationContentDescription = "Back",
+                        onNavigationClick = ::backToEntry,
+                    )
                     TwoFaceScreen(
                         targetState = step,
                         modifier = Modifier.weight(1f).fillMaxWidth(),
