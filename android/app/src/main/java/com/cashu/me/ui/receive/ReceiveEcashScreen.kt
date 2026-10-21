@@ -291,7 +291,13 @@ fun ReceiveEcashScreen(
                     inputHint = null
                     routed = false
                 },
+                // The field's own size animates (outermost), so the rows below
+                // slide as a pasted token wraps; the sheet column's animation
+                // alone only eased the sheet's bottom edge while they hopped.
                 modifier = Modifier
+                    .animateContentSize(
+                        animationSpec = tween(CashuMotion.SharedAxisDurationMs, easing = FastOutSlowInEasing),
+                    )
                     .fillMaxWidth()
                     .padding(vertical = CashuTheme.spacing.default),
                 placeholder = "Paste a Cashu token",

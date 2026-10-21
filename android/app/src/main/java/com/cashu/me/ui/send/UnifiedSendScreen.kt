@@ -1133,7 +1133,13 @@ private fun InputFace(
         CashuTextField(
             value = destination,
             onValueChange = onDestinationChange,
+            // Outermost size animation on the field itself: the method rows
+            // below slide as a long destination wraps instead of hopping a
+            // line while only the sheet's edge eases (see ReceiveEcashScreen).
             modifier = Modifier
+                .animateContentSize(
+                    animationSpec = tween(CashuMotion.SharedAxisDurationMs, easing = FastOutSlowInEasing),
+                )
                 .fillMaxWidth()
                 .padding(vertical = CashuTheme.spacing.default)
                 .testTag(UiTestTags.SendDestination),
