@@ -62,10 +62,12 @@ cross-fade, and the Receive toolbar and "To" row stay mounted during creation.
 ### 2. Send: back from the amount face
 
 1. From the amount face, tap the back chevron.
-2. Expect: the sheet shrinks back to compact smoothly; the chevron and "To" row
-   fade out; the input face slides in with your destination still in it.
-3. Fail if: the sheet stays tall with empty space, or the compact sheet jumps
-   down.
+2. Expect: the sheet starts shrinking on the very next frame and lands with
+   the input face (about 300 ms, one decelerating motion); the chevron fades
+   out, the "To" row disappears as the shrink starts, and the input face slides
+   in with your destination still in it.
+3. Fail if: the sheet hesitates before moving, keeps sinking after the input
+   face has already landed, stays tall with empty space, or jumps down.
 4. Also: close the sheet with a swipe and with the scrim from both faces.
 
 ### 3. Send: Continue → quote → confirm → pay (A4)
@@ -212,6 +214,7 @@ Needs a fresh install or "delete wallet".
 | `ui/send/UnifiedSendScreen.kt` | Header + "To" row hoisted above the body `AnimatedContent`; `animateContentSize` is the **outermost** modifier on the sheet column. |
 | `ui/shell/WalletFlowHost.kt` | Container colour animated between compact and full; Send's sheet insets exclude the IME (keyboard-blind height). |
 | `ui/components/CashuModalBottomSheet.kt` | New `contentWindowInsets` parameter, default unchanged. |
+| `ui/components/TwoFaceScreen.kt` | Face swaps no longer animate the container size (`SizeTransform` snaps); the host owns height. Also used by Receive Lightning and Send Ecash, where the host constrains the height, so no visible change there. |
 | `ui/mints/ConnectMintSheetContent.kt` | The custom-URL form pads for the keyboard itself (needed inside Send). |
 | `ui/components/SheetHeader.kt` | Leading icon is now `AnimatedVisibility`; keeps the last icon for the exit. |
 | `ui/receive/ReceiveLightningScreen.kt` | Selector no longer gated on `creating`; settlement state latch for BOLT11. |

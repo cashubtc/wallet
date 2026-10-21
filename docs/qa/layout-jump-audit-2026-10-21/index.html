@@ -374,6 +374,16 @@
   while the keyboard slides down beside it. Re-verified on the Pixel 7a with a Lightning address: handle 300 → 176 px in
   one rise, no dip, and the compact sheet still tracks the keyboard as it opens.
 </p>
+<p>
+  <strong>Back from the amount face</strong> felt slow after these changes: the sheet kept sinking for ~200 ms after the
+  input face had landed, and started late. Two nested size animations were chasing each other. The face container
+  (<code>TwoFaceScreen</code>) ran its own size spring on the way back and the pinned "To" row animated its own height, so
+  the sheet's height animation retargeted every frame instead of running one curve. The face container now snaps its size
+  (the sheet animates height; the faces only slide and fade), the "To" row takes and gives up its space in the same frame
+  as the step change and only fades its ink, and the sheet height runs the same 300 ms shared-axis curve as the faces.
+  Re-measured on the Pixel 7a: the sheet starts moving on the first frame after the tap and settles with the faces at
+  ~280 ms, in both directions.
+</p>
 <figure><img src="img/pixel-send-lnaddress-keyboard-dip-strip.jpg" alt="Pixel 7a filmstrip of the first fix: the sheet rises, drops and rises again as the keyboard leaves"><figcaption>First version of the fix, Lightning address typed with the keyboard open: full height, then a 320 px drop as the keyboard leaves, then a climb back (frames 172–219).</figcaption></figure>
 <figure><img src="img/fixed-pixel-send-lnaddress-keyboard-strip.jpg" alt="Pixel 7a filmstrip of the keyboard-blind fix: one rise while the keyboard slides down"><figcaption>Keyboard-blind version: one rise to the top while the keyboard slides down beside it (frames 174–193).</figcaption></figure>
 <figure><img src="img/fixed-pixel-send-sheet-grow-strip.jpg" alt="Pixel 7a filmstrip of the Send sheet growing to full height over several frames"><figcaption>Pixel 7a after the fix: compact → full height over ~180 ms (frames 205–226); the input face fades under the growth, the amount face slides in after it.</figcaption></figure>
