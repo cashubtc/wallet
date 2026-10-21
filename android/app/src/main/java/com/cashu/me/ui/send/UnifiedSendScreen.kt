@@ -4,8 +4,8 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -50,7 +50,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -132,6 +131,7 @@ import com.cashu.me.ui.components.TwoFaceScreen
 import com.cashu.me.ui.mints.ConnectMintContext
 import com.cashu.me.ui.mints.ConnectMintSheetContent
 import com.cashu.me.ui.testing.UiTestTags
+import com.cashu.me.ui.theme.CashuMotion
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.withMonoDigits
 import com.cashu.me.ui.theme.rememberReducedMotion
@@ -669,9 +669,13 @@ fun UnifiedSendScreen(
             // purpose: placed inside `fillMaxHeight` it would only animate the
             // content while the sheet still saw the full height at once. The
             // sheet host keeps this flow's insets keyboard-blind, so the only
-            // IME-driven size here is the input face's own padding; a medium
-            // spring keeps that within a few frames of the keyboard.
-            .animateContentSize(animationSpec = spring(stiffness = Spring.StiffnessMedium))
+            // IME-driven size here is the input face's own padding. Timed to
+            // the shared-axis face swap it accompanies, so the sheet and the
+            // faces settle together: a spring's long tail kept the sheet
+            // sinking for ~200 ms after the input face had already landed.
+            .animateContentSize(
+                animationSpec = tween(CashuMotion.SharedAxisDurationMs, easing = FastOutSlowInEasing),
+            )
             .then(
                 if (prefersCompactSheet) {
                     Modifier.fillMaxWidth()
@@ -704,20 +708,24 @@ fun UnifiedSendScreen(
             } else {
                 ""
             }
-            // Keep the last recipient for the row's exit so it never fades
-            // out empty.
-            var lastRecipient by remember { mutableStateOf("") }
-            SideEffect { if (recipient.isNotBlank()) lastRecipient = recipient }
-            AnimatedVisibility(
-                visible = recipient.isNotBlank() &&
-                    status !is SendStatus.Sent && status !is SendStatus.Failed,
-                enter = fadeIn(tween(200)) + expandVertically(tween(200)),
-                exit = fadeOut(tween(150)) + shrinkVertically(tween(150)),
+            // The row takes its space in the same frame the step changes and
+            // only fades its ink: the sheet column animates its height as one
+            // motion, and a row that animated its own height alongside kept
+            // retargeting that animation, which read as a 150ms hesitation
+            // before the sheet got going on the way back.
+            val toRowVisible = recipient.isNotBlank() &&
+                status !is SendStatus.Sent && status !is SendStatus.Failed
+            val toRowAlpha by animateFloatAsState(
+                targetValue = if (toRowVisible) 1f else 0f,
+                animationSpec = tween(200),
                 label = "unified-send-to-row",
-            ) {
+            )
+            if (toRowVisible) {
                 ToRow(
-                    destination = recipient.ifBlank { lastRecipient },
-                    modifier = Modifier.padding(horizontal = CashuTheme.spacing.comfortable),
+                    destination = recipient,
+                    modifier = Modifier
+                        .padding(horizontal = CashuTheme.spacing.comfortable)
+                        .graphicsLayer { alpha = toRowAlpha },
                 )
             }
         }

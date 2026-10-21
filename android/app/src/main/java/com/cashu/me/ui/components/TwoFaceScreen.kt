@@ -2,9 +2,11 @@ package com.cashu.me.ui.components
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -49,7 +51,7 @@ fun <T> TwoFaceScreen(
         targetState = targetState,
         modifier = modifier,
         transitionSpec = {
-            if (reducedMotion) {
+            val swap = if (reducedMotion) {
                 fadeIn(tween(SharedAxisDurationMillis))
                     .togetherWith(fadeOut(tween(SharedAxisDurationMillis)))
             } else {
@@ -58,6 +60,12 @@ fun <T> TwoFaceScreen(
                     forward = forward(initialState, targetState),
                 )
             }
+            // The faces never animate their container's size. Where the host
+            // constrains them (weight(1f)) it is moot; where it lets them wrap
+            // (Send's compact input face), the host animates the sheet height
+            // itself, and a second size spring here made that animation chase
+            // this one's slow tail for ~700 ms on the way back.
+            swap.using(SizeTransform(clip = false) { _, _ -> snap() })
         },
         label = label,
         content = { content(it) },
