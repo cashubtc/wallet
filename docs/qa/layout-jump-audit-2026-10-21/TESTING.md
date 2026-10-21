@@ -1,7 +1,9 @@
 # Layout-jump fixes: manual test plan
 
-Branch: `qa/layout-jump-audit` (commits `6e580ab9` code, `752b5e8e` report).
-Report with before/after frames: `docs/qa/layout-jump-audit-2026-10-21/index.html`.
+Branch: `qa/layout-jump-audit`, now merged on top of the mint-transfer branch
+(PR #404). Report with before/after frames:
+`docs/qa/layout-jump-audit-2026-10-21/index.html` (section 9 covers the
+second pass: ecash and transfer).
 
 ## What changed, in one paragraph
 
@@ -22,6 +24,15 @@ cross-fade, and the Receive toolbar and "To" row stay mounted during creation.
 - An amountless destination to reach Send's amount step. This BOLT12 offer
   resolves and pays on Testnut:
   `lno1pgqpvggr25nht4nyqrgtnhxltctkdsfrf3myhj008f6fyulf4tplmarx8hxq`
+- A second wallet to claim tokens from and to generate tokens with (the
+  Nutshell CLI in `CI/.nutshell-venv` works: `cashu -h https://testnut.cashu.space
+  invoice 1000`, then `cashu send 50` / `cashu receive <token>`).
+- Two mints for Transfer. Release and debug builds refuse cleartext mint URLs,
+  so use Testnut plus a second HTTPS mint (a real one with a few sats is fine:
+  a 21 sat transfer costs a sat or two in fees), or run the local CDK mint
+  (`./CI/start-cdk.sh`, port 3339) with a one-line local change that sets
+  `allowCleartextLocalTestMints = true` on `UiRuntimePolicy.Production` for
+  the capture build only. Do not commit that change.
 - Android: a release build (`assembleRelease`, sign with the debug key) on a
   real phone. The debug build and the emulator both stutter on this app's blur
   effects and will hide what you are looking for.
@@ -147,6 +158,55 @@ Needs a fresh install or "delete wallet".
 - Reduce motion (Developer options → animator scale 0): the Send sheet should
   still reach full height with no stuck state.
 
+### 8a. Receive Ecash: keyboard, wrapping, and the handoff (A13, A14, A15)
+
+1. Home → Receive. Tap "Paste a Cashu token" from a closed keyboard.
+2. Expect: the sheet rides up with the keyboard over ~200 ms and the field is
+   never covered. Fail if the sheet is already at the top in the frame before
+   the keyboard starts moving (it used to jump 290 dp in one frame).
+3. Paste a token (or type one): the field grows to its wrapped height and the
+   Scan/Ecash/Bitcoin rows slide down over ~300 ms. Fail if the rows hop a
+   line at a time.
+4. The token routes to the full-screen claim page. Expect: the keyboard goes
+   down together with the sheet, the wallet home is briefly visible without a
+   keyboard, then the claim page fades in. Fail if the keyboard is still on
+   screen after the sheet has gone, or vanishes in one frame as the page
+   enters.
+5. Tap Receive on the claim page: "Claiming…" morphs into the green check and
+   "Payment Received!", the amount and rows fade in, then Done.
+6. Also: Send → paste a token into the destination field. Same handoff, same
+   expectations.
+
+### 8b. Send Ecash: the "Checking…" row (A12)
+
+1. Home → Send → Ecash → 50 → Send. Leave the token face alone.
+2. After about two minutes the wallet stops polling and "Checking…" leaves.
+   Expect: the row fades and shrinks over ~220 ms and Unit/Mint slide up with
+   it. Fail if Unit/Mint hop up in one frame.
+3. Claim the token from the second wallet while the face is still polling.
+   Expect the "Claimed" full-screen success to fade in. If the face never
+   reports the claim, note it: the claim probe looked unreliable on the Pixel
+   during the audit and that is a logic issue, not a layout one.
+
+### 8c. Transfer (A16, and the flow as a whole)
+
+Needs two mints with a balance on the source (fund the second mint through
+Receive → Bitcoin → mint picker).
+
+1. Mints tab → Transfer. Tap the swap button twice: names and balances replace
+   in place, the glyph half-turns; nothing else moves.
+2. Type 21, tap Max: the amount and the trailing "Max" → "Using Max" cross-fade.
+   Long-press delete to clear, type 21 again.
+3. Continue. Expect: the entry face fades out, a spinner, the review (amount,
+   From, To, Network fee, Total, "Transfer ₿21") fades in; the back chevron
+   fades in next to the title rather than popping. Fail if the chevron is
+   already there on the first frame of the transition.
+4. Transfer. Expect: the hero becomes the spinner with "Transferring… / Leaving
+   …", the rows hold still, then the spinner morphs into the check, "Total"
+   leaves, the amount takes the hero, Done fades in.
+5. From the review, tap the chevron: the entry fades back in and the chevron
+   fades out. Close the sheet with Back.
+
 ## iOS
 
 ### 9. Send: Continue → quote → confirm (I2)
@@ -172,6 +232,11 @@ Needs a fresh install or "delete wallet".
 4. Test all three request types: Lightning invoice, Reusable (BOLT12), and
    Bitcoin address. Each landing should fade; the reusable and on-chain paths
    use different code paths that were also wrapped.
+5. Second pass (I9, I11): the invoice landing cut again on the merged branch
+   and now fades on Testnut and on a local mint alike. While the invoice is
+   showing, watch the QR through a status refresh (a local mint that pays at
+   once refreshes within a few seconds): it must stay solid black. Fail if the
+   modules flash grey for a frame.
 
 ### 11. Receive Lightning: payment received (I4)
 
@@ -195,6 +260,38 @@ Needs a fresh install or "delete wallet".
   slides.
 - VoiceOver: the disabled toolbar buttons during creation announce as dimmed;
   the "To" row and selector are still reachable.
+
+### 13. Send Ecash: token face and Claimed (I7, I8)
+
+1. Home → Send → Ecash → 50 → Send.
+2. Expect: the keypad face slides out to the leading edge and the token face
+   slides in from the trailing edge over ~0.3 s, title cross-fading to
+   "Pending Ecash"; the QR renders into the card afterwards. Fail if the token
+   face is simply there in the next frame.
+3. Copy the token and claim it from the second wallet. Within ~10 s the face
+   should fade to the full-screen "Claimed" success. Fail if it cuts.
+4. Also: with checking disabled in Settings, use Check Status; the same
+   expectations apply.
+
+### 14. Receive Ecash: paste → claim page → received
+
+1. Home → Receive → Paste (with a token on the clipboard).
+2. Expect: the sheet dismisses, the claim page covers the screen, the review
+   rows (fee, mint) fill in, Receive → "Claiming…" → the check materialises
+   and "Payment Received!" and the amount fade in, Done.
+
+### 15. Mints: Add mint (I10)
+
+1. Mints tab → Add mint → type a mint URL → Add mint.
+2. Expect: when the add completes, the keyboard slides down and the sheet
+   dismisses; the list shows the new mint. Fail if the keyboard disappears in
+   one frame while the sheet is still up.
+
+### 16. Transfer on iOS (regression)
+
+Not changed in this pass; it looked right in the audit. Run the same steps as
+8c once: open, swap twice, Max, clear, 21, Continue, Transfer, Done, and the
+Back path.
 
 ## Known and intentionally unchanged
 
@@ -223,6 +320,13 @@ Needs a fresh install or "delete wallet".
 | `Core/Wallet/WalletManager.kt` | `addMint` preserves `needsOnboarding` instead of clearing it. |
 | `Views/Send/SendView.swift` | Quote landing and `isWorking` inside one `withAnimation`. |
 | `Views/Receive/ReceiveLightningView.swift` | Toolbar/selector gated by `.disabled`, not removal; three quote landings, settled refresh and `completeReceivedQuote` animated. |
+| `ui/shell/WalletFlowHost.kt` (second pass) | Receive sheet insets exclude the IME as well as Send's. |
+| `ui/receive/ReceiveEcashScreen.kt` | Outermost `animateContentSize` on the sheet column; `routeInput` hides the keyboard and clears focus before handing off a token or payable. |
+| `ui/send/UnifiedSendScreen.kt` (second pass) | Keyboard controller/focus manager declared before `advance`; the token handoff hides the keyboard first. |
+| `ui/send/SendEcashScreen.kt` (second pass) | "Checking…" row in an `AnimatedVisibility` with its gap inside the animated block. |
+| `ui/mints/MintTransferScreen.kt` | One `SheetHeader` for both steps; chevron passed only on review. |
+| `Views/Send/SendView.swift` (second pass) | Token landing and both claimed paths hop to the next run-loop pass, then animate; `isGenerating` / `isCheckingClaim` cleared inside the animation; no `defer`. |
+| `Views/Mints/AddMintSheet.swift` | Focus binding cleared before `onAdded`. |
 
 ## Automated checks already run
 
@@ -231,3 +335,5 @@ Needs a fresh install or "delete wallet".
 - iOS: app and UI-test bundle build clean; the unit-test target was started
   after the change (see the branch notes for the result).
 - No test files changed in the commit.
+- Second pass: Android unit tests, screenshot validation and lint pass on the
+  merged branch; the iOS app and UI-test bundle build clean.
