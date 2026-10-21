@@ -78,7 +78,7 @@ extension WalletManager {
             let result = await self.refreshPendingMintQuote(
                 quoteId: quoteID, observingQuoteID: quoteID
             )
-            if let result, result.newlyIssued > 0 {
+            if let result, result.newlyIssued > 0, !self.isMintTransferQuote(quoteID) {
                 self.postReceivedMintNotification(
                     amount: result.newlyIssued, unit: result.quote.unit, homeHaptic: homeHaptic
                 )
@@ -146,17 +146,21 @@ extension WalletManager {
         guard force || !focusedMintQuoteMonitor.isActive else { return }
         lastMintQuoteSyncAt = Date()
 
+        await failEndedMintTransfersAssumingWalletOperationLease()
+        let transfers = walletStore.loadMintTransfers()
+        let transferQuoteIDs = transfers.ownedMintQuoteIDs
+
         // The CDK database is the durable ledger. Union it with app-level
         // receive intents so an older/migrated BOLT12 row is still explicitly
         // checked and produces a useful missing-quote diagnostic instead of
         // silently disappearing from maintenance.
         var quoteIDs = Set(CashuRequestStore.shared.requests.compactMap(\.quoteId))
-        var unsettledOnchainQuoteIDs = Set<String>()
+        var reopenedQuoteIDs = Set<String>()
         if let db {
             do {
                 let quotes = try await db.getUnissuedMintQuotes()
                 quoteIDs.formUnion(quotes.map(\.id))
-                unsettledOnchainQuoteIDs.formUnion(quotes.filter {
+                reopenedQuoteIDs.formUnion(quotes.filter {
                     PaymentMethodKind.from($0.paymentMethod) == .onchain && $0.amountIssued.value == 0
                 }.map(\.id))
             } catch {
@@ -166,13 +170,24 @@ extension WalletManager {
             }
         }
 
+        // CDK drops a quote from its unissued list the moment it issues, which
+        // saga recovery can do without passing through this sweep. A committed
+        // transfer's quote stays listed until it is seen issued — and past its
+        // invoice's expiry, because the payment can still settle after that.
+        let awaitingIssuance = transfers.awaitingIssuanceMintQuoteIDs
+        quoteIDs.formUnion(awaitingIssuance)
+        reopenedQuoteIDs.formUnion(awaitingIssuance)
+        // A transfer still under review has an invoice nothing will pay until
+        // the user confirms.
+        quoteIDs.subtract(transfers.draftMintQuoteIDs)
+
         guard force || !focusedMintQuoteMonitor.isActive else { return }
         let selection = MintQuoteSchedulePolicy.select(
             quoteIDs: quoteIDs,
             existing: walletStore.loadMintQuoteSchedules(),
             now: Date(),
             force: force,
-            unsettledOnchainQuoteIDs: unsettledOnchainQuoteIDs
+            reopenedQuoteIDs: reopenedQuoteIDs
         )
         walletStore.saveMintQuoteSchedules(selection.records)
         guard !selection.quoteIDs.isEmpty else { return }
@@ -184,11 +199,15 @@ extension WalletManager {
             guard let result = await reconcileMintQuoteAssumingLease(quoteId: quoteID, force: force) else { continue }
             if result.newlyIssued > 0 {
                 mintedAny = true
-                postReceivedMintNotification(
-                    amount: result.newlyIssued,
-                    unit: result.quote.unit,
-                    homeHaptic: true
-                )
+                // A transfer finishing late is the user's own money arriving,
+                // not a payment received.
+                if !transferQuoteIDs.contains(quoteID) {
+                    postReceivedMintNotification(
+                        amount: result.newlyIssued,
+                        unit: result.quote.unit,
+                        homeHaptic: true
+                    )
+                }
             }
             if await operationCoordinator.hasWaitingUserOperation() { break }
         }
@@ -221,7 +240,11 @@ extension WalletManager {
                 )
             }
         )
-        return await reconciler.reconcile(quoteID: quoteId, force: force)
+        let result = await reconciler.reconcile(quoteID: quoteId, force: force)
+        if let result, result.hasSettledPayment {
+            noteMintTransferIssued(quoteID: quoteId)
+        }
+        return result
     }
 
     /// Register a newly-created/discovered quote without postponing an already

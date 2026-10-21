@@ -1,13 +1,76 @@
 package com.cashu.me.Core
 
+import com.cashu.me.Core.MintTransferEligibility.Blocker
 import com.cashu.me.Core.Wallet.WalletErrorMessages
+import com.cashu.me.Core.Wallet.WalletMessage
 import com.cashu.me.Core.Wallet.WalletMessageSeverity
+import com.cashu.me.Models.MintTransferException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Test
 
 /** iOS parity: `WalletErrorMessageTests.swift`. */
 class WalletErrorMessagesTest {
+
+    /** A one-line slot shows {what broke} and drops {what to try next}. */
+    @Test
+    fun headlineIsTheFirstSentence() {
+        assertEquals(
+            "Couldn't reach the mint.",
+            WalletMessage("Couldn't reach the mint. Check your connection and try again.").headline,
+        )
+        assertEquals("Not enough balance.", WalletMessage("Not enough balance.").headline)
+        assertEquals(
+            "Amountless invoices are not supported for unit sat and method bolt12",
+            WalletMessage("Amountless invoices are not supported for unit sat and method bolt12").headline,
+        )
+    }
+
+    /**
+     * The guidance says "connected", which the network matcher would turn
+     * into a connection error.
+     */
+    @Test
+    fun transferInProgressRemovalPreservesSafetyGuidanceInsteadOfSuggestingNetworkRetry() {
+        assertEquals(
+            "A transfer involving this mint is still settling. Keep it connected until the transfer finishes.",
+            WalletErrorMessages.classify(MintTransferInProgressException()).text,
+        )
+    }
+
+    /** Transfer failures carry no raw text to match, so each maps by type. */
+    @Test
+    fun `mint transfer errors map to transfer copy`() {
+        val caution = WalletMessageSeverity.Caution
+        val error = WalletMessageSeverity.Error
+        listOf(
+            Triple(MintTransferException.NotEligible(Blocker.SameMint), "Choose two different mints.", caution),
+            Triple(
+                MintTransferException.NotEligible(Blocker.SourceCannotSend),
+                "This mint can't send over Lightning. Choose another mint.", caution,
+            ),
+            Triple(
+                MintTransferException.NotEligible(Blocker.DestinationCannotReceive),
+                "This mint can't receive over Lightning. Choose another mint.", caution,
+            ),
+            Triple(MintTransferException.InsufficientBalance(42, 40), "Not enough balance.", error),
+            Triple(MintTransferException.NothingToTransfer(), "Nothing left to transfer after fees.", caution),
+            Triple(
+                MintTransferException.QuoteMismatch(),
+                "The mint returned an unexpected quote. Try again or use another mint.", error,
+            ),
+            Triple(MintTransferException.PlanExpired(), "This quote expired. Review the transfer again.", caution),
+            Triple(MintTransferException.PlanStale(), "The transfer changed. Review it again.", caution),
+            Triple(
+                MintTransferException.PaymentReturned(),
+                "The transfer didn't go through. Your funds were not moved.", error,
+            ),
+        ).forEach { (failure, text, severity) ->
+            val message = WalletErrorMessages.classify(failure)
+            assertEquals(text, message.text)
+            assertEquals(text, severity, message.severity)
+        }
+    }
 
     private val mintLimitsCopy =
         "This amount is outside the mint's limits. Try a different amount."
@@ -91,5 +154,33 @@ class WalletErrorMessagesTest {
 
         assertFalse(text.contains("`0`"))
         assertFalse(text.lowercase().contains("must be between"))
+    }
+
+    /**
+     * A mint that pauses a direction answers with CDK's "Minting is disabled" /
+     * "Melting is disabled". The rule used to match only the wording without
+     * "is", so the raw sentence was what the user read.
+     */
+    @Test
+    fun `cdk paused mint wording maps to paused copy`() {
+        val deposits = WalletErrorMessages.classifyMessage("Minting is disabled")
+        assertEquals("This mint has paused deposits. Choose another mint.", deposits.text)
+        assertEquals(WalletMessageSeverity.Caution, deposits.severity)
+
+        val payments = WalletErrorMessages.classifyMessage("Melting is disabled")
+        assertEquals("This mint has paused payments. Choose another mint.", payments.text)
+        assertEquals(WalletMessageSeverity.Caution, payments.severity)
+    }
+
+    @Test
+    fun `legacy paused mint wordings still map to paused copy`() {
+        assertEquals(
+            "This mint has paused deposits. Choose another mint.",
+            WalletErrorMessages.classifyMessage("Minting disabled").text,
+        )
+        assertEquals(
+            "This mint has paused payments. Choose another mint.",
+            WalletErrorMessages.classifyMessage("Melting disabled").text,
+        )
     }
 }

@@ -7,6 +7,7 @@ import com.cashu.me.Core.CDK.WalletAccountReference
 import com.cashu.me.Models.MintInfo
 import com.cashu.me.Models.MintQuoteInfo
 import com.cashu.me.Models.MintQuoteState
+import com.cashu.me.Models.MintTransferRecord
 import com.cashu.me.Models.PaymentMethodKind
 import com.cashu.me.Models.PendingReceiveToken
 import com.cashu.me.Models.TransactionKind
@@ -353,6 +354,42 @@ class StoredAccountProjectionInstrumentedTest {
         }
         val result = WalletTransactionLoader(store, failing).load(mints, false)
         assertEquals(setOf("usd-old", "sat-new"), result.transactions.map { it.id }.toSet())
+    }
+
+    /** The cache keeps both CDK rows, so a fallback to it folds a transfer once, never twice. */
+    @Test fun transferFoldsOnLoadWhileTheCacheKeepsBothRows() = runBlocking {
+        val fake = FakeWalletGateway()
+        fake.openWalletRepository("fixture", "unused")
+        val source = "https://a.example"
+        val destination = "https://b.example"
+        fake.ensureWallet(source, "sat")
+        fake.ensureWallet(destination, "sat")
+        fun leg(id: String, type: TransactionType, mint: String, quote: String) = WalletTransaction(
+            id = id, amount = 40, type = type, kind = TransactionKind.Lightning, dateEpochMillis = 1,
+            status = AppTransactionStatus.Completed, mintUrl = mint, quoteId = quote,
+        )
+        fake.addTransaction(leg("payment", TransactionType.Outgoing, source, "melt-quote"))
+        fake.addTransaction(leg("receipt", TransactionType.Incoming, destination, "mint-quote"))
+        val store = WalletStore(context, "transfer_history_" + UUID.randomUUID())
+        store.saveMintTransfers(listOf(MintTransferRecord(
+            id = "transfer", sourceMintUrl = source, destinationMintUrl = destination,
+            mintQuoteId = "mint-quote", meltQuoteId = "melt-quote", amount = 40,
+            createdAtEpochMillis = 0, state = MintTransferRecord.State.Completed,
+        )))
+        val mints = listOf(MintInfo(source), MintInfo(destination))
+        val loader = WalletTransactionLoader(store, fake)
+
+        assertEquals(listOf("Transfer to b.example"), loader.load(mints, false).transactions.map(TransactionDisplay::title))
+        assertEquals(setOf("payment", "receipt"), store.loadTransactions().map { it.id }.toSet())
+        assertEquals(listOf("Transfer to b.example"), loader.cached(mints).map(TransactionDisplay::title))
+
+        val failing = object : CdkWalletGateway by fake {
+            override suspend fun listTransactions(unitsByMint: Map<String, List<String>>): List<WalletTransaction> =
+                error("Storage unavailable")
+        }
+        val fallback = WalletTransactionLoader(store, failing).load(mints, false).transactions
+        assertEquals(listOf("Transfer to b.example"), fallback.map(TransactionDisplay::title))
+        assertEquals(setOf("payment", "receipt"), store.loadTransactions().map { it.id }.toSet())
     }
 
     @Test fun accountAndDiscoveryFailuresDoNotSuppressFreshQuotes() = runBlocking {

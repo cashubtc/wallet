@@ -2,13 +2,14 @@ package com.cashu.me.ui.send
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -56,6 +57,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.graphicsLayer
@@ -99,11 +102,11 @@ import com.cashu.me.Models.MintQuoteState
 import com.cashu.me.Models.PaymentMethodKind
 import com.cashu.me.R
 import com.cashu.me.ui.components.AmountFlipDisplay
+import com.cashu.me.ui.components.AmountNote
 import com.cashu.me.ui.components.AmountText
 import com.cashu.me.ui.components.CashuTextField
 import com.cashu.me.ui.components.EmptyState
 import com.cashu.me.ui.components.EmptyStateSize
-import com.cashu.me.ui.components.FlowSheetTitle
 import com.cashu.me.ui.components.GhostButton
 import com.cashu.me.ui.components.InlineNotice
 import com.cashu.me.ui.components.InlineNoticeHost
@@ -124,12 +127,17 @@ import com.cashu.me.ui.components.SkeletonValue
 import com.cashu.me.ui.components.SpinnerRing
 import com.cashu.me.ui.components.TextButtonContext
 import com.cashu.me.ui.components.TwoFaceScreen
+import com.cashu.me.ui.components.amountHeroHeight
+import com.cashu.me.ui.components.entryNoteRoom
+import com.cashu.me.ui.components.fittingEntryScale
+import com.cashu.me.ui.components.leavingRoomAbove
 import com.cashu.me.ui.mints.ConnectMintContext
 import com.cashu.me.ui.mints.ConnectMintSheetContent
 import com.cashu.me.ui.testing.UiTestTags
+import com.cashu.me.ui.theme.CashuMotion
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.withMonoDigits
-import com.cashu.me.ui.theme.rememberReducedMotion
+import com.cashu.me.ui.theme.AmountScale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -141,10 +149,10 @@ private const val CASHU_FEE_DEBOUNCE_MS = 250L
 // band (amount / quote spinner / caution face) lands at the same Y as the
 // status terminal's glyph — the pay transition then keeps the spinner still
 // instead of jumping.
-private const val ConfirmTopFraction = 0.16f
-private val ConfirmHeroMinHeight = 220.dp
+internal const val ConfirmTopFraction = 0.16f
+internal val ConfirmHeroMinHeight = 220.dp
 private val ConfirmGlyphSlotSize = 72.dp
-private val ConfirmGlyphSize = 64.dp
+internal val ConfirmGlyphSize = 64.dp
 
 private enum class SendStep { Input, Amount, Confirm }
 
@@ -214,6 +222,9 @@ fun UnifiedSendScreen(
         context.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_NFC) &&
             android.nfc.NfcAdapter.getDefaultAdapter(context) != null
     }
+
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
 
     var step by remember { mutableStateOf(SendStep.Input) }
     var status by remember { mutableStateOf<SendStatus?>(null) }
@@ -367,7 +378,14 @@ fun UnifiedSendScreen(
                     step = SendStep.Confirm
                 }
             }
-            is SendDestinationResolution.EcashToken -> onOpenReceiveToken(resolution.token)
+            is SendDestinationResolution.EcashToken -> {
+                // The claim page replaces this sheet; take the keyboard along
+                // so it does not hang over the home screen until the sheet's
+                // window is torn down (see ReceiveEcashScreen.routeInput).
+                focusManager.clearFocus()
+                keyboardController?.hide()
+                onOpenReceiveToken(resolution.token)
+            }
             SendDestinationResolution.Unrecognized -> {
                 if (showUnrecognizedHint) {
                     inputHint =
@@ -642,16 +660,87 @@ fun UnifiedSendScreen(
     // amount/confirm/status need the full sheet for the keypad and pay scaffold.
     val prefersCompactSheet = status == null && step == SendStep.Input
     LaunchedEffect(prefersCompactSheet) { onCompactSheetChanged(prefersCompactSheet) }
+    // The keyboard leaves the moment the input face does, so its exit runs
+    // alongside the sheet's growth instead of after it. The outgoing field
+    // would otherwise keep focus until its face is disposed, and the keyboard
+    // would only start down once the sheet had already settled.
+    LaunchedEffect(prefersCompactSheet) {
+        if (!prefersCompactSheet) {
+            focusManager.clearFocus()
+            keyboardController?.hide()
+        }
+    }
     Column(
-        modifier = (
-            if (prefersCompactSheet) {
-                Modifier.fillMaxWidth()
-            } else {
-                Modifier.fillMaxHeight()
-            }
-            ).testTag(UiTestTags.SendSheet),
+        modifier = Modifier
+            // The compact input sheet grows into the full-height payment sheet
+            // when a destination resolves (and by a line when a long payload
+            // wraps). The Material sheet re-anchors to a new content height
+            // with a snap, so the height change is animated here and the sheet
+            // follows it frame by frame instead of jumping. Outermost on
+            // purpose: placed inside `fillMaxHeight` it would only animate the
+            // content while the sheet still saw the full height at once. The
+            // sheet host keeps this flow's insets keyboard-blind, so the only
+            // IME-driven size here is the input face's own padding. Timed to
+            // the shared-axis face swap it accompanies, so the sheet and the
+            // faces settle together: a spring's long tail kept the sheet
+            // sinking for ~200 ms after the input face had already landed.
+            .animateContentSize(
+                animationSpec = tween(CashuMotion.SharedAxisDurationMs, easing = FastOutSlowInEasing),
+            )
+            .then(
+                if (prefersCompactSheet) {
+                    Modifier.fillMaxWidth()
+                } else {
+                    Modifier.fillMaxHeight()
+                },
+            )
+            .testTag(UiTestTags.SendSheet),
     ) {
-        // Status terminal replaces the form body but retains the sheet title,
+        // The sheet chrome lives above the body swap so it never fades out
+        // with a face or with the status terminal: the title stays put, the
+        // back chevron fades in on the later steps and out while money moves,
+        // and the pinned "To" row expands in once a destination is locked and
+        // stays through the quote wait and the payment itself.
+        val showsConnectMint = status == null && step == SendStep.Input && walletState.mints.isEmpty()
+        if (!showsConnectMint) {
+            SheetHeader(
+                title = if (creqFromScan) "Pay Cashu Request" else "Send",
+                navigationIcon = Icons.AutoMirrored.Outlined.ArrowBack
+                    .takeIf { status == null && step != SendStep.Input },
+                navigationContentDescription = "Back",
+                onNavigationClick = ::goBack,
+            )
+            val recipient = if (step != SendStep.Input && !creqFromScan) {
+                when (val rail = locked) {
+                    is LockedRail.Melt -> PaymentRequestDecoder.displayRequest(rail.raw, rail.decoded)
+                    is LockedRail.Creq -> PaymentRequestDecoder.displayRequest(rail.raw, rail.decoded)
+                    null -> PaymentRequestDecoder.middleTruncated(destination)
+                }
+            } else {
+                ""
+            }
+            // The row takes its space in the same frame the step changes and
+            // only fades its ink: the sheet column animates its height as one
+            // motion, and a row that animated its own height alongside kept
+            // retargeting that animation, which read as a 150ms hesitation
+            // before the sheet got going on the way back.
+            val toRowVisible = recipient.isNotBlank() &&
+                status !is SendStatus.Sent && status !is SendStatus.Failed
+            val toRowAlpha by animateFloatAsState(
+                targetValue = if (toRowVisible) 1f else 0f,
+                animationSpec = tween(200),
+                label = "unified-send-to-row",
+            )
+            if (toRowVisible) {
+                ToRow(
+                    destination = recipient,
+                    modifier = Modifier
+                        .padding(horizontal = CashuTheme.spacing.comfortable)
+                        .graphicsLayer { alpha = toRowAlpha },
+                )
+            }
+        }
+        // Status terminal replaces the form body under the chrome above,
         // matching the toolbar-owned iOS PaymentStatusView slot.
         // One content key for every status value keeps a single
         // PaymentStatusScreen mounted across Sending → Sent/Failed, so the
@@ -672,9 +761,6 @@ fun UnifiedSendScreen(
         ) { current ->
             if (current != null) {
                 Column(modifier = Modifier.fillMaxSize()) {
-                    FlowSheetTitle(
-                        title = if (creqFromScan) "Pay Cashu Request" else "Send",
-                    )
                     SendStatusTerminal(
                         status = current,
                         formatter = formatter,
@@ -707,35 +793,10 @@ fun UnifiedSendScreen(
                         Modifier.fillMaxSize()
                     },
                 ) {
-                    if (step == SendStep.Input) {
-                        FlowSheetTitle(
-                            title = if (creqFromScan) "Pay Cashu Request" else "Send",
-                        )
-                    } else {
-                        SheetHeader(
-                            title = if (creqFromScan) "Pay Cashu Request" else "Send",
-                            navigationIcon = Icons.AutoMirrored.Outlined.ArrowBack,
-                            navigationContentDescription = "Back",
-                            onNavigationClick = ::goBack,
-                        )
-                    }
-                    // The pinned "To" row is shared by the amount AND confirm
-                    // faces, rendered once up here so the recipient is the step
-                    // swap's fixed anchor — it never slides with the faces
-                    // (iOS parity).
-                    if (step != SendStep.Input && !creqFromScan) {
-                        val recipient = when (val rail = locked) {
-                            is LockedRail.Melt -> PaymentRequestDecoder.displayRequest(rail.raw, rail.decoded)
-                            is LockedRail.Creq -> PaymentRequestDecoder.displayRequest(rail.raw, rail.decoded)
-                            null -> PaymentRequestDecoder.middleTruncated(destination)
-                        }
-                        if (recipient.isNotBlank()) {
-                            ToRow(
-                                destination = recipient,
-                                modifier = Modifier.padding(horizontal = CashuTheme.spacing.comfortable),
-                            )
-                        }
-                    }
+                    // The header and the pinned "To" row sit above this swap
+                    // (see the chrome at the top of the sheet), so the
+                    // recipient is the step swap's fixed anchor — it never
+                    // slides with the faces (iOS parity).
                     TwoFaceScreen(
                         targetState = step,
                         modifier = if (step == SendStep.Input) {
@@ -1072,7 +1133,13 @@ private fun InputFace(
         CashuTextField(
             value = destination,
             onValueChange = onDestinationChange,
+            // Outermost size animation on the field itself: the method rows
+            // below slide as a long destination wraps instead of hopping a
+            // line while only the sheet's edge eases (see ReceiveEcashScreen).
             modifier = Modifier
+                .animateContentSize(
+                    animationSpec = tween(CashuMotion.SharedAxisDurationMs, easing = FastOutSlowInEasing),
+                )
                 .fillMaxWidth()
                 .padding(vertical = CashuTheme.spacing.default)
                 .testTag(UiTestTags.SendDestination),
@@ -1206,87 +1273,66 @@ private fun AmountFace(
     val validation = UnifiedSendAmountEntry.validation(amountSats, mintBalance)
     val insufficient = validation == UnifiedSendAmountValidation.InsufficientBalance
     val isFiatEntry = entryPrimary == AmountDisplayPrimary.Fiat
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = CashuTheme.spacing.comfortable),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        val reduceMotion = rememberReducedMotion()
-        // One flexible cell: the amount centered in it, the notice *overlaid* at
-        // its bottom (iOS SendView's ZStack, and Send Ecash's twin). As a sibling
-        // the notice shoved the amount up by its full height the instant it
-        // appeared, with no transition at all.
-        Box(
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-            contentAlignment = Alignment.Center,
+    // The mint selector states the available balance, so repeating it in the
+    // note would add visual noise.
+    val note = if (insufficient) AmountNote("Insufficient balance", NoticeSeverity.Caution) else null
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val noteRoom = entryNoteRoom(note, maxWidth - CashuTheme.spacing.comfortable * 2)
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = CashuTheme.spacing.comfortable),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            AmountFlipDisplay(
-                amountSats = amountSats,
-                primary = entryPrimary,
-                onFlip = onFlipEntryPrimary,
-                btcPrice = btcPrice,
-                currencyCode = fiatCurrencyCode,
-                useBitcoinSymbol = useBitcoinSymbol,
-                entryRaw = amount,
-                primaryAccessibilityPrefix = "Send amount",
-            )
-            Column(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .padding(bottom = CashuTheme.spacing.default),
-                horizontalAlignment = Alignment.CenterHorizontally,
+            // One flexible cell, the amount centered in it (iOS SendView parity).
+            // A note takes the conversion line under the amount, so it never
+            // pushes the amount up. Where the cell is short the amount steps down
+            // a rung instead of squeezing that line out.
+            BoxWithConstraints(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                contentAlignment = Alignment.Center,
             ) {
-                AnimatedVisibility(
-                    visible = insufficient,
-                    enter = if (reduceMotion) {
-                        fadeIn(spring(stiffness = Spring.StiffnessMedium))
-                    } else {
-                        fadeIn(spring(stiffness = Spring.StiffnessMedium)) + scaleIn(
-                            animationSpec = spring(stiffness = Spring.StiffnessMedium),
-                            initialScale = 0.95f,
-                        )
-                    },
-                    exit = fadeOut(spring(stiffness = Spring.StiffnessMedium)),
-                ) {
-                    // The mint selector states the available balance, so
-                    // repeating it in this notice would add visual noise.
-                    InlineNotice(
-                        text = "Insufficient balance",
-                        detail = null,
-                        severity = NoticeSeverity.Caution,
-                        showsContainer = false,
-                        centered = true,
-                    )
-                }
+                AmountFlipDisplay(
+                    amountSats = amountSats,
+                    primary = entryPrimary,
+                    onFlip = onFlipEntryPrimary,
+                    btcPrice = btcPrice,
+                    currencyCode = fiatCurrencyCode,
+                    useBitcoinSymbol = useBitcoinSymbol,
+                    entryRaw = amount,
+                    entryScale = fittingEntryScale(maxHeight, noteRoom),
+                    primaryAccessibilityPrefix = "Send amount",
+                    note = note,
+                    holdsNoteLine = true,
+                )
             }
-        }
-        if (cashuRequestFeePresentation != null) {
-            EstimatedCashuRequestFeeRow(cashuRequestFeePresentation)
-            Spacer(Modifier.height(CashuTheme.spacing.snug))
-        }
-        // Under the amount, over the keypad (Send Ecash / Receive parity).
-        if (mint != null) {
-            AmountEntryMintSelector(
-                direction = MintSelectorDirection.Source,
-                mint = mint,
-                balanceText = balanceText,
-                onPickMint = onPickMint,
-                // Gated on a spendable balance, the way Send Ecash already does
-                // it — an empty mint offered a Max that filled in zero.
-                onUseMax = onUseMax.takeIf { mintBalance > 0L },
+            if (cashuRequestFeePresentation != null) {
+                EstimatedCashuRequestFeeRow(cashuRequestFeePresentation)
+                Spacer(Modifier.height(CashuTheme.spacing.snug))
+            }
+            // Under the amount, over the keypad (Send Ecash / Receive parity).
+            if (mint != null) {
+                AmountEntryMintSelector(
+                    direction = MintSelectorDirection.Source,
+                    mint = mint,
+                    balanceText = balanceText,
+                    onPickMint = onPickMint,
+                    // Gated on a spendable balance, the way Send Ecash already does
+                    // it — an empty mint offered a Max that filled in zero.
+                    onUseMax = onUseMax.takeIf { mintBalance > 0L },
+                )
+                Spacer(Modifier.height(CashuTheme.spacing.snug))
+            }
+            NumberPadFooter(
+                amount = amount,
+                onAmountChange = onAmountChange,
+                buttonText = "Continue",
+                onButtonClick = onContinue,
+                modifier = Modifier.leavingRoomAbove(amountHeroHeight(AmountScale.Compact) + noteRoom),
+                decimals = if (isFiatEntry) 2 else 0,
+                buttonEnabled = validation == UnifiedSendAmountValidation.Valid,
             )
-            Spacer(Modifier.height(CashuTheme.spacing.snug))
         }
-        NumberPadFooter(
-            amount = amount,
-            onAmountChange = onAmountChange,
-            buttonText = "Continue",
-            onButtonClick = onContinue,
-            decimals = if (isFiatEntry) 2 else 0,
-            buttonEnabled = validation == UnifiedSendAmountValidation.Valid,
-        )
     }
 }
 
@@ -1598,7 +1644,7 @@ private fun ConfirmFace(
  * lives in the pinned bottom slot.
  */
 @Composable
-private fun ConfirmCautionFace(message: String, detail: String? = null) {
+internal fun ConfirmCautionFace(message: String, detail: String? = null) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.comfortable),

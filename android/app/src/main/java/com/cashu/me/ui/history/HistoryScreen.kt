@@ -70,6 +70,7 @@ import com.cashu.me.Core.SettingsManager
 import com.cashu.me.Core.TransactionDisplay
 import com.cashu.me.Core.WalletManager
 import com.cashu.me.Models.CashuRequest
+import com.cashu.me.Models.MintInfo
 import com.cashu.me.Models.TransactionStatus
 import com.cashu.me.Models.WalletTransaction
 import com.cashu.me.ui.components.ActionConfirmationSheet
@@ -127,13 +128,14 @@ fun HistoryScreen(
     }
 
     // Unified, filtered, searched timeline merging transactions + Cashu Requests.
-    val items by remember(walletState.transactions, requestState.requests, filter, query) {
+    val items by remember(walletState.transactions, requestState.requests, filter, query, walletState.mints) {
         derivedStateOf {
             unifiedFiltered(
                 transactions = walletState.transactions,
                 requests = requestState.requests,
                 filter = filter,
                 query = query,
+                mints = walletState.mints,
             )
         }
     }
@@ -322,7 +324,7 @@ fun HistoryScreen(
                                         TransactionRow(
                                             model = TransactionRowModel(
                                                 transaction = tx,
-                                                title = TransactionDisplay.title(tx),
+                                                title = TransactionDisplay.title(tx, walletState.mints),
                                                 timestamp = formatRelativeTimestamp(tx.dateEpochMillis),
                                                 primaryAmount = amountDisplay.primary,
                                                 secondaryAmount = amountDisplay.secondary,
@@ -464,6 +466,8 @@ internal fun unifiedFiltered(
     requests: List<CashuRequest>,
     filter: HistoryFilter,
     query: String,
+    // Search matches the title the row shows, which names a transfer's mint.
+    mints: List<MintInfo> = emptyList(),
 ): List<HistoryItem> {
     val claimedTxIds = buildSet {
         requests.forEach { req -> req.receivedPayments.forEach { add(it.transactionId) } }
@@ -494,7 +498,7 @@ internal fun unifiedFiltered(
         when (item) {
             is HistoryItem.Tx -> {
                 val tx = item.transaction
-                TransactionDisplay.title(tx).contains(normalizedQuery, ignoreCase = true) ||
+                TransactionDisplay.title(tx, mints).contains(normalizedQuery, ignoreCase = true) ||
                     (!tx.isUnfundedAddress && tx.amount.toString().contains(normalizedQuery)) ||
                     tx.displayDescription?.contains(normalizedQuery, ignoreCase = true) == true
             }

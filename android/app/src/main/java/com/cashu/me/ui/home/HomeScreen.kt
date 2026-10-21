@@ -332,7 +332,7 @@ fun HomeScreen(
                             TransactionRow(
                                 model = TransactionRowModel(
                                     transaction = tx,
-                                    title = TransactionDisplay.title(tx),
+                                    title = TransactionDisplay.title(tx, walletState.mints),
                                     timestamp = formatRelativeTimestamp(tx.dateEpochMillis),
                                     primaryAmount = amountDisplay.primary,
                                     secondaryAmount = amountDisplay.secondary,

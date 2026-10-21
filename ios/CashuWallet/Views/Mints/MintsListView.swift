@@ -6,6 +6,7 @@ struct MintsListView: View {
     @State private var mintToRemove: MintInfo?
     @State private var showAddMintSheet = false
     @State private var showDiscoverySheet = false
+    @State private var transfer: TransferPresentation?
     @State private var removalError: String?
     @State private var actionError: String?
 
@@ -26,6 +27,16 @@ struct MintsListView: View {
                 }
 
                 Section {
+                    // A transfer needs two ends.
+                    if canTransfer {
+                        Button {
+                            transfer = TransferPresentation(mintURL: nil)
+                        } label: {
+                            actionRow(title: "Transfer", systemImage: "arrow.left.arrow.right")
+                        }
+                        .accessibilityIdentifier("mints-transfer-button")
+                    }
+
                     Button {
                         showAddMintSheet = true
                     } label: {
@@ -50,6 +61,10 @@ struct MintsListView: View {
                 MintDiscoverySheet()
                     .environmentObject(walletManager)
                     .walletSheetSurface(fillsScreen: true)
+            }
+            .backdropSheet(item: $transfer) { presentation in
+                MintTransferView(openedFromMintURL: presentation.mintURL)
+                    .environmentObject(walletManager)
             }
             .task {
                 await walletManager.refreshMintInfo()
@@ -82,6 +97,15 @@ struct MintsListView: View {
                 .foregroundStyle(.tertiary)
         }
     }
+
+    /// One sheet item for both ways in: the list's Transfer row, or a mint's
+    /// menu, which starts the transfer on that mint.
+    private struct TransferPresentation: Identifiable {
+        let id = UUID()
+        let mintURL: String?
+    }
+
+    private var canTransfer: Bool { walletManager.mints.count >= 2 }
 
     private var isActive: (MintInfo) -> Bool {
         { mint in walletManager.activeMint?.url == mint.url }
@@ -123,6 +147,11 @@ struct MintsListView: View {
             .accessibilityValue(isActive(mint) ? "Default mint" : "")
         }
         .contextMenu {
+            if canTransfer {
+                Button { transfer = TransferPresentation(mintURL: mint.url) } label: {
+                    Label("Transfer", systemImage: "arrow.left.arrow.right")
+                }
+            }
             Button { setActive(mint) } label: {
                 Label("Set as Default", systemImage: "checkmark.circle")
             }

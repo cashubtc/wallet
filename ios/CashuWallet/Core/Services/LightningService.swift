@@ -37,6 +37,31 @@ func meltOptionsForLightningRequest(
     return .amountless(amountMsat: Amount(value: amountSats * 1_000))
 }
 
+/// Which proofs a melt spends.
+enum MeltProofSelection: Equatable {
+    /// CDK picks the proofs, swapping first when it needs exact inputs.
+    case automatic
+    /// Every unspent proof goes in directly, with no pre-melt swap. A max
+    /// cross-mint quote sizes its amount on the input fee of exactly this proof
+    /// set, so a swap would charge a second fee the balance no longer covers.
+    case allUnspentSkippingSwap(expectedInputFee: UInt64)
+}
+
+/// The proofs on hand no longer cost what the quote was sized for, so melting
+/// them would not leave the amount the quote promised. Nothing was sent.
+struct MeltInputFeeChanged: Error, Equatable {
+    let expected: UInt64
+    let actual: UInt64
+}
+
+/// A destination mint quote and the source melt quote that pays it.
+struct CrossMintQuotes {
+    let mintQuote: MintQuoteInfo
+    let meltQuote: MeltQuoteInfo
+    /// Input fee for spending every unspent source proof. Zero on most mints.
+    let inputFee: UInt64
+}
+
 // MARK: - Lightning Service
 
 /// Service responsible for Lightning Network operations (NUT-04/NUT-05).
@@ -835,17 +860,19 @@ class LightningService: ObservableObject {
 
     /// Pending result built from the stored quote's numbers. Amount and fee
     /// aren't final until the payment settles, so the fee is the reserve upper
-    /// bound — the UI still gets facts to show.
+    /// bound — the UI still gets facts to show. CDK reports input fees inside
+    /// the settled fee, so a melt that planned one adds it to the bound.
     private func pendingMeltConfirmation(
         storedMeltQuote: MeltQuote?,
         mintURLString: String,
+        inputFee: UInt64 = 0,
         deferredSettlement: Task<FinalizedMelt, any Error>? = nil
     ) -> MeltConfirmation {
         MeltConfirmation(
             result: MeltPaymentResult(
                 preimage: nil,
                 amount: storedMeltQuote?.amount.value ?? 0,
-                feePaid: storedMeltQuote?.feeReserve.value ?? 0,
+                feePaid: (storedMeltQuote?.feeReserve.value ?? 0) + inputFee,
                 mintUrl: mintURLString,
                 settlement: .pending
             ),
@@ -856,7 +883,11 @@ class LightningService: ObservableObject {
     /// Pay a Lightning invoice or on-chain address (melt tokens)
     /// - Parameter quoteId: The quote ID to melt
     /// - Returns: Melt confirmation, including whether settlement is pending.
-    func meltTokens(quoteId: String, mintUrl preferredMintUrl: String? = nil) async throws -> MeltConfirmation {
+    func meltTokens(
+        quoteId: String,
+        mintUrl preferredMintUrl: String? = nil,
+        selection: MeltProofSelection = .automatic
+    ) async throws -> MeltConfirmation {
         guard let repo = walletRepository() else {
             throw WalletError.notInitialized
         }
@@ -873,7 +904,13 @@ class LightningService: ObservableObject {
 
         let preparedMelt: PreparedMelt
         do {
-            preparedMelt = try await wallet.prepareMelt(quoteId: quoteId)
+            switch selection {
+            case .automatic:
+                preparedMelt = try await wallet.prepareMelt(quoteId: quoteId)
+            case .allUnspentSkippingSwap:
+                let proofs = try await wallet.getProofsByStates(states: [.unspent])
+                preparedMelt = try await wallet.prepareMeltProofs(quoteId: quoteId, proofs: proofs)
+            }
         } catch {
             // Preparation can reserve proofs before its native future reports an
             // error. If CDK persisted an operation, resolve it exactly like an
@@ -916,10 +953,45 @@ class LightningService: ObservableObject {
             "wallet-op melt prepared operation=\(WalletOperationCoordinator.privacySafeIdentifier(operationID), privacy: .public) quote=\(WalletOperationCoordinator.privacySafeIdentifier(quoteId), privacy: .public)"
         )
 
+        if case .allUnspentSkippingSwap(let expectedInputFee) = selection {
+            let inputFee = preparedMelt.inputFeeWithoutSwap().value
+            if inputFee != expectedInputFee {
+                do {
+                    try await preparedMelt.cancel()
+                } catch {
+                    // The reservation outlived a failed cancel, so the quote is
+                    // not reusable until recovery has released it.
+                    return try await resolveMeltAfterAmbiguousFailure(
+                        wallet: wallet,
+                        quoteId: quoteId,
+                        mintURLString: mintURLString,
+                        operationID: operationID,
+                        fallbackQuote: storedMeltQuote
+                    )
+                }
+                throw MeltInputFeeChanged(expected: expectedInputFee, actual: inputFee)
+            }
+        }
+
         do {
             AppLogger.wallet.info(
                 "wallet-op native-call kind=melt phase=confirm operation=\(WalletOperationCoordinator.privacySafeIdentifier(operationID), privacy: .public) quote=\(WalletOperationCoordinator.privacySafeIdentifier(quoteId), privacy: .public)"
             )
+            if case .allUnspentSkippingSwap(let inputFee) = selection {
+                // No respond-async confirmation takes options, so the
+                // confirmation itself is the bounded wait. If the cap fires the
+                // native call keeps running as the settlement watcher; it is
+                // never cancelled mid-payment.
+                return try await boundedMeltSettlement(
+                    wallet: wallet,
+                    quoteId: quoteId,
+                    mintURLString: mintURLString,
+                    operationID: operationID,
+                    storedMeltQuote: storedMeltQuote,
+                    inputFee: inputFee,
+                    wait: { try await preparedMelt.confirmWithOptions(options: MeltConfirmOptions(skipSwap: true)) }
+                )
+            }
             switch try await preparedMelt.confirmPreferAsync() {
             case .paid(let finalized):
                 return settledMeltConfirmation(from: finalized, mintURLString: mintURLString)
@@ -935,36 +1007,14 @@ class LightningService: ObservableObject {
                 // immediate pending path.
                 let method = storedMeltQuote?.paymentMethod
                 if method == .bolt11 || method == .bolt12 {
-                    switch await awaitMeltSettlementBounded(
-                        cap: MeltSettlementWait.cap,
+                    return try await boundedMeltSettlement(
+                        wallet: wallet,
+                        quoteId: quoteId,
+                        mintURLString: mintURLString,
+                        operationID: operationID,
+                        storedMeltQuote: storedMeltQuote,
                         wait: { try await pendingMelt.wait() }
-                    ) {
-                    case .finalized(let finalized) where finalized.state == .paid || finalized.state == .issued:
-                        AppLogger.wallet.info(
-                            "wallet-op melt settled via wait operation=\(WalletOperationCoordinator.privacySafeIdentifier(operationID), privacy: .public)"
-                        )
-                        return settledMeltConfirmation(from: finalized, mintURLString: mintURLString)
-                    case .finalized, .failed:
-                        // A wait that ends any other way carries the same
-                        // ambiguity as a thrown confirmation: resolve it
-                        // against the mint through the recovery path.
-                        return try await resolveMeltAfterAmbiguousFailure(
-                            wallet: wallet,
-                            quoteId: quoteId,
-                            mintURLString: mintURLString,
-                            operationID: operationID,
-                            fallbackQuote: storedMeltQuote
-                        )
-                    case .capExpired(let residual):
-                        AppLogger.wallet.info(
-                            "wallet-op melt wait cap expired operation=\(WalletOperationCoordinator.privacySafeIdentifier(operationID), privacy: .public)"
-                        )
-                        return pendingMeltConfirmation(
-                            storedMeltQuote: storedMeltQuote,
-                            mintURLString: mintURLString,
-                            deferredSettlement: residual
-                        )
-                    }
+                    )
                 }
                 return pendingMeltConfirmation(
                     storedMeltQuote: storedMeltQuote,
@@ -982,6 +1032,131 @@ class LightningService: ObservableObject {
                 operationID: operationID,
                 fallbackQuote: storedMeltQuote
             )
+        }
+    }
+
+    /// Drive a lightning settlement to a result within the cap, mapping the
+    /// three ways the wait can end.
+    private func boundedMeltSettlement(
+        wallet: Wallet,
+        quoteId: String,
+        mintURLString: String,
+        operationID: String,
+        storedMeltQuote: MeltQuote?,
+        inputFee: UInt64 = 0,
+        wait: @escaping () async throws -> FinalizedMelt
+    ) async throws -> MeltConfirmation {
+        switch await awaitMeltSettlementBounded(cap: MeltSettlementWait.cap, wait: wait) {
+        case .finalized(let finalized) where finalized.state == .paid || finalized.state == .issued:
+            AppLogger.wallet.info(
+                "wallet-op melt settled via wait operation=\(WalletOperationCoordinator.privacySafeIdentifier(operationID), privacy: .public)"
+            )
+            return settledMeltConfirmation(from: finalized, mintURLString: mintURLString)
+        case .finalized, .failed:
+            // A wait that ends any other way carries the same ambiguity as a
+            // thrown confirmation: resolve it against the mint through the
+            // recovery path.
+            return try await resolveMeltAfterAmbiguousFailure(
+                wallet: wallet,
+                quoteId: quoteId,
+                mintURLString: mintURLString,
+                operationID: operationID,
+                fallbackQuote: storedMeltQuote
+            )
+        case .capExpired(let residual):
+            AppLogger.wallet.info(
+                "wallet-op melt wait cap expired operation=\(WalletOperationCoordinator.privacySafeIdentifier(operationID), privacy: .public)"
+            )
+            return pendingMeltConfirmation(
+                storedMeltQuote: storedMeltQuote,
+                mintURLString: mintURLString,
+                inputFee: inputFee,
+                deferredSettlement: residual
+            )
+        }
+    }
+
+    // MARK: - Transfers between held mints
+
+    /// Quote the largest amount `sourceMintURL` can move to `destinationMintURL`
+    /// in one Lightning payment: a BOLT11 mint quote at the destination and the
+    /// melt quote at the source that pays it.
+    ///
+    /// CDK probes to find that amount, and every probe leaves a quote at both
+    /// mints that cannot be cancelled. Call this once for an explicit request,
+    /// never speculatively. CDK keeps only the returned pair locally.
+    func createMaxCrossMintQuotes(
+        sourceMintURL: String,
+        destinationMintURL: String
+    ) async throws -> CrossMintQuotes {
+        guard let repo = walletRepository() else {
+            throw WalletError.notInitialized
+        }
+
+        isLoading = true
+        defer { isLoading = false }
+
+        let source = try await repo.getWallet(mintUrl: MintUrl(url: sourceMintURL), unit: .sat)
+        let destination = try await repo.getWallet(mintUrl: MintUrl(url: destinationMintURL), unit: .sat)
+        AppLogger.wallet.info(
+            "wallet-op native-call kind=transferQuote resource=\(WalletOperationCoordinator.privacySafeIdentifier(sourceMintURL), privacy: .public)"
+        )
+        let quotes = try await source.crossMintTransferQuoteMax(targetWallet: destination)
+        return CrossMintQuotes(
+            mintQuote: mintQuoteInfo(from: quotes.mintQuote, fallbackAmount: nil, paymentMethod: .bolt11),
+            meltQuote: meltQuoteInfo(from: quotes.meltQuote, paymentMethod: .bolt11, fallbackMintUrl: sourceMintURL),
+            inputFee: quotes.inputFee.value
+        )
+    }
+
+    /// Forget a quote pair the user backed out of, so the destination quote
+    /// stops reading as an invoice awaiting payment. Returns false, and removes
+    /// nothing, once there is any local evidence the melt started: from then on
+    /// the destination quote is the only handle on money that may be in flight.
+    /// A failed or compensated melt still counts as started — the wallet can
+    /// believe a payment failed that the mint went on to make.
+    @discardableResult
+    func removeUnusedQuotes(mintQuoteID: String, meltQuoteID: String?) async -> Bool {
+        guard let database = walletDatabase() else { return false }
+        do {
+            if let meltQuoteID {
+                if let meltQuote = try await database.getMeltQuote(quoteId: meltQuoteID) {
+                    guard meltQuote.state == .unpaid, meltQuote.usedByOperation == nil else { return false }
+                }
+                let attempts = try await database.listTransactions(mintUrl: nil, direction: .outgoing, unit: nil)
+                guard !attempts.contains(where: { $0.quoteId == meltQuoteID }) else { return false }
+            }
+            if let mintQuote = try await database.getMintQuote(quoteId: mintQuoteID) {
+                guard mintQuote.amountPaid.value == 0,
+                      mintQuote.amountIssued.value == 0,
+                      mintQuote.usedByOperation == nil else { return false }
+                try await database.removeMintQuote(quoteId: mintQuoteID)
+            }
+            if let meltQuoteID {
+                try await database.removeMeltQuote(quoteId: meltQuoteID)
+            }
+            return true
+        } catch {
+            AppLogger.wallet.error(
+                "unused quote removal failed resource=\(WalletOperationCoordinator.privacySafeIdentifier(mintQuoteID), privacy: .public) error_type=\(String(reflecting: type(of: error)), privacy: .public)"
+            )
+            return false
+        }
+    }
+
+    /// Whether local state shows a melt is over and did not pay: the quote is
+    /// unpaid, no operation holds it, and no attempt is still pending. False
+    /// whenever that cannot be established.
+    func meltEndedUnpaid(quoteID: String?) async -> Bool {
+        guard let quoteID, let database = walletDatabase() else { return false }
+        do {
+            guard let quote = try await database.getMeltQuote(quoteId: quoteID),
+                  quote.state == .unpaid,
+                  quote.usedByOperation == nil else { return false }
+            let attempts = try await database.listTransactions(mintUrl: nil, direction: .outgoing, unit: nil)
+            return !attempts.contains { $0.quoteId == quoteID && $0.status == .pending }
+        } catch {
+            return false
         }
     }
 

@@ -4,12 +4,14 @@ import com.cashu.me.Core.CDK.CdkWalletGateway
 import com.cashu.me.Models.MintInfo
 import com.cashu.me.Models.MintQuoteInfo
 import com.cashu.me.Models.MintQuoteRetryState
+import com.cashu.me.Models.MintTransferRecord
 import com.cashu.me.Models.PaymentMethodKind
 import com.cashu.me.Models.PendingReceiveToken
 import com.cashu.me.Models.TransactionKind
 import com.cashu.me.Models.TransactionStatus
 import com.cashu.me.Models.TransactionType
 import com.cashu.me.Models.WalletTransaction
+import com.cashu.me.Models.ownedMintQuoteIds
 import com.cashu.me.Models.restoringDescription
 
 internal data class WalletTransactionLoadResult(
@@ -140,9 +142,14 @@ internal class WalletTransactionLoader(
         val mintQuoteTimestamps = walletStore.loadMintQuoteTimestamps().toMutableMap()
         val quoteRead = runCatching { gateway.listUnissuedMintQuotes() }
         quoteRead.exceptionOrNull()?.let { if (it is kotlinx.coroutines.CancellationException) throw it }
-        val unissuedMintQuotes = quoteRead.getOrDefault(emptyList())
+        // A transfer's destination quote is paid by the wallet itself, so it is
+        // never an invoice the user is waiting on. Read after the quotes, so a
+        // quote created a moment ago already has its record.
+        val transfers = walletStore.loadMintTransfers()
+        val transferQuoteIds = transfers.ownedMintQuoteIds
+        val unissuedMintQuotes = quoteRead.getOrDefault(emptyList()).filterNot { it.id in transferQuoteIds }
         val retainedQuotes = if (quoteRead.isFailure) previous.filter {
-            it.id == it.quoteId && it.id !in quoteIdsWithTransactions &&
+            it.id == it.quoteId && it.id !in quoteIdsWithTransactions && it.id !in transferQuoteIds &&
                 trackedMintUrls.any { tracked -> com.cashu.me.Core.CDK.mintRemovalUrlsMatch(tracked, it.mintUrl.orEmpty()) }
         } else emptyList()
         // Observe addresses before building rows: amountless quotes have no
@@ -196,13 +203,27 @@ internal class WalletTransactionLoader(
             .distinctBy { it.id }
             .let(MintReceiptProjection::project)
             .sortedByDescending { it.dateEpochMillis }
+        // The cache keeps the rows from before transfers are folded into
+        // single rows. A failed read falls back to these, so a folded row is
+        // never folded twice.
         walletStore.saveTransactions(merged)
         walletStore.saveMintQuoteTimestamps(pruneMintQuoteTimestamps(merged, mintQuoteTimestamps))
         return WalletTransactionLoadResult(
-            transactions = merged,
+            transactions = foldingTransfers(merged, transfers, mints),
             pendingReceiveTokens = pendingReceiveTokens,
         )
     }
+
+    /** The cached history as [load] would show it, before the wallet runtime is up. */
+    fun cached(mints: List<MintInfo>): List<WalletTransaction> =
+        foldingTransfers(walletStore.loadTransactions(), walletStore.loadMintTransfers(), mints)
+
+    private fun foldingTransfers(
+        rows: List<WalletTransaction>,
+        transfers: List<MintTransferRecord>,
+        mints: List<MintInfo>,
+    ): List<WalletTransaction> =
+        MintTransferProjection.project(rows, transfers) { mintDisplayName(it, mints) }
 }
 
 /** CDK stores an independent wallet per (mint, unit), including transaction history. */

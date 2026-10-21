@@ -1,5 +1,6 @@
 package com.cashu.me.Core.CDK
 
+import com.cashu.me.Models.Bolt11SatCapability
 import com.cashu.me.Models.PaymentMethodKind
 import org.cashudevkit.CurrencyUnit as CdkCurrencyUnit
 import org.cashudevkit.Nuts as CdkNuts
@@ -49,6 +50,28 @@ internal fun CdkNuts.reportedMeltMethods(): List<PaymentMethodKind> =
         .mapNotNull { it.method.toKnownPaymentMethodKind() }
         .distinct()
         .sortedBy { it.sortOrder }
+
+/**
+ * The (bolt11, sat) pair under NUT-04 and NUT-05. A disabled NUT turns the
+ * direction off even when the method is listed; limits are kept either way so
+ * the capability records what was reported.
+ */
+internal fun CdkNuts.reportedBolt11SatCapability(): Bolt11SatCapability {
+    val mintMethod = nut04.methods.firstOrNull {
+        it.method == CdkPaymentMethod.Bolt11 && it.unit == CdkCurrencyUnit.Sat
+    }
+    val meltMethod = nut05.methods.firstOrNull {
+        it.method == CdkPaymentMethod.Bolt11 && it.unit == CdkCurrencyUnit.Sat
+    }
+    return Bolt11SatCapability(
+        canMint = mintMethod != null && !nut04.disabled,
+        canMelt = meltMethod != null && !nut05.disabled,
+        mintMin = mintMethod?.minAmount?.value?.toLong(),
+        mintMax = mintMethod?.maxAmount?.value?.toLong(),
+        meltMin = meltMethod?.minAmount?.value?.toLong(),
+        meltMax = meltMethod?.maxAmount?.value?.toLong(),
+    )
+}
 
 private fun CdkPaymentMethod.toKnownPaymentMethodKind(): PaymentMethodKind? = when (this) {
     CdkPaymentMethod.Bolt11 -> PaymentMethodKind.Bolt11

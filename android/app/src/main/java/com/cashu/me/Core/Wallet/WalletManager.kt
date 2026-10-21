@@ -4,13 +4,16 @@ import com.cashu.me.Models.MintUrlIdentity
 import java.net.URL
 import java.text.Normalizer
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
@@ -39,12 +42,16 @@ import com.cashu.me.Core.Protocols.SecureStorage
 import com.cashu.me.Core.Protocols.StorageKeys
 import com.cashu.me.Core.Wallet.isInsufficientBalance
 import com.cashu.me.Models.MeltPaymentResult
+import com.cashu.me.Models.MeltProofSelection
 import com.cashu.me.Models.MeltQuoteInfo
 import com.cashu.me.Models.MeltQuoteState
 import com.cashu.me.Models.MintInfo
 import com.cashu.me.Models.CashuRequest
 import com.cashu.me.Models.MintQuoteInfo
 import com.cashu.me.Models.MintQuoteState
+import com.cashu.me.Models.MintTransferOutcome
+import com.cashu.me.Models.MintTransferPlan
+import com.cashu.me.Models.MintTransferStage
 import com.cashu.me.Models.PaymentMethodKind
 import com.cashu.me.Models.PendingReceiveToken
 import com.cashu.me.Models.RestoreMintResult
@@ -53,6 +60,10 @@ import com.cashu.me.Models.SendTokenResult
 import com.cashu.me.Models.TransactionKind
 import com.cashu.me.Models.TransactionType
 import com.cashu.me.Models.WalletTransaction
+import com.cashu.me.Models.awaitingIssuanceMintQuoteIds
+import com.cashu.me.Models.draftMintQuoteIds
+import com.cashu.me.Models.hasUnfinishedTransfer
+import com.cashu.me.Models.ownedMintQuoteIds
 import org.bouncycastle.crypto.digests.SHA512Digest
 import org.bouncycastle.crypto.generators.PKCS5S2ParametersGenerator
 import org.bouncycastle.crypto.params.KeyParameter
@@ -101,6 +112,13 @@ class WalletManager(
     private val initializationMutex = Mutex()
     private val replacement = DurableWalletReplacement(secureStorage, databasePathManager.replacementBoundaryFiles())
     private val mintQuoteSyncService = WalletMintQuoteSyncService(gateway, walletStore)
+    private val mintTransferService = WalletMintTransferService(
+        gateway = gateway,
+        walletStore = walletStore,
+        mints = { mutableState.value.mints },
+        melt = { quoteId, mintUrl, selection -> meltForMintTransfer(quoteId, mintUrl, selection) },
+        issue = { quoteId -> issueMintTransferQuote(quoteId) },
+    )
     private val focusedMintQuoteMonitor = FocusedMintQuoteMonitor()
     private val transactionLoader = WalletTransactionLoader(walletStore, gateway)
     private val npcQuotesInFlight = mutableSetOf<String>()
@@ -122,6 +140,14 @@ class WalletManager(
     // plus [syncPendingMeltQuotes] are the relaunch backstop (iOS
     // WalletManager+PendingMelts parity).
     private val pendingMeltWaiters = mutableMapOf<String, Job>()
+
+    // Transfers between mints that are executing right now. Maintenance reads
+    // their quotes as untouched until the melt begins, so it leaves them be.
+    // Concurrent: the startup sweep runs on Dispatchers.IO.
+    private val mintTransfersInFlight = ConcurrentHashMap.newKeySet<String>()
+    // When this process began managing the wallet. A transfer draft older than
+    // this belongs to a review screen that no longer exists.
+    private val startedAtEpochMillis = System.currentTimeMillis()
 
     // Foreground quote poll (started/stopped on ProcessLifecycle ON_START/ON_STOP
     // so M3 ModalBottomSheet dialog windows don't kill it). Re-checks pending
@@ -256,6 +282,11 @@ class WalletManager(
                         }
                         .onFailure { AppLogger.wallet.error("Wallet saga recovery failed for mint ${mint.url}", it) }
                 }
+                // After saga recovery, so a transfer interrupted mid-melt is
+                // judged on its recovered state rather than mistaken for one
+                // that never started.
+                runCatching { mintTransferService.discardAbandonedDrafts(startedAtEpochMillis) }
+                    .onFailure { AppLogger.wallet.error("Abandoned transfer draft cleanup failed", it) }
                 runCatching { syncPendingMeltQuotes() }
                     .onFailure { AppLogger.wallet.error("Startup pending melt sync failed", it) }
                 runCatching { syncPendingMintQuotes() }
@@ -395,7 +426,11 @@ class WalletManager(
             walletStore.setMintRemoved(normalized, removed = false)
             walletStore.saveMints(updated)
             if (mutableState.value.activeMint == null) walletStore.activeMintURL = fetched.url
-            loadCachedState(needsOnboarding = false)
+            // Adding a mint never ends onboarding by itself: the first-mint
+            // step hands off through the ASCII curtain, which calls
+            // completeOnboarding() once it has full cover. Flipping the gate
+            // here let the wallet show through for the curtain's first frames.
+            loadCachedState(needsOnboarding = mutableState.value.needsOnboarding)
             addedMintUrl = fetched.url
         }
 
@@ -427,6 +462,10 @@ class WalletManager(
         withLoading {
             val trackedMint = mutableState.value.mints.firstOrNull { it.url == mint.url }
                 ?: throw IllegalArgumentException("Mint is no longer tracked.")
+            // Removing either end would drop the wallet that finishes it.
+            if (walletStore.loadMintTransfers().hasUnfinishedTransfer(referencing = trackedMint.url)) {
+                throw MintTransferInProgressException()
+            }
             removeMintWalletBeforeCommit(
                 mintUrl = trackedMint.url,
                 removeWallets = gateway::removeWallets,
@@ -531,6 +570,10 @@ class WalletManager(
                 // Same for NUT-05 amountless; only an unread value keeps the stored one.
                 supportsAmountlessBolt11Melt = fetched.supportsAmountlessBolt11Melt
                     ?: mint.supportsAmountlessBolt11Melt,
+                // Likewise authoritative once reported: a mint that pauses a
+                // direction or drops the rail must stop being offered for
+                // transfers. Only an unreported value keeps the stored one.
+                bolt11Sat = fetched.bolt11Sat ?: mint.bolt11Sat,
                 lastUpdatedEpochMillis = System.currentTimeMillis(),
                 balance = mint.balance,
                 isActive = mint.isActive,
@@ -708,7 +751,7 @@ class WalletManager(
                 loadTransactions()
             }
         }
-        publishReceivedPayment(amount, unit, confirmationOwner)
+        publishMintQuoteReceipt(quoteId, amount, unit, confirmationOwner)
         return amount
     }
 
@@ -723,14 +766,25 @@ class WalletManager(
         force: Boolean = false,
         observingQuoteId: String? = null,
     ): MintQuoteSyncResult {
-        val result = mintQuoteSyncService.syncPendingMintQuote(quoteId, force)
+        val result = reconcileMintQuote(quoteId, force)
         // A prior status poll or websocket check may already have recovered
         // the issue saga. Re-read balances for an already-settled receive too.
         if (result.minted || result.hasSettledPayment) refreshBalance()
         loadTransactions(observingQuoteId = observingQuoteId)
         result.receivedAmount?.let { amount ->
-            publishReceivedPayment(amount, result.unit, confirmationOwner)
+            publishMintQuoteReceipt(quoteId, amount, result.unit, confirmationOwner)
         }
+        return result
+    }
+
+    /**
+     * The one place a quote is reconciled against its mint, so a transfer's
+     * issuance is recorded however it was reached — the transfer itself, a
+     * sweep, or a screen showing the quote.
+     */
+    private suspend fun reconcileMintQuote(quoteId: String, force: Boolean): MintQuoteSyncResult {
+        val result = mintQuoteSyncService.syncPendingMintQuote(quoteId, force)
+        if (result.hasSettledPayment) mintTransferService.noteIssued(quoteId)
         return result
     }
 
@@ -800,31 +854,47 @@ class WalletManager(
         }
         lastMintQuoteSyncAtMs.set(System.currentTimeMillis())
         try {
+            mintTransferService.failEndedTransfers(excluding = mintTransfersInFlight)
             val databaseQuotes = runCatching { gateway.listUnissuedMintQuotes() }
                 .onFailure { AppLogger.wallet.error("Mint quote ledger scan failed", it) }
                 .getOrDefault(emptyList())
+            // Read after the ledger, so a transfer quote created a moment ago
+            // already has its record.
+            val transfers = walletStore.loadMintTransfers()
+            val awaitingIssuanceQuoteIds = transfers.awaitingIssuanceMintQuoteIds
             // App intents are a second durable index. Usually these IDs are
             // already in CDK's list; the union also surfaces a missing local
             // quote instead of silently dropping an older/migrated offer.
             val intentQuoteIds = cashuRequestStore.state.value.requests.mapNotNull { it.quoteId }
-            val quoteIds = (databaseQuotes.map { it.id } + intentQuoteIds).distinct().sorted()
+            // CDK drops a quote from its unissued list the moment it issues,
+            // which saga recovery can do without passing through this sweep.
+            // A committed transfer's quote stays listed until it is seen issued.
+            val quoteIds = (databaseQuotes.map { it.id } + intentQuoteIds + awaitingIssuanceQuoteIds)
+                .distinct()
+                // A transfer still under review has an invoice nothing will
+                // pay until the user confirms.
+                .minus(transfers.draftMintQuoteIds)
+                .sorted()
             if (!force && focusedMintQuoteMonitor.isActive) return 0
             val selectedQuoteIds = mintQuoteSyncService.selectQuoteIdsForSync(
                 quoteIds,
                 force,
-                unsettledOnchainQuoteIds = databaseQuotes.filter {
+                reopenedQuoteIds = databaseQuotes.filter {
                     it.paymentMethod == PaymentMethodKind.Onchain && it.amountIssued == 0L
-                }.map { it.id }.toSet(),
+                }.map { it.id }.toSet() +
+                    // A transfer's payment can settle after its invoice expired.
+                    awaitingIssuanceQuoteIds,
             )
             if (selectedQuoteIds.isEmpty()) return 0
 
             var mintedQuotes = 0
             for (quoteId in selectedQuoteIds) {
                 if (!force && focusedMintQuoteMonitor.isActive) break
-                val result = mintQuoteSyncService.syncPendingMintQuote(quoteId, force)
+                val result = reconcileMintQuote(quoteId, force)
                 result.receivedAmount?.let { amount ->
                     mintedQuotes += 1
-                    publishReceivedPayment(
+                    publishMintQuoteReceipt(
+                        quoteId = quoteId,
                         amount = amount,
                         unit = result.unit,
                         confirmationOwner = ReceiveConfirmationOwner.Home,
@@ -1524,6 +1594,158 @@ class WalletManager(
         throw CashuRequestMintSettling()
     }
 
+    // MARK: - Transfers between held mints (iOS WalletManager+MintTransfer parity)
+
+    /**
+     * Quote moving [amount] from one held mint to another. [amount] is what
+     * arrives; the source pays it plus the fee reserve.
+     *
+     * The quotes exist at both mints from here on. Pass the plan to
+     * [executeMintTransfer], or to [discardMintTransferPlan] if the user backs
+     * out — never just drop it.
+     */
+    suspend fun prepareMintTransfer(
+        sourceMintUrl: String,
+        destinationMintUrl: String,
+        amount: Long,
+    ): MintTransferPlan = prepareMintTransferPlan {
+        mintTransferService.prepare(sourceMintUrl, destinationMintUrl, amount)
+    }
+
+    /**
+     * Quote the largest amount the source can move to the destination in one
+     * payment. Makes several quotes at both mints to find it, so call it for
+     * an explicit request only.
+     */
+    suspend fun prepareMaxMintTransfer(
+        sourceMintUrl: String,
+        destinationMintUrl: String,
+    ): MintTransferPlan = prepareMintTransferPlan {
+        mintTransferService.prepareMax(sourceMintUrl, destinationMintUrl)
+    }
+
+    /**
+     * Run a prepared transfer: pay the destination's invoice from the source,
+     * then issue the ecash at the destination.
+     *
+     * Returns [MintTransferOutcome.Settling] when either leg is slow. Nothing
+     * more is needed from the caller then: the pending-quote sweeps finish it,
+     * across relaunches.
+     */
+    suspend fun executeMintTransfer(
+        plan: MintTransferPlan,
+        onStage: (MintTransferStage) -> Unit = {},
+    ): MintTransferOutcome =
+        // On the manager's scope: a caller that goes away (the screen closing)
+        // must not cancel a transfer between its legs.
+        scope.async {
+            mintTransfersInFlight += plan.id
+            try {
+                mintTransferService.execute(plan, onStage).also {
+                    AppLogger.wallet.info("Mint transfer ${it.logLabel}")
+                }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (error: Throwable) {
+                // A failed transfer may have removed its quotes or changed its row.
+                runCatching { loadTransactions() }
+                throw error
+            } finally {
+                mintTransfersInFlight -= plan.id
+            }
+        }.await()
+
+    /**
+     * Forget a plan the user backed out of. Safe to call at any point: once
+     * the melt has started it removes nothing.
+     */
+    suspend fun discardMintTransferPlan(plan: MintTransferPlan) {
+        // On the manager's scope: backing out usually tears the caller down.
+        scope.launch { mintTransferService.discard(plan) }.join()
+    }
+
+    /**
+     * Quoting creates state at both mints, so it runs on the manager's scope
+     * and always reaches the draft record. A caller that left meanwhile has
+     * nobody to hand the plan to, so the plan is discarded here.
+     */
+    private suspend fun prepareMintTransferPlan(prepare: suspend () -> MintTransferPlan): MintTransferPlan {
+        val preparation = scope.async { prepare() }
+        try {
+            return preparation.await()
+        } catch (cancellation: CancellationException) {
+            scope.launch {
+                val orphaned = runCatching { preparation.await() }.getOrNull() ?: return@launch
+                mintTransferService.discard(orphaned)
+            }
+            throw cancellation
+        }
+    }
+
+    private suspend fun meltForMintTransfer(
+        quoteId: String,
+        mintUrl: String,
+        selection: MeltProofSelection,
+    ): MeltPaymentResult = when (selection) {
+        MeltProofSelection.Automatic -> meltTokens(quoteId, mintUrl)
+        is MeltProofSelection.AllUnspentSkippingSwap -> withLoadingResult {
+            val confirmation = try {
+                gateway.meltAllUnspentSkippingSwap(quoteId, mintUrl, selection.expectedInputFee)
+            } catch (failure: com.cashu.me.Core.CDK.MeltPaymentRecoveryException) {
+                refreshBalance()
+                loadTransactions()
+                throw failure
+            }
+            confirmation.residualSettlement?.let { watchResidualMeltSettlement(it, quoteId) }
+            refreshBalance()
+            loadTransactions()
+            confirmation.result
+        }
+    }
+
+    /**
+     * The destination leg goes through the shared check → mint → verify lane,
+     * so it cannot race a sweep into a second issuance attempt. The quote is a
+     * transfer's, so no receipt is published for it.
+     */
+    private suspend fun issueMintTransferQuote(quoteId: String): Boolean = try {
+        refreshPendingMintQuote(
+            quoteId = quoteId,
+            confirmationOwner = ReceiveConfirmationOwner.InFlow,
+            force = true,
+            // Keeps each attempt's history reload off the on-chain explorer.
+            observingQuoteId = quoteId,
+        ).hasSettledPayment
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (error: Throwable) {
+        // The payment already went out; a failed refresh is just a slow issue.
+        AppLogger.wallet.error("Mint transfer issuance check failed", error)
+        false
+    }
+
+    /**
+     * A skip-swap melt that outlived the gateway's settlement cap keeps its
+     * native confirmation running. Observe it so balance and history refresh
+     * the moment the payment lands, as [watchPendingMelt] does for a handle;
+     * [syncPendingMeltQuotes] takes over after a relaunch.
+     */
+    private fun watchResidualMeltSettlement(settlement: Deferred<*>, quoteId: String) {
+        if (pendingMeltWaiters[quoteId]?.isActive == true) return
+        pendingMeltWaiters[quoteId] = scope.launch {
+            try {
+                settlement.await()
+                refreshBalance()
+                loadTransactions()
+            } catch (error: Throwable) {
+                // Recovery polling retries the reconciliation later.
+                AppLogger.wallet.error("Residual melt settlement failed for quote $quoteId", error)
+            } finally {
+                pendingMeltWaiters.remove(quoteId)
+            }
+        }
+    }
+
     suspend fun loadTransactions(
         includeRemoteObservations: Boolean = true,
         observingQuoteId: String? = null,
@@ -1695,7 +1917,7 @@ class WalletManager(
             this["sat"] = cachedBalance
         }
         val active = activeMintFrom(mints)
-        val transactions = walletStore.loadTransactions()
+        val transactions = transactionLoader.cached(mints)
         val pendingReceiveTokens = walletStore.loadPendingReceiveTokens()
         processedNPCQuotes = walletStore.loadProcessedNPCQuotes().toMutableSet()
         update {
@@ -1866,6 +2088,23 @@ class WalletManager(
         }
     }
 
+    /**
+     * Receipt for ecash issued from a mint quote. A transfer's destination
+     * quote is the user's own money arriving, never a payment received.
+     */
+    private fun publishMintQuoteReceipt(
+        quoteId: String,
+        amount: Long,
+        unit: String,
+        confirmationOwner: ReceiveConfirmationOwner,
+    ) {
+        if (isMintTransferQuote(quoteId)) return
+        publishReceivedPayment(amount, unit, confirmationOwner)
+    }
+
+    private fun isMintTransferQuote(quoteId: String): Boolean =
+        quoteId in walletStore.loadMintTransfers().ownedMintQuoteIds
+
     internal val deletionAction by lazy {
         WalletDeletionAction(::launch, ::deleteWallet)
     }
@@ -1885,6 +2124,15 @@ class WalletManager(
         const val PENDING_QUOTE_POLL_INTERVAL_MS = 10_000L
     }
 }
+
+private val MintTransferOutcome.logLabel: String
+    get() = when (this) {
+        is MintTransferOutcome.Completed -> "completed"
+        is MintTransferOutcome.Settling -> when (leg) {
+            MintTransferOutcome.Leg.Payment -> "payment settling"
+            MintTransferOutcome.Leg.Issuance -> "issuance settling"
+        }
+    }
 
 /** BIP39 PBKDF2-HMAC-SHA512 seed, with the NFKD normalization required by BIP39. */
 internal fun walletBip39Seed(mnemonic: String, passphrase: String = ""): ByteArray {

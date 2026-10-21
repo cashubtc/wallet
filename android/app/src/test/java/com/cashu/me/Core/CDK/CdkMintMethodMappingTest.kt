@@ -2,6 +2,7 @@ package com.cashu.me.Core.CDK
 
 import com.cashu.me.Core.PaymentRequestDecodeResult
 import com.cashu.me.Models.PaymentMethodKind
+import org.cashudevkit.Amount as CdkAmount
 import org.cashudevkit.CurrencyUnit as CdkCurrencyUnit
 import org.cashudevkit.MeltOptions as CdkMeltOptions
 import org.cashudevkit.MeltMethodSettings as CdkMeltMethodSettings
@@ -189,17 +190,60 @@ class CdkMintMethodMappingTest {
         )
     }
 
+    @Test
+    fun bolt11SatCapabilityRequiresThePair() {
+        val capability = nuts(
+            nut04Methods = listOf(
+                mintMethod(CdkPaymentMethod.Bolt11, CdkCurrencyUnit.Usd),
+                mintMethod(CdkPaymentMethod.Bolt12, CdkCurrencyUnit.Sat),
+            ),
+        ).reportedBolt11SatCapability()
+
+        // Bolt11 in another unit, or another rail in sat, is not the pair.
+        assertEquals(false, capability.canMint)
+        assertEquals(true, capability.canMelt)
+    }
+
+    @Test
+    fun disabledNutTurnsTheDirectionOffEvenWhenListed() {
+        val capability = nuts(mintingDisabled = true, meltingDisabled = true)
+            .reportedBolt11SatCapability()
+
+        assertEquals(false, capability.canMint)
+        assertEquals(false, capability.canMelt)
+    }
+
+    @Test
+    fun bolt11SatCapabilityKeepsTheSatLimitsNotAnotherUnits() {
+        val capability = nuts(
+            nut04Methods = listOf(
+                mintMethod(CdkPaymentMethod.Bolt11, CdkCurrencyUnit.Usd, min = 100, max = 200),
+                mintMethod(CdkPaymentMethod.Bolt11, CdkCurrencyUnit.Sat, min = 1, max = 500_000),
+            ),
+            nut05Methods = listOf(
+                meltMethod(CdkPaymentMethod.Bolt11, CdkCurrencyUnit.Sat, min = 10, max = 250_000),
+            ),
+        ).reportedBolt11SatCapability()
+
+        assertEquals(1L, capability.mintMin)
+        assertEquals(500_000L, capability.mintMax)
+        assertEquals(10L, capability.meltMin)
+        assertEquals(250_000L, capability.meltMax)
+    }
+
     private fun mintMethod(
         method: CdkPaymentMethod,
         unit: CdkCurrencyUnit,
         description: Boolean? = null,
+        min: Long? = null,
+        max: Long? = null,
     ) =
         CdkMintMethodSettings(
             method = method,
             unit = unit,
             methodName = null,
-            minAmount = null,
-            maxAmount = null,
+            minAmount = min?.let { CdkAmount(it.toULong()) },
+            maxAmount = max?.let { CdkAmount(it.toULong()) },
             description = description,
         )
 
@@ -207,13 +251,15 @@ class CdkMintMethodMappingTest {
         method: CdkPaymentMethod,
         unit: CdkCurrencyUnit,
         amountless: Boolean? = null,
+        min: Long? = null,
+        max: Long? = null,
     ) =
         CdkMeltMethodSettings(
             method = method,
             unit = unit,
             methodName = null,
-            minAmount = null,
-            maxAmount = null,
+            minAmount = min?.let { CdkAmount(it.toULong()) },
+            maxAmount = max?.let { CdkAmount(it.toULong()) },
             amountless = amountless,
         )
 
@@ -224,9 +270,11 @@ class CdkMintMethodMappingTest {
         nut05Methods: List<CdkMeltMethodSettings> = listOf(
             meltMethod(CdkPaymentMethod.Bolt11, CdkCurrencyUnit.Sat),
         ),
+        mintingDisabled: Boolean = false,
+        meltingDisabled: Boolean = false,
     ) = CdkNuts(
-        nut04 = CdkNut04Settings(methods = nut04Methods, disabled = false),
-        nut05 = CdkNut05Settings(methods = nut05Methods, disabled = false),
+        nut04 = CdkNut04Settings(methods = nut04Methods, disabled = mintingDisabled),
+        nut05 = CdkNut05Settings(methods = nut05Methods, disabled = meltingDisabled),
         nut07Supported = false,
         nut08Supported = false,
         nut09Supported = false,

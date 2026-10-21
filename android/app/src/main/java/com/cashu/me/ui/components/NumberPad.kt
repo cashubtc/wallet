@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -27,11 +28,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.cashu.me.Core.AmountFormatter
 import com.cashu.me.Core.UnitAmountEntry
@@ -41,8 +44,8 @@ import com.cashu.me.ui.theme.CashuTheme
 // Matches iOS NumberPadAmountInput (10pt gaps, up to 64pt keys).
 private val KeyGap = 10.dp
 // Grow toward iOS on roomy screens while preserving the 48dp touch target.
-private val PreferredKeyHeight = 64.dp
-private val MinimumKeyHeight = 48.dp
+internal val NumberPadPreferredKeyHeight = 64.dp
+internal val NumberPadMinimumKeyHeight = 48.dp
 
 /**
  * Minimal numeric keypad for amount entry — no background boxes, just numbers
@@ -71,7 +74,7 @@ fun NumberPad(
     )
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
         val keyHeight = ((maxHeight - KeyGap * 3) / 4)
-            .coerceIn(MinimumKeyHeight, PreferredKeyHeight)
+            .coerceIn(NumberPadMinimumKeyHeight, NumberPadPreferredKeyHeight)
         Column(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(KeyGap),
@@ -131,6 +134,34 @@ fun NumberPad(
             }
         }
     }
+}
+
+/**
+ * The height [NumberPadFooter] takes at ordinary text sizes with keys
+ * [keyHeight] tall: the pad, the button, the gaps around it and the navigation
+ * inset. The pad grows its keys to [NumberPadPreferredKeyHeight] whenever it is
+ * given the room, so a screen that has to decide what else fits above it
+ * budgets against that height, not the minimum.
+ */
+@Composable
+internal fun numberPadFooterHeight(keyHeight: Dp): Dp =
+    keyHeight * 4 + KeyGap * 3 + CashuTheme.spacing.comfortable * 2 + ButtonMinHeight +
+        WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+
+/**
+ * Holds [room] back for the amount cell above an amount-entry footer. A column
+ * measures the footer before its weighted amount cell, so on a short screen
+ * the keys give up height, down to their 48dp minimum, before the amount's
+ * note line is squeezed out (Transfer budgets its pad the same way).
+ */
+fun Modifier.leavingRoomAbove(room: Dp): Modifier = layout { measurable, constraints ->
+    val maxHeight = if (constraints.hasBoundedHeight) {
+        (constraints.maxHeight - room.roundToPx()).coerceAtLeast(constraints.minHeight)
+    } else {
+        constraints.maxHeight
+    }
+    val placeable = measurable.measure(constraints.copy(maxHeight = maxHeight))
+    layout(placeable.width, placeable.height) { placeable.place(0, 0) }
 }
 
 /**

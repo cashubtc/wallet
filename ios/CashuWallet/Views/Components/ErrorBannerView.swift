@@ -39,6 +39,17 @@ enum ErrorSeverity {
         }
     }
 
+    /// Ink for a note written in colour with no glyph: the line under an
+    /// amount. A problem is red whether it is an error or a caution, since
+    /// orange text fails contrast on a light background; anything else stays
+    /// secondary.
+    var noteForeground: Color {
+        switch self {
+        case .error, .caution: return Color(uiColor: .legibleRed)
+        case .info, .success:  return .secondary
+        }
+    }
+
     /// Prefix spoken by VoiceOver so the tier is announced, not just the message.
     var announcementPrefix: String {
         switch self {
@@ -47,6 +58,16 @@ enum ErrorSeverity {
         case .info:    return ""
         case .success: return ""
         }
+    }
+}
+
+private extension UIColor {
+    /// The system red, except in light mode, where it takes the red iOS uses
+    /// under Increase Contrast: the standard one falls short of 4.5:1 as text
+    /// on white. Dark mode's red already clears it.
+    static let legibleRed = UIColor { traits in
+        guard traits.userInterfaceStyle != .dark else { return .systemRed.resolvedColor(with: traits) }
+        return .systemRed.resolvedColor(with: traits.modifyingTraits { $0.accessibilityContrast = .high })
     }
 }
 

@@ -37,7 +37,7 @@ internal object MintQuoteSchedulePolicy {
         existing: Map<String, MintQuoteScheduleRecord>,
         nowEpochMillis: Long,
         force: Boolean,
-        unsettledOnchainQuoteIds: Set<String> = emptySet(),
+        reopenedQuoteIds: Set<String> = emptySet(),
     ): Selection {
         val uniqueIds = quoteIds.asSequence().filter(String::isNotBlank).toSet()
         val records = existing
@@ -50,9 +50,10 @@ internal object MintQuoteSchedulePolicy {
                 MintQuoteScheduleRecord(firstObservedAtEpochMillis = nowEpochMillis),
             )
         }
-        // Reopen schedules created by the old expiry policy while a deposit
-        // was still waiting for confirmations. CDK remains the source of truth.
-        unsettledOnchainQuoteIds.forEach { quoteId ->
+        // Expiry is not always terminal: an on-chain deposit can still be
+        // waiting for confirmations, and a transfer's Lightning payment can
+        // settle after its invoice expired. The durable quote reopens those.
+        reopenedQuoteIds.forEach { quoteId ->
             records[quoteId]?.takeIf { it.isComplete }?.let { record ->
                 records[quoteId] = record.copy(isComplete = false, nextAttemptAtEpochMillis = 0)
             }

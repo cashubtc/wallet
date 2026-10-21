@@ -37,9 +37,51 @@ struct MintInfo: Identifiable, Equatable, Codable {
 
     /// Required on-chain confirmations for minting, if advertised by the mint
     var onchainMintConfirmations: Int? = nil
-    
+
+    /// What the mint advertises for BOLT11 in sat. Nil until a live NUT-06
+    /// fetch reports it, so records persisted before this landed stay unknown
+    /// rather than reading as "unsupported".
+    var bolt11Sat: Bolt11SatCapability? = nil
+
     /// Last updated timestamp
     var lastUpdated: Date = Date()
+}
+
+/// The (bolt11, sat) pair as advertised under NUT-04 and NUT-05 — the rail a
+/// transfer between two held mints runs on. The method lists on `MintInfo`
+/// cannot answer this: mint methods are not unit-filtered and neither list
+/// carries the NUT's `disabled` flag or its amount limits.
+struct Bolt11SatCapability: Equatable, Codable {
+    /// NUT-04 lists (bolt11, sat) and minting is not disabled.
+    var canMint: Bool
+    /// NUT-05 lists (bolt11, sat) and melting is not disabled.
+    var canMelt: Bool
+    var mintMin: UInt64?
+    var mintMax: UInt64?
+    var meltMin: UInt64?
+    var meltMax: UInt64?
+
+    typealias Advertised = (method: PaymentMethodKind?, isSat: Bool, min: UInt64?, max: UInt64?)
+
+    /// A disabled NUT turns the direction off even when the method is listed.
+    /// Limits are kept either way so the capability records what was reported.
+    static func reported(
+        mint: [Advertised],
+        mintingDisabled: Bool,
+        melt: [Advertised],
+        meltingDisabled: Bool
+    ) -> Bolt11SatCapability {
+        let mintMethod = mint.first { $0.method == .bolt11 && $0.isSat }
+        let meltMethod = melt.first { $0.method == .bolt11 && $0.isSat }
+        return Bolt11SatCapability(
+            canMint: mintMethod != nil && !mintingDisabled,
+            canMelt: meltMethod != nil && !meltingDisabled,
+            mintMin: mintMethod?.min,
+            mintMax: mintMethod?.max,
+            meltMin: meltMethod?.min,
+            meltMax: meltMethod?.max
+        )
+    }
 }
 
 /// Lightweight identity + capability preview fetched for discovery / staging
@@ -128,6 +170,7 @@ extension MintInfo {
         case supportsBolt12MintDescription
         case supportsAmountlessBolt11Melt
         case onchainMintConfirmations
+        case bolt11Sat
         case lastUpdated
     }
 
@@ -148,6 +191,7 @@ extension MintInfo {
         supportsBolt12MintDescription = try container.decodeIfPresent(Bool.self, forKey: .supportsBolt12MintDescription) ?? false
         supportsAmountlessBolt11Melt = try container.decodeIfPresent(Bool.self, forKey: .supportsAmountlessBolt11Melt)
         onchainMintConfirmations = try container.decodeIfPresent(Int.self, forKey: .onchainMintConfirmations)
+        bolt11Sat = try container.decodeIfPresent(Bolt11SatCapability.self, forKey: .bolt11Sat)
         lastUpdated = try container.decodeIfPresent(Date.self, forKey: .lastUpdated) ?? Date()
     }
 
@@ -166,6 +210,7 @@ extension MintInfo {
         try container.encode(supportsBolt12MintDescription, forKey: .supportsBolt12MintDescription)
         try container.encodeIfPresent(supportsAmountlessBolt11Melt, forKey: .supportsAmountlessBolt11Melt)
         try container.encodeIfPresent(onchainMintConfirmations, forKey: .onchainMintConfirmations)
+        try container.encodeIfPresent(bolt11Sat, forKey: .bolt11Sat)
         try container.encode(lastUpdated, forKey: .lastUpdated)
     }
 }
@@ -201,11 +246,21 @@ enum MintSelection {
         return mint
     }
 
-    static func sorted(_ mints: [MintInfo], selectedID: String? = nil, minimumAmount: UInt64? = nil) -> [MintInfo] {
+    /// Selected first, then mints `isAvailable` accepts, then those that cover
+    /// `minimumAmount`, then by balance and name.
+    static func sorted(
+        _ mints: [MintInfo], selectedID: String? = nil,
+        isAvailable: ((MintInfo) -> Bool)? = nil, minimumAmount: UInt64? = nil
+    ) -> [MintInfo] {
         mints.sorted { lhs, rhs in
             let lhsSelected = lhs.id == selectedID
             let rhsSelected = rhs.id == selectedID
             if lhsSelected != rhsSelected { return lhsSelected }
+            if let isAvailable {
+                let lhsAvailable = isAvailable(lhs)
+                let rhsAvailable = isAvailable(rhs)
+                if lhsAvailable != rhsAvailable { return lhsAvailable }
+            }
             if let minimumAmount {
                 let lhsCanPay = lhs.balance >= minimumAmount
                 let rhsCanPay = rhs.balance >= minimumAmount

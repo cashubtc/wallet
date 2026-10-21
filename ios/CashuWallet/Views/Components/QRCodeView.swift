@@ -86,12 +86,27 @@ struct QRCodeView: View {
     @State private var timer: Timer?
 
     @State private var encoder: TokenUrEncoder?
-    
+    // Generating the QR on every body pass handed SwiftUI a fresh UIImage each
+    // time; inside an animated update (a quote refresh while the invoice is
+    // showing) the old and new images cross-dissolved and the modules went
+    // grey for a frame. Cache per source string so re-renders reuse the image.
+    @State private var renderedQR: (source: String, image: UIImage)?
+
+    private var displayedQRImage: UIImage? {
+        if let renderedQR, renderedQR.source == currentQRCodeString { return renderedQR.image }
+        return generateQRCode(from: currentQRCodeString)
+    }
+
+    private func cacheQRImage() {
+        guard renderedQR?.source != currentQRCodeString else { return }
+        renderedQR = generateQRCode(from: currentQRCodeString).map { (currentQRCodeString, $0) }
+    }
+
     var body: some View {
         VStack(spacing: 8) {
             // QR Code
             Group {
-                if let image = generateQRCode(from: currentQRCodeString) {
+                if let image = displayedQRImage {
                     Image(uiImage: image)
                         .interpolation(.none)
                         .resizable()
@@ -125,6 +140,9 @@ struct QRCodeView: View {
         }
         .onAppear {
             prepareEncoder()
+        }
+        .onChange(of: currentQRCodeString, initial: true) {
+            cacheQRImage()
         }
         .onChange(of: content) {
             prepareEncoder()

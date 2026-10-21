@@ -8,9 +8,10 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -100,6 +101,9 @@ import com.cashu.me.Views.Components.ScannerQuickAction
 import com.cashu.me.ui.components.SectionHeader
 import com.cashu.me.ui.components.AmountEntryHero
 import com.cashu.me.ui.components.AmountFlipDisplay
+import com.cashu.me.ui.components.AmountNote
+import com.cashu.me.ui.components.AmountNoteLine
+import com.cashu.me.ui.components.AmountNoteLinePlaceholder
 import com.cashu.me.ui.components.CashuTextField
 import com.cashu.me.ui.components.GhostButton
 import com.cashu.me.ui.components.InlineNotice
@@ -120,11 +124,15 @@ import com.cashu.me.ui.components.TwoFaceScreen
 import com.cashu.me.ui.components.UnitPickerSheet
 import com.cashu.me.ui.components.neutralActionButtonColors
 import com.cashu.me.ui.components.shareText
+import com.cashu.me.ui.components.amountHeroHeight
+import com.cashu.me.ui.components.entryNoteRoom
+import com.cashu.me.ui.components.fittingEntryScale
+import com.cashu.me.ui.components.leavingRoomAbove
 import com.cashu.me.ui.settings.P2PKKeyDisplay
 import com.cashu.me.ui.testing.UiTestTags
 import com.cashu.me.ui.theme.CashuTheme
-import com.cashu.me.ui.theme.rememberReducedMotion
 import com.cashu.me.ui.theme.withMonoDigits
+import com.cashu.me.ui.theme.AmountScale
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -600,14 +608,14 @@ private fun InputFace(
     val insufficient = !balanceLoading && amountValue > 0 && amountValue > mintBalance
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val compactHeight = maxHeight < 600.dp
+        val contentWidth = maxWidth - CashuTheme.spacing.comfortable * 2
+        val rowGap = if (compactHeight) CashuTheme.spacing.micro else CashuTheme.spacing.default
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = CashuTheme.spacing.comfortable)
                 .imePadding(),
-            verticalArrangement = Arrangement.spacedBy(
-                if (compactHeight) CashuTheme.spacing.micro else CashuTheme.spacing.default,
-            ),
+            verticalArrangement = Arrangement.spacedBy(rowGap),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
         Spacer(Modifier.height(CashuTheme.spacing.micro))
@@ -621,16 +629,29 @@ private fun InputFace(
             animationSpec = spring(stiffness = Spring.StiffnessMedium),
             label = "amount-color",
         )
-        val reduceMotion = rememberReducedMotion()
-        // One flexible cell between the mint row and the keypad: the amount
-        // centered in it, the notice *overlaid* at its bottom (iOS SendView's
-        // ZStack). As siblings the notice pushed the amount upward the instant
-        // it appeared — a jump you now hit on the first over-balance keystroke.
-        Box(
+        // The mint selector states the available balance, so repeating it in
+        // the note would add visual noise.
+        val note = when {
+            insufficient -> AmountNote("Insufficient balance", NoticeSeverity.Caution)
+            errorText != null -> AmountNote(errorText, NoticeSeverity.Error)
+            else -> null
+        }
+        val noteRoom = entryNoteRoom(note, contentWidth)
+        // One flexible cell between the mint row and the keypad, the amount
+        // centered in it (iOS SendView parity). A note takes the conversion
+        // line under the amount, so it never pushes the amount up. Where the
+        // cell is short the amount steps down a rung instead of squeezing that
+        // line out; a P2PK recipient under it is measured first.
+        Column(
             modifier = Modifier.weight(1f, fill = true).fillMaxWidth(),
-            contentAlignment = Alignment.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
         ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            BoxWithConstraints(
+                modifier = Modifier.weight(1f, fill = false),
+                contentAlignment = Alignment.Center,
+            ) {
+                val entryScale = fittingEntryScale(maxHeight, noteRoom)
                 if (isSatUnit) {
                     AmountFlipDisplay(
                         amountSats = amountSats,
@@ -640,81 +661,56 @@ private fun InputFace(
                         currencyCode = fiatCurrencyCode,
                         useBitcoinSymbol = useBitcoinSymbol,
                         entryRaw = amount,
+                        entryScale = entryScale,
                         primaryAccessibilityPrefix = "Send amount",
                         color = amountColor,
+                        note = note,
+                        holdsNoteLine = true,
                     )
                 } else {
-                    AmountEntryHero(
-                        entryRaw = amount,
-                        isSat = false,
-                        unit = unit,
-                        useBitcoinSymbol = useBitcoinSymbol,
-                        formatter = formatter,
-                        color = amountColor,
-                    )
-                }
-
-                confirmedP2pkPubkey?.let { pubkey ->
-                    P2pkRecipientConfirmation(
-                        confirmedPubkey = pubkey,
-                        recipientIsPrimaryKey = p2pkRecipientIsPrimaryKey,
-                        onEditRecipient = onEditP2pkRecipient,
-                        onRemoveRecipient = onRemoveP2pkRecipient,
-                    )
+                    // A unit with no conversion keeps the line for its notes.
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
+                    ) {
+                        AmountEntryHero(
+                            entryRaw = amount,
+                            isSat = false,
+                            unit = unit,
+                            useBitcoinSymbol = useBitcoinSymbol,
+                            formatter = formatter,
+                            color = amountColor,
+                            scale = entryScale,
+                        )
+                        if (note != null) AmountNoteLine(note) else AmountNoteLinePlaceholder()
+                    }
                 }
             }
 
-            // Fade+scale warning (iOS .transition(.opacity.combined(with: .scale))),
-            // reduce-motion collapses to a plain fade.
-            Column(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                AnimatedVisibility(
-                    visible = insufficient,
-                    enter = if (reduceMotion) {
-                        fadeIn(spring(stiffness = Spring.StiffnessMedium))
-                    } else {
-                        fadeIn(spring(stiffness = Spring.StiffnessMedium)) + scaleIn(
-                            animationSpec = spring(stiffness = Spring.StiffnessMedium),
-                            initialScale = 0.95f,
-                        )
-                    },
-                    exit = fadeOut(spring(stiffness = Spring.StiffnessMedium)),
-                ) {
-                    // The mint selector states the available balance, so
-                    // repeating it in this notice would add visual noise.
-                    InlineNotice(
-                        text = "Insufficient balance",
-                        detail = null,
-                        severity = NoticeSeverity.Caution,
-                        showsContainer = false,
-                        centered = true,
-                        modifier = Modifier.padding(bottom = CashuTheme.spacing.snug),
-                    )
-                }
-                if (errorText != null) {
-                    InlineNotice(
-                        text = errorText,
-                        modifier = Modifier.padding(bottom = CashuTheme.spacing.snug),
-                        severity = NoticeSeverity.Error,
-                    )
-                }
+            confirmedP2pkPubkey?.let { pubkey ->
+                P2pkRecipientConfirmation(
+                    confirmedPubkey = pubkey,
+                    recipientIsPrimaryKey = p2pkRecipientIsPrimaryKey,
+                    onEditRecipient = onEditP2pkRecipient,
+                    onRemoveRecipient = onRemoveP2pkRecipient,
+                )
             }
         }
 
         // The selector sits under the amount and over the keypad, not under the
         // toolbar: it qualifies the amount, so it reads as a setting on the way
         // to the action rather than a second header competing with the title.
-        if (!sending && activeMint != null) {
+        // Stays mounted while the token is being minted: removing both rows
+        // re-balances the column and drops the hero amount 64dp in a single
+        // frame, then pops it back when the face exits. Only the picker and
+        // Max are withdrawn while sending.
+        if (activeMint != null) {
             AmountEntryMintSelector(
                 direction = MintSelectorDirection.Source,
                 mint = activeMint,
                 balanceText = balanceText,
-                onPickMint = onPickMint,
-                onUseMax = if (canUseMax) onUseMax else null,
+                onPickMint = onPickMint.takeIf { !sending },
+                onUseMax = if (canUseMax && !sending) onUseMax else null,
             )
             Spacer(Modifier.height(CashuTheme.spacing.snug))
         }
@@ -728,6 +724,8 @@ private fun InputFace(
             buttonEnabled = canSend,
             buttonLoading = sending,
             buttonModifier = Modifier.testTag(UiTestTags.SendEcashSubmit),
+            // The cell's minimum, with the row gap that follows it.
+            modifier = Modifier.leavingRoomAbove(amountHeroHeight(AmountScale.Compact) + noteRoom + rowGap),
         )
         }
     }
@@ -958,9 +956,21 @@ private fun GeneratedFace(
                 shareSubject = "Cashu token",
                 confirmationMessage = "Copied ecash token",
             )
-            PaymentConfirmationAmount(presentation = amountPresentation, generatedReceipt = true)
-            if (claimState == ClaimState.Checking) {
-                ClaimStatusRow(claimState = claimState)
+            // The amount and its status line share one slot so "Checking…" can
+            // grow in and shrink away (with its own gap) when polling starts or
+            // gives up; removing it outright hopped the rows below up a line.
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                PaymentConfirmationAmount(presentation = amountPresentation, generatedReceipt = true)
+                AnimatedVisibility(
+                    visible = claimState == ClaimState.Checking,
+                    enter = fadeIn(tween(220)) + expandVertically(tween(220)),
+                    exit = fadeOut(tween(220)) + shrinkVertically(tween(220)),
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Spacer(Modifier.height(CashuTheme.spacing.loose))
+                        ClaimStatusRow(claimState = ClaimState.Checking)
+                    }
+                }
             }
             if (!pollingEnabled) {
                 PendingTokenClaimNotice(manualCheckResult)

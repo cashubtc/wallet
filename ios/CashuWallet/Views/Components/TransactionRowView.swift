@@ -5,6 +5,8 @@ struct TransactionRowView: View {
     @ObservedObject private var settings = SettingsManager.shared
     @ObservedObject private var priceService = PriceService.shared
     let transaction: WalletTransaction
+    /// Names a transfer's destination mint in its title, as History does.
+    var mints: [MintInfo] = []
     var horizontalPadding: CGFloat = 4
     var verticalPadding: CGFloat = 16
     var accessibilityHint: String = "Opens transaction details"
@@ -13,11 +15,15 @@ struct TransactionRowView: View {
     var body: some View {
         Button(action: onSelect) {
             HStack(spacing: 14) {
-                TransactionIcon(direction: transaction.type)
+                TransactionIcon(
+                    direction: transaction.type,
+                    isTransfer: transaction.transfer != nil,
+                    isFailed: transaction.status == .failed
+                )
                     .frame(width: 36, height: 36)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(transaction.displayTitle)
+                    Text(transaction.displayTitle(mints: mints))
                         .font(.body.weight(.medium))
                         .lineLimit(1)
 
@@ -42,7 +48,7 @@ struct TransactionRowView: View {
 
     private func rowAccessibilityLabel(for transaction: WalletTransaction) -> String {
         [
-            transaction.displayTitle,
+            transaction.displayTitle(mints: mints),
             transaction.isUnfundedAddress ? nil : formatAmount(transaction),
             transaction.status == .completed ? "completed" : transaction.displayStatusText.lowercased(),
             Self.formatRelativeDate(transaction.date),

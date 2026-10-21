@@ -13,8 +13,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import com.cashu.me.Core.AmountFormatter
+import com.cashu.me.Core.AmountParts
 import com.cashu.me.Core.displayMintUnitAmount
-import com.cashu.me.ui.components.AmountText
+import com.cashu.me.ui.components.AmountHero
+import com.cashu.me.ui.theme.AmountScale
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.withMonoDigits
 
@@ -59,9 +61,10 @@ internal fun paymentConfirmationAmountPresentation(
 }
 
 /**
- * Read-only confirmation hero. The persisted primary unit leads while the
- * conversion remains visible as supporting information; the whole pair is one
- * concise TalkBack stop instead of an iOS-style unit-flip control.
+ * Read-only confirmation hero, at the entry hero's size. The persisted primary
+ * unit leads while the conversion remains visible as supporting information;
+ * the whole pair is one concise TalkBack stop instead of an iOS-style
+ * unit-flip control.
  */
 @Composable
 internal fun PaymentConfirmationAmount(
@@ -108,7 +111,14 @@ internal fun PaymentConfirmationAmount(
                 color = MaterialTheme.colorScheme.onSurface,
             )
         } else {
-            AmountText(text = presentation.primary, style = CashuTheme.type.amountConfirm)
+            // Entry, review and the status face share one hero size (iOS
+            // keeps `.amountHero` through review too), so the amount holds
+            // its size from the keypad to completion.
+            AmountHero(
+                parts = AmountParts.parse(presentation.primary),
+                scale = AmountScale.Hero,
+                animated = false,
+            )
         }
         presentation.alternate?.let { alternate ->
             if (generatedReceipt) {

@@ -15,10 +15,6 @@ struct SendView: View {
     @State private var errorMessage: String?
     @State private var tokenCreationFailure: String?
     @State private var errorSeverity: ErrorSeverity = .error
-    @State private var errorShowsMintAction = false
-    // Optional second line under the error notice (e.g. the change-fee hint);
-    // overrides the generic insufficient-balance detail when set.
-    @State private var errorDetail: String?
     @State private var showMintPicker = false
     @State private var selectedSendMint: MintInfo?
 
@@ -209,18 +205,22 @@ struct SendView: View {
                     .padding(.top, 10)
             }
 
-            // Flexible cell between mint row and keypad: amount centered (Android
-            // InputFace weight spacers), notice pinned to the bottom of the same cell.
-            ZStack {
-                Group {
-                    if isSatSend {
-                        CurrencyAmountDisplay(
-                            sats: amountSats,
-                            primary: $settings.amountDisplayPrimary,
-                            entryRaw: amountString,
-                            isDimmed: isInsufficientBalance
-                        )
-                    } else {
+            // Flexible cell between mint row and keypad, the amount centered in
+            // it (Android InputFace weight spacers). A note takes the
+            // conversion line under the amount.
+            Group {
+                if isSatSend {
+                    CurrencyAmountDisplay(
+                        sats: amountSats,
+                        primary: $settings.amountDisplayPrimary,
+                        entryRaw: amountString,
+                        isDimmed: isInsufficientBalance,
+                        note: sendInputNote,
+                        holdsNoteLine: true
+                    )
+                } else {
+                    // A unit with no conversion keeps the line for its notes.
+                    VStack(spacing: AmountPairMetrics.spacing) {
                         AmountLockup(
                             parts: AmountParts.parse(sendUnitEntryDisplay),
                             role: .amountHero,
@@ -228,31 +228,17 @@ struct SendView: View {
                             isDimmed: isInsufficientBalance
                         )
                         .animation(.snappy, value: isInsufficientBalance)
-                    }
-                }
-
-                VStack {
-                    Spacer(minLength: 0)
-                    if isInsufficientBalance {
-                        // The mint selector states the available balance, so
-                        // repeating it in this notice would add visual noise.
-                        sendInputNotice(
-                            message: "Insufficient balance",
-                            detail: nil,
-                            severity: .caution
-                        )
-                    } else if let error = errorMessage {
-                        sendInputNotice(
-                            message: error,
-                            detail: errorDetail ?? (errorShowsMintAction ? insufficientBalanceDetail : nil),
-                            severity: errorSeverity
-                        )
+                        if let sendInputNote {
+                            AmountNoteLine(note: sendInputNote)
+                                .transition(.asymmetric(insertion: .opacity, removal: .identity))
+                        } else {
+                            AmountNoteLine.placeholder
+                        }
                     }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .animation(reduceMotion ? .easeInOut(duration: 0.2) : .snappy(duration: 0.25), value: isInsufficientBalance)
-            .animation(reduceMotion ? .easeInOut(duration: 0.2) : .snappy(duration: 0.25), value: errorMessage)
+            .animation(reduceMotion ? .easeInOut(duration: 0.2) : .snappy(duration: 0.25), value: sendInputNote)
 
             // The selector sits under the amount and over the keypad, not under
             // the toolbar: it qualifies the amount, so it reads as a setting on
@@ -297,18 +283,14 @@ struct SendView: View {
         .animation(.snappy(duration: 0.3), value: lockWithP2PK)
     }
 
-    /// The send amount face's notice. Positioning only — the rendering belongs
-    /// to `InlineNotice`, which also supplies the VoiceOver severity prefix this
-    /// used to drop back when it was a hand-rolled copy of that component.
-    private func sendInputNotice(
-        message: String,
-        detail: String?,
-        severity: ErrorSeverity
-    ) -> some View {
-        InlineNotice(message: message, severity: severity, detail: detail, isCentered: true)
-            .padding(.horizontal)
-            .padding(.bottom, 8)
-            .transition(.opacity)
+    /// The send amount face's note, said in the conversion line's place.
+    private var sendInputNote: AmountNote? {
+        if isInsufficientBalance {
+            // The mint selector states the available balance, so repeating it
+            // here would add visual noise.
+            return AmountNote(text: "Insufficient balance", severity: .caution)
+        }
+        return errorMessage.map { AmountNote(text: $0, severity: errorSeverity) }
     }
 
     // MARK: - Mint Selector
@@ -812,17 +794,9 @@ struct SendView: View {
         AmountFormatter.sats(sats, useBitcoinSymbol: settings.useBitcoinSymbol)
     }
 
-    /// Secondary line under an insufficient-balance notice: what's actually here.
-    private var insufficientBalanceDetail: String? {
-        guard let mint = displaySendMint else { return nil }
-        return "You have \(sendBalanceText) in \(mint.name)."
-    }
-
-    private func presentError(_ message: String, severity: ErrorSeverity = .error, showsMintAction: Bool = false, detail: String? = nil) {
+    private func presentError(_ message: String, severity: ErrorSeverity = .error) {
         errorMessage = message
         errorSeverity = severity
-        errorShowsMintAction = showsMintAction
-        errorDetail = detail
     }
 
     private func extractMintHost(_ url: String) -> String {
@@ -858,26 +832,42 @@ struct SendView: View {
                     mintUrl: mint.url,
                     unit: unit
                 )
-                generatedToken = result.token
-                generatedTokenMintURL = mint.url
-                generatedTokenUnit = unit
-                generatedAmount = amount
-                tokenFee = result.fee
+                // `sendTokens` refreshes the balance and history (published,
+                // unanimated) right before it returns. Landing in that same
+                // run-loop pass folds this animated write into the unanimated
+                // update and the keypad → token swap renders as a one-frame
+                // cut, so give the landing a pass of its own first.
+                try? await Task.sleep(for: .milliseconds(1))
+                // Every body-read change of the landing goes inside one
+                // animation. `isGenerating` cleared after the do/catch landed
+                // outside it in the same update and cut the swap as well.
+                withAnimation(.smooth(duration: 0.3)) {
+                    generatedToken = result.token
+                    generatedTokenMintURL = mint.url
+                    generatedTokenUnit = unit
+                    generatedAmount = amount
+                    tokenFee = result.fee
+                    isGenerating = false
+                }
                 HapticFeedback.notification(.success)
             } catch {
                 let walletMessage = error.walletMessage
+                let failure: String
                 if error.isInsufficientBalanceError, amount <= effectiveSendBalance {
                     // The balance covers the amount, but the swap that makes
                     // change for it carries a fee the remainder can't absorb —
                     // the plain "Not enough balance." reads as a wallet bug when
                     // the user typed exactly what the screen says they hold.
-                    tokenCreationFailure = "Not enough balance to cover the mint fee. Try Send Max."
+                    failure = "Not enough balance to cover the mint fee. Try Send Max."
                 } else {
-                    tokenCreationFailure = walletMessage.text
+                    failure = walletMessage.text
                 }
-                errorMessage = nil
+                withAnimation(.smooth(duration: 0.3)) {
+                    tokenCreationFailure = failure
+                    errorMessage = nil
+                    isGenerating = false
+                }
             }
-            isGenerating = false
         }
     }
 
@@ -960,9 +950,15 @@ struct SendView: View {
                 if case .claimed = outcome {
                     // Flipping `tokenClaimed` swaps the body to the full-screen
                     // success (owns its own success haptic on appear, so don't
-                    // buzz here). It stays until the user taps Done.
-                    tokenClaimed = true
-                    isCheckingClaim = false
+                    // buzz here). It stays until the user taps Done. Both flags
+                    // change inside one animation, on a run-loop pass of their
+                    // own (the claim check publishes wallet state as it returns),
+                    // or the swap renders as a cut.
+                    try? await Task.sleep(for: .milliseconds(1))
+                    withAnimation(.smooth(duration: 0.3)) {
+                        tokenClaimed = true
+                        isCheckingClaim = false
+                    }
                     break
                 }
 
@@ -986,22 +982,37 @@ struct SendView: View {
         checkingTask = Task {
             isCheckingClaim = true
             manualClaimCheckResult = nil
-            defer { isCheckingClaim = false }
 
             do {
                 let outcome = try await runPendingTokenClaimCheck {
                     try await checkGeneratedTokenClaim(token: token, mintUrl: mintUrl)
                 }
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled else {
+                    isCheckingClaim = false
+                    return
+                }
 
-                manualClaimCheckResult = outcome
-                if case .claimed = outcome {
-                    tokenClaimed = true
+                // The checking flag clears inside the same animation as the
+                // claimed swap; a `defer` would clear it outside and cut the swap.
+                // Same run-loop hop as the polling path above.
+                try? await Task.sleep(for: .milliseconds(1))
+                guard !Task.isCancelled else {
+                    isCheckingClaim = false
+                    return
+                }
+                withAnimation(.smooth(duration: 0.3)) {
+                    manualClaimCheckResult = outcome
+                    if case .claimed = outcome {
+                        tokenClaimed = true
+                    }
+                    isCheckingClaim = false
                 }
                 announceClaimCheckResult(outcome)
             } catch is CancellationError {
+                isCheckingClaim = false
                 return
             } catch {
+                isCheckingClaim = false
                 return
             }
         }
@@ -1769,17 +1780,15 @@ struct UnifiedSendView: View {
                 VStack(spacing: 0) {
                     Spacer(minLength: 0)
 
+                    // A note takes the conversion line under the amount.
                     CurrencyAmountDisplay(
                         sats: amountSats,
                         primary: $settings.amountDisplayPrimary,
-                        entryRaw: amountString
+                        entryRaw: amountString,
+                        note: errorMessage.map { AmountNote(text: $0, severity: errorSeverity) },
+                        holdsNoteLine: true
                     )
-
-                    if let errorMessage {
-                        errorNotice(errorMessage)
-                            .padding(.horizontal)
-                            .padding(.top, 12)
-                    }
+                    .animation(reduceMotion ? .easeInOut(duration: 0.2) : .snappy(duration: 0.25), value: errorMessage)
 
                     Spacer(minLength: 0)
 
@@ -1839,13 +1848,20 @@ struct UnifiedSendView: View {
     private func continueFromAmount() {
         guard amountSats > 0 else { return }
         HapticFeedback.selection()
+        // The preflight's first state changes ride in the step's animation: a
+        // change made outside it in the same update turns the cross-fade into
+        // a cut.
         switch locked {
         case .melt:
-            withAnimation(.smooth(duration: 0.3)) { step = .confirm }
-            fetchMeltQuote()
+            withAnimation(.smooth(duration: 0.3)) {
+                step = .confirm
+                fetchMeltQuote()
+            }
         case .cashuRequest:
-            withAnimation(.smooth(duration: 0.3)) { step = .confirm }
-            recomputeFee()
+            withAnimation(.smooth(duration: 0.3)) {
+                step = .confirm
+                recomputeFee()
+            }
         case nil:
             break
         }
@@ -1855,13 +1871,21 @@ struct UnifiedSendView: View {
     /// face, so it is dropped on the way out — Continue re-runs it against
     /// whatever amount the user settles on.
     private func backToAmount() {
-        cancelMeltQuote()
         HapticFeedback.selection()
         feeTask?.cancel()
-        feeState = .idle
-        meltQuote = nil
-        errorMessage = nil
-        withAnimation(.smooth(duration: 0.3)) { step = .amount }
+        // Everything this tap changes rides in the one animation: a change made
+        // outside it in the same update turns the cross-fade into a cut. The
+        // error goes now, since the amount screen says it too; the quote and
+        // fee are cleared once the confirm face has faded out as it was.
+        withAnimation(.smooth(duration: 0.3)) {
+            cancelMeltQuote()
+            errorMessage = nil
+            step = .amount
+        } completion: {
+            guard step == .amount else { return }
+            feeState = .idle
+            meltQuote = nil
+        }
     }
 
     // MARK: Confirm step
@@ -1900,7 +1924,7 @@ struct UnifiedSendView: View {
             PayFlowScaffold {
                 VStack(spacing: 8) {
                     if let quote = shortQuote {
-                        confirmCautionFace(
+                        ConfirmCautionFace(
                             message: "Not enough balance.",
                             detail: mintInfo(for: quote).map { mint in
                                 "This mint holds \(AmountFormatter.sats(mint.balance, useBitcoinSymbol: settings.useBitcoinSymbol)); the payment reserves up to \(AmountFormatter.sats(quote.totalAmount, useBitcoinSymbol: settings.useBitcoinSymbol))."
@@ -1911,7 +1935,7 @@ struct UnifiedSendView: View {
                         CurrencyAmountDisplay(sats: quote.amount, primary: $settings.amountDisplayPrimary)
                             .transition(.opacity)
                     } else if let errorMessage {
-                        confirmCautionFace(
+                        ConfirmCautionFace(
                             message: errorMessage,
                             detail: errorShowsMintAction ? meltInsufficientDetail : nil
                         )
@@ -1948,7 +1972,7 @@ struct UnifiedSendView: View {
                     // wait (PaymentStatusView.processing parity) — no second
                     // spinner in the button.
                     Button(action: {}) { Text(verbatim: " ") }
-                        .glassButton()
+                        .flatSheetSecondaryButton()
                         .disabled(true)
                         .opacity(0)
                         .accessibilityHidden(true)
@@ -1971,7 +1995,7 @@ struct UnifiedSendView: View {
                         // Nothing actionable — the X closes; the ask stays
                         // visible on the disabled commit.
                         Button(action: payMelt) { Text("Pay \(displayAmount) sat") }
-                            .glassButton()
+                            .flatSheetSecondaryButton()
                             .disabled(true)
                     }
                 } else if meltQuote == nil {
@@ -1980,8 +2004,10 @@ struct UnifiedSendView: View {
                     Button(action: fetchMeltQuote) { Text("Retry Quote") }
                         .flatSheetSecondaryButton()
                 } else {
+                    // Quiet tonal, like the Cashu request's Pay and Transfer's
+                    // commit; Android's neutral fill is the same.
                     Button(action: payMelt) { Text("Pay \(displayAmount) sat") }
-                        .glassButton()
+                        .flatSheetSecondaryButton()
                         .disabled(isWorking || !canPay)
                 }
             }
@@ -1990,34 +2016,6 @@ struct UnifiedSendView: View {
         }
         .animation(.smooth(duration: 0.3), value: meltQuote != nil)
         .animation(.smooth(duration: 0.3), value: errorMessage != nil)
-    }
-
-    /// Preflight caution, in the status screens' hero anatomy — glyph, message,
-    /// secondary detail — centered where the amount hero sits. Always the
-    /// orange warning triangle: a quote failure or balance shortfall spends
-    /// nothing, so it never wears the terminal failures' red (Android renders
-    /// the identical face).
-    private func confirmCautionFace(message: String, detail: String?) -> some View {
-        VStack(spacing: 16) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.statusGlyph)
-                .foregroundStyle(.orange)
-
-            VStack(spacing: 8) {
-                Text(message)
-                    .font(.title2.weight(.semibold))
-                    .multilineTextAlignment(.center)
-
-                if let detail {
-                    Text(detail)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-            }
-            .padding(.horizontal, 32)
-        }
-        .accessibilityElement(children: .combine)
     }
 
     private var meltCompatibleMints: [MintInfo] {
@@ -2032,16 +2030,16 @@ struct UnifiedSendView: View {
         let isOnchain: Bool = { if case .melt(_, .onchain, _) = locked { return true } else { return false } }()
         return VStack(spacing: 0) {
             if isOnchain, case let .melt(request, _, _) = locked {
-                creqDetailRow(label: "To", value: request)
+                PaymentDetailTextRow(label: "To", value: request)
             }
             if let explanation = activeRouteExplanation {
                 CashuRequestRouteExplanationRow(explanation: explanation)
             }
-            creqDetailRow(
+            PaymentDetailTextRow(
                 label: "Network fee",
                 value: AmountFormatter.sats(quote.feeReserve, useBitcoinSymbol: settings.useBitcoinSymbol)
             )
-            creqDetailRow(
+            PaymentDetailTextRow(
                 label: "Total",
                 value: AmountFormatter.sats(quote.totalAmount, useBitcoinSymbol: settings.useBitcoinSymbol)
             )
@@ -2201,15 +2199,22 @@ struct UnifiedSendView: View {
     // MARK: Melt quote + pay
 
     private func fetchMeltQuote() {
-        cancelMeltQuote()
-        guard case let .melt(request, mode, decoded) = locked else { return }
+        guard case let .melt(request, mode, decoded) = locked else {
+            cancelMeltQuote()
+            return
+        }
         guard let mint = activeMeltMint else {
+            cancelMeltQuote()
             presentError("No mint supports \(meltPaymentMethod.displayName) payments.")
             return
         }
-        isWorking = true
-        errorMessage = nil
-        meltQuote = nil
+        // Retry Quote swaps the face too, so these animate wherever they run.
+        withAnimation(.smooth(duration: 0.3)) {
+            cancelMeltQuote()
+            isWorking = true
+            errorMessage = nil
+            meltQuote = nil
+        }
         let amount = amountSats
         meltQuoteTask = Task { @MainActor in
             defer { if !Task.isCancelled { isWorking = false } }
@@ -2236,13 +2241,22 @@ struct UnifiedSendView: View {
                     }
                 }
                 guard !Task.isCancelled, step == .confirm else { return }
-                meltQuote = quote
-                if let resolved = mintInfo(for: quote) { selectedMint = resolved }
+                // The quote landing swaps the waiting face for confirm. The
+                // working flag clears in the same animation; left to the
+                // `defer` it would land outside it and cut the swap.
+                withAnimation(.smooth(duration: 0.3)) {
+                    isWorking = false
+                    meltQuote = quote
+                    if let resolved = mintInfo(for: quote) { selectedMint = resolved }
+                }
             } catch {
                 guard !Task.isCancelled else { return }
                 // Quote creation is a preflight, not a payment. Keep its failure inline
                 // on confirm so it can never be presented as a failed melt.
-                withAnimation(.smooth(duration: 0.3)) { presentError(from: error) }
+                withAnimation(.smooth(duration: 0.3)) {
+                    isWorking = false
+                    presentError(from: error)
+                }
             }
         }
     }
@@ -2735,7 +2749,7 @@ struct UnifiedSendView: View {
                     CashuRequestRouteExplanationRow(explanation: explanation)
                 }
                 if let memo = creqMemo(creq) {
-                    creqDetailRow(label: "Memo", value: memo)
+                    PaymentDetailTextRow(label: "Memo", value: memo)
                 }
                 creqFeesRow
             }
@@ -2827,16 +2841,6 @@ struct UnifiedSendView: View {
                 Text("—").foregroundStyle(.secondary)
             }
         }
-    }
-
-    private func creqDetailRow(label: String, value: String) -> some View {
-        PaymentDetailPair(label: label) {
-            Text(value)
-                .fontWeight(.regular)
-                .truncationMode(.tail)
-        }
-        .paymentDetailRow()
-        .accessibilityElement(children: .combine)
     }
 
     // MARK: Input actions
@@ -3034,6 +3038,11 @@ struct MintSelectorSheet: View {
     private let paymentMethod: PaymentMethodKind?
     private let amountlessBolt11: Bool
     private let minimumAmount: UInt64?
+    private let title: LocalizedStringKey
+    /// Why a listed mint cannot be chosen, or nil when it can. Such a mint
+    /// stays in the list, dimmed, with the reason in place of its balance, so
+    /// the user can see why it is not on offer.
+    private let unavailableReason: ((MintInfo) -> String?)?
     private let onSelect: ((MintInfo) -> Void)?
 
     /// A stable viewport for the title and roughly four mint rows. Additional
@@ -3046,6 +3055,8 @@ struct MintSelectorSheet: View {
         paymentMethod: PaymentMethodKind? = nil,
         amountlessBolt11: Bool = false,
         minimumAmount: UInt64? = nil,
+        title: LocalizedStringKey = "Choose mint",
+        unavailableReason: ((MintInfo) -> String?)? = nil,
         onSelect: ((MintInfo) -> Void)? = nil
     ) {
         _selectedMint = selectedMint
@@ -3053,6 +3064,8 @@ struct MintSelectorSheet: View {
         self.paymentMethod = paymentMethod
         self.amountlessBolt11 = amountlessBolt11
         self.minimumAmount = minimumAmount
+        self.title = title
+        self.unavailableReason = unavailableReason
         self.onSelect = onSelect
     }
 
@@ -3067,7 +3080,7 @@ struct MintSelectorSheet: View {
                     mintListView
                 }
             }
-            .navigationTitle("Choose mint")
+            .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
         }
         .presentationDetents([.height(Self.pickerHeight)])
@@ -3103,7 +3116,12 @@ struct MintSelectorSheet: View {
             filteredMints = sourceMints
         }
 
-        return MintSelection.sorted(filteredMints, selectedID: selectedMint?.id, minimumAmount: minimumAmount)
+        return MintSelection.sorted(
+            filteredMints,
+            selectedID: selectedMint?.id,
+            isAvailable: unavailableReason.map { reason in { (mint: MintInfo) in reason(mint) == nil } },
+            minimumAmount: minimumAmount
+        )
     }
 
     private var sourceMints: [MintInfo] {
@@ -3114,13 +3132,16 @@ struct MintSelectorSheet: View {
         ScrollView {
             VStack(spacing: 0) {
                 ForEach(displayMints) { mint in
+                    let reason = unavailableReason?(mint)
                     Button(action: { selectMint(mint) }) {
-                        MintPickerRow(mint: mint, subtitle: mintSubtitle(for: mint), isSelected: selectedMint?.id == mint.id, showsSelectionBadge: true)
+                        MintPickerRow(mint: mint, subtitle: reason ?? mintSubtitle(for: mint), isSelected: selectedMint?.id == mint.id, showsSelectionBadge: true)
                         .padding(.horizontal, 20)
                         .padding(.vertical, 12)
                         .contentShape(Rectangle())
+                        .opacity(reason == nil ? 1 : DisabledControlOpacity.content)
                     }
                     .buttonStyle(.plain)
+                    .disabled(reason != nil)
                 }
             }
         }

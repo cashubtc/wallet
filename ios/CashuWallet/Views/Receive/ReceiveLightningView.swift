@@ -176,11 +176,13 @@ struct ReceiveLightningView: View {
                             .accessibilityLabel("Share request")
                         }
                     }
-                } else if requestFailure == nil && shouldShowMethodPicker && !isCreatingRequest && !isPaid {
+                } else if requestFailure == nil && shouldShowMethodPicker && !isPaid {
                     // Liquid Glass method switcher. On iOS 26 the toolbar renders
                     // bar buttons as glass, so this reads as a sibling of the
                     // close button by construction. Replaces the old inline
-                    // `methodChip` text affordance.
+                    // `methodChip` text affordance. Stays mounted while the
+                    // request is being created (disabled, not removed): dropping
+                    // toolbar items mid-tap re-laid out the bar in one frame.
                     ToolbarItem(placement: .topBarTrailing) {
                         Button {
                             HapticFeedback.selection()
@@ -190,6 +192,7 @@ struct ReceiveLightningView: View {
                                 .contentTransition(.symbolEffect(.replace))
                                 .toolbarIconTapTarget()
                         }
+                        .disabled(isCreatingRequest)
                         // Both reusable options share title + glyph, so the
                         // descriptor is what tells "fixed" from "any amount".
                         .accessibilityLabel("Receive method: \(selectedOption.friendlyTitle), \(selectedOption.friendlyDescriptor)")
@@ -200,7 +203,7 @@ struct ReceiveLightningView: View {
                 // Unit selector — only in the amount-entry state, for a mint that
                 // can mint more than one unit (on-chain is amountless, no unit).
                 // Declared after the method button so it sits to its right.
-                if requestFailure == nil, mintQuote == nil, !isCreatingRequest, selectedMethod != .onchain,
+                if requestFailure == nil, mintQuote == nil, selectedMethod != .onchain,
                    let mint = walletManager.activeMint, mint.supportsMultipleMintUnits {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button {
@@ -210,6 +213,7 @@ struct ReceiveLightningView: View {
                             Text(effectiveUnit.uppercased())
                                 .font(.subheadline.weight(.semibold))
                         }
+                        .disabled(isCreatingRequest)
                         .accessibilityLabel("Unit: \(effectiveUnit.uppercased())")
                         .accessibilityHint("Choose the unit to mint")
                     }
@@ -469,7 +473,9 @@ struct ReceiveLightningView: View {
             Spacer()
 
             // Under the amount, over the keypad — the same slot the send flows use.
-            if !isCreatingRequest, let mint = walletManager.activeMint {
+            // Stays mounted while the request is being created: removing it
+            // re-centred the hero amount 28pt lower in a single frame.
+            if let mint = walletManager.activeMint {
                 mintSelector(mint: mint)
                     // Aligned to the number pad below, not the CTA.
                     .padding(.horizontal, NumberPadMetrics.gutter)
@@ -573,7 +579,8 @@ struct ReceiveLightningView: View {
             mint: mint,
             // One mint means nothing to choose between, so the row drops its
             // chevron and stops opening a picker that would list a single row.
-            onChooseMint: walletManager.mints.count > 1 ? { showMintPicker = true } : nil
+            // The picker is also withdrawn while a request is in flight.
+            onChooseMint: walletManager.mints.count > 1 && !isCreatingRequest ? { showMintPicker = true } : nil
         )
     }
 
@@ -1169,7 +1176,20 @@ struct ReceiveLightningView: View {
                     description: advertisedOfferDescription
                 )
                 guard !Task.isCancelled else { return }
-                mintQuote = quote
+                // `createMintQuote` reloads History (published, unanimated)
+                // right before it returns; landing in that run-loop pass folds
+                // this animated write into the unanimated update and the swap
+                // renders as a cut. Give the landing a pass of its own.
+                try? await Task.sleep(for: .milliseconds(1))
+                guard !Task.isCancelled else { return }
+                // The face swap carries `.transition(.opacity)`; it only plays
+                // when every body-read change of the landing is inside one
+                // animation, including the flag the Task's `defer` would
+                // otherwise clear outside it a moment later.
+                withAnimation(.smooth(duration: 0.3)) {
+                    mintQuote = quote
+                    isCreatingRequest = false
+                }
             } catch {
                 guard !Task.isCancelled else { return }
                 requestFailure = ReceiveRequestFailure(
@@ -1267,8 +1287,14 @@ struct ReceiveLightningView: View {
                     )
                 }
                 guard !Task.isCancelled else { return }
-                quoteCreatedAt = quote.updatedAt ?? Date()
-                mintQuote = quote
+                // Own run-loop pass for the landing; see the BOLT11 path above.
+                try? await Task.sleep(for: .milliseconds(1))
+                guard !Task.isCancelled else { return }
+                withAnimation(.smooth(duration: 0.3)) {
+                    quoteCreatedAt = quote.updatedAt ?? Date()
+                    mintQuote = quote
+                    isCreatingRequest = false
+                }
             } catch {
                 guard !Task.isCancelled else { return }
                 requestFailure = ReceiveRequestFailure(
@@ -1335,10 +1361,16 @@ struct ReceiveLightningView: View {
                     )
                 }
                 guard !Task.isCancelled else { return }
+                // Own run-loop pass for the landing; see the BOLT11 path above.
+                try? await Task.sleep(for: .milliseconds(1))
+                guard !Task.isCancelled else { return }
                 // A reused address keeps the date it was made, the same date
                 // its History row shows.
-                quoteCreatedAt = quote.updatedAt ?? Date()
-                mintQuote = quote
+                withAnimation(.smooth(duration: 0.3)) {
+                    quoteCreatedAt = quote.updatedAt ?? Date()
+                    mintQuote = quote
+                    isCreatingRequest = false
+                }
             } catch {
                 guard !Task.isCancelled else { return }
                 requestFailure = ReceiveRequestFailure(
@@ -1434,7 +1466,10 @@ struct ReceiveLightningView: View {
             quoteStatusTask?.cancel()
             monitoredQuoteId = nil
             expiryTimer?.invalidate()
-            mintQuote = result.quote
+            // The refreshed quote lands in the same update as `isPaid`; set
+            // outside the animation it would turn the QR face's exit into a cut.
+            try? await Task.sleep(for: .milliseconds(1))
+            withAnimation(.smooth(duration: 0.3)) { mintQuote = result.quote }
             await completeReceivedQuote(receivedAmount: result.quote.amountIssued)
             return
         }
@@ -1542,8 +1577,22 @@ struct ReceiveLightningView: View {
             force: force,
             observingQuoteID: quote.id
         ), !Task.isCancelled, mintQuote?.id == quote.id else { return }
-        mintQuote = result.quote
-        mintRetryStatus = result.retryStatus
+        if result.hasSettledPayment {
+            // A settled refresh is followed by the paid swap in the same
+            // update; every body-read change of that update must sit inside
+            // the animation or the QR face's exit renders as a cut. The
+            // status check may have published wallet state as it returned,
+            // so the swap first takes a run-loop pass of its own.
+            try? await Task.sleep(for: .milliseconds(1))
+            guard !Task.isCancelled, mintQuote?.id == quote.id else { return }
+            withAnimation(.smooth(duration: 0.3)) {
+                mintQuote = result.quote
+                mintRetryStatus = result.retryStatus
+            }
+        } else {
+            mintQuote = result.quote
+            mintRetryStatus = result.retryStatus
+        }
 
         if result.quote.paymentMethod == .bolt12 {
             if let amount = reusablePaymentObservation.newlyIssuedAmount(result.quote.amountIssued) {
@@ -1565,28 +1614,35 @@ struct ReceiveLightningView: View {
     @MainActor
     private func completeReceivedQuote(receivedAmount: UInt64? = nil) async {
         guard !isPaid else { return }
-        self.receivedAmount = receivedAmount
-        isPaid = true
         expiryTimer?.invalidate()
+        // Every observed change of this update sits inside one animation —
+        // the paid flag, the monitor state, and the wallet notification the
+        // home screen listens to. Any of them landing outside it turned the
+        // QR face's fast exit into a single-frame cut.
+        withAnimation(.smooth(duration: 0.3)) {
+            self.receivedAmount = receivedAmount
+            isPaid = true
+            // Returning to a reusable QR starts monitoring again with the
+            // same issuance baseline, so the previous payment cannot replay
+            // success.
+            monitoredQuoteId = nil
 
-        // Fire the home-screen toast (same notification the NPC mint flow
-        // posts from WalletManager) so the user sees the receipt on the home
-        // screen after dismiss.
-        if let quote = mintQuote,
-           let amount = receivedAmount ?? quote.amount,
-           amount > 0 {
-            walletManager.postReceivedMintNotification(
-                amount: amount,
-                unit: quote.unit,
-                homeHaptic: false
-            )
+            // Fire the home-screen toast (same notification the NPC mint flow
+            // posts from WalletManager) so the user sees the receipt on the
+            // home screen after dismiss.
+            if let quote = mintQuote,
+               let amount = receivedAmount ?? quote.amount,
+               amount > 0 {
+                walletManager.postReceivedMintNotification(
+                    amount: amount,
+                    unit: quote.unit,
+                    homeHaptic: false
+                )
+            }
         }
 
-        // Returning to a reusable QR starts monitoring again with the same
-        // issuance baseline, so the previous payment cannot replay success.
         quoteStatusTask?.cancel()
         onchainObservationTask?.cancel()
-        monitoredQuoteId = nil
     }
 
 
