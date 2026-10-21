@@ -303,6 +303,9 @@ Back path.
   Material's own timing.
 - **I5 / I6** Onboarding mint-list cut before the curtain; mint-detail rows
   reflow as data loads. Cosmetic.
+- **I12** iOS compact Send/Receive sheet steps to its new height when a
+  multi-line token is pasted (the detent height cannot be animated as
+  written); the sheet leaves for the claim page within a second.
 
 ## Where to look in the diff
 

@@ -112,8 +112,8 @@
 <p>
   <strong>Second pass, 2026-10-22 (ecash + transfer):</strong> the branch now sits on top of the mint-transfer branch
   (<a href="https://github.com/cashubtc/wallet/pull/404">PR #404</a>), and the audit was extended to generating ecash,
-  pasting and claiming a token, and the new Transfer flow on both platforms. Ten more findings (A12–A16, I7–I11), all fixed
-  and re-verified; see <a href="#pass2">section 9</a>. One of them (I9) is the first pass's I3 coming back on the merged
+  pasting and claiming a token, and the new Transfer flow on both platforms. Eleven more findings (A12–A16, I7–I12), ten fixed
+  and re-verified on the Pixel 7a and the simulator, one left open (I12); see <a href="#pass2">section 9</a>. One of them (I9) is the first pass's I3 coming back on the merged
   branch, with a more robust fix. The transfer flow itself moves cleanly on both platforms;
   its only blemish was a popping header chevron on Android.
 </p>
@@ -132,11 +132,11 @@
     <tr><td><a href="#A9">A9</a></td><td><span class="plat">Android</span></td><td>Onboarding · Add mint → wallet</td><td>Wallet home shows through for ~150 ms, fades out, curtain holds 2 s, wallet fades in again</td><td>double reveal</td><td><span class="sev medium">Medium</span></td><td><a href="#fix-A9"><span class="sev low">Fixed</span></a></td></tr>
     <tr><td><a href="#A10">A10</a></td><td><span class="plat">Android</span></td><td>Any screen with blur (API 31+)</td><td>Emulator renders 1–3 frames per transition on API 36; same build is 60 fps on API 29. Checked on a Pixel 7a: not an issue on hardware</td><td>emulator only</td><td><span class="sev low">Closed</span></td><td><span class="sev info">n/a</span></td></tr>
     <tr><td><a href="#A11">A11</a></td><td><span class="plat">Android</span></td><td>Onboarding · Create Wallet</td><td>Caution + checkbox accessory slides in from off-screen left and is clipped by the screen edge</td><td>~150 ms</td><td><span class="sev low">Low</span></td><td><a href="#fix-A11"><span class="sev low">Fixed</span></a></td></tr>
-    <tr><td><a href="#A12">A12</a></td><td><span class="plat">Android</span></td><td>Send Ecash · token face, polling gives up</td><td>"Checking…" row removed outright; the Unit/Mint rows below hop up</td><td>96 px (36 dp), 1 frame</td><td><span class="sev low">Low</span></td><td><a href="#fix-A12"><span class="sev info">Fix applied</span></a></td></tr>
+    <tr><td><a href="#A12">A12</a></td><td><span class="plat">Android</span></td><td>Send Ecash · token face, polling gives up</td><td>"Checking…" row removed outright; the Unit/Mint rows below hop up</td><td>96 px (36 dp), 1 frame</td><td><span class="sev low">Low</span></td><td><a href="#fix-A12"><span class="sev low">Fixed</span></a></td></tr>
     <tr><td><a href="#A13">A13</a></td><td><span class="plat">Android</span></td><td>Receive · tap the token field</td><td>Sheet re-anchors to the keyboard inset before the keyboard has started to move: the whole compact sheet jumps to the top in one frame, then the keyboard slides in beneath it</td><td>760 px (290 dp), 1 frame</td><td><span class="sev high">High</span></td><td><a href="#fix-A13"><span class="sev low">Fixed</span></a></td></tr>
-    <tr><td><a href="#A14">A14</a></td><td><span class="plat">Android</span></td><td>Receive · token wraps while typing</td><td>Field grows a line at a time with no height animation; Scan/Ecash/Bitcoin rows hop down</td><td>1 line per hop</td><td><span class="sev low">Low</span></td><td><a href="#fix-A14"><span class="sev info">Fix applied</span></a></td></tr>
+    <tr><td><a href="#A14">A14</a></td><td><span class="plat">Android</span></td><td>Receive · token wraps while typing</td><td>Field grows a line at a time with no height animation; Scan/Ecash/Bitcoin rows hop down</td><td>1 line per hop</td><td><span class="sev low">Low</span></td><td><a href="#fix-A14"><span class="sev low">Fixed</span></a></td></tr>
     <tr><td><a href="#A15">A15</a></td><td><span class="plat">Android</span></td><td>Receive / Send · token → claim page</td><td>Keyboard stays over the home screen ~1 s after the sheet has gone, then vanishes in one frame as the claim page enters</td><td>19 % of pixels, 1 frame</td><td><span class="sev medium">Medium</span></td><td><a href="#fix-A15"><span class="sev low">Fixed</span></a></td></tr>
-    <tr><td><a href="#A16">A16</a></td><td><span class="plat">Android</span></td><td>Transfer · Continue / Back</td><td>Header back chevron pops in and out (the header composable is swapped, not animated)</td><td>1 frame</td><td><span class="sev low">Low</span></td><td><a href="#fix-A16"><span class="sev info">Fix applied</span></a></td></tr>
+    <tr><td><a href="#A16">A16</a></td><td><span class="plat">Android</span></td><td>Transfer · Continue / Back</td><td>Header back chevron pops in and out (the header composable is swapped, not animated)</td><td>1 frame</td><td><span class="sev low">Low</span></td><td><a href="#fix-A16"><span class="sev low">Fixed</span></a></td></tr>
     <tr><td><a href="#I1">I1</a></td><td><span class="plat">iOS</span></td><td>Send · destination resolves → amount face</td><td>Send sheet is dismissed and a new sheet presented; wallet home fully visible in between</td><td>~0.6 s of home</td><td><span class="sev high">High</span></td><td><span class="sev info">Open</span></td></tr>
     <tr><td><a href="#I2">I2</a></td><td><span class="plat">iOS</span></td><td>Send · Continue → quote → confirm</td><td>"Processing…" → confirm face is a single-frame cut; To row and chevron snap back</td><td>8.2 % of pixels, 1 frame @60 fps</td><td><span class="sev high">High</span></td><td><a href="#fix-I2"><span class="sev low">Fixed</span></a></td></tr>
     <tr><td><a href="#I3">I3</a></td><td><span class="plat">iOS</span></td><td>Receive Lightning · Create invoice</td><td>Toolbar chips and "To Testnut mint" removed instantly, amount drops; 0.46 s later keypad → invoice is a cut</td><td>+84 px (28 pt); 23.7 % cut</td><td><span class="sev high">High</span></td><td><a href="#fix-I3"><span class="sev low">Fixed</span></a></td></tr>
@@ -148,6 +148,7 @@
     <tr><td><a href="#I9">I9</a></td><td><span class="plat">iOS</span></td><td>Receive Lightning · Create invoice (merged branch)</td><td>The invoice face lands as a cut again, on Testnut and on the local mint; the paid face cuts on the local mint. I3's fix races the wallet's History reload</td><td>22 % / 29 %, 1 frame</td><td><span class="sev high">High</span></td><td><a href="#fix-I9"><span class="sev low">Fixed</span></a></td></tr>
     <tr><td><a href="#I10">I10</a></td><td><span class="plat">iOS</span></td><td>Mints · Add mint completes</td><td>Keyboard vanishes in one frame while the sheet is still in place, then the sheet dismisses</td><td>17 % of pixels, 1 frame</td><td><span class="sev low">Low</span></td><td><a href="#fix-I10"><span class="sev low">Fixed</span></a></td></tr>
     <tr><td><a href="#I11">I11</a></td><td><span class="plat">iOS</span></td><td>Receive Lightning · quote refresh while the invoice shows</td><td>QR modules turn grey for one frame when a status poll replaces the quote (two images cross-dissolve)</td><td>12 % of pixels, 1 frame</td><td><span class="sev low">Low</span></td><td><a href="#fix-I11"><span class="sev low">Fixed</span></a></td></tr>
+    <tr><td><a href="#I12">I12</a></td><td><span class="plat">iOS</span></td><td>Send / Receive · multi-line paste into the compact sheet</td><td>The content-fit detent takes its new height in one frame when a four-line token is pasted</td><td>~27 pt, 1 frame</td><td><span class="sev low">Low</span></td><td><span class="sev info">Open</span></td></tr>
   </tbody>
 </table>
 
@@ -497,10 +498,9 @@
   could be recorded live.
 </p>
 <p class="small">
-  <strong>Pixel filmstrips for this pass are still to come.</strong> The Android recordings were taken and measured (the
-  numbers below are from them), but the machine rebooted before the strips were cut and the recordings did not survive it.
-  A13 and A15 were re-recorded on the fixed build before that and read as animated in the per-frame scan; A12, A14 and A16
-  still need their hardware re-check, so they are marked "fix applied" rather than "fixed".
+  Every Android finding in this pass was recorded twice on the Pixel 7a: on the merged branch without the fixes ("before")
+  and on the fixed build ("after"), with the same script, so the strips below are like for like. The first set of
+  recordings was lost to a reboot; the strips are from the second set, whose numbers match the first.
 </p>
 <p class="small">
   Two mints are needed for Transfer. The release build refuses cleartext mint URLs, so the capture build carried a one-line,
@@ -518,6 +518,7 @@
   <dt>Measured</dt><dd>Rows move 96 px (36 dp) between two consecutive 90 fps frames.</dd>
   <dt>Cause</dt><dd><code>SendEcashScreen.kt</code>: <code>if (claimState == ClaimState.Checking) { ClaimStatusRow(…) }</code> inside a <code>spacedBy</code> column; the row's own <code>AnimatedContent</code> never gets to run its exit because the row is dropped from composition.</dd>
 </dl>
+<figure><img src="img/px-sendecash-checking-row-before-strip.jpg" alt="Pixel filmstrip of the Checking row vanishing and the rows below hopping up"><figcaption>Before: between 120.36 s and 120.37 s the row is gone and Unit/Mint sit 36 dp higher.</figcaption></figure>
 </section>
 
 <section class="finding" id="A13">
@@ -528,6 +529,7 @@
   <dt>Measured</dt><dd>Title moves 760 px (290 dp) in one 90 fps frame; 11.7 % of pixels change in that frame, the keyboard's own frames follow at 4–5 % each.</dd>
   <dt>Cause</dt><dd>Same mechanism as A1's keyboard case: Material's <code>ModalBottomSheet</code> includes the IME in its window insets and re-anchors to the new inset instantly, while the sheet content's <code>imePadding()</code> animates. The Send sheet got keyboard-blind insets in the first pass; the Receive sheet did not.</dd>
 </dl>
+<figure><img src="img/px-receive-keyboard-before-strip.jpg" alt="Pixel filmstrip of the Receive sheet jumping to the top before the keyboard appears"><figcaption>Before (pre-fix build, 90 fps): between 10.63 s and 10.65 s the sheet is at the top with no keyboard; the keyboard slides in over the following frames.</figcaption></figure>
 </section>
 
 <section class="finding" id="A14">
@@ -543,15 +545,18 @@
   <dt>Measured</dt><dd>Keyboard removal: 19.4 % of pixels in one frame, 1.2 s after the sheet finished leaving.</dd>
   <dt>Cause</dt><dd>The IME is attached to the sheet's window. Routing closes the sheet without resigning the field, so the keyboard stays until that window is torn down, which happens when the handoff completes and the claim overlay is mounted.</dd>
 </dl>
+<figure><img src="img/px-receive-handoff-before-strip.jpg" alt="Pixel filmstrip of the keyboard lingering over the home screen and then vanishing as the claim page enters"><figcaption>Before: the sheet is gone by 16.45 s, the keyboard sits over the home screen until 17.55 s, and is gone in the frame where the claim page starts to fade in.</figcaption></figure>
 </section>
 
 <section class="finding" id="A16">
 <h3>A16 · Transfer: the header chevron pops in and out <span class="sev low">Low</span></h3>
 <p>Continue swaps the sheet's <code>FlowSheetTitle</code> for a <code>SheetHeader</code> with a back chevron, and Back swaps it back. Both are composable swaps, so the chevron appears on the first frame of the forward transition and disappears on the first frame of the back transition, while the faces themselves cross-fade. The title does not move (both headers share the same metrics).</p>
+<figure><img src="img/px-transfer-chevron-before-strip.jpg" alt="Pixel filmstrip of the Transfer chevron present on the first frame after Continue"><figcaption>Before: the chevron is fully there at 24.28 s, the first frame after the tap, while the entry face has only begun to fade.</figcaption></figure>
 </section>
 
 <div class="note ok">
 <p><strong>Transfer transitions that looked right (Pixel 7a):</strong> sheet open; swap (names and balances replace in place over ~5 frames, glyph half-turn); Max (amount and "Using Max" cross-fade over 4 frames); Continue → entry fades out, spinner, review fades in with its rows; Transfer → hero becomes spinner + "Transferring… / Leaving …" with the From/To/fee/Total rows held still; success morphs the spinner into the check, "Total" leaves, the amount takes the hero; Back → entry; close.</p>
+<p><strong>Also checked on the Pixel 7a, nothing to report:</strong> Receive → Ecash (new Cashu request page: the standard push transition in and out); Send → Tap (contactless face swap in and back); Send → Lightning address → amount face and back (the first pass's A1 fix holds with the field animation in place); Send → paste a token → claim page (same handoff as Receive, now keyboard-first).</p>
 <p><strong>Ecash transitions that looked right (Pixel 7a):</strong> Send → Ecash sheet swap; keypad → token face (fade-through, title cross-fades to "Pending Ecash"); Copy toast; claim page enter (slide + fade) and exit; "Claiming…" → "Payment Received!" (spinner morphs into the check in place); Receive → Bitcoin; mint picker open/pick; Create invoice → invoice face → paid face on the local mint.</p>
 </div>
 
@@ -590,27 +595,36 @@
 <figure><img src="img/ios-receive-qr-grey-before-strip.jpg" alt="iOS filmstrip of the QR turning grey for one frame"><figcaption>Local mint, before: the QR is grey in the middle frame only.</figcaption></figure>
 </section>
 
+<section class="finding" id="I12">
+<h3>I12 · Send / Receive: the compact sheet steps to its new height on a multi-line paste <span class="sev low">Low</span></h3>
+<p>Pasting a four-line token into the compact Send (or Receive) sheet re-measures its content-fit detent and the sheet takes the new height in one frame (~27 pt, 6.7 % of pixels). The token then routes to the claim page within a second, so the step is brief. Wrapping the measured-height write in <code>withAnimation</code> was tried and measured: SwiftUI does not animate a changed <code>.height</code> detent value, only a selection change, so the change was reverted. Left open; the fix would be a two-detent selection or a manual height animation.</p>
+</section>
+
 <section class="finding" id="I10">
 <h3>I10 · Mints: Add mint drops the keyboard in one frame <span class="sev low">Low</span></h3>
 <p>When the add completes, the keyboard disappears between two frames (17 % of pixels) while the sheet is still in place; the sheet then dismisses on its own. The field was never resigned, so the keyboard went with the sheet's window instead of animating down.</p>
 </section>
 
 <div class="note ok">
-<p><strong>iOS transitions that looked right:</strong> Receive → Paste → sheet dismiss → claim page cover; claim page review rows; Receive → "Claiming…" → "Payment Received!" (check materialises over the spinner, amount and rows fade in); Done; Transfer sheet open, swap, Back → entry (chevron fades), close; Add mint sheet open; mint list update after adding; Receive → Bitcoin → mint picker → pick.</p>
+<p><strong>iOS transitions that looked right:</strong> Receive → Ecash (the Cashu Request page covers the sheet with a slide); Send → paste a token → sheet dismiss → claim page cover → Receive Later; Receive → Paste → sheet dismiss → claim page cover; claim page review rows; Receive → "Claiming…" → "Payment Received!" (check materialises over the spinner, amount and rows fade in); Done; Transfer sheet open, swap, Back → entry (chevron fades), close; Add mint sheet open; mint list update after adding; Receive → Bitcoin → mint picker → pick.</p>
 </div>
 
 <h3>Fixes in this pass</h3>
 
-<h3 id="fix-A13"><span id="fix-A14"></span>A13, A14 · Receive sheet is keyboard-blind and grows with its content (Android) <span class="sev low">A13 fixed</span> <span class="sev info">A14 fix applied</span></h3>
+<h3 id="fix-A13"><span id="fix-A14"></span>A13, A14 · Receive sheet is keyboard-blind and its token field grows smoothly (Android) <span class="sev low">Fixed</span></h3>
 <p>
   <code>WalletFlowHost</code> excludes the IME from the sheet insets for the Receive flow as well as Send, so the sheet no
   longer re-anchors when the keyboard appears; its content already pads for the keyboard and that padding animates with it.
-  <code>ReceiveEcashScreen</code>'s sheet column got the outermost <code>animateContentSize</code> (shared-axis duration), so a
-  wrapping token line grows the sheet over 300 ms instead of a hop per line. On the fixed build the field tap read as
-  ~20 frames of 4–5 % change with no single frame above 5 % (it was 11.7 % in one frame); whether the rows below the field
-  now follow a wrap smoothly, rather than only the sheet's bottom edge, is the part that still needs the hardware
-  re-check.
+  For the wrap, animating the sheet column alone was not enough: the first fixed build eased the sheet's bottom edge while
+  the rows under the field still hopped a line (measured on the Pixel). The size animation now sits on the token field
+  itself (outermost in its modifier chain, in <code>ReceiveEcashScreen</code> and the same field in
+  <code>UnifiedSendScreen</code>), so the field's measured height eases and the rows below slide with it; the sheet column
+  keeps its own animation for the keyboard padding. On the fixed build the field tap reads as ~20 frames of 3–5 % change
+  with no single frame above 3.5 % (it was 8.3 % in one frame), and a wrap spreads over ~15 frames.
 </p>
+<figure><img src="img/px-receive-keyboard-after-strip.jpg" alt="Pixel filmstrip of the keyboard sliding in and the Receive sheet rising behind it after the fix"><figcaption>After: the keyboard slides in over ~250 ms and the sheet rises behind it over the next ~300 ms; no frame carries a jump (largest single-frame change 3.5 %, against 8.3 % before).</figcaption></figure>
+<figure><img src="img/px-receive-wrap-before-strip.jpg" alt="Pixel filmstrip of the Receive rows hopping down as the token wraps"><figcaption>A14 before: the field gains a line and Scan/Ecash/Bitcoin sit one line lower in the next frame.</figcaption></figure>
+<figure><img src="img/px-receive-wrap-after-strip.jpg" alt="Pixel filmstrip of the Receive rows sliding down as the token wraps after the fix"><figcaption>A14 after: the field grows and the rows slide over ~15 frames.</figcaption></figure>
 
 <h3 id="fix-A15">A15 · The keyboard leaves with the sheet (Android) <span class="sev low">Fixed</span></h3>
 <p>
@@ -619,16 +633,20 @@
   enters over the plain home screen (fixed build: the sheet-and-keyboard exit spreads over 16.28–16.81 s with no frame
   above 12 %, and the claim page enters 1.5 s later with 0.6 % frames; the 19 % keyboard cut is gone).
 </p>
+<figure><img src="img/px-receive-handoff-after-strip.jpg" alt="Pixel filmstrip of the keyboard sliding away with the sheet before the claim page enters"><figcaption>After: keyboard and sheet leave together between 16.6 s and 17.1 s; the claim page fades in over the plain home screen.</figcaption></figure>
 
-<h3 id="fix-A12">A12 · "Checking…" row grows in and shrinks away (Android) <span class="sev info">Fix applied</span></h3>
+<h3 id="fix-A12">A12 · "Checking…" row grows in and shrinks away (Android) <span class="sev low">Fixed</span></h3>
 <p>
   The amount and its status row share one column; the row (with its own gap) sits in an <code>AnimatedVisibility</code> with
   fade + vertical expand/shrink, so the rows below slide up over 220 ms when polling stops. Putting the gap inside the
   animated block avoids the last-frame hop that <code>spacedBy</code> would otherwise add when the row leaves composition.
+  On the Pixel the removal now spreads over 119.41–119.58 s with no frame above 0.7 % (it was 0.65 % in a single frame).
 </p>
+<figure><img src="img/px-sendecash-checking-row-after-strip.jpg" alt="Pixel filmstrip of the Checking row shrinking away after the fix"><figcaption>After: the row fades and shrinks; Unit/Mint follow it up over ~15 frames.</figcaption></figure>
 
-<h3 id="fix-A16">A16 · One Transfer header, chevron fades (Android) <span class="sev info">Fix applied</span></h3>
+<h3 id="fix-A16">A16 · One Transfer header, chevron fades (Android) <span class="sev low">Fixed</span></h3>
 <p><code>MintTransferScreen</code> keeps a single <code>SheetHeader</code> for both steps and passes the chevron only on the review step; <code>SheetHeader</code> animates its icon in and out, as it already did for Send.</p>
+<figure><img src="img/px-transfer-chevron-after-strip.jpg" alt="Pixel filmstrip of the Transfer chevron fading in after Continue"><figcaption>After: the chevron fades in across three frames as the entry face starts to fade; on Back it fades out the same way.</figcaption></figure>
 
 <h3 id="fix-I7"><span id="fix-I8"></span>I7, I8 · Token face and "Claimed" face fade in (iOS) <span class="sev low">Fixed</span></h3>
 <p>
@@ -658,9 +676,9 @@
 
 <h3>Left open in this pass</h3>
 <ul>
-  <li>Nothing from this pass. The first pass's open items (A7, I1, I5, I6) stand.</li>
+  <li><strong>I12</strong> (iOS compact sheet steps on a multi-line paste): the detent height is not animatable as written; brief, and followed by the sheet leaving. The first pass's open items (A7, I1, I5, I6) stand.</li>
 </ul>
-<p class="small">Verification on this branch after the second pass: Android unit tests, Compose screenshot validation and lint pass on the merged branch with the fixes; the iOS app and UI-test bundle build clean and every iOS fix in this pass (I7–I11) was re-captured on the simulator. The throwaway iOS capture test was restored again, so no test files changed. Side finding, not a layout issue: the Android token face never reported the token as claimed although a second wallet redeemed it within a minute (iOS reported it in about six seconds); the claim probe is worth a look on its own.</p>
+<p class="small">Verification on this branch after the second pass: Android unit tests, Compose screenshot validation and lint pass on the merged branch with the fixes (re-run after the field animation); iOS unit target 893 tests, 871 passed, 0 failed, 22 skipped; every fix in this pass was re-captured on the Pixel 7a or the simulator. The throwaway iOS capture test was restored again, so no test files changed. Side finding, not a layout issue: the Android token face never reported the token as claimed although a second wallet redeemed it within a minute (iOS reported it in about six seconds); the claim probe is worth a look on its own.</p>
 
 </main>
 </body>
