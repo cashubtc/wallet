@@ -39,7 +39,11 @@ import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.cashu.me.Core.AmountDisplayPrimary
@@ -318,6 +322,38 @@ fun AmountNoteLinePlaceholder(modifier: Modifier = Modifier) {
  */
 internal val AmountNoteStyle: TextStyle
     @Composable get() = CashuTheme.type.amountSecondary.copy(fontWeight = FontWeight.Normal)
+
+/**
+ * The room under an entry amount: the gap and its note or conversion line,
+ * plus the lines a note adds when it wraps at [width].
+ */
+@Composable
+fun entryNoteRoom(note: AmountNote?, width: Dp): Dp {
+    val density = LocalDensity.current
+    val noteStyle = AmountNoteStyle
+    val textMeasurer = rememberTextMeasurer()
+    val noteLines = note?.let {
+        textMeasurer.measure(
+            text = it.text,
+            style = noteStyle,
+            constraints = Constraints(maxWidth = with(density) { width.roundToPx() }.coerceAtLeast(0)),
+        ).lineCount
+    } ?: 1
+    return CashuTheme.spacing.default + with(density) { noteStyle.lineHeight.toDp() } * noteLines
+}
+
+/**
+ * The largest entry rung whose amount and [noteRoom] fit in [height], for a
+ * screen whose amount cell is all the room it has. A short cell steps the
+ * amount down rather than squeezing its note line out (Transfer budgets the
+ * same way; iOS picks with ViewThatFits). Below Compact the keypad gives up
+ * height instead: see [leavingRoomAbove].
+ */
+@Composable
+fun fittingEntryScale(height: Dp, noteRoom: Dp): AmountScale =
+    listOf(AmountScale.Hero, AmountScale.Confirm)
+        .firstOrNull { amountHeroHeight(it) + noteRoom <= height }
+        ?: AmountScale.Compact
 
 /**
  * Live keypad presentation for sat-denominated entry. Primary follows the typed

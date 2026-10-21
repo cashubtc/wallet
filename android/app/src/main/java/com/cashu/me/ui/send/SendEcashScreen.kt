@@ -121,10 +121,15 @@ import com.cashu.me.ui.components.TwoFaceScreen
 import com.cashu.me.ui.components.UnitPickerSheet
 import com.cashu.me.ui.components.neutralActionButtonColors
 import com.cashu.me.ui.components.shareText
+import com.cashu.me.ui.components.amountHeroHeight
+import com.cashu.me.ui.components.entryNoteRoom
+import com.cashu.me.ui.components.fittingEntryScale
+import com.cashu.me.ui.components.leavingRoomAbove
 import com.cashu.me.ui.settings.P2PKKeyDisplay
 import com.cashu.me.ui.testing.UiTestTags
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.withMonoDigits
+import com.cashu.me.ui.theme.AmountScale
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -600,14 +605,14 @@ private fun InputFace(
     val insufficient = !balanceLoading && amountValue > 0 && amountValue > mintBalance
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val compactHeight = maxHeight < 600.dp
+        val contentWidth = maxWidth - CashuTheme.spacing.comfortable * 2
+        val rowGap = if (compactHeight) CashuTheme.spacing.micro else CashuTheme.spacing.default
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = CashuTheme.spacing.comfortable)
                 .imePadding(),
-            verticalArrangement = Arrangement.spacedBy(
-                if (compactHeight) CashuTheme.spacing.micro else CashuTheme.spacing.default,
-            ),
+            verticalArrangement = Arrangement.spacedBy(rowGap),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
         Spacer(Modifier.height(CashuTheme.spacing.micro))
@@ -628,14 +633,22 @@ private fun InputFace(
             errorText != null -> AmountNote(errorText, NoticeSeverity.Error)
             else -> null
         }
+        val noteRoom = entryNoteRoom(note, contentWidth)
         // One flexible cell between the mint row and the keypad, the amount
         // centered in it (iOS SendView parity). A note takes the conversion
-        // line under the amount, so it never pushes the amount up.
-        Box(
+        // line under the amount, so it never pushes the amount up. Where the
+        // cell is short the amount steps down a rung instead of squeezing that
+        // line out; a P2PK recipient under it is measured first.
+        Column(
             modifier = Modifier.weight(1f, fill = true).fillMaxWidth(),
-            contentAlignment = Alignment.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
         ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            BoxWithConstraints(
+                modifier = Modifier.weight(1f, fill = false),
+                contentAlignment = Alignment.Center,
+            ) {
+                val entryScale = fittingEntryScale(maxHeight, noteRoom)
                 if (isSatUnit) {
                     AmountFlipDisplay(
                         amountSats = amountSats,
@@ -645,6 +658,7 @@ private fun InputFace(
                         currencyCode = fiatCurrencyCode,
                         useBitcoinSymbol = useBitcoinSymbol,
                         entryRaw = amount,
+                        entryScale = entryScale,
                         primaryAccessibilityPrefix = "Send amount",
                         color = amountColor,
                         note = note,
@@ -663,19 +677,20 @@ private fun InputFace(
                             useBitcoinSymbol = useBitcoinSymbol,
                             formatter = formatter,
                             color = amountColor,
+                            scale = entryScale,
                         )
                         if (note != null) AmountNoteLine(note) else AmountNoteLinePlaceholder()
                     }
                 }
+            }
 
-                confirmedP2pkPubkey?.let { pubkey ->
-                    P2pkRecipientConfirmation(
-                        confirmedPubkey = pubkey,
-                        recipientIsPrimaryKey = p2pkRecipientIsPrimaryKey,
-                        onEditRecipient = onEditP2pkRecipient,
-                        onRemoveRecipient = onRemoveP2pkRecipient,
-                    )
-                }
+            confirmedP2pkPubkey?.let { pubkey ->
+                P2pkRecipientConfirmation(
+                    confirmedPubkey = pubkey,
+                    recipientIsPrimaryKey = p2pkRecipientIsPrimaryKey,
+                    onEditRecipient = onEditP2pkRecipient,
+                    onRemoveRecipient = onRemoveP2pkRecipient,
+                )
             }
         }
 
@@ -702,6 +717,8 @@ private fun InputFace(
             buttonEnabled = canSend,
             buttonLoading = sending,
             buttonModifier = Modifier.testTag(UiTestTags.SendEcashSubmit),
+            // The cell's minimum, with the row gap that follows it.
+            modifier = Modifier.leavingRoomAbove(amountHeroHeight(AmountScale.Compact) + noteRoom + rowGap),
         )
         }
     }

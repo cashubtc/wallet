@@ -28,6 +28,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -146,6 +147,22 @@ fun NumberPad(
 internal fun numberPadFooterHeight(keyHeight: Dp): Dp =
     keyHeight * 4 + KeyGap * 3 + CashuTheme.spacing.comfortable * 2 + ButtonMinHeight +
         WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+
+/**
+ * Holds [room] back for the amount cell above an amount-entry footer. A column
+ * measures the footer before its weighted amount cell, so on a short screen
+ * the keys give up height, down to their 48dp minimum, before the amount's
+ * note line is squeezed out (Transfer budgets its pad the same way).
+ */
+fun Modifier.leavingRoomAbove(room: Dp): Modifier = layout { measurable, constraints ->
+    val maxHeight = if (constraints.hasBoundedHeight) {
+        (constraints.maxHeight - room.roundToPx()).coerceAtLeast(constraints.minHeight)
+    } else {
+        constraints.maxHeight
+    }
+    val placeable = measurable.measure(constraints.copy(maxHeight = maxHeight))
+    layout(placeable.width, placeable.height) { placeable.place(0, 0) }
+}
 
 /**
  * Shared tail for every amount-entry screen: [NumberPad] followed by a primary

@@ -123,11 +123,16 @@ import com.cashu.me.ui.components.SkeletonValue
 import com.cashu.me.ui.components.SpinnerRing
 import com.cashu.me.ui.components.TextButtonContext
 import com.cashu.me.ui.components.TwoFaceScreen
+import com.cashu.me.ui.components.amountHeroHeight
+import com.cashu.me.ui.components.entryNoteRoom
+import com.cashu.me.ui.components.fittingEntryScale
+import com.cashu.me.ui.components.leavingRoomAbove
 import com.cashu.me.ui.mints.ConnectMintContext
 import com.cashu.me.ui.mints.ConnectMintSheetContent
 import com.cashu.me.ui.testing.UiTestTags
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.withMonoDigits
+import com.cashu.me.ui.theme.AmountScale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -1204,59 +1209,66 @@ private fun AmountFace(
     val validation = UnifiedSendAmountEntry.validation(amountSats, mintBalance)
     val insufficient = validation == UnifiedSendAmountValidation.InsufficientBalance
     val isFiatEntry = entryPrimary == AmountDisplayPrimary.Fiat
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = CashuTheme.spacing.comfortable),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        // One flexible cell, the amount centered in it (iOS SendView parity).
-        // A note takes the conversion line under the amount, so it never
-        // pushes the amount up.
-        Box(
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-            contentAlignment = Alignment.Center,
+    // The mint selector states the available balance, so repeating it in the
+    // note would add visual noise.
+    val note = if (insufficient) AmountNote("Insufficient balance", NoticeSeverity.Caution) else null
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val noteRoom = entryNoteRoom(note, maxWidth - CashuTheme.spacing.comfortable * 2)
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = CashuTheme.spacing.comfortable),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            AmountFlipDisplay(
-                amountSats = amountSats,
-                primary = entryPrimary,
-                onFlip = onFlipEntryPrimary,
-                btcPrice = btcPrice,
-                currencyCode = fiatCurrencyCode,
-                useBitcoinSymbol = useBitcoinSymbol,
-                entryRaw = amount,
-                primaryAccessibilityPrefix = "Send amount",
-                // The mint selector states the available balance, so repeating
-                // it in the note would add visual noise.
-                note = if (insufficient) AmountNote("Insufficient balance", NoticeSeverity.Caution) else null,
-                holdsNoteLine = true,
+            // One flexible cell, the amount centered in it (iOS SendView parity).
+            // A note takes the conversion line under the amount, so it never
+            // pushes the amount up. Where the cell is short the amount steps down
+            // a rung instead of squeezing that line out.
+            BoxWithConstraints(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                contentAlignment = Alignment.Center,
+            ) {
+                AmountFlipDisplay(
+                    amountSats = amountSats,
+                    primary = entryPrimary,
+                    onFlip = onFlipEntryPrimary,
+                    btcPrice = btcPrice,
+                    currencyCode = fiatCurrencyCode,
+                    useBitcoinSymbol = useBitcoinSymbol,
+                    entryRaw = amount,
+                    entryScale = fittingEntryScale(maxHeight, noteRoom),
+                    primaryAccessibilityPrefix = "Send amount",
+                    note = note,
+                    holdsNoteLine = true,
+                )
+            }
+            if (cashuRequestFeePresentation != null) {
+                EstimatedCashuRequestFeeRow(cashuRequestFeePresentation)
+                Spacer(Modifier.height(CashuTheme.spacing.snug))
+            }
+            // Under the amount, over the keypad (Send Ecash / Receive parity).
+            if (mint != null) {
+                AmountEntryMintSelector(
+                    direction = MintSelectorDirection.Source,
+                    mint = mint,
+                    balanceText = balanceText,
+                    onPickMint = onPickMint,
+                    // Gated on a spendable balance, the way Send Ecash already does
+                    // it — an empty mint offered a Max that filled in zero.
+                    onUseMax = onUseMax.takeIf { mintBalance > 0L },
+                )
+                Spacer(Modifier.height(CashuTheme.spacing.snug))
+            }
+            NumberPadFooter(
+                amount = amount,
+                onAmountChange = onAmountChange,
+                buttonText = "Continue",
+                onButtonClick = onContinue,
+                modifier = Modifier.leavingRoomAbove(amountHeroHeight(AmountScale.Compact) + noteRoom),
+                decimals = if (isFiatEntry) 2 else 0,
+                buttonEnabled = validation == UnifiedSendAmountValidation.Valid,
             )
         }
-        if (cashuRequestFeePresentation != null) {
-            EstimatedCashuRequestFeeRow(cashuRequestFeePresentation)
-            Spacer(Modifier.height(CashuTheme.spacing.snug))
-        }
-        // Under the amount, over the keypad (Send Ecash / Receive parity).
-        if (mint != null) {
-            AmountEntryMintSelector(
-                direction = MintSelectorDirection.Source,
-                mint = mint,
-                balanceText = balanceText,
-                onPickMint = onPickMint,
-                // Gated on a spendable balance, the way Send Ecash already does
-                // it — an empty mint offered a Max that filled in zero.
-                onUseMax = onUseMax.takeIf { mintBalance > 0L },
-            )
-            Spacer(Modifier.height(CashuTheme.spacing.snug))
-        }
-        NumberPadFooter(
-            amount = amount,
-            onAmountChange = onAmountChange,
-            buttonText = "Continue",
-            onButtonClick = onContinue,
-            decimals = if (isFiatEntry) 2 else 0,
-            buttonEnabled = validation == UnifiedSendAmountValidation.Valid,
-        )
     }
 }
 
