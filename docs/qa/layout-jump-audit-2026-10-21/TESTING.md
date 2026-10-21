@@ -339,4 +339,5 @@ Back path.
   after the change (see the branch notes for the result).
 - No test files changed in the commit.
 - Second pass: Android unit tests, screenshot validation and lint pass on the
-  merged branch; the iOS app and UI-test bundle build clean.
+  merged branch (re-run after the field animation); iOS unit target 893
+  tests, 871 passed, 0 failed, 22 skipped against the local mint fixtures.
