@@ -9,12 +9,13 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.cashu.me.Core.AmountlessMeltBlock
+import com.cashu.me.Core.presentation
 import com.cashu.me.test.UiFailureArtifactsRule
 import com.cashu.me.test.WalletJourneyRobot
 import com.cashu.me.test.fixtures.AppTestFixture
 import com.cashu.me.test.fixtures.FixtureMode
 import com.cashu.me.test.fixtures.LaunchedFixture
-import com.cashu.me.ui.send.AmountlessBolt11Hint
 import com.cashu.me.ui.testing.UiTestTags
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -24,8 +25,9 @@ import org.junit.runner.RunWith
 /**
  * cashubtc/wallet#381: pasting a BOLT11 invoice with no amount must never leave
  * Send stuck. A mint advertising NUT-05 `amountless` gets the amount keypad;
- * otherwise the caution (like any paste hint) stays visible past the typing
- * debounce. iOS twin: `LiveCdkPaymentUITests.testPastedHintsStayVisible`.
+ * otherwise the amount step says why it can't be paid, and the To step's own
+ * paste hints still stay visible past the typing debounce. iOS twin:
+ * `LiveCdkPaymentUITests.testPastedHintsStayVisible`.
  */
 @RunWith(AndroidJUnit4::class)
 class AmountlessInvoiceJourneyTest {
@@ -58,20 +60,24 @@ class AmountlessInvoiceJourneyTest {
     }
 
     @Test
-    fun pastedHintsStayVisibleWhenNothingCanBePaid() {
+    fun amountlessInvoiceNothingCanPayExplainsWhyAndHintsStayVisible() {
         launch(supportsAmountlessBolt11Melt = false)
         setClipboard(AmountlessInvoice)
+        val cantPay = AmountlessMeltBlock.NoCapableMint.presentation(zero = "")
 
         robot.awaitTag(UiTestTags.WalletScreen)
             .tapTag(UiTestTags.WalletSend)
             .awaitTag(UiTestTags.SendSheet)
             .tapTextWithinTag(UiTestTags.SendSheet, "Paste")
-            .awaitText(AmountlessBolt11Hint)
-        assertStillShownAfterDebounce(AmountlessBolt11Hint)
-        robot.assertTagDoesNotExist(UiTestTags.SendPaymentSubmit)
+            .awaitText(cantPay.headline)
+            .awaitText(cantPay.detail)
+        // No keypad behind it: nothing typed there could be paid.
+        robot.assertTextDoesNotExist("Continue")
+            .assertTagDoesNotExist(UiTestTags.SendPaymentSubmit)
 
         setClipboard("hello world")
-        robot.tapDescription("Clear")
+        robot.tapDescription("Back")
+            .tapDescription("Clear")
             .tapTextWithinTag(UiTestTags.SendSheet, "Paste")
             .awaitText(UnrecognizedHint)
         assertStillShownAfterDebounce(UnrecognizedHint)

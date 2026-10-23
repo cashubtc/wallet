@@ -50,9 +50,14 @@ sealed interface WalletFlow {
     /**
      * Move ecash between two held mints (iOS `WalletFlow.transfer`). Fills the
      * sheet like Send Ecash: the keypad needs the height. [openedFromMintUrl]
-     * is the mint whose row it was opened from, when it was.
+     * is the mint whose row it was opened from, when it was. [pendingInvoice]
+     * is the amountless invoice Send couldn't pay until that mint is funded;
+     * a completed transfer hands it back to Send.
      */
-    data class Transfer(val openedFromMintUrl: String? = null) : WalletFlow
+    data class Transfer(
+        val openedFromMintUrl: String? = null,
+        val pendingInvoice: String? = null,
+    ) : WalletFlow
 
     /** Whether the sheet wraps this flow's content rather than filling the screen. */
     val wrapsContent: Boolean

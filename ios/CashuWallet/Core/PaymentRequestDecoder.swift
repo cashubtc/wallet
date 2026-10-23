@@ -118,14 +118,58 @@ extension PaymentRequestDecodeResult {
         return false
     }
 
-    /// Clean caution copy when none of `mints` can pay this amountless BOLT11
-    /// invoice (NUT-05 `amountless`). Nil for everything the wallet can route.
-    func amountlessMeltCaution(payableBy mints: [MintInfo]) -> String? {
-        guard isAmountlessBolt11,
-              !mints.contains(where: { $0.canMelt(.bolt11, amountless: true) }) else {
+    /// Why this amountless BOLT11 invoice can't be paid from `mints`, or nil
+    /// when a mint that can pay it (NUT-05 `amountless`) holds a balance.
+    func amountlessMeltBlock(payableBy mints: [MintInfo]) -> AmountlessMeltBlock? {
+        guard isAmountlessBolt11 else { return nil }
+        let capable = mints.filter { $0.canMelt(.bolt11, amountless: true) }
+        guard !capable.isEmpty else { return .noCapableMint }
+        guard !capable.contains(where: { $0.balance > 0 }) else { return nil }
+        // A Transfer can fund a capable mint when a funded mint can send to it.
+        let destination = capable.first { candidate in
+            MintTransferEligibility.canReceive(candidate) && mints.contains { source in
+                source.balance > 0 && MintTransferEligibility.eligible(source: source, destination: candidate)
+            }
+        }
+        return .capableMintsEmpty(
+            capableMintNames: capable.map(\.name),
+            transferDestinationURL: destination?.url
+        )
+    }
+}
+
+/// An amountless BOLT11 invoice the wallet can't pay as it stands (Android
+/// `AmountlessMeltBlock` parity). The payment sheet says so in place of the
+/// keypad, never inline under the destination field.
+enum AmountlessMeltBlock: Equatable {
+    /// No held mint advertises NUT-05 `amountless`.
+    case noCapableMint
+    /// The mints that can pay it hold nothing. `transferDestinationURL` is the
+    /// one a Transfer can fund, nil when no funded mint can send to any of them.
+    case capableMintsEmpty(capableMintNames: [String], transferDestinationURL: String?)
+
+    static let headline = "Can't pay this invoice."
+    private static let askForAmount = "Ask for one with the amount set."
+
+    /// `zero` is the wallet's own rendering of 0 sat (₿0 or 0 sat).
+    func detail(zero: String) -> String {
+        switch self {
+        case .noCapableMint:
+            return "None of your mints can pay invoices without an amount. \(Self.askForAmount)"
+        case .capableMintsEmpty(let names, let destination):
+            let fact = names.count == 1
+                ? "Only \(names[0]) can pay invoices without an amount, and it holds \(zero)."
+                : "The mints that can pay invoices without an amount are empty."
+            return destination == nil ? "\(fact) \(Self.askForAmount)" : fact
+        }
+    }
+
+    /// The Transfer button's title, or nil when no Transfer can help.
+    var transferActionTitle: String? {
+        guard case .capableMintsEmpty(let names, let destination) = self, destination != nil else {
             return nil
         }
-        return "None of your mints can pay invoices without an amount. Ask for one with the amount set."
+        return names.count == 1 ? "Transfer to \(names[0])" : "Transfer ecash"
     }
 }
 
