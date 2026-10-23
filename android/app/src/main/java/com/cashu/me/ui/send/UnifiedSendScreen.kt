@@ -848,7 +848,7 @@ fun UnifiedSendScreen(
                                                 if (payable != null) {
                                                     amount = UnifiedSendAmountEntry.maxRawForBalance(payable, entryContext)
                                                     if (payable < mint.balance) {
-                                                        maxFeedback = "Amount adjusted for fees and the recipient’s payment limits."
+                                                        maxFeedback = "Amount adjusted for the network fee."
                                                     }
                                                 } else {
                                                     maxNotice = "This mint's balance can't cover the network fee for this payment." +

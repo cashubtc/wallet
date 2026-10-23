@@ -1868,7 +1868,7 @@ struct UnifiedSendView: View {
                 if let payable {
                     fillAmount(sats: payable)
                     if payable < mint.balance {
-                        maxFeedback = "Amount adjusted for fees and the recipient’s payment limits."
+                        maxFeedback = "Amount adjusted for the network fee."
                     }
                 } else {
                     presentError("This mint's balance can't cover the network fee for this payment." + (canChangeMint ? " Choose another mint." : ""), severity: .caution)
@@ -2303,7 +2303,7 @@ struct UnifiedSendView: View {
     /// invoice or offer that carries its own amount use it).
     private func requestMeltQuote(
         request: String,
-        mode: MeltView.MeltMode,
+        mode: MeltMode,
         decoded: PaymentRequestDecodeResult,
         amount: UInt64,
         mintURL: String
