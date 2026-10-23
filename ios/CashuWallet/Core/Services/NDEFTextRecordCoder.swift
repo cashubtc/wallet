@@ -2,7 +2,10 @@ import CoreNFC
 import Foundation
 
 enum NDEFTextRecord {
+    static let maxMessageSize = 0x70ff
+
     static func extractText(from message: NFCNDEFMessage) -> String? {
+        guard message.length <= maxMessageSize else { return nil }
         for record in message.records {
             if let text = extractText(from: record) {
                 return text

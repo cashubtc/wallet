@@ -29,6 +29,7 @@ internal object NfcNdefCodec {
     fun parseType4File(file: ByteArray): NfcNdefPayload {
         require(file.size >= 2) { "NDEF file is incomplete." }
         val nlen = ((file[0].toInt() and 0xff) shl 8) or (file[1].toInt() and 0xff)
+        require(nlen <= NfcType4Tag.MAX_NDEF_SIZE) { "NDEF message is too large." }
         require(nlen > 0 && nlen + 2 <= file.size) { "NDEF length is invalid." }
         return parseRecord(file.copyOfRange(2, nlen + 2))
     }
@@ -77,7 +78,9 @@ internal object NfcNdefCodec {
             require(payloadLength >= 0) { "NDEF payload length is invalid." }
             cursor = 6
         }
-        require(cursor + typeLength + payloadLength <= record.size) { "NDEF payload is incomplete." }
+        require(payloadLength <= NfcType4Tag.MAX_NDEF_SIZE) { "NDEF payload is too large." }
+        require(typeLength <= record.size - cursor) { "NDEF record type is incomplete." }
+        require(payloadLength <= record.size - cursor - typeLength) { "NDEF payload is incomplete." }
         val type = record.copyOfRange(cursor, cursor + typeLength)
         cursor += typeLength
         val payload = record.copyOfRange(cursor, cursor + payloadLength)
