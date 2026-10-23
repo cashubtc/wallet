@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		428000000000000000000001 /* NDEFTextRecordTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 428000000000000000000002 /* NDEFTextRecordTests.swift */; };
 		0CDDC2436692F1886D7CD29A /* MintPickerRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14B9795059FDE9BAEE232693 /* MintPickerRow.swift */; };
 		60E000177DBCB05DF08580F0 /* RestoreStagedMintRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6074DC1273E39450F63BD412 /* RestoreStagedMintRow.swift */; };
 		92F95725A5BC282D8A4EAE08 /* RestoreMintProgressRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7E760221E594D899683572C /* RestoreMintProgressRow.swift */; };
@@ -239,6 +240,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		428000000000000000000002 /* NDEFTextRecordTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CashuWalletTests/NDEFTextRecordTests.swift; sourceTree = "<group>"; };
 		14B9795059FDE9BAEE232693 /* MintPickerRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MintPickerRow.swift; sourceTree = "<group>"; };
 		6074DC1273E39450F63BD412 /* RestoreStagedMintRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RestoreStagedMintRow.swift; sourceTree = "<group>"; };
 		B7E760221E594D899683572C /* RestoreMintProgressRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RestoreMintProgressRow.swift; sourceTree = "<group>"; };
@@ -530,6 +532,7 @@
 				AA9600000000000000000002 /* NPCServiceTests.swift */,
 				CD9100000000000000000004 /* MintDetailInfoLoaderTests.swift */,
 				SE00000000000013 /* SeedPhraseEntryTests.swift */,
+				428000000000000000000002 /* NDEFTextRecordTests.swift */,
 				T1B0000000000010 /* WalletSurfaceCoordinatorTests.swift */,
 				T1B0000000000011 /* ScanRouterTests.swift */,
 				T1B0000000000012 /* AsciiFieldTerrainTests.swift */,
@@ -1167,6 +1170,7 @@
 				AA9600000000000000000001 /* NPCServiceTests.swift in Sources */,
 				CD9100000000000000000003 /* MintDetailInfoLoaderTests.swift in Sources */,
 				SE00000000000003 /* SeedPhraseEntryTests.swift in Sources */,
+				428000000000000000000001 /* NDEFTextRecordTests.swift in Sources */,
 				T2B0000000000010 /* WalletSurfaceCoordinatorTests.swift in Sources */,
 				T2B0000000000011 /* ScanRouterTests.swift in Sources */,
 				T2B0000000000012 /* AsciiFieldTerrainTests.swift in Sources */,

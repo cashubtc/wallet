@@ -80,6 +80,24 @@ class NfcType4TagTest {
     }
 
     @Test
+    fun `invalid message is discarded and a subsequent valid message is received`() {
+        val events = mutableListOf<NfcType4Event>()
+        val tag = NfcType4Tag({ NfcNdefCodec.textFile("request") }, events::add)
+        assertOk(tag.process(selectAid()))
+        assertOk(tag.process(selectNdef()))
+
+        val invalid = byteArrayOf(0, 7, 0xc1.toByte(), 1, 0x7f, 0xff.toByte(), 0xff.toByte(), 0xff.toByte(), 'T'.code.toByte())
+        assertOk(tag.process(update(0, invalid)))
+        assertTrue(events.none { it is NfcType4Event.MessageReceived })
+
+        assertOk(tag.process(update(0, NfcNdefCodec.textFile("token"))))
+        assertEquals(
+            NfcNdefPayload.Text("token"),
+            events.filterIsInstance<NfcType4Event.MessageReceived>().single().payload,
+        )
+    }
+
+    @Test
     fun `long text request uses non-short ndef record`() {
         val file = NfcNdefCodec.textFile("x".repeat(400))
         val payload = NfcNdefCodec.parseType4File(file)
