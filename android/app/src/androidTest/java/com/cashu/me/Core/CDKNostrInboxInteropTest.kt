@@ -123,7 +123,10 @@ class CDKNostrInboxInteropTest {
         private fun serve(socket: Socket) {
             socket.soTimeout = 30_000
             val input = DataInputStream(socket.getInputStream())
-            val output = DataOutputStream(socket.getOutputStream())
+            // Buffered so the handshake leaves in one write. Unbuffered writeBytes
+            // sends one byte per write, and tungstenite rejects a handshake read in
+            // many tiny chunks ("Attack attempt detected"), adding a 7-13 s retry.
+            val output = DataOutputStream(socket.getOutputStream().buffered())
             val header = StringBuilder()
             while (!header.endsWith("\r\n\r\n")) header.append(input.readUnsignedByte().toChar())
             val key = header.lines().first { it.startsWith("Sec-WebSocket-Key:", ignoreCase = true) }
