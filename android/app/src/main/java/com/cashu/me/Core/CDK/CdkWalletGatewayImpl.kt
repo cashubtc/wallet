@@ -250,9 +250,7 @@ class CdkWalletGatewayImpl : WalletGateway {
         val wallet = walletFor(mintUrl)
         val info = runCatching { wallet.fetchMintInfo() }.getOrNull()
         wallet.recoverIncompleteSagas()
-        check(database?.getIncompleteSagas().orEmpty().isEmpty()) {
-            "An interrupted payment is still being recovered. Retry restore after it finishes."
-        }
+        requireSafeMintRestore(checkNotNull(database), mintUrl)
         val restored = wallet.restore()
         RestoreMintResult(
             mintUrl = mintUrl,
@@ -342,8 +340,8 @@ class CdkWalletGatewayImpl : WalletGateway {
         }
         ensureWalletUnlocked(input.mintUrl, unit)
         val wallet = walletFor(input.mintUrl, unit)
-        // Resynchronize lost proof-output counters before importing a quote
-        // that automatic recovery could issue after a restart.
+        // Resynchronize counters without overwriting another operation's inputs.
+        requireSafeMintRestore(checkNotNull(database), input.mintUrl)
         wallet.restore()
         val quote = wallet.fetchMintQuoteWithKeySearch(input.quoteId, method, input.searchLimit)
         if (!mintRemovalUrlsMatch(quote.mintUrl.url, input.mintUrl) || quote.unit != unit || quote.paymentMethod != method) {
@@ -442,7 +440,9 @@ class CdkWalletGatewayImpl : WalletGateway {
                     "The wallet will retry automatically.",
             )
         }
-        val proofs = walletFor(normalizedQuote.mintUrl.url, normalizedQuote.unit).mintUnified(
+        val wallet = walletFor(normalizedQuote.mintUrl.url, normalizedQuote.unit)
+        prepareEmptyMintAccount(checkNotNull(database), wallet, normalizedQuote.mintUrl.url)
+        val proofs = wallet.mintUnified(
             quoteId = quoteId,
             amountSplitTarget = CdkSplitTarget.None,
             spendingConditions = null,

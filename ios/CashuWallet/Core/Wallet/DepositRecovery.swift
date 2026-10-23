@@ -129,6 +129,7 @@ extension WalletManager {
         // existing proofs before importing a quote that background recovery
         // could issue, so previously signed outputs are never reused.
         self.walletStore.setMintRemoved(url: request.mintURL, removed: false)
+        try await MintRestoreSafety.requireSafe(database: db, mintURL: request.mintURL)
         _ = try await wallet.restore()
         let recovered = try await wallet.fetchMintQuoteWithKeySearch(quoteId: request.quoteID,
             paymentMethod: request.method.cdkMethod, keySearchLimit: request.searchLimit)
