@@ -1,5 +1,6 @@
 package com.cashu.me.ui.send
 
+import com.cashu.me.Core.PendingSendRecovery
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Spring
@@ -162,6 +163,7 @@ internal sealed interface SendStatus {
     data class Failed(
         override val details: SendPaymentDetails,
         val message: WalletMessage,
+        val recovery: PendingSendRecovery? = null,
     ) : SendStatus
 }
 
@@ -220,6 +222,7 @@ fun UnifiedSendScreen(
 
     var step by remember { mutableStateOf(SendStep.Input) }
     var status by remember { mutableStateOf<SendStatus?>(null) }
+    var recoveringSend by remember { mutableStateOf(false) }
     var destination by remember { mutableStateOf("") }
     var locked by remember { mutableStateOf<LockedRail?>(null) }
     var inputHint by remember { mutableStateOf<String?>(null) }
@@ -488,7 +491,7 @@ fun UnifiedSendScreen(
                     ),
                 )
             } catch (t: Throwable) {
-                status = SendStatus.Failed(paymentDetails.resolvingFailed(), t.walletMessage)
+                status = SendStatus.Failed(paymentDetails.resolvingFailed(), t.walletMessage, t as? PendingSendRecovery)
             }
         }
     }
@@ -628,12 +631,12 @@ fun UnifiedSendScreen(
 
     // Block sheet dismissal while the melt is in flight — a stray swipe must
     // not tear down the coroutine mid-payment.
-    LaunchedEffect(status) { onDismissLockChanged(status is SendStatus.Sending) }
+    LaunchedEffect(status, recoveringSend) { onDismissLockChanged(status is SendStatus.Sending || recoveringSend) }
 
     // Dismissal contract: system back = swipe = abandon to the wallet, so the
     // sheet handles it. The header chevron owns internal step-back (Confirm →
     // Amount → Input). Swallow back only while the melt is in flight.
-    BackHandler(enabled = status is SendStatus.Sending) {}
+    BackHandler(enabled = status is SendStatus.Sending || recoveringSend) {}
 
     // Quote preparation uses the same full-screen status layout as submission.
     // Keep operation state separate so cancelling a quote remains safe.
@@ -678,7 +681,9 @@ fun UnifiedSendScreen(
                     FlowSheetTitle(
                         title = if (creqFromScan) "Pay Cashu Request" else "Send",
                     )
-                    SendStatusTerminal(
+                    if (current is SendStatus.Failed && current.recovery != null) {
+                        PendingSendRecoveryContent(current.recovery, walletManager, onClose, Modifier.weight(1f), { recoveringSend = it })
+                    } else SendStatusTerminal(
                         status = current,
                         formatter = formatter,
                         useBitcoinSymbol = settings.useBitcoinSymbol,
