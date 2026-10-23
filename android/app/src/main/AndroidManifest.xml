@@ -34,8 +34,14 @@
             android:name="io.sentry.auto-init"
             android:value="false" />
 
+        <!-- Text size, bold text, display size and window resizes reach Compose
+             as a configuration update instead of recreating the activity, so an
+             open payment sheet keeps its step, draft and in-flight work (as iOS
+             does across Dynamic Type changes). Theme and locale still recreate:
+             system bar styling and amount formatting read them once. -->
         <activity
             android:name=".App.MainActivity"
+            android:configChanges="fontScale|fontWeightAdjustment|density|screenSize|smallestScreenSize|screenLayout"
             android:exported="true"
             android:launchMode="singleTask"
             android:screenOrientation="portrait"
