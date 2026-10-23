@@ -614,7 +614,7 @@ struct ReceiveLightningView: View {
     @ViewBuilder
     private func requestDisplayView(quote: MintQuoteInfo) -> some View {
         VStack(spacing: 0) {
-            PaymentDetailContent(stableSizeKey: quote.id, fitsContent: true) { qrSize in
+            PaymentDetailContent(fitsContent: true) { qrSize in
                 QRCodeView(
                     content: quote.request,
                     showControls: false,

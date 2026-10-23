@@ -1474,7 +1474,6 @@ private fun DisplayFace(
     Column(modifier = Modifier.fillMaxWidth()) {
         PaymentDetailContent(
             modifier = Modifier.weight(1f, fill = false),
-            stableSizeKey = quote.id,
             fitsContent = true,
             hero = { qrSize ->
                 QrCard(

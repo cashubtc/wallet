@@ -13,7 +13,6 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -28,16 +27,10 @@ internal val LocalCompactPaymentDetails = compositionLocalOf { false }
 
 /**
  * Fits the QR around the actual receipt text, with scrolling for oversized content.
- *
- * @param stableSizeKey when set, the QR keeps the size it settled at for this key:
- *   details that change in place afterwards (a status value, a notice) scroll
- *   instead of shrinking the code someone may be scanning. A new key, container
- *   size or font scale measures again (iOS `PaymentDetailContent` parity).
  */
 @Composable
 fun PaymentDetailContent(
     modifier: Modifier = Modifier,
-    stableSizeKey: Any? = null,
     fitsContent: Boolean = false,
     hero: @Composable (Dp) -> Unit,
     details: @Composable ColumnScope.() -> Unit,
@@ -62,10 +55,8 @@ fun PaymentDetailContent(
         return
     }
     var detailsHeight by remember { mutableIntStateOf(0) }
-    var sizeLatch by remember { mutableStateOf<Any?>(null) }
     val density = LocalDensity.current
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
-        val latchKey = stableSizeKey?.let { listOf(it, maxWidth, maxHeight, density.fontScale) }
         val compact = maxHeight < 600.dp
         val qrSize = minOf(280.dp, maxWidth - 64.dp,
             maxHeight - with(density) { detailsHeight.toDp() } - 64.dp).coerceAtLeast(120.dp)
@@ -79,9 +70,7 @@ fun PaymentDetailContent(
             CompositionLocalProvider(LocalCompactPaymentDetails provides compact) {
                 Column(
                     modifier = Modifier.fillMaxWidth().onSizeChanged { size ->
-                        if (latchKey != null && latchKey == sizeLatch && detailsHeight > 0) return@onSizeChanged
                         detailsHeight = size.height
-                        if (size.height > 0) sizeLatch = latchKey
                     },
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.comfortable),
