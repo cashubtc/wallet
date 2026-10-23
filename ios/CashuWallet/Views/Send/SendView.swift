@@ -13,6 +13,7 @@ struct SendView: View {
     @State private var tokenFee: UInt64 = 0
     @State private var isGenerating = false
     @State private var errorMessage: String?
+    @State private var sendRecovery: PendingSendRecovery?
     @State private var tokenCreationFailure: String?
     @State private var errorSeverity: ErrorSeverity = .error
     @State private var showMintPicker = false
@@ -48,7 +49,9 @@ struct SendView: View {
     var body: some View {
         NavigationStack {
             Group {
-                if let failure = tokenCreationFailure {
+                if let sendRecovery {
+                    PendingSendRecoveryView(recovery: sendRecovery, onDone: { dismiss() }, onWorkingChanged: { isGenerating = $0 })
+                } else if let failure = tokenCreationFailure {
                     tokenCreationFailureView(failure)
                         .transition(.opacity)
                 } else if let token = generatedToken {
@@ -94,7 +97,7 @@ struct SendView: View {
                         .disabled(isGenerating)
                 }
 
-                if generatedToken == nil && tokenCreationFailure == nil {
+                if generatedToken == nil && tokenCreationFailure == nil && sendRecovery == nil {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button {
                             HapticFeedback.selection()
@@ -110,7 +113,7 @@ struct SendView: View {
 
                 // Unit selector — only when the active mint offers more than one
                 // unit. Declared after the lock so it sits to the lock's right.
-                if generatedToken == nil, tokenCreationFailure == nil,
+                if generatedToken == nil, tokenCreationFailure == nil, sendRecovery == nil,
                    let mint = unitContextMint, mint.supportsMultipleUnits {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button {
@@ -838,6 +841,8 @@ struct SendView: View {
                 generatedAmount = amount
                 tokenFee = result.fee
                 HapticFeedback.notification(.success)
+            } catch let recovery as PendingSendRecovery {
+                sendRecovery = recovery
             } catch {
                 let walletMessage = error.walletMessage
                 if error.isInsufficientBalanceError, amount <= effectiveSendBalance {
@@ -1120,6 +1125,7 @@ struct UnifiedSendView: View {
     @State private var topUpContext: TopUpContext?
 
     // Flow control
+    @State private var sendRecovery: PendingSendRecovery?
     @State private var isWorking = false
     @State private var errorMessage: String?
     @State private var errorSeverity: ErrorSeverity = .error
@@ -1153,6 +1159,7 @@ struct UnifiedSendView: View {
     }
 
     private func presentError(from error: Error) {
+        sendRecovery = error as? PendingSendRecovery
         let walletMessage = error.walletMessage
         errorMessage = walletMessage.text
         errorSeverity = walletMessage.severity
@@ -1315,7 +1322,9 @@ struct UnifiedSendView: View {
                 }
 
                 Group {
-                    if let statusPhase = statusPhase ?? (isLoadingMeltQuote ? .processing : nil) {
+                    if let sendRecovery {
+                        PendingSendRecoveryView(recovery: sendRecovery, onDone: onClose, onWorkingChanged: { isWorking = $0 })
+                    } else if let statusPhase = statusPhase ?? (isLoadingMeltQuote ? .processing : nil) {
                         // Single branch keeps the status screen's identity stable across
                         // processing → sent → failed, so PaymentStatusView owns the morph.
                         statusView(statusPhase)
@@ -1369,6 +1378,7 @@ struct UnifiedSendView: View {
                             ConnectMintBackButton { backToAmount() }
                         } else {
                             SheetCloseButton(action: onClose)
+                                .disabled(isWorking)
                         }
                     }
                 }

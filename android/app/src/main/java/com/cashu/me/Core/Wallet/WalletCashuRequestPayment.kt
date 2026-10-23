@@ -59,6 +59,16 @@ internal suspend fun payCashuPaymentRequestAndRefresh(
     loadTransactions: suspend () -> Unit,
 ) {
     payCashuPaymentRequest(encoded, customAmountSats, preferredMintURL)
-    refreshBalance()
-    loadTransactions()
+    refreshAfterConfirmedSend(refreshBalance, loadTransactions)
+}
+
+internal suspend fun refreshAfterConfirmedSend(
+    refreshBalance: suspend () -> Unit,
+    loadTransactions: suspend () -> Unit,
+) {
+    for (refresh in listOf(refreshBalance, loadTransactions)) {
+        try { refresh() }
+        catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+        catch (_: Exception) { /* The confirmed result remains authoritative. */ }
+    }
 }

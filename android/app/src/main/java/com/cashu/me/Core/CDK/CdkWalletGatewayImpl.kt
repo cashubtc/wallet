@@ -1,5 +1,7 @@
 package com.cashu.me.Core.CDK
 
+import com.cashu.me.Core.PendingSendRecovery
+import com.cashu.me.Core.performRecoverableSend
 import com.cashu.me.Models.MintUrlIdentity
 import com.cashu.me.Core.toDomainUnit
 
@@ -862,16 +864,22 @@ class CdkWalletGatewayImpl : WalletGateway {
             p2pkSigningKeys = p2pkSigningKeys.map(::CdkSecretKey),
             p2pkLockedProofSendMode = CdkP2pkLockedProofSendMode.SWAP,
         )
-        val prepared = walletFor(mintUrl, cdkUnit).prepareSend(amount.toCdkAmount(), sendOptions)
-        val fee = prepared.fee().value.toLong()
-        val token = prepared.confirm(memo)
-        // CDK 0.18 records the send as a Pending transaction whose id derives
-        // from the send saga's operation id, computable without a store read.
-        SendTokenResult(
-            token = token.encode(),
-            fee = fee,
-            transactionId = SagaTransactionId.transactionIdHex(prepared.operationId()),
-        )
+        val wallet = walletFor(mintUrl, cdkUnit)
+        val context = PendingSendRecovery(mintUrl, cdkUnit.toDomainUnit())
+        performRecoverableSend(
+            context = context,
+            inspect = { sendRecoverySnapshot(wallet, context, it) },
+            recover = { wallet.recoverIncompleteSagas(); Unit },
+        ) { remember ->
+            val prepared = wallet.prepareSend(amount.toCdkAmount(), sendOptions)
+            remember(prepared.operationId())
+            val fee = prepared.fee().value.toLong()
+            val token = prepared.confirm(memo)
+            SendTokenResult(
+                token = token.encode(), fee = fee,
+                transactionId = SagaTransactionId.transactionIdHex(prepared.operationId()),
+            )
+        }
     }
 
     override suspend fun receiveEcashToken(tokenString: String, p2pkSigningKeys: List<String>): Long = cdkCall {
@@ -1032,13 +1040,37 @@ class CdkWalletGatewayImpl : WalletGateway {
         val mintUrl = preferredMint
             ?: candidateMints.firstOrNull()
             ?: firstWallet().mintUrl().url
-        // CDK rc.1 splits atomic pay_request into prepare + confirm: prepare
-        // resolves method/fees and reserves proofs, confirm delivers. On
-        // delivery failure the pending operation stays reclaimable via
-        // revokeSend instead of paying twice.
-        walletFor(mintUrl)
-            .preparePayRequest(request, if (request.amount() == null) amount else null)
-            .confirm()
+        val wallet = walletFor(mintUrl)
+        val context = PendingSendRecovery(mintUrl, "sat")
+        performRecoverableSend(
+            context = context,
+            inspect = { sendRecoverySnapshot(wallet, context, it) },
+            recover = { wallet.recoverIncompleteSagas(); Unit },
+        ) { remember ->
+            val prepared = wallet.preparePayRequest(request, if (request.amount() == null) amount else null)
+            remember(prepared.operationId())
+            prepared.confirm()
+        }
+    }
+
+    private suspend fun sendRecoverySnapshot(
+        wallet: CdkWallet,
+        context: PendingSendRecovery,
+        operationIds: List<String> = context.operationIds,
+    ): PendingSendRecovery {
+        val pending = wallet.getPendingSends()
+        val sagas = checkNotNull(database).getIncompleteSagas()
+        val transactions = wallet.listTransactions(CdkTransactionDirection.OUTGOING)
+        return com.cashu.me.Core.resolvePendingSendRecovery(
+            context, wallet.mintUrl().url, sagas, pending, operationIds,
+            transactions.associate { it.id.hex to it.status.toDomain() },
+        )
+    }
+
+    override suspend fun checkSendRecovery(context: PendingSendRecovery): PendingSendRecovery = cdkCall {
+        val wallet = walletFor(context.mintUrl, cdkUnit(context.unit))
+        wallet.recoverIncompleteSagas()
+        sendRecoverySnapshot(wallet, context)
     }
 
     override suspend fun listPendingSendOperationIds(mintUrl: String, unit: String): List<String> = cdkCall {
