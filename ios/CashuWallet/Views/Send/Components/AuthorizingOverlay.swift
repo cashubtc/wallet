@@ -48,6 +48,22 @@ struct PaymentStatusView: View {
     /// still happening.
     var settlementPending: Bool = false
 
+    /// What is still happening while `settlementPending`, when it is something
+    /// other than a payment the mint is settling.
+    var settlementMessage: String? = nil
+
+    /// What is happening right now while `.processing`, for a flow with more
+    /// than one step to report. Changes are announced.
+    var processingMessage: String? = nil
+
+    /// Keep the detail rows up while `.processing`, for a flow whose facts
+    /// (which mints, how much) are what the user is waiting on.
+    var showsDetailsWhileProcessing: Bool = false
+
+    /// Try Again in the quiet secondary style, for a flow whose own actions are
+    /// tonal (Transfer: moving between your own mints is no payment).
+    var quietRetry: Bool = false
+
     /// The payment left the wallet but the mint hasn't confirmed its outcome, so
     /// the funds are held, not lost. The failure face then must not claim
     /// failure: the glyph becomes the same pending clock, the title names what
@@ -86,6 +102,10 @@ struct PaymentStatusView: View {
         successTitle: String = "Payment Sent!",
         failureTitle: String = "Payment Failed",
         settlementPending: Bool = false,
+        settlementMessage: String? = nil,
+        processingMessage: String? = nil,
+        showsDetailsWhileProcessing: Bool = false,
+        quietRetry: Bool = false,
         awaitingMint: Bool = false,
         failureCTA: FailureCTA? = nil,
         onViewHistory: (() -> Void)? = nil,
@@ -98,6 +118,10 @@ struct PaymentStatusView: View {
         self.successTitle = successTitle
         self.failureTitle = failureTitle
         self.settlementPending = settlementPending
+        self.settlementMessage = settlementMessage
+        self.processingMessage = processingMessage
+        self.showsDetailsWhileProcessing = showsDetailsWhileProcessing
+        self.quietRetry = quietRetry
         self.awaitingMint = awaitingMint
         self.failureCTA = failureCTA
         self.onViewHistory = onViewHistory
@@ -132,7 +156,8 @@ struct PaymentStatusView: View {
     private var statusMessage: String? {
         if case .failure(let message, _, _) = phase, !message.isEmpty { return message }
         if case .success = phase, settlementPending {
-            return "The mint accepted this payment and is settling it. Your balance will update automatically."
+            return settlementMessage
+                ?? "The mint accepted this payment and is settling it. Your balance will update automatically."
         }
         return nil
     }
@@ -184,6 +209,24 @@ struct PaymentStatusView: View {
                         )
                         .padding(.horizontal, 24)
                         .padding(.top, 16)
+                    } else if phase == .processing, let processingMessage {
+                        // Same slot as the message below. Each step replaces
+                        // the last with a cross-fade in place.
+                        ZStack {
+                            Text(processingMessage)
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                                .lineLimit(3)
+                                .frame(maxWidth: .infinity)
+                                .id(processingMessage)
+                                .transition(.opacity)
+                        }
+                        .padding(.horizontal, 32)
+                        // Top-aligned so the line sits under the title, not
+                        // floated mid-slot (Android parity).
+                        .frame(minHeight: 44, alignment: .top)
+                        .animation(.smooth(duration: 0.3), value: processingMessage)
                     } else {
                         // Reserved slot so success ↔ failure never nudges the icon above it.
                         Text(statusMessage ?? " ")
@@ -193,7 +236,7 @@ struct PaymentStatusView: View {
                             .lineLimit(3)
                             .opacity(statusMessage == nil ? 0 : 1)
                             .padding(.horizontal, 32)
-                            .frame(minHeight: 44)
+                            .frame(minHeight: 44, alignment: .top)
                     }
                 }
                 .opacity(bandVisible ? 1 : 0)
@@ -202,9 +245,10 @@ struct PaymentStatusView: View {
             }
             .frame(minHeight: 220, alignment: .top)
         } details: {
-            // Payment facts are terminal-only: processing shows just the spinner
-            // and title, matching the claiming screen.
-            if !receiptDetails.isEmpty, phase != .processing {
+            // Payment facts are terminal-only unless the caller opts in:
+            // processing shows just the spinner and title, matching the
+            // claiming screen.
+            if !receiptDetails.isEmpty, phase != .processing || showsDetailsWhileProcessing {
                 VStack(spacing: 0) {
                     ForEach(receiptDetails) { row in
                         detailRow(row)
@@ -231,6 +275,10 @@ struct PaymentStatusView: View {
         .animation(.smooth(duration: 0.3), value: phaseKey)
         .onChange(of: phase) { _, newPhase in
             handlePhase(newPhase, announce: true)
+        }
+        .onChange(of: processingMessage) { _, message in
+            guard phase == .processing, let message else { return }
+            AccessibilityNotification.Announcement(message).post()
         }
         .onAppear { handlePhase(phase, announce: false) }
         .task {
@@ -334,6 +382,9 @@ struct PaymentStatusView: View {
             } else if isTerminal {
                 // Same demotion as success — there is nothing left to do here.
                 Button(action: onDone) { Text("Done") }
+                    .flatSheetSecondaryButton()
+            } else if quietRetry {
+                Button(action: onRetry) { Text("Try Again") }
                     .flatSheetSecondaryButton()
             } else {
                 Button(action: onRetry) { Text("Try Again") }
@@ -510,6 +561,39 @@ struct PayFlowScaffold<TopAccessory: View, Hero: View, Details: View, Footer: Vi
             // (confirm) or absence (status) never shifts the details-block Y.
             .overlay(alignment: .top) { topAccessory }
         }
+    }
+}
+
+/// Preflight caution, in the status screens' hero anatomy — glyph, message,
+/// secondary detail — centered where the amount hero sits. Always the orange
+/// warning triangle: a quote failure or balance shortfall spends nothing, so
+/// it never wears the terminal failures' red. Shared by the pay confirm and
+/// the transfer review (Android renders the identical `ConfirmCautionFace`).
+struct ConfirmCautionFace: View {
+    let message: String
+    var detail: String?
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.statusGlyph)
+                .foregroundStyle(.orange)
+
+            VStack(spacing: 8) {
+                Text(message)
+                    .font(.title2.weight(.semibold))
+                    .multilineTextAlignment(.center)
+
+                if let detail {
+                    Text(detail)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+            }
+            .padding(.horizontal, 32)
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 

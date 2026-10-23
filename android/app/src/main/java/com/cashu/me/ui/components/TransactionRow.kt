@@ -15,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -63,6 +64,7 @@ fun TransactionRow(
 ) {
     val tx = model.transaction
     val incoming = tx.type == TransactionType.Incoming
+    val isTransfer = tx.transfer != null
     val unsettled = tx.isUnsettled
     val amountColor = when {
         unsettled || tx.status == TransactionStatus.Failed -> MaterialTheme.colorScheme.onSurfaceVariant
@@ -77,7 +79,8 @@ fun TransactionRow(
     val semanticAmount = amountText.takeIf { showsAmount }
     val semanticParts = listOfNotNull(
         model.title,
-        if (incoming) "Incoming" else "Outgoing",
+        // A transfer is neither; its title already says what it is.
+        if (isTransfer) null else if (incoming) "Incoming" else "Outgoing",
         tx.displayStatusText,
         semanticAmount,
         model.secondaryAmount?.takeIf { showsAmount },
@@ -100,7 +103,7 @@ fun TransactionRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
     ) {
-        DirectionIcon(incoming = incoming, isFailed = tx.status == TransactionStatus.Failed)
+        DirectionIcon(incoming = incoming, isTransfer = isTransfer, isFailed = tx.status == TransactionStatus.Failed)
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = model.title,
@@ -138,9 +141,21 @@ fun TransactionRow(
     }
 }
 
-/** Muted directional arrow, or failure X, on a soft neutral circle (iOS TransactionIcon). */
+/**
+ * Muted directional arrow, or failure X, on a soft neutral circle (iOS
+ * TransactionIcon). A transfer between the user's own mints is neither
+ * received nor sent, so it takes a two-way arrow.
+ */
 @Composable
-internal fun DirectionIcon(incoming: Boolean, isFailed: Boolean = false) {
+internal fun DirectionIcon(incoming: Boolean, isTransfer: Boolean = false, isFailed: Boolean = false) {
+    val (glyph, description) = when {
+        // The row already announces failure; keep the X decorative.
+        isFailed -> Icons.Filled.Close to null
+        // The title already opens with "Transfer"; the glyph adds nothing to hear.
+        isTransfer -> Icons.Filled.SwapHoriz to null
+        incoming -> Icons.Filled.ArrowDownward to "Incoming"
+        else -> Icons.Filled.ArrowUpward to "Outgoing"
+    }
     Box(
         modifier = Modifier
             .size(DirectionIconCircle)
@@ -151,13 +166,8 @@ internal fun DirectionIcon(incoming: Boolean, isFailed: Boolean = false) {
         contentAlignment = Alignment.Center,
     ) {
         Icon(
-            imageVector = when {
-                isFailed -> Icons.Filled.Close
-                incoming -> Icons.Filled.ArrowDownward
-                else -> Icons.Filled.ArrowUpward
-            },
-            // The row already announces failure; keep the X decorative.
-            contentDescription = if (isFailed) null else if (incoming) "Incoming" else "Outgoing",
+            imageVector = glyph,
+            contentDescription = description,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(DirectionIconSize)
                 .then(if (isFailed) Modifier.testTag("transaction-failure-icon") else Modifier),

@@ -300,7 +300,7 @@ final class MintQuoteSchedulePolicyTests: XCTestCase {
         let restored = MintQuoteSchedulePolicy.select(
             quoteIDs: [pending.id], existing: [pending.id: oldRecord],
             now: Date(timeIntervalSince1970: 700), force: false,
-            unsettledOnchainQuoteIDs: [pending.id]
+            reopenedQuoteIDs: [pending.id]
         )
         XCTAssertEqual(restored.quoteIDs, [pending.id])
     }

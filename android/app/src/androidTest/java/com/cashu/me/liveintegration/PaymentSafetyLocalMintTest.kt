@@ -2,6 +2,7 @@ package com.cashu.me.liveintegration
 
 import androidx.test.platform.app.InstrumentationRegistry
 import com.cashu.me.Core.CDK.CdkWalletGatewayImpl
+import com.cashu.me.Core.CDK.MeltInputFeeChangedException
 import com.cashu.me.Core.CDK.MeltPaymentRecoveryException
 import com.cashu.me.Core.NostrService
 import com.cashu.me.Models.MeltQuoteState
@@ -85,12 +86,14 @@ open class PaymentFixtureTest {
         }
         suspend fun balance() = gateway.totalBalance(url)
         suspend fun quote(amount: Long) = gateway.createMintQuote(amount, PaymentMethodKind.Bolt11, url, "sat")
-        suspend fun pay(quote: MintQuoteInfo): MintQuoteInfo {
+        suspend fun pay(quote: MintQuoteInfo, mint: String = this.mint): MintQuoteInfo {
             if (mint in listOf("controlled", "fees")) {
                 call("$root/pay/$mint", "POST", buildJsonObject { put("invoice", quote.request) })
             }
             return awaitPaid(quote)
         }
+        /** A second mint in this wallet's repository — the shape a transfer between two held mints runs in. */
+        suspend fun hold(mint: String): String = mintUrl(mint).also { gateway.ensureWallet(it) }
         suspend fun awaitPaid(quote: MintQuoteInfo): MintQuoteInfo {
             repeat(80) {
                 val current = gateway.checkMintQuote(quote.id)
@@ -342,5 +345,159 @@ class PaymentSafetyLocalMintTest : PaymentFixtureTest() {
         }
         assertEquals(1, results.count { it })
         assertEquals(21, a.balance() + b.balance())
+    }
+
+    // Transfers between two held mints. The two controlled mints are separate
+    // Lightning backends: a melt at one settles there but does not credit the
+    // other's invoice. Each test pays the destination invoice explicitly, which
+    // also proves issuance follows payment rather than the melt.
+
+    private suspend fun TestWallet.history(mintUrl: String) =
+        gateway.listTransactions(mapOf(mintUrl to listOf("sat")))
+
+    @Test fun crossMintTransferExactConservesValue() = runBlocking {
+        val wallet = wallet("controlled")
+        val destination = wallet.hold("fees")
+        wallet.fund()
+        val incoming = wallet.gateway.createMintQuote(40, PaymentMethodKind.Bolt11, destination, "sat")
+        val outgoing = wallet.gateway.createMeltQuote(incoming.request, null, wallet.url)
+        assertEquals(40, outgoing.amount)
+        arm("/v1/melt/quote/bolt11/", "delay", "GET")
+        val result = wallet.gateway.meltTokens(outgoing.id, wallet.url).result
+        assertEquals(MeltSettlement.Settled, result.settlement)
+        assertEquals(MintQuoteState.Unpaid, wallet.gateway.checkMintQuote(incoming.id).state)
+        wallet.pay(incoming, "fees")
+        assertEquals(40, wallet.gateway.mintTokens(incoming.id))
+        assertEquals(100 - 40 - result.feePaid, wallet.balance())
+        assertEquals(40, wallet.gateway.totalBalance(destination))
+        assertEquals(1, wallet.history(wallet.url).count { it.quoteId == outgoing.id })
+        assertEquals(1, wallet.history(destination).count { it.quoteId == incoming.id })
+    }
+
+    @Test fun crossMintMaxOnFeeMintIsAcceptedByMint() = runBlocking {
+        val wallet = wallet("fees")
+        val destination = wallet.hold("controlled")
+        wallet.fund()
+        val plan = wallet.gateway.createMaxCrossMintQuotes(wallet.url, destination)
+        val amount = requireNotNull(plan.mintQuote.amount)
+        assertEquals(amount, plan.meltQuote.amount)
+        assertTrue("1000 ppk charges one unit per input proof", plan.inputFee > 0)
+        assertEquals(100, amount + plan.meltQuote.feeReserve + plan.inputFee)
+        // Only the returned pair is kept locally, however many probes the search made.
+        assertEquals(listOf(plan.mintQuote.id), wallet.gateway.listUnissuedMintQuotes().map { it.id })
+        arm("/v1/melt/quote/bolt11/", "delay", "GET")
+        val result = wallet.gateway.meltAllUnspentSkippingSwap(plan.meltQuote.id, wallet.url, plan.inputFee).result
+        assertEquals(MeltSettlement.Settled, result.settlement)
+        wallet.pay(plan.mintQuote, "controlled")
+        assertEquals(amount, wallet.gateway.mintTokens(plan.mintQuote.id))
+        // CDK reports the input fee inside the fee paid, and the unused part of
+        // the reserve comes back as change rather than being lost.
+        assertEquals(100, wallet.balance() + amount + result.feePaid)
+        assertTrue(result.feePaid >= plan.inputFee)
+        assertTrue(result.feePaid <= plan.inputFee + plan.meltQuote.feeReserve)
+    }
+
+    @Test fun crossMintTransferLostMeltResponseDoesNotDoubleDebit() = runBlocking {
+        val wallet = wallet("controlled")
+        val destination = wallet.hold("fees")
+        wallet.fund()
+        val incoming = wallet.gateway.createMintQuote(40, PaymentMethodKind.Bolt11, destination, "sat")
+        val outgoing = wallet.gateway.createMeltQuote(incoming.request, null, wallet.url)
+        arm("/v1/melt/bolt11", "lose_response")
+        // Nutshell 0.20.1 can answer an immediate status read before its
+        // background task has persisted the payment.
+        arm("/v1/melt/quote/bolt11/", "delay", "GET")
+        runCatching { wallet.gateway.meltTokens(outgoing.id, wallet.url) }
+        wallet.gateway.recoverIncompleteSagas(wallet.url)
+        assertEquals(MeltQuoteState.Paid, wallet.gateway.checkMeltQuoteStatus(outgoing.id, wallet.url).state)
+        wallet.pay(incoming, "fees")
+        assertEquals(40, wallet.gateway.mintUnissuedQuotes(destination, "sat"))
+        assertEquals(0, wallet.gateway.mintUnissuedQuotes(destination, "sat"))
+        val debits = wallet.history(wallet.url).filter { it.quoteId == outgoing.id }
+        assertEquals(1, debits.size)
+        assertEquals(100, wallet.balance() + 40 + debits.single().fee)
+    }
+
+    @Test fun crossMintMaxLostMeltResponseRecoversChange() = runBlocking {
+        val wallet = wallet("fees")
+        val destination = wallet.hold("controlled")
+        wallet.fund()
+        val plan = wallet.gateway.createMaxCrossMintQuotes(wallet.url, destination)
+        val amount = requireNotNull(plan.mintQuote.amount)
+        arm("/v1/melt/bolt11", "lose_response")
+        arm("/v1/melt/quote/bolt11/", "delay", "GET")
+        runCatching { wallet.gateway.meltAllUnspentSkippingSwap(plan.meltQuote.id, wallet.url, plan.inputFee) }
+        wallet.gateway.recoverIncompleteSagas(wallet.url)
+        assertEquals(MeltQuoteState.Paid, wallet.gateway.checkMeltQuoteStatus(plan.meltQuote.id, wallet.url).state)
+        val debits = wallet.history(wallet.url).filter { it.quoteId == plan.meltQuote.id }
+        assertEquals(1, debits.size)
+        // Every proof went in as an input, so whatever the payment did not use
+        // has to come back through recovery or the wallet lost it.
+        assertEquals(100, wallet.balance() + amount + debits.single().fee)
+    }
+
+    @Test fun crossMintTransferReopenBetweenMeltAndMintIssuesExactlyOnce() = runBlocking {
+        val wallet = wallet("fees")
+        val destination = wallet.hold("controlled")
+        wallet.fund()
+        val plan = wallet.gateway.createMaxCrossMintQuotes(wallet.url, destination)
+        val amount = requireNotNull(plan.mintQuote.amount)
+        arm("/v1/melt/quote/bolt11/", "delay", "GET")
+        wallet.gateway.meltAllUnspentSkippingSwap(plan.meltQuote.id, wallet.url, plan.inputFee)
+        call("$root/pay/controlled", "POST", buildJsonObject { put("invoice", plan.mintQuote.request) })
+        // The app was killed after paying and before issuing. Only what CDK
+        // persisted for the returned pair can finish the transfer.
+        wallet.reopen()
+        wallet.hold("controlled")
+        wallet.awaitPaid(plan.mintQuote)
+        assertEquals(amount, wallet.gateway.mintUnissuedQuotes(destination, "sat"))
+        assertEquals(0, wallet.gateway.mintUnissuedQuotes(destination, "sat"))
+        assertEquals(1, wallet.history(destination).count { it.quoteId == plan.mintQuote.id })
+    }
+
+    @Test fun abandonedCrossMintPlanLeavesNoUnissuedQuote() = runBlocking {
+        val wallet = wallet("fees")
+        val destination = wallet.hold("controlled")
+        wallet.fund()
+
+        val incoming = wallet.gateway.createMintQuote(40, PaymentMethodKind.Bolt11, destination, "sat")
+        val outgoing = wallet.gateway.createMeltQuote(incoming.request, null, wallet.url)
+        assertTrue(wallet.gateway.removeUnusedQuotes(incoming.id, outgoing.id))
+        val abandoned = wallet.gateway.createMaxCrossMintQuotes(wallet.url, destination)
+        assertTrue(wallet.gateway.removeUnusedQuotes(abandoned.mintQuote.id, abandoned.meltQuote.id))
+
+        assertTrue(wallet.gateway.listUnissuedMintQuotes().isEmpty())
+        assertEquals(0, wallet.gateway.mintUnissuedQuotes(destination, "sat"))
+        assertEquals(100, wallet.balance())
+
+        // Once the melt has started, the destination quote is the only handle
+        // on the paid invoice and must survive a discard.
+        val started = wallet.gateway.createMaxCrossMintQuotes(wallet.url, destination)
+        arm("/v1/melt/quote/bolt11/", "delay", "GET")
+        wallet.gateway.meltAllUnspentSkippingSwap(started.meltQuote.id, wallet.url, started.inputFee)
+        assertFalse(wallet.gateway.removeUnusedQuotes(started.mintQuote.id, started.meltQuote.id))
+        assertEquals(listOf(started.mintQuote.id), wallet.gateway.listUnissuedMintQuotes().map { it.id })
+    }
+
+    /**
+     * A proof set that no longer costs what the quote was sized for must not be
+     * melted: the amount would not fit. The reservation is released and the
+     * same quote still works once the fee matches.
+     */
+    @Test fun crossMintMaxChangedInputFeeCancelsBeforeAnythingIsSpent() = runBlocking {
+        val wallet = wallet("fees")
+        val destination = wallet.hold("controlled")
+        wallet.fund()
+        val plan = wallet.gateway.createMaxCrossMintQuotes(wallet.url, destination)
+
+        val failure = runCatching {
+            wallet.gateway.meltAllUnspentSkippingSwap(plan.meltQuote.id, wallet.url, plan.inputFee + 1)
+        }.exceptionOrNull()
+        assertTrue("Unexpected outcome: $failure", failure is MeltInputFeeChangedException)
+        assertEquals(100, wallet.balance())
+
+        arm("/v1/melt/quote/bolt11/", "delay", "GET")
+        val result = wallet.gateway.meltAllUnspentSkippingSwap(plan.meltQuote.id, wallet.url, plan.inputFee).result
+        assertEquals(MeltSettlement.Settled, result.settlement)
     }
 }

@@ -19,6 +19,13 @@ struct WalletMessage {
     /// the funds are held rather than lost. The UI shows a waiting face, not a failure.
     var awaitsMintConfirmation = false
 
+    /// The {what broke} sentence alone, for a slot that holds one line. The
+    /// whole text when there is no second sentence.
+    var headline: String {
+        guard let end = text.range(of: ". ") else { return text }
+        return String(text[..<end.lowerBound]) + "."
+    }
+
     static func error(_ text: String) -> WalletMessage { .init(text: text, severity: .error) }
     static func caution(_ text: String) -> WalletMessage { .init(text: text, severity: .caution) }
     static func info(_ text: String) -> WalletMessage { .init(text: text, severity: .info) }
@@ -46,6 +53,10 @@ enum WalletErrorMessage {
         if let checkpointError = error as? WalletCheckpointError {
             return .error(checkpointError.localizedDescription)
         }
+        if let removalError = error as? MintRemovalPolicyError {
+            // Preserve app-owned safety guidance before generic CDK matching.
+            return .error(removalError.localizedDescription)
+        }
         if let meltRecoveryError = error as? MeltPaymentRecoveryError {
             switch meltRecoveryError {
             case .compensated:
@@ -54,6 +65,29 @@ enum WalletErrorMessage {
                 return .caution("The mint hasn't confirmed this payment yet. Your funds are held until it's paid or refunded.")
                     .terminal()
                     .awaitingMintConfirmation()
+            }
+        }
+
+        if let transferError = error as? MintTransferError {
+            switch transferError {
+            case .notEligible(.sameMint):
+                return .caution("Choose two different mints.")
+            case .notEligible(.sourceCannotSend):
+                return .caution("This mint can't send over Lightning. Choose another mint.")
+            case .notEligible(.destinationCannotReceive):
+                return .caution("This mint can't receive over Lightning. Choose another mint.")
+            case .insufficientBalance:
+                return .error("Not enough balance.")
+            case .nothingToTransfer:
+                return .caution("Nothing left to transfer after fees.")
+            case .quoteMismatch:
+                return .error("The mint returned an unexpected quote. Try again or use another mint.")
+            case .planExpired:
+                return .caution("This quote expired. Review the transfer again.")
+            case .planStale:
+                return .caution("The transfer changed. Review it again.")
+            case .paymentReturned:
+                return .error("The transfer didn't go through. Your funds were not moved.")
             }
         }
 
@@ -335,11 +369,12 @@ enum WalletErrorMessage {
             return .caution("This amount is outside the mint's limits. Try a different amount.")
         }
 
-        if normalized.contains("minting disabled") {
+        // CDK words these "Minting is disabled" / "Melting is disabled".
+        if normalized.contains("minting disabled") || normalized.contains("minting is disabled") {
             return .caution("This mint has paused deposits. Choose another mint.")
         }
 
-        if normalized.contains("melting disabled") {
+        if normalized.contains("melting disabled") || normalized.contains("melting is disabled") {
             return .caution("This mint has paused payments. Choose another mint.")
         }
 

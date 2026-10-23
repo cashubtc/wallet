@@ -2,13 +2,11 @@ package com.cashu.me.ui.send
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -99,6 +97,7 @@ import com.cashu.me.Models.MintQuoteState
 import com.cashu.me.Models.PaymentMethodKind
 import com.cashu.me.R
 import com.cashu.me.ui.components.AmountFlipDisplay
+import com.cashu.me.ui.components.AmountNote
 import com.cashu.me.ui.components.AmountText
 import com.cashu.me.ui.components.CashuTextField
 import com.cashu.me.ui.components.EmptyState
@@ -124,12 +123,16 @@ import com.cashu.me.ui.components.SkeletonValue
 import com.cashu.me.ui.components.SpinnerRing
 import com.cashu.me.ui.components.TextButtonContext
 import com.cashu.me.ui.components.TwoFaceScreen
+import com.cashu.me.ui.components.amountHeroHeight
+import com.cashu.me.ui.components.entryNoteRoom
+import com.cashu.me.ui.components.fittingEntryScale
+import com.cashu.me.ui.components.leavingRoomAbove
 import com.cashu.me.ui.mints.ConnectMintContext
 import com.cashu.me.ui.mints.ConnectMintSheetContent
 import com.cashu.me.ui.testing.UiTestTags
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.withMonoDigits
-import com.cashu.me.ui.theme.rememberReducedMotion
+import com.cashu.me.ui.theme.AmountScale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -141,10 +144,10 @@ private const val CASHU_FEE_DEBOUNCE_MS = 250L
 // band (amount / quote spinner / caution face) lands at the same Y as the
 // status terminal's glyph — the pay transition then keeps the spinner still
 // instead of jumping.
-private const val ConfirmTopFraction = 0.16f
-private val ConfirmHeroMinHeight = 220.dp
+internal const val ConfirmTopFraction = 0.16f
+internal val ConfirmHeroMinHeight = 220.dp
 private val ConfirmGlyphSlotSize = 72.dp
-private val ConfirmGlyphSize = 64.dp
+internal val ConfirmGlyphSize = 64.dp
 
 private enum class SendStep { Input, Amount, Confirm }
 
@@ -1206,87 +1209,66 @@ private fun AmountFace(
     val validation = UnifiedSendAmountEntry.validation(amountSats, mintBalance)
     val insufficient = validation == UnifiedSendAmountValidation.InsufficientBalance
     val isFiatEntry = entryPrimary == AmountDisplayPrimary.Fiat
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = CashuTheme.spacing.comfortable),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        val reduceMotion = rememberReducedMotion()
-        // One flexible cell: the amount centered in it, the notice *overlaid* at
-        // its bottom (iOS SendView's ZStack, and Send Ecash's twin). As a sibling
-        // the notice shoved the amount up by its full height the instant it
-        // appeared, with no transition at all.
-        Box(
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-            contentAlignment = Alignment.Center,
+    // The mint selector states the available balance, so repeating it in the
+    // note would add visual noise.
+    val note = if (insufficient) AmountNote("Insufficient balance", NoticeSeverity.Caution) else null
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val noteRoom = entryNoteRoom(note, maxWidth - CashuTheme.spacing.comfortable * 2)
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = CashuTheme.spacing.comfortable),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            AmountFlipDisplay(
-                amountSats = amountSats,
-                primary = entryPrimary,
-                onFlip = onFlipEntryPrimary,
-                btcPrice = btcPrice,
-                currencyCode = fiatCurrencyCode,
-                useBitcoinSymbol = useBitcoinSymbol,
-                entryRaw = amount,
-                primaryAccessibilityPrefix = "Send amount",
-            )
-            Column(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .padding(bottom = CashuTheme.spacing.default),
-                horizontalAlignment = Alignment.CenterHorizontally,
+            // One flexible cell, the amount centered in it (iOS SendView parity).
+            // A note takes the conversion line under the amount, so it never
+            // pushes the amount up. Where the cell is short the amount steps down
+            // a rung instead of squeezing that line out.
+            BoxWithConstraints(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                contentAlignment = Alignment.Center,
             ) {
-                AnimatedVisibility(
-                    visible = insufficient,
-                    enter = if (reduceMotion) {
-                        fadeIn(spring(stiffness = Spring.StiffnessMedium))
-                    } else {
-                        fadeIn(spring(stiffness = Spring.StiffnessMedium)) + scaleIn(
-                            animationSpec = spring(stiffness = Spring.StiffnessMedium),
-                            initialScale = 0.95f,
-                        )
-                    },
-                    exit = fadeOut(spring(stiffness = Spring.StiffnessMedium)),
-                ) {
-                    // The mint selector states the available balance, so
-                    // repeating it in this notice would add visual noise.
-                    InlineNotice(
-                        text = "Insufficient balance",
-                        detail = null,
-                        severity = NoticeSeverity.Caution,
-                        showsContainer = false,
-                        centered = true,
-                    )
-                }
+                AmountFlipDisplay(
+                    amountSats = amountSats,
+                    primary = entryPrimary,
+                    onFlip = onFlipEntryPrimary,
+                    btcPrice = btcPrice,
+                    currencyCode = fiatCurrencyCode,
+                    useBitcoinSymbol = useBitcoinSymbol,
+                    entryRaw = amount,
+                    entryScale = fittingEntryScale(maxHeight, noteRoom),
+                    primaryAccessibilityPrefix = "Send amount",
+                    note = note,
+                    holdsNoteLine = true,
+                )
             }
-        }
-        if (cashuRequestFeePresentation != null) {
-            EstimatedCashuRequestFeeRow(cashuRequestFeePresentation)
-            Spacer(Modifier.height(CashuTheme.spacing.snug))
-        }
-        // Under the amount, over the keypad (Send Ecash / Receive parity).
-        if (mint != null) {
-            AmountEntryMintSelector(
-                direction = MintSelectorDirection.Source,
-                mint = mint,
-                balanceText = balanceText,
-                onPickMint = onPickMint,
-                // Gated on a spendable balance, the way Send Ecash already does
-                // it — an empty mint offered a Max that filled in zero.
-                onUseMax = onUseMax.takeIf { mintBalance > 0L },
+            if (cashuRequestFeePresentation != null) {
+                EstimatedCashuRequestFeeRow(cashuRequestFeePresentation)
+                Spacer(Modifier.height(CashuTheme.spacing.snug))
+            }
+            // Under the amount, over the keypad (Send Ecash / Receive parity).
+            if (mint != null) {
+                AmountEntryMintSelector(
+                    direction = MintSelectorDirection.Source,
+                    mint = mint,
+                    balanceText = balanceText,
+                    onPickMint = onPickMint,
+                    // Gated on a spendable balance, the way Send Ecash already does
+                    // it — an empty mint offered a Max that filled in zero.
+                    onUseMax = onUseMax.takeIf { mintBalance > 0L },
+                )
+                Spacer(Modifier.height(CashuTheme.spacing.snug))
+            }
+            NumberPadFooter(
+                amount = amount,
+                onAmountChange = onAmountChange,
+                buttonText = "Continue",
+                onButtonClick = onContinue,
+                modifier = Modifier.leavingRoomAbove(amountHeroHeight(AmountScale.Compact) + noteRoom),
+                decimals = if (isFiatEntry) 2 else 0,
+                buttonEnabled = validation == UnifiedSendAmountValidation.Valid,
             )
-            Spacer(Modifier.height(CashuTheme.spacing.snug))
         }
-        NumberPadFooter(
-            amount = amount,
-            onAmountChange = onAmountChange,
-            buttonText = "Continue",
-            onButtonClick = onContinue,
-            decimals = if (isFiatEntry) 2 else 0,
-            buttonEnabled = validation == UnifiedSendAmountValidation.Valid,
-        )
     }
 }
 
@@ -1598,7 +1580,7 @@ private fun ConfirmFace(
  * lives in the pinned bottom slot.
  */
 @Composable
-private fun ConfirmCautionFace(message: String, detail: String? = null) {
+internal fun ConfirmCautionFace(message: String, detail: String? = null) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.comfortable),

@@ -3,8 +3,15 @@ package com.cashu.me.Core.CDK
 import com.cashu.me.Models.MintUrlIdentity
 import com.cashu.me.Core.toDomainUnit
 
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
@@ -44,6 +51,7 @@ import org.cashudevkit.BitcoinNetwork as CdkBitcoinNetwork
 import org.cashudevkit.CurrencyUnit as CdkCurrencyUnit
 import org.cashudevkit.FinalizedMelt as CdkFinalizedMelt
 import org.cashudevkit.KeysetLoadPolicy as CdkKeysetLoadPolicy
+import org.cashudevkit.MeltConfirmOptions as CdkMeltConfirmOptions
 import org.cashudevkit.MeltConfirmOutcome as CdkMeltConfirmOutcome
 import org.cashudevkit.MeltOptions as CdkMeltOptions
 import org.cashudevkit.MeltQuote as CdkMeltQuote
@@ -134,6 +142,11 @@ class CdkWalletGatewayImpl : WalletGateway {
     private var repository: CdkWalletRepository? = null
     private val operationMutex = Mutex()
 
+    // Confirmations that outlived their cap. They hold the native wallet and
+    // store, so the repository must not close under them.
+    private val settlementScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val residualSettlements = ConcurrentHashMap.newKeySet<Deferred<*>>()
+
     override suspend fun initializeLogging(level: String) = cdkCall {
         initLogging(level)
     }
@@ -147,6 +160,7 @@ class CdkWalletGatewayImpl : WalletGateway {
     }
 
     override suspend fun openWalletRepository(mnemonic: String, databasePath: String) = cdkCall {
+        residualSettlements.toList().joinAll()
         closeWalletRepositoryUnlocked()
         val db = CdkWalletSqliteDatabase(databasePath)
         database = db
@@ -154,6 +168,7 @@ class CdkWalletGatewayImpl : WalletGateway {
     }
 
     override suspend fun closeWalletRepository() = cdkCall {
+        residualSettlements.toList().joinAll()
         closeWalletRepositoryUnlocked()
     }
 
@@ -652,6 +667,136 @@ class CdkWalletGatewayImpl : WalletGateway {
         )
     }
 
+    override suspend fun createMaxCrossMintQuotes(sourceMintUrl: String, destinationMintUrl: String): CrossMintQuotes = cdkCall {
+        val quotes = walletFor(sourceMintUrl).crossMintTransferQuoteMax(walletFor(destinationMintUrl))
+        CrossMintQuotes(
+            mintQuote = quotes.mintQuote.toDomain(fallbackAmount = null, fallbackMethod = PaymentMethodKind.Bolt11),
+            meltQuote = quotes.meltQuote.toDomain(fallbackMethod = PaymentMethodKind.Bolt11),
+            inputFee = quotes.inputFee.value.toLong(),
+        )
+    }
+
+    override suspend fun meltAllUnspentSkippingSwap(quoteId: String, mintUrl: String, expectedInputFee: Long): MeltConfirmation = cdkCall {
+        val quote = database?.getMeltQuote(quoteId)
+        val wallet = walletFor(mintUrl)
+        val prepared = try {
+            wallet.prepareMeltProofs(quoteId, wallet.getProofsByStates(listOf(org.cashudevkit.ProofState.UNSPENT)))
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            val stored = try { checkNotNull(database).getMeltQuote(quoteId) }
+                catch (_: Exception) { throw MeltPaymentRecoveryException(quoteId, null, unresolved = true) }
+            val operation = stored?.usedByOperation ?: throw failure
+            return@cdkCall resolveMeltFailure(wallet, quoteId, operation)
+        }
+        val inputFee = prepared.inputFeeWithoutSwap().value.toLong()
+        if (inputFee != expectedInputFee) {
+            try {
+                withContext(NonCancellable) { prepared.cancel() }
+            } catch (_: Exception) {
+                // The reservation outlived a failed cancel, so the quote is not
+                // reusable until recovery has released it.
+                return@cdkCall resolveMeltFailure(wallet, quoteId, prepared.operationId())
+            }
+            throw MeltInputFeeChangedException(expected = expectedInputFee, actual = inputFee)
+        }
+        // No respond-async confirmation takes options, so the confirmation
+        // itself is the bounded wait. It runs outside this call's scope: if the
+        // cap fires, or the caller goes away, the native call keeps running as
+        // the settlement watcher and is never cancelled mid-payment.
+        val confirmation = settlementScope.async {
+            prepared.confirmWithOptions(CdkMeltConfirmOptions(skipSwap = true))
+        }
+        residualSettlements += confirmation
+        confirmation.invokeOnCompletion { residualSettlements -= confirmation }
+        try {
+            val finalized = withTimeoutOrNull(LIGHTNING_SETTLEMENT_WAIT_MS) { confirmation.await() }
+            when {
+                finalized == null -> MeltConfirmation(
+                    result = MeltPaymentResult(
+                        preimage = null,
+                        amount = quote?.amount?.value?.toLong() ?: 0,
+                        feePaid = (quote?.feeReserve?.value?.toLong() ?: 0) + expectedInputFee,
+                        mintUrl = wallet.mintUrl().url,
+                        paymentMethod = quote?.paymentMethod?.toDomain(),
+                        request = quote?.request,
+                        settlement = MeltSettlement.Pending,
+                    ),
+                    pendingMelt = null,
+                    residualSettlement = confirmation,
+                )
+                finalized.state == CdkQuoteState.PAID || finalized.state == CdkQuoteState.ISSUED -> MeltConfirmation(
+                    result = MeltPaymentResult(
+                        preimage = finalized.preimage,
+                        amount = finalized.amount.value.toLong(),
+                        feePaid = finalized.feePaid.value.toLong(),
+                        mintUrl = wallet.mintUrl().url,
+                        paymentMethod = quote?.paymentMethod?.toDomain(),
+                        request = quote?.request,
+                        settlement = MeltSettlement.Settled,
+                    ),
+                    pendingMelt = null,
+                )
+                else -> resolveMeltFailure(wallet, quoteId, prepared.operationId())
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (recovery: MeltPaymentRecoveryException) {
+            throw recovery
+        } catch (_: Exception) {
+            resolveMeltFailure(wallet, quoteId, prepared.operationId())
+        }
+    }
+
+    override suspend fun removeUnusedQuotes(mintQuoteId: String, meltQuoteId: String?): Boolean = cdkCall {
+        val db = database ?: return@cdkCall false
+        try {
+            if (meltQuoteId != null) {
+                val meltQuote = db.getMeltQuote(meltQuoteId)
+                if (meltQuote != null &&
+                    (meltQuote.state != CdkQuoteState.UNPAID || meltQuote.usedByOperation != null)
+                ) {
+                    return@cdkCall false
+                }
+                val attempts = db.listTransactions(null, CdkTransactionDirection.OUTGOING, null)
+                if (attempts.any { it.quoteId == meltQuoteId }) return@cdkCall false
+            }
+            val mintQuote = db.getMintQuote(mintQuoteId)
+            if (mintQuote != null) {
+                if (mintQuote.amountPaid.value > 0uL ||
+                    mintQuote.amountIssued.value > 0uL ||
+                    mintQuote.usedByOperation != null
+                ) {
+                    return@cdkCall false
+                }
+                db.removeMintQuote(mintQuoteId)
+            }
+            if (meltQuoteId != null) db.removeMeltQuote(meltQuoteId)
+            true
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    override suspend fun meltEndedUnpaid(meltQuoteId: String?): Boolean = cdkCall {
+        val db = database
+        if (meltQuoteId == null || db == null) return@cdkCall false
+        try {
+            val quote = db.getMeltQuote(meltQuoteId)
+            if (quote == null || quote.state != CdkQuoteState.UNPAID || quote.usedByOperation != null) {
+                return@cdkCall false
+            }
+            val attempts = db.listTransactions(null, CdkTransactionDirection.OUTGOING, null)
+            attempts.none { it.quoteId == meltQuoteId && it.status == CdkTransactionStatus.PENDING }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     override suspend fun checkMeltQuoteStatus(quoteId: String, mintUrl: String?): MeltQuoteInfo = cdkCall {
         val stored = database?.getMeltQuote(quoteId)
         val wallet = walletFor(mintUrl ?: stored?.mintUrl?.url ?: firstWallet().mintUrl().url)
@@ -1028,6 +1173,7 @@ class CdkWalletGatewayImpl : WalletGateway {
             supportedMeltMethods = meltMethods,
             supportsBolt12MintDescription = nuts.reportsBolt12MintDescription(),
             supportsAmountlessBolt11Melt = nuts.reportsAmountlessBolt11Melt(),
+            bolt11Sat = nuts.reportedBolt11SatCapability(),
             contacts = contact.orEmpty().map { MintContact(method = it.method, info = it.info) },
             tosUrl = tosUrl,
             software = version?.let { MintSoftware(name = it.name, version = it.version) },

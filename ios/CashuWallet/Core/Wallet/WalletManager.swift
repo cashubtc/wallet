@@ -146,6 +146,12 @@ class WalletManager: ObservableObject {
     /// before this task starts, and wallet-boundary resets cancel it.
     var startupMaintenanceTask: Task<Void, Never>?
     var npcQuoteObserver: NSObjectProtocol?
+    /// Transfers between mints that are executing right now. Maintenance reads
+    /// their quotes as untouched until the melt begins, so it leaves them be.
+    var mintTransfersInFlight: Set<String> = []
+    /// When this process began managing the wallet. A transfer draft older than
+    /// this belongs to a review screen that no longer exists.
+    let startedAt = Date()
     var serviceChangeCancellables: Set<AnyCancellable> = []
     let walletDatabaseDirectoryName = "cashu-swift"
     let walletDatabaseFilename = "wallet.db"

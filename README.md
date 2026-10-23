@@ -33,8 +33,8 @@ balances are not real sats.
 - **NFC contactless** — tap-to-pay ecash between devices.
 - **Locked ecash (P2PK)** — lock a send to the recipient's key so only they
   can redeem it.
-- **Multi-mint** — add mints by URL or QR, discover public mints, and keep
-  per-mint balances visible.
+- **Multi-mint** — add mints by URL or QR, discover public mints, keep
+  per-mint balances visible, and transfer a balance from one mint to another.
 - **Nostr Wallet Connect** — let other apps spend from the wallet with scoped
   permissions.
 - **Backup & restore** — BIP-39 seed phrase backup and restore, plus an App

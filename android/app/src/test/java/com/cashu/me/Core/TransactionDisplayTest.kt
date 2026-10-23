@@ -1,5 +1,7 @@
 package com.cashu.me.Core
 
+import com.cashu.me.Models.MintInfo
+import com.cashu.me.Models.MintTransferLeg
 import com.cashu.me.Models.TransactionKind
 import com.cashu.me.Models.TransactionStatus
 import com.cashu.me.Models.TransactionType
@@ -180,6 +182,95 @@ class TransactionDisplayTest {
                 .any { it.label == "Memo" && it.value == "Coffee from Alice" },
         )
         assertTrue(TransactionDisplay.detailFields(withoutMemo).none { it.label == "Memo" })
+    }
+
+    /**
+     * A transfer's detail names its two mints and nothing about the Lightning
+     * payment that carried it: no Mint row, no payment proof, no description.
+     */
+    @Test
+    fun transferDetailNamesBothMintsAndHidesThePaymentPlumbing() {
+        val transfer = transaction(
+            kind = TransactionKind.Lightning,
+            type = TransactionType.Outgoing,
+            preimage = "0123456789abcdef0123456789abcdef",
+            fee = 2,
+        ).copy(
+            transfer = MintTransferLeg(
+                recordId = "transfer",
+                sourceMintUrl = "https://source.example",
+                destinationMintUrl = "https://destination.example",
+                destinationQuoteId = "mint-quote",
+            ),
+        )
+
+        val fields = TransactionDisplay.detailFields(transfer) { url ->
+            if (url == "https://source.example") "Source" else "Destination"
+        }
+
+        assertEquals(listOf("Status", "Date", "Fee", "From", "To"), fields.map { it.label })
+        assertEquals("Completed", fields.first().value)
+        assertEquals(listOf("Source", "Destination"), fields.takeLast(2).map { it.value })
+        assertTrue(fields.none { it.copyValue != null })
+        assertEquals(
+            listOf("Status", "Date", "From", "To"),
+            TransactionDisplay.detailFields(transfer.copy(fee = 0)).map { it.label },
+        )
+    }
+
+    /** A transfer is titled by where the ecash went, as the wallet names that mint. */
+    @Test
+    fun transferTitleNamesTheDestinationMint() {
+        val transfer = transaction(kind = TransactionKind.Lightning, type = TransactionType.Outgoing).copy(
+            transfer = MintTransferLeg("transfer", "https://source.example", "https://destination.example", "mint-quote"),
+        )
+        val mints = listOf(
+            MintInfo(url = "https://source.example", name = "Source"),
+            // Spelled as the wallet stored it, not as the record did.
+            MintInfo(url = "https://Destination.example/", name = "  Destination Mint "),
+        )
+
+        assertEquals("Transfer to Destination Mint", TransactionDisplay.title(transfer, mints))
+    }
+
+    /**
+     * A destination the wallet no longer holds is named by its host, never by
+     * a raw URL (iOS `MintInfo.displayName`), and a blank name counts as none.
+     */
+    @Test
+    fun transferTitleFallsBackToTheDestinationHost() {
+        val transfer = transaction(kind = TransactionKind.Lightning, type = TransactionType.Outgoing).copy(
+            transfer = MintTransferLeg("transfer", "https://source.example", "https://destination.example:3338/v1", "q"),
+        )
+
+        assertEquals("Transfer to destination.example", TransactionDisplay.title(transfer))
+        assertEquals(
+            "Transfer to destination.example",
+            TransactionDisplay.title(
+                transfer,
+                listOf(MintInfo(url = "https://destination.example:3338/v1", name = " ")),
+            ),
+        )
+        // Only a row with a transfer leg is retitled.
+        assertEquals("Lightning paid", TransactionDisplay.title(transfer.copy(transfer = null), emptyList()))
+    }
+
+    /** While a transfer is in flight its Status says which leg is outstanding. */
+    @Test
+    fun transferStatusNamesTheOutstandingLeg() {
+        val transfer = transaction(kind = TransactionKind.Lightning, type = TransactionType.Outgoing).copy(
+            transfer = MintTransferLeg("transfer", "https://source.example", "https://destination.example", "mint-quote"),
+        )
+
+        assertEquals("Completed", TransactionDisplay.statusText(transfer))
+        assertEquals(
+            "Arriving at Destination",
+            TransactionDisplay.statusText(
+                transfer.copy(status = TransactionStatus.Pending, statusNote = "Arriving at Destination"),
+            ),
+        )
+        assertEquals("Pending", TransactionDisplay.statusText(transfer.copy(status = TransactionStatus.Pending)))
+        assertEquals("Failed", TransactionDisplay.statusText(transfer.copy(status = TransactionStatus.Failed)))
     }
 
     @Test

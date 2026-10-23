@@ -95,7 +95,7 @@ struct TransactionDetailView: View {
 
     var body: some View {
         ActivityDetailSheet(
-            title: transaction.displayTitle,
+            title: transaction.displayTitle(mints: walletManager.mints),
             contentHeight: contentHeight,
             fitsContent: !usesAdaptiveQR,
             onShare: showsQR ? { showShareSheet = true } : nil
@@ -329,6 +329,10 @@ struct TransactionDetailView: View {
     /// The lifecycle word for the Status row. Direction/rail come from the nav
     /// title, so this only names the state: completed → Claimed/Paid/Confirmed.
     private var statusFieldValue: String {
+        if transaction.transfer != nil {
+            // Says which leg is outstanding while the transfer is in flight.
+            return transaction.status == .completed ? "Completed" : transaction.displayStatusText
+        }
         switch transaction.status {
         case .completed:
             switch transaction.kind {
@@ -360,6 +364,13 @@ struct TransactionDetailView: View {
         ]
         if transaction.fee > 0 {
             rows.append(("Fee", formattedNativeFee, nil))
+        }
+        if let transfer = transaction.transfer {
+            // Both ends are the user's own mints; the Lightning payment between
+            // them is plumbing, so its proof is not shown.
+            rows.append(("From", MintInfo.displayName(for: transfer.sourceMintURL, in: walletManager.mints), nil))
+            rows.append(("To", MintInfo.displayName(for: transfer.destinationMintURL, in: walletManager.mints), nil))
+            return rows
         }
         if transaction.kind == .onchain {
             if let mintUrl = transaction.mintUrl {

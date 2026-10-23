@@ -74,6 +74,43 @@ Cashu Request payment, and NFC receive (Android-only surface).
   `successTitle: "Payment Received!"`; Android `PaymentStatusScreen` terminals in
   `ReceiveLightningScreen`, `ReceiveTokenReview`, `CashuRequestDetailScreen`,
   and `NfcReceiveUi` use the same title.
+- **Not a transfer.** Moving ecash between two of the user's own mints ends on
+  the same status screen but is not a payment received: nothing new landed in
+  the wallet. Its terminal says "Transfer Complete" on iOS and "Transfer
+  complete" on Android (each platform's send-terminal casing), "Transfer
+  Processing" / "Transfer processing" while a leg is still settling, and
+  "Transfer Failed" / "Transfer failed" otherwise. The received celebration
+  never plays for a transfer, including when a later sweep finishes it.
+  While it runs, the line under "Transferring…" names where the ecash is:
+  "Leaving {source}", then "Arriving at {destination}". A settling terminal
+  says which leg is outstanding in the same words, never "payment":
+  "{destination} is still issuing your ecash. It will arrive automatically."
+  or "Still leaving {source}. Your funds are safe."
+- **Transfer entry and review.** Each mint's balance is a bare number under
+  its name, with no "available" or "Balance" (screen readers hear "2 sat
+  available" and "Balance 1 sat"). "Max" sits at the end of the source's
+  balance line, as on Send, and fills the largest amount the mint can transfer
+  after fees. The visible word is part of its accessible name, so Voice
+  Control and Voice Access can say "Max" (or "Using Max"): VoiceOver reads
+  "Transfer maximum" with "Max" as an input label, and TalkBack reads "Max"
+  with "transfer maximum" as the action. Once used it reads
+  "Using Max" until the amount changes; that is the whole explanation of an
+  amount that came out under the balance, so no note says it. A problem with
+  a mint is said on that mint's line in the route, after its balance and in
+  red words, never under the amount: "2 sat · too little to cover the fee"
+  (the maximum came out at nothing after fees; Max then goes), "2 sat · can't
+  send over Lightning", "1 sat · can't receive over Lightning".
+  The note under the amount is for the amount only. It takes the conversion
+  line, so it is written to fit one line: red words for a problem, no glyph. A
+  wallet error shows its {what broke} sentence alone ("Couldn't reach the
+  mint."), since tapping Max again is the retry, and screen readers hear the
+  whole message. Over the balance it says "Insufficient balance", as Send
+  does. Typing a source's whole balance says "Not enough left for the fee.
+  Use Max." before any quote is asked for: the fee is paid from the source on
+  top of the amount, so the whole balance cannot arrive, and Max is the one
+  control that fixes it. When the quotes lapse on the review screen and are
+  replaced, the review says "The fee was updated. Check it and transfer
+  again." The commit names the amount that arrives: "Transfer 21 sat".
 
 ### 2. History row / transaction detail title (factual record)
 
@@ -87,6 +124,14 @@ receipt.
   counterparts). Single source of truth per platform (iOS
   `WalletTransaction.displayTitle`, Android `TransactionDisplay.title`) so a
   row and the detail it opens read identically.
+- **Transfers:** moving ecash between two of the user's own mints is titled
+  **"Transfer to {destination}"** — kind first, then where the ecash went, and
+  no verb: nothing was received and nothing was sent. Naming the destination is
+  what lets a list of transfers be told apart; a destination the wallet no
+  longer holds is named by its host. The detail names the mints as "From" and
+  "To". While the destination has yet to issue the ecash the status reads
+  "Arriving at {mint}"; while the payment is still settling, "Payment in
+  progress".
 
 ### 3. Transient live confirmation (brief signal)
 

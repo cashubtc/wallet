@@ -1284,6 +1284,10 @@ extension WalletManager {
             }
         }
 
+        // After saga recovery, so a transfer interrupted mid-melt is judged on
+        // its recovered state rather than mistaken for one that never started.
+        await discardAbandonedMintTransferDraftsAssumingWalletOperationLease()
+
         if timestampsChanged {
             walletStore.saveMintKeysetRefreshTimestamps(keysetRefreshTimestamps)
         }

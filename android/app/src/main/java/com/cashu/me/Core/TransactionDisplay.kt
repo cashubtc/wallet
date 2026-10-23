@@ -1,6 +1,7 @@
 package com.cashu.me.Core
 
 import java.net.URI
+import com.cashu.me.Models.MintInfo
 import com.cashu.me.Models.TransactionKind
 import com.cashu.me.Models.TransactionStatus
 import com.cashu.me.Models.TransactionType
@@ -18,41 +19,56 @@ data class TransactionDetailField(
 
 object TransactionDisplay {
     // Kind-first, capitalized kind, lowercase verb — single source of truth for
-    // rows AND the detail title, so a row and the sheet it opens read identically.
-    fun title(transaction: WalletTransaction): String = if (transaction.isPendingReceiveToken) "Ecash to claim" else when (transaction.kind) {
-        TransactionKind.Lightning -> when {
-            transaction.type != TransactionType.Incoming -> "Lightning paid"
-            // Nothing has been received while the invoice awaits payment.
-            transaction.isUnpaidInvoice -> "Lightning invoice"
-            else -> "Lightning received"
+    // rows, the detail title AND title search, so a row and the sheet it opens
+    // read identically. [mints] names a transfer's destination; a mint the
+    // wallet no longer holds is named by its host (iOS `displayTitle(mints:)`).
+    fun title(transaction: WalletTransaction, mints: List<MintInfo> = emptyList()): String = when {
+        // Neither received nor sent: both ends are the user's own mints, so
+        // the row says where the ecash went.
+        transaction.transfer != null -> transaction.transfer.destinationMintUrl.let { url ->
+            "Transfer to ${heldMintName(url, mints) ?: mintHost(url.trim())}"
         }
-        TransactionKind.Onchain -> when {
-            transaction.type != TransactionType.Incoming -> "Bitcoin sent"
-            transaction.isUnfundedAddress -> "Bitcoin address"
-            else -> "Bitcoin received"
-        }
-        TransactionKind.Ecash -> if (transaction.type == TransactionType.Incoming) {
-            "Ecash received"
-        } else {
-            "Ecash sent"
+        transaction.isPendingReceiveToken -> "Ecash to claim"
+        else -> when (transaction.kind) {
+            TransactionKind.Lightning -> when {
+                transaction.type != TransactionType.Incoming -> "Lightning paid"
+                // Nothing has been received while the invoice awaits payment.
+                transaction.isUnpaidInvoice -> "Lightning invoice"
+                else -> "Lightning received"
+            }
+            TransactionKind.Onchain -> when {
+                transaction.type != TransactionType.Incoming -> "Bitcoin sent"
+                transaction.isUnfundedAddress -> "Bitcoin address"
+                else -> "Bitcoin received"
+            }
+            TransactionKind.Ecash -> if (transaction.type == TransactionType.Incoming) {
+                "Ecash received"
+            } else {
+                "Ecash sent"
+            }
         }
     }
 
     // Explicit, monochrome lifecycle text in the shared receipt inspector.
-    fun statusText(transaction: WalletTransaction): String = when (transaction.status) {
-        TransactionStatus.Completed -> when (transaction.kind) {
-            TransactionKind.Ecash -> "Claimed"
-            TransactionKind.Lightning -> "Paid"
-            TransactionKind.Onchain -> "Confirmed"
+    fun statusText(transaction: WalletTransaction): String = when {
+        // Says which leg is outstanding while the transfer is in flight.
+        transaction.transfer != null ->
+            if (transaction.status == TransactionStatus.Completed) "Completed" else transaction.displayStatusText
+        else -> when (transaction.status) {
+            TransactionStatus.Completed -> when (transaction.kind) {
+                TransactionKind.Ecash -> "Claimed"
+                TransactionKind.Lightning -> "Paid"
+                TransactionKind.Onchain -> "Confirmed"
+            }
+            // An incoming deposit names its stage — the same words its History
+            // row and the receive sheet use (DESIGN.md → On-chain receive status).
+            TransactionStatus.Pending ->
+                transaction.statusNote?.takeIf {
+                    transaction.kind == TransactionKind.Onchain && transaction.type == TransactionType.Incoming
+                } ?: "Pending"
+            TransactionStatus.Failed -> "Failed"
+            TransactionStatus.Expired -> "Expired"
         }
-        // An incoming deposit names its stage — the same words its History
-        // row and the receive sheet use (DESIGN.md → On-chain receive status).
-        TransactionStatus.Pending ->
-            transaction.statusNote?.takeIf {
-                transaction.kind == TransactionKind.Onchain && transaction.type == TransactionType.Incoming
-            } ?: "Pending"
-        TransactionStatus.Failed -> "Failed"
-        TransactionStatus.Expired -> "Expired"
     }
 
     fun qrContent(transaction: WalletTransaction): String? =
@@ -102,13 +118,25 @@ object TransactionDisplay {
     // Detail rows follow the iOS canon: Status first (monochrome), Date, then
     // conditional essentials — Fee when > 0, Mint, Lightning payment proof,
     // or on-chain Address/Transaction ID. Type/Direction/Unit rows stay dropped;
-    // amounts and fees already carry their native unit.
-    fun detailFields(transaction: WalletTransaction): List<TransactionDetailField> =
+    // amounts and fees already carry their native unit. A transfer names its
+    // two mints as From and To instead. [mintName] resolves a mint URL to the
+    // name the wallet knows it by; the host is the fallback.
+    fun detailFields(
+        transaction: WalletTransaction,
+        mintName: (String) -> String = ::mintHost,
+    ): List<TransactionDetailField> =
         buildList {
             add(TransactionDetailField("Status", statusText(transaction)))
             add(TransactionDetailField("Date", formatDetailDate(transaction.dateEpochMillis)))
             if (transaction.fee > 0) add(TransactionDetailField("Fee", formatNativeAmount(transaction.fee, transaction.unit)))
-            transaction.mintUrl?.let { add(TransactionDetailField("Mint", mintHost(it))) }
+            transaction.transfer?.let { transfer ->
+                // Both ends are the user's own mints; the Lightning payment
+                // between them is plumbing, so its proof is not shown.
+                add(TransactionDetailField("From", mintName(transfer.sourceMintUrl)))
+                add(TransactionDetailField("To", mintName(transfer.destinationMintUrl)))
+                return@buildList
+            }
+            transaction.mintUrl?.let { add(TransactionDetailField("Mint", mintName(it))) }
             val descriptionHash = transaction.descriptionHash
             if (descriptionHash != null) {
                 add(TransactionDetailField("Hash", middleTruncated(descriptionHash), copyValue = descriptionHash))

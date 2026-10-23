@@ -1,5 +1,6 @@
 package com.cashu.me.test.fixtures
 
+import com.cashu.me.Core.CDK.CrossMintQuotes
 import com.cashu.me.Core.CDK.ForeignNfcSettlement
 import com.cashu.me.Core.CDK.MeltConfirmation
 import com.cashu.me.Core.CDK.NfcReceiveReceipt
@@ -295,7 +296,9 @@ class FakeWalletGateway(
         val quote = MeltQuoteInfo(
             id = "melt-quote-${sequence.getAndIncrement()}",
             mintUrl = mintUrl,
-            amount = amountSats ?: 21,
+            // An invoice this fake issued carries that quote's amount, as a
+            // real one would.
+            amount = amountSats ?: unpaidMintQuote(request)?.value?.amount ?: 21,
             feeReserve = 2,
             paymentMethod = if (request.startsWith("bitcoin", ignoreCase = true)) {
                 PaymentMethodKind.Onchain
@@ -320,6 +323,9 @@ class FakeWalletGateway(
         check((balances[quote.mintUrl] ?: 0) >= total) { "Insufficient balance." }
         balances[quote.mintUrl] = checkNotNull(balances[quote.mintUrl]) - total
         meltQuotes[quoteId] = quote.copy(state = MeltQuoteState.Paid)
+        // Paying an invoice this fake issued settles that quote, which is what
+        // moves ecash between two held mints.
+        quote.request?.let(::unpaidMintQuote)?.let { markMintQuotePaid(it.value.id) }
         transactions += WalletTransaction(
             id = "melt-payment-${sequence.getAndIncrement()}",
             quoteId = quote.id,
@@ -352,6 +358,37 @@ class FakeWalletGateway(
 
     override suspend fun checkMeltQuoteStatus(quoteId: String, mintUrl: String?): MeltQuoteInfo =
         checkNotNull(meltQuotes[quoteId]) { "Unknown fake melt quote $quoteId" }
+
+    override suspend fun createMaxCrossMintQuotes(sourceMintUrl: String, destinationMintUrl: String): CrossMintQuotes {
+        failIfRequested()
+        val amount = totalBalance(sourceMintUrl) - 2
+        check(amount > 0) { "Insufficient balance." }
+        val mintQuote = createMintQuote(amount, PaymentMethodKind.Bolt11, destinationMintUrl, "sat", null)
+        return CrossMintQuotes(
+            mintQuote = mintQuote,
+            meltQuote = createMeltQuote(mintQuote.request, null, sourceMintUrl),
+            inputFee = 0,
+        )
+    }
+
+    override suspend fun meltAllUnspentSkippingSwap(quoteId: String, mintUrl: String, expectedInputFee: Long): MeltConfirmation =
+        meltTokens(quoteId, mintUrl)
+
+    override suspend fun removeUnusedQuotes(mintQuoteId: String, meltQuoteId: String?): Boolean {
+        if (meltQuoteId != null && meltQuotes[meltQuoteId]?.state == MeltQuoteState.Paid) return false
+        mintQuotes -= mintQuoteId
+        if (meltQuoteId != null) meltQuotes -= meltQuoteId
+        return true
+    }
+
+    // This fake settles a melt within the call, so a quote still unpaid was
+    // never attempted.
+    override suspend fun meltEndedUnpaid(meltQuoteId: String?): Boolean =
+        meltQuoteId != null && meltQuotes[meltQuoteId]?.state == MeltQuoteState.Unpaid
+
+    private fun unpaidMintQuote(request: String) = mintQuotes.values.lastOrNull {
+        it.value.request == request && it.value.state == MintQuoteState.Unpaid
+    }
 
     override suspend fun receiveRecoveryCandidates() = receiveCandidates
     override suspend fun recoverReceiveAccount(candidate: com.cashu.me.Core.CDK.ReceiveRecoveryCandidate): SagaRecoveryReport {
