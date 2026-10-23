@@ -26,7 +26,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.CheckCircle
@@ -213,6 +212,8 @@ fun ReceiveLightningScreen(
     settingsManager: SettingsManager,
     priceService: PriceService,
     onClose: () -> Unit,
+    initialQuote: MintQuoteInfo? = null,
+    onCompactSheetChanged: (Boolean) -> Unit = {},
 ) {
     val walletState by walletManager.state.collectAsState()
     val npcState by npcService.state.collectAsState()
@@ -225,9 +226,9 @@ fun ReceiveLightningScreen(
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
 
-    var face: ReceiveLnFace by remember { mutableStateOf(ReceiveLnFace.Input) }
+    var face: ReceiveLnFace by remember { mutableStateOf(initialQuote?.let { ReceiveLnFace.Display(it) } ?: ReceiveLnFace.Input) }
     var amount by remember { mutableStateOf("") }
-    var method by remember { mutableStateOf(PaymentMethodKind.Bolt11) }
+    var method by remember { mutableStateOf(initialQuote?.paymentMethod ?: PaymentMethodKind.Bolt11) }
     var creating by remember { mutableStateOf(false) }
     var errorText by remember { mutableStateOf<String?>(null) }
     // When a payment lands the body crossfades to the shared receipt while the
@@ -262,7 +263,26 @@ fun ReceiveLightningScreen(
     var displayActionsOpen by remember { mutableStateOf(false) }
     var methodPickerOpen by remember { mutableStateOf(false) }
 
-    val activeMint = walletState.activeMint
+    var technicalDetailsOpen by remember(displayedQuote?.id) { mutableStateOf(false) }
+    val detailRequest = cashuRequestState.requests.firstOrNull { it.quoteId == displayedQuote?.id }
+    val detailTransaction = displayedQuote?.let { quote ->
+        walletState.transactions.firstOrNull { it.quoteId == quote.id || it.id == quote.id }
+    }
+    if (technicalDetailsOpen) {
+        if (detailRequest != null) {
+            com.cashu.me.ui.history.RequestTechnicalDetailsSheet(detailRequest, walletManager) {
+                technicalDetailsOpen = false
+            }
+        } else if (detailTransaction != null) {
+            com.cashu.me.ui.history.TransactionTechnicalDetailsSheet(detailTransaction, walletManager) {
+                technicalDetailsOpen = false
+            }
+        }
+    }
+
+    val activeMint = if (displayedQuote != null) {
+        walletState.mints.firstOrNull { it.url == displayedQuote.mintUrl }
+    } else walletState.activeMint
     val supportedMethods = activeMint?.supportedMintMethods?.ifEmpty { listOf(PaymentMethodKind.Bolt11) }
         ?: listOf(PaymentMethodKind.Bolt11)
     // Fail closed: only mints that advertised NUT-04 bolt12 description=true
@@ -270,7 +290,7 @@ fun ReceiveLightningScreen(
     val mintSupportsBolt12Description = activeMint?.supportsBolt12MintDescription == true
 
     // Mint unit: NUT-04 mintable units only; on-chain always mints sat.
-    val effectiveUnit = if (method == PaymentMethodKind.Onchain) {
+    val effectiveUnit = displayedQuote?.unit ?: if (method == PaymentMethodKind.Onchain) {
         "sat"
     } else {
         activeMint?.resolvedMintUnit(selectedReceiveUnit) ?: "sat"
@@ -300,8 +320,10 @@ fun ReceiveLightningScreen(
             return@LaunchedEffect
         }
         if (reusableOfferDescriptionLoadedFor == null && activeMint != null) {
-            reusableOfferDescription = cashuRequestStore
-                .lastPresentedAmountlessOffer(activeMint.url, effectiveUnit)?.memo
+            reusableOfferDescription = if (displayedQuote != null) {
+                cashuRequestState.requests.firstOrNull { it.quoteId == displayedQuote.id }?.memo
+                    ?: displayedQuote.description
+            } else cashuRequestStore.lastPresentedAmountlessOffer(activeMint.url, effectiveUnit)?.memo
             reusableOfferDescriptionLoadedFor = descriptionContext
         }
     }
@@ -368,11 +390,12 @@ fun ReceiveLightningScreen(
                 val quote = if (requestMethod == PaymentMethodKind.Onchain && !forceNew) {
                     // Hand the same address out until the mint credits it
                     // (iOS `existingOnchainMintQuote` parity).
-                    walletManager.existingOnchainMintQuote() ?: walletManager.createMintQuote(
+                    walletManager.existingOnchainMintQuote(targetMintUrl = activeMint.url) ?: walletManager.createMintQuote(
                         amount = null,
                         method = requestMethod,
                         unit = requestUnit,
                         description = null,
+                        targetMintUrl = activeMint.url,
                     )
                 } else if (
                     requestMethod == PaymentMethodKind.Bolt12 &&
@@ -382,11 +405,13 @@ fun ReceiveLightningScreen(
                     walletManager.existingAmountlessBolt12Offer(
                         unit = requestUnit,
                         description = offerDescription,
+                        targetMintUrl = activeMint.url,
                     ) ?: walletManager.createMintQuote(
                         amount = null,
                         method = requestMethod,
                         unit = requestUnit,
                         description = offerDescription,
+                        targetMintUrl = activeMint.url,
                     )
                 } else {
                     walletManager.createMintQuote(
@@ -394,6 +419,7 @@ fun ReceiveLightningScreen(
                         method = requestMethod,
                         unit = requestUnit,
                         description = offerDescription,
+                        targetMintUrl = activeMint.url,
                     )
                 }
                 // createMintQuote (and the reuse path) already carry the
@@ -523,6 +549,7 @@ fun ReceiveLightningScreen(
     }
 
     LaunchedEffect(activeMint) {
+        if (displayedQuote != null) return@LaunchedEffect
         selectedReceiveUnit = null
         if (method !in supportedMethods) {
             val fallback = supportedMethods.first()
@@ -584,6 +611,9 @@ fun ReceiveLightningScreen(
         }
     }
 
+    val compactRequest = face is ReceiveLnFace.Display && successInfo == null
+    LaunchedEffect(compactRequest) { onCompactSheetChanged(compactRequest) }
+
     // The paid terminal replaces the sheet body while retaining the same header
     // and explicit Done action as iOS. Standard swap pair (not a bare
     // Crossfade, whose slower symmetric tween buried the terminal's staged
@@ -622,7 +652,7 @@ fun ReceiveLightningScreen(
       } else {
         Column(
             modifier = Modifier
-                .fillMaxHeight()
+                .then(if (compactRequest) Modifier.fillMaxWidth() else Modifier.fillMaxHeight())
                 .testTag(UiTestTags.ReceiveLightningScreen),
         ) {
         SheetHeader(
@@ -631,21 +661,21 @@ fun ReceiveLightningScreen(
                 is ReceiveLnFace.Display -> receiveRequestHeaderTitle(current.quote.paymentMethod)
                 is ReceiveLnFace.Failure -> receiveRequestHeaderTitle(current.retry.method)
             },
-            // Input: close X (same as Receive Ecash / Cashu Request). Display:
-            // back chevron returns to the amount pad.
+            // Existing requests use the same dismissible sheet from Receive and History.
+            // A back-to-input control would expose a different flow from History.
             navigationIcon = when (face) {
                 ReceiveLnFace.Input -> Icons.Outlined.Close
-                is ReceiveLnFace.Display -> Icons.AutoMirrored.Outlined.ArrowBack
+                is ReceiveLnFace.Display -> null
                 is ReceiveLnFace.Failure -> Icons.Outlined.Close
             },
             navigationContentDescription = when (face) {
                 ReceiveLnFace.Input -> "Close"
-                is ReceiveLnFace.Display -> "Back"
+                is ReceiveLnFace.Display -> "Close"
                 is ReceiveLnFace.Failure -> "Close"
             },
             onNavigationClick = when (face) {
                 ReceiveLnFace.Input -> onClose
-                is ReceiveLnFace.Display -> { { face = ReceiveLnFace.Input } }
+                is ReceiveLnFace.Display -> onClose
                 is ReceiveLnFace.Failure -> onClose
             },
             actions = {
@@ -744,7 +774,7 @@ fun ReceiveLightningScreen(
         TwoFaceScreen(
             targetState = face,
             modifier = Modifier
-                .weight(1f)
+                .weight(1f, fill = !compactRequest)
                 .fillMaxWidth(),
             // Display → Display (fresh on-chain address) also slides forward.
             forward = { _, target ->
@@ -810,6 +840,7 @@ fun ReceiveLightningScreen(
                     var isIssuingEcash by remember(current.quote.id) { mutableStateOf(false) }
                     LaunchedEffect(current.quote.id) {
                         persistReusableOffer(current.quote)
+                        walletManager.loadTransactions(includeRemoteObservations = false)
                     }
                     // Websocket push is a preference-gated accelerator; the
                     // polling loop below is the always-on fallback that also
@@ -1128,6 +1159,9 @@ fun ReceiveLightningScreen(
                             null
                         },
                         onOpenExplorer = explorerUrl?.let { url -> { context.openInBrowser(url) } },
+                        onDetails = if (detailRequest != null || detailTransaction != null) {
+                            { technicalDetailsOpen = true }
+                        } else null,
                     )
                 }
 
@@ -1418,6 +1452,7 @@ private fun DisplayFace(
     onEditReusableAmount: (() -> Unit)?,
     onEditReusableDescription: (() -> Unit)?,
     onOpenExplorer: (() -> Unit)?,
+    onDetails: (() -> Unit)?,
 ) {
     val confirmationToastController = LocalConfirmationToastController.current
     val haptics = rememberWalletHaptics()
@@ -1436,10 +1471,10 @@ private fun DisplayFace(
     val isExpired = receiveInvoiceIsExpired(
         quote.paymentMethod, quote.expiryEpochSeconds, nowSeconds, settlementState,
     )
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(modifier = Modifier.fillMaxWidth()) {
         PaymentDetailContent(
-            modifier = Modifier.weight(1f),
-            stableSizeKey = quote.id,
+            modifier = Modifier.weight(1f, fill = false),
+            fitsContent = true,
             hero = { qrSize ->
                 QrCard(
                     content = quote.request,
@@ -1535,6 +1570,13 @@ private fun DisplayFace(
                 }
                 if (onOpenExplorer != null) {
                     ExplorerLinkRow(label = explorerLabel, onClick = onOpenExplorer)
+                }
+                if (onDetails != null) {
+                    com.cashu.me.ui.components.DisclosureRow(
+                        label = "Details",
+                        onClick = onDetails,
+                        modifier = Modifier.paymentDetailWidth().testTag(UiTestTags.HistoryTransactionDetails),
+                    )
                 }
             }
         }

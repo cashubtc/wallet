@@ -94,6 +94,10 @@ struct TransactionDetailView: View {
     }
 
     var body: some View {
+        StoredReceiveView(quoteID: seed.liveReceiveQuoteID) { receipt }
+    }
+
+    private var receipt: some View {
         ActivityDetailSheet(
             title: transaction.displayTitle(mints: walletManager.mints),
             contentHeight: contentHeight,
@@ -732,11 +736,48 @@ struct CashuRequestReceiptView: View {
     private var current: CashuRequest { store.request(withId: request.id) ?? request }
 
     var body: some View {
+        StoredReceiveView(quoteID: current.rail == .bolt12 ? current.quoteId : nil) { receipt }
+    }
+
+    private var receipt: some View {
         ActivityDetailSheet(title: current.displayTitle, onShare: { showShareSheet = true }) {
             CashuRequestDetailView(request: current, showsNavigationHeader: false)
         }
         .sheet(isPresented: $showShareSheet) {
             ShareSheet(items: [current.encoded])
+        }
+    }
+}
+
+/// Resolve a live request once on opening; settled or unavailable quotes retain their receipt.
+private struct StoredReceiveView<Receipt: View>: View {
+    let quoteID: String?
+    @ViewBuilder var receipt: () -> Receipt
+    @EnvironmentObject private var walletManager: WalletManager
+    @State private var receiveQuote: MintQuoteInfo?
+    @State private var didLoad = false
+
+    var body: some View {
+        Group {
+            if let receiveQuote {
+                ReceiveLightningView(quote: receiveQuote)
+            } else if quoteID != nil && !didLoad {
+                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                receipt()
+            }
+        }
+        .task(id: quoteID) {
+            receiveQuote = nil
+            didLoad = false
+            if let quoteID {
+                let stored = await walletManager.storedReceiveQuote(quoteID: quoteID)
+                guard !Task.isCancelled else { return }
+                if stored?.paymentMethod == .bolt12 || stored?.hasSettledPayment == false {
+                    receiveQuote = stored
+                }
+            }
+            didLoad = true
         }
     }
 }

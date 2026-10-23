@@ -2,6 +2,11 @@ import Foundation
 import Cdk
 
 extension WalletManager {
+    /// Reopen the exact stored request without creating a replacement or changing mints.
+    func storedReceiveQuote(quoteID: String) async -> MintQuoteInfo? {
+        await lightningService.storedMintQuote(quoteId: quoteID)
+    }
+
     /// Read display-only quote snapshots from the local database. Never fetches
     /// mint status, performs a payment, or exposes the NUT-20 signing key.
     func transactionQuoteSnapshot(for transaction: WalletTransaction) async -> TransactionTechnicalDetails.QuoteSnapshot {

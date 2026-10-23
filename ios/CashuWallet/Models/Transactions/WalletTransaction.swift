@@ -104,6 +104,14 @@ struct WalletTransaction: Identifiable {
         return quoteId ?? id
     }
 
+    /// Only live incoming requests reopen the receive screen. Funded addresses,
+    /// expired requests, outgoing payments, and transfers retain their receipt.
+    var liveReceiveQuoteID: String? {
+        guard transfer == nil, type == .incoming, kind != .ecash,
+              hasActionablePaymentCode else { return nil }
+        return quoteId ?? id
+    }
+
     /// Payment receipts retire their QR after settlement. Reusable offers remain
     /// available from their dedicated request detail screen.
     var hasActionablePaymentCode: Bool {
