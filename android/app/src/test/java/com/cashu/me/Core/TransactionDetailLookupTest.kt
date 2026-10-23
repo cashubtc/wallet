@@ -11,6 +11,21 @@ import org.junit.Test
 
 class TransactionDetailLookupTest {
     @Test
+    fun liveRequestsShareReceiveButFundedExpiredAndOutgoingPaymentsRemainReceipts() {
+        val pending = tx(id = "payment", quoteId = "quote", status = TransactionStatus.Pending)
+        assertEquals("quote", TransactionDisplay.liveReceiveQuoteId(pending))
+        assertEquals("payment", TransactionDisplay.liveReceiveQuoteId(pending.copy(quoteId = null)))
+        for (status in listOf(TransactionStatus.Completed, TransactionStatus.Expired, TransactionStatus.Failed)) {
+            assertNull(TransactionDisplay.liveReceiveQuoteId(pending.copy(status = status)))
+        }
+        assertNull(TransactionDisplay.liveReceiveQuoteId(pending.copy(type = TransactionType.Outgoing)))
+        assertNull(TransactionDisplay.liveReceiveQuoteId(pending.copy(kind = TransactionKind.Ecash)))
+        val address = pending.copy(kind = TransactionKind.Onchain, isUnfundedAddress = true)
+        assertEquals("quote", TransactionDisplay.liveReceiveQuoteId(address))
+        assertNull(TransactionDisplay.liveReceiveQuoteId(address.copy(isUnfundedAddress = false)))
+    }
+
+    @Test
     fun detailMonitoringIncludesSettledOffersButExcludesPaidInvoicesAndOutgoingPayments() {
         val pending = tx(id = "payment", quoteId = "quote", status = TransactionStatus.Pending)
         assertEquals("quote", pending.mintQuoteIdForStatusRefresh)

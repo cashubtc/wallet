@@ -93,7 +93,33 @@ struct TransactionDetailView: View {
         showsQR && transaction.descriptionHash == nil && transaction.displayDescription != nil
     }
 
+    @State private var receiveQuote: MintQuoteInfo?
+    @State private var didLoadReceiveQuote = false
+
+    private var liveReceiveQuoteID: String? { seed.liveReceiveQuoteID }
+
     var body: some View {
+        Group {
+            if let receiveQuote {
+                ReceiveLightningView(quote: receiveQuote)
+            } else if liveReceiveQuoteID != nil && !didLoadReceiveQuote {
+                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                receipt
+            }
+        }
+        .task(id: liveReceiveQuoteID) {
+            if let quoteID = liveReceiveQuoteID {
+                let stored = await walletManager.storedReceiveQuote(quoteID: quoteID)
+                if stored?.paymentMethod == .bolt12 || stored?.hasSettledPayment == false {
+                    receiveQuote = stored
+                }
+            }
+            didLoadReceiveQuote = true
+        }
+    }
+
+    private var receipt: some View {
         ActivityDetailSheet(
             title: transaction.displayTitle(mints: walletManager.mints),
             contentHeight: contentHeight,
@@ -731,7 +757,32 @@ struct CashuRequestReceiptView: View {
 
     private var current: CashuRequest { store.request(withId: request.id) ?? request }
 
+    @EnvironmentObject private var walletManager: WalletManager
+    @State private var receiveQuote: MintQuoteInfo?
+    @State private var didLoadReceiveQuote = false
+
     var body: some View {
+        Group {
+            if let receiveQuote {
+                ReceiveLightningView(quote: receiveQuote)
+            } else if current.rail == .bolt12 && !didLoadReceiveQuote {
+                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                receipt
+            }
+        }
+        .task(id: request.id) {
+            if current.rail == .bolt12, let quoteID = current.quoteId {
+                let stored = await walletManager.storedReceiveQuote(quoteID: quoteID)
+                if stored?.paymentMethod == .bolt12 || stored?.hasSettledPayment == false {
+                    receiveQuote = stored
+                }
+            }
+            didLoadReceiveQuote = true
+        }
+    }
+
+    private var receipt: some View {
         ActivityDetailSheet(title: current.displayTitle, onShare: { showShareSheet = true }) {
             CashuRequestDetailView(request: current, showsNavigationHeader: false)
         }

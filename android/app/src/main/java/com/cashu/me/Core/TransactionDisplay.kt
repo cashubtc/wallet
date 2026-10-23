@@ -75,6 +75,13 @@ object TransactionDisplay {
         transaction.token ?: transaction.invoice
 
     /** Pending artifacts retain their QR. Settled offers live in request details, not receipts. */
+    /** Live incoming requests share Receive; funded addresses and payments retain receipts. */
+    fun liveReceiveQuoteId(transaction: WalletTransaction): String? =
+        (transaction.quoteId ?: transaction.id).takeIf {
+            transaction.transfer == null && transaction.type == TransactionType.Incoming &&
+                transaction.kind != TransactionKind.Ecash && showsQr(transaction)
+        }
+
     fun showsQr(transaction: WalletTransaction): Boolean = when (transaction.kind) {
         TransactionKind.Ecash ->
             !transaction.token.isNullOrEmpty() &&

@@ -83,6 +83,23 @@ struct ReceiveLightningView: View {
     @State private var selectedReceiveUnit: String?
     @State private var showUnitPicker = false
 
+    init(quote: MintQuoteInfo? = nil) {
+        _mintQuote = State(initialValue: quote)
+        _selectedMethod = State(initialValue: quote?.paymentMethod ?? .bolt11)
+        _isAmountless = State(initialValue: quote?.isAmountless ?? false)
+        _quoteCreatedAt = State(initialValue: quote?.createdAt ?? quote?.updatedAt)
+        _offerDescription = State(initialValue: quote.flatMap {
+            CashuRequestStore.shared.intent(forQuoteId: $0.id)?.memo ?? $0.description
+        })
+        _offerDescriptionLoaded = State(initialValue: quote != nil)
+    }
+
+    @State private var showTechnicalDetails = false
+
+    private func detailTransaction(for quote: MintQuoteInfo) -> WalletTransaction? {
+        walletManager.transactions.first { $0.quoteId == quote.id || $0.id == quote.id }
+    }
+
     var body: some View {
         NavigationStack {
             Group {
@@ -314,7 +331,10 @@ struct ReceiveLightningView: View {
     /// Fail closed: only mints that advertised NUT-04 bolt12 description=true
     /// get a Description row / description minting.
     private var mintSupportsBolt12Description: Bool {
-        walletManager.activeMint?.supportsBolt12MintDescription == true
+        if let mintQuote {
+            return walletManager.mints.first { $0.url == mintQuote.mintURL }?.supportsBolt12MintDescription == true
+        }
+        return walletManager.activeMint?.supportsBolt12MintDescription == true
     }
 
     /// Description threaded into mintQuote only when the mint advertises it.
@@ -397,7 +417,7 @@ struct ReceiveLightningView: View {
     /// mint it, otherwise the mint's default mintable unit. Auto-resets when the
     /// active mint changes to one that can't mint the selection.
     private var effectiveUnit: String {
-        walletManager.activeMint?.resolvedMintUnit(selectedReceiveUnit) ?? "sat"
+        mintQuote?.unit ?? walletManager.activeMint?.resolvedMintUnit(selectedReceiveUnit) ?? "sat"
     }
 
     private var isSatReceive: Bool { effectiveUnit.lowercased() == "sat" }
@@ -579,12 +599,8 @@ struct ReceiveLightningView: View {
 
     // MARK: - Request Display View
 
-    /// Routes the result screen by rail. Every reusable BOLT12 offer (amountless
-    /// or fixed) gets the calm, Cashu-Request-style metadata layout; BOLT11 and
-    /// on-chain keep the amount-hero + expiry-countdown layout in
-    /// `standardRequestDisplayView`.
+    /// Receive and History share the QR, amount, status, details, and actions.
     @ViewBuilder
-    /// Every receive rail shares the same QR, amount, status, inspector, and actions.
     private func requestDisplayView(quote: MintQuoteInfo) -> some View {
         VStack(spacing: 0) {
             PaymentDetailContent(stableSizeKey: quote.id) { qrSize in
@@ -667,6 +683,17 @@ struct ReceiveLightningView: View {
                         if let explorerURL = blockExplorerURL(for: quote) {
                             explorerLinkRow(label: blockExplorerLabel(for: quote), url: explorerURL)
                         }
+                        if CashuRequestStore.shared.intent(forQuoteId: quote.id) != nil || detailTransaction(for: quote) != nil {
+                            Button { showTechnicalDetails = true } label: {
+                                PaymentDetailPair(label: "Details") {
+                                    Image(systemName: "chevron.right").foregroundStyle(.tertiary)
+                                }
+                                .paymentDetailRow(isInteractive: true)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("cashu.history.details")
+                        }
                     }
                     .padding(.horizontal, 4)
                 }
@@ -678,6 +705,16 @@ struct ReceiveLightningView: View {
             .flatSheetSecondaryButton()
             .padding(.horizontal)
             .padding(.bottom, 16)
+        }
+        .sheet(isPresented: $showTechnicalDetails) {
+            if let request = CashuRequestStore.shared.intent(forQuoteId: quote.id) {
+                RequestTechnicalDetailsView(request: request)
+            } else if let transaction = detailTransaction(for: quote) {
+                TransactionTechnicalDetailsView(transaction: transaction)
+            }
+        }
+        .task(id: quote.id) {
+            await walletManager.loadTransactions(includeRemoteObservations: false)
         }
         .onAppear { startDisplayingQuote(quote) }
         .onChange(of: mintQuote?.id) {
@@ -1047,6 +1084,7 @@ struct ReceiveLightningView: View {
     }
 
     private func syncSelectedMethodWithActiveMint() {
+        guard mintQuote == nil else { return }
         // A different mint may not mint the previously-picked unit — clear the
         // explicit choice so `effectiveUnit` falls back to the new mint's default.
         selectedReceiveUnit = nil
@@ -1209,14 +1247,17 @@ struct ReceiveLightningView: View {
     /// reverting to the plain one.
     private func loadStoredOfferDescriptionIfNeeded() {
         guard !offerDescriptionLoaded else { return }
-        guard let mintUrl = walletManager.activeMint?.url else { return }
+        guard let mintUrl = mintQuote?.mintURL ?? walletManager.activeMint?.url else { return }
         guard mintSupportsBolt12Description else {
             offerDescription = nil
             offerDescriptionLoaded = true
             return
         }
-        offerDescription = CashuRequestStore.shared
-            .lastPresentedAmountlessOffer(mintURL: mintUrl, unit: effectiveUnit)?.memo
+        if let mintQuote {
+            offerDescription = CashuRequestStore.shared.intent(forQuoteId: mintQuote.id)?.memo ?? mintQuote.description
+        } else {
+            offerDescription = CashuRequestStore.shared.lastPresentedAmountlessOffer(mintURL: mintUrl, unit: effectiveUnit)?.memo
+        }
         offerDescriptionLoaded = true
     }
 
@@ -1230,7 +1271,7 @@ struct ReceiveLightningView: View {
         mintURL: String? = nil,
         unit: String? = nil
     ) {
-        let requestedMintURL = mintURL ?? walletManager.activeMint?.url
+        let requestedMintURL = mintURL ?? mintQuote?.mintURL ?? walletManager.activeMint?.url
         let requestedUnit = unit ?? effectiveUnit
         requestCreationTask?.cancel()
         isCreatingRequest = true
@@ -1295,7 +1336,7 @@ struct ReceiveLightningView: View {
 
     private func createRequest(method requestMethod: PaymentMethodKind, amountless: Bool, forceNew: Bool = false) {
         let requestedUnit = effectiveUnit
-        let requestedMintURL = walletManager.activeMint?.url
+        let requestedMintURL = mintQuote?.mintURL ?? walletManager.activeMint?.url
         // Onchain is always amountless (sender decides). Lightning/BOLT12 require a value.
         // Amount is in the active unit's base units (sats, or eur/usd cents, …).
         let requestAmount: UInt64? = (amountless || requestMethod == .onchain) ? nil : (amountBaseUnits > 0 ? amountBaseUnits : nil)

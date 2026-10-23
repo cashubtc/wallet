@@ -20,6 +20,18 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.SheetValue
+import androidx.compose.material3.rememberBottomSheetState
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.CircularProgressIndicator
+import com.cashu.me.Core.TransactionDisplay
+import com.cashu.me.Models.MintQuoteInfo
+import com.cashu.me.Models.PaymentMethodKind
+import com.cashu.me.ui.components.rememberSheetDismissAction
+import com.cashu.me.ui.components.CashuModalBottomSheet
+import com.cashu.me.ui.components.CompactSheetContent
+import com.cashu.me.ui.receive.ReceiveLightningScreen
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.unit.dp
@@ -284,33 +296,47 @@ fun CashuNavHost(
     }
 
     receiptRequest?.let { request ->
-        CashuRequestReceiptSheet(
-            request = request,
-            walletManager = container.walletManager,
-            settingsManager = container.settingsManager,
-            nostrService = container.nostrService,
-            nfcReceiveCoordinator = container.nfcReceiveCoordinator,
-            store = container.cashuRequestStore,
-            onDismissRequest = { receiptRequest = null },
-            onNfcSuccessDone = ::finishNfcReceive,
+        StoredReceiveSheet(
+            quoteId = request.quoteId.takeIf { request.quoteKind.equals("bolt12", ignoreCase = true) },
+            container = container,
+            onClose = { receiptRequest = null },
             onBackdropVisibilityChanged = { receiptBackdropVisible = it },
-        )
+        ) {
+            CashuRequestReceiptSheet(
+                request = request,
+                walletManager = container.walletManager,
+                settingsManager = container.settingsManager,
+                nostrService = container.nostrService,
+                nfcReceiveCoordinator = container.nfcReceiveCoordinator,
+                store = container.cashuRequestStore,
+                onDismissRequest = { receiptRequest = null },
+                onNfcSuccessDone = ::finishNfcReceive,
+                onBackdropVisibilityChanged = { receiptBackdropVisible = it },
+            )
+        }
     }
 
     receiptTransaction?.let { transaction ->
-        TransactionReceiptSheet(
-            transaction = transaction,
-            walletManager = container.walletManager,
-            settingsManager = container.settingsManager,
-            priceService = container.priceService,
-            onDismissRequest = { receiptTransaction = null },
+        StoredReceiveSheet(
+            quoteId = TransactionDisplay.liveReceiveQuoteId(transaction),
+            container = container,
+            onClose = { receiptTransaction = null },
             onBackdropVisibilityChanged = { receiptBackdropVisible = it },
-            // The claim flow presents at app level; the sheet steps aside first.
-            onClaimReceiveToken = { token ->
-                receiptTransaction = null
-                onClaimReceiveToken(token)
-            },
-        )
+        ) {
+            TransactionReceiptSheet(
+                transaction = transaction,
+                walletManager = container.walletManager,
+                settingsManager = container.settingsManager,
+                priceService = container.priceService,
+                onDismissRequest = { receiptTransaction = null },
+                onBackdropVisibilityChanged = { receiptBackdropVisible = it },
+                // The claim flow presents at app level; the sheet steps aside first.
+                onClaimReceiveToken = { token ->
+                    receiptTransaction = null
+                    onClaimReceiveToken(token)
+                },
+            )
+        }
     }
 }
 
@@ -479,4 +505,57 @@ internal val tabExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> Ex
             easing = FastOutLinearInEasing,
         ),
     )
+}
+
+/** History and Receive mount the same live request screen; receipts remain the fallback. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun StoredReceiveSheet(
+    quoteId: String?,
+    container: AppContainer,
+    onClose: () -> Unit,
+    onBackdropVisibilityChanged: (Boolean) -> Unit,
+    receipt: @Composable () -> Unit,
+) {
+    var quote by remember(quoteId) { mutableStateOf<MintQuoteInfo?>(null) }
+    var loaded by remember(quoteId) { mutableStateOf(quoteId == null) }
+    LaunchedEffect(quoteId) {
+        if (quoteId != null) quote = container.walletManager.storedReceiveQuote(quoteId)?.takeIf {
+            it.paymentMethod == PaymentMethodKind.Bolt12 || !it.hasSettledPayment
+        }
+        loaded = true
+    }
+    val stored = quote
+    if (loaded && stored == null) {
+        receipt()
+    } else {
+        val sheetState = rememberBottomSheetState(
+            initialValue = SheetValue.Hidden,
+            enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
+        )
+        val dismiss = rememberSheetDismissAction(sheetState)
+        CashuModalBottomSheet(
+            onDismissRequest = onClose,
+            sheetState = sheetState,
+            sheetGesturesEnabled = !dismiss.isDismissing,
+            containerColor = MaterialTheme.colorScheme.background,
+            onBackdropVisibilityChanged = onBackdropVisibilityChanged,
+        ) {
+            CompactSheetContent {
+                if (stored != null) {
+                    ReceiveLightningScreen(
+                        walletManager = container.walletManager,
+                        npcService = container.npcService,
+                        cashuRequestStore = container.cashuRequestStore,
+                        settingsManager = container.settingsManager,
+                        priceService = container.priceService,
+                        onClose = { dismiss(onClose) },
+                        initialQuote = stored,
+                    )
+                } else {
+                    CircularProgressIndicator()
+                }
+            }
+        }
+    }
 }
