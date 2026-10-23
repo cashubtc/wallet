@@ -3,6 +3,7 @@ package com.cashu.me.ui.journeys
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import com.cashu.me.Models.MintInfo
@@ -133,6 +134,8 @@ class OnchainHistoryJourneyTest {
                 .tapTag(UiTestTags.HistoryTransactionDetails).awaitText("Quote ID")
                 .pressSystemBack().awaitTag(UiTestTags.ReceiveLightningScreen)
             compose.onAllNodesWithText("0 sat").assertCountEquals(0)
+            compose.onAllNodesWithContentDescription("Back").assertCountEquals(0)
+            compose.onAllNodesWithContentDescription("Close").assertCountEquals(0)
             robot.pressSystemBack()
                 .assertTagDoesNotExist(UiTestTags.TransactionReceiptSheet)
 

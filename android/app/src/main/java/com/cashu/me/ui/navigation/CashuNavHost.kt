@@ -530,6 +530,7 @@ private fun StoredReceiveSheet(
     if (loaded && stored == null) {
         receipt()
     } else {
+        var compactRequest by remember(quoteId) { mutableStateOf(true) }
         val sheetState = rememberBottomSheetState(
             initialValue = SheetValue.Hidden,
             enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
@@ -539,7 +540,8 @@ private fun StoredReceiveSheet(
             onDismissRequest = onClose,
             sheetState = sheetState,
             sheetGesturesEnabled = !dismiss.isDismissing,
-            containerColor = CashuTheme.colors.compactSheetContainer,
+            containerColor = if (compactRequest) CashuTheme.colors.compactSheetContainer
+                else MaterialTheme.colorScheme.background,
             onBackdropVisibilityChanged = onBackdropVisibilityChanged,
         ) {
             CompactSheetContent {
@@ -552,6 +554,7 @@ private fun StoredReceiveSheet(
                         priceService = container.priceService,
                         onClose = { dismiss(onClose) },
                         initialQuote = stored,
+                        onCompactSheetChanged = { compactRequest = it },
                     )
                 } else {
                     CircularProgressIndicator()
