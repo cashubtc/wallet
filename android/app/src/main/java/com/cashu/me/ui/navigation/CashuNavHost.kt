@@ -65,6 +65,7 @@ import com.cashu.me.ui.settings.P2PKScreen
 import com.cashu.me.ui.settings.LicensesScreen
 import com.cashu.me.ui.settings.PrivacyScreen
 import com.cashu.me.ui.settings.SettingsScreen
+import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.CashuMotion
 import java.net.URLDecoder
 import java.net.URLEncoder
@@ -538,7 +539,7 @@ private fun StoredReceiveSheet(
             onDismissRequest = onClose,
             sheetState = sheetState,
             sheetGesturesEnabled = !dismiss.isDismissing,
-            containerColor = MaterialTheme.colorScheme.background,
+            containerColor = CashuTheme.colors.compactSheetContainer,
             onBackdropVisibilityChanged = onBackdropVisibilityChanged,
         ) {
             CompactSheetContent {

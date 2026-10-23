@@ -100,6 +100,12 @@ struct ReceiveLightningView: View {
         walletManager.transactions.first { $0.quoteId == quote.id || $0.id == quote.id }
     }
 
+    @State private var requestContentHeight: CGFloat = 0
+
+    private var showsCompactRequest: Bool {
+        mintQuote != nil && !isPaid && requestFailure == nil
+    }
+
     var body: some View {
         NavigationStack {
             Group {
@@ -143,8 +149,10 @@ struct ReceiveLightningView: View {
             // clear the safe-area inset so nothing overlaps.
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    SheetCloseButton()
+                if !showsCompactRequest {
+                    ToolbarItem(placement: .cancellationAction) {
+                        SheetCloseButton()
+                    }
                 }
 
                 if requestFailure == nil, let quote = mintQuote, !isPaid {
@@ -317,7 +325,10 @@ struct ReceiveLightningView: View {
             }
         }
         .accessibilityIdentifier("receive-lightning-screen")
-        .walletSheetSurface(fillsScreen: true)
+        .walletSheetSurface(fillsScreen: !showsCompactRequest)
+        .contentFitDetent(requestContentHeight, enabled: showsCompactRequest, estimate: 580, navigationBar: true)
+        .presentationDragIndicator(showsCompactRequest ? .visible : .automatic)
+        .accessibilityAction(.escape) { dismiss() }
     }
 
     // MARK: - Computed Properties
@@ -603,7 +614,7 @@ struct ReceiveLightningView: View {
     @ViewBuilder
     private func requestDisplayView(quote: MintQuoteInfo) -> some View {
         VStack(spacing: 0) {
-            PaymentDetailContent(stableSizeKey: quote.id) { qrSize in
+            PaymentDetailContent(stableSizeKey: quote.id, fitsContent: true) { qrSize in
                 QRCodeView(
                     content: quote.request,
                     showControls: false,
@@ -706,6 +717,7 @@ struct ReceiveLightningView: View {
             .padding(.horizontal)
             .padding(.bottom, 16)
         }
+        .contentFitMeasured { requestContentHeight = $0 }
         .sheet(isPresented: $showTechnicalDetails) {
             if let request = CashuRequestStore.shared.intent(forQuoteId: quote.id) {
                 RequestTechnicalDetailsView(request: request)

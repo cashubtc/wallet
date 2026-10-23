@@ -100,6 +100,8 @@ struct PaymentDetailContent<Hero: View, Details: View>: View {
     /// shrinking the code someone may be scanning. A new key, container size or
     /// text size measures again.
     var stableSizeKey: AnyHashable? = nil
+    /// Content-fit sheets measure the natural QR and rows instead of filling the viewport.
+    var fitsContent = false
     @ViewBuilder let hero: (CGFloat) -> Hero
     @ViewBuilder let details: () -> Details
     @State private var detailsHeight: CGFloat = 0
@@ -113,6 +115,23 @@ struct PaymentDetailContent<Hero: View, Details: View>: View {
     }
 
     var body: some View {
+        if fitsContent {
+            VStack(spacing: 16) {
+                ViewThatFits(in: .horizontal) {
+                    hero(280)
+                    hero(240)
+                    hero(200)
+                }
+                details()
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+        } else {
+            adaptiveContent
+        }
+    }
+
+    private var adaptiveContent: some View {
         GeometryReader { geometry in
             let qrSize = max(120, min(280, geometry.size.width - 64,
                                       geometry.size.height - detailsHeight - 64))

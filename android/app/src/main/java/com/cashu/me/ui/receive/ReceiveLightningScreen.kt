@@ -26,7 +26,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.CheckCircle
@@ -214,6 +213,7 @@ fun ReceiveLightningScreen(
     priceService: PriceService,
     onClose: () -> Unit,
     initialQuote: MintQuoteInfo? = null,
+    onCompactSheetChanged: (Boolean) -> Unit = {},
 ) {
     val walletState by walletManager.state.collectAsState()
     val npcState by npcService.state.collectAsState()
@@ -611,6 +611,9 @@ fun ReceiveLightningScreen(
         }
     }
 
+    val compactRequest = face is ReceiveLnFace.Display && successInfo == null
+    LaunchedEffect(compactRequest) { onCompactSheetChanged(compactRequest) }
+
     // The paid terminal replaces the sheet body while retaining the same header
     // and explicit Done action as iOS. Standard swap pair (not a bare
     // Crossfade, whose slower symmetric tween buried the terminal's staged
@@ -649,7 +652,7 @@ fun ReceiveLightningScreen(
       } else {
         Column(
             modifier = Modifier
-                .fillMaxHeight()
+                .then(if (compactRequest) Modifier.fillMaxWidth() else Modifier.fillMaxHeight())
                 .testTag(UiTestTags.ReceiveLightningScreen),
         ) {
         SheetHeader(
@@ -658,21 +661,21 @@ fun ReceiveLightningScreen(
                 is ReceiveLnFace.Display -> receiveRequestHeaderTitle(current.quote.paymentMethod)
                 is ReceiveLnFace.Failure -> receiveRequestHeaderTitle(current.retry.method)
             },
-            // Input: close X (same as Receive Ecash / Cashu Request). Display:
-            // back chevron returns to the amount pad.
+            // Existing requests use the same dismissible sheet from Receive and History.
+            // A back-to-input control would expose a different flow from History.
             navigationIcon = when (face) {
                 ReceiveLnFace.Input -> Icons.Outlined.Close
-                is ReceiveLnFace.Display -> Icons.AutoMirrored.Outlined.ArrowBack
+                is ReceiveLnFace.Display -> null
                 is ReceiveLnFace.Failure -> Icons.Outlined.Close
             },
             navigationContentDescription = when (face) {
                 ReceiveLnFace.Input -> "Close"
-                is ReceiveLnFace.Display -> "Back"
+                is ReceiveLnFace.Display -> "Close"
                 is ReceiveLnFace.Failure -> "Close"
             },
             onNavigationClick = when (face) {
                 ReceiveLnFace.Input -> onClose
-                is ReceiveLnFace.Display -> { { face = ReceiveLnFace.Input } }
+                is ReceiveLnFace.Display -> onClose
                 is ReceiveLnFace.Failure -> onClose
             },
             actions = {
@@ -771,7 +774,7 @@ fun ReceiveLightningScreen(
         TwoFaceScreen(
             targetState = face,
             modifier = Modifier
-                .weight(1f)
+                .weight(1f, fill = !compactRequest)
                 .fillMaxWidth(),
             // Display → Display (fresh on-chain address) also slides forward.
             forward = { _, target ->
@@ -1468,10 +1471,11 @@ private fun DisplayFace(
     val isExpired = receiveInvoiceIsExpired(
         quote.paymentMethod, quote.expiryEpochSeconds, nowSeconds, settlementState,
     )
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(modifier = Modifier.fillMaxWidth()) {
         PaymentDetailContent(
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.weight(1f, fill = false),
             stableSizeKey = quote.id,
+            fitsContent = true,
             hero = { qrSize ->
                 QrCard(
                     content = quote.request,
@@ -1572,7 +1576,7 @@ private fun DisplayFace(
                     com.cashu.me.ui.components.DisclosureRow(
                         label = "Details",
                         onClick = onDetails,
-                        modifier = Modifier.testTag(UiTestTags.HistoryTransactionDetails),
+                        modifier = Modifier.paymentDetailWidth().testTag(UiTestTags.HistoryTransactionDetails),
                     )
                 }
             }

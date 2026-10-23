@@ -38,9 +38,29 @@ internal val LocalCompactPaymentDetails = compositionLocalOf { false }
 fun PaymentDetailContent(
     modifier: Modifier = Modifier,
     stableSizeKey: Any? = null,
+    fitsContent: Boolean = false,
     hero: @Composable (Dp) -> Unit,
     details: @Composable ColumnScope.() -> Unit,
 ) {
+    if (fitsContent) {
+        Column(
+            modifier = modifier.fillMaxWidth().verticalScroll(rememberScrollState())
+                .padding(horizontal = CashuTheme.spacing.comfortable, vertical = CashuTheme.spacing.snug),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.comfortable),
+        ) {
+            BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                hero(minOf(280.dp, maxWidth - 32.dp))
+            }
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.comfortable),
+                content = details,
+            )
+        }
+        return
+    }
     var detailsHeight by remember { mutableIntStateOf(0) }
     var sizeLatch by remember { mutableStateOf<Any?>(null) }
     val density = LocalDensity.current
