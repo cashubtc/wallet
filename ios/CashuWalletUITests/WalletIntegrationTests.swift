@@ -152,10 +152,11 @@ class LivePaymentUITestBase: UITestBase {
 }
 
 final class LiveCdkPaymentUITests: LivePaymentUITestBase {
-    /// cashubtc/wallet#381: the hint Paste leaves must survive the field's own
-    /// change event. This CDK FakeWallet mint doesn't advertise NUT-05
-    /// `amountless`, so an amountless invoice lands on the caution instead of
-    /// the amount keypad. Android twin: `AmountlessInvoiceJourneyTest`.
+    /// cashubtc/wallet#381: this CDK FakeWallet mint doesn't advertise NUT-05
+    /// `amountless`, so an amountless invoice opens the payment sheet on its
+    /// can't-pay face, never a keypad that can't quote. The hint Paste leaves
+    /// for unrecognized text must survive the field's own change event.
+    /// Android twin: `AmountlessInvoiceJourneyTest`.
     func testPastedHintsStayVisible() throws {
         createWalletWithMint()
         receiveThroughUI()
@@ -166,15 +167,20 @@ final class LiveCdkPaymentUITests: LivePaymentUITestBase {
         tapWhenReady(app.buttons["wallet-action-send"])
 
         paste(Self.amountlessInvoice)
-        let caution = app.staticTexts["None of your mints can pay invoices without an amount. Ask for one with the amount set."]
-        XCTAssertTrue(caution.waitForExistence(timeout: 10), "An amountless invoice no mint can pay must explain why")
-        assertStillShownAfterDebounce(caution)
+        // The face combines its headline and detail into one element.
+        let blocked = app.descendants(matching: .any).matching(NSPredicate(
+            format: "label CONTAINS %@",
+            "None of your mints can pay invoices without an amount. Ask for one with the amount set."
+        )).firstMatch
+        XCTAssertTrue(blocked.waitForExistence(timeout: 10), "An amountless invoice no mint can pay must explain why")
+        XCTAssertFalse(app.buttons["Continue"].exists, "No keypad for an invoice nothing can pay")
         let capture = XCTAttachment(screenshot: app.screenshot())
-        capture.name = "amountless-invoice-caution"
+        capture.name = "amountless-invoice-cant-pay"
         capture.lifetime = .keepAlways
         add(capture)
 
-        tapWhenReady(app.buttons["Clear"])
+        tapWhenReady(app.buttons["Close"])
+        tapWhenReady(app.buttons["wallet-action-send"])
         paste("hello world")
         let unrecognized = app.staticTexts["Unrecognized — try a Lightning address, invoice, Bitcoin address, or Cashu Request"]
         XCTAssertTrue(unrecognized.waitForExistence(timeout: 10))

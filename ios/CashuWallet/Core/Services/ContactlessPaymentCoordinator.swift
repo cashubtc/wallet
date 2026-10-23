@@ -95,11 +95,8 @@ final class ContactlessPaymentCoordinator {
 
             case .bolt11(let invoice):
                 let decoded = PaymentRequestDecoder.decode(invoice)
-                // Refuse on the NFC sheet what Send's own input would refuse.
-                if let caution = decoded.amountlessMeltCaution(payableBy: walletManager.mints) {
-                    session.invalidate(errorMessage: caution)
-                    return
-                }
+                // An invoice no mint can pay as it stands still opens Send,
+                // whose payment sheet says why (paste and scan parity).
                 session.alertMessage = "Lightning request found"
                 session.invalidate()
                 // The Send sheet already closed when the NFC session started,

@@ -32,18 +32,20 @@ class SendDestinationResolverTest {
         assertTrue(resolution is SendDestinationResolution.Melt)
     }
 
+    /**
+     * No held mint can pay it: still the amount step, which says why instead
+     * of a hint on the To step (`amountlessMeltBlock`).
+     */
     @Test
-    fun amountlessBolt11ShowsHintWhenNoHeldMintCanPayIt() {
+    fun amountlessBolt11RoutesToAmountEntryWhenNoHeldMintCanPayIt() {
         val refuses = MintInfo(url = "https://refuses.example", supportsAmountlessBolt11Melt = false)
 
-        assertEquals(
-            SendDestinationResolution.Hint(AmountlessBolt11Hint),
-            resolveSendDestination(Bolt11AmountlessDonationInvoice, walletMints = listOf(refuses)),
-        )
-        assertEquals(
-            SendDestinationResolution.Hint(AmountlessBolt11Hint),
-            resolveSendDestination(Bolt11AmountlessDonationInvoice, walletMints = emptyList()),
-        )
+        listOf(listOf(refuses), emptyList()).forEach { mints ->
+            val resolution = resolveSendDestination(Bolt11AmountlessDonationInvoice, walletMints = mints)
+
+            assertTrue(resolution is SendDestinationResolution.Melt)
+            assertTrue((resolution as SendDestinationResolution.Melt).requiresAmountEntry)
+        }
     }
 
     @Test
