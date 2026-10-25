@@ -50,6 +50,9 @@ struct WalletMessage {
 enum WalletErrorMessage {
     /// Resolve an error to its user-facing message **and** severity.
     static func classified(for error: Error) -> WalletMessage {
+        if let recovery = error as? PendingSendRecovery {
+            return .caution(recovery.localizedDescription).terminal()
+        }
         if let checkpointError = error as? WalletCheckpointError {
             return .error(checkpointError.localizedDescription)
         }
@@ -171,7 +174,7 @@ enum WalletErrorMessage {
         case .PaymentRequestDeliveryFailed:
             // The token was created but transport delivery failed; the send
             // stays pending and is reclaimed via revokeSend if unclaimed.
-            return .error("The payment couldn't be delivered. Any reserved funds stay pending and are reclaimed if unclaimed.")
+            return .caution("The delivery outcome is uncertain. Check the pending send before paying again.").terminal()
         }
     }
 

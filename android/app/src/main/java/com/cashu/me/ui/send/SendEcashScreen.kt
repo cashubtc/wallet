@@ -133,6 +133,7 @@ import com.cashu.me.ui.testing.UiTestTags
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.withMonoDigits
 import com.cashu.me.ui.theme.AmountScale
+import com.cashu.me.Core.PendingSendRecovery
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -162,7 +163,7 @@ data class SendEcashDraft(
 private sealed interface SendFace {
     data object Input : SendFace
 
-    data class Failure(val detail: String) : SendFace
+    data class Failure(val detail: String, val recovery: PendingSendRecovery? = null) : SendFace
 
     // Unit and amount are captured at generation time so the token face keeps
     // rendering correctly after the entry state resets.
@@ -348,17 +349,17 @@ fun SendEcashScreen(
                 is SendFace.Generated -> "Pending Ecash"
                 is SendFace.Failure -> "Send Ecash"
             },
-            navigationIcon = if (face is SendFace.Failure) {
+            navigationIcon = if ((face as? SendFace.Failure)?.recovery == null && face is SendFace.Failure) {
                 Icons.AutoMirrored.Outlined.ArrowBack
             } else {
                 Icons.Outlined.Close
             },
-            navigationContentDescription = if (face is SendFace.Failure) "Back" else "Close",
+            navigationContentDescription = if ((face as? SendFace.Failure)?.recovery == null && face is SendFace.Failure) "Back" else "Close",
             onNavigationClick = {
-                when (face) {
+                if (!sending) when (face) {
                     SendFace.Input -> onClose()
                     is SendFace.Generated -> onClose()
-                    is SendFace.Failure -> face = SendFace.Input
+                    is SendFace.Failure -> if ((face as SendFace.Failure).recovery != null) onClose() else { face = SendFace.Input }
                 }
             },
             actions = {
@@ -488,7 +489,7 @@ fun SendEcashScreen(
                                     t.userFacingWalletMessage
                                 }
                                 errorText = null
-                                face = SendFace.Failure(detail)
+                                face = SendFace.Failure(detail, t as? PendingSendRecovery)
                             } finally {
                                 sending = false
                             }
@@ -527,7 +528,9 @@ fun SendEcashScreen(
                     onDone = onClose,
                 )
 
-                is SendFace.Failure -> PaymentStatusScreen(
+                is SendFace.Failure -> if (current.recovery != null) {
+                    PendingSendRecoveryContent(current.recovery, walletManager, onClose, onWorkingChanged = { sending = it })
+                } else PaymentStatusScreen(
                     phase = PaymentStatusPhase.Failure,
                     title = "Couldn't Create Ecash",
                     detail = current.detail,

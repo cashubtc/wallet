@@ -182,33 +182,29 @@ extension WalletManager {
             protectsBackgroundExecution: true,
             defaultFailureOutcome: .ambiguousFailure
         ) {
-            do {
-                let wallet = try await walletRepository.getWallet(
-                    mintUrl: MintUrl(url: selectedMint.url),
-                    unit: .sat
-                )
-                let customAmount = request.amount() == nil ? Amount(value: amount) : nil
-
-                // CDK rc.1 splits atomic pay_request into prepare + confirm:
-                // prepare resolves method/fees and reserves proofs, confirm
-                // delivers. On delivery failure the pending operation stays
-                // reclaimable via revokeSend instead of paying twice.
-                let prepared = try await wallet.preparePayRequest(
-                    paymentRequest: request,
-                    customAmount: customAmount
-                )
-                try await prepared.confirm()
-                await self.refreshBalanceAssumingWalletOperationLease()
-                await self.loadTransactionsAssumingWalletOperationLease()
-            } catch {
-                await self.captureWalletFailureDiagnostics(kind: .send)
-                await self.recoverWalletStateAfterFailureAssumingWalletOperationLease(
-                    kind: .send,
-                    preferredMintURL: selectedMint.url
-                )
-                await self.captureWalletFailureDiagnostics(kind: .send)
-                throw error
-            }
+            let wallet = try await walletRepository.getWallet(
+                mintUrl: MintUrl(url: selectedMint.url), unit: .sat
+            )
+            let context = PendingSendRecovery(mintURL: selectedMint.url, unit: "sat")
+            try await performRecoverableSend(
+                context: context,
+                inspect: { ids in
+                    var current = context
+                    current.operationIDs = ids
+                    return try await self.sendRecoverySnapshot(wallet: wallet, context: current)
+                },
+                recover: { _ = try await wallet.recoverIncompleteSagas() },
+                send: { remember in
+                    let prepared = try await wallet.preparePayRequest(
+                        paymentRequest: request,
+                        customAmount: request.amount() == nil ? Amount(value: amount) : nil
+                    )
+                    remember(prepared.operationId())
+                    try await prepared.confirm()
+                }
+            )
+            await self.refreshBalanceAssumingWalletOperationLease()
+            await self.loadTransactionsAssumingWalletOperationLease()
         }
     }
 

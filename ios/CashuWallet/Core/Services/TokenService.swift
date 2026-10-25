@@ -42,7 +42,7 @@ class TokenService: ObservableObject {
     ///   - amount: Amount to send in satoshis
     ///   - memo: Optional memo to include
     /// - Returns: Result containing token string and fee paid
-    func sendTokens(amount: UInt64, memo: String? = nil, p2pkPubkey: String? = nil, mintUrl preferredMintURL: String? = nil, unit: Cdk.CurrencyUnit = .sat) async throws -> SendTokenResult {
+    func sendTokens(amount: UInt64, memo: String? = nil, p2pkPubkey: String? = nil, mintUrl preferredMintURL: String? = nil, unit: Cdk.CurrencyUnit = .sat, onPrepared: (String) -> Void = { _ in }) async throws -> SendTokenResult {
         guard let repo = walletRepository() else {
             throw WalletError.notInitialized
         }
@@ -109,6 +109,7 @@ class TokenService: ObservableObject {
         // Avoids calling token.proofsSimple() after confirm, which fails for
         // IDv2 keyset tokens because proofsSimple passes an empty keyset list
         // to the underlying token.proofs() call and can't resolve the short ID.
+        onPrepared(prepared.operationId())
         let fee = prepared.fee().value
 
         let token = try await prepared.confirm(memo: memo)

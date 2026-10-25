@@ -1,0 +1,4 @@
+interface:
+  display_name: "Wallet Simulation Testing"
+  short_description: "Native wallet journeys with fee and recovery evidence"
+  default_prompt: "Use $wallet-simulation-testing to plan and execute an isolated iOS and Android wallet run, recording every step and reconciling each transaction."

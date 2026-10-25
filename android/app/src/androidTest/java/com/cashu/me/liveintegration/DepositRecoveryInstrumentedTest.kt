@@ -21,6 +21,29 @@ class DepositRecoveryInstrumentedTest {
     private val args get() = InstrumentationRegistry.getArguments()
     private val mint get() = args.getString("cashu.cdkMintUrl") ?: "http://127.0.0.1:3339"
 
+    @Test fun seedOnlyAccountScansBeforeAllocatingNewMintOutputs() = runBlocking {
+        val directory = File(InstrumentationRegistry.getInstrumentation().targetContext.cacheDir, "counter-recovery-${UUID.randomUUID()}")
+        directory.mkdirs()
+        val gateway = CdkWalletGatewayImpl()
+        try {
+            val seed = gateway.generateMnemonic()
+            for ((name, amount) in listOf("original" to 16L, "restored" to 100L)) {
+                gateway.openWalletRepository(seed, File(directory, "$name.db").path)
+                gateway.ensureWallet(mint, "sat")
+                val quote = gateway.createMintQuote(amount, PaymentMethodKind.Bolt11, mint, "sat")
+                repeat(40) {
+                    if (gateway.checkMintQuote(quote.id).amountPaid == 0L) delay(100)
+                }
+                assertEquals(amount, gateway.mintTokens(quote.id))
+                assertEquals(if (name == "original") 16L else 116L, gateway.totalBalance(mint))
+                gateway.closeWalletRepository()
+            }
+        } finally {
+            gateway.closeWalletRepository()
+            directory.deleteRecursively()
+        }
+    }
+
     @Test fun lostUsdDepositRequiresDeeperSearchAndCanOnlyBeClaimedOnce() = runBlocking {
         withQuote(PaymentMethodKind.Bolt11, "usd", 1_000u) { seed, quoteId, expected ->
             AppTestFixture.launch(FixtureMode.LiveSeededWithoutMint, mnemonic = seed).use { fixture ->

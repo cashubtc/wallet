@@ -13,6 +13,7 @@ import androidx.compose.material3.SheetState
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
@@ -22,6 +23,8 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 
 /** Native sheet gestures and layout, with spatial motion for dismissal. */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -60,17 +63,26 @@ fun CashuModalBottomSheet(
     }
     val baseMotion = MaterialTheme.motionScheme
     val sheetMotion = remember(baseMotion) { SheetDismissMotionScheme(baseMotion) }
+    // Material3 rebuilds the sheet's dialog, dropping everything composed in
+    // it, whenever LocalDensity changes, and text size and display size both
+    // change it. The content reads its own window's live density, and the
+    // dialog uses this one only for its window elevation, so pin it: a size
+    // change then re-lays the open sheet out instead of resetting it.
+    val density = LocalDensity.current
+    val sheetDensity = remember { Density(density.density, density.fontScale) }
     WithMotionScheme(sheetMotion) {
-        ModalBottomSheet(
-            onDismissRequest = onDismissRequest,
-            sheetState = sheetState,
-            containerColor = containerColor,
-            sheetGesturesEnabled = sheetGesturesEnabled,
-            contentWindowInsets = contentWindowInsets,
-        ) {
-            val columnScope = this
-            // Buttons and content transitions retain the normal effects springs.
-            WithMotionScheme(baseMotion) { columnScope.content() }
+        CompositionLocalProvider(LocalDensity provides sheetDensity) {
+            ModalBottomSheet(
+                onDismissRequest = onDismissRequest,
+                sheetState = sheetState,
+                containerColor = containerColor,
+                sheetGesturesEnabled = sheetGesturesEnabled,
+                contentWindowInsets = contentWindowInsets,
+            ) {
+                val columnScope = this
+                // Buttons and content transitions retain the normal effects springs.
+                WithMotionScheme(baseMotion) { columnScope.content() }
+            }
         }
     }
 }

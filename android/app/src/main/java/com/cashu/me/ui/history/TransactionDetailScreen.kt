@@ -1,5 +1,8 @@
 package com.cashu.me.ui.history
 
+import com.cashu.me.Core.PendingSendRecovery
+import com.cashu.me.ui.send.PendingSendRecoveryContent
+
 import com.cashu.me.ui.components.PendingTokenClaimNotice
 import android.content.ClipData
 import androidx.compose.foundation.layout.Arrangement
@@ -140,6 +143,8 @@ fun TransactionReceiptSheet(
     }
     val current = resolved ?: openSnapshot
 
+    var sendRecovery by remember(transaction.id) { mutableStateOf<PendingSendRecovery?>(null) }
+    var recoveringSend by remember { mutableStateOf(false) }
     var checkingClaim by remember(transaction.id) { mutableStateOf(false) }
     var showTechnicalDetails by remember(transaction.id) { mutableStateOf(false) }
     var manualCheckResult: PendingTokenClaimCheckResult? by remember(transaction.id) {
@@ -305,6 +310,15 @@ fun TransactionReceiptSheet(
                         },
                     )
                 }
+                if (current.kind == TransactionKind.Ecash && current.type == TransactionType.Outgoing &&
+                    current.status == TransactionStatus.Pending && current.sagaId != null && current.mintUrl != null
+                ) {
+                    SecondaryButton(
+                        text = "Manage pending ecash", compact = true,
+                        onClick = { sendRecovery = PendingSendRecovery(current.mintUrl, current.unit, listOf(current.sagaId)) },
+                        modifier = Modifier.testTag("cashu.history.manage-pending-send"),
+                    )
+                }
                 if (offersManualClaimCheck) {
                     PrimaryButton(
                         text = if (checkingClaim) "Checking…" else "Check Status",
@@ -342,10 +356,10 @@ fun TransactionReceiptSheet(
 
     ActivityDetailSheet(
         title = title,
-        fitsContent = !(showsQr && description != null),
-        onDismissRequest = onDismissRequest,
+        fitsContent = sendRecovery == null && !(showsQr && description != null),
+        onDismissRequest = { if (!recoveringSend) onDismissRequest() },
         sheetState = sheetState,
-        sheetGesturesEnabled = !dismiss.isDismissing,
+        sheetGesturesEnabled = !dismiss.isDismissing && !recoveringSend,
         onBackdropVisibilityChanged = onBackdropVisibilityChanged,
         onShare = if (showsQr && qrContent != null) {
             { context.shareText(qrContent, subject = title) }
@@ -359,7 +373,12 @@ fun TransactionReceiptSheet(
                 onDismissRequest = { showTechnicalDetails = false },
             )
         }
-        if (showsQr && description != null) {
+        if (sendRecovery != null) {
+            PendingSendRecoveryContent(
+                checkNotNull(sendRecovery), walletManager, onDone = { sendRecovery = null },
+                modifier = Modifier.weight(1f), onWorkingChanged = { recoveringSend = it },
+            )
+        } else if (showsQr && description != null) {
             PaymentDetailContent(
                 modifier = Modifier.weight(1f, fill = false),
                 hero = hero,

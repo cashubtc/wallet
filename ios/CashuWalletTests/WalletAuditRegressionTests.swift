@@ -5,6 +5,19 @@ import SQLite3
 
 @MainActor
 final class WalletAuditRegressionTests: XCTestCase {
+    func testRestoreIgnoresOtherMintsButPreservesSameMintReservations() {
+        let mint = "https://mint.example"
+        let otherSend = #"{"kind":"send","mint_url":"https://other.example"}"#
+        let issue = #"{"kind":"mint","mint_url":"https://mint.example"}"#
+        XCTAssertTrue(MintRestoreSafety.allows(sagas: [otherSend, issue], mintURL: mint, hasProtectedProofs: false))
+        for kind in ["send", "melt", "swap", "receive", "unknown"] {
+            let saga = "{\"kind\":\"\(kind)\",\"mint_url\":\"https://MINT.example/\"}"
+            XCTAssertFalse(MintRestoreSafety.allows(sagas: [saga], mintURL: mint, hasProtectedProofs: false))
+        }
+        XCTAssertFalse(MintRestoreSafety.allows(sagas: [issue], mintURL: mint, hasProtectedProofs: true))
+        XCTAssertFalse(MintRestoreSafety.allows(sagas: ["invalid"], mintURL: mint, hasProtectedProofs: false))
+    }
+
     private enum Failure: Error { case offline }
 
     func testSharedBech32FramingAcceptsBothChecksumsAndRejectsCorruption() throws {
@@ -363,6 +376,42 @@ final class WalletAuditRegressionTests: XCTestCase {
         XCTAssertEqual(quote.totalAmount, .max)
     }
 
+    func testSeedOnlyAccountScansHistoricalOutputsBeforeNewIssuance() async throws {
+        let mintURL = ProcessInfo.processInfo.environment["NUTSHELL_MINT_URL"] ?? "http://localhost:3338"
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let seed = try generateMnemonic()
+        let originalDB = try LifecycleSafeWalletDatabase(filePath: directory.appendingPathComponent("original.sqlite").path)
+        let original = try WalletRepository(mnemonic: seed, store: customWalletStore(db: originalDB))
+        let url = MintUrl(url: mintURL)
+        let active = MintInfo(url: mintURL, name: "Test mint", isActive: true, balance: 0)
+        try await original.createWallet(mintUrl: url, unit: .sat, targetProofCount: nil)
+        let firstService = LightningService(walletRepository: { original }, walletDatabase: { originalDB }, getActiveMint: { active })
+        var first = try await firstService.createMintQuote(amount: 16, targetMintURL: mintURL)
+        for _ in 0..<50 where first.state == .pending {
+            try await Task.sleep(for: .milliseconds(100))
+            first = try await firstService.checkMintQuote(quoteId: first.id)
+        }
+        _ = try await firstService.mintTokens(quoteId: first.id)
+
+        // Same seed, fresh ledger: counters and proofs have not been restored.
+        let restoredDB = try LifecycleSafeWalletDatabase(filePath: directory.appendingPathComponent("restored.sqlite").path)
+        let restored = try WalletRepository(mnemonic: seed, store: customWalletStore(db: restoredDB))
+        try await restored.createWallet(mintUrl: url, unit: .sat, targetProofCount: nil)
+        let service = LightningService(walletRepository: { restored }, walletDatabase: { restoredDB }, getActiveMint: { active })
+        var next = try await service.createMintQuote(amount: 100, targetMintURL: mintURL)
+        for _ in 0..<50 where next.state == .pending {
+            try await Task.sleep(for: .milliseconds(100))
+            next = try await service.checkMintQuote(quoteId: next.id)
+        }
+        let received = try await service.mintTokens(quoteId: next.id)
+        XCTAssertEqual(received, 100)
+        let wallet = try await restored.getWallet(mintUrl: url, unit: .sat)
+        let balance = try await wallet.totalBalance().value
+        XCTAssertEqual(balance, 116, "Historical proofs and the new payment must both survive")
+    }
+
     func testLightningServiceMintsIntoTheQuotesWalletAfterActiveMintChanges() async throws {
         let mintURL = ProcessInfo.processInfo.environment["NUTSHELL_MINT_URL"] ?? "http://localhost:3338"
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -514,6 +563,25 @@ final class WalletAuditRegressionTests: XCTestCase {
         }
     }
 
+    func testEmptyRestoredAccountCannotIssueIfCounterScanFails() async throws {
+        let database = try WalletSqliteDatabase.newInMemory()
+        let original = onchainQuote()
+        try await database.addMintQuote(quote: original)
+        let wallet = try OnchainStatusWallet(database: database)
+        wallet.failRestore = true
+        let repository = try OnchainStatusRepository(wallet: wallet, database: database)
+        let service = LightningService(walletRepository: { repository }, walletDatabase: { database }, getActiveMint: { nil })
+        do {
+            _ = try await service.mintTokens(quoteId: original.id)
+            XCTFail("Must scan before allocating outputs")
+        } catch { }
+        XCTAssertEqual(wallet.restoreCalls, 1)
+        XCTAssertEqual(wallet.mintCalls, 0)
+        let retained = try await database.getMintQuote(quoteId: original.id)
+        XCTAssertEqual(retained?.amountPaid.value, 1_000)
+        XCTAssertEqual(retained?.amountIssued.value, 0)
+    }
+
     func testConfirmedOnchainReceiveReachesMintingAndIssuedState() async throws {
         let database = try WalletSqliteDatabase.newInMemory()
         let original = onchainQuote()
@@ -530,6 +598,7 @@ final class WalletAuditRegressionTests: XCTestCase {
         let received = try await service.mintTokens(quoteId: original.id)
         XCTAssertEqual(received, 1_000)
         XCTAssertEqual(wallet.mintCalls, 1)
+        XCTAssertEqual(wallet.restoreCalls, 1)
         let settled = try await service.checkMintQuote(quoteId: original.id)
         XCTAssertEqual(settled.state, .issued)
         XCTAssertEqual(settled.mintableAmount, 0)
@@ -766,6 +835,8 @@ final class WalletAuditRegressionTests: XCTestCase {
 private final class OnchainStatusWallet: Wallet, @unchecked Sendable {
     private let database: WalletSqliteDatabase
     private(set) var mintCalls = 0
+    private(set) var restoreCalls = 0
+    var failRestore = false
 
     init(database: WalletSqliteDatabase) throws {
         self.database = database
@@ -778,6 +849,12 @@ private final class OnchainStatusWallet: Wallet, @unchecked Sendable {
     }
 
     required init(unsafeFromHandle handle: UInt64) { fatalError("Test double only") }
+
+    override func restore() async throws -> Restored {
+        restoreCalls += 1
+        if failRestore { throw URLError(.notConnectedToInternet) }
+        return Restored(spent: Amount(value: 0), unspent: Amount(value: 0), pending: Amount(value: 0))
+    }
 
     override func checkMintQuoteStatus(quoteId: String) async throws -> MintQuote {
         let current = try await database.getMintQuote(quoteId: quoteId)!

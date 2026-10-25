@@ -103,6 +103,9 @@ interface CdkWalletGateway {
     suspend fun listTransactions(unitsByMint: Map<String, List<String>>): List<WalletTransaction>
     suspend fun payCashuPaymentRequest(encoded: String, customAmountSats: Long?, preferredMintURL: String?)
 
+    suspend fun checkSendRecovery(context: com.cashu.me.Core.PendingSendRecovery): com.cashu.me.Core.PendingSendRecovery =
+        throw UnsupportedOperationException("Send recovery is unavailable.")
+
     /**
      * CDK 0.18 send lifecycle: operation ids of outgoing sends whose token is
      * still unclaimed (their transactions read as Pending).

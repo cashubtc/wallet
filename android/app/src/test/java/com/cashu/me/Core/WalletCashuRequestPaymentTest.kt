@@ -6,6 +6,18 @@ import org.junit.Test
 
 class WalletCashuRequestPaymentTest {
     @Test
+    fun confirmedPaymentRemainsSuccessfulWhenDisplayRefreshFails() = runBlocking {
+        val events = mutableListOf<String>()
+        payCashuPaymentRequestAndRefresh(
+            encoded = "creq1payment", customAmountSats = 21, preferredMintURL = "https://mint.example",
+            payCashuPaymentRequest = { _, _, _ -> events += "paid" },
+            refreshBalance = { events += "balance"; error("offline") },
+            loadTransactions = { events += "history"; error("offline") },
+        )
+        assertEquals(listOf("paid", "balance", "history"), events)
+    }
+
+    @Test
     fun payCashuPaymentRequestPaysThenRefreshesBalanceAndTransactions() = runBlocking {
         val events = mutableListOf<String>()
 
