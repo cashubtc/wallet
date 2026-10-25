@@ -1,5 +1,6 @@
 package com.cashu.me.Core.Wallet
 
+import com.cashu.me.Core.PendingSendRecovery
 import com.cashu.me.Core.MintTransferEligibility
 import com.cashu.me.Models.MintTransferException
 
@@ -61,6 +62,10 @@ object WalletErrorMessages {
         "The wallet couldn't finish that action. Try again in a moment."
 
     fun classify(error: Throwable): WalletMessage {
+        if (error is PendingSendRecovery) return WalletMessage(error.message.orEmpty(), WalletMessageSeverity.Caution, isTerminal = true)
+        if (error is org.cashudevkit.FfiException.PaymentRequestDeliveryFailed) {
+            return WalletMessage("The delivery outcome is uncertain. Check the pending send before paying again.", WalletMessageSeverity.Caution, isTerminal = true)
+        }
         // An application safety policy, not a transport failure. Its guidance
         // contains "connected", which the raw network matcher catches.
         if (error is com.cashu.me.Core.MintTransferInProgressException) {

@@ -1120,12 +1120,16 @@ class WalletManager(
             // Keep the token string under its (stable, saga-derived) CDK
             // transaction id so History can re-display it and claim checks can
             // resolve the send operation. Lifecycle state lives in CDK itself.
-            result.transactionId?.let { transactionId ->
-                walletStore.saveSavedTokens(walletStore.loadSavedTokens() + (transactionId to result.token))
+            try {
+                result.transactionId?.let { transactionId ->
+                    walletStore.saveSavedTokens(walletStore.loadSavedTokens() + (transactionId to result.token))
+                }
+                normalizedP2PKPubkey?.let(settingsManager::markP2PKKeyUsed)
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                AppLogger.wallet.error("Unable to cache confirmed send", error)
             }
-            normalizedP2PKPubkey?.let(settingsManager::markP2PKKeyUsed)
-            refreshBalance()
-            loadTransactions()
+            refreshAfterConfirmedSend({ refreshBalance() }, { loadTransactions() })
             result
         }
     }
@@ -1416,17 +1420,26 @@ class WalletManager(
      * Reclaim an unclaimed sent token: CDK swaps the proofs back and marks the
      * transaction failed/revoked, so no local bookkeeping remains.
      */
+    suspend fun checkSendRecovery(context: PendingSendRecovery): PendingSendRecovery = withLoadingResult {
+        val result = gateway.checkSendRecovery(context)
+        refreshBalance()
+        loadTransactions()
+        result
+    }
+
+    suspend fun reclaimPendingSend(operationId: String, mintUrl: String, unit: String): Long = withLoadingResult {
+        val amount = gateway.revokePendingSend(mintUrl, operationId, unit)
+        refreshBalance()
+        loadTransactions()
+        amount
+    }
+
     suspend fun reclaimPendingSend(transaction: WalletTransaction): Long {
         val sagaId = transaction.sagaId
             ?: throw IllegalStateException("Transaction has no send operation to revoke.")
         val mintUrl = transaction.mintUrl
             ?: throw IllegalStateException("Transaction has no mint to revoke from.")
-        return withLoadingResult {
-            val amount = gateway.revokePendingSend(mintUrl, sagaId, transaction.unit)
-            refreshBalance()
-            loadTransactions()
-            amount
-        }
+        return reclaimPendingSend(sagaId, mintUrl, transaction.unit)
     }
 
     suspend fun calculateReceiveFee(tokenString: String): Long = gateway.calculateReceiveFee(tokenString)

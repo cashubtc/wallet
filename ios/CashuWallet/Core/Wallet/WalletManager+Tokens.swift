@@ -19,24 +19,29 @@ extension WalletManager {
             protectsBackgroundExecution: true,
             defaultFailureOutcome: .ambiguousFailure
         ) {
-            do {
-                return try await self.tokenService.sendTokens(
-                    amount: amount,
-                    memo: memo,
-                    p2pkPubkey: p2pkPubkey,
-                    mintUrl: preferredMintURL,
-                    unit: currencyUnit
-                )
-            } catch {
-                await self.captureWalletFailureDiagnostics(kind: .send)
-                await self.recoverWalletStateAfterFailureAssumingWalletOperationLease(
-                    kind: .send,
-                    preferredMintURL: recoveryMintURL,
-                    unit: currencyUnit
-                )
-                await self.captureWalletFailureDiagnostics(kind: .send)
-                throw error
+            guard let recoveryMintURL, let repository = self.walletRepository else { throw WalletError.notInitialized }
+            if PaymentRequestDecoder.unitDescription(currencyUnit) != "sat" {
+                try await repository.createWallet(mintUrl: MintUrl(url: recoveryMintURL), unit: currencyUnit, targetProofCount: nil)
             }
+            let wallet = try await repository.getWallet(
+                mintUrl: MintUrl(url: recoveryMintURL), unit: currencyUnit
+            )
+            let context = PendingSendRecovery(mintURL: recoveryMintURL, unit: PaymentRequestDecoder.unitDescription(currencyUnit))
+            return try await performRecoverableSend(
+                context: context,
+                inspect: { ids in
+                    var current = context
+                    current.operationIDs = ids
+                    return try await self.sendRecoverySnapshot(wallet: wallet, context: current)
+                },
+                recover: { _ = try await wallet.recoverIncompleteSagas() },
+                send: { remember in
+                    try await self.tokenService.sendTokens(
+                        amount: amount, memo: memo, p2pkPubkey: p2pkPubkey,
+                        mintUrl: preferredMintURL, unit: currencyUnit, onPrepared: remember
+                    )
+                }
+            )
         }
         let tokenMintURL = recoveryMintURL ?? ""
 
@@ -345,22 +350,7 @@ extension WalletManager {
             throw WalletError.notInitialized
         }
         let mintUrl = transaction.mintUrl ?? activeMint?.url ?? ""
-        let amount = try await operationCoordinator.perform(
-            kind: .send,
-            resourceID: mintUrl,
-            protectsBackgroundExecution: true
-        ) {
-            let unit = PaymentRequestDecoder.currencyUnit(from: transaction.unit)
-            let wallet = try await self.walletRepository?.getWallet(
-                mintUrl: MintUrl(url: mintUrl),
-                unit: unit
-            )
-            guard let wallet else { throw WalletError.notInitialized }
-            return try await wallet.revokeSend(operationId: sagaId).value
-        }
-        await refreshBalance()
-        await loadTransactions()
-        return amount
+        return try await reclaimPendingSend(operationID: sagaId, mintURL: mintUrl, unit: transaction.unit)
     }
 
     func checkAllPendingTokens() async {

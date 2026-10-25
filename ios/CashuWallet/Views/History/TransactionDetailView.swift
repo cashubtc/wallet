@@ -13,6 +13,7 @@ struct TransactionDetailView: View {
 
     @State private var contentHeight: CGFloat = 0
     @State private var claimReceiveToken: PendingReceiveToken?
+    @State private var showSendRecovery = false
     @State private var showShareSheet = false
     @State private var showTechnicalDetails = false
     @State private var isCheckingClaim = false
@@ -123,6 +124,14 @@ struct TransactionDetailView: View {
                     .padding(.horizontal)
                     .padding(.bottom, 16)
                     .contentFitMeasured { contentHeight = $0 }
+                }
+            }
+            .sheet(isPresented: $showSendRecovery) {
+                if let mintURL = seed.mintUrl, let operationID = seed.sagaId {
+                    PendingSendRecoveryView(
+                        recovery: PendingSendRecovery(mintURL: mintURL, unit: seed.unit, operationIDs: [operationID]),
+                        onDone: { showSendRecovery = false }
+                    )
                 }
             }
             .sheet(isPresented: $showShareSheet) {
@@ -249,6 +258,12 @@ struct TransactionDetailView: View {
                     .accessibilityHint("Copies the \(qrContentAccessibilityLabel) to clipboard")
                 }
 
+                if transaction.kind == .ecash, transaction.type == .outgoing,
+                   transaction.status == .pending, transaction.sagaId != nil, transaction.mintUrl != nil {
+                    Button("Manage pending ecash") { showSendRecovery = true }
+                        .glassButton()
+                        .accessibilityIdentifier("cashu.history.manage-pending-send")
+                }
                 if offersManualClaimCheck {
                     Button(action: { startManualClaimCheck() }) {
                         if isCheckingClaim {

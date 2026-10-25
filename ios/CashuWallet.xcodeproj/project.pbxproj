@@ -220,6 +220,10 @@
 		308A34C268A34350989D0C6A /* DepositRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8ED477B70CA24BF98A9B4D6A /* DepositRecovery.swift */; };
 		8848F6B8FAAB4327BC310907 /* RecoverDepositView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC7F477F6FD345FCB144F398 /* RecoverDepositView.swift */; };
 		25FD2A973A05429ABA4F7B49 /* DepositRecoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20E4CAFD0E4E40908CB92016 /* DepositRecoveryTests.swift */; };
+		0AEC8ED59550495580115680 /* PendingSendRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46E5416B3B6D4106B7EF2C85 /* PendingSendRecovery.swift */; };
+		E8BB72035E264FAC92F29D6D /* WalletManager+SendRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85948366C3C542BC933C6CB2 /* WalletManager+SendRecovery.swift */; };
+		7BE613C981CB48E585C01B16 /* PendingSendRecoveryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47264B46C5444B5C829B3AEF /* PendingSendRecoveryView.swift */; };
+		B68EE599C9A64E3A9BDCB756 /* PendingSendRecoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C68F59F7A7AB4D16BAC0CFDB /* PendingSendRecoveryTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -452,6 +456,10 @@
 		8ED477B70CA24BF98A9B4D6A /* DepositRecovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DepositRecovery.swift; sourceTree = "<group>"; };
 		EC7F477F6FD345FCB144F398 /* RecoverDepositView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecoverDepositView.swift; sourceTree = "<group>"; };
 		20E4CAFD0E4E40908CB92016 /* DepositRecoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CashuWalletTests/DepositRecoveryTests.swift; sourceTree = "<group>"; };
+		46E5416B3B6D4106B7EF2C85 /* PendingSendRecovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PendingSendRecovery.swift; path = "CashuWallet/Core/Wallet/PendingSendRecovery.swift"; sourceTree = "<group>"; };
+		85948366C3C542BC933C6CB2 /* WalletManager+SendRecovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "WalletManager+SendRecovery.swift"; path = "CashuWallet/Core/Wallet/WalletManager+SendRecovery.swift"; sourceTree = "<group>"; };
+		47264B46C5444B5C829B3AEF /* PendingSendRecoveryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PendingSendRecoveryView.swift; path = "CashuWallet/Views/Send/PendingSendRecoveryView.swift"; sourceTree = "<group>"; };
+		C68F59F7A7AB4D16BAC0CFDB /* PendingSendRecoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PendingSendRecoveryTests.swift; path = "CashuWalletTests/PendingSendRecoveryTests.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -488,6 +496,7 @@
 		172BA94269E4241413C46309 /* CashuWalletTests */ = {
 			isa = PBXGroup;
 			children = (
+				C68F59F7A7AB4D16BAC0CFDB /* PendingSendRecoveryTests.swift */,
 				323A00000000000000000002 /* PriceServiceTests.swift */,
 				F1CF8C0C2E1379BCD23CF8C6 /* IntegrationTestBase.swift */,
 				E20100000000000000000002 /* PaymentSafetyIntegrationTests.swift */,
@@ -545,6 +554,9 @@
 		4000000000000000 = {
 			isa = PBXGroup;
 			children = (
+				47264B46C5444B5C829B3AEF /* PendingSendRecoveryView.swift */,
+				85948366C3C542BC933C6CB2 /* WalletManager+SendRecovery.swift */,
+				46E5416B3B6D4106B7EF2C85 /* PendingSendRecovery.swift */,
 				4100000000000001 /* CashuWallet */,
 				6A8EC9592F26983E0058C21B /* Frameworks */,
 				4100000000000002 /* Products */,
@@ -1127,6 +1139,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B68EE599C9A64E3A9BDCB756 /* PendingSendRecoveryTests.swift in Sources */,
 				323A00000000000000000001 /* PriceServiceTests.swift in Sources */,
 				BF36C01CE0AB810E1B462448 /* IntegrationTestBase.swift in Sources */,
 				E20100000000000000000001 /* PaymentSafetyIntegrationTests.swift in Sources */,
@@ -1183,6 +1196,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7BE613C981CB48E585C01B16 /* PendingSendRecoveryView.swift in Sources */,
+				E8BB72035E264FAC92F29D6D /* WalletManager+SendRecovery.swift in Sources */,
+				0AEC8ED59550495580115680 /* PendingSendRecovery.swift in Sources */,
 				1100000000000001 /* CashuWalletApp.swift in Sources */,
 				6A8EC9342F244BD80058C21B /* ScannerWrapperView.swift in Sources */,
 				1100000000000002 /* ContentView.swift in Sources */,
