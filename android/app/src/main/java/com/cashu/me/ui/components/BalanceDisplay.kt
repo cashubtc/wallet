@@ -23,8 +23,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -32,6 +30,7 @@ import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.ui.unit.sp
 import com.cashu.me.Core.AmountDisplayText
 import com.cashu.me.Core.AmountParts
+import com.cashu.me.Core.HomeBalanceCycle
 import com.cashu.me.ui.theme.AmountScale
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.rememberReducedMotion
@@ -79,6 +78,13 @@ private sealed interface BalanceStatusLine {
  *   so the swap never reflows the balance.
  * @param statusMessage wallet lifecycle copy, such as runtime preparation,
  *   shown ahead of the regular secondary amount.
+ * @param onPrimaryClick advances the home balance tap cycle. The balance is
+ *   tappable whenever this is set, with or without a fiat line, because the
+ *   cycle always has private mode to go to.
+ * @param primaryClickLabel what that tap does next, for TalkBack.
+ * @param hidden private mode: [amount] is already masked, the hero reads
+ *   "Balance hidden", and the fiat line stays empty. A delta beat and a
+ *   status message still show.
  */
 @Composable
 fun BalanceDisplay(
@@ -88,9 +94,11 @@ fun BalanceDisplay(
     receivedDelta: String? = null,
     statusMessage: String? = null,
     onPrimaryClick: (() -> Unit)? = null,
+    primaryClickLabel: String? = null,
+    hidden: Boolean = false,
 ) {
     val reduceMotion = rememberReducedMotion()
-    val primaryClickModifier = if (onPrimaryClick != null && amount.secondary != null) {
+    val primaryClickModifier = if (onPrimaryClick != null) {
         Modifier
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
@@ -99,12 +107,11 @@ fun BalanceDisplay(
                 // ripple does not draw a rectangular bar around the numeral.
                 indication = null,
                 role = Role.Button,
-                onClickLabel = "Make ${amount.secondary} primary",
+                // The hero's own label already names the amount; repeating it
+                // here made TalkBack read the balance twice.
+                onClickLabel = primaryClickLabel ?: amount.secondary?.let { "Make $it primary" },
                 onClick = onPrimaryClick,
             )
-            .semantics(mergeDescendants = true) {
-                contentDescription = "Balance: ${amount.primary}. Tap to make ${amount.secondary} primary."
-            }
             .sizeIn(minHeight = 48.dp)
     } else {
         Modifier
@@ -120,11 +127,12 @@ fun BalanceDisplay(
             scale = AmountScale.Hero,
             modifier = primaryClickModifier,
             accessibilityPrefix = "Balance",
+            accessibilityLabel = HomeBalanceCycle.HiddenLabel.takeIf { hidden },
         )
         val statusLine: BalanceStatusLine = when {
             receivedDelta != null -> BalanceStatusLine.Delta(receivedDelta)
             statusMessage != null -> BalanceStatusLine.Status(statusMessage)
-            amount.secondary != null -> BalanceStatusLine.Secondary(amount.secondary)
+            !hidden && amount.secondary != null -> BalanceStatusLine.Secondary(amount.secondary)
             else -> BalanceStatusLine.None
         }
         Box(

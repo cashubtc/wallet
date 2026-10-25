@@ -94,6 +94,7 @@ object StorageKeys {
     const val settingsAmountDisplayPrimary = "settings.amountDisplayPrimary"
     const val settingsHomeBalancePrimary = "settings.homeBalancePrimary"
     const val settingsHomeBalanceUnit = "settings.homeBalanceUnit"
+    const val settingsHideBalances = "settings.hideBalances"
     const val settingsSentryEnabled = "settings.sentryEnabled"
     const val settingsAppLockEnabled = "settings.appLockEnabled"
 

@@ -229,4 +229,13 @@ class AmountFormatterTest {
         assertEquals("500 sats", formatter.satsParts(500, useBitcoinSymbol = true).spoken)
         assertEquals("500 sat", formatter.satsParts(500, useBitcoinSymbol = false).spoken)
     }
+
+    @Test
+    fun hiddenBalanceIsTheAsterisksAloneWithNoUnit() {
+        val hidden = AmountFormatter.HiddenBalance
+        assertEquals("****", hidden.primary)
+        assertEquals(AmountParts("****", AmountParts.Affix.None), hidden.primaryParts)
+        assertNull(hidden.secondary)
+        assertEquals("+****", AmountFormatter.HiddenDelta)
+    }
 }

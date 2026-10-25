@@ -61,6 +61,7 @@ data class SettingsState(
     val amountDisplayPrimary: String = "fiat",
     val homeBalancePrimary: String = "sats",
     val homeBalanceUnit: String = "sat",
+    val hideBalances: Boolean = false,
     val sentryEnabled: Boolean = false,
     val appLockEnabled: Boolean = false,
     val checkIncomingInvoices: Boolean = true,
@@ -292,6 +293,20 @@ class SettingsManager internal constructor(
     fun setHomeBalanceUnit(unit: String) = update { settingsStore.homeBalanceUnit = unit }
 
     /**
+     * Lands the home balance tap cycle on [step]. Primary and private mode are
+     * written in one update, so leaving private never emits a fiat frame on
+     * the way back to bitcoin.
+     */
+    fun applyHomeBalanceStep(step: HomeBalanceStep) = update {
+        val target = HomeBalanceCycle.settings(
+            step,
+            keeping = AmountDisplayPrimary.fromRaw(settingsStore.homeBalancePrimary),
+        )
+        settingsStore.homeBalancePrimary = target.primary.rawValue
+        settingsStore.hideBalances = target.hidden
+    }
+
+    /**
      * Adds a relay, reporting why it was rejected instead of silently no-opping.
      * Null means the input was blank and nothing happened.
      */
@@ -518,6 +533,7 @@ class SettingsManager internal constructor(
             amountDisplayPrimary = AmountDisplayPrimary.fromRaw(settingsStore.amountDisplayPrimary).rawValue,
             homeBalancePrimary = AmountDisplayPrimary.fromRaw(settingsStore.homeBalancePrimary).rawValue,
             homeBalanceUnit = settingsStore.homeBalanceUnit,
+            hideBalances = settingsStore.hideBalances,
             sentryEnabled = settingsStore.sentryEnabled,
             appLockEnabled = settingsStore.appLockEnabled,
             checkIncomingInvoices = settingsStore.checkIncomingInvoices,

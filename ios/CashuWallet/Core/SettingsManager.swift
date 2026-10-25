@@ -145,6 +145,15 @@ class SettingsManager: ObservableObject {
         }
     }
 
+    /// The private step of the home balance cycle: masks the home balance and
+    /// the Recent and History row amounts. Detail screens and pay flows still
+    /// show amounts.
+    @Published var hideBalances: Bool {
+        didSet {
+            settingsStore.hideBalances = hideBalances
+        }
+    }
+
     @Published var appLockEnabled: Bool {
         didSet {
             settingsStore.appLockEnabled = appLockEnabled
@@ -198,6 +207,7 @@ class SettingsManager: ObservableObject {
         self.nostrMintBackupEnabled = settingsStore.nostrMintBackupEnabled
         self.amountDisplayPrimary = AmountDisplayPrimary(rawValue: settingsStore.amountDisplayPrimary) ?? .fiat
         self.homeBalancePrimary = AmountDisplayPrimary(rawValue: settingsStore.homeBalancePrimary) ?? .sats
+        self.hideBalances = settingsStore.hideBalances
         self.appLockEnabled = settingsStore.appLockEnabled
         self.sentryEnabled = settingsStore.sentryEnabled
 
@@ -722,6 +732,14 @@ class SettingsManager: ObservableObject {
         Self.normalizeP2PKPublicKeyForComparison(publicKey)
     }
     
+    /// Writes a home balance step. Callers wrap this in their animation so the
+    /// primary and hidden changes land in one transaction.
+    func applyHomeBalanceStep(_ step: HomeBalanceStep) {
+        let target = HomeBalanceCycle.settings(for: step, keeping: homeBalancePrimary)
+        if homeBalancePrimary != target.primary { homeBalancePrimary = target.primary }
+        if hideBalances != target.hidden { hideBalances = target.hidden }
+    }
+
     // MARK: - Formatting Helpers
     
     func formatAmount(_ sats: UInt64) -> String {

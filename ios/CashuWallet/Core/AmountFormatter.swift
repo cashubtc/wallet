@@ -91,6 +91,21 @@ enum AmountFormatter {
         return formatter
     }()
 
+    /// Private mode's stand-in for numerals: always four asterisks, whatever the
+    /// amount, so the length never hints at it.
+    static let hiddenDigits = "****"
+
+    /// The received beat while balances are hidden; the visible beat is "+2,500".
+    static let hiddenDelta = "+" + hiddenDigits
+
+    /// Spoken in place of a row amount while balances are hidden.
+    static let hiddenRowAmountAccessibility = "amount hidden"
+
+    /// A hidden home balance on every page: the asterisks alone, with no ₿,
+    /// sat or currency symbol. Built from structure, never parsed: with no
+    /// digits to anchor on, `AmountParts.parse` would read it all as a prefix.
+    static let hiddenBalanceParts = AmountParts(value: hiddenDigits, affix: .none)
+
     /// Sats decomposed for typesetting. The canonical source; `sats(_:…)` is
     /// this joined back up.
     static func satsParts(_ sats: UInt64, useBitcoinSymbol: Bool) -> AmountParts {

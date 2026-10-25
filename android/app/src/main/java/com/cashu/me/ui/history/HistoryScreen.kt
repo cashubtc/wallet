@@ -328,6 +328,7 @@ fun HistoryScreen(
                                                 timestamp = formatRelativeTimestamp(tx.dateEpochMillis),
                                                 primaryAmount = amountDisplay.primary,
                                                 secondaryAmount = amountDisplay.secondary,
+                                                amountHidden = settings.hideBalances,
                                             ),
                                             onClick = {
                                                 keyboardController?.hide()
@@ -368,6 +369,7 @@ fun HistoryScreen(
                                                 onOpenCashuRequest(item.request)
                                             },
                                             onLongClick = { requestPendingDelete = item.request },
+                                            amountHidden = settings.hideBalances,
                                         )
                                     }
                                 }

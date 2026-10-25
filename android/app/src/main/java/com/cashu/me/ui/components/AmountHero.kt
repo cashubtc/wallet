@@ -74,6 +74,8 @@ fun AmountHero(
     color: Color = LocalContentColor.current,
     animated: Boolean = true,
     accessibilityPrefix: String? = null,
+    /** Replaces the spoken amount outright, e.g. "Balance hidden" in private mode. */
+    accessibilityLabel: String? = null,
 ) {
     val style = CashuTheme.type.amount(scale)
     Box(
@@ -94,7 +96,9 @@ fun AmountHero(
                 minFontSize = style.fontSize * AmountHeroMinScale,
                 maxFontSize = style.fontSize,
             ),
-            semanticsLabel = accessibilityPrefix?.let { "$it: ${parts.spoken}" } ?: parts.spoken,
+            semanticsLabel = accessibilityLabel
+                ?: accessibilityPrefix?.let { "$it: ${parts.spoken}" }
+                ?: parts.spoken,
         )
     }
 }

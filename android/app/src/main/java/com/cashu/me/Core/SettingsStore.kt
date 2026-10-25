@@ -89,6 +89,14 @@ class SettingsStore(
         get() = store.string(StorageKeys.settingsHomeBalanceUnit) ?: "sat"
         set(value) = store.putString(StorageKeys.settingsHomeBalanceUnit, value)
 
+    /**
+     * Private mode for the home balance and the History list. A device
+     * preference like [homeBalancePrimary], so it is not wallet-scoped.
+     */
+    var hideBalances: Boolean
+        get() = store.boolean(StorageKeys.settingsHideBalances, false)
+        set(value) = store.putBoolean(StorageKeys.settingsHideBalances, value)
+
     var sentryEnabled: Boolean
         get() = store.boolean(StorageKeys.settingsSentryEnabled, false)
         set(value) = store.putBoolean(StorageKeys.settingsSentryEnabled, value)

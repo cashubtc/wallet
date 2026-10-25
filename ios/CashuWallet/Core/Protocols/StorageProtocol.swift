@@ -133,6 +133,7 @@ enum StorageKeys {
     static let nostrMintBackupEnabled = "settings.nostrMintBackupEnabled"
     static let amountDisplayPrimary = "settings.amountDisplayPrimary"
     static let homeBalancePrimary = "settings.homeBalancePrimary"
+    static let hideBalances = "settings.hideBalances"
     static let appLockEnabled = "settings.appLockEnabled"
     static let sentryEnabled = "settings.sentryEnabled"
 

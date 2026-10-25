@@ -158,6 +158,13 @@ final class SettingsStore {
         set { set(newValue, forKey: StorageKeys.homeBalancePrimary) }
     }
 
+    /// Private mode for the home balance, History rows and Recent rows. A device
+    /// preference like `homeBalancePrimary`, so wallet resets keep it.
+    var hideBalances: Bool {
+        get { bool(StorageKeys.hideBalances, default: false) }
+        set { set(newValue, forKey: StorageKeys.hideBalances) }
+    }
+
     var appLockEnabled: Bool {
         get { bool(StorageKeys.appLockEnabled, default: false) }
         set { set(newValue, forKey: StorageKeys.appLockEnabled) }

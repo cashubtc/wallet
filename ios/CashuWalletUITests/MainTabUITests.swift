@@ -7,6 +7,33 @@ final class MainTabUITests: UITestBase {
 
     // MARK: - Tests
 
+    /// Without a fiat line the balance still taps: bitcoin → hidden → bitcoin.
+    /// Hidden survives a relaunch, and nothing below the hero moves.
+    func testBalanceTapHidesAndShowsWithoutMovingTheHome() {
+        waitForMainTab()
+        let balance = app.buttons["wallet-balance-sat"]
+        XCTAssertTrue(balance.waitForExistence(timeout: 10), "The home balance should be a button")
+        XCTAssertTrue(balance.label.hasPrefix("Balance: "), "Unexpected label: \(balance.label)")
+        let receive = app.buttons["wallet-action-receive"]
+        XCTAssertTrue(receive.waitForExistence(timeout: 5))
+        let receiveY = receive.frame.minY
+        let balanceHeight = balance.frame.height
+
+        tapWhenReady(balance)
+        assertLabel(of: balance, becomes: "Balance hidden")
+        XCTAssertEqual(receive.frame.minY, receiveY, accuracy: 0.5, "Hiding must not move the actions")
+        XCTAssertEqual(balance.frame.height, balanceHeight, accuracy: 0.5, "Hiding must not resize the hero")
+
+        relaunchPreservingWallet()
+        let relaunched = app.buttons["wallet-balance-sat"]
+        XCTAssertTrue(relaunched.waitForExistence(timeout: 10))
+        assertLabel(of: relaunched, becomes: "Balance hidden")
+
+        tapWhenReady(relaunched)
+        let shown = expectation(for: NSPredicate(format: "label BEGINSWITH %@", "Balance: "), evaluatedWith: relaunched)
+        wait(for: [shown], timeout: 5)
+    }
+
     func testWalletNoMintEmptyStateOpensConnectMintPicker() throws {
         waitForMainTab()
 
@@ -110,6 +137,18 @@ final class MainTabUITests: UITestBase {
         )
 
         tapTab("Wallet")
+    }
+
+    private func assertLabel(
+        of element: XCUIElement,
+        becomes label: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let changed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", label), object: element)
+        if XCTWaiter.wait(for: [changed], timeout: 5) != .completed {
+            XCTFail("Expected label \"\(label)\", got \"\(element.label)\"", file: file, line: line)
+        }
     }
 }
 

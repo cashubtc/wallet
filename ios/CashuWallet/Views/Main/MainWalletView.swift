@@ -248,30 +248,28 @@ struct MainWalletView: View {
                 let sats = walletManager.balancesByUnit["sat"] ?? walletManager.balance
                 let display = balanceDisplay(sats)
                 let primaryValue = balanceNumericValue(sats, primary: display.effectivePrimary)
-                if let secondary = display.secondary {
-                    Button {
-                        withAnimation(reduceMotion ? .easeOut(duration: 0.2) : .snappy) {
-                            settings.homeBalancePrimary.toggle()
-                        }
-                    } label: {
-                        AmountLockup(
-                            parts: display.primaryParts,
-                            value: primaryValue,
-                            accessibilityPrefix: "Balance"
-                        )
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Balance: \(display.primary)")
-                    .accessibilityHint("Double tap to make \(secondary) the primary balance")
-                    .sensoryFeedback(.selection, trigger: settings.homeBalancePrimary)
-                } else {
-                    AmountLockup(
-                        parts: display.primaryParts,
-                        value: primaryValue,
-                        accessibilityPrefix: "Balance"
+                let step = HomeBalanceCycle.current(
+                    isHidden: settings.hideBalances,
+                    effectivePrimary: display.effectivePrimary,
+                    isSatPage: true
+                )
+                let next = HomeBalanceCycle.next(
+                    after: step,
+                    hasFiat: display.effectivePrimary == .fiat || display.secondary != nil,
+                    isSatPage: true
+                )
+                balanceHeroButton(
+                    unit: unit,
+                    parts: display.primaryParts,
+                    value: primaryValue,
+                    label: "Balance: \(display.primary)",
+                    next: next,
+                    phrase: HomeBalanceCycle.actionPhrase(
+                        for: next,
+                        fiatText: display.effectivePrimary == .fiat ? display.primary : display.secondary,
+                        unitName: "sats"
                     )
-                }
+                )
 
                 // Status line under the balance: a transient monochrome
                 // received-delta beat takes over the fiat slot for 2.5s on receipt,
@@ -280,14 +278,22 @@ struct MainWalletView: View {
                 balanceStatusLine(display, secondaryValue: balanceSecondaryNumericValue(sats, display: display))
             } else {
                 let amount = walletManager.balancesByUnit[unit] ?? 0
-                let formatted = CurrencyAmount(
-                    value: amount,
-                    currency: CurrencyRegistry.currency(forMintUnit: unit)
-                ).formatted()
-                AmountLockup(
-                    parts: AmountParts.parse(formatted),
+                let currency = CurrencyRegistry.currency(forMintUnit: unit)
+                let formatted = CurrencyAmount(value: amount, currency: currency).formatted()
+                let parts = AmountParts.parse(formatted)
+                let step = HomeBalanceCycle.current(
+                    isHidden: settings.hideBalances,
+                    effectivePrimary: .sats,
+                    isSatPage: false
+                )
+                let next = HomeBalanceCycle.next(after: step, hasFiat: false, isSatPage: false)
+                balanceHeroButton(
+                    unit: unit,
+                    parts: parts,
                     value: Double(amount),
-                    accessibilityPrefix: "Balance"
+                    label: "Balance: \(parts.spoken)",
+                    next: next,
+                    phrase: HomeBalanceCycle.actionPhrase(for: next, fiatText: nil, unitName: currency.code)
                 )
                 .animation(.snappy, value: amount)
                 // Same reserved status slot as sat (no fiat conversion for non-sat).
@@ -295,6 +301,59 @@ struct MainWalletView: View {
             }
         }
         .padding(.bottom, convertedAmountBottomPadding)
+    }
+
+    /// The tappable hero. Every page steps through the balance cycle, with or
+    /// without a fiat line, so it is always one Button: the hidden and visible
+    /// lockups swap inside its label, which keeps the Button's identity (and
+    /// VoiceOver focus) through every step. Both lockups reserve the same line
+    /// box, so the swap never reflows the hero.
+    private func balanceHeroButton(
+        unit: String,
+        parts: AmountParts,
+        value: Double,
+        label: String,
+        next: HomeBalanceStep,
+        phrase: String
+    ) -> some View {
+        let hidden = settings.hideBalances
+        return Button {
+            cycleHomeBalance(to: next)
+        } label: {
+            ZStack {
+                if hidden {
+                    AmountLockup(parts: AmountFormatter.hiddenBalanceParts)
+                        .transition(balanceMaskTransition)
+                } else {
+                    // Bitcoin ↔ fiat stays inside this branch, so the digits
+                    // still roll; only hiding and showing blur.
+                    AmountLockup(parts: parts, value: value, accessibilityPrefix: "Balance")
+                        .transition(balanceMaskTransition)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(hidden ? HomeBalanceCycle.hiddenLabel : label)
+        .accessibilityHint("Double tap to \(phrase)")
+        .accessibilityAction(named: Text(phrase.prefix(1).uppercased() + phrase.dropFirst())) {
+            cycleHomeBalance(to: next)
+        }
+        .accessibilityIdentifier("wallet-balance-\(unit.lowercased())")
+    }
+
+    private var balanceMaskTransition: AnyTransition {
+        reduceMotion ? .opacity : AnyTransition(.blurReplace)
+    }
+
+    /// One step of the cycle. The haptic fires here rather than off a settings
+    /// trigger, so fiat → hidden buzzes like every other step and a price that
+    /// drops out doesn't.
+    private func cycleHomeBalance(to next: HomeBalanceStep) {
+        HapticFeedback.selection()
+        withAnimation(reduceMotion ? .easeOut(duration: 0.2) : .snappy) {
+            settings.applyHomeBalanceStep(next)
+        }
     }
 
     /// Compact page dots under the unit pager (6pt dots, 6pt gap, active pill
@@ -332,7 +391,7 @@ struct MainWalletView: View {
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .transition(.opacity)
-            } else if let secondary = display.secondary {
+            } else if !settings.hideBalances, let secondary = display.secondary {
                 Text(secondary)
                     .font(.body)
                     .monospacedDigit()
@@ -350,9 +409,10 @@ struct MainWalletView: View {
     /// names the exact amount that landed. Grouped via the canonical formatter,
     /// no unit (the balance beside it carries it), no directional arrow (the
     /// down-arrow stays exclusive to row badges). VoiceOver-hidden; the balance
-    /// announces the new total.
+    /// announces the new total. While balances are hidden it reads "+****":
+    /// the same beat, without the amount.
     private func receivedDeltaBeat(_ amount: UInt64) -> some View {
-        Text("+\(settings.formatAmountShort(amount))")
+        Text(settings.hideBalances ? AmountFormatter.hiddenDelta : "+\(settings.formatAmountShort(amount))")
             .monospacedDigit()
             .font(.body.weight(.semibold))
             .foregroundStyle(.secondary)
