@@ -47,7 +47,11 @@ struct SendView: View {
 
     var body: some View {
         NavigationStack {
-            Group {
+            // A real container, not a Group: under a Group the faces were the
+            // stack's root content, which never runs insertion or removal
+            // transitions, so every swap below fell back to a plain cross-fade
+            // (the keypad's amount over the token's QR).
+            ZStack {
                 if let failure = tokenCreationFailure {
                     tokenCreationFailureView(failure)
                         .transition(.opacity)
