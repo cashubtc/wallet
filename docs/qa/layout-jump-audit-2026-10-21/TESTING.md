@@ -207,6 +207,19 @@ Receive → Bitcoin → mint picker).
 5. From the review, tap the chevron: the entry fades back in and the chevron
    fades out. Close the sheet with Back.
 
+### 8d. Third pass: fade-through and inert selectors (A17, A18)
+
+1. Send → paste a fixed-amount invoice → Pay. Watch the quote landing, the
+   Pay tap and the success.
+2. Expect: each swap fades through. The outgoing face (form or status) is
+   gone in ~90 ms and the incoming one fades in over ~210 ms after it, so
+   "Processing…" never sits over the amount, and never over "Payment Sent!"
+   (A17).
+3. Send → Ecash → 50 → Send, and Receive → Bitcoin → 1000 → Create invoice,
+   each with two mints. Expect: the mint row keeps its chevron and Max while
+   the request is in flight, inert, so neither the mint name nor "… available"
+   moves sideways (A18). Fail if Max vanishes or the name re-centres.
+
 ## iOS
 
 ### 9. Send: Continue → quote → confirm (I2)
@@ -293,6 +306,23 @@ Not changed in this pass; it looked right in the audit. Run the same steps as
 8c once: open, swap twice, Max, clear, 21, Continue, Transfer, Done, and the
 Back path.
 
+### 16a. Third pass: fade-through, inert selectors and the token swap (I13, I14, I15)
+
+1. Home → Send → Ecash → 2100 → Send. Expect: "From … / … available / Max"
+   stays under the amount, inert, while the token is minted; the amount does
+   not drop (I13: the row used to be removed, dropping it 27 pt in one frame).
+   Then the keypad face slides out to the leading edge and the token face in
+   from the trailing edge, staged: no frame shows the amount over the QR
+   (I15: the faces were the NavigationStack's root content, so none of their
+   transitions ran and the swap was a plain cross-fade).
+2. Home → Send → paste a fixed-amount invoice. Expect: the large sheet rises
+   with "Processing…" alone, which is gone before the amount and Pay fade in.
+   Then Pay: the confirm face is gone before "Processing…" appears, and
+   "Processing…" is gone before "Payment Sent!" fades in (I14).
+3. Receive → Bitcoin with two mints → Create invoice. Expect: the chevron
+   stays (inert) while the request is created; the mint name does not shift.
+4. Reduce Motion on: the same swaps are staged fades; nothing slides.
+
 ## Known and intentionally unchanged
 
 - **I1** iOS Send still dismisses the compact sheet and presents a new large
@@ -330,6 +360,13 @@ Back path.
 | `ui/mints/MintTransferScreen.kt` | One `SheetHeader` for both steps; chevron passed only on review. |
 | `Views/Send/SendView.swift` (second pass) | Token landing and both claimed paths hop to the next run-loop pass, then animate; `isGenerating` / `isCheckingClaim` cleared inside the animation; no `defer`. |
 | `Views/Mints/AddMintSheet.swift` | Focus binding cleared before `onAdded`. |
+| `Views/Components/LiquidGlassModifiers.swift` (third pass) | `SharedAxis.fadeThrough`: the shared axis's staged fades without the travel. |
+| `Views/Send/SendView.swift` (third pass) | Send Ecash faces in a `ZStack`, not a root `Group`; token swap on `SharedAxis`; mint row `.disabled`, never removed; Unified Send's status, amount and confirm faces fade through. |
+| `Views/Send/Components/AuthorizingOverlay.swift` | Status title and processing message fade through. |
+| `Views/Receive/ReceiveLightningView.swift` (third pass) | Mint row disabled while creating; the chevron stays. |
+| `ui/theme/Motion.kt` | `fadeThrough()`, the twin of iOS `SharedAxis.fadeThrough`. |
+| `ui/components/PaymentStatusScreen.kt`, `ui/send/UnifiedSendScreen.kt` | Title, subline and form ↔ status swaps use `fadeThrough()`. |
+| `ui/components/MintSelectorRow.kt` | `AmountEntryMintSelector(enabled =)`; Send Ecash and Receive pass `!sending` / `!creating` instead of dropping Max and the picker. |
 
 ## Automated checks already run
 
@@ -341,3 +378,8 @@ Back path.
 - Second pass: Android unit tests, screenshot validation and lint pass on the
   merged branch (re-run after the field animation); iOS unit target 893
   tests, 871 passed, 0 failed, 22 skipped against the local mint fixtures.
+- Third pass: Android app compiles and its unit tests pass (900 tests, 0
+  failures, 6 skipped); the iOS app and UI-test bundle build clean, and the
+  iOS changes were checked frame by frame in a Simulator recording of Receive
+  → Send Ecash → pay a pasted invoice. The Android transitions were not
+  re-recorded on a device.
