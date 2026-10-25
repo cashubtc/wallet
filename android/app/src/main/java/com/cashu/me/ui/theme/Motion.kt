@@ -5,9 +5,13 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -55,6 +59,17 @@ object CashuMotion {
     const val SharedAxisInMs = 210
     const val SharedAxisDurationMs = 300
 }
+
+/**
+ * The shared axis's staged fades without the travel (iOS `SharedAxis.fadeThrough`),
+ * for faces that replace each other in place: a status face and the form it
+ * gives way to, or one status title and the next. Crossed, they shared a slot
+ * mid-swap ("Processing…" over the amount, then over "Payment Sent!"). Nothing
+ * moves, so it stays under reduced motion.
+ */
+fun fadeThrough(): ContentTransform =
+    fadeIn(tween(CashuMotion.SharedAxisInMs, delayMillis = CashuMotion.SharedAxisOutMs)) togetherWith
+        fadeOut(tween(CashuMotion.SharedAxisOutMs))
 
 /**
  * True when the user has disabled system animations (animator duration scale 0)

@@ -1387,12 +1387,14 @@ internal fun InputFace(
         // Stays mounted while the request is being created: removing it here
         // re-balances the two weighted spacers and drops the hero amount by
         // the row's height in a single frame, then pops it back when the face
-        // exits. Only the picker is withdrawn while a request is in flight.
+        // exits. It goes inert while a request is in flight rather than losing
+        // its chevron, which re-centred the mint's name.
         if (mint != null) {
             AmountEntryMintSelector(
                 direction = MintSelectorDirection.Destination,
                 mint = mint,
-                onPickMint = onPickMint.takeIf { !creating },
+                onPickMint = onPickMint,
+                enabled = !creating,
             )
             Spacer(Modifier.height(CashuTheme.spacing.snug))
         }

@@ -702,15 +702,16 @@ private fun InputFace(
         // to the action rather than a second header competing with the title.
         // Stays mounted while the token is being minted: removing both rows
         // re-balances the column and drops the hero amount 64dp in a single
-        // frame, then pops it back when the face exits. Only the picker and
-        // Max are withdrawn while sending.
+        // frame, then pops it back when the face exits. It goes inert while
+        // sending rather than losing the picker and Max, which re-centred it.
         if (activeMint != null) {
             AmountEntryMintSelector(
                 direction = MintSelectorDirection.Source,
                 mint = activeMint,
                 balanceText = balanceText,
-                onPickMint = onPickMint.takeIf { !sending },
-                onUseMax = if (canUseMax && !sending) onUseMax else null,
+                onPickMint = onPickMint,
+                onUseMax = if (canUseMax) onUseMax else null,
+                enabled = !sending,
             )
             Spacer(Modifier.height(CashuTheme.spacing.snug))
         }

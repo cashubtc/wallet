@@ -61,6 +61,7 @@ import com.cashu.me.Core.WalletHaptic
 import com.cashu.me.Core.rememberWalletHaptics
 import com.cashu.me.ui.theme.AmountScale
 import com.cashu.me.ui.theme.CashuTheme
+import com.cashu.me.ui.theme.fadeThrough
 import com.cashu.me.ui.theme.rememberReducedMotion
 
 // Exact geometry shared with iOS PaymentStatusView / PayFlowScaffold.
@@ -366,7 +367,7 @@ fun PaymentStatusScreen(
                             targetState = title,
                             modifier = Modifier.fillMaxWidth(),
                             contentAlignment = Alignment.Center,
-                            transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(150)) },
+                            transitionSpec = { fadeThrough() },
                             label = "payment-status-title",
                         ) { currentTitle ->
                             Text(
@@ -390,9 +391,7 @@ fun PaymentStatusScreen(
                                     fadesProcessingDetail && phase == PaymentStatusPhase.Processing
                                 },
                             ),
-                            transitionSpec = {
-                                (fadeIn(tween(200)) togetherWith fadeOut(tween(150))).using(null)
-                            },
+                            transitionSpec = { fadeThrough().using(null) },
                             label = "payment-status-amount",
                         ) { subline ->
                             val amount = subline.amount

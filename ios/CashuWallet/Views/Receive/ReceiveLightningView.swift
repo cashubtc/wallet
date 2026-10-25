@@ -474,9 +474,12 @@ struct ReceiveLightningView: View {
 
             // Under the amount, over the keypad — the same slot the send flows use.
             // Stays mounted while the request is being created: removing it
-            // re-centred the hero amount 28pt lower in a single frame.
+            // re-centred the hero amount 28pt lower in a single frame. Disabled
+            // rather than stripped of its chevron, which would re-centre the
+            // mint's name.
             if let mint = walletManager.activeMint {
                 mintSelector(mint: mint)
+                    .disabled(isCreatingRequest)
                     // Aligned to the number pad below, not the CTA.
                     .padding(.horizontal, NumberPadMetrics.gutter)
                     .padding(.bottom, 8)
@@ -579,8 +582,7 @@ struct ReceiveLightningView: View {
             mint: mint,
             // One mint means nothing to choose between, so the row drops its
             // chevron and stops opening a picker that would list a single row.
-            // The picker is also withdrawn while a request is in flight.
-            onChooseMint: walletManager.mints.count > 1 && !isCreatingRequest ? { showMintPicker = true } : nil
+            onChooseMint: walletManager.mints.count > 1 ? { showMintPicker = true } : nil
         )
     }
 

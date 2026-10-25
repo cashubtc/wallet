@@ -59,8 +59,12 @@ struct SendView: View {
                             .transition(.opacity)
                     } else {
                         tokenDisplayView(token: token)
-                            .transition(reduceMotion ? .opacity : .asymmetric(
-                                insertion: .move(edge: .trailing).combined(with: .opacity),
+                            .transition(.asymmetric(
+                                // The keypad face hands over with the shared
+                                // axis (Android's TwoFaceScreen): staged fades,
+                                // so the outgoing amount never lies over the QR.
+                                insertion: reduceMotion ? SharedAxis.fadeThrough
+                                    : SharedAxis.transition(forward: true, reduceMotion: false),
                                 // Fast opacity exit (DESIGN.md's subtler-exits
                                 // rule): when the claim lands, the QR clears
                                 // quickly so the success terminal's staged
@@ -70,10 +74,8 @@ struct SendView: View {
                     }
                 } else {
                     sendInputView
-                        .transition(reduceMotion ? .opacity : .asymmetric(
-                            insertion: .move(edge: .leading).combined(with: .opacity),
-                            removal: .move(edge: .leading).combined(with: .opacity)
-                        ))
+                        .transition(reduceMotion ? SharedAxis.fadeThrough
+                            : SharedAxis.transition(forward: true, reduceMotion: false))
                 }
             }
             .animation(.smooth(duration: 0.3), value: generatedToken != nil)
@@ -243,8 +245,13 @@ struct SendView: View {
             // The selector sits under the amount and over the keypad, not under
             // the toolbar: it qualifies the amount, so it reads as a setting on
             // the way to the action rather than a second header.
-            if !isGenerating, let mint = displaySendMint {
+            // Stays mounted while the token is generated, as Receive's does
+            // while it creates: removing it re-centred the hero amount 27pt
+            // lower in a single frame. Disabled rather than stripped of Max and
+            // the picker, which would re-centre the row itself.
+            if let mint = displaySendMint {
                 mintSelector(mint: mint)
+                    .disabled(isGenerating)
                     // Aligned to the number pad below, not the CTA: the pad is
                     // the block this row reads against.
                     .padding(.horizontal, NumberPadMetrics.gutter)
@@ -1355,8 +1362,11 @@ struct UnifiedSendView: View {
                     if let statusPhase = statusPhase ?? (isLoadingMeltQuote ? .processing : nil) {
                         // Single branch keeps the status screen's identity stable across
                         // processing → sent → failed, so PaymentStatusView owns the morph.
+                        // It and the amount/confirm faces fade through each other:
+                        // crossed, "Processing…" sat over the amount as the quote
+                        // landed and again as Pay was tapped.
                         statusView(statusPhase)
-                            .transition(.opacity)
+                            .transition(SharedAxis.fadeThrough)
                     } else if let connectMintRoute {
                         // Swapped in place rather than pushed: the sheet resizes
                         // with the step, and a push lays the arriving page out at
@@ -1370,8 +1380,8 @@ struct UnifiedSendView: View {
                     } else {
                         switch step {
                         case .input: inputContent
-                        case .amount: amountStep
-                        case .confirm: confirmStep
+                        case .amount: amountStep.transition(SharedAxis.fadeThrough)
+                        case .confirm: confirmStep.transition(SharedAxis.fadeThrough)
                         case .sending, .sent, .failed: EmptyView()
                         }
                     }

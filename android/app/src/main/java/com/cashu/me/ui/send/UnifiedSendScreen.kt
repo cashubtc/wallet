@@ -136,6 +136,7 @@ import com.cashu.me.ui.mints.ConnectMintSheetContent
 import com.cashu.me.ui.testing.UiTestTags
 import com.cashu.me.ui.theme.CashuMotion
 import com.cashu.me.ui.theme.CashuTheme
+import com.cashu.me.ui.theme.fadeThrough
 import com.cashu.me.ui.theme.withMonoDigits
 import com.cashu.me.ui.theme.AmountScale
 import kotlinx.coroutines.CancellationException
@@ -755,7 +756,7 @@ fun UnifiedSendScreen(
                     .weight(1f)
                     .fillMaxWidth()
             },
-            transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(150)) },
+            transitionSpec = { fadeThrough() },
             label = "unified-send-terminal",
             contentKey = { it != null },
         ) { current ->
