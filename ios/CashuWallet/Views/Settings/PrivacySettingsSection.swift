@@ -52,10 +52,6 @@ struct PrivacySettingsSection: View {
                 .padding(.horizontal, 4)
                 .padding(.vertical, 14)
 
-                Toggle("Paste ecash automatically", isOn: $settings.autoPasteEcashReceive)
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 14)
-
                 Toggle(isOn: $settings.enablePaymentRequests) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Listen for payment requests")

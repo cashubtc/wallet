@@ -53,7 +53,6 @@ data class SettingsState(
     val bitcoinPriceCurrency: String = "USD",
     val checkPendingOnStartup: Boolean = true,
     val checkSentTokens: Boolean = true,
-    val autoPasteEcashReceive: Boolean = true,
     val useWebsockets: Boolean = true,
     val enablePaymentRequests: Boolean = true,
     val receivePaymentRequestsAutomatically: Boolean = true,
@@ -255,7 +254,6 @@ class SettingsManager internal constructor(
         settingsStore.periodicallyCheckIncomingInvoices = value
     }
     fun setCheckSentTokens(value: Boolean) = update { settingsStore.checkSentTokens = value }
-    fun setAutoPasteEcashReceive(value: Boolean) = update { settingsStore.autoPasteEcashReceive = value }
     fun setEnablePaymentRequests(value: Boolean) = update { settingsStore.enablePaymentRequests = value }
     fun setReceivePaymentRequestsAutomatically(value: Boolean) {
         val previous = state.value.receivePaymentRequestsAutomatically
@@ -510,7 +508,6 @@ class SettingsManager internal constructor(
             bitcoinPriceCurrency = settingsStore.bitcoinPriceCurrency,
             checkPendingOnStartup = settingsStore.checkPendingOnStartup,
             checkSentTokens = settingsStore.checkSentTokens,
-            autoPasteEcashReceive = settingsStore.autoPasteEcashReceive,
             useWebsockets = settingsStore.useWebsockets,
             enablePaymentRequests = settingsStore.enablePaymentRequests,
             receivePaymentRequestsAutomatically = settingsStore.receivePaymentRequestsAutomatically,

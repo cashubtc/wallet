@@ -23,7 +23,6 @@ data class UiRuntimePolicy(
     val runStartupMaintenance: Boolean = true,
     val startNwc: Boolean = true,
     val pollQuotesInForeground: Boolean = true,
-    val allowAutomaticClipboardReads: Boolean = true,
     val allowCleartextLocalTestMints: Boolean = false,
     val useDeterministicCameraPermission: Boolean = false,
 ) {
@@ -35,7 +34,6 @@ data class UiRuntimePolicy(
             runStartupMaintenance = false,
             startNwc = false,
             pollQuotesInForeground = false,
-            allowAutomaticClipboardReads = false,
             allowCleartextLocalTestMints = true,
             useDeterministicCameraPermission = true,
         )
