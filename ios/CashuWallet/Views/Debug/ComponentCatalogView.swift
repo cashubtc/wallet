@@ -342,7 +342,17 @@ private struct ActivityDetailCatalog: View {
                 .accessibilityIdentifier("cashu-request-usd")
         }
         .sheet(isPresented: $showUpdatingDetails) { TechnicalDetailsUpdateCatalog() }
-        .sheet(item: $selectedTransaction) { TransactionDetailView(transaction: $0) }
+        .sheet(item: $selectedTransaction) { transaction in
+            if ProcessInfo.processInfo.environment["UITEST_RECEIVE_QUOTE"] == "1", transaction.isUnfundedAddress {
+                ReceiveLightningView(quote: MintQuoteInfo(
+                    id: transaction.id, request: transaction.invoice ?? "", amount: nil, isAmountless: true,
+                    paymentMethod: .onchain, state: .pending, expiry: nil, createdAt: date,
+                    unit: "sat", mintURL: "https://mint.example", updatedAt: date
+                ))
+            } else {
+                TransactionDetailView(transaction: transaction)
+            }
+        }
         .sheet(item: $selectedRequest) { CashuRequestReceiptView(request: $0) }
         .onAppear {
             if IntegrationTestConfig.isEnabled {

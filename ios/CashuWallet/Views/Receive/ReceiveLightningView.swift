@@ -101,6 +101,7 @@ struct ReceiveLightningView: View {
     }
 
     @State private var requestContentHeight: CGFloat = 0
+    @State private var requestActionHeight: CGFloat = 0
 
     private var showsCompactRequest: Bool {
         mintQuote != nil && !isPaid && requestFailure == nil
@@ -326,7 +327,7 @@ struct ReceiveLightningView: View {
         }
         .accessibilityIdentifier("receive-lightning-screen")
         .walletSheetSurface(fillsScreen: !showsCompactRequest)
-        .contentFitDetent(requestContentHeight, enabled: showsCompactRequest, estimate: 580, navigationBar: true)
+        .contentFitDetent(requestContentHeight + requestActionHeight, enabled: showsCompactRequest, estimate: 580, navigationBar: true)
         .presentationDragIndicator(showsCompactRequest ? .visible : .automatic)
         .accessibilityAction(.escape) { dismiss() }
     }
@@ -691,6 +692,7 @@ struct ReceiveLightningView: View {
                     .padding(.horizontal, 4)
                 }
             }
+            .contentFitMeasured { requestContentHeight = $0 }
 
             Button(action: { copyRequest(quote.request) }) {
                 Text(copyButtonTitle(for: quote))
@@ -698,8 +700,9 @@ struct ReceiveLightningView: View {
             .flatSheetSecondaryButton()
             .padding(.horizontal)
             .padding(.bottom, 16)
+            .fixedSize(horizontal: false, vertical: true)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { requestActionHeight = $0 }
         }
-        .contentFitMeasured { requestContentHeight = $0 }
         .sheet(isPresented: $showTechnicalDetails) {
             if let request = CashuRequestStore.shared.intent(forQuoteId: quote.id) {
                 RequestTechnicalDetailsView(request: request)

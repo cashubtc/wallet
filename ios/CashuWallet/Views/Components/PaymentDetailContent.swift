@@ -136,7 +136,9 @@ struct PaymentDetailsButton: View {
 
     var body: some View {
         Button(action: action) {
-            PaymentDetailPair(label: "Details") {
+            HStack {
+                Text("Details").foregroundStyle(.secondary)
+                Spacer(minLength: 16)
                 Image(systemName: "chevron.right").foregroundStyle(.tertiary)
             }
             .paymentDetailRow(layout: layout, isInteractive: true)
@@ -155,7 +157,9 @@ struct PaymentExplorerLink: View {
 
     var body: some View {
         Link(destination: url) {
-            PaymentDetailPair(label: label) {
+            HStack {
+                Text(label).foregroundStyle(.secondary)
+                Spacer(minLength: 16)
                 Image(systemName: "arrow.up.right")
                     .font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
             }
