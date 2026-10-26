@@ -191,8 +191,18 @@ final class LiveCdkPaymentUITests: LivePaymentUITestBase {
     /// app's pasteboard content raises the system paste prompt.
     private func paste(_ text: String) {
         UIPasteboard.general.string = text
-        tapWhenReady(app.buttons["Paste from clipboard"])
-        let allow = XCUIApplication(bundleIdentifier: "com.apple.springboard").buttons["Allow Paste"]
+        let pasteButton = app.buttons["Paste from clipboard"]
+        XCTAssertTrue(pasteButton.waitUntilEnabledAndHittable(timeout: 5))
+        let frame = pasteButton.frame
+        let system = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        // The pasteboard read waits for system consent. An app-owned tap waits
+        // for that blocked app to idle before we can dismiss the prompt. Tap
+        // the real button through the system coordinate space, then handle
+        // consent without querying the app while its read is suspended.
+        system.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: frame.midX, dy: frame.midY))
+            .tap()
+        let allow = system.buttons["Allow Paste"]
         if allow.waitForExistence(timeout: 3) { allow.tap() }
     }
 
