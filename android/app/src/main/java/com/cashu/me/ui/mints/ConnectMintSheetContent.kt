@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -204,6 +205,11 @@ fun ConnectMintSheetContent(
                     modifier = Modifier
                         .padding(horizontal = CashuTheme.spacing.loose)
                         .navigationBarsPadding()
+                        // The Send sheet, which also hosts this face, keeps
+                        // its insets keyboard-blind, so the URL field pads
+                        // for the keyboard itself (a no-op where the host
+                        // sheet already does).
+                        .imePadding()
                         .padding(bottom = CashuTheme.spacing.comfortable),
                 )
 

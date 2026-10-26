@@ -267,7 +267,11 @@ private fun MintBalance(balanceText: String, modifier: Modifier = Modifier) {
     )
 }
 
-/** The centered mint context used by Receive, Send and Create Ecash amount entry. */
+/**
+ * The centered mint context used by Receive, Send and Create Ecash amount entry.
+ * [enabled] false keeps the row exactly as laid out but inert, for a request in
+ * flight: dropping the chevron or Max instead re-centres the row.
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AmountEntryMintSelector(
@@ -276,13 +280,20 @@ fun AmountEntryMintSelector(
     balanceText: String? = null,
     onPickMint: (() -> Unit)? = null,
     onUseMax: (() -> Unit)? = null,
+    enabled: Boolean = true,
 ) {
     val description = "${direction.label} ${mint.name}"
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
         Row(
             modifier = Modifier
                 .heightIn(min = MinimumTouchTarget)
-                .then(if (onPickMint != null) Modifier.clickable(role = Role.Button, onClick = onPickMint) else Modifier)
+                .then(
+                    if (onPickMint != null) {
+                        Modifier.clickable(enabled = enabled, role = Role.Button, onClick = onPickMint)
+                    } else {
+                        Modifier
+                    },
+                )
                 .semantics(mergeDescendants = true) { }
                 .padding(horizontal = CashuTheme.spacing.snug),
             verticalAlignment = Alignment.CenterVertically,
@@ -322,6 +333,7 @@ fun AmountEntryMintSelector(
                 if (onUseMax != null) {
                     TextButton(
                         onClick = onUseMax,
+                        enabled = enabled,
                         modifier = Modifier
                             .defaultMinSize(minWidth = MinimumTouchTarget, minHeight = MinimumTouchTarget)
                             .semantics { contentDescription = "Send maximum" },

@@ -48,7 +48,11 @@ struct SendView: View {
 
     var body: some View {
         NavigationStack {
-            Group {
+            // A real container, not a Group: under a Group the faces were the
+            // stack's root content, which never runs insertion or removal
+            // transitions, so every swap below fell back to a plain cross-fade
+            // (the keypad's amount over the token's QR).
+            ZStack {
                 if let sendRecovery {
                     PendingSendRecoveryView(recovery: sendRecovery, onDone: { dismiss() }, onWorkingChanged: { isGenerating = $0 })
                 } else if let failure = tokenCreationFailure {
@@ -62,8 +66,12 @@ struct SendView: View {
                             .transition(.opacity)
                     } else {
                         tokenDisplayView(token: token)
-                            .transition(reduceMotion ? .opacity : .asymmetric(
-                                insertion: .move(edge: .trailing).combined(with: .opacity),
+                            .transition(.asymmetric(
+                                // The keypad face hands over with the shared
+                                // axis (Android's TwoFaceScreen): staged fades,
+                                // so the outgoing amount never lies over the QR.
+                                insertion: reduceMotion ? SharedAxis.fadeThrough
+                                    : SharedAxis.transition(forward: true, reduceMotion: false),
                                 // Fast opacity exit (DESIGN.md's subtler-exits
                                 // rule): when the claim lands, the QR clears
                                 // quickly so the success terminal's staged
@@ -73,10 +81,8 @@ struct SendView: View {
                     }
                 } else {
                     sendInputView
-                        .transition(reduceMotion ? .opacity : .asymmetric(
-                            insertion: .move(edge: .leading).combined(with: .opacity),
-                            removal: .move(edge: .leading).combined(with: .opacity)
-                        ))
+                        .transition(reduceMotion ? SharedAxis.fadeThrough
+                            : SharedAxis.transition(forward: true, reduceMotion: false))
                 }
             }
             .animation(.smooth(duration: 0.3), value: generatedToken != nil)
@@ -246,8 +252,13 @@ struct SendView: View {
             // The selector sits under the amount and over the keypad, not under
             // the toolbar: it qualifies the amount, so it reads as a setting on
             // the way to the action rather than a second header.
-            if !isGenerating, let mint = displaySendMint {
+            // Stays mounted while the token is generated, as Receive's does
+            // while it creates: removing it re-centred the hero amount 27pt
+            // lower in a single frame. Disabled rather than stripped of Max and
+            // the picker, which would re-centre the row itself.
+            if let mint = displaySendMint {
                 mintSelector(mint: mint)
+                    .disabled(isGenerating)
                     // Aligned to the number pad below, not the CTA: the pad is
                     // the block this row reads against.
                     .padding(.horizontal, NumberPadMetrics.gutter)
@@ -835,28 +846,47 @@ struct SendView: View {
                     mintUrl: mint.url,
                     unit: unit
                 )
-                generatedToken = result.token
-                generatedTokenMintURL = mint.url
-                generatedTokenUnit = unit
-                generatedAmount = amount
-                tokenFee = result.fee
+                // `sendTokens` refreshes the balance and history (published,
+                // unanimated) right before it returns. Landing in that same
+                // run-loop pass folds this animated write into the unanimated
+                // update and the keypad → token swap renders as a one-frame
+                // cut, so give the landing a pass of its own first.
+                try? await Task.sleep(for: .milliseconds(1))
+                // Every body-read change of the landing goes inside one
+                // animation. `isGenerating` cleared after the do/catch landed
+                // outside it in the same update and cut the swap as well.
+                withAnimation(.smooth(duration: 0.3)) {
+                    generatedToken = result.token
+                    generatedTokenMintURL = mint.url
+                    generatedTokenUnit = unit
+                    generatedAmount = amount
+                    tokenFee = result.fee
+                    isGenerating = false
+                }
                 HapticFeedback.notification(.success)
             } catch let recovery as PendingSendRecovery {
-                sendRecovery = recovery
+                withAnimation(.smooth(duration: 0.3)) {
+                    sendRecovery = recovery
+                    isGenerating = false
+                }
             } catch {
                 let walletMessage = error.walletMessage
+                let failure: String
                 if error.isInsufficientBalanceError, amount <= effectiveSendBalance {
                     // The balance covers the amount, but the swap that makes
                     // change for it carries a fee the remainder can't absorb —
                     // the plain "Not enough balance." reads as a wallet bug when
                     // the user typed exactly what the screen says they hold.
-                    tokenCreationFailure = "Not enough balance to cover the mint fee. Try Send Max."
+                    failure = "Not enough balance to cover the mint fee. Try Send Max."
                 } else {
-                    tokenCreationFailure = walletMessage.text
+                    failure = walletMessage.text
                 }
-                errorMessage = nil
+                withAnimation(.smooth(duration: 0.3)) {
+                    tokenCreationFailure = failure
+                    errorMessage = nil
+                    isGenerating = false
+                }
             }
-            isGenerating = false
         }
     }
 
@@ -939,9 +969,15 @@ struct SendView: View {
                 if case .claimed = outcome {
                     // Flipping `tokenClaimed` swaps the body to the full-screen
                     // success (owns its own success haptic on appear, so don't
-                    // buzz here). It stays until the user taps Done.
-                    tokenClaimed = true
-                    isCheckingClaim = false
+                    // buzz here). It stays until the user taps Done. Both flags
+                    // change inside one animation, on a run-loop pass of their
+                    // own (the claim check publishes wallet state as it returns),
+                    // or the swap renders as a cut.
+                    try? await Task.sleep(for: .milliseconds(1))
+                    withAnimation(.smooth(duration: 0.3)) {
+                        tokenClaimed = true
+                        isCheckingClaim = false
+                    }
                     break
                 }
 
@@ -965,22 +1001,37 @@ struct SendView: View {
         checkingTask = Task {
             isCheckingClaim = true
             manualClaimCheckResult = nil
-            defer { isCheckingClaim = false }
 
             do {
                 let outcome = try await runPendingTokenClaimCheck {
                     try await checkGeneratedTokenClaim(token: token, mintUrl: mintUrl)
                 }
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled else {
+                    isCheckingClaim = false
+                    return
+                }
 
-                manualClaimCheckResult = outcome
-                if case .claimed = outcome {
-                    tokenClaimed = true
+                // The checking flag clears inside the same animation as the
+                // claimed swap; a `defer` would clear it outside and cut the swap.
+                // Same run-loop hop as the polling path above.
+                try? await Task.sleep(for: .milliseconds(1))
+                guard !Task.isCancelled else {
+                    isCheckingClaim = false
+                    return
+                }
+                withAnimation(.smooth(duration: 0.3)) {
+                    manualClaimCheckResult = outcome
+                    if case .claimed = outcome {
+                        tokenClaimed = true
+                    }
+                    isCheckingClaim = false
                 }
                 announceClaimCheckResult(outcome)
             } catch is CancellationError {
+                isCheckingClaim = false
                 return
             } catch {
+                isCheckingClaim = false
                 return
             }
         }
@@ -1332,8 +1383,11 @@ struct UnifiedSendView: View {
                     } else if let statusPhase = statusPhase ?? (isLoadingMeltQuote ? .processing : nil) {
                         // Single branch keeps the status screen's identity stable across
                         // processing → sent → failed, so PaymentStatusView owns the morph.
+                        // It and the amount/confirm faces fade through each other:
+                        // crossed, "Processing…" sat over the amount as the quote
+                        // landed and again as Pay was tapped.
                         statusView(statusPhase)
-                            .transition(.opacity)
+                            .transition(SharedAxis.fadeThrough)
                     } else if let connectMintRoute {
                         // Swapped in place rather than pushed: the sheet resizes
                         // with the step, and a push lays the arriving page out at
@@ -1350,12 +1404,12 @@ struct UnifiedSendView: View {
                         case .amount:
                             if let block = amountlessMeltBlock {
                                 amountlessBlockedStep(block)
-                                    .transition(.opacity)
+                                    .transition(SharedAxis.fadeThrough)
                             } else {
                                 amountStep
-                                    .transition(.opacity)
+                                    .transition(SharedAxis.fadeThrough)
                             }
-                        case .confirm: confirmStep
+                        case .confirm: confirmStep.transition(SharedAxis.fadeThrough)
                         case .sending, .sent, .failed: EmptyView()
                         }
                     }

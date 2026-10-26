@@ -1052,6 +1052,43 @@ fun ReceiveLightningScreen(
                     }
                     val quoteIntent = cashuRequestState.requests
                         .firstOrNull { it.quoteId == liveQuote.id }
+                    val liveSettlementState = when {
+                        isOnchain -> null
+                        isIssuingEcash -> MintQuoteSettlementState.Issuing
+                        liveQuote.mintableAmount > 0 &&
+                            mintRetryStatus.state == MintQuoteRetryState.NeedsAttention ->
+                            MintQuoteSettlementState.NeedsAttention
+                        liveQuote.mintableAmount > 0 &&
+                            mintRetryStatus.state == MintQuoteRetryState.RetryScheduled ->
+                            MintQuoteSettlementState.RetryScheduled
+                        liveQuote.mintableAmount > 0 -> MintQuoteSettlementState.PaymentDetected
+                        liveQuote.paymentMethod == PaymentMethodKind.Bolt12 &&
+                            liveQuote.amountIssued > 0 -> MintQuoteSettlementState.Ready
+                        liveQuote.paymentMethod == PaymentMethodKind.Bolt12 ->
+                            MintQuoteSettlementState.Waiting
+                        else -> null
+                    }
+                    // Once a one-shot invoice has shown "Adding to wallet…", keep
+                    // showing it until the success face takes over. Issuance
+                    // clears `isIssuingEcash` and `mintableAmount` a frame before
+                    // the paid swap lands, and that frame used to fall back to
+                    // the expiry countdown — a one-frame flicker of "Expires in".
+                    var settlementLatched by remember(liveQuote.id) { mutableStateOf(false) }
+                    LaunchedEffect(liveSettlementState) {
+                        if (liveSettlementState == MintQuoteSettlementState.Issuing ||
+                            liveSettlementState == MintQuoteSettlementState.PaymentDetected
+                        ) {
+                            settlementLatched = true
+                        }
+                    }
+                    val settlementState = if (
+                        liveSettlementState == null && settlementLatched &&
+                        liveQuote.paymentMethod == PaymentMethodKind.Bolt11
+                    ) {
+                        MintQuoteSettlementState.Issuing
+                    } else {
+                        liveSettlementState
+                    }
                     DisplayFace(
                         quote = liveQuote,
                         // On-chain carries its amount inside the Status row.
@@ -1060,22 +1097,7 @@ fun ReceiveLightningScreen(
                                 isOnchain
                         },
                         receivedAmountLabel = receivedAmountLabel,
-                        settlementState = when {
-                            isOnchain -> null
-                            isIssuingEcash -> MintQuoteSettlementState.Issuing
-                            liveQuote.mintableAmount > 0 &&
-                                mintRetryStatus.state == MintQuoteRetryState.NeedsAttention ->
-                                MintQuoteSettlementState.NeedsAttention
-                            liveQuote.mintableAmount > 0 &&
-                                mintRetryStatus.state == MintQuoteRetryState.RetryScheduled ->
-                                MintQuoteSettlementState.RetryScheduled
-                            liveQuote.mintableAmount > 0 -> MintQuoteSettlementState.PaymentDetected
-                            liveQuote.paymentMethod == PaymentMethodKind.Bolt12 &&
-                                liveQuote.amountIssued > 0 -> MintQuoteSettlementState.Ready
-                            liveQuote.paymentMethod == PaymentMethodKind.Bolt12 ->
-                                MintQuoteSettlementState.Waiting
-                            else -> null
-                        },
+                        settlementState = settlementState,
                         mintName = walletState.mints.firstOrNull { it.url == liveQuote.mintUrl }?.name
                             ?: liveQuote.mintUrl?.let { android.net.Uri.parse(it).host }
                             ?: activeMint?.name,
@@ -1362,11 +1384,17 @@ internal fun InputFace(
         }
         Spacer(Modifier.weight(1f))
         // Under the amount, over the keypad — the same slot the send flows use.
-        if (!creating && mint != null) {
+        // Stays mounted while the request is being created: removing it here
+        // re-balances the two weighted spacers and drops the hero amount by
+        // the row's height in a single frame, then pops it back when the face
+        // exits. It goes inert while a request is in flight rather than losing
+        // its chevron, which re-centred the mint's name.
+        if (mint != null) {
             AmountEntryMintSelector(
                 direction = MintSelectorDirection.Destination,
                 mint = mint,
                 onPickMint = onPickMint,
+                enabled = !creating,
             )
             Spacer(Modifier.height(CashuTheme.spacing.snug))
         }

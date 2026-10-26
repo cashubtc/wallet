@@ -196,16 +196,18 @@ struct PaymentStatusView: View {
                 // landed. Inert (opacity 1, offset 0) outside a celebration
                 // mount, so the morph path renders byte-identically.
                 VStack(spacing: 8) {
-                    // Keep both titles centered during the crossfade. A Text
+                    // Keep both titles centered during the swap. A Text
                     // content transition interpolates their different widths,
                     // sliding the outgoing title sideways as the amount arrives.
+                    // Faded through, not crossed: "Processing…" is gone before
+                    // "Payment Sent!" comes in.
                     ZStack {
                         Text(statusTitle)
                             .font(.title2.weight(.semibold))
                             .multilineTextAlignment(.center)
                             .frame(maxWidth: .infinity)
                             .id(statusTitle)
-                            .transition(.opacity)
+                            .transition(SharedAxis.fadeThrough)
                     }
 
                     if let amount = successAmount {
@@ -218,7 +220,8 @@ struct PaymentStatusView: View {
                         .padding(.top, 16)
                     } else if phase == .processing, let processingMessage {
                         // Same slot as the message below. Each step replaces
-                        // the last with a cross-fade in place.
+                        // the last in place, faded through so two steps never
+                        // read at once.
                         ZStack {
                             Text(processingMessage)
                                 .font(.callout)
@@ -227,7 +230,7 @@ struct PaymentStatusView: View {
                                 .lineLimit(3)
                                 .frame(maxWidth: .infinity)
                                 .id(processingMessage)
-                                .transition(.opacity)
+                                .transition(SharedAxis.fadeThrough)
                         }
                         .padding(.horizontal, 32)
                         // Top-aligned so the line sits under the title, not

@@ -1,14 +1,19 @@
 package com.cashu.me.ui.shell
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.exclude
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.SnackbarHost
@@ -147,13 +152,34 @@ fun WalletFlowSheetHost(
     )
     val dismiss = rememberSheetDismissAction(sheetState)
     val close: () -> Unit = { dismiss(onDismissed) }
+    // The compact and full-height sheets wear different grounds; a flow that
+    // grows from one into the other (Send, once a destination resolves) used
+    // to switch colour in the same frame it grew.
+    val containerColor by animateColorAsState(
+        targetValue = if (compactContent) CashuTheme.colors.compactSheetContainer
+            else MaterialTheme.colorScheme.background,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "wallet-sheet-container",
+    )
+    // Send is keyboard-blind at the sheet level: its input face pads for the
+    // IME itself, and its full-height faces must measure against the whole
+    // window even while the keyboard is still on its way out. With the IME in
+    // the sheet's insets, the full-height column grew again as the keyboard
+    // left, and the bottom-anchored sheet dipped and climbed while its
+    // animated height caught up.
+    val sheetInsets = BottomSheetDefaults.modalWindowInsets
+    val imeInsets = WindowInsets.ime
+    // Receive's token field has the same shape: keyboard-aware sheet insets
+    // snapped the compact sheet to the top in one frame before the keyboard
+    // had even started to slide; its content pads for the keyboard itself.
+    val keyboardBlind = flow == WalletFlow.Send || flow == WalletFlow.ReceiveEcash
     CashuModalBottomSheet(
         onDismissRequest = onDismissed,
         sheetState = sheetState,
         sheetGesturesEnabled = !dismiss.isDismissing,
-        containerColor = if (compactContent) CashuTheme.colors.compactSheetContainer
-            else MaterialTheme.colorScheme.background,
+        containerColor = containerColor,
         onBackdropVisibilityChanged = onBackdropVisibilityChanged,
+        contentWindowInsets = { if (keyboardBlind) sheetInsets.exclude(imeInsets) else sheetInsets },
     ) {
         CompactSheetContent {
             Box(modifier = Modifier.fillMaxWidth()) {
