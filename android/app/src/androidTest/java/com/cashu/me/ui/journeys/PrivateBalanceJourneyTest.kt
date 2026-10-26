@@ -41,9 +41,12 @@ class PrivateBalanceJourneyTest {
             .tapDescription("Balance: \$0.50")
             .awaitDescription(HomeBalanceCycle.HiddenLabel)
         assertTrue(SettingsStore(ApplicationProvider.getApplicationContext()).hideBalances)
-        // Recent keeps each row's sign; only the digits are masked.
+        // Recent rows show the asterisks alone: no sign, whatever the direction.
+        compose.onAllNodes(hasText(AmountFormatter.HiddenDigits), useUnmergedTree = true)
+            .onFirst()
+            .assertExists()
         compose.onAllNodes(hasText("+${AmountFormatter.HiddenDigits}"), useUnmergedTree = true)
-            .assertCountEquals(1)
+            .assertCountEquals(0)
         assertNoFixtureAmounts()
 
         app.scenario.recreate()
