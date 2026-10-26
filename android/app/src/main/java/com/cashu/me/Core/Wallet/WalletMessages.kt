@@ -340,3 +340,32 @@ object WalletErrorMessages {
     private fun caution(text: String) = WalletMessage(text, WalletMessageSeverity.Caution)
     private fun terminal(text: String) = WalletMessage(text, WalletMessageSeverity.Error, isTerminal = true)
 }
+
+/** Receive preview failures keep an unknown fee distinct from a free receive. */
+internal enum class ReceiveFeeFailure(val title: String, val message: String) {
+    MintUnavailable("Mint unreachable", "This mint may be offline. Check your connection and try again later."),
+    Unavailable("Fee unavailable", "Couldn't calculate the receive fee. Try again.");
+
+    companion object {
+        fun classify(error: Throwable): ReceiveFeeFailure {
+            val raw = when (error) {
+                is org.cashudevkit.FfiException.Cdk -> error.errorMessage
+                is org.cashudevkit.FfiException.Internal -> error.errorMessage
+                else -> error.toString()
+            }.lowercase()
+            // Client/protocol rejections do not imply that the mint is offline.
+            if (Regex("(?:http|status|response)[^\\n]{0,40}\\b4\\d{2}\\b").containsMatchIn(raw)) return Unavailable
+            val serverFailure = Regex("(?:http|status|response)[^\\n]{0,40}\\b5\\d{2}\\b").containsMatchIn(raw)
+            val transportFailure = error is java.net.ConnectException ||
+                error is java.net.UnknownHostException || error is java.net.SocketTimeoutException ||
+                error is javax.net.ssl.SSLException || listOf(
+                    "timeout", "timed out", "connection", "connect error", "cannot connect",
+                    "error sending request", "dns", "failed to lookup address", "failed to resolve",
+                    "network is unreachable", "network unreachable", "offline", "tls", "ssl",
+                    "certificate", "couldn't reach", "could not reach", "http transport error",
+                    "bad gateway", "service unavailable", "gateway timeout",
+                ).any(raw::contains)
+            return if (serverFailure || transportFailure) MintUnavailable else Unavailable
+        }
+    }
+}

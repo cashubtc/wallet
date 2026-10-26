@@ -7,6 +7,7 @@ import com.cashu.me.Models.MintUrlIdentity
 import com.cashu.me.Core.toDomainUnit
 
 import java.util.concurrent.ConcurrentHashMap
+import com.cashu.me.Core.Wallet.ReceiveFeeFailure
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -948,20 +949,20 @@ class CdkWalletGatewayImpl : WalletGateway {
         // shows the token's gross value as if the redeem were free.
         val proofs = runCatching {
             token.proofs(wallet.keysets(null).map { it.toKeySetInfo() })
-        }.getOrElse { token.proofsSimple() }
+        }.getOrElse { error ->
+            // Keep the original connectivity failure for the receive review.
+            if (error is CancellationException || ReceiveFeeFailure.classify(error) == ReceiveFeeFailure.MintUnavailable) {
+                throw error
+            }
+            token.proofsSimple()
+        }
         if (proofs.isEmpty()) return@cdkCall 0
         // NUT-02 fee: sum each input's fee_ppk, then one ceil over the total.
         // Don't use wallet.calculateFee here — the 0.17.x FFI helper floor-
         // divides (ppk * count / 1000), reporting 0 where the mint charges 1.
-        runCatching {
-            val ppkByKeyset = mutableMapOf<String, Long>()
-            val totalPpk = proofs.sumOf { proof ->
-                ppkByKeyset.getOrPut(proof.keysetId) {
-                    wallet.getKeysetFeesById(proof.keysetId).toLong()
-                }
-            }
-            (totalPpk + 999) / 1000
-        }.getOrDefault(0L)
+        receiveFeeForKeysets(proofs.map { it.keysetId }) { keysetId ->
+            wallet.getKeysetFeesById(keysetId).toLong()
+        }
     }
 
     override suspend fun activeMintInputFeePpk(mintUrl: String): Long? = cdkCall {

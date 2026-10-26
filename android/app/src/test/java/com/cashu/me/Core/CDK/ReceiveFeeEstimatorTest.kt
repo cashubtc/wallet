@@ -7,6 +7,29 @@ import org.junit.Test
 
 class ReceiveFeeEstimatorTest {
     @Test
+    fun missingKeysetFeesPropagateInsteadOfBecomingZero() = runBlocking {
+        val failure = IllegalStateException("Http transport error Some(502): Bad Gateway")
+        try {
+            receiveFeeForKeysets(listOf("keyset")) { throw failure }
+            org.junit.Assert.fail("An unknown fee must not be shown as free")
+        } catch (error: IllegalStateException) {
+            org.junit.Assert.assertSame(failure, error)
+        }
+    }
+
+    @Test
+    fun roundsCombinedInputFeesOnceAndCachesLookups() = runBlocking {
+        var lookups = 0
+        val fee = receiveFeeForKeysets(listOf("a", "a", "b")) {
+            lookups++
+            100L
+        }
+        assertEquals(1L, fee)
+        assertEquals(2, lookups)
+        assertEquals(0L, receiveFeeForKeysets(listOf("free")) { 0L })
+    }
+
+    @Test
     fun usesCalculatedFeeWhenAvailable() = runBlocking {
         var fallbackUsed = false
 

@@ -16,6 +16,7 @@ import com.cashu.me.Core.Protocols.CurrencyAmount
 import com.cashu.me.Core.Protocols.CurrencyRegistry
 import com.cashu.me.Core.SettingsManager
 import com.cashu.me.Core.TokenParser
+import com.cashu.me.Core.Wallet.ReceiveFeeFailure
 import com.cashu.me.Core.Wallet.WalletMessage
 import com.cashu.me.Core.Wallet.walletMessage
 import com.cashu.me.Core.WalletManager
@@ -41,11 +42,13 @@ import com.cashu.me.ui.theme.CashuTheme
 internal data class TokenReview(
     val token: String,
     val info: TokenInfo,
-    val fee: Long,
+    val fee: Long?,
     val p2pkLock: P2PKLockState,
+    val feeFailure: ReceiveFeeFailure? = null,
 ) {
     val canClaim: Boolean
-        get() = p2pkLock !is P2PKLockState.Locked || p2pkLock.claimable
+        get() = fee != null && feeFailure == null &&
+            (p2pkLock !is P2PKLockState.Locked || p2pkLock.claimable)
 }
 
 /**
@@ -135,8 +138,7 @@ internal fun P2PKLockState.presentation(): P2PKLockPresentation? = when (this) {
 
 /**
  * Async half of validation: receive-swap fee preview + P2PK lock check.
- * Fee failures degrade to 0 (matching the historical sheet behavior); the
- * redeem itself is the source of truth.
+ * An unavailable fee blocks claiming but still allows saving the token.
  */
 internal suspend fun tokenReviewDetails(
     token: String,
@@ -144,7 +146,6 @@ internal suspend fun tokenReviewDetails(
     walletManager: WalletManager,
     settingsManager: SettingsManager,
 ): TokenReview {
-    val fee = runCatching { walletManager.calculateReceiveFee(token) }.getOrDefault(0L)
     val p2pkLock = p2pkLockState(token) { targets ->
         // p2pkSigningKeysFor deliberately throws when no usable matching key is
         // held. Convert that expected guard into stable review state so an
@@ -153,7 +154,20 @@ internal suspend fun tokenReviewDetails(
             settingsManager.p2pkSigningKeysFor(targets).isNotEmpty()
         }.getOrDefault(false)
     }
-    return TokenReview(token = token, info = info, fee = fee, p2pkLock = p2pkLock)
+    return loadTokenReview(token, info, p2pkLock) { walletManager.calculateReceiveFee(token) }
+}
+
+internal suspend fun loadTokenReview(
+    token: String,
+    info: TokenInfo,
+    p2pkLock: P2PKLockState,
+    calculateFee: suspend () -> Long,
+): TokenReview = try {
+    TokenReview(token, info, calculateFee(), p2pkLock)
+} catch (cancelled: CancellationException) {
+    throw cancelled
+} catch (error: Exception) {
+    TokenReview(token, info, null, p2pkLock, ReceiveFeeFailure.classify(error))
 }
 
 /**
@@ -213,6 +227,8 @@ internal suspend fun claimToken(
     claimPendingReceiveToken: suspend (PendingReceiveToken) -> Long =
         walletManager::claimPendingReceiveToken,
 ): TokenClaimStatus {
+    require(review.canClaim) { "Review the receive fee and token lock before claiming." }
+    val previewFee = requireNotNull(review.fee)
     val startedAt = System.currentTimeMillis()
     val result = try {
         val pending = walletManager.state.value.pendingReceiveTokens
@@ -240,8 +256,8 @@ internal suspend fun claimToken(
         onFailure = {
             TokenClaimStatus.Failed(
                 message = it.walletMessage,
-                amount = (review.info.amount.coerceAtLeast(0L) - review.fee).coerceAtLeast(0L),
-                fee = review.fee,
+                amount = (review.info.amount.coerceAtLeast(0L) - previewFee).coerceAtLeast(0L),
+                fee = previewFee,
                 unit = review.info.unit,
                 mint = review.info.mint,
             )
@@ -251,14 +267,17 @@ internal suspend fun claimToken(
 
 /** "Receive later": persist the token for a future claim. */
 internal fun pendingReceiveTokenFrom(review: TokenReview): PendingReceiveToken =
+    pendingReceiveTokenFrom(review.token, review.info)
+
+internal fun pendingReceiveTokenFrom(token: String, info: TokenInfo): PendingReceiveToken =
     PendingReceiveToken(
-        tokenId = PendingReceiveToken.idFor(review.token),
-        token = review.token,
-        amount = review.info.amount,
-        mintUrl = review.info.mint,
+        tokenId = PendingReceiveToken.idFor(token),
+        token = token,
+        amount = info.amount,
+        mintUrl = info.mint,
         dateEpochMillis = System.currentTimeMillis(),
-        unit = review.info.unit,
-        memo = review.info.memo,
+        unit = info.unit,
+        memo = info.memo,
     )
 
 /**
@@ -275,23 +294,30 @@ internal fun TokenInspectorRows(
     useBitcoinSymbol: Boolean,
     modifier: Modifier = Modifier,
     mintName: String = mintDisplayName(info.mint, emptyList()),
+    feeFailure: ReceiveFeeFailure? = null,
 ) {
     val isSatToken = info.unit.equals("sat", ignoreCase = true)
     val tokenCurrency = CurrencyRegistry.currencyForMintUnit(info.unit)
     val lockPresentation = p2pkLock?.presentation()
     Column(modifier = modifier.fillMaxWidth()) {
-        InspectorRow(
-            label = "Fee",
-            value = when {
-                fee == null -> ""
-                // Prospective charge (docs/product/copy-guidance.md): a
-                // charge-absence phrase, never a bare "0 sat".
-                fee == 0L -> "No fee"
-                isSatToken -> formatter.formatWalletSats(fee, useBitcoinSymbol)
-                else -> CurrencyAmount(fee, tokenCurrency).formatted()
-            },
-            loading = fee == null,
-        )
+        if (feeFailure != null) {
+            InspectorRow(
+                label = "Amount",
+                value = if (isSatToken) formatter.formatWalletSats(info.amount, useBitcoinSymbol)
+                    else CurrencyAmount(info.amount, tokenCurrency).formatted(),
+            )
+        } else {
+            InspectorRow(
+                label = "Fee",
+                value = when {
+                    fee == null -> ""
+                    fee == 0L -> "No fee"
+                    isSatToken -> formatter.formatWalletSats(fee, useBitcoinSymbol)
+                    else -> CurrencyAmount(fee, tokenCurrency).formatted()
+                },
+                loading = fee == null,
+            )
+        }
         InspectorRow(
             label = "Mint",
             value = mintName,
