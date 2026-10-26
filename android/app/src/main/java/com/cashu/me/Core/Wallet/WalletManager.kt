@@ -1561,15 +1561,18 @@ class WalletManager(
     ) {
         mintCashuRequestTopUpWithRetries(quoteId)
         try {
-            gateway.payCashuPaymentRequest(encoded, amountSats, targetMintUrl)
+            payCashuPaymentRequestAndRefresh(
+                encoded, amountSats, targetMintUrl,
+                payCashuPaymentRequest = { request, amount, mint -> gateway.payCashuPaymentRequest(request, amount, mint) },
+                refreshBalance = { refreshBalance() },
+                loadTransactions = { loadTransactions() },
+            )
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (failure: Throwable) {
             if (failure.isInsufficientBalance) throw CashuRequestMintSettling()
             throw failure
         }
-        refreshBalance()
-        loadTransactions()
     }
 
     private suspend fun mintCashuRequestTopUpWithRetries(quoteId: String) {

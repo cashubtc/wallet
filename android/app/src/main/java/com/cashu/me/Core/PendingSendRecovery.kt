@@ -4,6 +4,44 @@ import com.cashu.me.Models.SagaTransactionId
 import com.cashu.me.Models.TransactionStatus
 import kotlinx.serialization.json.*
 import kotlinx.coroutines.CancellationException
+import org.cashudevkit.FfiException
+import org.cashudevkit.PreparedPaymentRequest
+
+class CashuRequestDeliveryReturned : Exception(
+    "The payment couldn't be delivered. Unclaimed ecash was returned to your wallet. Mint fees may apply.",
+)
+
+internal suspend fun performRecoverablePaymentRequest(
+    context: PendingSendRecovery,
+    inspect: suspend (List<String>) -> PendingSendRecovery,
+    recover: suspend () -> Unit,
+    prepare: suspend () -> PreparedPaymentRequest,
+    reclaim: suspend (String) -> Unit,
+) {
+    var deliveryFailed = false
+    try {
+        performRecoverableSend(context, inspect, recover) { remember ->
+            val prepared = prepare()
+            val operationId = prepared.operationId()
+            remember(operationId)
+            try {
+                prepared.confirm()
+            } catch (error: FfiException.PaymentRequestDeliveryFailed) {
+                if (error.operationId != operationId) throw error
+                deliveryFailed = true
+                // Revoke only this attempt; the mint arbitrates a concurrent recipient claim.
+                try { reclaim(operationId) }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (_: Exception) { /* Resolve through the normal recovery snapshot below. */ }
+                throw error
+            }
+        }
+    } catch (error: FfiException.PaymentRequestDeliveryFailed) {
+        // The send wrapper rethrows this only once no funds remain pending.
+        if (deliveryFailed) throw CashuRequestDeliveryReturned()
+        throw error
+    }
+}
 
 data class PendingSend(val id: String, val amount: Long, val token: String?)
 

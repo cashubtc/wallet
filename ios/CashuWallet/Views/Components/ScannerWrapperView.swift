@@ -446,6 +446,7 @@ struct CashuPaymentRequestPayView: View {
     @State private var paymentPhase: PaymentStatusView.Phase?
     /// The failed payment left the wallet but the mint hasn't confirmed it yet.
     @State private var paymentAwaitsMint = false
+    @State private var sendRecovery: PendingSendRecovery?
     @State private var activeRouteExplanation: CashuRequestRouteExplanation?
     @State private var showingMintPicker = false
     @State private var selectedMint: MintInfo?
@@ -476,7 +477,9 @@ struct CashuPaymentRequestPayView: View {
     var body: some View {
         NavigationStack {
             Group {
-              if let paymentPhase {
+              if let sendRecovery {
+                PendingSendRecoveryView(recovery: sendRecovery, onDone: { dismiss() }, onWorkingChanged: { isPaying = $0 })
+              } else if let paymentPhase {
                 statusView(paymentPhase)
                     .transition(.opacity)
               } else {
@@ -1122,6 +1125,7 @@ struct CashuPaymentRequestPayView: View {
                 // the Lightning/on-chain payment vocabulary.
                 withAnimation(.smooth(duration: 0.3)) { paymentPhase = .success }
             } catch {
+                sendRecovery = error as? PendingSendRecovery
                 let walletMessage = error.walletMessage
                 errorMessage = walletMessage.text
                 errorSeverity = walletMessage.severity
@@ -1175,6 +1179,7 @@ struct CashuPaymentRequestPayView: View {
                 paymentAwaitsMint = false
                 withAnimation(.smooth(duration: 0.3)) { paymentPhase = .failure(message: text, isCaution: true) }
             } catch {
+                sendRecovery = error as? PendingSendRecovery
                 let walletMessage = error.walletMessage
                 errorMessage = walletMessage.text
                 errorSeverity = walletMessage.severity

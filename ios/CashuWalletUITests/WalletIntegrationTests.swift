@@ -250,6 +250,67 @@ final class LiveNutshellPaymentUITests: LivePaymentUITestBase {
     func testReceivePayAndRelaunch() throws { try receiveThenPayAndReopenHistory() }
 }
 
+final class LiveCashuRequestRecoveryUITests: LivePaymentUITestBase {
+    override var backend: String { "controlled" }
+
+    func testFailedDeliveryReturnsBalanceWithoutManualRecovery() throws {
+        createWalletWithMint()
+        tapWhenReady(app.buttons["wallet-action-receive"])
+        tapWhenReady(app.buttons["wallet-flow-receiveLightning"])
+        for digit in ["1", "0", "0"] { tapWhenReady(app.buttons[digit]) }
+        tapWhenReady(app.buttons["receive-lightning-create-request"])
+        tapWhenReady(app.buttons["Copy Invoice"], timeout: 20)
+        // Reading the app's pasteboard can prompt for permission. Keep the
+        // test driver free to answer that system prompt while the read waits.
+        let copied = expectation(description: "Read the displayed invoice")
+        var copiedInvoice: String?
+        DispatchQueue.global().async {
+            copiedInvoice = UIPasteboard.general.string
+            copied.fulfill()
+        }
+        let allowPaste = XCUIApplication(bundleIdentifier: "com.apple.springboard").buttons["Allow Paste"]
+        if allowPaste.waitForExistence(timeout: 3) { allowPaste.tap() }
+        wait(for: [copied], timeout: 10)
+        let invoice = try XCTUnwrap(copiedInvoice)
+        _ = try fixtureCall("/sessions/" + fixtureSession + "/pay/controlled", method: "POST", body: ["invoice": invoice])
+        XCTAssertTrue(app.staticTexts["Payment Received!"].waitForExistence(timeout: 30))
+        tapWhenReady(app.buttons["Done"])
+        waitForMainTab()
+
+        let encoded = try fixtureCall("/sessions/" + fixtureSession + "/request", method: "POST", body: [
+            "target": fixtureURL + "/sessions/" + fixtureSession + "/unavailable",
+            "amount": 21, "mints": [mintURL]
+        ])["request"] as! String
+        tapWhenReady(app.buttons["wallet-action-send"])
+        let field = app.descendants(matching: .any).matching(identifier: "Address, invoice, or Cashu Request").firstMatch
+        tapWhenReady(field)
+        field.typeText(encoded)
+        tapWhenReady(app.buttons["Pay"], timeout: 20)
+        let returned = app.descendants(matching: .any).matching(NSPredicate(
+            format: "label CONTAINS %@", "Unclaimed ecash was returned to your wallet."
+        )).firstMatch
+        XCTAssertTrue(returned.waitForExistence(timeout: 30))
+        XCTAssertFalse(app.buttons["cashu.send.reclaim"].exists)
+        let capture = XCTAttachment(screenshot: app.screenshot())
+        capture.name = "failed-request-automatically-returned"
+        capture.lifetime = .keepAlways
+        add(capture)
+        app.navigationBars["Send"].swipeDown()
+        waitForMainTab()
+        let balance = app.descendants(matching: .any).matching(NSPredicate(
+            format: "label BEGINSWITH %@ AND label CONTAINS %@", "Balance", "100"
+        )).firstMatch
+        XCTAssertTrue(balance.waitForExistence(timeout: 10))
+        relaunchPreservingWallet()
+        XCTAssertTrue(balance.waitForExistence(timeout: 10))
+        tapTab("History")
+        let failedReceipt = app.descendants(matching: .any).matching(NSPredicate(
+            format: "label CONTAINS %@ AND label CONTAINS[c] %@", "Ecash sent", "failed"
+        )).firstMatch
+        XCTAssertTrue(failedReceipt.waitForExistence(timeout: 10))
+    }
+}
+
 /// A transfer between two held mints through the real UI and real CDK: the
 /// source melts, the destination issues, and History keeps one row for it.
 final class LiveMintTransferUITests: LivePaymentUITestBase {
