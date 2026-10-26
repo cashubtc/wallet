@@ -207,9 +207,12 @@ struct TransactionDetailView: View {
                     DescriptionDetailRow(description: description, layout: .history)
                 }
                 if let explorerURL = onchainExplorerURL {
-                    explorerLinkRow(label: "View in block explorer", url: explorerURL)
+                    PaymentExplorerLink(label: "View in block explorer", url: explorerURL, layout: .history)
                 }
-                technicalDetailsRow
+                PaymentDetailsButton(layout: .history) {
+                    HapticFeedback.selection()
+                    showTechnicalDetails = true
+                }
             }
             .padding(.horizontal, 4)
             .padding(.top, transaction.isUnfundedAddress && heroSlotIsEmpty ? 16 : 0)
@@ -283,27 +286,12 @@ struct TransactionDetailView: View {
     @ViewBuilder
     private func heroSlot(qrSize: CGFloat) -> some View {
         if showsQR, let content = qrContent {
-            QRCodeView(
-                content: content,
-                showControls: false,
-                // Lightning invoices / Bitcoin addresses are standard QR formats;
-                // ecash tokens are long and benefit from UR-animated encoding.
-                staticOnly: transaction.kind != .ecash,
+            PaymentCodeCard(
+                content: content, size: qrSize, staticOnly: transaction.kind != .ecash,
                 onCopy: { copyContent(content) },
                 onShare: { showShareSheet = true }
             )
             .accessibilityIdentifier("cashu.history.payment-code")
-            .frame(width: qrSize, height: qrSize)
-            .padding(16)
-            .background(Color.white, in: RoundedRectangle(cornerRadius: 20))
-            .contextMenu {
-                Button(action: { copyContent(content) }) {
-                    Label("Copy", systemImage: "doc.on.doc")
-                }
-                Button(action: { showShareSheet = true }) {
-                    Label("Share", systemImage: "square.and.arrow.up")
-                }
-            }
         } else if transaction.status == .completed {
             // Static glyph — no `.symbolEffect(.bounce)`. This is historical review
             // (a detail screen re-opened often), not the live payment-received moment
@@ -470,55 +458,7 @@ struct TransactionDetailView: View {
         .accessibilityHint("Copies the \(label.lowercased()) to clipboard")
     }
 
-    /// Last receipt row: the identifiers behind the payment (quote ID, request,
-    /// proof) open in a nested `.large` sheet, like the description reader.
-    private var technicalDetailsRow: some View {
-        Button {
-            HapticFeedback.selection()
-            showTechnicalDetails = true
-        } label: {
-            HStack {
-                Text("Details")
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-            }
-            .paymentDetailRow(layout: .history, isInteractive: true)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityHint("Shows quote, request and proof identifiers")
-        .accessibilityIdentifier("cashu.history.details")
-    }
-
-    /// Same shape as `detailRow` but opens an external URL, with the trailing
-    /// arrow-up-right glyph settings uses for outbound links — the on-chain
-    /// block explorer row (matches the receive screen's row).
-    private func explorerLinkRow(label: String, url: URL) -> some View {
-        Link(destination: url) {
-            HStack {
-                Text(label)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Image(systemName: "arrow.up.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-            }
-            .paymentDetailRow(layout: .history, isInteractive: true)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .simultaneousGesture(TapGesture().onEnded { HapticFeedback.selection() })
-        .accessibilityHint("Opens the block explorer in your browser")
-    }
-
     // MARK: - Helpers
-
-    private func extractMintHost(_ url: String) -> String {
-        URL(string: url)?.host ?? url
-    }
 
     private var onchainExplorerURL: URL? {
         guard transaction.kind == .onchain else { return nil }
@@ -770,13 +710,9 @@ private struct StoredReceiveView<Receipt: View>: View {
         .task(id: quoteID) {
             receiveQuote = nil
             didLoad = false
-            if let quoteID {
-                let stored = await walletManager.storedReceiveQuote(quoteID: quoteID)
-                guard !Task.isCancelled else { return }
-                if stored?.paymentMethod == .bolt12 || stored?.hasSettledPayment == false {
-                    receiveQuote = stored
-                }
-            }
+            let stored = await walletManager.storedReceiveQuote(quoteID: quoteID)
+            guard !Task.isCancelled else { return }
+            receiveQuote = stored
             didLoad = true
         }
     }

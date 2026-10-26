@@ -26,10 +26,28 @@ Missing local quotes fall back to the existing receipt. A one-shot quote that
 settled between selecting its History row and reading it also falls back to its
 receipt. Reusable invoices remain reusable after previous payments.
 
+## Shared implementation and retained differences
+
+Receive, Cashu requests, and transaction receipts share iOS `PaymentCodeCard`
+(Android already uses `QrCard`), including context-menu and accessibility actions.
+Request metadata, editing affordances, Details, and explorer links use shared
+native row components. Android's compact and adaptive payment layouts use one
+content tree, and History uses the same `WalletFlowSheetHost` as Receive.
+Quote lookup and settlement eligibility live outside the view in a tested resolver.
+
+Receipt QR branches remain reachable for outgoing payments, pending sent ecash,
+and missing local quotes. They share the QR component rather than duplicating it.
+Receipt status, fees, proofs, claim/recovery actions, and live-request editing and
+monitoring have different responsibilities and remain separate. Compact and
+adaptive sizing remain explicit layout modes; this cleanup retains the PR's
+existing compact presentation.
+
 ## Regression coverage
 
 The routing tests cover incoming versus outgoing, pending versus terminal states,
 legacy rows without an explicit quote ID, and funded versus unfunded addresses.
+Both platforms also test missing-quote fallback, exact stored-artifact/mint/unit
+preservation, settlement between selection and lookup, and reusable paid offers.
 The Android on-chain History journey checks that an unfunded address opens the
 Receive screen with Copy address and the technical Details inspector.
 

@@ -35,30 +35,11 @@ fun PaymentDetailContent(
     hero: @Composable (Dp) -> Unit,
     details: @Composable ColumnScope.() -> Unit,
 ) {
-    if (fitsContent) {
-        Column(
-            modifier = modifier.fillMaxWidth().verticalScroll(rememberScrollState())
-                .padding(horizontal = CashuTheme.spacing.comfortable, vertical = CashuTheme.spacing.snug),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.comfortable),
-        ) {
-            BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                hero(minOf(280.dp, maxWidth - 32.dp))
-            }
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.comfortable),
-                content = details,
-            )
-        }
-        return
-    }
     var detailsHeight by remember { mutableIntStateOf(0) }
     val density = LocalDensity.current
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
-        val compact = maxHeight < 600.dp
-        val qrSize = minOf(280.dp, maxWidth - 64.dp,
+        val compact = !fitsContent && maxHeight < 600.dp
+        val qrSize = if (fitsContent) minOf(280.dp, maxWidth - 64.dp) else minOf(280.dp, maxWidth - 64.dp,
             maxHeight - with(density) { detailsHeight.toDp() } - 64.dp).coerceAtLeast(120.dp)
         Column(
             modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())

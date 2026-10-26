@@ -615,24 +615,11 @@ struct ReceiveLightningView: View {
     private func requestDisplayView(quote: MintQuoteInfo) -> some View {
         VStack(spacing: 0) {
             PaymentDetailContent(fitsContent: true) { qrSize in
-                QRCodeView(
-                    content: quote.request,
-                    showControls: false,
-                    staticOnly: true,
+                PaymentCodeCard(
+                    content: quote.request, size: qrSize,
                     onCopy: { copyRequest(quote.request) },
                     onShare: { shareQuoteRequest(quote.request) }
                 )
-                .frame(width: qrSize, height: qrSize)
-                .padding(16)
-                .background(Color.white, in: RoundedRectangle(cornerRadius: 20))
-                .contextMenu {
-                    Button(action: { copyRequest(quote.request) }) {
-                        Label("Copy", systemImage: "doc.on.doc")
-                    }
-                    ShareLink(item: quote.request) {
-                        Label("Share", systemImage: "square.and.arrow.up")
-                    }
-                }
                 .sheet(isPresented: $showShareSheet) {
                     ShareSheet(items: [qrShareText])
                 }
@@ -663,47 +650,39 @@ struct ReceiveLightningView: View {
                             )
                             addressRow(quote.request)
                         }
-                        detailRow(label: "Mint", value: mintDisplayValue(for: quote) ?? "Unknown mint")
+                        PaymentMetadataRow(label: "Mint", value: mintDisplayValue(for: quote) ?? "Unknown mint")
                         if quote.paymentMethod == .bolt12 && mintSupportsBolt12Description {
-                            editableRow(
+                            PaymentMetadataRow(
                                 label: "Description",
                                 value: CashuRequestStore.shared.intent(forQuoteId: quote.id)?.memo
                                     ?? quote.description ?? "None",
-                                action: { showReusableDescriptionEditor = true }
+                                onEdit: { showReusableDescriptionEditor = true }
                             )
                         } else if let description = CashuRequestStore.shared.intent(forQuoteId: quote.id)?.displayDescription
                             ?? MintQuoteDomain.normalizedOfferDescription(quote.description) {
                             DescriptionDetailRow(description: description)
                         }
                         if quote.paymentMethod == .bolt12 {
-                            editableRow(
+                            PaymentMetadataRow(
                                 label: "Amount",
                                 value: quote.isAmountless ? "Any"
                                     : quote.amount.map { formatQuoteAmount($0, unit: quote.unit) } ?? "Any",
-                                action: { showReusableAmountPicker = true }
+                                onEdit: { showReusableAmountPicker = true }
                             )
                             if quote.amountIssued > 0 {
-                                detailRow(label: "Total received",
+                                PaymentMetadataRow(label: "Total received",
                                           value: formatQuoteAmount(quote.amountIssued, unit: quote.unit))
                             }
                         }
                         if let created = quote.createdAt ?? quoteCreatedAt {
-                            detailRow(label: "Created",
+                            PaymentMetadataRow(label: "Created",
                                       value: created.formatted(date: .abbreviated, time: .shortened))
                         }
                         if let explorerURL = blockExplorerURL(for: quote) {
-                            explorerLinkRow(label: blockExplorerLabel(for: quote), url: explorerURL)
+                            PaymentExplorerLink(label: blockExplorerLabel(for: quote), url: explorerURL)
                         }
                         if CashuRequestStore.shared.intent(forQuoteId: quote.id) != nil || detailTransaction(for: quote) != nil {
-                            Button { showTechnicalDetails = true } label: {
-                                PaymentDetailPair(label: "Details") {
-                                    Image(systemName: "chevron.right").foregroundStyle(.tertiary)
-                                }
-                                .paymentDetailRow(isInteractive: true)
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityIdentifier("cashu.history.details")
+                            PaymentDetailsButton { showTechnicalDetails = true }
                         }
                     }
                     .padding(.horizontal, 4)
@@ -867,53 +846,6 @@ struct ReceiveLightningView: View {
 
     // MARK: - Detail Row
 
-    private func detailRow(label: String, value: String) -> some View {
-        PaymentDetailPair(label: label) {
-            Text(value)
-                .fontWeight(.regular)
-                .truncationMode(.middle)
-        }
-        .paymentDetailRow()
-    }
-
-    /// Same as `detailRow` but tappable, with a trailing pencil — used for the
-    /// Amount row on the reusable offer screen (mirrors the Cashu Request screen).
-    private func editableRow(label: String, value: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            PaymentDetailPair(label: label) {
-                Text(value)
-                    .fontWeight(.regular)
-                    .truncationMode(.middle)
-                Image(systemName: "pencil")
-                    .font(.footnote)
-                    .foregroundStyle(.tertiary)
-                    .padding(.leading, 4)
-            }
-            .paymentDetailRow(isInteractive: true)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityHint("Edits the \(label.lowercased())")
-    }
-
-    /// Same shape as `detailRow` but opens an external URL, with the trailing
-    /// arrow-up-right glyph settings uses for outbound links — used for the
-    /// on-chain block explorer row.
-    private func explorerLinkRow(label: String, url: URL) -> some View {
-        Link(destination: url) {
-            PaymentDetailPair(label: label) {
-                Image(systemName: "arrow.up.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-            }
-            .paymentDetailRow(isInteractive: true)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .simultaneousGesture(TapGesture().onEnded { HapticFeedback.selection() })
-        .accessibilityHint("Opens the block explorer in your browser")
-    }
-
     /// The address as text, in the standard 8…6 cut, so it can be checked
     /// against the sender's screen; tapping copies the full address.
     private func addressRow(_ address: String) -> some View {
@@ -1031,18 +963,6 @@ struct ReceiveLightningView: View {
     }
 
     // MARK: - Helpers
-
-    private func formattedAmount(sats: UInt64?) -> String {
-        let amount = sats ?? 0
-        if settings.useBitcoinSymbol {
-            return "₿\(amount)"
-        }
-        return "\(amount) sat"
-    }
-
-    private func formatBalance(_ sats: UInt64) -> String {
-        AmountFormatter.sats(sats, useBitcoinSymbol: settings.useBitcoinSymbol)
-    }
 
     private func extractMintHost(_ url: String) -> String {
         URL(string: url)?.host ?? url

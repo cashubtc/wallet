@@ -20,17 +20,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.SheetValue
-import androidx.compose.material3.rememberBottomSheetState
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.CircularProgressIndicator
 import com.cashu.me.Core.TransactionDisplay
 import com.cashu.me.Models.MintQuoteInfo
-import com.cashu.me.Models.PaymentMethodKind
-import com.cashu.me.ui.components.rememberSheetDismissAction
-import com.cashu.me.ui.components.CashuModalBottomSheet
-import com.cashu.me.ui.components.CompactSheetContent
+import com.cashu.me.ui.shell.WalletFlow
+import com.cashu.me.ui.shell.WalletFlowSheetHost
 import com.cashu.me.ui.receive.ReceiveLightningScreen
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -65,7 +59,6 @@ import com.cashu.me.ui.settings.P2PKScreen
 import com.cashu.me.ui.settings.LicensesScreen
 import com.cashu.me.ui.settings.PrivacyScreen
 import com.cashu.me.ui.settings.SettingsScreen
-import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.CashuMotion
 import java.net.URLDecoder
 import java.net.URLEncoder
@@ -509,7 +502,6 @@ internal val tabExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> Ex
 }
 
 /** History and Receive mount the same live request screen; receipts remain the fallback. */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun StoredReceiveSheet(
     quoteId: String?,
@@ -521,9 +513,7 @@ private fun StoredReceiveSheet(
     var quote by remember(quoteId) { mutableStateOf<MintQuoteInfo?>(null) }
     var loaded by remember(quoteId) { mutableStateOf(quoteId == null) }
     LaunchedEffect(quoteId) {
-        if (quoteId != null) quote = container.walletManager.storedReceiveQuote(quoteId)?.takeIf {
-            it.paymentMethod == PaymentMethodKind.Bolt12 || !it.hasSettledPayment
-        }
+        quote = container.walletManager.storedReceiveQuote(quoteId)
         loaded = true
     }
     val stored = quote
@@ -531,34 +521,27 @@ private fun StoredReceiveSheet(
         receipt()
     } else {
         var compactRequest by remember(quoteId) { mutableStateOf(true) }
-        val sheetState = rememberBottomSheetState(
-            initialValue = SheetValue.Hidden,
-            enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
-        )
-        val dismiss = rememberSheetDismissAction(sheetState)
-        CashuModalBottomSheet(
-            onDismissRequest = onClose,
-            sheetState = sheetState,
-            sheetGesturesEnabled = !dismiss.isDismissing,
-            containerColor = if (compactRequest) CashuTheme.colors.compactSheetContainer
-                else MaterialTheme.colorScheme.background,
+        WalletFlowSheetHost(
+            flow = WalletFlow.ReceiveLightning,
+            dismissLocked = false,
+            compactContent = compactRequest,
+            onDismissed = onClose,
             onBackdropVisibilityChanged = onBackdropVisibilityChanged,
-        ) {
-            CompactSheetContent {
-                if (stored != null) {
-                    ReceiveLightningScreen(
-                        walletManager = container.walletManager,
-                        npcService = container.npcService,
-                        cashuRequestStore = container.cashuRequestStore,
-                        settingsManager = container.settingsManager,
-                        priceService = container.priceService,
-                        onClose = { dismiss(onClose) },
-                        initialQuote = stored,
-                        onCompactSheetChanged = { compactRequest = it },
-                    )
-                } else {
-                    CircularProgressIndicator()
-                }
+            snackbarHostState = container.snackbarHostState,
+        ) { _, close ->
+            if (stored != null) {
+                ReceiveLightningScreen(
+                    walletManager = container.walletManager,
+                    npcService = container.npcService,
+                    cashuRequestStore = container.cashuRequestStore,
+                    settingsManager = container.settingsManager,
+                    priceService = container.priceService,
+                    onClose = close,
+                    initialQuote = stored,
+                    onCompactSheetChanged = { compactRequest = it },
+                )
+            } else {
+                CircularProgressIndicator()
             }
         }
     }

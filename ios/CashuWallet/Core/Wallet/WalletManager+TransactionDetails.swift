@@ -3,8 +3,10 @@ import Cdk
 
 extension WalletManager {
     /// Reopen the exact stored request without creating a replacement or changing mints.
-    func storedReceiveQuote(quoteID: String) async -> MintQuoteInfo? {
-        await lightningService.storedMintQuote(quoteId: quoteID)
+    func storedReceiveQuote(quoteID: String?) async -> MintQuoteInfo? {
+        await MintQuoteDomain.resolveStoredReceiveQuote(quoteID: quoteID) {
+            await self.lightningService.storedMintQuote(quoteId: $0)
+        }
     }
 
     /// Read display-only quote snapshots from the local database. Never fetches

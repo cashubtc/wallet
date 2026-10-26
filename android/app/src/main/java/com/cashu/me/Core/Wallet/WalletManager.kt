@@ -1323,10 +1323,13 @@ class WalletManager(
      * Lightning and on-chain rows a melt quote (iOS parity).
      */
     suspend fun requestMintQuoteSnapshot(request: CashuRequest): MintQuoteInfo? =
-        request.quoteId?.let { storedReceiveQuote(it) }
+        request.quoteId?.let { storedMintQuoteSnapshot(it) }
 
     /** Reopen the stored request without creating a replacement or selecting another mint. */
-    suspend fun storedReceiveQuote(quoteID: String): MintQuoteInfo? {
+    suspend fun storedReceiveQuote(quoteID: String?): MintQuoteInfo? =
+        resolveStoredReceiveQuote(quoteID, ::storedMintQuoteSnapshot)
+
+    private suspend fun storedMintQuoteSnapshot(quoteID: String): MintQuoteInfo? {
         return try {
             gateway.storedMintQuote(quoteID)
         } catch (cancelled: CancellationException) {

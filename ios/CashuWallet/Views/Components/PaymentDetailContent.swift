@@ -92,6 +92,78 @@ struct PaymentDetailTextRow: View {
     }
 }
 
+/// Request metadata shared by Lightning, on-chain and Cashu requests.
+struct PaymentMetadataRow: View {
+    let label: String
+    let value: String
+    var onEdit: (() -> Void)? = nil
+
+    var body: some View {
+        Group {
+            if let onEdit {
+                Button(action: onEdit) { row }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Edits the \(label.lowercased())")
+            } else {
+                row
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
+        .accessibilityValue(value)
+    }
+
+    private var row: some View {
+        PaymentDetailPair(label: label) {
+            Text(value).fontWeight(.regular).truncationMode(.middle)
+            if onEdit != nil {
+                Image(systemName: "pencil")
+                    .font(.footnote).foregroundStyle(.tertiary).padding(.leading, 4)
+            }
+        }
+        .paymentDetailRow(isInteractive: onEdit != nil)
+        .contentShape(Rectangle())
+    }
+}
+
+struct PaymentDetailsButton: View {
+    var layout: PaymentDetailLayout = .flow
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            PaymentDetailPair(label: "Details") {
+                Image(systemName: "chevron.right").foregroundStyle(.tertiary)
+            }
+            .paymentDetailRow(layout: layout, isInteractive: true)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Shows quote, request and proof identifiers")
+        .accessibilityIdentifier("cashu.history.details")
+    }
+}
+
+struct PaymentExplorerLink: View {
+    let label: String
+    let url: URL
+    var layout: PaymentDetailLayout = .flow
+
+    var body: some View {
+        Link(destination: url) {
+            PaymentDetailPair(label: label) {
+                Image(systemName: "arrow.up.right")
+                    .font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+            }
+            .paymentDetailRow(layout: layout, isInteractive: true)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .simultaneousGesture(TapGesture().onEnded { HapticFeedback.selection() })
+        .accessibilityHint("Opens the block explorer in your browser")
+    }
+}
+
 /// Fits the QR around the receipt's actual text, keeping related details together.
 /// Scrolling remains available when accessibility text needs more than one screen.
 struct PaymentDetailContent<Hero: View, Details: View>: View {
