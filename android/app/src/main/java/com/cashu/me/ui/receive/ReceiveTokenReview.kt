@@ -295,26 +295,29 @@ internal fun TokenInspectorRows(
     modifier: Modifier = Modifier,
     mintName: String = mintDisplayName(info.mint, emptyList()),
     feeFailure: ReceiveFeeFailure? = null,
-    onRetryFee: (() -> Unit)? = null,
 ) {
     val isSatToken = info.unit.equals("sat", ignoreCase = true)
     val tokenCurrency = CurrencyRegistry.currencyForMintUnit(info.unit)
     val lockPresentation = p2pkLock?.presentation()
     Column(modifier = modifier.fillMaxWidth()) {
-        InspectorRow(
-            label = feeFailure?.title ?: "Fee",
-            value = when {
-                feeFailure != null -> "Retry"
-                fee == null -> ""
-                // Prospective charge (docs/product/copy-guidance.md): a
-                // charge-absence phrase, never a bare "0 sat".
-                fee == 0L -> "No fee"
-                isSatToken -> formatter.formatWalletSats(fee, useBitcoinSymbol)
-                else -> CurrencyAmount(fee, tokenCurrency).formatted()
-            },
-            loading = fee == null && feeFailure == null,
-            onClick = if (feeFailure != null) onRetryFee else null,
-        )
+        if (feeFailure != null) {
+            InspectorRow(
+                label = "Amount",
+                value = if (isSatToken) formatter.formatWalletSats(info.amount, useBitcoinSymbol)
+                    else CurrencyAmount(info.amount, tokenCurrency).formatted(),
+            )
+        } else {
+            InspectorRow(
+                label = "Fee",
+                value = when {
+                    fee == null -> ""
+                    fee == 0L -> "No fee"
+                    isSatToken -> formatter.formatWalletSats(fee, useBitcoinSymbol)
+                    else -> CurrencyAmount(fee, tokenCurrency).formatted()
+                },
+                loading = fee == null,
+            )
+        }
         InspectorRow(
             label = "Mint",
             value = mintName,

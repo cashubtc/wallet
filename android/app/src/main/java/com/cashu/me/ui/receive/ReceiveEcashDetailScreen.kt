@@ -35,6 +35,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import kotlinx.coroutines.launch
 import com.cashu.me.Core.AmountDisplayPrimary
 import com.cashu.me.Core.AmountFormatter
@@ -53,6 +56,8 @@ import com.cashu.me.ui.components.InlineNotice
 import com.cashu.me.ui.components.NoticeSeverity
 import com.cashu.me.ui.components.PaymentStatusPhase
 import com.cashu.me.ui.components.PaymentStatusScreen
+import com.cashu.me.ui.components.SpinnerRing
+import com.cashu.me.ui.send.ConfirmCautionFace
 import com.cashu.me.ui.components.PrimaryButton
 import com.cashu.me.ui.components.TextButtonContext
 import com.cashu.me.ui.components.ToolbarIcon
@@ -96,6 +101,7 @@ fun ReceiveEcashDetailScreen(
     // eagerly in init — no spurious 0 → N roll on mount).
     val parsed = remember(payload) { parseToken(payload) }
     var review by remember(payload) { mutableStateOf<TokenReview?>(null) }
+    var isLoadingFee by remember(payload) { mutableStateOf(true) }
     var feeAttempt by remember(payload) { mutableStateOf(0) }
     var status by remember(payload) { mutableStateOf<TokenClaimStatus?>(null) }
     val mintTrust = remember(parsed, walletState.mints) {
@@ -110,7 +116,7 @@ fun ReceiveEcashDetailScreen(
     // Fee preview + P2PK lock check land async; the fee row shows the
     // skeleton fill-in until then.
     LaunchedEffect(parsed, feeAttempt) {
-        review = null
+        isLoadingFee = true
         val ok = parsed as? TokenParseOutcome.Ok ?: return@LaunchedEffect
         review = tokenReviewDetails(
             token = ok.token,
@@ -118,6 +124,7 @@ fun ReceiveEcashDetailScreen(
             walletManager = walletManager,
             settingsManager = settingsManager,
         )
+        isLoadingFee = false
     }
 
     // The shell's overlay BackHandler owns dismissal; it consults this lock.
@@ -128,7 +135,7 @@ fun ReceiveEcashDetailScreen(
     BackHandler(enabled = status == TokenClaimStatus.Claiming) {}
 
     fun claim(target: TokenReview) {
-        if (status != null || !target.canClaim) return
+        if (status != null || isLoadingFee || !target.canClaim) return
         status = TokenClaimStatus.Claiming
         scope.launch {
             status = claimToken(target, walletManager, claimPendingReceiveToken)
@@ -179,6 +186,7 @@ fun ReceiveEcashDetailScreen(
                 is TokenParseOutcome.Ok -> ConfirmContent(
                     parsed = parsed,
                     review = review,
+                    isLoadingFee = isLoadingFee,
                     formatter = formatter,
                     fiatPrice = if (settings.showFiatBalance) priceState.btcPrice.takeIf { it > 0 } else null,
                     currencyCode = settings.bitcoinPriceCurrency,
@@ -189,7 +197,7 @@ fun ReceiveEcashDetailScreen(
                     mintName = mintDisplayName(parsed.info.mint, walletState.mints),
                     onClose = onDone,
                     onReceive = { review?.let { target -> claim(target) } },
-                    onRetryFee = { review = null; feeAttempt += 1 },
+                    onRetryFee = { isLoadingFee = true; feeAttempt += 1 },
                     secondaryActionText = if (heldPayment != null) "Decline" else "Receive later",
                     onSecondaryAction = {
                         if (heldPayment != null) {
@@ -216,6 +224,7 @@ fun ReceiveEcashDetailScreen(
 private fun ConfirmContent(
     parsed: TokenParseOutcome.Ok,
     review: TokenReview?,
+    isLoadingFee: Boolean,
     formatter: AmountFormatter,
     fiatPrice: Double?,
     currencyCode: String,
@@ -254,7 +263,18 @@ private fun ConfirmContent(
             modifier = Modifier.fillMaxWidth(),
             contentAlignment = Alignment.Center,
         ) {
-            if (isSatToken) {
+            if (review?.feeFailure != null) {
+                if (isLoadingFee) {
+                    SpinnerRing()
+                } else {
+                    Box(Modifier.semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite }) {
+                        ConfirmCautionFace(
+                            message = review.feeFailure.title,
+                            detail = review.feeFailure.message,
+                        )
+                    }
+                }
+            } else if (isSatToken) {
                 AmountFlipDisplay(
                     amountSats = netAmount,
                     primary = amountPrimary,
@@ -286,21 +306,12 @@ private fun ConfirmContent(
             mintName = mintName,
             fee = fee,
             feeFailure = review?.feeFailure,
-            onRetryFee = onRetryFee,
             p2pkLock = review?.p2pkLock,
             formatter = formatter,
             useBitcoinSymbol = useBitcoinSymbol,
             modifier = Modifier.padding(horizontal = CashuTheme.spacing.comfortable),
         )
-        review?.feeFailure?.let { failure ->
-            Spacer(Modifier.height(CashuTheme.spacing.comfortable))
-            InlineNotice(
-                text = failure.message,
-                severity = NoticeSeverity.Caution,
-                modifier = Modifier.padding(horizontal = CashuTheme.spacing.comfortable),
-            )
-        }
-        if (mintTrust?.showWarning == true) {
+        if (review?.fee != null && !isLoadingFee && mintTrust?.showWarning == true) {
             Spacer(Modifier.height(CashuTheme.spacing.comfortable))
             UnknownMintTrustNotice(
                 trust = mintTrust,
@@ -315,11 +326,13 @@ private fun ConfirmContent(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             PrimaryButton(
-                text = "Receive",
-                onClick = onReceive,
+                text = if (review?.feeFailure != null) {
+                    if (isLoadingFee) "Retrying…" else "Retry"
+                } else "Receive",
+                onClick = if (review?.feeFailure != null) onRetryFee else onReceive,
                 // Disabled until the fee/lock preview lands (net amount must be
                 // known before committing) and while P2PK-locked to foreign keys.
-                enabled = review?.canClaim == true,
+                enabled = !isLoadingFee && (review?.feeFailure != null || review?.canClaim == true),
                 // Neutral capsule, not inverted ink: iOS renders this commit as a
                 // .glassButton() frosted capsule, and solid ink stays reserved for
                 // the Send/Pay commit. PrimaryButton's default neutral fill is the
