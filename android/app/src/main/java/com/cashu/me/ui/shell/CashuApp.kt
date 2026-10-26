@@ -637,7 +637,6 @@ private fun AuthenticatedShell(container: AppContainer) {
                 },
                 // Bitcoin opens the mint's Lightning / on-chain receive dialog.
                 onReceiveBitcoin = { activeFlow = WalletFlow.ReceiveLightning },
-                allowAutomaticClipboardRead = container.runtimePolicy.allowAutomaticClipboardReads,
                 onCompactSheetChanged = { flowUsesCompactSheet = it },
             )
 

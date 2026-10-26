@@ -78,11 +78,6 @@ fun PrivacyScreen(
                 onCheckedChange = settingsManager::setUseWebsockets,
             )
             ToggleRow(
-                title = "Paste ecash automatically",
-                checked = settings.autoPasteEcashReceive,
-                onCheckedChange = settingsManager::setAutoPasteEcashReceive,
-            )
-            ToggleRow(
                 title = "Listen for payment requests",
                 subtitle = "Receives ecash sent to your Nostr key while the app is open.",
                 checked = settings.enablePaymentRequests,

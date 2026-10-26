@@ -35,13 +35,13 @@ does not create an app container until `AppTestFixture` installs one, so no
 activity or production service can race fixture setup.
 
 `UiRuntimePolicy.DeterministicTest` disables telemetry, public relay listeners,
-startup maintenance, NWC startup, foreground quote polling, and automatic
-clipboard reads. Explicit UI actions still call either `FakeWalletGateway` or
-the real CDK gateway connected to a local mint. Cleartext HTTP is accepted only
-in this policy and only for emulator/host loopback addresses; production still
-requires HTTPS. The same policy drives the production scanner UI through a
-deterministic denied/allow/ready permission contract while replacing only the
-OS grant dialog and physical camera preview.
+startup maintenance, NWC startup, and foreground quote polling. Explicit UI
+actions still call either `FakeWalletGateway` or the real CDK gateway connected
+to a local mint. Cleartext HTTP is accepted only in this policy and only for
+emulator/host loopback addresses; production still requires HTTPS. The same
+policy drives the production scanner UI through a deterministic
+denied/allow/ready permission contract while replacing only the OS grant dialog
+and physical camera preview.
 
 Available fixture modes are:
 
