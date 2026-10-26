@@ -28,7 +28,14 @@
       "LiveMintSubscriptionIntegrationTests/testNutshellQuoteSubscriptionAndIssuance",
       "LiveCdkPaymentUITests/testReceivePayAndRelaunch",
       "LiveNutshellPaymentUITests/testReceivePayAndRelaunch",
-      "LiveMintTransferUITests/testTransferBetweenMintsLeavesOneHistoryRowAfterRelaunch"
+      "LiveMintTransferUITests/testTransferBetweenMintsLeavesOneHistoryRowAfterRelaunch",
+      "CashuRequestDeliveryRecoveryTests/testFailedDeliveryReturnsSpendableFundsAcrossReopen",
+      "CashuRequestDeliveryRecoveryTests/testFailedAcknowledgementInvalidatesUnclaimedDeliveredToken",
+      "CashuRequestDeliveryRecoveryTests/testRecipientClaimBeforeReclaimIsCompletedNotRefunded",
+      "CashuRequestDeliveryRecoveryTests/testFailedReclaimRemainsPendingAndBlocksRetry",
+      "CashuRequestDeliveryRecoveryTests/testExistingSharedTokenIsNotReclaimed",
+      "CashuRequestDeliveryRecoveryTests/testSuccessfulDeliveryIsNotReclaimed",
+      "LiveCashuRequestRecoveryUITests/testFailedDeliveryReturnsBalanceWithoutManualRecovery"
     ],
     "full": [
       "PaymentExtendedIntegrationTests/testCashuRequestFixedAndAmountlessHttpDelivery",
@@ -65,15 +72,21 @@
       "LiveMintSubscriptionTest/cdkQuoteSubscriptionAndIssuance",
       "LiveMintSubscriptionTest/nutshellQuoteSubscriptionAndIssuance",
       "LivePaymentJourneyTest/cdkReceivePayAndReopenHistory",
-      "LivePaymentJourneyTest/nutshellReceivePayAndReopenHistory"
+      "LivePaymentJourneyTest/nutshellReceivePayAndReopenHistory",
+      "LivePaymentJourneyTest/failedCashuRequestReturnsFunds",
+      "LivePaymentJourneyTest/failedCashuRequestWithUnavailableReclaimStaysVisible"
     ],
     "full": [
       "PaymentExtendedLocalMintTest/cashuRequestFixedAndAmountlessHttpDelivery",
       "PaymentExtendedLocalMintTest/cdkCashuRequestFixedAndAmountlessHttpDelivery",
-      "PaymentExtendedLocalMintTest/cashuRequestDeliveryFailureLeavesReclaimableToken",
+      "PaymentExtendedLocalMintTest/cashuRequestDeliveryFailureReturnsFunds",
       "PaymentExtendedLocalMintTest/repeatedFeePreviewReleasesReservedProofs",
       "PaymentExtendedLocalMintTest/multipleMintUnitsDoNotCrossCredit",
-      "PaymentExtendedLocalMintTest/nwcPaymentLimitReplayAndBalance"
+      "PaymentExtendedLocalMintTest/nwcPaymentLimitReplayAndBalance",
+      "PaymentExtendedLocalMintTest/failedAcknowledgementRevokesUnclaimedDeliveredToken",
+      "PaymentExtendedLocalMintTest/failedAcknowledgementAfterClaimDoesNotRefund",
+      "PaymentExtendedLocalMintTest/failedReclaimStaysPendingWithoutCreatingAnotherSend",
+      "PaymentExtendedLocalMintTest/existingSharedTokenIsNeverAutomaticallyReclaimed"
     ]
   }
 }

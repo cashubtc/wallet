@@ -50,6 +50,9 @@ struct WalletMessage {
 enum WalletErrorMessage {
     /// Resolve an error to its user-facing message **and** severity.
     static func classified(for error: Error) -> WalletMessage {
+        if let returned = error as? CashuRequestDeliveryReturned {
+            return .error(returned.localizedDescription)
+        }
         if let recovery = error as? PendingSendRecovery {
             return .caution(recovery.localizedDescription).terminal()
         }

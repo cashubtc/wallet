@@ -34,6 +34,12 @@ class PaymentFixtureTests(unittest.TestCase):
         self.assertEqual(self.client.post(url, json={}).status_code, 200)
         self.assertEqual(len(self.forwarded), 1)
 
+    def test_failed_acknowledgement_keeps_delivered_payload(self):
+        payload = {"id": self.key, "proofs": []}
+        response = self.client.post(self.root + '/receive?fail=true', json=payload)
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(self.client.get(self.root).json()['deliveries'], [payload])
+
     def test_lost_response_occurs_after_upstream_commit(self):
         self.client.post(self.root + '/faults', json={'action': 'lose_response', 'method': 'POST', 'path': '/v1/melt/bolt11'})
         with self.assertRaises(Exception):

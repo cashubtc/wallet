@@ -22,9 +22,8 @@ other units, so both platforms can use the sat+USD CDK fixture profile.
 
 ## Added required coverage
 
-`coverage.json` lists individual executable tests, not feature labels. On PRs iOS
-requires 28 cases (25 native + 3 UI) and Android 25 (23 native + 2 UI); full/nightly
-runs add 6 more on each. iOS carries two extra cross-mint cases because its
+`coverage.json` lists the individual native and UI cases required on PRs and in
+the expanded full/nightly runs. iOS carries extra cross-mint cases because its
 CDK-level tests import only `Cdk`, so the app's Lightning service is exercised
 separately; Android's cases already run through the production gateway.
 `check_coverage.py` reads JUnit XML or Xcode test-result trees and fails for any
@@ -55,7 +54,8 @@ missing, skipped, or unsuccessful required case. The existing suites still run.
 | Real native UI on both mints | Receive 100, pay 21, history survives relaunch (iOS) / activity recreation (Android) | PR |
 | Cashu Request HTTP | Fixed and amountless request, matching request ID, actual recipient redemption, exact sender debit on the zero-fee mint | Full |
 | CDK Cashu Request HTTP | The same fixed/amountless payment invariants on the zero-fee CDK mint | Full |
-| Cashu Request delivery failure | Failed HTTP delivery leaves a reclaimable operation; revoke restores balance | Full |
+| Cashu Request delivery failure (CDK) | Failed HTTP delivery leaves a reclaimable operation across recovery/reopen; explicit revoke restores balance | Full |
+| Cashu Request delivery failure (wallet) | Automatically revoke the failed attempt; restored balance is spendable after reopen; an already-claimed token is completed, an unavailable reclaim remains pending, and unrelated shared tokens stay valid | PR iOS native/UI + Android UI; full Android native |
 | Proof reservation release | Swift competing preparation/cancel; Android repeated real fee-preview/cancel; full balance remains spendable | Full |
 | Currency isolation | Sat and USD share one repository/database per wallet owner; USD payments preserve both sender and recipient sat balances | Full |
 | NWC over local signed Nostr relay | Balance, payment limit, duplicated request event, one payment and conserved funds | Full |

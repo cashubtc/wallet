@@ -186,23 +186,28 @@ extension WalletManager {
                 mintUrl: MintUrl(url: selectedMint.url), unit: .sat
             )
             let context = PendingSendRecovery(mintURL: selectedMint.url, unit: "sat")
-            try await performRecoverableSend(
-                context: context,
-                inspect: { ids in
-                    var current = context
-                    current.operationIDs = ids
-                    return try await self.sendRecoverySnapshot(wallet: wallet, context: current)
-                },
-                recover: { _ = try await wallet.recoverIncompleteSagas() },
-                send: { remember in
-                    let prepared = try await wallet.preparePayRequest(
-                        paymentRequest: request,
-                        customAmount: request.amount() == nil ? Amount(value: amount) : nil
-                    )
-                    remember(prepared.operationId())
-                    try await prepared.confirm()
-                }
-            )
+            do {
+                try await performRecoverablePaymentRequest(
+                    context: context,
+                    inspect: { ids in
+                        var current = context
+                        current.operationIDs = ids
+                        return try await self.sendRecoverySnapshot(wallet: wallet, context: current)
+                    },
+                    recover: { _ = try await wallet.recoverIncompleteSagas() },
+                    prepare: {
+                        try await wallet.preparePayRequest(
+                            paymentRequest: request,
+                            customAmount: request.amount() == nil ? Amount(value: amount) : nil
+                        )
+                    },
+                    reclaim: { _ = try await wallet.revokeSend(operationId: $0) }
+                )
+            } catch {
+                await self.refreshBalanceAssumingWalletOperationLease()
+                await self.loadTransactionsAssumingWalletOperationLease()
+                throw error
+            }
             await self.refreshBalanceAssumingWalletOperationLease()
             await self.loadTransactionsAssumingWalletOperationLease()
         }

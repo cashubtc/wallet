@@ -148,9 +148,20 @@ async def nwc(key: str, request: Request):
 
 
 @app.post("/sessions/{key}/receive")
-async def receive_request(key: str, request: Request):
+async def receive_request(key: str, request: Request, fail: bool = False, wait: bool = False):
     payload = await request.json()
     session(key)["deliveries"].append(payload)
+    if wait:
+        release = session(key).setdefault("delivery_release", asyncio.Event())
+        await asyncio.wait_for(release.wait(), timeout=20)
+    if fail:
+        return JSONResponse({"detail": "Delivery acknowledgement failed"}, status_code=503)
+    return {}
+
+
+@app.post("/sessions/{key}/release-delivery")
+async def release_delivery(key: str):
+    session(key).setdefault("delivery_release", asyncio.Event()).set()
     return {}
 
 

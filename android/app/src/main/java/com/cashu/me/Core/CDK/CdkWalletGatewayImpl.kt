@@ -2,6 +2,7 @@ package com.cashu.me.Core.CDK
 
 import com.cashu.me.Core.PendingSendRecovery
 import com.cashu.me.Core.performRecoverableSend
+import com.cashu.me.Core.performRecoverablePaymentRequest
 import com.cashu.me.Models.MintUrlIdentity
 import com.cashu.me.Core.toDomainUnit
 
@@ -1042,15 +1043,13 @@ class CdkWalletGatewayImpl : WalletGateway {
             ?: firstWallet().mintUrl().url
         val wallet = walletFor(mintUrl)
         val context = PendingSendRecovery(mintUrl, "sat")
-        performRecoverableSend(
+        performRecoverablePaymentRequest(
             context = context,
             inspect = { sendRecoverySnapshot(wallet, context, it) },
             recover = { wallet.recoverIncompleteSagas(); Unit },
-        ) { remember ->
-            val prepared = wallet.preparePayRequest(request, if (request.amount() == null) amount else null)
-            remember(prepared.operationId())
-            prepared.confirm()
-        }
+            prepare = { wallet.preparePayRequest(request, if (request.amount() == null) amount else null) },
+            reclaim = { wallet.revokeSend(it); Unit },
+        )
     }
 
     private suspend fun sendRecoverySnapshot(

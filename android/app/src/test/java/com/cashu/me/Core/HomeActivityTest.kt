@@ -9,11 +9,12 @@ import org.junit.Test
 
 class HomeActivityTest {
     @Test
-    fun showsOnlyLatestCompletedSentAndReceivedTransactions() {
+    fun showsPendingOutgoingEcashAlongsideCompletedPayments() {
         val transactions = listOf(
             transaction("received-via-request", TransactionStatus.Completed, 20, TransactionType.Incoming)
                 .copy(cashuRequestId = "request"),
             transaction("pending-request", TransactionStatus.Pending, 50),
+            transaction("pending-receive", TransactionStatus.Pending, 70, TransactionType.Incoming),
             transaction("failed", TransactionStatus.Failed, 40),
             transaction("sent", TransactionStatus.Completed, 30),
             transaction("expired", TransactionStatus.Expired, 60),
@@ -21,7 +22,7 @@ class HomeActivityTest {
 
         val recent = recentPaymentTransactions(transactions, limit = 5)
 
-        assertEquals(listOf("sent", "received-via-request"), recent.map { it.id })
+        assertEquals(listOf("pending-request", "sent", "received-via-request"), recent.map { it.id })
     }
 
     @Test

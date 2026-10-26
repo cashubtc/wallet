@@ -62,6 +62,7 @@ object WalletErrorMessages {
         "The wallet couldn't finish that action. Try again in a moment."
 
     fun classify(error: Throwable): WalletMessage {
+        if (error is com.cashu.me.Core.CashuRequestDeliveryReturned) return WalletMessage(error.message.orEmpty())
         if (error is PendingSendRecovery) return WalletMessage(error.message.orEmpty(), WalletMessageSeverity.Caution, isTerminal = true)
         if (error is org.cashudevkit.FfiException.PaymentRequestDeliveryFailed) {
             return WalletMessage("The delivery outcome is uncertain. Check the pending send before paying again.", WalletMessageSeverity.Caution, isTerminal = true)

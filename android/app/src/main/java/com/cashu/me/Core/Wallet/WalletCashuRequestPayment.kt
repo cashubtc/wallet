@@ -58,8 +58,12 @@ internal suspend fun payCashuPaymentRequestAndRefresh(
     refreshBalance: suspend () -> Unit,
     loadTransactions: suspend () -> Unit,
 ) {
-    payCashuPaymentRequest(encoded, customAmountSats, preferredMintURL)
-    refreshAfterConfirmedSend(refreshBalance, loadTransactions)
+    try {
+        payCashuPaymentRequest(encoded, customAmountSats, preferredMintURL)
+    } finally {
+        // Failure may have returned funds or left an unresolved send to display.
+        refreshAfterConfirmedSend(refreshBalance, loadTransactions)
+    }
 }
 
 internal suspend fun refreshAfterConfirmedSend(
