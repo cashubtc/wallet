@@ -259,8 +259,8 @@ class AccessibilitySemanticsComposeTest {
 
         compose.onNodeWithContentDescription("Received ecash, Incoming, Completed, Amount hidden, Today")
             .assertIsDisplayed()
-        // Sign and direction survive; only the digits are masked.
-        compose.onAllNodes(within("hiddenRow") and hasText("+****"), useUnmergedTree = true)
+        // The asterisks stand alone: no sign, whatever the direction.
+        compose.onAllNodes(within("hiddenRow") and hasText("****"), useUnmergedTree = true)
             .assertCountEquals(1)
         compose.onAllNodes(within("hiddenRow") and hasDigits(), useUnmergedTree = true)
             .assertCountEquals(0)

@@ -134,9 +134,12 @@ fun CashuRequestRow(
             },
         ) {
             if (primaryAmountText != null) {
-                val shownAmount = if (amountHidden) AmountFormatter.HiddenDigits else primaryAmountText
                 AmountText(
-                    text = if (received) "+$shownAmount" else shownAmount,
+                    text = when {
+                        amountHidden -> AmountFormatter.HiddenDigits
+                        received -> "+$primaryAmountText"
+                        else -> primaryAmountText
+                    },
                     style = MaterialTheme.typography.bodyLarge
                         .copy(fontWeight = FontWeight.Medium)
                         .withMonoDigits(),

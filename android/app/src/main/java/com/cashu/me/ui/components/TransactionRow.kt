@@ -47,8 +47,8 @@ data class TransactionRowModel(
     val primaryAmount: String,
     val secondaryAmount: String?,
     /**
-     * Private mode: the digits become fixed asterisks (sign and colour stay) and
-     * the amount reads "Amount hidden", so the real strings never reach the
+     * Private mode: the amount becomes fixed asterisks with no sign (the colour
+     * stays) and reads "Amount hidden", so the real strings never reach the
      * screen or the semantics tree.
      */
     val amountHidden: Boolean = false,
@@ -81,8 +81,11 @@ fun TransactionRow(
         else -> MaterialTheme.colorScheme.onSurface
     }
     val hidden = model.amountHidden
-    val shownAmount = if (hidden) AmountFormatter.HiddenDigits else model.primaryAmount
-    val amountText = if (tx.status == TransactionStatus.Completed && incoming) "+$shownAmount" else shownAmount
+    val amountText = when {
+        hidden -> AmountFormatter.HiddenDigits
+        tx.status == TransactionStatus.Completed && incoming -> "+${model.primaryAmount}"
+        else -> model.primaryAmount
+    }
     // An unfunded deposit address has no amount yet: no trailing element, like
     // an any-amount Cashu Request that is still waiting.
     val showsAmount = !tx.isUnfundedAddress

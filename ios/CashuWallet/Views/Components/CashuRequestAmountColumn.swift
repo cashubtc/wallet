@@ -51,7 +51,7 @@ struct CashuRequestAmountColumn: View {
         return ZStack(alignment: .trailing) {
             VStack(alignment: .trailing, spacing: 2) {
                 if hidden {
-                    HiddenDigitsText(sign: received ? "+" : "", role: .amountRow)
+                    HiddenDigitsText(role: .amountRow)
                         .cashuText(.amountRow)
                         .foregroundStyle(received ? .green : .secondary)
                 } else if received {

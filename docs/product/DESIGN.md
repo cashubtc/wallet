@@ -1457,8 +1457,8 @@ bitcoin. While private:
   symbol, so neither the length nor the unit hints at the amount;
 - the fiat line empties but keeps its slot, and the received beat reads `+****`
   with its usual timing and haptic;
-- Recent and History rows swap only their digits for asterisks, keeping the sign and
-  ink (`+****` in green), and the fiat line keeps its height without its value.
+- Recent and History rows show `****` with no sign, in the row's ink (green for
+  a receipt), and the fiat line keeps its height without its value.
 
 Screens opened on purpose keep real amounts: transaction detail, the Mints tab
 and every pay flow. VoiceOver and TalkBack read "Balance hidden" and name the

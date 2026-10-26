@@ -9,7 +9,7 @@ import SwiftUI
 // re-check lives on History pull-to-refresh. See DESIGN.md — The Received
 // Amount Rule, The Quiet Pending Rule,
 // The Fiat Sub-Amount Rule.
-// Private mode swaps only the digits for asterisks: the sign and ink stay, and the
+// Private mode shows the asterisks alone, with no sign, in the row's ink; the
 // fiat line keeps its height without its value, so hiding never moves a row.
 struct TransactionAmountColumn: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -37,7 +37,7 @@ struct TransactionAmountColumn: View {
                 // those last two cannot both be on.
                 Group {
                     if settings.hideBalances {
-                        HiddenDigitsText(sign: amountSign, role: .amountRow)
+                        HiddenDigitsText(role: .amountRow)
                             .cashuText(.amountRow)
                     } else {
                         Text(amountSign + amountDisplay.primary)
