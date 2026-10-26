@@ -3,7 +3,6 @@ import SwiftUI
 struct TransactionDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @EnvironmentObject var walletManager: WalletManager
     /// Snapshot at open; [transaction] prefers the live wallet row so a
     /// successful open-check can flip Pending → Completed without dismissing.
@@ -192,9 +191,14 @@ struct TransactionDetailView: View {
             VStack(spacing: 0) {
                 ForEach(Array(detailRows.enumerated()), id: \.offset) { _, row in
                     if let copyValue = row.copyValue {
-                        copyableRow(label: row.label, value: row.value, copyValue: copyValue)
+                        PaymentMetadataRow(label: row.label, value: row.value, layout: .history,
+                                           symbol: "doc.on.doc", hint: "Copies the \(row.label.lowercased()) to clipboard") {
+                            UIPasteboard.general.string = copyValue
+                            HapticFeedback.notification(.success)
+                            ConfirmationToast.show(copyConfirmationMessage(for: row.label))
+                        }
                     } else {
-                        detailRow(label: row.label, value: row.value)
+                        PaymentMetadataRow(label: row.label, value: row.value, layout: .history)
                     }
                     if row.label == "Mint", transaction.descriptionHash == nil,
                        let description = transaction.displayDescription {
@@ -400,62 +404,6 @@ struct TransactionDetailView: View {
             value: transaction.fee,
             currency: CurrencyRegistry.currency(forMintUnit: transaction.unit)
         ).formatted()
-    }
-
-    private func detailRow(label: String, value: String) -> some View {
-        HStack {
-            Text(label)
-                .foregroundStyle(.secondary)
-            Spacer()
-            Text(value)
-                .fontWeight(.regular)
-                .multilineTextAlignment(.trailing)
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
-        }
-        .paymentDetailRow(layout: .history)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(label)
-        .accessibilityValue(value)
-    }
-
-    /// Same shape as `detailRow` but tap-to-copy: copies the FULL value while
-    /// leaving the affordance visually stable. The shared top toast is the one
-    /// confirmation channel; no icon morph competes with it.
-    private func copyableRow(label: String, value: String, copyValue: String) -> some View {
-        Button {
-            UIPasteboard.general.string = copyValue
-            HapticFeedback.notification(.success)
-            ConfirmationToast.show(copyConfirmationMessage(for: label))
-        } label: {
-            let layout = dynamicTypeSize.isAccessibilitySize
-                ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
-                : AnyLayout(HStackLayout(spacing: 8))
-            layout {
-                Text(label)
-                    .foregroundStyle(.secondary)
-                if !dynamicTypeSize.isAccessibilitySize {
-                    Spacer()
-                }
-                HStack(spacing: 8) {
-                    Text(value)
-                        .fontWeight(.regular)
-                        .multilineTextAlignment(dynamicTypeSize.isAccessibilitySize ? .leading : .trailing)
-                        .lineLimit(2)
-                        .truncationMode(.middle)
-                    Image(systemName: "doc.on.doc")
-                        .font(.footnote)
-                        .foregroundStyle(.tertiary)
-                }
-                .frame(maxWidth: .infinity, alignment: dynamicTypeSize.isAccessibilitySize ? .leading : .trailing)
-            }
-            .paymentDetailRow(layout: .history, isInteractive: true)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(label)
-        .accessibilityValue(value)
-        .accessibilityHint("Copies the \(label.lowercased()) to clipboard")
     }
 
     // MARK: - Helpers

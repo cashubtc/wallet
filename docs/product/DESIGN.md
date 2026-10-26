@@ -309,6 +309,11 @@ Android, while retaining the existing payment-specific content and actions.
   their content from both Receive and History, with a visible drag handle and
   no close/back-to-input control. Amount entry and payment completion keep their
   full-height flow presentation. Long request content remains scrollable.
+- History reopens the exact stored quote, preserving its mint and unit for edits.
+  Missing quotes and settled one-shot payments fall back to receipts. Receipt QR
+  rendering remains necessary for outgoing payments, pending sent ecash, and
+  missing quotes; it uses the same native QR component as Receive. Claims,
+  recovery, fees and payment proofs retain their receipt-specific behavior.
 - Keep QR codes immediately visible in their original position above the amount.
   Preserve adaptive QR sizing, compact amounts beside a QR, normal receipt amounts,
   and the existing rows and spacing. No QR disclosure or collapse animation.

@@ -228,7 +228,7 @@ struct CashuRequestDetailView: View {
                     VStack(spacing: 0) {
                         if request.rail == .ecash {
                             PaymentMetadataRow(label: "Mint", value: mintDisplayValue(for: request),
-                                        onEdit: { showMintPicker = true })
+                                        action: { showMintPicker = true })
                         } else {
                             PaymentMetadataRow(label: "Mint", value: mintDisplayValue(for: request))
                         }
@@ -241,7 +241,7 @@ struct CashuRequestDetailView: View {
                         // available BOLT12 quotes open the shared Receive screen.
                         if request.rail == .ecash {
                             PaymentMetadataRow(label: "Amount", value: amountDisplayValue(for: request),
-                                        onEdit: { showAmountPicker = true })
+                                        action: { showAmountPicker = true })
                         } else if request.amount == nil {
                             PaymentMetadataRow(label: "Amount", value: amountDisplayValue(for: request))
                         }
@@ -249,7 +249,7 @@ struct CashuRequestDetailView: View {
                             PaymentMetadataRow(
                                 label: "Unit",
                                 value: request.unit.uppercased(),
-                                onEdit: { showUnitPicker = true }
+                                action: { showUnitPicker = true }
                             )
                         } else if request.rail == .ecash {
                             PaymentMetadataRow(label: "Unit", value: request.unit.uppercased())

@@ -648,7 +648,10 @@ struct ReceiveLightningView: View {
                                 useBitcoinSymbol: settings.useBitcoinSymbol,
                                 onRetry: retryPendingMintQuote
                             )
-                            addressRow(quote.request)
+                            PaymentMetadataRow(label: "Address", value: PaymentRequestDecoder.middleTruncated(quote.request),
+                                               symbol: "doc.on.doc", hint: "Copies the Bitcoin address") {
+                                copyRequest(quote.request)
+                            }
                         }
                         PaymentMetadataRow(label: "Mint", value: mintDisplayValue(for: quote) ?? "Unknown mint")
                         if quote.paymentMethod == .bolt12 && mintSupportsBolt12Description {
@@ -656,7 +659,7 @@ struct ReceiveLightningView: View {
                                 label: "Description",
                                 value: CashuRequestStore.shared.intent(forQuoteId: quote.id)?.memo
                                     ?? quote.description ?? "None",
-                                onEdit: { showReusableDescriptionEditor = true }
+                                action: { showReusableDescriptionEditor = true }
                             )
                         } else if let description = CashuRequestStore.shared.intent(forQuoteId: quote.id)?.displayDescription
                             ?? MintQuoteDomain.normalizedOfferDescription(quote.description) {
@@ -667,7 +670,7 @@ struct ReceiveLightningView: View {
                                 label: "Amount",
                                 value: quote.isAmountless ? "Any"
                                     : quote.amount.map { formatQuoteAmount($0, unit: quote.unit) } ?? "Any",
-                                onEdit: { showReusableAmountPicker = true }
+                                action: { showReusableAmountPicker = true }
                             )
                             if quote.amountIssued > 0 {
                                 PaymentMetadataRow(label: "Total received",
@@ -842,30 +845,6 @@ struct ReceiveLightningView: View {
                 }
             }
         }
-    }
-
-    // MARK: - Detail Row
-
-    /// The address as text, in the standard 8…6 cut, so it can be checked
-    /// against the sender's screen; tapping copies the full address.
-    private func addressRow(_ address: String) -> some View {
-        let shortAddress = PaymentRequestDecoder.middleTruncated(address)
-        return Button { copyRequest(address) } label: {
-            PaymentDetailPair(label: "Address") {
-                Text(shortAddress)
-                    .fontWeight(.regular)
-                Image(systemName: "doc.on.doc")
-                    .font(.footnote)
-                    .foregroundStyle(.tertiary)
-                    .padding(.leading, 4)
-            }
-            .paymentDetailRow(isInteractive: true)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Address")
-        .accessibilityValue(shortAddress)
-        .accessibilityHint("Copies the Bitcoin address")
     }
 
     // MARK: - Status Badge

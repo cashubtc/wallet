@@ -96,32 +96,36 @@ struct PaymentDetailTextRow: View {
 struct PaymentMetadataRow: View {
     let label: String
     let value: String
-    var onEdit: (() -> Void)? = nil
+    var layout: PaymentDetailLayout = .flow
+    var symbol = "pencil"
+    var hint: String? = nil
+    var action: (() -> Void)? = nil
 
     var body: some View {
-        Group {
-            if let onEdit {
-                Button(action: onEdit) { row }
-                    .buttonStyle(.plain)
-                    .accessibilityHint("Edits the \(label.lowercased())")
-            } else {
-                row
-            }
+        if let action {
+            Button(action: action) { row }
+                .buttonStyle(.plain)
+                .accessibilityLabel(label)
+                .accessibilityValue(value)
+                .accessibilityHint(hint ?? "Edits the \(label.lowercased())")
+        } else {
+            row
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(label)
+                .accessibilityValue(value)
         }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(label)
-        .accessibilityValue(value)
     }
 
     private var row: some View {
         PaymentDetailPair(label: label) {
             Text(value).fontWeight(.regular).truncationMode(.middle)
-            if onEdit != nil {
-                Image(systemName: "pencil")
+                .textSelection(.enabled)
+            if action != nil {
+                Image(systemName: symbol)
                     .font(.footnote).foregroundStyle(.tertiary).padding(.leading, 4)
             }
         }
-        .paymentDetailRow(isInteractive: onEdit != nil)
+        .paymentDetailRow(layout: layout, isInteractive: action != nil)
         .contentShape(Rectangle())
     }
 }

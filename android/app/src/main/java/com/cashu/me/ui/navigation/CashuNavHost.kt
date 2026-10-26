@@ -39,7 +39,6 @@ import androidx.navigation.navArgument
 import com.cashu.me.App.AppContainer
 import com.cashu.me.Models.CashuRequest
 import com.cashu.me.Models.WalletTransaction
-import com.cashu.me.ui.history.CashuRequestReceiptSheet
 import com.cashu.me.ui.history.HistoryScreen
 import com.cashu.me.ui.history.TransactionReceiptSheet
 import com.cashu.me.ui.home.HomeScreen
@@ -296,14 +295,15 @@ fun CashuNavHost(
             onClose = { receiptRequest = null },
             onBackdropVisibilityChanged = { receiptBackdropVisible = it },
         ) {
-            CashuRequestReceiptSheet(
-                request = request,
+            CashuRequestDetailScreen(
+                requestId = request.id,
                 walletManager = container.walletManager,
                 settingsManager = container.settingsManager,
                 nostrService = container.nostrService,
                 nfcReceiveCoordinator = container.nfcReceiveCoordinator,
-                store = container.cashuRequestStore,
-                onDismissRequest = { receiptRequest = null },
+                cashuRequestStore = container.cashuRequestStore,
+                onClose = { receiptRequest = null },
+                asActivitySheet = true,
                 onNfcSuccessDone = ::finishNfcReceive,
                 onBackdropVisibilityChanged = { receiptBackdropVisible = it },
             )
