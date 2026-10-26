@@ -1,4 +1,5 @@
 import XCTest
+import Cdk
 @testable import CashuWallet
 
 /// A CDK/mint failure as it reaches the classifier: an opaque error whose only
@@ -10,6 +11,27 @@ private struct RawMintError: Error, CustomStringConvertible {
 }
 
 final class WalletErrorMessageTests: XCTestCase {
+
+    func testReceiveFeeIdentifiesUnavailableMint() {
+        for raw in [
+            "Http transport error Some(502): Bad Gateway",
+            "HTTP status 503", "HTTP 504", "error sending request for url (https://mint.example/v1/keysets)",
+            "dns error: failed to lookup address", "Connection refused", "request timed out",
+        ] {
+            XCTAssertEqual(ReceiveFeeFailure.classify(Cdk.FfiError.Internal(errorMessage: raw)), .mintUnavailable, raw)
+        }
+        XCTAssertEqual(ReceiveFeeFailure.classify(URLError(.notConnectedToInternet)), .mintUnavailable)
+        XCTAssertEqual(ReceiveFeeFailure.classify(URLError(.timedOut)), .mintUnavailable)
+        XCTAssertEqual(ReceiveFeeFailure.mintUnavailable.title, "Mint unreachable")
+        XCTAssertTrue(ReceiveFeeFailure.mintUnavailable.message.contains("try again later"))
+    }
+
+    func testReceiveFeeDoesNotCallProtocolOrLocalErrorsOffline() {
+        for raw in ["HTTP 401 Unauthorized", "HTTP 404 Not Found", "Unknown keyset",
+                    "The mint returned an invalid receive fee.", "database is locked"] {
+            XCTAssertEqual(ReceiveFeeFailure.classify(WalletError.networkError(raw)), .unavailable, raw)
+        }
+    }
 
     /// A one-line slot shows {what broke} and drops {what to try next}.
     func testHeadlineIsTheFirstSentence() {

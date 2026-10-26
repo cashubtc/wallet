@@ -96,6 +96,7 @@ fun ReceiveEcashDetailScreen(
     // eagerly in init — no spurious 0 → N roll on mount).
     val parsed = remember(payload) { parseToken(payload) }
     var review by remember(payload) { mutableStateOf<TokenReview?>(null) }
+    var feeAttempt by remember(payload) { mutableStateOf(0) }
     var status by remember(payload) { mutableStateOf<TokenClaimStatus?>(null) }
     val mintTrust = remember(parsed, walletState.mints) {
         (parsed as? TokenParseOutcome.Ok)?.let {
@@ -108,7 +109,8 @@ fun ReceiveEcashDetailScreen(
 
     // Fee preview + P2PK lock check land async; the fee row shows the
     // skeleton fill-in until then.
-    LaunchedEffect(parsed) {
+    LaunchedEffect(parsed, feeAttempt) {
+        review = null
         val ok = parsed as? TokenParseOutcome.Ok ?: return@LaunchedEffect
         review = tokenReviewDetails(
             token = ok.token,
@@ -126,7 +128,7 @@ fun ReceiveEcashDetailScreen(
     BackHandler(enabled = status == TokenClaimStatus.Claiming) {}
 
     fun claim(target: TokenReview) {
-        if (status != null) return
+        if (status != null || !target.canClaim) return
         status = TokenClaimStatus.Claiming
         scope.launch {
             status = claimToken(target, walletManager, claimPendingReceiveToken)
@@ -187,20 +189,19 @@ fun ReceiveEcashDetailScreen(
                     mintName = mintDisplayName(parsed.info.mint, walletState.mints),
                     onClose = onDone,
                     onReceive = { review?.let { target -> claim(target) } },
+                    onRetryFee = { review = null; feeAttempt += 1 },
                     secondaryActionText = if (heldPayment != null) "Decline" else "Receive later",
                     onSecondaryAction = {
                         if (heldPayment != null) {
                             onDeclinePendingReceiveToken(heldPayment)
                             onDone()
                         } else {
-                            review?.let {
-                                val alreadyPending = walletManager.state.value.pendingReceiveTokens
-                                    .any { pending -> pending.token == it.token }
-                                if (!alreadyPending) {
-                                    walletManager.savePendingReceiveToken(pendingReceiveTokenFrom(it))
-                                }
-                                onDone()
+                            val alreadyPending = walletManager.state.value.pendingReceiveTokens
+                                .any { pending -> pending.token == parsed.token }
+                            if (!alreadyPending) {
+                                walletManager.savePendingReceiveToken(pendingReceiveTokenFrom(parsed.token, parsed.info))
                             }
+                            onDone()
                         }
                     },
                 )
@@ -225,6 +226,7 @@ private fun ConfirmContent(
     mintName: String,
     onClose: () -> Unit,
     onReceive: () -> Unit,
+    onRetryFee: () -> Unit,
     secondaryActionText: String,
     onSecondaryAction: () -> Unit,
 ) {
@@ -283,11 +285,21 @@ private fun ConfirmContent(
             info = info,
             mintName = mintName,
             fee = fee,
+            feeFailure = review?.feeFailure,
+            onRetryFee = onRetryFee,
             p2pkLock = review?.p2pkLock,
             formatter = formatter,
             useBitcoinSymbol = useBitcoinSymbol,
             modifier = Modifier.padding(horizontal = CashuTheme.spacing.comfortable),
         )
+        review?.feeFailure?.let { failure ->
+            Spacer(Modifier.height(CashuTheme.spacing.comfortable))
+            InlineNotice(
+                text = failure.message,
+                severity = NoticeSeverity.Caution,
+                modifier = Modifier.padding(horizontal = CashuTheme.spacing.comfortable),
+            )
+        }
         if (mintTrust?.showWarning == true) {
             Spacer(Modifier.height(CashuTheme.spacing.comfortable))
             UnknownMintTrustNotice(

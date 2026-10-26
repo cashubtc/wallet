@@ -58,6 +58,7 @@ struct ReceiveTokenDetailView: View {
     /// unit-native amount/fee formatting so a non-sat token isn't shown as sats.
     @State private var tokenUnit: String
     @State private var receiveFee: UInt64?
+    @State private var feeFailure: ReceiveFeeFailure?
     @State private var isValidToken = false
     /// The net amount CDK actually credited (token value minus the mint's
     /// receive-swap fee), set once the claim completes. Drives the success
@@ -212,7 +213,7 @@ struct ReceiveTokenDetailView: View {
                             value: receiveFee == 0 ? "No fee" : formatFee(receiveFee)
                         )
                     } else {
-                        PaymentDetailPair(label: "Fee unavailable") {
+                        PaymentDetailPair(label: feeFailure?.title ?? "Fee unavailable") {
                             Button {
                                 Task { await calculateFee() }
                             } label: {
@@ -232,6 +233,12 @@ struct ReceiveTokenDetailView: View {
                     }
                 }
                 .padding(.horizontal)
+
+                if let feeFailure {
+                    InlineNotice(message: feeFailure.message, severity: .caution)
+                        .padding(.horizontal)
+                        .accessibilityIdentifier("receive-token-fee-failure")
+                }
 
                 if !mintIsKnown && !mintUrl.isEmpty {
                     InlineNotice(
@@ -413,12 +420,14 @@ struct ReceiveTokenDetailView: View {
         guard !Task.isCancelled else { return }
         isLoadingFee = true
         receiveFee = nil
+        feeFailure = nil
         do {
             let fee = try await walletManager.calculateReceiveFee(tokenString: tokenString)
             guard !Task.isCancelled else { return }
             receiveFee = fee
         } catch {
             guard !Task.isCancelled else { return }
+            feeFailure = ReceiveFeeFailure.classify(error)
         }
         isLoadingFee = false
     }
