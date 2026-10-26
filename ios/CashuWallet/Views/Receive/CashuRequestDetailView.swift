@@ -227,55 +227,44 @@ struct CashuRequestDetailView: View {
 
                     VStack(spacing: 0) {
                         if request.rail == .ecash {
-                            editableRow(label: "Mint", value: mintDisplayValue(for: request),
+                            PaymentMetadataRow(label: "Mint", value: mintDisplayValue(for: request),
                                         action: { showMintPicker = true })
                         } else {
-                            detailRow(label: "Mint", value: mintDisplayValue(for: request))
+                            PaymentMetadataRow(label: "Mint", value: mintDisplayValue(for: request))
                         }
                         if let description = request.displayDescription {
                             DescriptionDetailRow(description: description)
                         }
                         // Only the ecash NUT-18 request can re-mint its Mint /
                         // Amount in place (that's what `regenerate` rebuilds).
-                        // Quote-backed rails (BOLT12 offer, etc.) are read-only
-                        // here until the unified editable detail lands.
+                        // A missing stored quote retains this read-only fallback;
+                        // available BOLT12 quotes open the shared Receive screen.
                         if request.rail == .ecash {
-                            editableRow(label: "Amount", value: amountDisplayValue(for: request),
+                            PaymentMetadataRow(label: "Amount", value: amountDisplayValue(for: request),
                                         action: { showAmountPicker = true })
                         } else if request.amount == nil {
-                            detailRow(label: "Amount", value: amountDisplayValue(for: request))
+                            PaymentMetadataRow(label: "Amount", value: amountDisplayValue(for: request))
                         }
                         if unitEditable(for: request) {
-                            editableRow(
+                            PaymentMetadataRow(
                                 label: "Unit",
                                 value: request.unit.uppercased(),
                                 action: { showUnitPicker = true }
                             )
                         } else if request.rail == .ecash {
-                            detailRow(label: "Unit", value: request.unit.uppercased())
+                            PaymentMetadataRow(label: "Unit", value: request.unit.uppercased())
                         }
-                        detailRow(
+                        PaymentMetadataRow(
                             label: "Created",
                             value: request.createdAt.formatted(date: .abbreviated, time: .omitted)
                         )
                         if request.totalReceived > 0 {
-                            detailRow(
+                            PaymentMetadataRow(
                                 label: "Total received",
                                 value: formatAmount(request.totalReceived, unit: request.unit)
                             )
                         }
-                        Button { showTechnicalDetails = true } label: {
-                            HStack {
-                                Text("Details").foregroundStyle(.secondary)
-                                Spacer()
-                                Image(systemName: "chevron.right").foregroundStyle(.tertiary)
-                            }
-                            // Same inset column as the rows above it.
-                            .paymentDetailRow(isInteractive: true)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("cashu.history.details")
+                        PaymentDetailsButton { showTechnicalDetails = true }
                     }
                     .padding(.horizontal, 4)
                 }
@@ -320,62 +309,15 @@ struct CashuRequestDetailView: View {
     }
 
     private func requestQRCode(_ request: CashuRequest, size: CGFloat) -> some View {
-        QRCodeView(
-            content: request.encoded,
-            showControls: false,
-            staticOnly: true,
+        PaymentCodeCard(
+            content: request.encoded, size: size,
             onCopy: { copy(request.encoded) },
             onShare: { showShareSheet = true }
         )
         .accessibilityIdentifier("cashu.history.payment-code")
-        .frame(width: size, height: size)
-        .padding(16)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 20))
-        .contextMenu {
-            Button(action: { copy(request.encoded) }) {
-                Label("Copy", systemImage: "doc.on.doc")
-            }
-            ShareLink(item: request.encoded) {
-                Label("Share", systemImage: "square.and.arrow.up")
-            }
-        }
         .sheet(isPresented: $showShareSheet) {
             ShareSheet(items: [request.encoded])
         }
-    }
-
-    // MARK: - Detail rows
-
-    private func detailRow(label: String, value: String) -> some View {
-        PaymentDetailPair(label: label) {
-            Text(value)
-                .fontWeight(.regular)
-                .truncationMode(.middle)
-        }
-        .paymentDetailRow()
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(label)
-        .accessibilityValue(value)
-    }
-
-    private func editableRow(label: String, value: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            PaymentDetailPair(label: label) {
-                Text(value)
-                    .fontWeight(.regular)
-                    .truncationMode(.middle)
-                Image(systemName: "pencil")
-                    .font(.footnote)
-                    .foregroundStyle(.tertiary)
-                    .padding(.leading, 4)
-            }
-            .paymentDetailRow(isInteractive: true)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(label)
-        .accessibilityValue(value)
-        .accessibilityHint("Edits the \(label.lowercased())")
     }
 
     // MARK: - Value formatters

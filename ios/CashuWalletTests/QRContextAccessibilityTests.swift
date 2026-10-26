@@ -40,6 +40,8 @@ final class QRContextAccessibilityTests: XCTestCase {
                     // unfunded (covered below); a funded one is never reused.
                     let expected = status == .pending &&
                         (kind == .lightning || direction == .outgoing)
+                    XCTAssertEqual(transaction.liveReceiveQuoteID,
+                                   expected && direction == .incoming && kind != .ecash ? "receipt" : nil)
                     XCTAssertEqual(transaction.hasActionablePaymentCode, expected,
                                    "Unexpected QR availability for \(kind), \(direction), \(status)")
                 }
@@ -69,6 +71,7 @@ final class QRContextAccessibilityTests: XCTestCase {
         )
         address.isUnfundedAddress = true
         address.quoteId = "address"
+        XCTAssertEqual(address.liveReceiveQuoteID, "address")
         XCTAssertTrue(address.hasActionablePaymentCode)
         XCTAssertTrue(address.monitorsMintQuoteWhileOpen)
 
@@ -77,11 +80,13 @@ final class QRContextAccessibilityTests: XCTestCase {
             status: .pending, statusNote: "In mempool", preimage: "txid", invoice: "bc1qdeposit"
         )
         inMempool.quoteId = "address"
+        XCTAssertNil(inMempool.liveReceiveQuoteID)
         XCTAssertFalse(inMempool.hasActionablePaymentCode)
         XCTAssertTrue(inMempool.monitorsMintQuoteWhileOpen, "A deposit on its way keeps being checked")
 
         var expired = address
         expired.status = .expired
+        XCTAssertNil(expired.liveReceiveQuoteID)
         XCTAssertFalse(expired.hasActionablePaymentCode)
         XCTAssertFalse(expired.monitorsMintQuoteWhileOpen)
     }

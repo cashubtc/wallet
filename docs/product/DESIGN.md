@@ -280,9 +280,10 @@ What this system explicitly rejects, pulled verbatim from docs/product/PRODUCT.m
   Editable rows retain at least 44pt/48dp touch height. At accessibility sizes,
   labels stack above full values; both platforms also adapt when an ordinary-size
   value cannot fit horizontally. Monetary values must remain readable.
-- History is a deliberate spacing exception: full-width facts, 12pt/dp vertical
-  padding, and native minimum row heights. Keep its compact elevated sheet;
-  do not apply the narrow payment column to History.
+- Settled and outgoing History receipts are a deliberate spacing exception:
+  full-width facts, 12pt/dp vertical padding, and native minimum row heights.
+  Live incoming requests share the payment fact column from Receive and History,
+  inside the same compact elevated sheet.
 - Idle QR screens have no waiting clock, glow, or label. Active claim progress,
   actionable failures, expiry, and received totals remain. A failed Lightning
   Address claim offers Retry and never claims success before credit. Meaningful
@@ -300,8 +301,19 @@ Android, while retaining the existing payment-specific content and actions.
 - Every transaction and stored receive request opens a sheet over its list with
   a centered title and drag handle. Dismiss by swipe, native accessibility escape,
   or Android Back. No redundant top-left close X.
-- Show a visible Share action at the top right whenever the payment artifact is
-  shareable. QR context-menu Copy/Share and the visible Copy button remain.
+- Keep one trailing header control for shareable artifacts. Live on-chain and
+  reusable Lightning requests use a menu containing Share and New address/invoice;
+  one-shot invoices and receipts show Share directly. QR context-menu Copy/Share
+  and the visible Copy button remain.
+- Live incoming Lightning invoices, reusable offers and Bitcoin addresses fit
+  their content from both Receive and History, with a visible drag handle and
+  no close/back-to-input control. Amount entry and payment completion keep their
+  full-height flow presentation. Long request content remains scrollable.
+- History reopens the exact stored quote, preserving its mint and unit for edits.
+  Missing quotes and settled one-shot payments fall back to receipts. Receipt QR
+  rendering remains necessary for outgoing payments, pending sent ecash, and
+  missing quotes; it uses the same native QR component as Receive. Claims,
+  recovery, fees and payment proofs retain their receipt-specific behavior.
 - Keep QR codes immediately visible in their original position above the amount.
   Preserve adaptive QR sizing, compact amounts beside a QR, normal receipt amounts,
   and the existing rows and spacing. No QR disclosure or collapse animation.

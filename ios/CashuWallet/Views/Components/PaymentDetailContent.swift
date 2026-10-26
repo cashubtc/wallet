@@ -92,27 +92,112 @@ struct PaymentDetailTextRow: View {
     }
 }
 
+/// Request metadata shared by Lightning, on-chain and Cashu requests.
+struct PaymentMetadataRow: View {
+    let label: String
+    let value: String
+    var layout: PaymentDetailLayout = .flow
+    var symbol = "pencil"
+    var hint: String? = nil
+    var action: (() -> Void)? = nil
+
+    var body: some View {
+        if let action {
+            Button(action: action) { row }
+                .buttonStyle(.plain)
+                .accessibilityLabel(label)
+                .accessibilityValue(value)
+                .accessibilityHint(hint ?? "Edits the \(label.lowercased())")
+        } else {
+            row
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(label)
+                .accessibilityValue(value)
+        }
+    }
+
+    private var row: some View {
+        PaymentDetailPair(label: label) {
+            Text(value).fontWeight(.regular).truncationMode(.middle)
+                .textSelection(.enabled)
+            if action != nil {
+                Image(systemName: symbol)
+                    .font(.footnote).foregroundStyle(.tertiary).padding(.leading, 4)
+            }
+        }
+        .paymentDetailRow(layout: layout, isInteractive: action != nil)
+        .contentShape(Rectangle())
+    }
+}
+
+struct PaymentDetailsButton: View {
+    var layout: PaymentDetailLayout = .flow
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack {
+                Text("Details").foregroundStyle(.secondary)
+                Spacer(minLength: 16)
+                Image(systemName: "chevron.right").foregroundStyle(.tertiary)
+            }
+            .paymentDetailRow(layout: layout, isInteractive: true)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Shows quote, request and proof identifiers")
+        .accessibilityIdentifier("cashu.history.details")
+    }
+}
+
+struct PaymentExplorerLink: View {
+    let label: String
+    let url: URL
+    var layout: PaymentDetailLayout = .flow
+
+    var body: some View {
+        Link(destination: url) {
+            HStack {
+                Text(label).foregroundStyle(.secondary)
+                Spacer(minLength: 16)
+                Image(systemName: "arrow.up.right")
+                    .font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+            }
+            .paymentDetailRow(layout: layout, isInteractive: true)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .simultaneousGesture(TapGesture().onEnded { HapticFeedback.selection() })
+        .accessibilityHint("Opens the block explorer in your browser")
+    }
+}
+
 /// Fits the QR around the receipt's actual text, keeping related details together.
 /// Scrolling remains available when accessibility text needs more than one screen.
 struct PaymentDetailContent<Hero: View, Details: View>: View {
-    /// When set, the QR keeps the size it settled at for this key: details that
-    /// change in place afterwards (a status value, a notice) scroll instead of
-    /// shrinking the code someone may be scanning. A new key, container size or
-    /// text size measures again.
-    var stableSizeKey: AnyHashable? = nil
+    /// Content-fit sheets measure the natural QR and rows instead of filling the viewport.
+    var fitsContent = false
     @ViewBuilder let hero: (CGFloat) -> Hero
     @ViewBuilder let details: () -> Details
     @State private var detailsHeight: CGFloat = 0
-    @State private var sizeLatch: SizeLatch?
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-
-    private struct SizeLatch: Equatable {
-        let key: AnyHashable
-        let container: CGSize
-        let typeSize: DynamicTypeSize
+    var body: some View {
+        if fitsContent {
+            VStack(spacing: 16) {
+                ViewThatFits(in: .horizontal) {
+                    hero(280)
+                    hero(240)
+                    hero(200)
+                }
+                details()
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+        } else {
+            adaptiveContent
+        }
     }
 
-    var body: some View {
+    private var adaptiveContent: some View {
         GeometryReader { geometry in
             let qrSize = max(120, min(280, geometry.size.width - 64,
                                       geometry.size.height - detailsHeight - 64))
@@ -123,12 +208,7 @@ struct PaymentDetailContent<Hero: View, Details: View>: View {
                         .environment(\.compactPaymentDetails, geometry.size.height < 600)
                         .fixedSize(horizontal: false, vertical: true)
                         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
-                            let latch = stableSizeKey.map {
-                                SizeLatch(key: $0, container: geometry.size, typeSize: dynamicTypeSize)
-                            }
-                            if let latch, latch == sizeLatch, detailsHeight > 0 { return }
                             detailsHeight = height
-                            if height > 0 { sizeLatch = latch }
                         }
                 }
                 .padding(.horizontal, 16)

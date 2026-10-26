@@ -88,14 +88,14 @@ final class LiveBolt12DescriptionUITests: UITestBase {
         openOffer()
         editDescription("Coffee tips\nThank you")
         assertDescription("Coffee tips Thank you")
-        tapWhenReady(app.buttons["Close"])
+        dismissOffer()
         openOffer()
         assertDescription("Coffee tips Thank you")
         editDescription("Updated coffee note")
         assertDescription("Updated coffee note")
         editDescription("   ")
         assertDescription("None")
-        tapWhenReady(app.buttons["Close"])
+        dismissOffer()
         openOffer()
         assertDescription("None")
         let amountRow = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Amount")).firstMatch
@@ -114,6 +114,13 @@ final class LiveBolt12DescriptionUITests: UITestBase {
         attachment.name = "Live BOLT12 offer after clearing and reopening"
         attachment.lifetime = .keepAlways
         add(attachment)
+    }
+
+    private func dismissOffer() {
+        let header = app.navigationBars["Reusable Invoice"]
+        header.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.95)))
+        XCTAssertTrue(screen("receive-lightning-screen").waitForNonExistence(timeout: 10))
     }
 
     private var descriptionRow: XCUIElement {

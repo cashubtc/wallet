@@ -647,6 +647,7 @@ private fun AuthenticatedShell(container: AppContainer) {
                 settingsManager = container.settingsManager,
                 priceService = container.priceService,
                 onClose = close,
+                onCompactSheetChanged = { flowUsesCompactSheet = it },
             )
 
             WalletFlow.Send -> UnifiedSendScreen(

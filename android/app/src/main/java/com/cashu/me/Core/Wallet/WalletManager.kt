@@ -622,12 +622,12 @@ class WalletManager(
         return gateway.fetchMintInfo(normalized)
     }
 
-    suspend fun createMintQuote(amount: Long?, method: PaymentMethodKind, unit: String = "sat", description: String? = null): MintQuoteInfo {
-        val active = mutableState.value.activeMint ?: throw IllegalStateException("No active mint.")
+    suspend fun createMintQuote(amount: Long?, method: PaymentMethodKind, unit: String = "sat", description: String? = null, targetMintUrl: String? = null): MintQuoteInfo {
+        val mintUrl = targetMintUrl ?: mutableState.value.activeMint?.url ?: throw IllegalStateException("No active mint.")
         val offerDescription = normalizedOfferDescription(description)
         return withLoadingResult {
             gateway.createMintQuote(
-                amount, method, active.url, unit,
+                amount, method, mintUrl, unit,
                 if (method == PaymentMethodKind.Bolt12) offerDescription else description,
             ).also {
                 mintQuoteSyncService.rememberMintQuoteTimestamp(it.id)
@@ -647,8 +647,8 @@ class WalletManager(
      * returns the offer description, so the match joins quotes with the
      * locally stored quote-intent memos keyed by quote id.
      */
-    suspend fun existingAmountlessBolt12Offer(unit: String, description: String? = null): MintQuoteInfo? {
-        val activeMint = mutableState.value.activeMint ?: return null
+    suspend fun existingAmountlessBolt12Offer(unit: String, description: String? = null, targetMintUrl: String? = null): MintQuoteInfo? {
+        val mintUrl = targetMintUrl ?: mutableState.value.activeMint?.url ?: return null
         val memosByQuoteId = LinkedHashMap<String, String?>()
         cashuRequestStore.state.value.requests.forEach { request ->
             // First-wins matches offer immutability (iOS `uniquingKeysWith`
@@ -664,18 +664,18 @@ class WalletManager(
         }
         return findExistingAmountlessBolt12Offer(
             quotes = quotes,
-            mintUrl = activeMint.url,
+            mintUrl = mintUrl,
             unit = unit,
             description = description,
         )
     }
 
     /** The active mint's deposit address to hand out again, if any (iOS parity). */
-    suspend fun existingOnchainMintQuote(): MintQuoteInfo? {
-        val activeMint = mutableState.value.activeMint ?: return null
+    suspend fun existingOnchainMintQuote(targetMintUrl: String? = null): MintQuoteInfo? {
+        val mintUrl = targetMintUrl ?: mutableState.value.activeMint?.url ?: return null
         return findReusableOnchainAddress(
             quotes = gateway.listUnissuedMintQuotes(),
-            mintUrl = activeMint.url,
+            mintUrl = mintUrl,
             nowEpochSeconds = System.currentTimeMillis() / 1000,
         )
     }
@@ -1330,8 +1330,14 @@ class WalletManager(
      * and never changes wallet state. Incoming rows carry a mint quote; outgoing
      * Lightning and on-chain rows a melt quote (iOS parity).
      */
-    suspend fun requestMintQuoteSnapshot(request: CashuRequest): MintQuoteInfo? {
-        val quoteID = request.quoteId ?: return null
+    suspend fun requestMintQuoteSnapshot(request: CashuRequest): MintQuoteInfo? =
+        request.quoteId?.let { storedMintQuoteSnapshot(it) }
+
+    /** Reopen the stored request without creating a replacement or selecting another mint. */
+    suspend fun storedReceiveQuote(quoteID: String?): MintQuoteInfo? =
+        resolveStoredReceiveQuote(quoteID, ::storedMintQuoteSnapshot)
+
+    private suspend fun storedMintQuoteSnapshot(quoteID: String): MintQuoteInfo? {
         return try {
             gateway.storedMintQuote(quoteID)
         } catch (cancelled: CancellationException) {

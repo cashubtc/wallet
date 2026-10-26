@@ -3,7 +3,6 @@ import SwiftUI
 struct TransactionDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @EnvironmentObject var walletManager: WalletManager
     /// Snapshot at open; [transaction] prefers the live wallet row so a
     /// successful open-check can flip Pending → Completed without dismissing.
@@ -95,6 +94,10 @@ struct TransactionDetailView: View {
     }
 
     var body: some View {
+        StoredReceiveView(quoteID: seed.liveReceiveQuoteID) { receipt }
+    }
+
+    private var receipt: some View {
         ActivityDetailSheet(
             title: transaction.displayTitle(mints: walletManager.mints),
             contentHeight: contentHeight,
@@ -197,9 +200,14 @@ struct TransactionDetailView: View {
             VStack(spacing: 0) {
                 ForEach(Array(detailRows.enumerated()), id: \.offset) { _, row in
                     if let copyValue = row.copyValue {
-                        copyableRow(label: row.label, value: row.value, copyValue: copyValue)
+                        PaymentMetadataRow(label: row.label, value: row.value, layout: .history,
+                                           symbol: "doc.on.doc", hint: "Copies the \(row.label.lowercased()) to clipboard") {
+                            UIPasteboard.general.string = copyValue
+                            HapticFeedback.notification(.success)
+                            ConfirmationToast.show(copyConfirmationMessage(for: row.label))
+                        }
                     } else {
-                        detailRow(label: row.label, value: row.value)
+                        PaymentMetadataRow(label: row.label, value: row.value, layout: .history)
                     }
                     if row.label == "Mint", transaction.descriptionHash == nil,
                        let description = transaction.displayDescription {
@@ -212,9 +220,12 @@ struct TransactionDetailView: View {
                     DescriptionDetailRow(description: description, layout: .history)
                 }
                 if let explorerURL = onchainExplorerURL {
-                    explorerLinkRow(label: "View in block explorer", url: explorerURL)
+                    PaymentExplorerLink(label: "View in block explorer", url: explorerURL, layout: .history)
                 }
-                technicalDetailsRow
+                PaymentDetailsButton(layout: .history) {
+                    HapticFeedback.selection()
+                    showTechnicalDetails = true
+                }
             }
             .padding(.horizontal, 4)
             .padding(.top, transaction.isUnfundedAddress && heroSlotIsEmpty ? 16 : 0)
@@ -294,27 +305,12 @@ struct TransactionDetailView: View {
     @ViewBuilder
     private func heroSlot(qrSize: CGFloat) -> some View {
         if showsQR, let content = qrContent {
-            QRCodeView(
-                content: content,
-                showControls: false,
-                // Lightning invoices / Bitcoin addresses are standard QR formats;
-                // ecash tokens are long and benefit from UR-animated encoding.
-                staticOnly: transaction.kind != .ecash,
+            PaymentCodeCard(
+                content: content, size: qrSize, staticOnly: transaction.kind != .ecash,
                 onCopy: { copyContent(content) },
                 onShare: { showShareSheet = true }
             )
             .accessibilityIdentifier("cashu.history.payment-code")
-            .frame(width: qrSize, height: qrSize)
-            .padding(16)
-            .background(Color.white, in: RoundedRectangle(cornerRadius: 20))
-            .contextMenu {
-                Button(action: { copyContent(content) }) {
-                    Label("Copy", systemImage: "doc.on.doc")
-                }
-                Button(action: { showShareSheet = true }) {
-                    Label("Share", systemImage: "square.and.arrow.up")
-                }
-            }
         } else if transaction.status == .completed {
             // Static glyph — no `.symbolEffect(.bounce)`. This is historical review
             // (a detail screen re-opened often), not the live payment-received moment
@@ -425,111 +421,7 @@ struct TransactionDetailView: View {
         ).formatted()
     }
 
-    private func detailRow(label: String, value: String) -> some View {
-        HStack {
-            Text(label)
-                .foregroundStyle(.secondary)
-            Spacer()
-            Text(value)
-                .fontWeight(.regular)
-                .multilineTextAlignment(.trailing)
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
-        }
-        .paymentDetailRow(layout: .history)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(label)
-        .accessibilityValue(value)
-    }
-
-    /// Same shape as `detailRow` but tap-to-copy: copies the FULL value while
-    /// leaving the affordance visually stable. The shared top toast is the one
-    /// confirmation channel; no icon morph competes with it.
-    private func copyableRow(label: String, value: String, copyValue: String) -> some View {
-        Button {
-            UIPasteboard.general.string = copyValue
-            HapticFeedback.notification(.success)
-            ConfirmationToast.show(copyConfirmationMessage(for: label))
-        } label: {
-            let layout = dynamicTypeSize.isAccessibilitySize
-                ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
-                : AnyLayout(HStackLayout(spacing: 8))
-            layout {
-                Text(label)
-                    .foregroundStyle(.secondary)
-                if !dynamicTypeSize.isAccessibilitySize {
-                    Spacer()
-                }
-                HStack(spacing: 8) {
-                    Text(value)
-                        .fontWeight(.regular)
-                        .multilineTextAlignment(dynamicTypeSize.isAccessibilitySize ? .leading : .trailing)
-                        .lineLimit(2)
-                        .truncationMode(.middle)
-                    Image(systemName: "doc.on.doc")
-                        .font(.footnote)
-                        .foregroundStyle(.tertiary)
-                }
-                .frame(maxWidth: .infinity, alignment: dynamicTypeSize.isAccessibilitySize ? .leading : .trailing)
-            }
-            .paymentDetailRow(layout: .history, isInteractive: true)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(label)
-        .accessibilityValue(value)
-        .accessibilityHint("Copies the \(label.lowercased()) to clipboard")
-    }
-
-    /// Last receipt row: the identifiers behind the payment (quote ID, request,
-    /// proof) open in a nested `.large` sheet, like the description reader.
-    private var technicalDetailsRow: some View {
-        Button {
-            HapticFeedback.selection()
-            showTechnicalDetails = true
-        } label: {
-            HStack {
-                Text("Details")
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-            }
-            .paymentDetailRow(layout: .history, isInteractive: true)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityHint("Shows quote, request and proof identifiers")
-        .accessibilityIdentifier("cashu.history.details")
-    }
-
-    /// Same shape as `detailRow` but opens an external URL, with the trailing
-    /// arrow-up-right glyph settings uses for outbound links — the on-chain
-    /// block explorer row (matches the receive screen's row).
-    private func explorerLinkRow(label: String, url: URL) -> some View {
-        Link(destination: url) {
-            HStack {
-                Text(label)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Image(systemName: "arrow.up.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-            }
-            .paymentDetailRow(layout: .history, isInteractive: true)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .simultaneousGesture(TapGesture().onEnded { HapticFeedback.selection() })
-        .accessibilityHint("Opens the block explorer in your browser")
-    }
-
     // MARK: - Helpers
-
-    private func extractMintHost(_ url: String) -> String {
-        URL(string: url)?.host ?? url
-    }
 
     private var onchainExplorerURL: URL? {
         guard transaction.kind == .onchain else { return nil }
@@ -747,11 +639,44 @@ struct CashuRequestReceiptView: View {
     private var current: CashuRequest { store.request(withId: request.id) ?? request }
 
     var body: some View {
+        StoredReceiveView(quoteID: current.rail == .bolt12 ? current.quoteId : nil) { receipt }
+    }
+
+    private var receipt: some View {
         ActivityDetailSheet(title: current.displayTitle, onShare: { showShareSheet = true }) {
             CashuRequestDetailView(request: current, showsNavigationHeader: false)
         }
         .sheet(isPresented: $showShareSheet) {
             ShareSheet(items: [current.encoded])
+        }
+    }
+}
+
+/// Resolve a live request once on opening; settled or unavailable quotes retain their receipt.
+private struct StoredReceiveView<Receipt: View>: View {
+    let quoteID: String?
+    @ViewBuilder var receipt: () -> Receipt
+    @EnvironmentObject private var walletManager: WalletManager
+    @State private var receiveQuote: MintQuoteInfo?
+    @State private var didLoad = false
+
+    var body: some View {
+        Group {
+            if let receiveQuote {
+                ReceiveLightningView(quote: receiveQuote)
+            } else if quoteID != nil && !didLoad {
+                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                receipt()
+            }
+        }
+        .task(id: quoteID) {
+            receiveQuote = nil
+            didLoad = false
+            let stored = await walletManager.storedReceiveQuote(quoteID: quoteID)
+            guard !Task.isCancelled else { return }
+            receiveQuote = stored
+            didLoad = true
         }
     }
 }

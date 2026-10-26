@@ -647,9 +647,9 @@ struct MainWalletView: View {
                 .environmentObject(walletManager)
                 .presentationDetents([.large])
         case .receiveLightning:
+            // The request owns its compact detent; amount entry remains large.
             ReceiveLightningView()
                 .environmentObject(walletManager)
-                .presentationDetents([.large])
         case .connectMint:
             // Same surface the Send sheet shows when there are no mints — the
             // detents and canvas background live inside it.

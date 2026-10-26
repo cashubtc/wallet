@@ -20,6 +20,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.material3.CircularProgressIndicator
+import com.cashu.me.Core.TransactionDisplay
+import com.cashu.me.Models.MintQuoteInfo
+import com.cashu.me.ui.shell.WalletFlow
+import com.cashu.me.ui.shell.WalletFlowSheetHost
+import com.cashu.me.ui.receive.ReceiveLightningScreen
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.unit.dp
@@ -33,7 +39,6 @@ import androidx.navigation.navArgument
 import com.cashu.me.App.AppContainer
 import com.cashu.me.Models.CashuRequest
 import com.cashu.me.Models.WalletTransaction
-import com.cashu.me.ui.history.CashuRequestReceiptSheet
 import com.cashu.me.ui.history.HistoryScreen
 import com.cashu.me.ui.history.TransactionReceiptSheet
 import com.cashu.me.ui.home.HomeScreen
@@ -284,33 +289,48 @@ fun CashuNavHost(
     }
 
     receiptRequest?.let { request ->
-        CashuRequestReceiptSheet(
-            request = request,
-            walletManager = container.walletManager,
-            settingsManager = container.settingsManager,
-            nostrService = container.nostrService,
-            nfcReceiveCoordinator = container.nfcReceiveCoordinator,
-            store = container.cashuRequestStore,
-            onDismissRequest = { receiptRequest = null },
-            onNfcSuccessDone = ::finishNfcReceive,
+        StoredReceiveSheet(
+            quoteId = request.quoteId.takeIf { request.quoteKind.equals("bolt12", ignoreCase = true) },
+            container = container,
+            onClose = { receiptRequest = null },
             onBackdropVisibilityChanged = { receiptBackdropVisible = it },
-        )
+        ) {
+            CashuRequestDetailScreen(
+                requestId = request.id,
+                walletManager = container.walletManager,
+                settingsManager = container.settingsManager,
+                nostrService = container.nostrService,
+                nfcReceiveCoordinator = container.nfcReceiveCoordinator,
+                cashuRequestStore = container.cashuRequestStore,
+                onClose = { receiptRequest = null },
+                asActivitySheet = true,
+                onNfcSuccessDone = ::finishNfcReceive,
+                onBackdropVisibilityChanged = { receiptBackdropVisible = it },
+            )
+        }
     }
 
     receiptTransaction?.let { transaction ->
-        TransactionReceiptSheet(
-            transaction = transaction,
-            walletManager = container.walletManager,
-            settingsManager = container.settingsManager,
-            priceService = container.priceService,
-            onDismissRequest = { receiptTransaction = null },
+        StoredReceiveSheet(
+            quoteId = TransactionDisplay.liveReceiveQuoteId(transaction),
+            container = container,
+            onClose = { receiptTransaction = null },
             onBackdropVisibilityChanged = { receiptBackdropVisible = it },
-            // The claim flow presents at app level; the sheet steps aside first.
-            onClaimReceiveToken = { token ->
-                receiptTransaction = null
-                onClaimReceiveToken(token)
-            },
-        )
+        ) {
+            TransactionReceiptSheet(
+                transaction = transaction,
+                walletManager = container.walletManager,
+                settingsManager = container.settingsManager,
+                priceService = container.priceService,
+                onDismissRequest = { receiptTransaction = null },
+                onBackdropVisibilityChanged = { receiptBackdropVisible = it },
+                // The claim flow presents at app level; the sheet steps aside first.
+                onClaimReceiveToken = { token ->
+                    receiptTransaction = null
+                    onClaimReceiveToken(token)
+                },
+            )
+        }
     }
 }
 
@@ -479,4 +499,50 @@ internal val tabExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> Ex
             easing = FastOutLinearInEasing,
         ),
     )
+}
+
+/** History and Receive mount the same live request screen; receipts remain the fallback. */
+@Composable
+private fun StoredReceiveSheet(
+    quoteId: String?,
+    container: AppContainer,
+    onClose: () -> Unit,
+    onBackdropVisibilityChanged: (Boolean) -> Unit,
+    receipt: @Composable () -> Unit,
+) {
+    var quote by remember(quoteId) { mutableStateOf<MintQuoteInfo?>(null) }
+    var loaded by remember(quoteId) { mutableStateOf(quoteId == null) }
+    LaunchedEffect(quoteId) {
+        quote = container.walletManager.storedReceiveQuote(quoteId)
+        loaded = true
+    }
+    val stored = quote
+    if (loaded && stored == null) {
+        receipt()
+    } else {
+        var compactRequest by remember(quoteId) { mutableStateOf(true) }
+        WalletFlowSheetHost(
+            flow = WalletFlow.ReceiveLightning,
+            dismissLocked = false,
+            compactContent = compactRequest,
+            onDismissed = onClose,
+            onBackdropVisibilityChanged = onBackdropVisibilityChanged,
+            snackbarHostState = container.snackbarHostState,
+        ) { _, close ->
+            if (stored != null) {
+                ReceiveLightningScreen(
+                    walletManager = container.walletManager,
+                    npcService = container.npcService,
+                    cashuRequestStore = container.cashuRequestStore,
+                    settingsManager = container.settingsManager,
+                    priceService = container.priceService,
+                    onClose = close,
+                    initialQuote = stored,
+                    onCompactSheetChanged = { compactRequest = it },
+                )
+            } else {
+                CircularProgressIndicator()
+            }
+        }
+    }
 }
