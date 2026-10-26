@@ -51,6 +51,19 @@ enum PaymentMethodKind: String, CaseIterable, Codable, Hashable, Sendable {
         }
     }
 
+    /// Why Send's mint picker can't offer a mint for a payment with this
+    /// method (Android `meltUnavailableReason` parity).
+    func meltUnavailableReason(amountless: Bool) -> String {
+        switch self {
+        case .bolt11:
+            return amountless ? "Can't pay invoices without an amount" : "Can't pay Lightning invoices"
+        case .bolt12:
+            return "Can't pay reusable invoices"
+        case .onchain:
+            return "Can't send on-chain"
+        }
+    }
+
     var requestDisplayName: String {
         switch self {
         case .bolt11:

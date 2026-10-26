@@ -69,6 +69,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.cashu.me.Core.AmountDisplayPrimary
 import com.cashu.me.Core.AmountFormatter
+import com.cashu.me.Core.AmountlessMeltBlock
+import com.cashu.me.Core.AmountlessMeltBlockPresentation
 import com.cashu.me.Core.CashuRequestAcquireResult
 import com.cashu.me.Core.CashuRequestMintSettling
 import com.cashu.me.Core.CashuPaymentRequestRoute
@@ -83,10 +85,13 @@ import com.cashu.me.Core.Wallet.isInsufficientBalance
 import com.cashu.me.Core.Wallet.userFacingWalletMessage
 import com.cashu.me.Core.Wallet.walletMessage
 import com.cashu.me.Core.WalletManager
+import com.cashu.me.Core.amountlessMeltBlock
 import com.cashu.me.Core.compatibleMintsForCashuPaymentRequest
-import com.cashu.me.Core.compatibleMintsForMeltPayment
 import com.cashu.me.Core.isAmountlessBolt11
+import com.cashu.me.Core.meltPaymentMethod
+import com.cashu.me.Core.meltUnavailableReason
 import com.cashu.me.Core.normalizedMintUrlForSelection
+import com.cashu.me.Core.presentation
 import com.cashu.me.Core.routeForCashuPaymentRequest
 import com.cashu.me.Core.selectMintForMeltPayment
 import com.cashu.me.Models.MeltPaymentResult
@@ -95,7 +100,6 @@ import com.cashu.me.Models.MeltSettlement
 import com.cashu.me.Models.MintInfo
 import com.cashu.me.Models.MintQuoteInfo
 import com.cashu.me.Models.MintQuoteState
-import com.cashu.me.Models.PaymentMethodKind
 import com.cashu.me.R
 import com.cashu.me.ui.components.AmountFlipDisplay
 import com.cashu.me.ui.components.AmountNote
@@ -205,6 +209,9 @@ fun UnifiedSendScreen(
     onCompactSheetChanged: (Boolean) -> Unit = {},
     // Closes the flow on the History tab, where an unconfirmed payment resolves.
     onViewHistory: (() -> Unit)? = null,
+    // Opens Transfer toward the empty mint that can pay this amountless
+    // invoice, carrying the invoice so Transfer can hand it back to pay.
+    onTransferToMint: ((mintUrl: String, invoice: String) -> Unit)? = null,
 ) {
     val walletState by walletManager.state.collectAsState()
     val settings by settingsManager.state.collectAsState()
@@ -256,20 +263,33 @@ fun UnifiedSendScreen(
     )
     var previousEntryContext by remember { mutableStateOf(entryContext) }
     val enteredAmount = UnifiedSendAmountEntry.amountSats(amount, entryContext)
-    // An amountless BOLT11 can only go to mints advertising NUT-05 `amountless`
-    // (iOS activeMeltMint parity); every other rail keeps the chosen mint.
-    val amountlessBolt11 = (locked as? LockedRail.Melt)?.decoded?.isAmountlessBolt11 == true
-    val activeMintUrl = if (amountlessBolt11) {
+    // A melt can only go to a mint that pays its rail — an amountless BOLT11
+    // also needs NUT-05 `amountless` (iOS activeMeltMint parity). Cashu
+    // Requests keep the chosen mint; their route picks the payer.
+    val meltRail = locked as? LockedRail.Melt
+    val meltMethod = meltRail?.decoded?.let(::meltPaymentMethod)
+    val amountlessBolt11 = meltRail?.decoded?.isAmountlessBolt11 == true
+    val activeMintUrl = if (meltMethod != null) {
         selectMintForMeltPayment(
             mints = walletState.mints,
             selectedMintUrl = selectedMintUrl,
             activeMintUrl = walletState.activeMint?.url,
-            paymentMethod = PaymentMethodKind.Bolt11,
+            paymentMethod = meltMethod,
             minimumAmount = enteredAmount.takeIf { it > 0L },
-            amountless = true,
+            amountless = amountlessBolt11,
         )?.url
     } else {
         selectedMintUrl ?: walletState.activeMint?.url
+    }
+    // Nothing held can pay this amountless invoice: the amount step says why
+    // instead of offering a keypad (iOS parity).
+    val amountlessBlock = amountlessMeltBlock(meltRail?.decoded, walletState.mints)
+    val amountlessTransfer: (() -> Unit)? = run {
+        val destination = (amountlessBlock as? AmountlessMeltBlock.CapableMintsEmpty)
+            ?.transferDestinationUrl ?: return@run null
+        val invoice = meltRail?.raw ?: return@run null
+        val transfer = onTransferToMint ?: return@run null
+        { transfer(destination, invoice) }
     }
     val confirmAmount = locked?.let { rail ->
         when (rail) {
@@ -288,12 +308,13 @@ fun UnifiedSendScreen(
             selectedTargetMintUrl = selectedCashuTargetMintUrl,
         )
     }
+    // A melt lists every held mint; the ones that can't pay it stay in the
+    // picker, dimmed, saying why (iOS `MintSelectorSheet`).
     val paymentMintChoices = (locked as? LockedRail.Creq)?.let { rail ->
         compatibleMintsForCashuPaymentRequest(rail.decoded.summary, walletState.mints)
-    } ?: if (amountlessBolt11) {
-        compatibleMintsForMeltPayment(walletState.mints, PaymentMethodKind.Bolt11, amountless = true)
-    } else {
-        walletState.mints
+    } ?: walletState.mints
+    val meltUnavailableReasonFor: ((MintInfo) -> String?)? = meltMethod?.let { method ->
+        { mint -> meltUnavailableReason(mint, method, amountlessBolt11) }
     }
     val activeMint = when (val route = cashuRoute) {
         is CashuPaymentRequestRoute.PayWithEcash -> route.mint
@@ -349,7 +370,6 @@ fun UnifiedSendScreen(
         if (trimmed.isEmpty() || trimmed == suppressedValue) return
         inputHint = null
         when (val resolution = resolveSendDestination(trimmed, walletState.mints)) {
-            is SendDestinationResolution.Hint -> inputHint = resolution.message
             is SendDestinationResolution.Melt -> {
                 locked = LockedRail.Melt(resolution.request, resolution.decoded, resolution.knownAmount)
                 if (resolution.requiresAmountEntry) {
@@ -783,43 +803,61 @@ fun UnifiedSendScreen(
                                 onReceive = onReceive,
                             )
 
-                            SendStep.Amount -> AmountFace(
-                                amount = amount,
-                                onAmountChange = { amount = it },
-                                mint = activeMint,
-                                balanceText = activeMint?.let {
-                                    formatter.formatWalletSats(it.balance, settings.useBitcoinSymbol)
-                                },
-                                // One mint means nothing to choose between, so the row
-                                // drops its chevron and stops opening a picker.
-                                onPickMint = { mintPickerOpen = true }
-                                    .takeIf { paymentMintChoices.size > 1 },
-                                onUseMax = {
-                                    activeMint?.balance?.takeIf { it > 0 }?.let {
-                                        amount = UnifiedSendAmountEntry.maxRawForBalance(it, entryContext)
-                                    }
-                                },
-                                amountSats = enteredAmount,
-                                entryPrimary = entryContext.primary,
-                                onFlipEntryPrimary = {
-                                    settingsManager.setAmountDisplayPrimary(it.rawValue)
-                                },
-                                btcPrice = entryFiatPrice,
-                                fiatCurrencyCode = priceState.currencyCode,
-                                useBitcoinSymbol = settings.useBitcoinSymbol,
-                                formatter = formatter,
-                                cashuRequestFeePresentation = (locked as? LockedRail.Creq)?.let {
-                                    displayedCashuRequestFeeEstimate.amountEntryPresentation(
-                                        usesNetworkRoute = cashuRoute is CashuPaymentRequestRoute.AcquireThenPay,
-                                    ) { fee ->
-                                        formatter.formatWalletSats(fee, settings.useBitcoinSymbol)
-                                    }
-                                },
-                                onContinue = {
-                                    cameFromAmount = true
-                                    step = SendStep.Confirm
-                                },
-                            )
+                            SendStep.Amount -> AnimatedContent(
+                                targetState = amountlessBlock,
+                                transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(150)) },
+                                label = "unified-send-amountless-block",
+                                // Only blocked ↔ keypad swaps; the block's own
+                                // details update in place.
+                                contentKey = { it != null },
+                            ) { block ->
+                                if (block != null) {
+                                    AmountlessBlockedFace(
+                                        presentation = block.presentation(
+                                            zero = formatter.formatWalletSats(0L, settings.useBitcoinSymbol),
+                                        ),
+                                        onTransfer = amountlessTransfer,
+                                    )
+                                } else {
+                                    AmountFace(
+                                        amount = amount,
+                                        onAmountChange = { amount = it },
+                                        mint = activeMint,
+                                        balanceText = activeMint?.let {
+                                            formatter.formatWalletSats(it.balance, settings.useBitcoinSymbol)
+                                        },
+                                        // One mint means nothing to choose between, so the row
+                                        // drops its chevron and stops opening a picker.
+                                        onPickMint = { mintPickerOpen = true }
+                                            .takeIf { paymentMintChoices.size > 1 },
+                                        onUseMax = {
+                                            activeMint?.balance?.takeIf { it > 0 }?.let {
+                                                amount = UnifiedSendAmountEntry.maxRawForBalance(it, entryContext)
+                                            }
+                                        },
+                                        amountSats = enteredAmount,
+                                        entryPrimary = entryContext.primary,
+                                        onFlipEntryPrimary = {
+                                            settingsManager.setAmountDisplayPrimary(it.rawValue)
+                                        },
+                                        btcPrice = entryFiatPrice,
+                                        fiatCurrencyCode = priceState.currencyCode,
+                                        useBitcoinSymbol = settings.useBitcoinSymbol,
+                                        formatter = formatter,
+                                        cashuRequestFeePresentation = (locked as? LockedRail.Creq)?.let {
+                                            displayedCashuRequestFeeEstimate.amountEntryPresentation(
+                                                usesNetworkRoute = cashuRoute is CashuPaymentRequestRoute.AcquireThenPay,
+                                            ) { fee ->
+                                                formatter.formatWalletSats(fee, settings.useBitcoinSymbol)
+                                            }
+                                        },
+                                        onContinue = {
+                                            cameFromAmount = true
+                                            step = SendStep.Confirm
+                                        },
+                                    )
+                                }
+                            }
 
                             SendStep.Confirm -> ConfirmFace(
                                 rail = locked,
@@ -869,6 +907,7 @@ fun UnifiedSendScreen(
         MintPickerSheet(
             mints = paymentMintChoices,
             activeMintUrl = activeMintUrl,
+            unavailableReason = meltUnavailableReasonFor,
             onSelect = { mint ->
                 mint?.let { selectedMintUrl = it.url }
                 mintPickerOpen = false
@@ -1574,6 +1613,55 @@ private fun ConfirmFace(
         Spacer(Modifier.navigationBarsPadding())
         }
 
+    }
+}
+
+/**
+ * An amountless invoice nothing held can pay (iOS `amountlessBlockedStep`):
+ * the confirm face's caution anatomy in the amount step's place, so no keypad
+ * offers an amount that can't be paid. Its one action, when a held mint can
+ * fund one that pays these, opens Transfer.
+ */
+@Composable
+private fun AmountlessBlockedFace(
+    presentation: AmountlessMeltBlockPresentation,
+    onTransfer: (() -> Unit)?,
+) {
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val scaffoldHeight = maxHeight
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = CashuTheme.spacing.comfortable),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                // The confirm face's hero position, so the caution sits where
+                // a shortfall would.
+                Spacer(Modifier.height(scaffoldHeight * ConfirmTopFraction))
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = ConfirmHeroMinHeight),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    ConfirmCautionFace(message = presentation.headline, detail = presentation.detail)
+                }
+            }
+            val actionTitle = presentation.actionTitle
+            if (actionTitle != null && onTransfer != null) {
+                // The confirm face's shortfall recovery button.
+                PrimaryButton(text = actionTitle, onClick = onTransfer)
+            }
+            Spacer(Modifier.navigationBarsPadding())
+        }
     }
 }
 

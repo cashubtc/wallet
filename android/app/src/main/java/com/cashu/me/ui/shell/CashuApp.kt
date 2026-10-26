@@ -683,6 +683,11 @@ private fun AuthenticatedShell(container: AppContainer) {
                 onViewHistory = {
                     flowHandoff.request(FlowHandoffDestination.NavTab(TopTab.History), close)
                 },
+                // Funding the one mint that can pay an amountless invoice is a
+                // flow swap inside the open sheet, like Send → Send Ecash.
+                onTransferToMint = { mintUrl, invoice ->
+                    activeFlow = WalletFlow.Transfer(openedFromMintUrl = mintUrl, pendingInvoice = invoice)
+                },
             )
 
             WalletFlow.SendEcash -> SendEcashScreen(
@@ -725,6 +730,13 @@ private fun AuthenticatedShell(container: AppContainer) {
                 onClose = close,
                 openedFromMintUrl = flow.openedFromMintUrl,
                 onDismissLockChanged = { flowDismissLocked = it },
+                // Back to Send on the invoice, now that a mint can pay it.
+                onPayInvoice = flow.pendingInvoice?.let { invoice ->
+                    {
+                        pendingSendScan = invoice
+                        activeFlow = WalletFlow.Send
+                    }
+                },
             )
 
             WalletFlow.ConnectMint -> ConnectMintSheetContent(

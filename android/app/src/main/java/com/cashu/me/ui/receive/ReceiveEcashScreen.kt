@@ -149,7 +149,6 @@ fun ReceiveEcashScreen(
                 routed = true
                 onSendPayable(trimmed)
             }
-            is SendDestinationResolution.Hint -> inputHint = res.message
             SendDestinationResolution.Unrecognized ->
                 inputHint = "That doesn't look like a Cashu token. Paste an ecash token to receive."
         }

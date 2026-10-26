@@ -6,6 +6,10 @@ import SwiftUI
 struct MintTransferView: View {
     /// The mint whose row this was opened from, when it was.
     var openedFromMintURL: String? = nil
+    /// A payment waiting on this transfer: Send's can't-pay face opened it to
+    /// fund the mint that can pay. A completed transfer offers to go back.
+    var pendingPayment: SendAmountDestination? = nil
+    var onPayPending: ((SendAmountDestination) -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -802,6 +806,14 @@ struct MintTransferView: View {
             showsDetailsWhileProcessing: true,
             // Tonal like Continue and the commit.
             quietRetry: true,
+            successCTA: pendingPayment.flatMap { payment in
+                onPayPending.map { pay in
+                    .init(title: "Pay invoice") {
+                        HapticFeedback.selection()
+                        pay(payment)
+                    }
+                }
+            },
             onDone: { dismiss() },
             onRetry: retryTransfer
         )
