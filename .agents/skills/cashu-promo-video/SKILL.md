@@ -1,6 +1,6 @@
 ---
 name: cashu-promo-video
-description: Make Cashu.me promo videos in the house style. These are short, silent, dark 1:1 films of the real iOS app, recorded in the Simulator and composited by the bundled Swift renderer. They show whole phones, hard cuts on a 100 BPM grid, one Inter Display caption at a time, the app's ASCII field faint behind, and an end card with "Cashu.me" and the App Store and Google Play badges. Use it whenever someone wants a promo, launch, social, feature or explainer video, clip or reel of the Cashu wallet. Use it too to re-shoot, re-cut or extend the message, send or restore films, or to ask how they were made or why they look the way they do, even without saying "promo" or "skill". Not for README screenshots (ios-sim-screenshots), PR before/after evidence (wallet-ui-visual-review), or Android footage.
+description: Make Cashu.me promo videos in the house style. These are short, silent, dark 1:1 films of the real iOS app, recorded in the Simulator and composited by the bundled Swift renderer. They show whole phones, hard cuts on a 100 BPM grid, one Inter Display caption at a time, the app's ASCII field faint behind, and an end card with "Cashu.me" and the App Store and Google Play badges. Use it whenever someone wants a promo, launch, social, feature or explainer video, clip or reel of the Cashu wallet. It also covers the separate 16:9 3D (Blender) product-film format. Use it too to re-shoot, re-cut or extend the message, send or restore films, or to ask how they were made or why they look the way they do, even without saying "promo" or "skill". Not for README screenshots (ios-sim-screenshots), PR before/after evidence (wallet-ui-visual-review), or Android footage.
 compatibility: macOS with Xcode 27 and an iOS 27 Simulator runtime (iPhone 17 Pro), a Swift 6 toolchain, and ffmpeg/ffprobe on PATH. The local mint uses the repo's CI/setup-cdk.sh binary.
 ---
 
@@ -60,6 +60,11 @@ conflicts with these rules (16:9, light mode, music, voice-over, zooms, a
 mocked screen, a multi-feature reel), name the rule and why it exists, offer
 the in-style version, and deviate only when the maintainer confirms. Record
 any confirmed deviation in the film's comments and the PR.
+
+One deviation is its own confirmed format: the **3D product film**, a 16:9
+Blender film of one phone with a moving camera and no captions. Its decisions
+and traps are in [references/product-film-3d.md](references/product-film-3d.md).
+It doesn't change the rules for the 1:1 films.
 
 ## Workflow
 
@@ -142,7 +147,7 @@ takes. Then clean up (`capture.md` → Cleanup).
 | `tool/Sources/Promo/QA.swift` | Automated checks |
 | `tool/capture/` | `PromoTakes.swift` (the XCTest takes), `take.sh`, sessions, sim/mint/worktree setup |
 | `scripts/` | `contact_sheet.sh` and `region_luma.py` for authoring cuts |
-| `references/` | `style.md`, `films.md`, `capture.md`, `cutting.md`, `qa.md` |
+| `references/` | `style.md`, `films.md`, `capture.md`, `cutting.md`, `qa.md`, and `product-film-3d.md` for the 3D format |
 
 The generated folders (`.build/`, `DerivedData/`, `takes/`, `edl/`, `out/`,
 `mint/work/`) are gitignored. The iOS app is the only platform filmed. There's

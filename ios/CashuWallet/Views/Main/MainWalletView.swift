@@ -671,8 +671,24 @@ struct MainWalletView: View {
                     navigationManager.present(
                         .sheet(.sendEdit(prefill: destination.rawInput))
                     )
+                },
+                onTransferToMint: { mintURL, destination in
+                    navigationManager.present(
+                        .sheet(.mintTransfer(openedFromMintURL: mintURL, pendingPayment: destination))
+                    )
                 }
             )
+        case .mintTransfer(let openedFromMintURL, let pendingPayment):
+            // Handed off from Send's can't-pay face; Pay invoice hands back
+            // to Send's payment sheet the same way.
+            MintTransferView(
+                openedFromMintURL: openedFromMintURL,
+                pendingPayment: pendingPayment,
+                onPayPending: { payment in
+                    navigationManager.present(.sheet(.sendAmount(payment)))
+                }
+            )
+            .environmentObject(walletManager)
         case .cashuRequestPay(let summary):
             CashuPaymentRequestPayView(
                 request: summary,
@@ -730,7 +746,8 @@ struct MainWalletView: View {
         initialAmountDestination: SendAmountDestination? = nil,
         initialRouteExplanation: CashuRequestRouteExplanation? = nil,
         autoAdvanceInitialDestination: Bool = true,
-        onEditDestination: (() -> Void)? = nil
+        onEditDestination: (() -> Void)? = nil,
+        onTransferToMint: ((String, SendAmountDestination) -> Void)? = nil
     ) -> some View {
         UnifiedSendView(
             initialDestination: initialDestination,
@@ -755,6 +772,7 @@ struct MainWalletView: View {
                 navigationManager.present(.sheet(.sendAmount(destination, explanation: explanation)))
             },
             onEditDestination: onEditDestination,
+            onTransferToMint: onTransferToMint,
             onViewHistory: viewHistoryFromSheet,
             initialRouteExplanation: initialRouteExplanation
         )

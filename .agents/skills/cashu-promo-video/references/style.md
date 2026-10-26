@@ -151,3 +151,7 @@ much". Don't bring them back without the maintainer asking:
 - Field curtains, erosion wipes, vault morphs and QR dissolves as transitions.
 - A light-mode variant.
 - 16:9 and 9:16 versions.
+
+The 3D product film ([product-film-3d.md](product-film-3d.md)) is 16:9 and
+moves its camera because it's a separate format the maintainer asked for. It
+doesn't make either acceptable in a house film.

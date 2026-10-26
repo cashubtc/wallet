@@ -31,7 +31,8 @@ enum AmountPairMetrics {
 /// let `minimumScaleFactor` shrink the value and the unit independently, so the
 /// size relationship between them would drift exactly when it matters most — on
 /// the long amounts that trigger scaling. Runs concatenated into one `Text`
-/// scale together.
+/// scale together. An amount being typed is the one exception, and only while
+/// it fits at full size; see `typed`.
 struct AmountLockup: View {
     let parts: AmountParts
     var role: CashuTextRole = .amountHero
@@ -39,13 +40,15 @@ struct AmountLockup: View {
     var value: Double?
     var isDimmed: Bool = false
     var accessibilityPrefix: String?
+    /// The amount is being typed on a keypad.
+    var isEntry: Bool = false
 
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.cashuFonts) private var fonts
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        composed
-            .cashuAmount(role, value: value)
+        lockup
             // A hidden balance's asterisks would sit up near the cap line; draw
             // them on the digits' centre instead. Render-only, like
             // `HiddenDigitsText`, so the line box below stays put.
@@ -60,6 +63,20 @@ struct AmountLockup: View {
             )
     }
 
+    @ViewBuilder
+    private var lockup: some View {
+        if isEntry {
+            // Past full size the one Text takes over, so a long amount still
+            // scales its value and unit together.
+            ViewThatFits(in: .horizontal) {
+                typed
+                composed.cashuAmount(role, value: value)
+            }
+        } else {
+            composed.cashuAmount(role, value: value)
+        }
+    }
+
     /// The value and its unit as runs of a single `Text`.
     ///
     /// A unit word is demoted on three independent axes — size, weight and ink —
@@ -69,37 +86,96 @@ struct AmountLockup: View {
     /// Center the unit beside the numeral's visible height. Keeping the offset
     /// inside the same Text makes the alignment scale with long amounts.
     private var composed: Text {
-        let pointSize = role.pointSize(at: typeSize)
-        let unitSize = pointSize * CashuTextRole.unitScale
-
-        func unitRun(_ word: String) -> Text {
-            Text(word)
-                .font(fonts.font(.sans, size: unitSize, weight: role.weight.oneStepDown))
-                .foregroundStyle(.secondary)
-                .baselineOffset((
-                    fonts.capHeight(.sans, size: pointSize, weight: role.weight)
-                    - fonts.capHeight(.sans, size: unitSize, weight: role.weight.oneStepDown)
-                ) / 2)
-        }
-
-        // A 1pt carrier whose tracking supplies the whole optical gap.
-        let gap = Text(" ")
-            .font(.system(size: 1))
-            .tracking(pointSize * unitGapEm)
-
         switch parts.affix {
         case .none:
             return Text(parts.value)
         case .suffix(let word):
             return Text(parts.value) + gap + unitRun(word)
         case .prefix(let symbol):
-            // The Bitcoin sign is the unit's primary mark, not a subordinate
-            // currency prefix. At the symbol scale it reads visibly smaller
-            // than the numeral lockup, so retain the full point size for ₿.
-            let symbolSize = symbol == "₿" ? pointSize : pointSize * symbolScale
-            return Text(symbol).font(
-                fonts.font(.sans, size: symbolSize, weight: role.weight)
-            ) + Text(parts.value)
+            return symbolRun(symbol) + Text(parts.value)
+        }
+    }
+
+    /// An amount being typed, one view per glyph.
+    ///
+    /// `.numericText` diffs the old string against the new one from both ends,
+    /// so once a grouping separator appears or moves, it rolls the digits in
+    /// between: typing the last 0 of 2,100 rolled a 0 in after the 1 while the
+    /// trailing 0 held still. Here each glyph keeps its place in the typing
+    /// (`AmountGlyph`), so the digit just typed is the one arriving at the end,
+    /// the rest slide aside to make room, and a separator that moves goes out
+    /// of focus where it was and comes into focus where it lands.
+    private var typed: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
+            if case .prefix(let symbol) = parts.affix {
+                symbolRun(symbol)
+            }
+            ForEach(AmountGlyph.glyphs(of: parts.value)) { glyph in
+                Text(String(glyph.id.character))
+                    .transition(reduceMotion ? .opacity : AnyTransition(.blurReplace))
+            }
+            if case .suffix(let word) = parts.affix {
+                gap + unitRun(word)
+            }
+        }
+        // The glyphs carry their own transition, so no value to roll.
+        .cashuAmount(role, value: nil)
+        .fixedSize()
+        // Centred inside the animation, so the lockup re-centres in step with
+        // the glyphs sliding within it.
+        .frame(maxWidth: .infinity)
+        .animation(reduceMotion ? .easeOut(duration: 0.2) : .snappy, value: parts)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var pointSize: CGFloat { role.pointSize(at: typeSize) }
+
+    private func unitRun(_ word: String) -> Text {
+        let unitSize = pointSize * CashuTextRole.unitScale
+        return Text(word)
+            .font(fonts.font(.sans, size: unitSize, weight: role.weight.oneStepDown))
+            .foregroundStyle(.secondary)
+            .baselineOffset((
+                fonts.capHeight(.sans, size: pointSize, weight: role.weight)
+                - fonts.capHeight(.sans, size: unitSize, weight: role.weight.oneStepDown)
+            ) / 2)
+    }
+
+    /// A 1pt carrier whose tracking supplies the whole optical gap.
+    private var gap: Text {
+        Text(" ")
+            .font(.system(size: 1))
+            .tracking(pointSize * unitGapEm)
+    }
+
+    private func symbolRun(_ symbol: String) -> Text {
+        // The Bitcoin sign is the unit's primary mark, not a subordinate
+        // currency prefix. At the symbol scale it reads visibly smaller
+        // than the numeral lockup, so retain the full point size for ₿.
+        let symbolSize = symbol == "₿" ? pointSize : pointSize * symbolScale
+        return Text(symbol).font(
+            fonts.font(.sans, size: symbolSize, weight: role.weight)
+        )
+    }
+}
+
+/// One glyph of an amount being typed, named by its place in the typing rather
+/// than on screen: how many digits come before it, and what it is. The nth digit
+/// typed keeps its name however the grouping around it changes; a separator is
+/// named by the digits before it, so one that moves is a new separator.
+struct AmountGlyph: Identifiable, Equatable {
+    struct ID: Hashable {
+        let digitsBefore: Int
+        let character: Character
+    }
+
+    let id: ID
+
+    static func glyphs(of value: String) -> [AmountGlyph] {
+        var digits = 0
+        return value.map { character in
+            defer { if character.isWholeNumber { digits += 1 } }
+            return AmountGlyph(id: ID(digitsBefore: digits, character: character))
         }
     }
 }

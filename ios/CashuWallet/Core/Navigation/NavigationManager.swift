@@ -15,6 +15,9 @@ enum WalletSheet: Identifiable {
     /// Scans, NFC and Send's own input all land here, so there is one payment UI.
     case sendAmount(SendAmountDestination, explanation: CashuRequestRouteExplanation? = nil)
     case cashuRequestPay(CashuPaymentRequestSummary)
+    /// Transfer opened from Send's can't-pay face: route preset toward the
+    /// mint that can pay, carrying the payment to return to once it is funded.
+    case mintTransfer(openedFromMintURL: String, pendingPayment: SendAmountDestination)
     case scanner
     case sendEcash
     case receiveLightning
@@ -33,6 +36,7 @@ enum WalletSheet: Identifiable {
         case .sendAmount(let destination, _):
             return "sendAmount-\(Data(destination.rawInput.utf8).sha256().base64EncodedString())"
         case .cashuRequestPay(let summary): return "creq-\(Data(summary.encoded.utf8).sha256().base64EncodedString())"
+        case .mintTransfer: return "mintTransfer"
         case .scanner: return "scanner"
         case .sendEcash: return "sendEcash"
         case .receiveLightning: return "receiveLightning"
@@ -188,14 +192,9 @@ final class NavigationManager: ObservableObject {
             content,
             routeForCashuPaymentRequest: walletManager.routeForCashuPaymentRequest
         ) {
-        case .send(let destination, _):
-            // Refuse inline what Send's own input would refuse on paste.
-            if case .melt(_, _, let decoded) = destination,
-               let caution = decoded.amountlessMeltCaution(payableBy: walletManager.mints) {
-                return .reject(message: caution)
-            }
-            return .accept
-        case .receiveToken, .cashuRequestPay:
+        // An invoice no mint can pay as it stands is accepted too: the payment
+        // sheet explains why, with the Transfer that fixes it when one can.
+        case .send, .receiveToken, .cashuRequestPay:
             return .accept
         case .mintURL(let url):
             UIPasteboard.general.string = url

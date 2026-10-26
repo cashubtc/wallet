@@ -853,6 +853,15 @@ double demotion that pushes it under the legibility line. `caption` and
 `.contentTransition(.numericText(value:))` so digits slide rather than reflow.
 This is non-negotiable; numeric jitter on a money value reads as broken.
 
+*Amended 2026-10-24: an amount being typed is the exception.* `.numericText`
+matches the old string to the new one from both ends, so once a grouping
+separator appears or moves it rolls the digits in between: typing the last 0
+of 2,100 rolled a 0 in after the 1. While it fits at full size, the keypad's
+amount (`AmountLockup` with `isEntry`) is one view per glyph, each named by
+its place in the typing. The digit just typed arrives at the end, the others
+slide aside, and a moved separator blur-replaces. Past full size it is the one
+`Text` with `.numericText` again, so a long amount still scales as a unit.
+
 **The System-Style Rule.** *Amended 2026-08-03.* Text is applied by role
 (`.cashuText(_:)` / `.cashuAmount(_:value:)`), and roles resolve to named iOS
 text styles so Dynamic Type works from xSmall through AX5. A bare

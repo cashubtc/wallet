@@ -125,6 +125,18 @@ It prints the frames where the region's mean luma moves. A take is 1206 ×
 - **A small bump before a big one:** a tap's glass press, then its content.
 - **A steady fall:** a sheet leaving.
 
+**Whole-frame change** finds every span where anything on screen moves, and
+proves a stretch is truly still:
+
+```sh
+ffmpeg -hide_banner -i takes/<…>/take-60.mp4 -vf "format=gray,tblend=all_mode=difference,lutyuv=y='if(gt(val\,12)\,255\,0)',signalstats,metadata=print:key=lavfi.signalstats.YAVG" -f null - 2>&1 | grep -E 'pts_time|YAVG'
+```
+
+For each frame it prints the share of pixels that moved by more than 12
+levels against the previous one; 0 means nothing moved. Keep the grey
+conversion and the threshold: a plain `tblend` on YUV reports ~9.5 for frames
+that differ by one level, which is just the CRF-8 re-encode's noise.
+
 Always check a candidate cut frame with your own eyes before committing it:
 extract it with `ffmpeg -ss <t> -i take-60.mp4 -frames:v 1 f.png`.
 
@@ -132,11 +144,21 @@ extract it with `ffmpeg -ss <t> -i take-60.mp4 -frames:v 1 f.png`.
 
 - **Trim idle time freely.** A cut between two frames of the same still
   screen is invisible.
+- **A still screen can still be settling.** In one take a sheet moved 2 px
+  about 5 s after it had visibly landed, so a cut across that moment
+  twitched. Run the whole-frame change check across every cut that should be
+  invisible, and take long holds from after any late settle.
 - **Enter on arrival.** Cut into a screen once it has resolved, past any
   blank page, grey placeholder or spinner.
 - **Leave on departure.** Cut out on the first frame of an exit (a sheet
   going down), or just before an app switch, which records as black.
 - **Don't cut mid-type.** Let a keypad sequence play whole, or cut on a digit.
+- **Type at a person's pace.** XCTest lands a key every ~0.85 s, and played
+  whole that reads as "unnaturally slow… people don't enter amounts that
+  slow". Give each key one 0.3 s span from its first changed frame: by then
+  its digit has all but settled (the last ~0.1 s of easing is all that's
+  left), and the next key's motion covers the cut. Let the last key play out.
+  That's ~3 keys a second, with every frame still at 1×.
 - **Hold the payoff.** The confirmation screen gets the longest span in the
   film.
 - **Work around what's missing.** When the Simulator can't render something

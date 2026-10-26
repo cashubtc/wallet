@@ -55,12 +55,6 @@ class SettingsManager: ObservableObject {
         }
     }
 
-    @Published var autoPasteEcashReceive: Bool {
-        didSet {
-            settingsStore.autoPasteEcashReceive = autoPasteEcashReceive
-        }
-    }
-
     @Published var useWebsockets: Bool {
         didSet {
             settingsStore.useWebsockets = useWebsockets
@@ -195,7 +189,6 @@ class SettingsManager: ObservableObject {
         self.showFiatBalance = settingsStore.showFiatBalance
         self.bitcoinPriceCurrency = settingsStore.bitcoinPriceCurrency
         self.checkSentTokens = settingsStore.checkSentTokens
-        self.autoPasteEcashReceive = settingsStore.autoPasteEcashReceive
         self.useWebsockets = settingsStore.useWebsockets
         self.showP2PKButtonInDrawer = settingsStore.showP2PKButtonInDrawer
         self.p2pkKeys = loadedP2PKKeys.keys

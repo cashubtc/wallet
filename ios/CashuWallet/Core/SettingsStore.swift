@@ -34,11 +34,6 @@ final class SettingsStore {
         set { set(newValue, forKey: StorageKeys.checkSentTokens) }
     }
 
-    var autoPasteEcashReceive: Bool {
-        get { bool(StorageKeys.autoPasteEcashReceive, legacy: StorageKeys.Legacy.autoPasteEcashReceive, default: true) }
-        set { set(newValue, forKey: StorageKeys.autoPasteEcashReceive) }
-    }
-
     var useWebsockets: Bool {
         get { bool(StorageKeys.useWebsockets, legacy: StorageKeys.Legacy.useWebsockets, default: true) }
         set { set(newValue, forKey: StorageKeys.useWebsockets) }

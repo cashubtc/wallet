@@ -57,10 +57,6 @@ class SettingsStore(
         get() = store.boolean(StorageKeys.settingsCheckSentTokens, true)
         set(value) = store.putBoolean(StorageKeys.settingsCheckSentTokens, value)
 
-    var autoPasteEcashReceive: Boolean
-        get() = store.boolean(StorageKeys.settingsAutoPasteEcashReceive, true)
-        set(value) = store.putBoolean(StorageKeys.settingsAutoPasteEcashReceive, value)
-
     var useWebsockets: Boolean
         get() = store.boolean(StorageKeys.settingsUseWebsockets, true)
         set(value) = store.putBoolean(StorageKeys.settingsUseWebsockets, value)

@@ -78,7 +78,6 @@ object StorageKeys {
     const val settingsBitcoinPriceCurrency = "settings.bitcoinPriceCurrency"
     const val settingsCheckPendingOnStartup = "settings.checkPendingOnStartup"
     const val settingsCheckSentTokens = "settings.checkSentTokens"
-    const val settingsAutoPasteEcashReceive = "settings.autoPasteEcashReceive"
     const val settingsUseWebsockets = "settings.useWebsockets"
     const val settingsEnablePaymentRequests = "settings.enablePaymentRequests"
     const val settingsReceivePaymentRequestsAutomatically = "settings.receivePaymentRequestsAutomatically"
