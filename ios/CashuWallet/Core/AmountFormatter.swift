@@ -95,9 +95,6 @@ enum AmountFormatter {
     /// amount, so the length never hints at it.
     static let hiddenDigits = "****"
 
-    /// The received beat while balances are hidden; the visible beat is "+2,500".
-    static let hiddenDelta = "+" + hiddenDigits
-
     /// Spoken in place of a row amount while balances are hidden.
     static let hiddenRowAmountAccessibility = "amount hidden"
 

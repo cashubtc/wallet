@@ -21,8 +21,12 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.BaselineShift
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import com.cashu.me.Core.AmountFormatter
+import com.cashu.me.ui.theme.CashuFonts
+import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.withMonoDigits
 import com.cashu.me.ui.theme.BitcoinSymbol
 
@@ -32,6 +36,29 @@ internal fun bitcoinAmountText(text: String): AnnotatedString = buildAnnotatedSt
     text.forEachIndexed { index, character ->
         if (character == '₿') {
             addStyle(SpanStyle(fontFamily = BitcoinSymbol), index, index + 1)
+        }
+    }
+}
+
+/**
+ * Lowers each run of private mode's asterisks onto the digits' centre line.
+ *
+ * Faces draw `*` up near the cap line, so unlowered asterisks read as a hidden
+ * amount jumping up when they replace the digits. `BaselineShift` is a multiple
+ * of the ascent (see [CashuFonts.ascentRatio]) and moves the glyphs without
+ * changing the line's height, so hiding never reflows a row. A sign beside the
+ * asterisks keeps its own position.
+ */
+internal fun AnnotatedString.withLoweredHiddenDigits(fonts: CashuFonts): AnnotatedString {
+    val mask = AmountFormatter.HiddenDigits
+    var start = text.indexOf(mask)
+    if (start < 0) return this
+    val lowered = SpanStyle(baselineShift = BaselineShift(-fonts.asteriskDropRatio / fonts.ascentRatio))
+    return buildAnnotatedString {
+        append(this@withLoweredHiddenDigits)
+        while (start >= 0) {
+            addStyle(lowered, start, start + mask.length)
+            start = text.indexOf(mask, start + mask.length)
         }
     }
 }
@@ -67,7 +94,7 @@ fun AmountText(
 ) {
     val resolvedColor = if (color == Color.Unspecified) LocalContentColor.current else color
     val finalStyle = style.withMonoDigits().copy(color = resolvedColor)
-    val styledText = annotated ?: bitcoinAmountText(text)
+    val styledText = (annotated ?: bitcoinAmountText(text)).withLoweredHiddenDigits(CashuTheme.fonts)
     val contentAlignment = when (finalStyle.textAlign) {
         TextAlign.Center -> Alignment.Center
         TextAlign.End, TextAlign.Right -> Alignment.CenterEnd

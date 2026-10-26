@@ -23,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -165,7 +166,7 @@ fun BalanceDisplay(
                         // Quiet monochrome beat — no green, no checkmark, no bounce:
                         // the rolling balance above is the primary signal.
                         Text(
-                            text = line.text,
+                            text = AnnotatedString(line.text).withLoweredHiddenDigits(CashuTheme.fonts),
                             style = MaterialTheme.typography.titleMedium
                                 .withMonoDigits()
                                 .copy(fontWeight = FontWeight.SemiBold),

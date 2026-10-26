@@ -879,7 +879,15 @@ final class MultiUnitSupportTests: XCTestCase {
     func testHiddenBalanceIsTheAsterisksAloneWithNoUnit() {
         XCTAssertEqual(AmountFormatter.hiddenBalanceParts, AmountParts(value: "****", affix: .none))
         XCTAssertEqual(AmountFormatter.hiddenBalanceParts.joined, "****")
-        XCTAssertEqual(AmountFormatter.hiddenDelta, "+****")
+    }
+
+    func testHiddenAsterisksDropOntoTheDigitCentreLine() {
+        // SF draws "*" near the cap line; the drop brings its centre down to
+        // half the cap height, about a fifth of an em at hero size.
+        let fonts = CashuFonts.system
+        let drop = fonts.asteriskDrop(.sans, size: 52, weight: .semibold)
+        XCTAssertEqual(drop / 52, 0.18, accuracy: 0.03)
+        XCTAssertGreaterThan(fonts.asteriskDrop(.sans, size: 17, weight: .regular), 0)
     }
 
     func testHideBalancesDefaultsOffPersistsAndSurvivesWalletReset() {

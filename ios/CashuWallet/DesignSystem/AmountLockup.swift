@@ -46,6 +46,10 @@ struct AmountLockup: View {
     var body: some View {
         composed
             .cashuAmount(role, value: value)
+            // A hidden balance's asterisks would sit up near the cap line; draw
+            // them on the digits' centre instead. Render-only, like
+            // `HiddenDigitsText`, so the line box below stays put.
+            .offset(y: parts == AmountFormatter.hiddenBalanceParts ? role.asteriskDrop(at: typeSize, fonts: fonts) : 0)
             .foregroundStyle(isDimmed ? .secondary : .primary)
             // Reserve exactly one line box at the current text size: constant
             // for a given size, so a unit swap never reflows; growing with it,
@@ -96,6 +100,33 @@ struct AmountLockup: View {
             return Text(symbol).font(
                 fonts.font(.sans, size: symbolSize, weight: role.weight)
             ) + Text(parts.value)
+        }
+    }
+}
+
+/// Private mode's asterisks, drawn on the digits' centre line, with an optional
+/// sign that stays where a sign beside digits sits.
+///
+/// Faces draw `*` up near the cap line, so unlowered asterisks read as the
+/// amount jumping up when they replace the digits. The drop is a render offset
+/// rather than a baseline offset: a baseline offset deepens the line box by the
+/// same amount, which would move the rows and the hero this is meant to keep
+/// still. Set the font with `role`'s modifier on this view, as for the digits.
+struct HiddenDigitsText: View {
+    var sign: String = ""
+    /// The role the amount is set in; it sizes the drop.
+    let role: CashuTextRole
+
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.cashuFonts) private var fonts
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
+            if !sign.isEmpty {
+                Text(sign)
+            }
+            Text(AmountFormatter.hiddenDigits)
+                .offset(y: role.asteriskDrop(at: typeSize, fonts: fonts))
         }
     }
 }

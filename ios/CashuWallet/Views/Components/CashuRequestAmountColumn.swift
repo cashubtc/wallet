@@ -48,17 +48,20 @@ struct CashuRequestAmountColumn: View {
         received: Bool
     ) -> some View {
         let hidden = settings.hideBalances
-        let primary = hidden ? AmountFormatter.hiddenDigits : display.primary
         return ZStack(alignment: .trailing) {
             VStack(alignment: .trailing, spacing: 2) {
-                if received {
-                    Text("+\(primary)")
+                if hidden {
+                    HiddenDigitsText(sign: received ? "+" : "", role: .amountRow)
+                        .cashuText(.amountRow)
+                        .foregroundStyle(received ? .green : .secondary)
+                } else if received {
+                    Text("+\(display.primary)")
                         .cashuAmount(.amountRow, value: Double(amount))
                         .foregroundStyle(.green)
                 } else {
                     // No value passed: a waiting amount is static, so it takes the
                     // role's tabular figures without the digit transition.
-                    Text(primary)
+                    Text(display.primary)
                         .cashuText(.amountRow)
                         .foregroundStyle(.secondary)
                 }

@@ -1,3 +1,4 @@
+import CoreText
 import SwiftUI
 import UIKit
 
@@ -38,6 +39,21 @@ struct CashuFonts {
     /// line rather than its baseline, so the two read as one object.
     func capHeight(_ face: Face, size: CGFloat, weight: Font.Weight) -> CGFloat {
         uiFont(face, size: size, weight: weight).capHeight
+    }
+
+    /// How far private mode's asterisks must drop, in points, for their centre
+    /// to meet the digits' centre (half the cap height). Faces draw `*` up
+    /// near the cap line, about a fifth of an em high in SF, and how high
+    /// varies with size and weight, so this is measured from the face rather
+    /// than kept as a constant.
+    func asteriskDrop(_ face: Face, size: CGFloat, weight: Font.Weight) -> CGFloat {
+        let font = uiFont(face, size: size, weight: weight)
+        var character: UniChar = 0x2A
+        var glyph: CGGlyph = 0
+        guard CTFontGetGlyphsForCharacters(font as CTFont, &character, &glyph, 1) else { return 0 }
+        var bounds = CGRect.zero
+        CTFontGetBoundingRectsForGlyphs(font as CTFont, .horizontal, &glyph, &bounds, 1)
+        return bounds.midY - font.capHeight / 2
     }
 }
 

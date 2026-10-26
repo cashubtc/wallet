@@ -411,12 +411,26 @@ struct MainWalletView: View {
     /// down-arrow stays exclusive to row badges). VoiceOver-hidden; the balance
     /// announces the new total. While balances are hidden it reads "+****":
     /// the same beat, without the amount.
+    @ViewBuilder
     private func receivedDeltaBeat(_ amount: UInt64) -> some View {
-        Text(settings.hideBalances ? AmountFormatter.hiddenDelta : "+\(settings.formatAmountShort(amount))")
-            .monospacedDigit()
-            .font(.body.weight(.semibold))
-            .foregroundStyle(.secondary)
-            .accessibilityHidden(true)
+        Group {
+            if settings.hideBalances {
+                HiddenDigitsText(sign: "+", role: semiboldBody)
+            } else {
+                Text("+\(settings.formatAmountShort(amount))")
+            }
+        }
+        .monospacedDigit()
+        .font(.body.weight(.semibold))
+        .foregroundStyle(.secondary)
+        .accessibilityHidden(true)
+    }
+
+    /// The beat's type, so its hidden asterisks drop to the right centre line.
+    private var semiboldBody: CashuTextRole {
+        var role = CashuTextRole.body
+        role.weight = .semibold
+        return role
     }
 
     /// Reuses the sanctioned payment-received celebration spring (Motion §6);

@@ -89,6 +89,14 @@ data class CashuFonts(
      * mis-aligns the lockup silently.
      */
     val ascentRatio: Float,
+    /**
+     * How far private mode's asterisks drop, as a fraction of the em, for
+     * their centre to meet the digits' centre (half the cap height). Faces
+     * draw `*` up near the cap line, so unlowered asterisks read as a hidden
+     * amount jumping up when they replace the digits. Measured from the
+     * shipped face at the weights amounts use.
+     */
+    val asteriskDropRatio: Float,
     val tracking: CashuTracking,
 ) {
     companion object {
@@ -103,6 +111,7 @@ data class CashuFonts(
             mono = FontFamily.Monospace,
             capHeightRatio = 0.711f,
             ascentRatio = 0.927f,
+            asteriskDropRatio = 0.161f,
             tracking = CashuTracking.Roboto,
         )
 
@@ -122,6 +131,9 @@ data class CashuFonts(
             mono = GeistMono,
             capHeightRatio = 0.710f,
             ascentRatio = 1.005f,
+            // 0.1925 at medium, 0.1905 at semibold; the outline's default
+            // instance, which `GeistFontTest` reads, sits at 0.199.
+            asteriskDropRatio = 0.191f,
             tracking = CashuTracking.Geist,
         )
     }

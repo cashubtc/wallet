@@ -35,9 +35,16 @@ struct TransactionAmountColumn: View {
                 // the line limit, the digit transition and the deliberate absence of
                 // autoscale — see `CashuTextRole.amountRow`, which documents why
                 // those last two cannot both be on.
-                Text(formattedAmount)
-                    .cashuAmount(.amountRow, value: Double(transaction.amount))
-                    .foregroundStyle(amountColor)
+                Group {
+                    if settings.hideBalances {
+                        HiddenDigitsText(sign: amountSign, role: .amountRow)
+                            .cashuText(.amountRow)
+                    } else {
+                        Text(amountSign + amountDisplay.primary)
+                            .cashuAmount(.amountRow, value: Double(transaction.amount))
+                    }
+                }
+                .foregroundStyle(amountColor)
 
                 if let secondaryAmount {
                     Text(settings.hideBalances ? AmountFormatter.hiddenDigits : secondaryAmount)
@@ -63,10 +70,8 @@ struct TransactionAmountColumn: View {
 
     // Only a settled receipt gets a sign. Sent, pending, expired, and failed rows stay
     // unsigned; direction remains explicit in the title.
-    private var formattedAmount: String {
-        let value = settings.hideBalances ? AmountFormatter.hiddenDigits : amountDisplay.primary
-        guard transaction.status == .completed, transaction.type == .incoming else { return value }
-        return "+\(value)"
+    private var amountSign: String {
+        transaction.status == .completed && transaction.type == .incoming ? "+" : ""
     }
 
     private var secondaryAmount: String? {
