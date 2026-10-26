@@ -13,11 +13,20 @@ case "${1:-}" in
   ui-settings)
     TEST_ARGUMENTS=(-only-testing:CashuWalletUITests/SettingsUITests)
     ;;
+  ui-live)
+    # Live mint payment and transfer journeys take minutes each; give them a runner.
+    TEST_ARGUMENTS=(-only-testing:CashuWalletUITests/LiveCdkPaymentUITests
+      -only-testing:CashuWalletUITests/LiveNutshellPaymentUITests
+      -only-testing:CashuWalletUITests/LiveMintTransferUITests)
+    ;;
   ui-other)
     # Include every other class, including future UI tests, automatically.
     TEST_ARGUMENTS=(-only-testing:CashuWalletUITests
       -skip-testing:CashuWalletUITests/WalletLifecycleUITests
-      -skip-testing:CashuWalletUITests/SettingsUITests)
+      -skip-testing:CashuWalletUITests/SettingsUITests
+      -skip-testing:CashuWalletUITests/LiveCdkPaymentUITests
+      -skip-testing:CashuWalletUITests/LiveNutshellPaymentUITests
+      -skip-testing:CashuWalletUITests/LiveMintTransferUITests)
     ;;
   *) echo "Unknown iOS test shard: ${1:-missing}" >&2; exit 1 ;;
 esac
