@@ -121,6 +121,12 @@ fun PaymentStatusScreen(
     // instead of the red X, with the warning haptic rather than Reject (iOS
     // `isCaution`). Failure only.
     caution: Boolean = false,
+    // An action above Done once the flow has succeeded (Transfer's "Pay
+    // invoice"). Setting the label reserves its slot in every phase so the
+    // hero never shifts when it appears; it shows only at success, and only
+    // while [onSuccessAction] is non-null.
+    successActionLabel: String? = null,
+    onSuccessAction: (() -> Unit)? = null,
 ) {
     val haptics = LocalHapticFeedback.current
     val walletHaptics = rememberWalletHaptics()
@@ -451,6 +457,19 @@ fun PaymentStatusScreen(
 
             // iOS always reserves the footer footprint, including while processing,
             // so the anchored hero never shifts when the CTA appears.
+            if (successActionLabel != null) {
+                val showsSuccessAction = phase == PaymentStatusPhase.Success && onSuccessAction != null
+                PrimaryButton(
+                    text = successActionLabel,
+                    onClick = onSuccessAction ?: {},
+                    enabled = showsSuccessAction,
+                    modifier = Modifier
+                        .padding(horizontal = CashuTheme.spacing.comfortable)
+                        .padding(bottom = CashuTheme.spacing.snug)
+                        .graphicsLayer { alpha = if (showsSuccessAction) terminalAlpha else 0f }
+                        .then(if (showsSuccessAction) Modifier else Modifier.clearAndSetSemantics {}),
+                )
+            }
             PrimaryButton(
                 text = if (hasAction) doneLabel else " ",
                 onClick = onDone ?: {},

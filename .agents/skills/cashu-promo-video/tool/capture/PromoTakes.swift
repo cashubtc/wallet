@@ -50,9 +50,6 @@ final class PromoTakes: XCTestCase {
         app = XCUIApplication()
         app.launchArguments = [
             "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
-            // The Receive sheet reads the clipboard on open; with this on, a
-            // system "Allow Paste" prompt can land mid-take.
-            "-settings.autoPasteEcashReceive", "<false/>",
         ]
     }
 

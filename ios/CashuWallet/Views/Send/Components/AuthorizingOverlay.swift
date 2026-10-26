@@ -73,6 +73,11 @@ struct PaymentStatusView: View {
     /// Optional custom failure CTA (overrides the default Done / Try Again button).
     var failureCTA: FailureCTA? = nil
 
+    /// An action above Done on a completed success (Transfer's Pay invoice,
+    /// when a payment waits on it). Its footprint is held from the first
+    /// frame, so nothing moves when it appears.
+    var successCTA: FailureCTA? = nil
+
     /// Opens History from the awaiting-mint face. When nil, that face offers Done.
     var onViewHistory: (() -> Void)? = nil
 
@@ -108,6 +113,7 @@ struct PaymentStatusView: View {
         quietRetry: Bool = false,
         awaitingMint: Bool = false,
         failureCTA: FailureCTA? = nil,
+        successCTA: FailureCTA? = nil,
         onViewHistory: (() -> Void)? = nil,
         onDone: @escaping () -> Void,
         onRetry: @escaping () -> Void
@@ -124,6 +130,7 @@ struct PaymentStatusView: View {
         self.quietRetry = quietRetry
         self.awaitingMint = awaitingMint
         self.failureCTA = failureCTA
+        self.successCTA = successCTA
         self.onViewHistory = onViewHistory
         self.onDone = onDone
         self.onRetry = onRetry
@@ -266,13 +273,18 @@ struct PaymentStatusView: View {
                 .animation(.smooth(duration: 0.3).delay(0.2), value: entered)
             }
         } footer: {
-            actionButton
-                .padding(.horizontal)
-                .padding(.bottom, 16)
-                // Rides beat 3 as opacity only — the hit target never moves,
-                // and opacity keeps hit-testing, so Done works from frame 1.
-                .opacity(bandVisible ? 1 : 0)
-                .animation(.smooth(duration: 0.3).delay(0.2), value: entered)
+            VStack(spacing: 12) {
+                if let successCTA {
+                    successActionButton(successCTA)
+                }
+                actionButton
+            }
+            .padding(.horizontal)
+            .padding(.bottom, 16)
+            // Rides beat 3 as opacity only — the hit target never moves,
+            // and opacity keeps hit-testing, so Done works from frame 1.
+            .opacity(bandVisible ? 1 : 0)
+            .animation(.smooth(duration: 0.3).delay(0.2), value: entered)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .animation(.smooth(duration: 0.3), value: phaseKey)
@@ -350,6 +362,20 @@ struct PaymentStatusView: View {
             }
         }
         .frame(width: 72, height: 72)
+    }
+
+    /// Shown only once the outcome is complete; until then it holds its place
+    /// invisibly, like the processing face's reserved Done.
+    private func successActionButton(_ cta: FailureCTA) -> some View {
+        let shown: Bool = {
+            if case .success = phase { return !settlementPending }
+            return false
+        }()
+        return Button(action: cta.action) { Text(cta.title) }
+            .flatSheetSecondaryButton()
+            .disabled(!shown)
+            .opacity(shown ? 1 : 0)
+            .accessibilityHidden(!shown)
     }
 
     @ViewBuilder

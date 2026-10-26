@@ -175,6 +175,9 @@ fun MintTransferScreen(
     onClose: () -> Unit,
     openedFromMintUrl: String? = null,
     onDismissLockChanged: (Boolean) -> Unit = {},
+    // Opened from Send to fund a mint for an invoice: a completed transfer
+    // offers to go back and pay it.
+    onPayInvoice: (() -> Unit)? = null,
 ) {
     val walletState by walletManager.state.collectAsState()
     val settings by settingsManager.state.collectAsState()
@@ -589,6 +592,7 @@ fun MintTransferScreen(
                         useBitcoinSymbol = settings.useBitcoinSymbol,
                         onDone = onClose,
                         onRetry = ::retryTransfer,
+                        onPayInvoice = onPayInvoice,
                     )
                 }
             } else {
@@ -1133,6 +1137,7 @@ private fun StatusFace(
     useBitcoinSymbol: Boolean,
     onDone: () -> Unit,
     onRetry: () -> Unit,
+    onPayInvoice: (() -> Unit)?,
 ) {
     val outcome = (status as? TransferStatus.Done)?.outcome
     val settling = outcome as? MintTransferOutcome.Settling
@@ -1185,6 +1190,10 @@ private fun StatusFace(
             }
         },
         caution = status is TransferStatus.Failed && status.isCaution,
+        // Only once the ecash has arrived: a settling transfer hasn't funded
+        // the mint the invoice needs yet.
+        successActionLabel = "Pay invoice".takeIf { onPayInvoice != null },
+        onSuccessAction = onPayInvoice.takeIf { outcome is MintTransferOutcome.Completed },
         showRowsDuringProcessing = true,
         rows = plan?.let { shown ->
             {

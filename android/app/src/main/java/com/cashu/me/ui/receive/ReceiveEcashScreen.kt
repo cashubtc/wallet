@@ -50,7 +50,6 @@ import com.cashu.me.Core.CashuRequestStore
 import com.cashu.me.Core.CashuRequestNostrReadiness
 import com.cashu.me.Core.NostrService
 import com.cashu.me.Core.SettingsManager
-import com.cashu.me.Core.TokenParser
 import com.cashu.me.Core.WalletManager
 import com.cashu.me.Core.Wallet.userFacingWalletMessage
 import com.cashu.me.Core.createNostrCashuRequest
@@ -71,25 +70,6 @@ import com.cashu.me.ui.theme.rememberReducedMotion
 import com.cashu.me.ui.testing.UiTestTags
 
 private const val TYPE_DEBOUNCE_MS = 400L
-
-internal fun automaticReceiveClipboardToken(
-    enabled: Boolean,
-    currentInput: String,
-    prefilledPayload: String?,
-    clipboardText: () -> String?,
-): String? {
-    if (!enabled || currentInput.isNotBlank() || !prefilledPayload.isNullOrBlank()) return null
-    return clipboardText()?.let(TokenParser::extractToken)
-}
-
-/**
- * Whether an auto-pasted clipboard token should fill the input (and thereby
- * auto-route to the claim page). Only a *confirmed-spent* token is
- * suppressed — when the spent check can't run (offline, unreachable mint,
- * undecodable token) we paste anyway and let the claim page surface its own
- * error. Mirrors iOS `UnifiedReceiveView.shouldAutoPasteClipboardToken`.
- */
-internal fun shouldAutoPasteClipboardToken(spent: Boolean?): Boolean = spent != true
 
 /**
  * The Receive surface — the mirror of [com.cashu.me.ui.send.UnifiedSendScreen]'s
@@ -118,11 +98,9 @@ fun ReceiveEcashScreen(
     onReceiveBitcoin: () -> Unit,
     prefilledPayload: String? = null,
     onPrefilledConsumed: () -> Unit = {},
-    allowAutomaticClipboardRead: Boolean = true,
     onCompactSheetChanged: (Boolean) -> Unit = {},
 ) {
     val walletState by walletManager.state.collectAsState()
-    val settings by settingsManager.state.collectAsState()
     val clipboard = LocalClipboardManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
@@ -188,35 +166,8 @@ fun ReceiveEcashScreen(
                 leaveWithKeyboardDown()
                 onSendPayable(trimmed)
             }
-            is SendDestinationResolution.Hint -> inputHint = res.message
             SendDestinationResolution.Unrecognized ->
                 inputHint = "That doesn't look like a Cashu token. Paste an ecash token to receive."
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        val clipboardToken = automaticReceiveClipboardToken(
-            enabled = allowAutomaticClipboardRead && settings.autoPasteEcashReceive,
-            currentInput = input,
-            prefilledPayload = prefilledPayload,
-            clipboardText = { clipboard.getText()?.text },
-        ) ?: return@LaunchedEffect
-        // Auto-pasting skips this sheet via the typed-input auto-route, so gate
-        // it on a NUT-07 spent check: a spent token would otherwise hijack
-        // every Receive tap just to fail on the claim page. Show a hint instead
-        // and leave the field empty so something else can be received.
-        val mintUrl = TokenParser.mintUrl(clipboardToken)
-        val spent: Boolean? = if (mintUrl != null) {
-            runCatching { walletManager.checkTokenSpent(clipboardToken, mintUrl) }.getOrNull()
-        } else {
-            null
-        }
-        // Don't clobber input the user typed while the check was in flight.
-        if (input.isNotBlank()) return@LaunchedEffect
-        if (shouldAutoPasteClipboardToken(spent)) {
-            input = clipboardToken
-        } else {
-            inputHint = "The token in your clipboard was already redeemed."
         }
     }
 

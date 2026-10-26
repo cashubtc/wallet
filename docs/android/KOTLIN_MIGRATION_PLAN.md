@@ -246,7 +246,7 @@ Create a `CdkWalletGateway` and map each Swift CDK use into a Kotlin gateway met
 Storage keys to port:
 
 - [ ] Wallet: `wallet.mints`, `wallet.activeMintUrl`, `wallet.pendingTokens`, `wallet.pendingReceiveTokens`, `wallet.claimedTokens`, `wallet.transactions`, `wallet.savedTokens`, `wallet.paymentPreimages`, `wallet.meltQuoteFees`, `wallet.mintQuoteTimestamps`, `wallet.processedNPCQuotes`.
-- [ ] Settings: `settings.useBitcoinSymbol`, `settings.showFiatBalance`, `settings.bitcoinPriceCurrency`, `settings.checkPendingOnStartup`, `settings.checkSentTokens`, `settings.autoPasteEcashReceive`, `settings.useWebsockets`, `settings.enablePaymentRequests`, `settings.receivePaymentRequestsAutomatically`, `settings.enableNWC`, `settings.nwcConnections`, `settings.showP2PKButtonInDrawer`, `settings.p2pkKeys`, `settings.checkIncomingInvoices`, `settings.periodicallyCheckIncomingInvoices`, `settings.nostrRelays`, `settings.nostrSignerType`, `settings.amountDisplayPrimary`.
+- [ ] Settings: `settings.useBitcoinSymbol`, `settings.showFiatBalance`, `settings.bitcoinPriceCurrency`, `settings.checkPendingOnStartup`, `settings.checkSentTokens`, `settings.useWebsockets`, `settings.enablePaymentRequests`, `settings.receivePaymentRequestsAutomatically`, `settings.enableNWC`, `settings.nwcConnections`, `settings.showP2PKButtonInDrawer`, `settings.p2pkKeys`, `settings.checkIncomingInvoices`, `settings.periodicallyCheckIncomingInvoices`, `settings.nostrRelays`, `settings.nostrSignerType`, `settings.amountDisplayPrimary`.
 - [ ] NPC: `npc.enabled`, `npc.automaticClaim`, `npc.selectedMint`, `npc.lastCheck`.
 - [ ] Price: `price.enabled`, `price.currencyCode`, `price.cachedBTC`, `price.cachedBTCDate`, plus currency-specific cache keys.
 - [ ] Secure: `wallet_mnemonic`, `nostr_private_key`, generated NWC secret keys, generated P2PK secret keys.
@@ -288,7 +288,7 @@ Storage keys to port:
 
 ### Receive
 
-- [x] Receive ecash token by paste, clipboard auto-paste, scanner, or deep link.
+- [x] Receive ecash token by paste, scanner, or deep link.
 - [x] Parse raw token and `cashu:` URI forms.
 - [x] Show token amount, mint, memo, P2PK lock warning, fee estimate, and spendability state.
 - [x] Block receiving P2PK-locked tokens when no local matching key exists; sign receive attempts with local P2PK keys and mark matched keys used.
@@ -357,7 +357,7 @@ Storage keys to port:
 
 - [x] Theme/amount display settings.
 - [x] Backup seed display and copy flow.
-- [x] Privacy settings: auto-paste, pending checks, WebSocket toggle.
+- [x] Privacy settings: pending checks, WebSocket toggle.
 - [x] Price settings: enable/disable, fiat currency selection, cached BTC spot price, refresh interval.
 - [x] Payment request settings toggles.
 - [x] NWC settings: generate connection, allowance, relay, connection URI, QR, copy, remove, secure secret storage.
@@ -372,7 +372,7 @@ Storage keys to port:
 - [x] Android manifest includes `INTERNET`, `ACCESS_NETWORK_STATE`, `CAMERA`, and `NFC`.
 - [x] Intent filters handle `cashu:` deep links. Add `bitcoin:` or `lightning:` OS-level filters only if product explicitly chooses Android behavior beyond current Swift, which only declares the `cashu` URL scheme.
 - [x] MainActivity forwards initial and single-task `cashu:` VIEW intents into Compose navigation; tokens route to Receive and Cashu payment requests route to Send.
-- [ ] Clipboard integration mirrors Swift paste/copy behavior. Send payment-request suggestions, Receive Cashu-token auto-paste/suggestions, onboarding and Mints mint-URL paste affordances, and Mints mint URL copy/share actions are implemented; history and remaining paste affordances still need parity.
+- [ ] Clipboard integration mirrors Swift paste/copy behavior. Send payment-request suggestions, onboarding and Mints mint-URL paste affordances, and Mints mint URL copy/share actions are implemented; history and remaining paste affordances still need parity.
 - [x] Share integration uses Android `ACTION_SEND`.
 - [x] Haptics map to Compose/Android haptic feedback.
 - [x] Connectivity observation maps `NWPathMonitor` to `ConnectivityManager`.
@@ -841,7 +841,7 @@ Progress column:
 
 | Source file | Migration type | Progress | Kotlin target and checklist |
 | --- | --- | --- | --- |
-| `ios/CashuWallet/Views/Receive/ReceiveView.swift` | Port | [x] | Receive entry, ecash receive flow, amount entry, BOLT11/BOLT12/on-chain method actions, scanner/paste actions, Cashu-token clipboard auto-paste/suggestion, pending receives, success badge/haptics, and receive-side Cashu request creation/detail sheets are implemented. Screenshot/device polish remains in hardening. |
+| `ios/CashuWallet/Views/Receive/ReceiveView.swift` | Port | [x] | Receive entry, ecash receive flow, amount entry, BOLT11/BOLT12/on-chain method actions, scanner/paste actions, pending receives, success badge/haptics, and receive-side Cashu request creation/detail sheets are implemented. Screenshot/device polish remains in hardening. |
 | `ios/CashuWallet/Views/Receive/ReceiveTokenDetailView.swift` | Port | [x] | Token preview, fee estimate, spendability status, P2PK unknown-key guard, receive now/later, receive-later persistence, pending claim, remove actions, and receive success badge/haptics are implemented inside Android Receive. Screenshot/device polish remains in hardening. |
 | `ios/CashuWallet/Views/Receive/ReceiveLightningView.swift` | Port | [x] | BOLT11, BOLT12 amountless/fixed entry, on-chain quote entry, method selection, quote display/copy/share/QR, expiry countdown, manual status refresh, BOLT12/on-chain quote subscriptions, polling fallback, paid-quote mint action, and success badge/haptics after minting are implemented. Live mint/device polish remains in hardening. |
 | `ios/CashuWallet/Views/Receive/CashuRequestDetailView.swift` | Port | [x] | Receive-side Cashu request QR/detail sheet with static QR, share/copy, waiting/received status, payment-received success badge/haptics, editable mint/amount rows, regenerate-new-request action, delete action, and payment attachment display. |
@@ -891,7 +891,7 @@ Progress column:
 - [x] ~~Animated QR/UR is not a CDK core feature~~ Superseded: CDK 0.18 added NUT-16 animated QR tokens with FFI bindings (`Token.urEncoder` / `TokenUrDecoder`). Both apps now use CDK for UR encode/decode; the interim `com.gorunjinian:bcur-kotlin` (Android) and URKit (iOS) dependencies were removed in the 0.18 upgrade.
 - [ ] Android secp256k1/Schnorr key generation must exactly match P2PK/Nostr expectations. Verify library output against Swift fixtures.
 - [ ] NFC behavior is hardware-dependent and must be verified on physical devices.
-- [ ] Android clipboard privacy differs from iOS. Auto-paste should be permission-aware and minimally invasive.
+- [x] ~~Android clipboard privacy differs from iOS. Auto-paste should be permission-aware and minimally invasive.~~ Superseded: Receive no longer reads the clipboard on its own on either platform; only its Paste button does.
 - [x] `checkPendingOnStartup` and NWC include settings beyond currently visible runtime processing. Preserve Swift parity and document future service work separately. Payment Request listener runtime is now implemented; receive-side request generation and settings-UI parity remain tracked separately.
 - [ ] iOS Liquid Glass has no Android equivalent. Compose should preserve hierarchy, contrast, motion, and spacing rather than mimicking implementation details.
 

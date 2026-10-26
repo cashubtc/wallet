@@ -4,16 +4,9 @@ import com.cashu.me.Core.PaymentRequestDecodeResult
 import com.cashu.me.Core.PaymentRequestDecoder
 import com.cashu.me.Core.TokenParser
 import com.cashu.me.Core.compatibleMintsForCashuPaymentRequest
-import com.cashu.me.Core.isAmountlessBolt11
 import com.cashu.me.Models.MintInfo
-import com.cashu.me.Models.PaymentMethodKind
-
-/** Shown only when no held mint advertises NUT-05 `amountless` (iOS parity). */
-internal const val AmountlessBolt11Hint =
-    "None of your mints can pay invoices without an amount. Ask for one with the amount set."
 
 internal sealed interface SendDestinationResolution {
-    data class Hint(val message: String) : SendDestinationResolution
     data class Melt(
         val request: String,
         val decoded: PaymentRequestDecodeResult,
@@ -53,21 +46,16 @@ internal fun resolveSendDestination(
     }
     return when (decoded) {
         is PaymentRequestDecodeResult.Bolt11 -> {
-            // An amountless invoice opens amount entry, like a BOLT12 offer —
-            // unless no held mint can pay one, which would dead-end the quote.
-            if (decoded.isAmountlessBolt11 &&
-                walletMints.none { it.canMelt(PaymentMethodKind.Bolt11, amountless = true) }
-            ) {
-                SendDestinationResolution.Hint(AmountlessBolt11Hint)
-            } else {
-                val known = decoded.amountSats?.takeIf { it > 0L }
-                SendDestinationResolution.Melt(
-                    request = PaymentRequestDecoder.encodedLightningRequest(request) ?: request,
-                    decoded = decoded,
-                    knownAmount = known,
-                    requiresAmountEntry = known == null,
-                )
-            }
+            // An amountless invoice opens amount entry, like a BOLT12 offer.
+            // When no held mint can pay one, that step says so
+            // (`amountlessMeltBlock`) instead of a hint here (iOS parity).
+            val known = decoded.amountSats?.takeIf { it > 0L }
+            SendDestinationResolution.Melt(
+                request = PaymentRequestDecoder.encodedLightningRequest(request) ?: request,
+                decoded = decoded,
+                knownAmount = known,
+                requiresAmountEntry = known == null,
+            )
         }
         is PaymentRequestDecodeResult.Bolt12 -> {
             val known = decoded.amountSats?.takeIf { it > 0L }

@@ -1135,6 +1135,9 @@ struct UnifiedSendView: View {
     let onRoutePayment: (SendAmountDestination, CashuRequestRouteExplanation?) -> Void
     /// Present only when this instance started as the routed amount sheet.
     private let onEditDestination: (() -> Void)?
+    /// Opens Transfer toward the mint (by URL) that can pay this destination
+    /// once funded, carrying the destination so Transfer can hand it back.
+    private let onTransferToMint: ((String, SendAmountDestination) -> Void)?
     /// Closes the sheet on the History tab, where an unconfirmed payment resolves.
     private let onViewHistory: (() -> Void)?
     /// True for the routed payment sheet (`initialAmountDestination != nil`):
@@ -1288,6 +1291,7 @@ struct UnifiedSendView: View {
         onSendEcash: @escaping () -> Void,
         onRoutePayment: @escaping (SendAmountDestination, CashuRequestRouteExplanation?) -> Void,
         onEditDestination: (() -> Void)? = nil,
+        onTransferToMint: ((String, SendAmountDestination) -> Void)? = nil,
         onViewHistory: (() -> Void)? = nil,
         initialRouteExplanation: CashuRequestRouteExplanation? = nil
     ) {
@@ -1300,6 +1304,7 @@ struct UnifiedSendView: View {
         self.onSendEcash = onSendEcash
         self.onRoutePayment = onRoutePayment
         self.onEditDestination = onEditDestination
+        self.onTransferToMint = onTransferToMint
         self.onViewHistory = onViewHistory
 
         routedPresentation = initialAmountDestination != nil
@@ -1396,7 +1401,14 @@ struct UnifiedSendView: View {
                     } else {
                         switch step {
                         case .input: inputContent
-                        case .amount: amountStep.transition(SharedAxis.fadeThrough)
+                        case .amount:
+                            if let block = amountlessMeltBlock {
+                                amountlessBlockedStep(block)
+                                    .transition(SharedAxis.fadeThrough)
+                            } else {
+                                amountStep
+                                    .transition(SharedAxis.fadeThrough)
+                            }
                         case .confirm: confirmStep.transition(SharedAxis.fadeThrough)
                         case .sending, .sent, .failed: EmptyView()
                         }
@@ -1411,6 +1423,7 @@ struct UnifiedSendView: View {
             .frame(maxHeight: prefersCompactSheet ? nil : .infinity, alignment: .top)
             .animation(.smooth(duration: 0.3), value: step)
             .animation(.smooth(duration: 0.3), value: locked != nil)
+            .animation(.smooth(duration: 0.3), value: amountlessMeltBlock)
             .navigationTitle(connectMintRoute?.navigationTitle ?? "Send")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -1730,12 +1743,9 @@ struct UnifiedSendView: View {
     ) {
         switch result {
         case .bolt11, .bolt12:
-            if let notice = result.amountlessMeltCaution(payableBy: availableMeltMints) {
-                // No held mint can pay an amountless invoice: stay on input with
-                // a clean caution instead of an amount step that can't quote.
-                inputHint = notice
-                return
-            }
+            // An amountless invoice no mint can pay as it stands still routes:
+            // the payment sheet says why in place of the keypad, so this
+            // compact sheet never grows a hint (its detent can't animate).
             let request = PaymentRequestDecoder.encodedLightningRequest(from: raw)
                 ?? PaymentRequestParser.normalizeLightningRequest(raw)
             lockMelt(request: request, mode: .lightning, decoded: result)
@@ -1812,10 +1822,11 @@ struct UnifiedSendView: View {
                         sats: amountSats,
                         primary: $settings.amountDisplayPrimary,
                         entryRaw: amountString,
-                        note: errorMessage.map { AmountNote(text: $0, severity: errorSeverity) },
+                        isDimmed: amountExceedsMintBalance,
+                        note: amountStepNote,
                         holdsNoteLine: true
                     )
-                    .animation(reduceMotion ? .easeInOut(duration: 0.2) : .snappy(duration: 0.25), value: errorMessage)
+                    .animation(reduceMotion ? .easeInOut(duration: 0.2) : .snappy(duration: 0.25), value: amountStepNote)
 
                     Spacer(minLength: 0)
 
@@ -1836,7 +1847,7 @@ struct UnifiedSendView: View {
                     // Quiet tonal fill, matching Android's gray keypad CTA —
                     // the white ink stays reserved for the pay-confirm commit.
                     .flatSheetSecondaryButton()
-                    .disabled(amountSats == 0)
+                    .disabled(amountSats == 0 || amountExceedsMintBalance)
                     .padding(.horizontal)
                     .padding(.top, 12)
                     .padding(.bottom, 16)
@@ -1873,7 +1884,7 @@ struct UnifiedSendView: View {
     }
 
     private func continueFromAmount() {
-        guard amountSats > 0 else { return }
+        guard amountSats > 0, !amountExceedsMintBalance else { return }
         HapticFeedback.selection()
         // The preflight's first state changes ride in the step's animation: a
         // change made outside it in the same update turns the cross-fade into
@@ -1912,6 +1923,68 @@ struct UnifiedSendView: View {
             guard step == .amount else { return }
             feeState = .idle
             meltQuote = nil
+        }
+    }
+
+    /// Live over-balance on a melt's keypad: dims the amount, says so in the
+    /// conversion line and holds Continue (Send Ecash and Android parity). Fees
+    /// are settled on confirm. A Cashu Request can top up the mint it pays
+    /// from, so its keypad never blocks on balance.
+    private var amountExceedsMintBalance: Bool {
+        guard case .melt = locked, let mint = currentAmountMint else { return false }
+        return amountSats > 0 && amountSats > mint.balance
+    }
+
+    private var amountStepNote: AmountNote? {
+        if amountExceedsMintBalance {
+            // The mint row states the available balance, so repeating it
+            // here would add visual noise.
+            return AmountNote(text: "Insufficient balance", severity: .caution)
+        }
+        return errorMessage.map { AmountNote(text: $0, severity: errorSeverity) }
+    }
+
+    // MARK: Can't-pay step
+
+    /// Set when this amountless invoice can't be paid from the mints held.
+    /// The amount step then says why instead of a keypad that can't quote;
+    /// read live, so funding a mint that can pay brings the keypad back.
+    private var amountlessMeltBlock: AmountlessMeltBlock? {
+        guard case .melt(_, _, let decoded) = locked else { return nil }
+        return decoded.amountlessMeltBlock(payableBy: availableMeltMints)
+    }
+
+    /// Confirm's shortfall face in the amount step's place, with the Transfer
+    /// that funds a mint able to pay, when one can.
+    private func amountlessBlockedStep(_ block: AmountlessMeltBlock) -> some View {
+        VStack(spacing: 0) {
+            PayFlowScaffold {
+                ConfirmCautionFace(
+                    message: AmountlessMeltBlock.headline,
+                    detail: block.detail(zero: AmountFormatter.sats(0, useBitcoinSymbol: settings.useBitcoinSymbol))
+                )
+            } details: {
+                EmptyView()
+            } footer: {
+                EmptyView()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            if let title = block.transferActionTitle,
+               case .capableMintsEmpty(_, let mintURL?) = block,
+               let locked, let onTransferToMint {
+                // Quiet tonal, like confirm's Choose Another Mint.
+                Button {
+                    HapticFeedback.selection()
+                    onTransferToMint(mintURL, locked)
+                } label: {
+                    Text(title)
+                }
+                .flatSheetSecondaryButton()
+                .accessibilityIdentifier("cashu.send.amountless.transfer")
+                .padding(.horizontal)
+                .padding(.bottom, 16)
+            }
         }
     }
 
@@ -3101,8 +3174,6 @@ struct MintSelectorSheet: View {
             Group {
                 if sourceMints.isEmpty {
                     emptyStateView
-                } else if displayMints.isEmpty {
-                    noCompatibleMintsView
                 } else {
                     mintListView
                 }
@@ -3123,30 +3194,22 @@ struct MintSelectorSheet: View {
         )
     }
 
-    private var noCompatibleMintsView: some View {
-        NativeEmptyState(
-            title: "No Compatible Mints",
-            systemImage: "exclamationmark.triangle",
-            description: amountlessBolt11
-                ? "None of your mints can pay invoices without an amount."
-                : paymentMethod.map { "None of your mints support \($0.displayName) payments." }
-        )
+    /// A mint that can't pay with `paymentMethod` stays listed, dimmed, with
+    /// the reason in place of its balance, so the user sees why it is not on
+    /// offer rather than finding it missing.
+    private func reason(for mint: MintInfo) -> String? {
+        if let reason = unavailableReason?(mint) { return reason }
+        guard let paymentMethod, !mint.canMelt(paymentMethod, amountless: amountlessBolt11) else { return nil }
+        return paymentMethod.meltUnavailableReason(amountless: amountlessBolt11)
     }
 
     private var displayMints: [MintInfo] {
-        let filteredMints: [MintInfo]
-        if let paymentMethod {
-            filteredMints = sourceMints.filter {
-                $0.canMelt(paymentMethod, amountless: amountlessBolt11)
-            }
-        } else {
-            filteredMints = sourceMints
-        }
-
-        return MintSelection.sorted(
-            filteredMints,
+        MintSelection.sorted(
+            sourceMints,
             selectedID: selectedMint?.id,
-            isAvailable: unavailableReason.map { reason in { (mint: MintInfo) in reason(mint) == nil } },
+            isAvailable: unavailableReason != nil || paymentMethod != nil
+                ? { reason(for: $0) == nil }
+                : nil,
             minimumAmount: minimumAmount
         )
     }
@@ -3159,7 +3222,7 @@ struct MintSelectorSheet: View {
         ScrollView {
             VStack(spacing: 0) {
                 ForEach(displayMints) { mint in
-                    let reason = unavailableReason?(mint)
+                    let reason = reason(for: mint)
                     Button(action: { selectMint(mint) }) {
                         MintPickerRow(mint: mint, subtitle: reason ?? mintSubtitle(for: mint), isSelected: selectedMint?.id == mint.id, showsSelectionBadge: true)
                         .padding(.horizontal, 20)

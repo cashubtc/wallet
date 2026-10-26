@@ -206,14 +206,15 @@ final class AmountlessBolt11MeltTests: XCTestCase {
     private func mint(
         _ name: String,
         methods: [PaymentMethodKind] = [.bolt11],
-        amountless: Bool?
+        amountless: Bool?,
+        balance: UInt64 = 1_000
     ) -> MintInfo {
         var mint = MintInfo(
             url: "https://\(name).example",
             name: name,
             description: nil,
             isActive: true,
-            balance: 1_000
+            balance: balance
         )
         mint.supportedMeltMethods = methods
         mint.supportsAmountlessBolt11Melt = amountless
@@ -263,26 +264,100 @@ final class AmountlessBolt11MeltTests: XCTestCase {
         XCTAssertEqual(roundTripped.supportsAmountlessBolt11Melt, false)
     }
 
-    func testAmountlessCautionOnlyWhenNoHeldMintCanPay() {
+    func testAmountlessBlockOnlyWhenNoFundedMintCanPay() {
         let amountless = PaymentRequestDecodeResult.bolt11(amountSats: nil, description: nil)
 
         XCTAssertTrue(amountless.isAmountlessBolt11)
-        XCTAssertNil(amountless.amountlessMeltCaution(payableBy: [
+        XCTAssertNil(amountless.amountlessMeltBlock(payableBy: [
             mint("no", amountless: false),
             mint("yes", amountless: true),
         ]))
+        // A mint never fetched since the flag landed still counts as able.
+        XCTAssertNil(amountless.amountlessMeltBlock(payableBy: [mint("unknown", amountless: nil)]))
         XCTAssertEqual(
-            amountless.amountlessMeltCaution(payableBy: [mint("no", amountless: false)]),
-            "None of your mints can pay invoices without an amount. Ask for one with the amount set."
+            amountless.amountlessMeltBlock(payableBy: [mint("no", amountless: false)]),
+            .noCapableMint
         )
+        XCTAssertEqual(amountless.amountlessMeltBlock(payableBy: []), .noCapableMint)
 
         let fixed = PaymentRequestDecodeResult.bolt11(amountSats: 21, description: nil)
         XCTAssertFalse(fixed.isAmountlessBolt11)
-        XCTAssertNil(fixed.amountlessMeltCaution(payableBy: [mint("no", amountless: false)]))
+        XCTAssertNil(fixed.amountlessMeltBlock(payableBy: [mint("no", amountless: false)]))
 
         let offer = PaymentRequestDecodeResult.bolt12(amountSats: nil, description: nil)
         XCTAssertFalse(offer.isAmountlessBolt11)
-        XCTAssertNil(offer.amountlessMeltCaution(payableBy: []))
+        XCTAssertNil(offer.amountlessMeltBlock(payableBy: []))
+    }
+
+    func testAmountlessBlockNamesTheEmptyMintAndTheTransferThatFundsIt() {
+        let amountless = PaymentRequestDecodeResult.bolt11(amountSats: nil, description: nil)
+        // The reported case: the default mint holds the sats but can't pay
+        // amountless invoices; the only mint that can is empty.
+        let funded = mint("Antifiat", amountless: false, balance: 103_577)
+        let empty = mint("Minibits", amountless: true, balance: 0)
+
+        let block = amountless.amountlessMeltBlock(payableBy: [funded, empty])
+        XCTAssertEqual(
+            block,
+            .capableMintsEmpty(capableMintNames: ["Minibits"], transferDestinationURL: empty.url)
+        )
+        XCTAssertEqual(
+            block?.detail(zero: "₿0"),
+            "Only Minibits can pay invoices without an amount, and it holds ₿0."
+        )
+        XCTAssertEqual(block?.transferActionTitle, "Transfer to Minibits")
+    }
+
+    func testAmountlessBlockWithoutATransferAsksForAnAmount() {
+        let amountless = PaymentRequestDecodeResult.bolt11(amountSats: nil, description: nil)
+        let empty = mint("Minibits", amountless: true, balance: 0)
+
+        // Nothing funded anywhere: no Transfer can help.
+        let alone = amountless.amountlessMeltBlock(payableBy: [empty])
+        XCTAssertEqual(alone, .capableMintsEmpty(capableMintNames: ["Minibits"], transferDestinationURL: nil))
+        XCTAssertEqual(
+            alone?.detail(zero: "0 sat"),
+            "Only Minibits can pay invoices without an amount, and it holds 0 sat. Ask for one with the amount set."
+        )
+        XCTAssertNil(alone?.transferActionTitle)
+
+        // The funded mint can't send over Lightning, so it can't fund one either.
+        let onchainOnly = mint("Vault", methods: [.onchain], amountless: false, balance: 5_000)
+        XCTAssertNil(amountless.amountlessMeltBlock(payableBy: [onchainOnly, empty])?.transferActionTitle)
+
+        XCTAssertEqual(
+            AmountlessMeltBlock.noCapableMint.detail(zero: "₿0"),
+            "None of your mints can pay invoices without an amount. Ask for one with the amount set."
+        )
+        XCTAssertNil(AmountlessMeltBlock.noCapableMint.transferActionTitle)
+    }
+
+    func testAmountlessBlockWithSeveralEmptyMintsTransfersToTheFirst() {
+        let amountless = PaymentRequestDecodeResult.bolt11(amountSats: nil, description: nil)
+        let first = mint("Minibits", amountless: true, balance: 0)
+        let second = mint("Macadamia", amountless: true, balance: 0)
+        let funded = mint("Antifiat", amountless: false, balance: 500)
+
+        let block = amountless.amountlessMeltBlock(payableBy: [funded, first, second])
+        XCTAssertEqual(
+            block,
+            .capableMintsEmpty(capableMintNames: ["Minibits", "Macadamia"], transferDestinationURL: first.url)
+        )
+        XCTAssertEqual(block?.detail(zero: "₿0"), "The mints that can pay invoices without an amount are empty.")
+        XCTAssertEqual(block?.transferActionTitle, "Transfer ecash")
+
+        XCTAssertEqual(
+            AmountlessMeltBlock.capableMintsEmpty(capableMintNames: ["A", "B"], transferDestinationURL: nil)
+                .detail(zero: "₿0"),
+            "The mints that can pay invoices without an amount are empty. Ask for one with the amount set."
+        )
+    }
+
+    func testMeltUnavailableReasonsNameTheMissingAbility() {
+        XCTAssertEqual(PaymentMethodKind.bolt11.meltUnavailableReason(amountless: true), "Can't pay invoices without an amount")
+        XCTAssertEqual(PaymentMethodKind.bolt11.meltUnavailableReason(amountless: false), "Can't pay Lightning invoices")
+        XCTAssertEqual(PaymentMethodKind.bolt12.meltUnavailableReason(amountless: true), "Can't pay reusable invoices")
+        XCTAssertEqual(PaymentMethodKind.onchain.meltUnavailableReason(amountless: false), "Can't send on-chain")
     }
 
     func testAmountlessBolt11MeltUsesEnteredAmountInMillisatoshis() throws {

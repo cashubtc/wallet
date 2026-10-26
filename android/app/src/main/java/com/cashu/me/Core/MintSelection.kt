@@ -24,6 +24,16 @@ internal fun recommendedSendMint(
         ?: candidates.sortedWith(mintBalanceNameComparator()).firstOrNull()
 }
 
+/** The NUT-05 rail a locked melt pays over (iOS `meltPaymentMethod`). */
+internal fun meltPaymentMethod(decoded: PaymentRequestDecodeResult): PaymentMethodKind? = when (decoded) {
+    is PaymentRequestDecodeResult.Bolt11,
+    is PaymentRequestDecodeResult.LightningAddress -> PaymentMethodKind.Bolt11
+    is PaymentRequestDecodeResult.Bolt12 -> PaymentMethodKind.Bolt12
+    is PaymentRequestDecodeResult.Onchain -> PaymentMethodKind.Onchain
+    is PaymentRequestDecodeResult.CashuPaymentRequest,
+    PaymentRequestDecodeResult.Unrecognized -> null
+}
+
 internal fun compatibleMintsForMeltPayment(
     mints: List<MintInfo>,
     paymentMethod: PaymentMethodKind,

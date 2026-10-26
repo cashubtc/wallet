@@ -1451,9 +1451,6 @@ class WalletManager(
     suspend fun estimateCashuPaymentRequestFee(amountSats: Long, mintUrl: String): Long =
         gateway.estimateCashuPaymentRequestFee(amountSats, mintUrl)
 
-    suspend fun checkTokenSpent(tokenString: String, mintUrl: String): Boolean =
-        gateway.checkTokenSpendable(tokenString, mintUrl)
-
     suspend fun payCashuPaymentRequest(encoded: String, customAmountSats: Long?, preferredMintURL: String?) {
         withLoading {
             payCashuPaymentRequestAndRefresh(

@@ -1138,6 +1138,8 @@ struct OnboardingView: View {
                             .font(.subheadline)
                     }
                     .foregroundStyle(.secondary)
+                    // Include the gap between the icon and caption in the tap target.
+                    .contentShape(Rectangle())
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel("Reveal seed phrase")
                     .accessibilityHint("Shows your 12-word recovery phrase")
