@@ -75,8 +75,19 @@ xcodebuild 30 s after the suite's last line.
 
 Convert a take to constant frame rate before cutting (the analysis does this
 itself as `take-60.mp4`). `recordVideo` writes a frame only when pixels change,
-and its timestamps are wall-clock accurate, so `ffmpeg -vf fps=60` (frames
-held, no renumbering) gives frame i = take time i/60.
+and its decode timestamps are the wall clock. Its presentation timestamps are
+sometimes scrambled, though: one take is clean, the next interleaves frames
+2–5 s apart, and `-vf fps=60` on it shows old and new screens alternating. A
+1 fps contact sheet can look plausible either way. So always retime by decode
+order first, then hold frames to 60 fps, which gives frame i = take time i/60:
+
+```sh
+ffmpeg -i take.mp4 -c copy -bsf:v setts=pts=DTS-STARTDTS:dts=DTS-STARTDTS take-dts.mp4
+ffmpeg -i take-dts.mp4 -vf fps=60 -an -c:v libx264 -crf 8 take-60.mp4
+```
+
+`Analyze.ensureCFR` does both. Delete any `take-60.mp4` made by an older
+`ensureCFR`, which skipped the retime.
 
 ## Writing a take
 
@@ -105,7 +116,14 @@ phone) or on `testShare` + `testClaim` (two phones).
   pixels, not marks (see `cutting.md`).
 - **Type on the app's keypad with `keypad("2500")`.** It resolves the keys
   once and taps by coordinate. Resolving per tap costs about 1 s and films as
-  one digit per second.
+  one digit per second. Even by coordinate, XCTest lands a key only every
+  ~0.85 s, slower than a person types, so the edit sets the typing pace
+  (`cutting.md` → rules of thumb).
+- **A pressed state only films if the press is held.** `tap()` lifts within a
+  frame or two, so no press shows. `press(forDuration: 0.35)` holds a capsule
+  button's press (97% scale, 85% opacity) on screen for ~0.4 s. List rows
+  and the keypad's plain keys only flash however long they're held (an
+  instant highlight that fades over ~0.4 s).
 - **Use the app's own controls,** the way a person would. Paste with Cashu's
   **Paste** button (`app.buttons["Paste from clipboard"]`), not a long-press
   on the field. Other apps are different: Messages has no paste button, so

@@ -5,18 +5,29 @@ import Foundation
 /// Reads a take's events out of its pixels, so in-points are frame-exact
 /// rather than trusting the driver's wall-clock marks.
 enum Analyze {
+    /// The take at a constant 60 fps, so frame i is take time i/60.
+    /// `recordVideo`'s decode timestamps are the wall clock, but its
+    /// presentation timestamps are sometimes scrambled (frames seconds apart
+    /// interleave), so the take is retimed by decode order before `fps=60`.
     static func ensureCFR(_ dir: URL) throws -> URL {
         darkTake = dir.path.contains("-dark/")
         let out = dir.appendingPathComponent("take-60.mp4")
         if FileManager.default.fileExists(atPath: out.path) { return out }
+        let dts = dir.appendingPathComponent("take-dts.mp4")
+        try ffmpeg(["-i", dir.appendingPathComponent("take.mp4").path, "-c", "copy",
+                    "-bsf:v", "setts=pts=DTS-STARTDTS:dts=DTS-STARTDTS", dts.path], "retime", dir)
+        try ffmpeg(["-i", dts.path, "-vf", "fps=60", "-an", "-c:v", "libx264", "-crf", "8", "-preset", "fast",
+                    out.path], "CFR", dir)
+        return out
+    }
+
+    private static func ffmpeg(_ args: [String], _ step: String, _ dir: URL) throws {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        p.arguments = ["ffmpeg", "-v", "error", "-y", "-i", dir.appendingPathComponent("take.mp4").path,
-                       "-vf", "fps=60", "-an", "-c:v", "libx264", "-crf", "8", "-preset", "fast", out.path]
+        p.arguments = ["ffmpeg", "-v", "error", "-y"] + args
         try p.run()
         p.waitUntilExit()
-        guard p.terminationStatus == 0 else { throw PromoError("ffmpeg CFR failed for \(dir.lastPathComponent)") }
-        return out
+        guard p.terminationStatus == 0 else { throw PromoError("ffmpeg \(step) failed for \(dir.lastPathComponent)") }
     }
 
     /// Dark-mode takes: "ink" is light on black, so `darkness` measures
