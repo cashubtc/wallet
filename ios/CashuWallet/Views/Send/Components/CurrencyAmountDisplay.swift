@@ -130,7 +130,8 @@ struct CurrencyAmountDisplay: View {
                 parts: primaryParts,
                 role: role,
                 value: primaryNumericValue,
-                isDimmed: isDimmed
+                isDimmed: isDimmed,
+                isEntry: entryRaw != nil
             )
             .animation(reduceMotion ? .easeOut(duration: 0.2) : .snappy, value: isDimmed)
 
