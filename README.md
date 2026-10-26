@@ -1,61 +1,89 @@
-# Cashu Wallet
+<div align="center">
 
-Native Cashu ecash wallets for iOS and Android.
+  <img src="docs/assets/app-icon-rounded.svg" width="144" height="144" alt="Cashu Me app icon">
 
-Cashu is Bitcoin-backed ecash: a mint issues bearer tokens against sats
-deposited over Lightning, and payments between wallets are private by design —
-the mint does not learn who pays whom. Cashu Wallet wraps that model in a
-first-class native app on each platform — SwiftUI on iOS, Jetpack Compose on
-Android — with the same surfaces, copy, and behavior on both.
+  <h1>Cashu Me</h1>
 
-iOS on the first row, Android on the second — same journey on both platforms:
+  <p><strong>Bitcoin ecash. Native on iOS and Android.</strong></p>
 
-| Onboarding | Wallet | Receive | Send |
-| :---: | :---: | :---: | :---: |
-| <img src="docs/screenshots/ios/01-welcome.png" alt="iOS onboarding" width="220"> | <img src="docs/screenshots/ios/06-wallet-home.png" alt="iOS wallet" width="220"> | <img src="docs/screenshots/ios/05-payment-received.png" alt="iOS payment received" width="220"> | <img src="docs/screenshots/ios/08-send-amount.png" alt="iOS send amount" width="220"> |
-| <img src="docs/screenshots/android/01-welcome.png" alt="Android onboarding" width="220"> | <img src="docs/screenshots/android/06-wallet-home.png" alt="Android wallet" width="220"> | <img src="docs/screenshots/android/05-payment-received.png" alt="Android payment received" width="220"> | <img src="docs/screenshots/android/08-send-amount.png" alt="Android send amount" width="220"> |
+  <p>
+    Send and receive private ecash payments, pay over Lightning,<br>
+    and manage your mints in one open-source wallet.
+  </p>
 
-The full capture set for both platforms — onboarding through settings — lives
-in [`docs/screenshots/`](docs/screenshots/). All shots show a test wallet
-funded from the public [Testnut mint](https://testnut.cashu.space); the
-balances are not real sats.
+  <p>
+    <a href="https://github.com/cashubtc/wallet/releases/latest"><strong>Download for Android</strong></a>
+    &nbsp;·&nbsp;
+    <a href="ios/README.md#building">Build for iOS</a>
+    &nbsp;·&nbsp;
+    <a href="#features">Features</a>
+    &nbsp;·&nbsp;
+    <a href="#development">Development</a>
+  </p>
+
+  <img src="docs/assets/wallet-hero.png" width="100%" alt="Cashu Me home screens in dark and light mode">
+
+</div>
+
+## Everyday payments, with ecash
+
+[Cashu](https://cashu.space) is a Bitcoin ecash protocol. A mint holds bitcoin
+and issues ecash that you keep in your wallet. Blind signatures let you make
+ecash payments without the mint learning who pays whom.
+
+Cashu Me brings that to iPhone and Android, with native interfaces built
+in SwiftUI and Jetpack Compose. Receive your first sats, share ecash as a QR
+code or text, and move between ecash and Lightning without running a node.
+
+Ecash depends on the mint holding and redeeming its bitcoin backing. Choose
+mints you trust; a seed phrase cannot protect you from a mint losing funds
+or going offline.
 
 ## Features
 
-- **Ecash** — hold sats as Cashu tokens; send and receive them as QR codes or
-  copyable strings, without touching a Lightning channel.
-- **Lightning** — fund the wallet and pay invoices through the mint, with
-  BOLT11 invoices and BOLT12 offers.
-- **On-chain Bitcoin** — receive to and send from mints that support it.
-- **Cashu Requests (NUT-18)** — publish a reusable, address-shaped payment
-  request that senders pay over Nostr relays, without leaking your mint or
-  balance to anyone watching a single endpoint.
-- **NFC contactless** — tap-to-pay ecash between devices.
-- **Locked ecash (P2PK)** — lock a send to the recipient's key so only they
-  can redeem it.
-- **Multi-mint** — add mints by URL or QR, discover public mints, keep
-  per-mint balances visible, and transfer a balance from one mint to another.
-- **Nostr Wallet Connect** — let other apps spend from the wallet with scoped
-  permissions.
-- **Backup & restore** — BIP-39 seed phrase backup and restore, plus an App
-  Lock behind the platform's biometrics.
+- **Send ecash.** Share Cashu tokens as QR codes or text. Lock tokens to a
+  recipient's key with P2PK.
+- **Pay with Lightning.** Send and receive with BOLT11 invoices and BOLT12
+  offers, and pay Lightning addresses.
+- **Use on-chain Bitcoin.** Send to and receive from Bitcoin addresses through
+  mints that support it.
+- **Receive with Cashu Requests.** Share reusable payment requests and receive
+  ecash over Nostr relays.
+- **Manage multiple mints.** Add mints by URL or QR code, discover public mints,
+  see each balance, and transfer funds between mints.
+- **Go contactless.** Send and receive ecash using NFC on supported devices.
+- **Connect other apps.** Use Nostr Wallet Connect with scoped permissions.
+- **Back up and restore.** Back up your seed phrase, restore your wallet, and
+  recover a deposit using its mint quote ID. Protect access with App Lock.
 
-## Repository layout
+Payment methods and fees depend on your mint. NFC availability depends on the
+device and platform. See the [deposit recovery guide](docs/product/deposit-recovery.md)
+for recovery requirements and supported payment methods.
 
-- `ios/` — SwiftUI app, Xcode project, unit + UI tests, helper scripts.
-  Targets iOS 18+.
-- `android/` — Kotlin / Jetpack Compose app and Gradle project.
-  `minSdk 26`, `targetSdk 36`.
-- `docs/product/` — shared product, design, and copy contracts both apps
-  implement. Platform notes live in `docs/ios/` and `docs/android/`.
-- `CI/` — local mint infrastructure for integration tests: Nutshell and CDK
-  mints running a FakeWallet Lightning backend, so end-to-end payment flows
-  run without a real Lightning node.
+## Get the wallet
 
-Both apps are built on the [Cashu Dev Kit](https://github.com/cashubtc/cdk)
-(CDK) through its native FFI bindings.
+| Platform | Install | Requirements |
+| --- | --- | --- |
+| Android | Download the APK from the [latest release](https://github.com/cashubtc/wallet/releases/latest) | Android 8.0+ |
+| iOS | [Build with Xcode](ios/README.md#building) | iOS 18+ |
 
-## Building
+Release notes and earlier downloads are on the
+[releases page](https://github.com/cashubtc/wallet/releases).
+
+## Development
+
+Both apps use the [Cashu Dev Kit](https://github.com/cashubtc/cdk) through
+native bindings. Shared product and design guidance lives in
+[`docs/product/`](docs/product/).
+
+| Directory | Contents |
+| --- | --- |
+| [`ios/`](ios/) | SwiftUI app, Xcode project, and iOS tests |
+| [`android/`](android/) | Kotlin / Jetpack Compose app and Android tests |
+| [`docs/screenshots/`](docs/screenshots/) | App screenshots from both platforms |
+| [`CI/`](CI/) | Local Nutshell and CDK mints for integration tests |
+
+### Building
 
 iOS (requires Xcode with the iOS 18+ SDK):
 
@@ -75,7 +103,7 @@ cd android
 ./gradlew --no-daemon :app:assembleDebug
 ```
 
-## Testing
+### Testing
 
 Unit tests:
 
@@ -96,6 +124,18 @@ locally — see [`CI/README.md`](CI/README.md) for the full setup:
 ./CI/setup-nutshell.sh && ./CI/start-nutshell.sh
 ./CI/setup-cdk.sh && ./CI/start-cdk.sh
 ```
+
+## Contributing
+
+[Report a bug](https://github.com/cashubtc/wallet/issues), suggest an improvement,
+or open a pull request. For interface changes, consider both iOS and Android
+and include screenshots of the affected flows.
+
+Platform setup: [iOS](ios/README.md) · [Android](android/README.md).
+
+## Security
+
+Report vulnerabilities privately using the contact in [SECURITY.md](SECURITY.md).
 
 ## License
 
