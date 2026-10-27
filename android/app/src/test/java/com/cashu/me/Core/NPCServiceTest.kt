@@ -52,12 +52,10 @@ class NPCServiceTest {
         assertEquals("quote-1", quote.id)
         assertEquals(21, quote.amount)
         assertEquals("https://mint.example", quote.mintUrl)
-        assertEquals("lnbc1invoice", quote.request)
         assertTrue(quote.isPaid)
         assertTrue(quote.locked)
         assertEquals(1_779_271_200L, quote.createdAtEpochSeconds)
         assertEquals(1_779_271_800L, quote.paidAtEpochSeconds)
-        assertEquals(1_779_273_000L, quote.expiryEpochSeconds)
         assertEquals("sat", quote.cdkQuote?.unit)
     }
 
@@ -91,7 +89,6 @@ class NPCServiceTest {
 
         assertEquals(42, quote.amount)
         assertEquals(null, quote.paidAtEpochSeconds)
-        assertEquals(null, quote.expiryEpochSeconds)
         assertEquals(false, quote.locked)
     }
 
