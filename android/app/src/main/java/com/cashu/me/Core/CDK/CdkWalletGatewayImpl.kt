@@ -476,7 +476,7 @@ class CdkWalletGatewayImpl : WalletGateway {
         // Import only once. A retry must retain CDK's newer counters and saga
         // reservation instead of replacing them with an external quote snapshot.
         if (database?.getMintQuote(quote.id) == null) {
-            replaceStoredMintQuote(quote.toCdkMintQuote(mintUrl))
+            replaceStoredMintQuote(npcMintQuote(quote, mintUrl))
         }
         val proofs = walletFor(mintUrl).mintUnified(
             quoteId = quote.id,
@@ -1247,35 +1247,6 @@ class CdkWalletGatewayImpl : WalletGateway {
             updatedAtEpochSeconds = updatedAt.toLong(),
             unit = unit.toDomainUnit(),
         )
-    }
-
-    private fun NPCQuote.toCdkMintQuote(mintUrl: String): CdkMintQuote {
-        val amountValue = amount.takeIf { it > 0 }?.toCdkAmount()
-        val state = toCdkQuoteState()
-        return CdkMintQuote(
-            id = id,
-            amount = amountValue,
-            unit = CdkCurrencyUnit.Sat,
-            request = request.orEmpty(),
-            state = state,
-            expiry = expiryEpochSeconds?.takeIf { it > 0 }?.toULong() ?: 0uL,
-            mintUrl = CdkMintUrl(mintUrl),
-            amountIssued = if (state == CdkQuoteState.ISSUED) amountValue ?: CdkAmount(0uL) else CdkAmount(0uL),
-            amountPaid = if (isPaid || state == CdkQuoteState.ISSUED) amountValue ?: CdkAmount(0uL) else CdkAmount(0uL),
-            updatedAt = 0uL,
-            estimatedBlocks = null,
-            paymentMethod = CdkPaymentMethod.Bolt11,
-            secretKey = null,
-            usedByOperation = null,
-            version = 0u,
-        )
-    }
-
-    private fun NPCQuote.toCdkQuoteState(): CdkQuoteState = when (state?.uppercase()) {
-        "PAID" -> CdkQuoteState.PAID
-        "PENDING" -> CdkQuoteState.PENDING
-        "ISSUED" -> CdkQuoteState.ISSUED
-        else -> CdkQuoteState.UNPAID
     }
 
     private suspend fun replaceStoredMintQuote(quote: CdkMintQuote) {
