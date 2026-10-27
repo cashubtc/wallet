@@ -179,7 +179,15 @@ final class LiveCdkPaymentUITests: LivePaymentUITestBase {
         capture.lifetime = .keepAlways
         add(capture)
 
-        tapWhenReady(app.buttons["Close"])
+        let close = app.buttons["Close"]
+        tapWhenReady(close)
+        if !blocked.waitForNonExistence(timeout: 5) {
+            // The routed sheet is still visible, so the close touch was not
+            // delivered. Retry only while its original content is present.
+            XCTAssertTrue(blocked.isHittable)
+            tapWhenReady(close)
+        }
+        XCTAssertTrue(blocked.waitForNonExistence(timeout: 10), "The payment sheet should close")
         tapWhenReady(app.buttons["wallet-action-send"])
         paste("hello world")
         let unrecognized = app.staticTexts["Unrecognized — try a Lightning address, invoice, Bitcoin address, or Cashu Request"]
