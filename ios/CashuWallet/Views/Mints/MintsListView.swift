@@ -72,7 +72,10 @@ struct MintsListView: View {
             .backdropSheet(item: $mintToRemove) { mint in
                 ActionConfirmationSheet(
                     title: "Remove mint?",
-                    message: "Remove \(mint.name) from your wallet? Any unspent ecash on this mint will need to be restored from your seed phrase.",
+                    message: MintRemovalPolicy.confirmationMessage(
+                        mintName: mint.name,
+                        hasUnfinishedTransfer: walletManager.hasUnfinishedMintTransfer(mintURL: mint.url)
+                    ),
                     actionLabel: "Remove",
                     destructive: true
                 ) {

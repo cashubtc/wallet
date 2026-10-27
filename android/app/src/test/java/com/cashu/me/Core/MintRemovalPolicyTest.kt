@@ -37,6 +37,20 @@ class MintRemovalPolicyTest {
         ))
     }
 
+    /** iOS parity: `MintServiceTests.testConfirmationMessageNamesAnUnfinishedTransfer`. */
+    @Test
+    fun confirmationMessageNamesAnUnfinishedTransfer() {
+        assertEquals(
+            "Remove Testnut mint from your wallet? Any unspent ecash on this mint will need to be restored from your seed phrase.",
+            mintRemovalConfirmationMessage(mintName = "Testnut mint", hasUnfinishedTransfer = false),
+        )
+        assertEquals(
+            "Remove Testnut mint from your wallet? Any unspent ecash on this mint will need to be restored from your seed phrase." +
+                "\n\nA transfer with this mint hasn't finished. Add the mint again on this device to finish it.",
+            mintRemovalConfirmationMessage(mintName = "Testnut mint", hasUnfinishedTransfer = true),
+        )
+    }
+
     @Test
     fun existingNativeWalletIsRemovedBeforeMetadataCommit() = runBlocking {
         val events = mutableListOf<String>()

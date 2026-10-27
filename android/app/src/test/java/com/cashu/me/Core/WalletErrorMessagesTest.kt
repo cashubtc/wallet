@@ -26,18 +26,6 @@ class WalletErrorMessagesTest {
         )
     }
 
-    /**
-     * The guidance says "connected", which the network matcher would turn
-     * into a connection error.
-     */
-    @Test
-    fun transferInProgressRemovalPreservesSafetyGuidanceInsteadOfSuggestingNetworkRetry() {
-        assertEquals(
-            "A transfer involving this mint is still settling. Keep it connected until the transfer finishes.",
-            WalletErrorMessages.classify(MintTransferInProgressException()).text,
-        )
-    }
-
     /** Transfer failures carry no raw text to match, so each maps by type. */
     @Test
     fun `mint transfer errors map to transfer copy`() {

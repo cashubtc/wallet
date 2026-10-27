@@ -2,6 +2,7 @@ package com.cashu.me.ui.journeys
 
 import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.cashu.me.Models.MintTransferRecord
 import com.cashu.me.test.UiFailureArtifactsRule
 import com.cashu.me.test.WalletJourneyRobot
 import com.cashu.me.test.fixtures.*
@@ -76,6 +77,27 @@ class MintSafetyJourneyTest {
         app.scenario.recreate()
         robot.awaitTag(UiTestTags.MintsScreen)
             .assertTagDoesNotExist(UiTestTags.mintRow(FakeWalletGateway.TestMintUrl))
+    }
+
+    /**
+     * Removal is reversible, so an unfinished transfer no longer blocks it.
+     * The record stays so adding the mint again picks the transfer back up.
+     * iOS parity: `ReceiveRecoveryTests.testRemovalProceedsPastAnUnfinishedTransferAndKeepsItsRecord`.
+     */
+    @Test fun unfinishedTransferIsNamedInTheSheetAndKeptAfterRemoval() {
+        val app = launch()
+        val transfer = MintTransferRecord(
+            id = "transfer", sourceMintUrl = FakeWalletGateway.TestMintUrl, destinationMintUrl = SecondMint,
+            mintQuoteId = "mint-quote", meltQuoteId = "melt-quote", amount = 21,
+            createdAtEpochMillis = 0, state = MintTransferRecord.State.Committed,
+        )
+        app.container.walletStore.saveMintTransfers(listOf(transfer))
+        openRemoval()
+        robot.awaitText("A transfer with this mint hasn't finished.", substring = true)
+            .tapText("Remove").awaitTag(UiTestTags.MintsScreen)
+            .assertTagDoesNotExist(UiTestTags.mintRow(FakeWalletGateway.TestMintUrl))
+        assertTrue(app.container.walletManager.state.value.mints.isEmpty())
+        assertEquals(listOf(transfer), app.container.walletStore.loadMintTransfers())
     }
 
     private fun openRemoval() {

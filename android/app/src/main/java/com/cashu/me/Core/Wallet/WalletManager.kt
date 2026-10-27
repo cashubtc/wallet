@@ -462,10 +462,8 @@ class WalletManager(
         withLoading {
             val trackedMint = mutableState.value.mints.firstOrNull { it.url == mint.url }
                 ?: throw IllegalArgumentException("Mint is no longer tracked.")
-            // Removing either end would drop the wallet that finishes it.
-            if (walletStore.loadMintTransfers().hasUnfinishedTransfer(referencing = trackedMint.url)) {
-                throw MintTransferInProgressException()
-            }
+            // An unfinished transfer stays recorded and resumes when the mint
+            // is added again; the remove sheet says so.
             removeMintWalletBeforeCommit(
                 mintUrl = trackedMint.url,
                 removeWallets = gateway::removeWallets,
@@ -486,6 +484,10 @@ class WalletManager(
             scope.launch { nostrMintBackupService.backupCurrentMintsIfEnabled() }
         }
     }
+
+    /** A transfer into or out of the mint has been paid for and not finished. */
+    fun hasUnfinishedMintTransfer(mintUrl: String): Boolean =
+        walletStore.loadMintTransfers().hasUnfinishedTransfer(referencing = mintUrl)
 
     suspend fun setActiveMint(mint: MintInfo) {
         walletStore.activeMintURL = mint.url
