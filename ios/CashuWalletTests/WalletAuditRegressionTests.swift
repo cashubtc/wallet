@@ -524,6 +524,19 @@ final class WalletAuditRegressionTests: XCTestCase {
         } catch { XCTAssertTrue(error is Failure) }
     }
 
+    func testNPCImportRetainsReservedQuote() async throws {
+        let database = try WalletSqliteDatabase.newInMemory()
+        let original = quote(reservation: nil)
+        try await database.addMintQuote(quote: original)
+        let operationID = UUID().uuidString
+        try await database.reserveMintQuote(quoteId: original.id, operationId: operationID)
+        let before = try await database.getMintQuote(quoteId: original.id)
+        try await WalletManager.replaceStoredNPCMintQuote(original, in: database)
+        let after = try await database.getMintQuote(quoteId: original.id)
+        XCTAssertEqual(after, before)
+        XCTAssertEqual(after?.usedByOperation, operationID.lowercased())
+    }
+
     func testStaleQuoteUpdatePreservesStoredReservation() async throws {
         let database = try WalletSqliteDatabase.newInMemory()
         let original = quote(reservation: nil)

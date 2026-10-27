@@ -921,8 +921,7 @@ class WalletManager(
         npcQuotesInFlight += quote.id
         val address = npcService.state.value.lightningAddress
         return try {
-            val mintUrl = quote.mintUrl ?: mutableState.value.activeMint?.url
-                ?: throw IllegalStateException("npub.cash quote ${quote.id} has no mint URL.")
+            val mintUrl = com.cashu.me.Core.npcClaimMintUrl(quote, p2pkPubkey)
             val normalizedMintUrl = ensureMintTracked(mintUrl)
             val amount = gateway.mintNPCQuote(quote.copy(mintUrl = normalizedMintUrl), p2pkPubkey)
             markNPCQuoteProcessed(quote.id)

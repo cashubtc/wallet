@@ -5,6 +5,64 @@ import Cdk
 
 @MainActor
 final class NPCServiceTests: XCTestCase {
+    func testQuoteConversionMatchesClaimPolicy() throws {
+        for (input, expected) in [("unpaid", QuoteState.unpaid), ("paid", .paid),
+                                  ("PENDING", .pending), ("ISSUED", .issued)] {
+            let source = NpubCashQuote(id: "quote", amount: 42, unit: "sat", createdAt: 100,
+                paidAt: nil, expiresAt: 200, mintUrl: "https://mint.example", request: "invoice",
+                state: input, locked: true)
+            let result = try npcMintQuote(source)
+            XCTAssertEqual(result.state, expected)
+            XCTAssertEqual(result.amount?.value, 42)
+            XCTAssertEqual(result.amountPaid.value, expected == .paid || expected == .issued ? 42 : 0)
+            XCTAssertEqual(result.amountIssued.value, expected == .issued ? 42 : 0)
+            XCTAssertEqual(result.mintUrl.url, "https://mint.example")
+            XCTAssertEqual(result.expiry, 200)
+            XCTAssertNil(result.secretKey)
+            XCTAssertNil(result.usedByOperation)
+        }
+    }
+
+    func testQuoteConversionRejectsUnidentifiedMintAndUnsupportedUnit() {
+        for (url, unit) in [(nil, "sat"), ("invalid", "sat"), ("https://mint.example", "usd")] {
+            let source = NpubCashQuote(id: "quote", amount: 42, unit: unit, createdAt: 100,
+                paidAt: nil, expiresAt: nil, mintUrl: url, request: "invoice", state: "PAID", locked: false)
+            XCTAssertThrowsError(try npcMintQuote(source))
+        }
+    }
+
+    func testPaymentCheckWaitsForClaimCompletion() async throws {
+        let client = ControlledNPCClient()
+        client.automaticResponsesAfter = 1
+        client.automaticQuotes = [NpubCashQuote(id: "quote", amount: 42, unit: "sat", createdAt: 100,
+            paidAt: 101, expiresAt: 200, mintUrl: "https://mint.example", request: "invoice",
+            state: "paid", locked: true)]
+        let settings = makeSettings(enabled: true)
+        settings.periodicallyCheckIncomingInvoices = false
+        let service = NPCService(settingsStore: settings, makeClient: { _, _ in client })
+        try service.initializeWithSeed(Data(repeating: 1, count: 64))
+        await client.nextRequest()
+        let connection = Task { await service.connect() }
+        client.complete(.success([]))
+        await connection.value
+        var resume: CheckedContinuation<Void, Never>?
+        var receivedConditions = false
+        service.quoteClaimHandler = { _, conditions, _, _, _ in
+            receivedConditions = conditions != nil
+            await withCheckedContinuation { resume = $0 }
+        }
+        settings.checkIncomingInvoices = true
+        let check = Task { await service.checkAndClaimPayments() }
+        for _ in 0..<100 where resume == nil { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertNotNil(resume)
+        XCTAssertTrue(receivedConditions)
+        XCTAssertTrue(service.paymentCheckInProgress)
+        resume?.resume()
+        await check.value
+        XCTAssertFalse(service.paymentCheckInProgress)
+        service.disconnect()
+    }
+
     func testClaimFailureSurvivesAutomaticRetryUntilCredited() {
         let service = makeService(client: ControlledNPCClient())
         service.lightningAddress = "test@example.com"

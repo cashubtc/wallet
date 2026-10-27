@@ -145,7 +145,6 @@ class WalletManager: ObservableObject {
     /// Per-mint launch reconciliation. The usable wallet state is published
     /// before this task starts, and wallet-boundary resets cancel it.
     var startupMaintenanceTask: Task<Void, Never>?
-    var npcQuoteObserver: NSObjectProtocol?
     /// Transfers between mints that are executing right now. Maintenance reads
     /// their quotes as untouched until the melt begins, so it leaves them be.
     var mintTransfersInFlight: Set<String> = []
@@ -215,9 +214,4 @@ class WalletManager: ObservableObject {
     }
     
 
-    deinit {
-        if let npcQuoteObserver {
-            NotificationCenter.default.removeObserver(npcQuoteObserver)
-        }
-    }
 }
