@@ -473,6 +473,8 @@ internal fun unifiedFiltered(
         requests.forEach { req -> req.receivedPayments.forEach { add(it.transactionId) } }
     }
     val txItems = transactions
+        // History rows are keyed by id; a repeated id would crash the list.
+        .distinctBy { it.id }
         .filterNot { it.id in claimedTxIds }
         .filter { tx ->
             when (filter) {

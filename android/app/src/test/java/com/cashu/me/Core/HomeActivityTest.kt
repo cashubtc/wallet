@@ -40,6 +40,19 @@ class HomeActivityTest {
     }
 
     @Test
+    fun dropsRepeatedTransactionIdsSoRecentKeysStayUnique() {
+        val sent = transaction("sent", TransactionStatus.Completed, 30)
+
+        assertEquals(
+            listOf("sent", "other"),
+            recentPaymentTransactions(
+                listOf(sent, transaction("other", TransactionStatus.Completed, 20), sent),
+                limit = 5,
+            ).map { it.id },
+        )
+    }
+
+    @Test
     fun includesPendingOnchainInBothDirectionsButExcludesFailedOnchain() {
         val incoming = transaction("deposit", TransactionStatus.Pending, 30, TransactionType.Incoming)
             .copy(kind = TransactionKind.Onchain)

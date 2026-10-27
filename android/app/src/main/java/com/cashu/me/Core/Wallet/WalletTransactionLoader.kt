@@ -216,7 +216,8 @@ internal class WalletTransactionLoader(
 
     /** The cached history as [load] would show it, before the wallet runtime is up. */
     fun cached(mints: List<MintInfo>): List<WalletTransaction> =
-        foldingTransfers(walletStore.loadTransactions(), walletStore.loadMintTransfers(), mints)
+        // The persisted cache can predate id dedupe; it is shown before any refresh.
+        foldingTransfers(walletStore.loadTransactions().distinctBy { it.id }, walletStore.loadMintTransfers(), mints)
 
     private fun foldingTransfers(
         rows: List<WalletTransaction>,

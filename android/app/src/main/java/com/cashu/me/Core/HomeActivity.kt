@@ -13,6 +13,8 @@ internal fun recentPaymentTransactions(
     limit: Int,
 ): List<WalletTransaction> = transactions
     .asSequence()
+    // Recent is a keyed lazy list; a repeated id there is a launch-time crash.
+    .distinctBy { it.id }
     // An in-flight deposit is money moving; an address nothing has reached
     // yet is only a request, like an unpaid invoice.
     .filter {
