@@ -173,6 +173,19 @@ final class MintServiceTests: XCTestCase {
         )
     }
 
+    /// Android parity: `MintRemovalPolicyTest.confirmationMessageNamesAnUnfinishedTransfer`.
+    func testConfirmationMessageNamesAnUnfinishedTransfer() {
+        XCTAssertEqual(
+            MintRemovalPolicy.confirmationMessage(mintName: "Testnut mint", hasUnfinishedTransfer: false),
+            "Remove Testnut mint from your wallet? Any unspent ecash on this mint will need to be restored from your seed phrase."
+        )
+        XCTAssertEqual(
+            MintRemovalPolicy.confirmationMessage(mintName: "Testnut mint", hasUnfinishedTransfer: true),
+            "Remove Testnut mint from your wallet? Any unspent ecash on this mint will need to be restored from your seed phrase."
+                + "\n\nA transfer with this mint hasn't finished. Add the mint again on this device to finish it."
+        )
+    }
+
     func testMultiUnitRemovalRemovesEveryUnitBeforeMetadataCommit() async throws {
         var multiUnitMint = mint("https://mint.example.com", name: "Test")
         multiUnitMint.units = ["sat", "eur"]

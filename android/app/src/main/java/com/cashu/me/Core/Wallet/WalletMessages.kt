@@ -67,11 +67,6 @@ object WalletErrorMessages {
         if (error is org.cashudevkit.FfiException.PaymentRequestDeliveryFailed) {
             return WalletMessage("The delivery outcome is uncertain. Check the pending send before paying again.", WalletMessageSeverity.Caution, isTerminal = true)
         }
-        // An application safety policy, not a transport failure. Its guidance
-        // contains "connected", which the raw network matcher catches.
-        if (error is com.cashu.me.Core.MintTransferInProgressException) {
-            return WalletMessage(checkNotNull(error.message))
-        }
         if (error is MintTransferException) return transferMessage(error)
         if (error is com.cashu.me.Core.CDK.MeltPaymentRecoveryException) {
             return WalletMessage(

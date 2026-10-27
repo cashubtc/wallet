@@ -593,10 +593,6 @@ final class MintTransferModelTests: XCTestCase {
             "The transfer didn't go through. Your funds were not moved."
         )
         XCTAssertTrue(MintTransferError.insufficientBalance(required: 42, available: 40).isInsufficientBalanceError)
-        XCTAssertEqual(
-            MintRemovalPolicyError.transferInProgress.userFacingWalletMessage,
-            "A transfer involving this mint is still settling. Keep it connected until the transfer finishes."
-        )
     }
 
     // MARK: - Fixtures

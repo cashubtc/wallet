@@ -38,6 +38,44 @@ final class ReceiveRecoveryTests: XCTestCase {
         XCTAssertEqual(Set(reloaded.mints[0].units), ["sat", "usd"])
     }
 
+    /// Removal is reversible, so an unfinished transfer no longer blocks it.
+    /// The record stays so adding the mint again picks the transfer back up.
+    func testRemovalProceedsPastAnUnfinishedTransferAndKeepsItsRecord() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let db = try LifecycleSafeWalletDatabase(filePath: directory.appendingPathComponent("wallet.sqlite").path)
+        let repo = try WalletRepository(mnemonic: generateMnemonic(), store: customWalletStore(db: db))
+        let source = "https://source.example"
+        let destination = "https://destination.example"
+        try await repo.createWallet(mintUrl: MintUrl(url: source), unit: .sat, targetProofCount: nil)
+        let store = WalletStore(storage: InMemoryStorage())
+        store.saveMints([
+            MintInfo(url: source, name: "Source", isActive: true, balance: 0),
+            MintInfo(url: destination, name: "Destination", isActive: false, balance: 0),
+        ])
+        let transfer = MintTransferRecord(
+            id: "transfer", sourceMintURL: source, destinationMintURL: destination,
+            mintQuoteID: "mint-quote", meltQuoteID: "melt-quote", amount: 21,
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000), state: .committed
+        )
+        store.saveMintTransfers([transfer])
+        let manager = WalletManager(walletStore: store)
+        manager.walletRepository = repo
+        manager.isRuntimeReady = true
+        manager.mintService.loadCachedMints()
+        XCTAssertTrue(manager.hasUnfinishedMintTransfer(mintURL: source))
+
+        let removed = await manager.removeMint(try XCTUnwrap(manager.mints.first { $0.url == source }))
+
+        XCTAssertTrue(removed)
+        XCTAssertNil(manager.errorMessage)
+        XCTAssertEqual(manager.mints.map(\.url), [destination])
+        XCTAssertTrue(store.isMintRemoved(url: source))
+        XCTAssertEqual(store.loadMintTransfers(), [transfer])
+        XCTAssertTrue(manager.hasUnfinishedMintTransfer(mintURL: destination))
+    }
+
     func testRemovalBeforeMetadataCommitSurvivesReloadAndClearsWithTheWallet() {
         let storage = InMemoryStorage()
         let store = WalletStore(storage: storage)
