@@ -235,7 +235,11 @@ class TransactionService: ObservableObject {
 
         // Restore from durable request metadata each load, even after payment/relaunch.
         let requests = walletStore.loadCashuRequests()
-        let rows = MintReceiptProjection.project(allTransactions).map { $0.restoringDescription(from: requests) }
+        // Deduplicate before receipt and transfer projection, so every consumer
+        // (including request totals) sees the same unique history.
+        var seenIDs = Set<String>()
+        let uniqueTransactions = allTransactions.filter { seenIDs.insert($0.id).inserted }
+        let rows = MintReceiptProjection.project(uniqueTransactions).map { $0.restoringDescription(from: requests) }
             .sorted { $0.date > $1.date }
         // Rows retained from a failed read may already be folded. The
         // projection leaves those as they are, so nothing is folded twice.
