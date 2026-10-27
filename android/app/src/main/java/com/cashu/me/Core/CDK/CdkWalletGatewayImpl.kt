@@ -333,13 +333,8 @@ class CdkWalletGatewayImpl : WalletGateway {
         val wallet = walletFor(quote.mintUrl.url, quote.unit)
         val method = quote.paymentMethod.toDomain()
         val fallbackAmount = quote.amount?.value?.toLong()
-        val checkedQuote = refreshPersistedMintQuote(
-            check = {
-                if (method == PaymentMethodKind.Onchain) wallet.checkMintQuoteStatus(quoteId)
-                else wallet.checkMintQuote(quoteId)
-            },
-            reload = { database?.getMintQuote(quoteId) },
-        )
+        val checkedQuote = if (method == PaymentMethodKind.Onchain) wallet.checkMintQuoteStatus(quoteId)
+        else wallet.checkMintQuote(quoteId)
         val refreshed = persistMintQuoteLocalMetadataIfNeeded(checkedQuote, method, fallbackAmount)
         refreshed.toDomain(
             fallbackAmount = fallbackAmount,
@@ -430,10 +425,7 @@ class CdkWalletGatewayImpl : WalletGateway {
         val method = quote.paymentMethod.toDomain()
         val fallbackAmount = quote.amount?.value?.toLong()
         val currentQuote = if (method == PaymentMethodKind.Onchain) {
-            refreshPersistedMintQuote(
-                check = { walletFor(quote.mintUrl.url, quote.unit).checkMintQuoteStatus(quoteId) },
-                reload = { database?.getMintQuote(quoteId) },
-            )
+            walletFor(quote.mintUrl.url, quote.unit).checkMintQuoteStatus(quoteId)
         } else {
             quote
         }

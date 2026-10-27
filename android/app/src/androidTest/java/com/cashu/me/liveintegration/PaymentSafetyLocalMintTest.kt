@@ -19,6 +19,11 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.*
+import org.cashudevkit.WalletRepository
+import org.cashudevkit.WalletSqliteDatabase
+import org.cashudevkit.WalletStore
+import org.cashudevkit.MintUrl
+import org.cashudevkit.CurrencyUnit
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
@@ -83,6 +88,13 @@ open class PaymentFixtureTest {
             gateway.closeWalletRepository()
             gateway = CdkWalletGatewayImpl()
             open()
+        }
+        suspend fun <T> withNativeQuote(block: suspend (org.cashudevkit.Wallet, WalletSqliteDatabase) -> T): T {
+            val database = WalletSqliteDatabase(path)
+            val repository = WalletRepository(seed, WalletStore.Sqlite(path))
+            val native = repository.getWallet(MintUrl(url), CurrencyUnit.Sat)
+            try { return block(native, database) }
+            finally { native.close(); repository.close(); database.close() }
         }
         suspend fun balance() = gateway.totalBalance(url)
         suspend fun quote(amount: Long) = gateway.createMintQuote(amount, PaymentMethodKind.Bolt11, url, "sat")
@@ -186,6 +198,40 @@ class PaymentSafetyLocalMintTest : PaymentFixtureTest() {
         assertTrue(records.any { it.jsonObject["fault"]?.jsonPrimitive?.contentOrNull == "lose_response" && it.jsonObject["forwarded"]?.jsonPrimitive?.boolean == true })
     }
 
+    @Test fun statusCheckFailurePropagatesWithoutChangingQuote() = runBlocking {
+        val wallet = wallet("controlled")
+        val quote = wallet.quote(42)
+        wallet.withNativeQuote { _, database ->
+            val before = database.getMintQuote(quote.id)!!
+            arm("/v1/mint/quote/bolt11/", "reject", "GET")
+            expectError("503", "unavailable", "http") { wallet.gateway.checkMintQuote(quote.id) }
+            val after = database.getMintQuote(quote.id)!!
+            assertEquals(before, after)
+        }
+    }
+
+    @Test fun statusReturnsPersistedQuoteAfterOrphanRelease() = runBlocking {
+        val wallet = wallet("controlled")
+        val quote = wallet.pay(wallet.quote(42))
+        wallet.withNativeQuote { native, database ->
+            val operation = UUID.randomUUID().toString()
+            database.reserveMintQuote(quote.id, operation)
+            assertEquals(operation, database.getMintQuote(quote.id)!!.usedByOperation)
+            val checked = native.checkMintQuoteStatus(quote.id)
+            val stored = database.getMintQuote(quote.id)!!
+            assertEquals(stored.version, checked.version)
+            assertNull(checked.usedByOperation)
+            assertEquals(stored.usedByOperation, checked.usedByOperation)
+            assertEquals(stored.amountPaid, checked.amountPaid)
+            assertEquals(stored.amountIssued, checked.amountIssued)
+            assertEquals(42uL, checked.amountPaid.value)
+            database.addMintQuote(checked)
+            val written = database.getMintQuote(quote.id)!!
+            assertEquals(checked.version + 1u, written.version)
+            assertNull(written.usedByOperation)
+        }
+    }
+
     @Test fun lostMintResponseRecoversPaidQuoteExactlyOnce() = runBlocking {
         assertLostMintResponse("controlled")
     }
@@ -200,8 +246,27 @@ class PaymentSafetyLocalMintTest : PaymentFixtureTest() {
         arm("/v1/mint/bolt11", "lose_response")
         runCatching { wallet.gateway.mintTokens(quote.id) }
         wallet.reopen()
+        wallet.withNativeQuote { native, database ->
+            val checked = native.checkMintQuoteStatus(quote.id)
+            val stored = database.getMintQuote(quote.id)!!
+            assertEquals(stored.version, checked.version)
+            assertEquals(stored.usedByOperation, checked.usedByOperation)
+            assertEquals(stored.amountPaid, checked.amountPaid)
+            assertEquals(stored.amountIssued, checked.amountIssued)
+            assertEquals(42uL, checked.amountPaid.value)
+            assertEquals(42uL, checked.amountIssued.value)
+        }
         wallet.gateway.recoverIncompleteSagas(wallet.url)
         wallet.gateway.mintUnissuedQuotes(wallet.url, "sat")
+        wallet.withNativeQuote { native, database ->
+            val settled = native.checkMintQuoteStatus(quote.id)
+            val stored = database.getMintQuote(quote.id)!!
+            assertEquals(stored.version, settled.version)
+            assertEquals(stored.usedByOperation, settled.usedByOperation)
+            assertNull(settled.usedByOperation)
+            assertEquals(42uL, settled.amountPaid.value)
+            assertEquals(42uL, settled.amountIssued.value)
+        }
         assertEquals(42, wallet.balance())
         assertEquals(0, wallet.gateway.mintUnissuedQuotes(wallet.url, "sat"))
         assertEquals(1, wallet.gateway.listTransactions(mapOf(wallet.url to listOf("sat"))).count { it.quoteId == quote.id })

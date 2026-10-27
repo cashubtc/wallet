@@ -5,15 +5,6 @@ import com.cashu.me.Models.PaymentMethodKind
 import org.cashudevkit.Amount as CdkAmount
 import org.cashudevkit.MintQuote as CdkMintQuote
 
-/** CDK persists status/recovery updates before returning a pre-write version. */
-internal suspend fun refreshPersistedMintQuote(
-    check: suspend () -> CdkMintQuote,
-    reload: suspend () -> CdkMintQuote?,
-): CdkMintQuote {
-    check()
-    return reload() ?: throw CdkGatewayUnavailable("This receive request is no longer available.")
-}
-
 /** Keep quote ownership with CDK; a failed upsert must never delete the row. */
 internal suspend fun persistMintQuoteMetadata(
     quote: CdkMintQuote,
