@@ -290,6 +290,32 @@ final class StoredWalletAccountTests: XCTestCase {
         try await body(reader, repo, service, store)
     }
 
+    func testRepeatedAccountRowsPublishOneTransactionPerIDAndSurviveReadFailure() async throws {
+        try await withHistoryService { db, _, service, _ in
+            let mint = MintUrl(url: "https://offline.example")
+            for amount: UInt64 in [21, 34] {
+                try await db.addTransaction(transaction: Cdk.Transaction(
+                    id: TransactionId(hex: String(repeating: "a", count: 64)), mintUrl: mint,
+                    direction: .incoming, amount: Amount(value: amount), fee: Amount(value: 0),
+                    unit: .sat, ys: [], timestamp: amount, memo: nil, metadata: [:],
+                    quoteId: "quote-\(amount)", paymentRequest: "lnbc-fixture", paymentProof: nil, paymentMethod: .bolt11,
+                    sagaId: UUID().uuidString, status: .completed
+                ))
+            }
+            db.repeatAccountRows = true
+            await service.loadTransactions(includeRemoteObservations: false)
+            XCTAssertEqual(service.transactions.count, 2)
+            XCTAssertEqual(Set(service.transactions.map(\.id)).count, 2)
+            XCTAssertEqual(service.transactions.map(\.amount), [34, 21])
+            XCTAssertEqual(HomeActivity.recentTransactions(from: service.transactions, limit: 5).count, 2)
+
+            db.failAccountReads = true
+            await service.loadTransactions(includeRemoteObservations: false)
+            XCTAssertEqual(service.transactions.map(\.amount), [34, 21])
+            XCTAssertEqual(Set(service.transactions.map(\.id)).count, 2)
+        }
+    }
+
     func testOnchainHistoryPreservesDirectionsStatesAndLegacyMethodAfterRelaunch() async throws {
         try await withHistoryService { db, repo, service, store in
             let mint = MintUrl(url: "https://offline.example")
@@ -425,6 +451,7 @@ private final class FailingAccountHistoryDatabase: WalletSqliteDatabase, @unchec
     var failAccountReads = false
     var failDiscoveryReads = false
     var failQuoteReads = false
+    var repeatAccountRows = false
     required init(unsafeFromHandle handle: UInt64) { super.init(unsafeFromHandle: handle) }
     convenience init(database: WalletSqliteDatabase) {
         self.init(unsafeFromHandle: database.uniffiCloneHandle())
@@ -432,7 +459,8 @@ private final class FailingAccountHistoryDatabase: WalletSqliteDatabase, @unchec
     }
     override func listTransactions(mintUrl: MintUrl?, direction: TransactionDirection?, unit: CurrencyUnit?) async throws -> [Cdk.Transaction] {
         if failAccountReads && unit != nil { throw NSError(domain: "TestStorage", code: 1) }
-        return try await super.listTransactions(mintUrl: mintUrl, direction: direction, unit: unit)
+        let rows = try await super.listTransactions(mintUrl: mintUrl, direction: direction, unit: unit)
+        return repeatAccountRows && unit != nil ? rows + rows : rows
     }
     override func getMintQuotes() async throws -> [MintQuote] {
         if failDiscoveryReads { throw NSError(domain: "TestStorage", code: 2) }
