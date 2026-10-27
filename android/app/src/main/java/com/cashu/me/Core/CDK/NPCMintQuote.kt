@@ -8,6 +8,7 @@ import org.cashudevkit.npubcashQuoteToMintQuote
 
 internal fun npcMintQuote(quote: NPCQuote, mintUrl: String): MintQuote {
     val original = requireNotNull(quote.cdkQuote) { "Missing original npub.cash quote." }
+    require(original.unit.equals("sat", ignoreCase = true)) { "Unsupported npub.cash quote unit." }
     require(original.id == quote.id) { "npub.cash quote ID changed." }
     val converted = npubcashQuoteToMintQuote(original.copy(mintUrl = mintUrl))
 

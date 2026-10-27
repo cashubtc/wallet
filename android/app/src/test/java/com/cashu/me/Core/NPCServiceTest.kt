@@ -9,6 +9,19 @@ import org.cashudevkit.NpubCashQuote
 
 class NPCServiceTest {
     @Test
+    fun claimRequiresOriginalQuoteMintAndLockedKey() {
+        val native = NpubCashQuote("id", 42uL, "sat", 100uL, null, null,
+            "https://mint.example", "invoice", "PAID", true)
+        val quote = NPCService.fromCdkQuote(native)
+        assertEquals("https://mint.example", npcClaimMintUrl(quote, "key"))
+        for (invalid in listOf(quote.copy(mintUrl = null), quote.copy(mintUrl = "invalid"),
+            quote.copy(cdkQuote = native.copy(unit = "usd")), quote.copy(cdkQuote = null))) {
+            assertTrue(runCatching { npcClaimMintUrl(invalid, "key") }.isFailure)
+        }
+        assertTrue(runCatching { npcClaimMintUrl(quote, null) }.isFailure)
+    }
+
+    @Test
     fun walletReplacementRestoresSeparateNpcPreferencesAndRuntimeState() = kotlinx.coroutines.runBlocking {
         val prefs = InMemorySharedPreferences()
         prefs.edit()

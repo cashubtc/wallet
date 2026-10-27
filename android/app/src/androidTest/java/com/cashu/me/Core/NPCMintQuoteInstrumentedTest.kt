@@ -17,12 +17,12 @@ class NPCMintQuoteInstrumentedTest {
             "UNPAID" to QuoteState.UNPAID, "paid" to QuoteState.PAID,
             "PENDING" to QuoteState.PENDING, "ISSUED" to QuoteState.ISSUED,
         )) {
-            val native = NpubCashQuote("id", 42uL, "usd", 100uL, 120uL, 200uL,
+            val native = NpubCashQuote("id", 42uL, "sat", 100uL, 120uL, 200uL,
                 "https://mint.example/", "invoice", input, true)
             val result = npcMintQuote(NPCService.fromCdkQuote(native), "https://mint.example")
             assertEquals("id", result.id)
             assertEquals(42uL, result.amount?.value)
-            assertEquals(CurrencyUnit.Usd, result.unit)
+            assertEquals(CurrencyUnit.Sat, result.unit)
             assertEquals("https://mint.example", result.mintUrl.url)
             assertEquals("invoice", result.request)
             assertEquals(200uL, result.expiry)

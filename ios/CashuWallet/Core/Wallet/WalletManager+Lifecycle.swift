@@ -890,10 +890,7 @@ extension WalletManager {
         startupMaintenanceTask?.cancel()
         startupMaintenanceTask = nil
 
-        if let npcQuoteObserver {
-            NotificationCenter.default.removeObserver(npcQuoteObserver)
-            self.npcQuoteObserver = nil
-        }
+        NPCService.shared.quoteClaimHandler = nil
 
         walletRepository = nil
         NostrMintBackupService.shared.walletRepository = nil

@@ -55,27 +55,10 @@ extension WalletManager {
     }
 
     func setupNPCQuoteListener() {
-        if let npcQuoteObserver {
-            NotificationCenter.default.removeObserver(npcQuoteObserver)
-        }
-        
-        npcQuoteObserver = NotificationCenter.default.addObserver(forName: .npcQuoteReceived, object: nil, queue: .main) { [weak self] notification in
-            guard let self = self,
-                  let userInfo = notification.userInfo,
-                  let mintQuote = userInfo["mintQuote"] as? MintQuote else { return }
-            let spendingConditions = userInfo["spendingConditions"] as? SpendingConditions
-            let npcQuote = userInfo["npcQuote"] as? NpubCashQuote
-            let address = userInfo["address"] as? String
-            let sessionID = userInfo["sessionID"] as? UUID
-            Task {
-                await self.mintNPCQuote(
-                    mintQuote: mintQuote,
-                    spendingConditions: spendingConditions,
-                    npcQuote: npcQuote,
-                    address: address,
-                    sessionID: sessionID
-                )
-            }
+        NPCService.shared.quoteClaimHandler = { [weak self] mintQuote, conditions, quote, address, session in
+            guard let self else { throw NPCError.notConnected }
+            await self.mintNPCQuote(mintQuote: mintQuote, spendingConditions: conditions,
+                                    npcQuote: quote, address: address, sessionID: session)
         }
     }
 
@@ -119,9 +102,8 @@ extension WalletManager {
                         let mintUrl = mintQuote.mintUrl
                         await self.mintService.ensureMintTracked(url: mintUrl.url)
 
-                        if let db = self.db {
-                            try await self.replaceStoredNPCMintQuote(mintQuote, in: db)
-                        }
+                        guard let db = self.db else { throw WalletError.notInitialized }
+                        try await Self.replaceStoredNPCMintQuote(mintQuote, in: db)
 
                         let wallet = try await walletRepository.getWallet(mintUrl: mintUrl, unit: .sat)
 
@@ -184,14 +166,12 @@ extension WalletManager {
         }
     }
 
-    private func replaceStoredNPCMintQuote(
+    static func replaceStoredNPCMintQuote(
         _ quote: MintQuote,
         in walletDatabase: WalletSqliteDatabase
     ) async throws {
-        do {
-            try await walletDatabase.addMintQuote(quote: quote)
-        } catch {
-            try await walletDatabase.removeMintQuote(quoteId: quote.id)
+        // Retain CDK's counters and reservation on retries.
+        if try await walletDatabase.getMintQuote(quoteId: quote.id) == nil {
             try await walletDatabase.addMintQuote(quote: quote)
         }
     }

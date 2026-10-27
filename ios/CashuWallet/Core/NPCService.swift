@@ -101,6 +101,7 @@ class NPCService: ObservableObject {
     
     // MARK: - Private
     
+    var quoteClaimHandler: ((MintQuote, SpendingConditions?, NpubCashQuote, String, UUID) async throws -> Void)?
     private var client: (any NpubCashClientProtocol)?
     private var suppressSettingsSideEffects = false
     private var connectionTask: Task<Void, Never>?
@@ -372,30 +373,27 @@ class NPCService: ObservableObject {
     
     /// Claim a specific quote by minting the tokens
     private func claimQuote(_ quote: NpubCashQuote) async {
-        // Convert to MintQuote using CDK helper and notify WalletManager
-        let mintQuote = npubcashQuoteToMintQuote(quote: quote)
-
-        var userInfo: [String: Any] = [
-            "mintQuote": mintQuote,
-            "npcQuote": quote,
-            "sessionID": sessionID,
-            "address": lightningAddress
-        ]
-
-        if quote.locked == true, let p2pkPublicKey {
-            userInfo["spendingConditions"] = SpendingConditions.p2pk(
-                pubkey: p2pkPublicKey,
-                conditions: nil
-            )
+        let receipt = NPCPaymentReceipt(quoteID: quote.id, address: lightningAddress,
+                                        amount: quote.amount, paidAt: quote.paidAt)
+        let session = sessionID
+        do {
+            let mintQuote = try npcMintQuote(quote)
+            guard let handler = quoteClaimHandler else { throw NPCError.notConnected }
+            let spendingConditions: SpendingConditions?
+            if quote.locked == true {
+                guard let key = p2pkPublicKey else { throw NPCError.invalidResponse }
+                spendingConditions = .p2pk(pubkey: key, conditions: nil)
+            } else {
+                spendingConditions = nil
+            }
+            // An app-lifetime task finishes a started mint if the receive sheet closes.
+            let task = Task { try await handler(mintQuote, spendingConditions, quote, receipt.address, session) }
+            try await task.value
+        } catch {
+            updatePaymentClaim(receipt, phase: .failed, session: session)
         }
-        
-        NotificationCenter.default.post(
-            name: .npcQuoteReceived,
-            object: nil,
-            userInfo: userInfo
-        )
     }
-    
+
     /// Notify about pending payment (when auto-claim is disabled)
     private func notifyPendingPayment(_ quote: NpubCashQuote) async {
         NotificationCenter.default.post(
@@ -539,9 +537,37 @@ enum NPCError: LocalizedError {
 // MARK: - Notification Names
 
 extension Notification.Name {
-    static let npcQuoteReceived = Notification.Name("npcQuoteReceived")
     static let npcPaymentPending = Notification.Name("npcPaymentPending")
     static let npcPaymentReceived = Notification.Name("npcPaymentReceived")
+}
+
+/// CDK 0.18.2 defaults malformed mint URLs to localhost and does not map
+/// PENDING or case-insensitive states. Keep the app's claim policy explicit.
+func npcMintQuote(_ quote: NpubCashQuote) throws -> MintQuote {
+    guard let url = quote.mintUrl, let parts = URLComponents(string: url),
+          let scheme = parts.scheme?.lowercased(), ["http", "https"].contains(scheme),
+          let host = parts.host, !host.isEmpty, quote.unit.lowercased() == "sat" else {
+        throw NPCError.invalidResponse
+    }
+    let normalized = NpubCashQuote(id: quote.id, amount: quote.amount, unit: quote.unit,
+        createdAt: quote.createdAt, paidAt: quote.paidAt, expiresAt: quote.expiresAt,
+        mintUrl: url, request: quote.request, state: quote.state?.uppercased(), locked: quote.locked)
+    let converted = npubcashQuoteToMintQuote(quote: normalized)
+    let state: QuoteState
+    switch normalized.state {
+    case "PAID": state = .paid
+    case "PENDING": state = .pending
+    case "ISSUED": state = .issued
+    default: state = .unpaid
+    }
+    let amount = converted.amount ?? Amount(value: 0)
+    return MintQuote(id: converted.id, amount: converted.amount, unit: converted.unit,
+        request: converted.request, state: state, expiry: converted.expiry, mintUrl: converted.mintUrl,
+        amountIssued: state == .issued ? amount : Amount(value: 0),
+        amountPaid: state == .paid || state == .issued ? amount : Amount(value: 0),
+        updatedAt: converted.updatedAt, estimatedBlocks: converted.estimatedBlocks,
+        paymentMethod: converted.paymentMethod, secretKey: converted.secretKey,
+        usedByOperation: converted.usedByOperation, version: converted.version)
 }
 
 private extension NpubCashQuote {

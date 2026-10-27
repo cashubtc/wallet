@@ -66,6 +66,21 @@ data class NPCQuote(
     val isPaid: Boolean get() = state.equals("PAID", ignoreCase = true)
 }
 
+/** Never guess the mint for a quote: only its issuing mint can redeem it. */
+internal fun npcClaimMintUrl(quote: NPCQuote, p2pkPubkey: String?): String {
+    val original = requireNotNull(quote.cdkQuote) { "Missing original npub.cash quote." }
+    require(original.id == quote.id && original.unit.equals("sat", ignoreCase = true)) {
+        "Unsupported npub.cash quote."
+    }
+    require(!quote.locked || p2pkPubkey != null) { "Locked npub.cash quote has no signing key." }
+    val mintUrl = requireNotNull(quote.mintUrl) { "npub.cash quote has no mint URL." }
+    val uri = runCatching { java.net.URI(mintUrl) }.getOrNull()
+    require(uri?.scheme?.lowercase() in setOf("http", "https") && !uri?.host.isNullOrBlank()) {
+        "Invalid npub.cash mint URL."
+    }
+    return mintUrl
+}
+
 data class NPCState(
     val isEnabled: Boolean = false,
     val automaticClaim: Boolean = true,
