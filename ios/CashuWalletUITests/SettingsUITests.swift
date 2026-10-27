@@ -595,15 +595,23 @@ final class SettingsUITests: UITestBase {
     private func setSwitch(_ element: XCUIElement, toOn: Bool) {
         XCTAssertTrue(element.waitUntilEnabledAndHittable(timeout: 10))
         let isOn = (element.value as? String) == "1"
+        let expectedValue = toOn ? "1" : "0"
         if isOn != toOn {
             tapSwitchControl(element)
+            let changed = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "value == %@", expectedValue), object: element
+            )
+            if XCTWaiter.wait(for: [changed], timeout: 5) != .completed {
+                // A touch can be swallowed while the scroll view settles. Retry
+                // only after observing that the switch still has its old value.
+                XCTAssertEqual(element.value as? String, toOn ? "0" : "1")
+                tapSwitchControl(element)
+            }
         }
-        let expectedValue = toOn ? "1" : "0"
-        let changed = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "value == %@", expectedValue),
-            object: element
+        let finalState = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", expectedValue), object: element
         )
-        XCTAssertEqual(XCTWaiter.wait(for: [changed], timeout: 5), .completed,
+        XCTAssertEqual(XCTWaiter.wait(for: [finalState], timeout: 5), .completed,
                        "Switch must reach the requested state before continuing")
     }
 
@@ -633,7 +641,7 @@ final class SettingsUITests: UITestBase {
         XCTAssertEqual(XCTWaiter.wait(for: [settled], timeout: 10), .completed,
                        "Switch must settle before interaction")
         // A short press gives the enclosing scroll view time to deliver the
-        // touch to the switch. Never retry: a second touch could toggle it back.
+        // touch to the switch. The caller observes the value before any retry.
         target.press(forDuration: 0.1)
     }
 
