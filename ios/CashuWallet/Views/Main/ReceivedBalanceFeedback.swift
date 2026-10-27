@@ -16,10 +16,12 @@ final class ReceivedBalanceFeedback {
         self.sleep = sleep
     }
 
+    /// Shows `amount`, or adds it to the "+N" already showing so the line
+    /// matches what the balance rolled by, and restarts the dismiss timer.
     func show(amount: UInt64, animation: Animation?) {
         dismissTask?.cancel()
         withAnimation(animation) {
-            self.amount = amount
+            self.amount = (self.amount ?? 0) + amount
         }
         dismissTask = Task { @MainActor [weak self, sleep] in
             do {

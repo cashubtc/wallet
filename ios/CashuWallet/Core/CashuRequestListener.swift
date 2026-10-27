@@ -606,13 +606,17 @@ final class CashuRequestListener: ObservableObject {
             AppLogger.wallet.error("CashuRequestListener: walletManager not attached")
             return .transientFailure
         }
+        // A detail screen showing the request confirms the payment itself;
+        // otherwise nothing on screen does, and home owns the confirmation.
+        let homeHaptic = !(requestId.map { CashuRequestStore.shared.isWatching(requestId: $0) } ?? false)
         do {
             // A gift wrap can arrive exactly as the app backgrounds; hold a background-task
             // assertion so this SQLite-writing redeem finishes before suspension.
             _ = try await withBackgroundWriteAssertion("cashu-request-claim") {
                 try await walletManager.receiveCashuRequestPayment(
                     tokenString: tokenString,
-                    requestId: requestId
+                    requestId: requestId,
+                    homeHaptic: homeHaptic
                 )
             }
             guard clientSlot.owns(generation) else { return .stale }

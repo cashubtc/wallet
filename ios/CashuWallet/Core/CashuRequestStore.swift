@@ -17,6 +17,23 @@ class CashuRequestStore: ObservableObject {
         return requests.first(where: { $0.id == id })
     }
 
+    /// Requests a detail screen is showing. That screen confirms their
+    /// payments itself, so home leaves out its haptic and announcement.
+    private var watchedRequestCounts: [String: Int] = [:]
+
+    func beginWatching(requestId: String) {
+        watchedRequestCounts[requestId, default: 0] += 1
+    }
+
+    func endWatching(requestId: String) {
+        guard let count = watchedRequestCounts[requestId] else { return }
+        watchedRequestCounts[requestId] = count > 1 ? count - 1 : nil
+    }
+
+    func isWatching(requestId: String) -> Bool {
+        watchedRequestCounts[requestId] != nil
+    }
+
     init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
         load()

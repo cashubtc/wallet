@@ -31,6 +31,16 @@ data class CashuRequest(
 
     val totalReceived: Long get() = receivedPayments.sumOf { it.amount }
 
+    /**
+     * When this intent last saw money: its latest payment, dated by the
+     * wallet's transaction when known and otherwise by when it was linked, or
+     * its creation while it has none. History sorts and dates the row by it,
+     * so a request that just got paid moves to the top.
+     */
+    fun lastActivityEpochMillis(transactionDates: Map<String, Long>): Long =
+        receivedPayments.maxOfOrNull { transactionDates[it.transactionId] ?: it.receivedAtEpochMillis }
+            ?: createdAtEpochMillis
+
     val isEcashRequest: Boolean get() = quoteKind == null
 
     val isReusable: Boolean get() = isEcashRequest || quoteKind.equals("bolt12", ignoreCase = true)

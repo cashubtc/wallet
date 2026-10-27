@@ -134,6 +134,13 @@ struct CashuRequestDetailView: View {
         .onChange(of: request?.receivedPayments) {
             presentNextPayment()
         }
+        // This screen confirms the request's payments, so home stays quiet.
+        .onAppear { store.beginWatching(requestId: requestId) }
+        .onDisappear { store.endWatching(requestId: requestId) }
+        .onChange(of: requestId) { old, new in
+            store.endWatching(requestId: old)
+            store.beginWatching(requestId: new)
+        }
         .onChange(of: showPaymentSuccess) {
             presentNextPayment()
         }

@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
@@ -30,10 +31,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -41,9 +44,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
@@ -53,17 +58,31 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.currentStateAsState
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import com.cashu.me.R
 import com.cashu.me.App.AppContainer
 import com.cashu.me.Core.Navigation.CashuRoute
 import com.cashu.me.Core.PaymentRequestDecodeResult
 import com.cashu.me.Core.PaymentRequestDecoder
 import com.cashu.me.Core.TokenParser
+import com.cashu.me.Core.WalletHaptic
+import com.cashu.me.Core.rememberWalletHaptics
 import com.cashu.me.Views.Components.ScannerView
 import com.cashu.me.Views.Components.ScannerDefaultPrompt
 import com.cashu.me.Views.Send.ContactlessPayView
+import com.cashu.me.ui.home.HomeArrivalCoordinator
+import com.cashu.me.ui.home.HomePresence
+import com.cashu.me.ui.home.HomeReceipt
+import com.cashu.me.ui.home.hasLoadedTransactions
+import com.cashu.me.ui.home.homeReceiptAnnouncement
+import com.cashu.me.ui.home.homeSnapshot
+import com.cashu.me.ui.home.liveRecentRows
 import com.cashu.me.ui.mints.ConnectMintContext
 import com.cashu.me.ui.mints.ConnectMintSheetContent
 import com.cashu.me.ui.mints.MintTransferScreen
@@ -359,6 +378,59 @@ private fun AuthenticatedShell(container: AppContainer) {
     val appLockState by container.appLockManager.state.collectAsState()
     val cashuRequestListenerState by container.cashuRequestListener.state.collectAsState()
 
+    // Home's arrival beat lives here, not in HomeScreen: Home leaves
+    // composition for History, Mints and pushed pages, and its arrivals must
+    // keep being held (and passive receipts must still buzz) while it's away.
+    val arrivalScope = rememberCoroutineScope()
+    val homeArrival = remember { HomeArrivalCoordinator(arrivalScope) }
+    val arrivalHaptics = rememberWalletHaptics()
+    var receiptAnnouncement by remember { mutableStateOf<String?>(null) }
+    SideEffect {
+        homeArrival.onConfirm = { receipts ->
+            arrivalHaptics.perform(WalletHaptic.Success)
+            receiptAnnouncement = homeReceiptAnnouncement(receipts)
+        }
+    }
+    LaunchedEffect(receiptAnnouncement) {
+        // Clear it once spoken so the same words can be announced again.
+        if (receiptAnnouncement != null) {
+            delay(RECEIPT_ANNOUNCEMENT_CLEAR_MS)
+            receiptAnnouncement = null
+        }
+    }
+    LaunchedEffect(homeArrival) {
+        container.walletManager.state
+            .map { state ->
+                val rows = state.liveRecentRows()
+                Triple(state.homeSnapshot(rows), state.hasLoadedTransactions, rows)
+            }
+            .distinctUntilChanged { old, new -> old.first == new.first && old.second == new.second }
+            .collect { (snapshot, loaded, rows) -> homeArrival.update(snapshot, rows, loaded) }
+    }
+    LaunchedEffect(homeArrival) {
+        container.walletManager.receivedPayments.collect { event ->
+            homeArrival.receive(
+                HomeReceipt(event.amount, event.unit, homeOwned = event.homeOwnsSuccessHaptic),
+            )
+        }
+    }
+    var receiptSheetOpen by remember { mutableStateOf(false) }
+    val homeBackStack by navController.currentBackStackEntryAsState()
+    val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
+    val homePresence = when {
+        homeBackStack?.destination?.route == Routes.HISTORY -> HomePresence.SeenElsewhere
+        homeBackStack?.destination?.route != Routes.HOME ||
+            activeFlow != null ||
+            receiveTokenDetail != null ||
+            scannerTarget != null ||
+            receiptSheetOpen ||
+            appLockState.isLocked ||
+            appLockState.isObscured ||
+            !lifecycleState.isAtLeast(Lifecycle.State.RESUMED) -> HomePresence.Covered
+        else -> HomePresence.OnScreen
+    }
+    LaunchedEffect(homePresence) { homeArrival.setPresence(homePresence) }
+
     // Incoming payments that are not eligible for silent receipt are already
     // persisted before being surfaced. Present the normal Receive review when
     // the shell is idle; closing it leaves the payment claimable from History.
@@ -478,7 +550,19 @@ private fun AuthenticatedShell(container: AppContainer) {
             onPendingMintScanConsumed = { pendingMintScan = null },
             // Pending "Receive later" tokens claim on the full-screen page.
             onClaimReceiveToken = openReceiveDetail,
+            homeArrival = homeArrival,
+            onReceiptSheetChanged = { receiptSheetOpen = it },
             navController = navController,
+        )
+        // Polite spoken confirmation for receipts no visible surface confirms
+        // (iOS posts a low-priority VoiceOver announcement).
+        Box(
+            Modifier
+                .size(1.dp)
+                .semantics {
+                    liveRegion = LiveRegionMode.Polite
+                    receiptAnnouncement?.let { contentDescription = it }
+                },
         )
         AnimatedVisibility(
             visible = activeScannerTarget != null,
@@ -756,6 +840,9 @@ private fun AuthenticatedShell(container: AppContainer) {
 // Deep-link destinations that present a payment surface — deferred until the
 // shell is idle. Scanner belongs here: its overlay renders in the activity
 // window and would mount underneath an open sheet's dialog window.
+// Long enough for TalkBack to pick up the live region before it clears.
+private const val RECEIPT_ANNOUNCEMENT_CLEAR_MS = 2_000L
+
 private val paymentRoutes = setOf(
     CashuRoute.Receive,
     CashuRoute.Send,

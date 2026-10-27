@@ -168,9 +168,15 @@ extension WalletManager {
     /// the payment to a specific request in CashuRequestStore.
     /// Identifies the CDK transaction id by diffing wallet.listTransactions() before
     /// and after the receive, then links it to the request so History can suppress
-    /// the duplicate "Received ecash" row.
+    /// the duplicate "Received ecash" row. `homeHaptic` marks a payment no
+    /// visible surface confirms (an auto-claim while no detail screen shows the
+    /// request), so home buzzes and announces.
     @discardableResult
-    func receiveCashuRequestPayment(tokenString: String, requestId: String?) async throws -> UInt64 {
+    func receiveCashuRequestPayment(
+        tokenString: String,
+        requestId: String?,
+        homeHaptic: Bool = false
+    ) async throws -> UInt64 {
         let outcome = try await performTokenReceive(tokenString: tokenString)
         if let transactionID = outcome.transactionID {
             transactionService.saveToken(txId: transactionID, token: tokenString)
@@ -188,7 +194,11 @@ extension WalletManager {
         await loadTransactions()
         SentryService.breadcrumb("Token received", category: "wallet.token")
 
-        var userInfo: [String: Any] = ["amount": outcome.amount, "source": "cashu-request"]
+        var userInfo: [String: Any] = [
+            "amount": outcome.amount,
+            "source": "cashu-request",
+            "homeHaptic": homeHaptic
+        ]
         if let requestId { userInfo["requestId"] = requestId }
         NotificationCenter.default.post(
             name: .cashuTokenReceived,

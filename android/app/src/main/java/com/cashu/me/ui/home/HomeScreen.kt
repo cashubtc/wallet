@@ -1,6 +1,9 @@
 package com.cashu.me.ui.home
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
@@ -56,8 +59,6 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.testTag as semanticsTestTag
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import com.cashu.me.Core.AmountDisplayPrimary
 import com.cashu.me.Core.AmountDisplayText
@@ -67,13 +68,11 @@ import com.cashu.me.Core.HomeBalance
 import com.cashu.me.Core.Protocols.CurrencyAmount
 import com.cashu.me.Core.Protocols.CurrencyRegistry
 import com.cashu.me.Core.PriceService
-import com.cashu.me.Core.ReceivedPaymentEvent
 import com.cashu.me.Core.SettingsManager
 import com.cashu.me.Core.TransactionDisplay
 import com.cashu.me.Core.WalletHaptic
 import com.cashu.me.Core.WalletManager
 import com.cashu.me.Core.displayText
-import com.cashu.me.Core.recentPaymentTransactions
 import com.cashu.me.Core.rememberWalletHaptics
 import com.cashu.me.Models.WalletTransaction
 import com.cashu.me.ui.components.BalanceDisplay
@@ -91,11 +90,6 @@ import com.cashu.me.ui.components.neutralActionButtonColors
 import com.cashu.me.ui.components.formatRelativeTimestamp
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.testing.UiTestTags
-
-private const val RECENT_LIMIT = 5
-
-// iOS MainWalletView: the received-delta beat auto-dismisses after 2.5s.
-private const val RECEIVED_DELTA_DISMISS_MS = 2_500L
 
 internal object HomeActionAccessibility {
     const val ReceiveClickLabel =
@@ -141,6 +135,7 @@ fun HomeScreen(
     onOpenSettings: () -> Unit,
     onScan: () -> Unit,
     contentPadding: PaddingValues,
+    arrival: HomeArrivalCoordinator,
 ) {
     val walletState by walletManager.state.collectAsState()
     val settings by settingsManager.state.collectAsState()
@@ -153,9 +148,14 @@ fun HomeScreen(
         isRuntimeReady = walletState.isRuntimeReady,
     )
 
-    val balanceDisplay = remember(walletState.balance, settings, priceState) {
+    // Balances and rows as home shows them: held while something covers home,
+    // then moved in one beat by the shell's HomeArrivalCoordinator.
+    val shown = arrival.shown
+    val shownBalancesByUnit = shown?.balancesByUnit ?: walletState.balancesByUnit
+    val shownSatBalance = shown?.satBalance ?: walletState.balance
+    val balanceDisplay = remember(shownSatBalance, settings, priceState) {
         formatter.displayText(
-            amountSats = walletState.balance,
+            amountSats = shownSatBalance,
             preferredPrimary = settings.homeBalancePrimary,
             showFiat = settings.showFiatBalance && priceState.btcPrice > 0,
             btcPrice = priceState.btcPrice,
@@ -176,27 +176,15 @@ fun HomeScreen(
         }
     }
 
-    val recentTransactions = remember(walletState.transactions) {
-        recentPaymentTransactions(walletState.transactions, RECENT_LIMIT)
-    }
-
-    // Received-payment beat (iOS MainWalletView notification parity): collect
-    // only explicit, confirmed credits from WalletManager. Balance refreshes,
-    // restore, mint recovery, and reclaim therefore cannot trigger it.
-    //
-    // A receive flow owns its PaymentStatusScreen success haptic. Home performs
-    // the success haptic only for passive receipts with no in-flow terminal.
-    // collectLatest keeps rapid receipts last-write-wins and restarts the 2.5s
-    // dismissal timer.
-    var receivedPayment by remember { mutableStateOf<ReceivedPaymentEvent?>(null) }
-    LaunchedEffect(walletManager) {
-        walletManager.receivedPayments.collectLatest { event ->
-            receivedPayment = event
-            if (event.homeOwnsSuccessHaptic) {
-                haptics.perform(WalletHaptic.Success)
-            }
-            delay(RECEIVED_DELTA_DISMISS_MS)
-            receivedPayment = null
+    // The held rows, each rendered from the wallet's current copy of it; a
+    // row the wallet no longer lists renders from the coordinator's cache
+    // until the beat that removes it.
+    val recentTransactions = remember(shown, walletState.transactions) {
+        if (shown == null) {
+            walletState.liveRecentRows()
+        } else {
+            val live = walletState.transactions.associateBy { it.id }
+            shown.rows.mapNotNull { live[it.id] ?: arrival.cachedRow(it.id) }
         }
     }
 
@@ -242,14 +230,14 @@ fun HomeScreen(
                 balance = {
                     HomeBalanceHero(
                         showsPager = HomeBalance.showsUnitPager(
-                            balancesByUnit = walletState.balancesByUnit,
+                            balancesByUnit = shownBalancesByUnit,
                         ),
-                        balancesByUnit = walletState.balancesByUnit,
+                        balancesByUnit = shownBalancesByUnit,
                         satAmount = balanceDisplay,
                         persistedUnit = settings.homeBalanceUnit,
                         onUnitSelected = settingsManager::setHomeBalanceUnit,
                         onSatBalanceClick = onSatBalanceClick,
-                        receivedPayment = receivedPayment,
+                        receivedDeltas = arrival.receivedDeltas,
                         formatter = formatter,
                         statusMessage = PREPARING_WALLET_LABEL.takeIf {
                             paymentActions.isPreparingWallet
@@ -293,7 +281,12 @@ fun HomeScreen(
                 ),
             ) {
                 item("section-header") {
-                    if (recentTransactions.isNotEmpty()) {
+                    // Fades in with a wallet's first row instead of popping.
+                    AnimatedVisibility(
+                        visible = recentTransactions.isNotEmpty(),
+                        enter = fadeIn(),
+                        exit = fadeOut(),
+                    ) {
                         SectionHeader(text = "Recent")
                     }
                 }
@@ -312,13 +305,16 @@ fun HomeScreen(
                             else "Mints custody your ecash. Add one to begin.",
                             actionLabel = if (!hasMints) "Add mint" else null,
                             onAction = if (!hasMints) onAddMint else null,
-                            modifier = Modifier.height(emptyHeight),
+                            // Fades out as a wallet's first row fades in.
+                            modifier = Modifier.animateItem().height(emptyHeight),
                         )
                     }
                 } else {
                     items(recentTransactions, key = { it.id }) { tx ->
-                        // Spring-animated placement when the timeline reshuffles
-                        // as completed payments land — History parity.
+                        // The system list insertion when a payment lands: rows
+                        // below glide down on a spring and the new row fades in
+                        // where it sits. The shell's HomeArrivalCoordinator
+                        // times it so it starts with the balance roll.
                         Column(modifier = Modifier.animateItem()) {
                             val amountDisplay = formatter.displayMintUnitAmount(
                                 amount = tx.amount,
@@ -344,6 +340,9 @@ fun HomeScreen(
                     item("view-all") {
                         Row(
                             modifier = Modifier
+                                // Glides down with the rows a new payment pushes
+                                // instead of snapping ahead of them.
+                                .animateItem()
                                 .fillMaxWidth()
                                 .padding(top = CashuTheme.spacing.snug),
                             verticalAlignment = Alignment.CenterVertically,
@@ -453,7 +452,7 @@ private fun HomeBalanceHero(
     persistedUnit: String,
     onUnitSelected: (String) -> Unit,
     onSatBalanceClick: (() -> Unit)?,
-    receivedPayment: ReceivedPaymentEvent?,
+    receivedDeltas: Map<String, Long>,
     formatter: AmountFormatter,
     statusMessage: String?,
 ) {
@@ -494,9 +493,8 @@ private fun HomeBalanceHero(
                 ) { page ->
                     val unit = units.getOrElse(page) { "sat" }
                     val isSat = unit.equals("sat", ignoreCase = true)
-                    val receivedDelta = receivedPayment
-                        ?.takeIf { it.unit.equals(unit, ignoreCase = true) }
-                        ?.displayDelta(formatter)
+                    val receivedDelta = receivedDeltas[unit.lowercase()]
+                        ?.let { receivedDeltaText(it, unit, formatter) }
                     BalanceDisplay(
                         amount = if (isSat) {
                             satAmount
@@ -519,9 +517,8 @@ private fun HomeBalanceHero(
             } else {
                 BalanceDisplay(
                     amount = satAmount,
-                    receivedDelta = receivedPayment
-                        ?.takeIf { it.unit.equals("sat", ignoreCase = true) }
-                        ?.displayDelta(formatter),
+                    receivedDelta = receivedDeltas["sat"]
+                        ?.let { receivedDeltaText(it, "sat", formatter) },
                     statusMessage = statusMessage,
                     onPrimaryClick = onSatBalanceClick,
                     modifier = Modifier.fillMaxWidth(),
@@ -565,7 +562,7 @@ private fun HomeBalanceHero(
     }
 }
 
-private fun ReceivedPaymentEvent.displayDelta(formatter: AmountFormatter): String =
+private fun receivedDeltaText(amount: Long, unit: String, formatter: AmountFormatter): String =
     if (unit.equals("sat", ignoreCase = true)) {
         "+" + formatter.formatSats(amount, includeUnit = false)
     } else {

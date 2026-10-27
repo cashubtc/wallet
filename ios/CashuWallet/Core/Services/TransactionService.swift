@@ -22,6 +22,10 @@ class TransactionService: ObservableObject {
     /// Pending tokens that have been received but not yet claimed by user
     @Published var pendingReceiveTokens: [PendingReceiveToken] = []
 
+    /// False until the first load publishes `transactions`, and again after a
+    /// reset, so an empty list can be told apart from one not read yet.
+    @Published private(set) var hasLoadedTransactions = false
+
     // MARK: - Private Properties
 
     private let walletRepository: () -> WalletRepository?
@@ -245,6 +249,7 @@ class TransactionService: ObservableObject {
             records: walletStore.loadMintTransfers(),
             mintName: { MintInfo.displayName(for: $0, in: mints) }
         )
+        if !hasLoadedTransactions { hasLoadedTransactions = true }
 
         // Post notification that transactions were updated
         NotificationCenter.default.post(name: .cashuTransactionsUpdated, object: nil)
@@ -257,6 +262,7 @@ class TransactionService: ObservableObject {
     func clearState() {
         transactions = []
         pendingReceiveTokens = []
+        hasLoadedTransactions = false
         NotificationCenter.default.post(name: .cashuTransactionsUpdated, object: nil)
     }
 

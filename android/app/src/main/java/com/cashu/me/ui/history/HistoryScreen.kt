@@ -1,6 +1,7 @@
 package com.cashu.me.ui.history
 
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Box
 import androidx.compose.animation.core.Spring
@@ -285,6 +286,21 @@ fun HistoryScreen(
                     )
                 } else {
                     val listState = rememberLazyListState()
+                    // A payment that starts a new section (the day's first)
+                    // lands above the old first row, and a lazy list keeps its
+                    // first visible row in place, so the arrival would sit out
+                    // of view above the top. While the list rests at the top,
+                    // keep it there so the arrival pushes in like any other.
+                    val firstKey = sections.firstOrNull()?.title
+                    val previousFirstKey = remember { FirstKeyHolder(firstKey) }
+                    if (firstKey != previousFirstKey.key) {
+                        val atTop = Snapshot.withoutReadObservation {
+                            listState.firstVisibleItemIndex == 0 &&
+                                listState.firstVisibleItemScrollOffset == 0
+                        }
+                        if (atTop) listState.requestScrollToItem(0)
+                        previousFirstKey.key = firstKey
+                    }
                     // Filter switches snap the list back to the top with motion
                     // (iOS: withAnimation(.snappy) { proxy.scrollTo(first, .top) }).
                     LaunchedEffect(filter) {
@@ -360,7 +376,7 @@ fun HistoryScreen(
                                         )
                                         CashuRequestRow(
                                             request = item.request,
-                                            timestamp = formatRelativeTimestamp(item.request.createdAtEpochMillis),
+                                            timestamp = formatRelativeTimestamp(item.date),
                                             primaryAmountText = amountDisplay?.primary,
                                             secondaryAmountText = amountDisplay?.secondary,
                                             onClick = {
@@ -442,6 +458,9 @@ private fun HistoryEmptyState(
     )
 }
 
+/** The first section seen last composition, without being state. */
+private class FirstKeyHolder(var key: String?)
+
 /** Unified History timeline item. Mirrors iOS HistoryItem enum. */
 internal sealed interface HistoryItem {
     val date: Long
@@ -450,8 +469,12 @@ internal sealed interface HistoryItem {
         override val date: Long get() = transaction.dateEpochMillis
         override val key: String get() = "tx:${transaction.id}"
     }
-    data class Req(val request: CashuRequest) : HistoryItem {
-        override val date: Long get() = request.createdAtEpochMillis
+    /**
+     * [activityEpochMillis] is the request's latest payment, or its creation
+     * while it has none, so a request that just got paid sorts to the top.
+     */
+    data class Req(val request: CashuRequest, val activityEpochMillis: Long) : HistoryItem {
+        override val date: Long get() = activityEpochMillis
         override val key: String get() = "req:${request.id}"
     }
 }
@@ -482,6 +505,7 @@ internal fun unifiedFiltered(
             }
         }
         .map { HistoryItem.Tx(it) as HistoryItem }
+    val transactionDates = transactions.associate { it.id to it.dateEpochMillis }
     val reqItems = requests
         .filter { req ->
             when (filter) {
@@ -490,7 +514,7 @@ internal fun unifiedFiltered(
                 HistoryFilter.Completed -> req.receivedPayments.isNotEmpty()
             }
         }
-        .map { HistoryItem.Req(it) as HistoryItem }
+        .map { HistoryItem.Req(it, it.lastActivityEpochMillis(transactionDates)) as HistoryItem }
     val all = (txItems + reqItems).sortedByDescending { it.date }
     val normalizedQuery = query.trim()
     if (normalizedQuery.isEmpty()) return all

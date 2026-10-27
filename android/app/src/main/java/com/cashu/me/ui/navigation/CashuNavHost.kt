@@ -41,6 +41,7 @@ import com.cashu.me.Models.CashuRequest
 import com.cashu.me.Models.WalletTransaction
 import com.cashu.me.ui.history.HistoryScreen
 import com.cashu.me.ui.history.TransactionReceiptSheet
+import com.cashu.me.ui.home.HomeArrivalCoordinator
 import com.cashu.me.ui.home.HomeScreen
 import com.cashu.me.ui.mints.MintDetailScreen
 import com.cashu.me.ui.mints.MintsScreen
@@ -83,10 +84,15 @@ fun CashuNavHost(
     pendingMintScan: String?,
     onPendingMintScanConsumed: () -> Unit,
     onClaimReceiveToken: (String) -> Unit,
+    homeArrival: HomeArrivalCoordinator,
+    onReceiptSheetChanged: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var receiptTransaction by remember { mutableStateOf<WalletTransaction?>(null) }
     var receiptRequest by remember { mutableStateOf<CashuRequest?>(null) }
+    // A receipt sheet over Home holds its arrivals until the sheet is gone.
+    val receiptSheetOpen = receiptTransaction != null || receiptRequest != null
+    LaunchedEffect(receiptSheetOpen) { onReceiptSheetChanged(receiptSheetOpen) }
     var receiptBackdropVisible by remember { mutableStateOf(false) }
     fun finishNfcReceive() {
         receiptRequest = null
@@ -132,6 +138,7 @@ fun CashuNavHost(
             // receipt-family sheet over the originating list (iOS parity).
             onOpenTransaction = { transaction -> receiptTransaction = transaction },
             onOpenRequest = { request -> receiptRequest = request },
+            homeArrival = homeArrival,
         )
         composable(
             route = Routes.MINT_DETAIL,
@@ -357,6 +364,7 @@ private fun NavGraphBuilder.tabDestinations(
     onPendingMintScanConsumed: () -> Unit,
     onOpenTransaction: (WalletTransaction) -> Unit,
     onOpenRequest: (CashuRequest) -> Unit,
+    homeArrival: HomeArrivalCoordinator,
 ) {
     composable(
         route = Routes.HOME,
@@ -380,6 +388,7 @@ private fun NavGraphBuilder.tabDestinations(
             onOpenSettings = { navController.navigate(Routes.SETTINGS) },
             onScan = onScan,
             contentPadding = contentPadding,
+            arrival = homeArrival,
         )
     }
     composable(
