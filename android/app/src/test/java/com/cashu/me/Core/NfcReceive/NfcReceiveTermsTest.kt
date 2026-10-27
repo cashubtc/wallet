@@ -40,6 +40,29 @@ class NfcReceiveTermsTest {
     }
 
     @Test
+    fun `any mint request receives active mint directly`() {
+        assertEquals(
+            NfcSettlementRoute.Direct,
+            validateNfcReceiveTerms(request(), "https://active.example/", "sat", 21, "https://active.example"),
+        )
+    }
+
+    @Test
+    fun `strict request rejects active mint when it is not allowed`() {
+        val failure = runCatching {
+            validateNfcReceiveTerms(
+                request(mints = listOf("https://accepted.example")),
+                "https://active.example/",
+                "sat",
+                21,
+                "https://active.example",
+            )
+        }.exceptionOrNull()
+        assertTrue(failure is IllegalArgumentException)
+        assertTrue(failure?.message.orEmpty().contains("selected mint"))
+    }
+
+    @Test
     fun `fixed amount rejects insufficient token`() {
         val failure = runCatching {
             validateNfcReceiveTerms(request(amount = 21), "https://active.example", "sat", 20, "https://active.example")
