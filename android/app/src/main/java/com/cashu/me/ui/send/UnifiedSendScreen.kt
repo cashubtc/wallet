@@ -333,15 +333,14 @@ fun UnifiedSendScreen(
     val meltUnavailableReasonFor: ((MintInfo) -> String?)? = meltMethod?.let { method ->
         { mint -> meltUnavailableReason(mint, method, amountlessBolt11) }
     }
-    val activeMint = when (val route = cashuRoute) {
-        is CashuPaymentRequestRoute.PayWithEcash -> route.mint
-        is CashuPaymentRequestRoute.AcquireThenPay -> route.targetMintUrl?.let { target ->
-            walletState.mints.firstOrNull {
-                normalizedMintUrlForSelection(it.url) == normalizedMintUrlForSelection(target)
-            }
-        }
-        else -> walletState.mints.firstOrNull { it.url == activeMintUrl } ?: walletState.activeMint
-    }
+    val activeMint = cashuRequestDisplayMint(
+        route = cashuRoute,
+        request = (locked as? LockedRail.Creq)?.decoded?.summary,
+        mints = walletState.mints,
+        selectedMintUrl = selectedMintUrl,
+        activeMintUrl = walletState.activeMint?.url,
+        fallbackMint = walletState.mints.firstOrNull { it.url == activeMintUrl } ?: walletState.activeMint,
+    )
     val cashuRequestFeeKey = (locked as? LockedRail.Creq)?.let { rail ->
         (cashuRoute as? CashuPaymentRequestRoute.PayWithEcash)?.let { route ->
             CashuRequestFeeEstimateKey(
