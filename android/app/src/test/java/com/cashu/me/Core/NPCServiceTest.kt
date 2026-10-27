@@ -58,6 +58,18 @@ class NPCServiceTest {
         assertEquals(1_779_271_200L, quote.createdAtEpochSeconds)
         assertEquals(1_779_271_800L, quote.paidAtEpochSeconds)
         assertEquals(1_779_273_000L, quote.expiryEpochSeconds)
+        assertEquals("sat", quote.cdkQuote?.unit)
+    }
+
+    @Test
+    fun retainsAnIndependentOriginalQuoteThroughDomainCopies() {
+        val original = NpubCashQuote("id", 21uL, "usd", 100uL, 120uL, 200uL,
+            "https://mint.example/", "invoice", "PAID", true)
+        val domain = NPCService.fromCdkQuote(original)
+        original.unit = "sat"
+        val normalized = domain.copy(mintUrl = "https://mint.example")
+        assertEquals("usd", normalized.cdkQuote?.unit)
+        assertEquals("https://mint.example/", normalized.cdkQuote?.mintUrl)
     }
 
     @Test

@@ -61,6 +61,7 @@ data class NPCQuote(
     val createdAtEpochSeconds: Long?,
     val paidAtEpochSeconds: Long?,
     val expiryEpochSeconds: Long? = null,
+    val cdkQuote: NpubCashQuote? = null,
 ) {
     val isPaid: Boolean get() = state.equals("PAID", ignoreCase = true)
 }
@@ -533,6 +534,7 @@ class NPCService internal constructor(
             createdAtEpochSeconds = quote.createdAt.toLong(),
             paidAtEpochSeconds = quote.paidAt?.toLong(),
             expiryEpochSeconds = quote.expiresAt?.toLong(),
+            cdkQuote = quote.copy(),
         )
 
         fun paidQuotesForProcessing(
