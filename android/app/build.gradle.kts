@@ -27,8 +27,8 @@ android {
         applicationId = "com.cashu.me"
         minSdk = 26
         targetSdk = 36
-        versionCode = 7
-        versionName = "1.0"
+        versionCode = 8
+        versionName = "1.0.1"
         testInstrumentationRunner = "com.cashu.me.test.CashuUiTestRunner"
         testInstrumentationRunnerArguments["clearPackageData"] = "true"
         testInstrumentationRunnerArguments["useTestStorageService"] = "true"
