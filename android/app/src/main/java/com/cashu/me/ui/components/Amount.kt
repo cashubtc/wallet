@@ -25,6 +25,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import com.cashu.me.ui.theme.withMonoDigits
 import com.cashu.me.ui.theme.BitcoinSymbol
+import com.cashu.me.ui.theme.rememberReducedMotion
 
 /** Keep the existing Bitcoin face at the surrounding text's size and weight. */
 internal fun bitcoinAmountText(text: String): AnnotatedString = buildAnnotatedString {
@@ -49,6 +50,9 @@ internal fun bitcoinAmountText(text: String): AnnotatedString = buildAnnotatedSt
  * @param semanticsLabel replaces the node's reading entirely. Amount strings
  *   contain glyphs like `₿` that announce as nothing useful, so a hero should
  *   always pass a spoken form.
+ * @param rollDigits roll changed digits instead of cross-fading the whole
+ *   amount (iOS `.numericText`); see [RollingAmountText]. Reduced motion keeps
+ *   the cross-fade, which [animated] then governs.
  */
 @Composable
 fun AmountText(
@@ -57,6 +61,7 @@ fun AmountText(
     style: TextStyle = MaterialTheme.typography.bodyLarge,
     color: Color = Color.Unspecified,
     animated: Boolean = true,
+    rollDigits: Boolean = false,
     maxLines: Int = Int.MAX_VALUE,
     // Ellipsis, not Clip: a hard cut mid-glyph reads as a rendering fault,
     // and every caller that had thought about it was already overriding this.
@@ -79,6 +84,17 @@ fun AmountText(
     // Auto-size needs a bounded width; fill so the Text sees the parent's max.
     val textModifier = (if (autoSize != null) Modifier.fillMaxWidth() else Modifier).then(semantics)
 
+    if (rollDigits && !rememberReducedMotion()) {
+        RollingAmountText(
+            text = styledText,
+            style = finalStyle,
+            modifier = modifier.then(textModifier),
+            maxLines = maxLines,
+            overflow = overflow,
+            autoSize = autoSize,
+        )
+        return
+    }
     if (!animated) {
         Text(
             text = styledText,

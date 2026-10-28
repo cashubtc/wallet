@@ -103,6 +103,16 @@ struct CashuRequest: Codable, Identifiable, Hashable {
         receivedPayments.reduce(0) { $0 + $1.amount }
     }
 
+    /// When this intent last saw money: its latest payment, dated by the
+    /// wallet's transaction when known and otherwise by when it was linked,
+    /// or its creation while it has none. History sorts and dates the row by
+    /// it, so a request that just got paid moves to the top.
+    func lastActivityAt(transactionDates: [String: Date]) -> Date {
+        receivedPayments
+            .map { transactionDates[$0.transactionId] ?? $0.receivedAt }
+            .max() ?? createdAt
+    }
+
     /// Derived lifecycle. For a reusable BOLT12 offer the cumulative total is
     /// authoritative from the mint quote's `amountIssued`; `receivedPayments`
     /// here is the per-receipt breakdown, used only to decide collecting vs
