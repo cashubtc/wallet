@@ -3,6 +3,9 @@ package com.cashu.me.ui.send
 import com.cashu.me.Core.PendingSendRecovery
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -55,6 +58,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.graphicsLayer
@@ -90,6 +95,7 @@ import com.cashu.me.Core.compatibleMintsForCashuPaymentRequest
 import com.cashu.me.Core.isAmountlessBolt11
 import com.cashu.me.Core.meltPaymentMethod
 import com.cashu.me.Core.meltUnavailableReason
+import com.cashu.me.Core.largestPayableMeltAmount
 import com.cashu.me.Core.normalizedMintUrlForSelection
 import com.cashu.me.Core.presentation
 import com.cashu.me.Core.routeForCashuPaymentRequest
@@ -107,7 +113,6 @@ import com.cashu.me.ui.components.AmountText
 import com.cashu.me.ui.components.CashuTextField
 import com.cashu.me.ui.components.EmptyState
 import com.cashu.me.ui.components.EmptyStateSize
-import com.cashu.me.ui.components.FlowSheetTitle
 import com.cashu.me.ui.components.GhostButton
 import com.cashu.me.ui.components.InlineNotice
 import com.cashu.me.ui.components.InlineNoticeHost
@@ -135,10 +140,13 @@ import com.cashu.me.ui.components.leavingRoomAbove
 import com.cashu.me.ui.mints.ConnectMintContext
 import com.cashu.me.ui.mints.ConnectMintSheetContent
 import com.cashu.me.ui.testing.UiTestTags
+import com.cashu.me.ui.theme.CashuMotion
 import com.cashu.me.ui.theme.CashuTheme
+import com.cashu.me.ui.theme.fadeThrough
 import com.cashu.me.ui.theme.withMonoDigits
 import com.cashu.me.ui.theme.AmountScale
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -227,6 +235,9 @@ fun UnifiedSendScreen(
             android.nfc.NfcAdapter.getDefaultAdapter(context) != null
     }
 
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+
     var step by remember { mutableStateOf(SendStep.Input) }
     var status by remember { mutableStateOf<SendStatus?>(null) }
     var recoveringSend by remember { mutableStateOf(false) }
@@ -237,6 +248,12 @@ fun UnifiedSendScreen(
     var suppressedValue by remember { mutableStateOf<String?>(null) }
     var amount by remember { mutableStateOf("") }
     var cameFromAmount by remember { mutableStateOf(false) }
+    // Fee-aware Max for melts quotes the mint before filling the keypad.
+    var maxJob by remember { mutableStateOf<Job?>(null) }
+    var findingMax by remember { mutableStateOf(false) }
+    var maxNotice by remember { mutableStateOf<String?>(null) }
+    var maxFeedback by remember { mutableStateOf<String?>(null) }
+    var maxGeneration by remember { mutableStateOf(0) }
     var selectedMintUrl by remember { mutableStateOf<String?>(null) }
     var mintPickerOpen by remember { mutableStateOf(false) }
     var cashuTargetPickerOpen by remember { mutableStateOf(false) }
@@ -316,15 +333,14 @@ fun UnifiedSendScreen(
     val meltUnavailableReasonFor: ((MintInfo) -> String?)? = meltMethod?.let { method ->
         { mint -> meltUnavailableReason(mint, method, amountlessBolt11) }
     }
-    val activeMint = when (val route = cashuRoute) {
-        is CashuPaymentRequestRoute.PayWithEcash -> route.mint
-        is CashuPaymentRequestRoute.AcquireThenPay -> route.targetMintUrl?.let { target ->
-            walletState.mints.firstOrNull {
-                normalizedMintUrlForSelection(it.url) == normalizedMintUrlForSelection(target)
-            }
-        }
-        else -> walletState.mints.firstOrNull { it.url == activeMintUrl } ?: walletState.activeMint
-    }
+    val activeMint = cashuRequestDisplayMint(
+        route = cashuRoute,
+        request = (locked as? LockedRail.Creq)?.decoded?.summary,
+        mints = walletState.mints,
+        selectedMintUrl = selectedMintUrl,
+        activeMintUrl = walletState.activeMint?.url,
+        fallbackMint = walletState.mints.firstOrNull { it.url == activeMintUrl } ?: walletState.activeMint,
+    )
     val cashuRequestFeeKey = (locked as? LockedRail.Creq)?.let { rail ->
         (cashuRoute as? CashuPaymentRequestRoute.PayWithEcash)?.let { route ->
             CashuRequestFeeEstimateKey(
@@ -345,7 +361,17 @@ fun UnifiedSendScreen(
     // "To" pill like iOS's UnifiedSendView.
     val creqFromScan = (locked as? LockedRail.Creq)?.fromScan == true
 
+    fun cancelMax() {
+        maxGeneration += 1
+        maxJob?.cancel()
+        maxJob = null
+        findingMax = false
+        maxNotice = null
+        maxFeedback = null
+    }
+
     fun reset(toInput: Boolean = true) {
+        cancelMax()
         locked = null
         amount = ""
         meltQuote = null
@@ -393,7 +419,14 @@ fun UnifiedSendScreen(
                     step = SendStep.Confirm
                 }
             }
-            is SendDestinationResolution.EcashToken -> onOpenReceiveToken(resolution.token)
+            is SendDestinationResolution.EcashToken -> {
+                // The claim page replaces this sheet; take the keyboard along
+                // so it does not hang over the home screen until the sheet's
+                // window is torn down (see ReceiveEcashScreen.routeInput).
+                focusManager.clearFocus()
+                keyboardController?.hide()
+                onOpenReceiveToken(resolution.token)
+            }
             SendDestinationResolution.Unrecognized -> {
                 if (showUnrecognizedHint) {
                     inputHint =
@@ -572,6 +605,10 @@ fun UnifiedSendScreen(
     }
 
     // Confirm entry prefetches the melt quote (iOS shows fee/total skeleton).
+    LaunchedEffect(step, activeMintUrl, amountlessBlock) {
+        cancelMax()
+    }
+
     LaunchedEffect(step, locked, confirmAmount, activeMintUrl) {
         if (step != SendStep.Confirm) return@LaunchedEffect
         val rail = locked as? LockedRail.Melt ?: return@LaunchedEffect
@@ -668,16 +705,87 @@ fun UnifiedSendScreen(
     // amount/confirm/status need the full sheet for the keypad and pay scaffold.
     val prefersCompactSheet = status == null && step == SendStep.Input
     LaunchedEffect(prefersCompactSheet) { onCompactSheetChanged(prefersCompactSheet) }
+    // The keyboard leaves the moment the input face does, so its exit runs
+    // alongside the sheet's growth instead of after it. The outgoing field
+    // would otherwise keep focus until its face is disposed, and the keyboard
+    // would only start down once the sheet had already settled.
+    LaunchedEffect(prefersCompactSheet) {
+        if (!prefersCompactSheet) {
+            focusManager.clearFocus()
+            keyboardController?.hide()
+        }
+    }
     Column(
-        modifier = (
-            if (prefersCompactSheet) {
-                Modifier.fillMaxWidth()
-            } else {
-                Modifier.fillMaxHeight()
-            }
-            ).testTag(UiTestTags.SendSheet),
+        modifier = Modifier
+            // The compact input sheet grows into the full-height payment sheet
+            // when a destination resolves (and by a line when a long payload
+            // wraps). The Material sheet re-anchors to a new content height
+            // with a snap, so the height change is animated here and the sheet
+            // follows it frame by frame instead of jumping. Outermost on
+            // purpose: placed inside `fillMaxHeight` it would only animate the
+            // content while the sheet still saw the full height at once. The
+            // sheet host keeps this flow's insets keyboard-blind, so the only
+            // IME-driven size here is the input face's own padding. Timed to
+            // the shared-axis face swap it accompanies, so the sheet and the
+            // faces settle together: a spring's long tail kept the sheet
+            // sinking for ~200 ms after the input face had already landed.
+            .animateContentSize(
+                animationSpec = tween(CashuMotion.SharedAxisDurationMs, easing = FastOutSlowInEasing),
+            )
+            .then(
+                if (prefersCompactSheet) {
+                    Modifier.fillMaxWidth()
+                } else {
+                    Modifier.fillMaxHeight()
+                },
+            )
+            .testTag(UiTestTags.SendSheet),
     ) {
-        // Status terminal replaces the form body but retains the sheet title,
+        // The sheet chrome lives above the body swap so it never fades out
+        // with a face or with the status terminal: the title stays put, the
+        // back chevron fades in on the later steps and out while money moves,
+        // and the pinned "To" row expands in once a destination is locked and
+        // stays through the quote wait and the payment itself.
+        val showsConnectMint = status == null && step == SendStep.Input && walletState.mints.isEmpty()
+        if (!showsConnectMint) {
+            SheetHeader(
+                title = if (creqFromScan) "Pay Cashu Request" else "Send",
+                navigationIcon = Icons.AutoMirrored.Outlined.ArrowBack
+                    .takeIf { status == null && step != SendStep.Input },
+                navigationContentDescription = "Back",
+                onNavigationClick = ::goBack,
+            )
+            val recipient = if (step != SendStep.Input && !creqFromScan) {
+                when (val rail = locked) {
+                    is LockedRail.Melt -> PaymentRequestDecoder.displayRequest(rail.raw, rail.decoded)
+                    is LockedRail.Creq -> PaymentRequestDecoder.displayRequest(rail.raw, rail.decoded)
+                    null -> PaymentRequestDecoder.middleTruncated(destination)
+                }
+            } else {
+                ""
+            }
+            // The row takes its space in the same frame the step changes and
+            // only fades its ink: the sheet column animates its height as one
+            // motion, and a row that animated its own height alongside kept
+            // retargeting that animation, which read as a 150ms hesitation
+            // before the sheet got going on the way back.
+            val toRowVisible = recipient.isNotBlank() &&
+                status !is SendStatus.Sent && status !is SendStatus.Failed
+            val toRowAlpha by animateFloatAsState(
+                targetValue = if (toRowVisible) 1f else 0f,
+                animationSpec = tween(200),
+                label = "unified-send-to-row",
+            )
+            if (toRowVisible) {
+                ToRow(
+                    destination = recipient,
+                    modifier = Modifier
+                        .padding(horizontal = CashuTheme.spacing.comfortable)
+                        .graphicsLayer { alpha = toRowAlpha },
+                )
+            }
+        }
+        // Status terminal replaces the form body under the chrome above,
         // matching the toolbar-owned iOS PaymentStatusView slot.
         // One content key for every status value keeps a single
         // PaymentStatusScreen mounted across Sending → Sent/Failed, so the
@@ -692,15 +800,12 @@ fun UnifiedSendScreen(
                     .weight(1f)
                     .fillMaxWidth()
             },
-            transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(150)) },
+            transitionSpec = { fadeThrough() },
             label = "unified-send-terminal",
             contentKey = { it != null },
         ) { current ->
             if (current != null) {
                 Column(modifier = Modifier.fillMaxSize()) {
-                    FlowSheetTitle(
-                        title = if (creqFromScan) "Pay Cashu Request" else "Send",
-                    )
                     if (current is SendStatus.Failed && current.recovery != null) {
                         PendingSendRecoveryContent(current.recovery, walletManager, onClose, Modifier.weight(1f), { recoveringSend = it })
                     } else SendStatusTerminal(
@@ -735,35 +840,10 @@ fun UnifiedSendScreen(
                         Modifier.fillMaxSize()
                     },
                 ) {
-                    if (step == SendStep.Input) {
-                        FlowSheetTitle(
-                            title = if (creqFromScan) "Pay Cashu Request" else "Send",
-                        )
-                    } else {
-                        SheetHeader(
-                            title = if (creqFromScan) "Pay Cashu Request" else "Send",
-                            navigationIcon = Icons.AutoMirrored.Outlined.ArrowBack,
-                            navigationContentDescription = "Back",
-                            onNavigationClick = ::goBack,
-                        )
-                    }
-                    // The pinned "To" row is shared by the amount AND confirm
-                    // faces, rendered once up here so the recipient is the step
-                    // swap's fixed anchor — it never slides with the faces
-                    // (iOS parity).
-                    if (step != SendStep.Input && !creqFromScan) {
-                        val recipient = when (val rail = locked) {
-                            is LockedRail.Melt -> PaymentRequestDecoder.displayRequest(rail.raw, rail.decoded)
-                            is LockedRail.Creq -> PaymentRequestDecoder.displayRequest(rail.raw, rail.decoded)
-                            null -> PaymentRequestDecoder.middleTruncated(destination)
-                        }
-                        if (recipient.isNotBlank()) {
-                            ToRow(
-                                destination = recipient,
-                                modifier = Modifier.padding(horizontal = CashuTheme.spacing.comfortable),
-                            )
-                        }
-                    }
+                    // The header and the pinned "To" row sit above this swap
+                    // (see the chrome at the top of the sheet), so the
+                    // recipient is the step swap's fixed anchor — it never
+                    // slides with the faces (iOS parity).
                     TwoFaceScreen(
                         targetState = step,
                         modifier = if (step == SendStep.Input) {
@@ -821,7 +901,10 @@ fun UnifiedSendScreen(
                                 } else {
                                     AmountFace(
                                         amount = amount,
-                                        onAmountChange = { amount = it },
+                                        onAmountChange = {
+                                            cancelMax()
+                                            amount = it
+                                        },
                                         mint = activeMint,
                                         balanceText = activeMint?.let {
                                             formatter.formatWalletSats(it.balance, settings.useBitcoinSymbol)
@@ -830,14 +913,65 @@ fun UnifiedSendScreen(
                                         // drops its chevron and stops opening a picker.
                                         onPickMint = { mintPickerOpen = true }
                                             .takeIf { paymentMintChoices.size > 1 },
-                                        onUseMax = {
-                                            activeMint?.balance?.takeIf { it > 0 }?.let {
-                                                amount = UnifiedSendAmountEntry.maxRawForBalance(it, entryContext)
+                                        // Lightning and on-chain payments also spend the mint's
+                                        // fee reserve, so Max asks the mint what fits instead of
+                                        // filling the gross balance the confirm step would then
+                                        // reject. Cashu requests pay ecash: gross (iOS parity).
+                                        onUseMax = onUseMax@{
+                                            val mint = activeMint?.takeIf { it.balance > 0 } ?: return@onUseMax
+                                            cancelMax()
+                                            val generation = maxGeneration
+                                            val rail = locked as? LockedRail.Melt
+                                            if (rail == null) {
+                                                amount = UnifiedSendAmountEntry.maxRawForBalance(mint.balance, entryContext)
+                                                return@onUseMax
+                                            }
+                                            val entryBeforeMax = amount
+                                            // State reads, not the composition's captured values:
+                                            // the coroutine must see a later edit or mint switch.
+                                            val selectionBeforeMax = selectedMintUrl
+                                            findingMax = true
+                                            maxJob = scope.launch {
+                                                try {
+                                                    val payable = largestPayableMeltAmount(mint.balance) { candidate ->
+                                                        walletManager.createMeltQuote(
+                                                            request = rail.raw,
+                                                            amountSats = candidate,
+                                                            preferredMintURL = mint.url,
+                                                        ).totalAmount
+                                                    }
+                                                    // Typing or switching mints meanwhile wins over a late result.
+                                                    if (generation == maxGeneration && step == SendStep.Amount && amount == entryBeforeMax &&
+                                                        selectedMintUrl == selectionBeforeMax
+                                                    ) {
+                                                        if (payable != null) {
+                                                            amount = UnifiedSendAmountEntry.maxRawForBalance(payable, entryContext)
+                                                            if (payable < mint.balance) {
+                                                                maxFeedback = "Amount adjusted for the network fee."
+                                                            }
+                                                        } else {
+                                                            maxNotice = "This mint's balance can't cover the network fee for this payment." +
+                                                                if (paymentMintChoices.size > 1) " Choose another mint." else ""
+                                                        }
+                                                    }
+                                                } catch (cancellation: CancellationException) {
+                                                    throw cancellation
+                                                } catch (failure: Throwable) {
+                                                    if (generation == maxGeneration && step == SendStep.Amount &&
+                                                        amount == entryBeforeMax && selectedMintUrl == selectionBeforeMax
+                                                    ) maxNotice = failure.userFacingWalletMessage
+                                                } finally {
+                                                    if (generation == maxGeneration) findingMax = false
+                                                }
                                             }
                                         },
+                                        isFindingMax = findingMax,
+                                        notice = maxNotice,
+                                        maxFeedback = maxFeedback,
                                         amountSats = enteredAmount,
                                         entryPrimary = entryContext.primary,
                                         onFlipEntryPrimary = {
+                                            cancelMax()
                                             settingsManager.setAmountDisplayPrimary(it.rawValue)
                                         },
                                         btcPrice = entryFiatPrice,
@@ -851,7 +985,9 @@ fun UnifiedSendScreen(
                                                 formatter.formatWalletSats(fee, settings.useBitcoinSymbol)
                                             }
                                         },
-                                        onContinue = {
+                                        onContinue = onContinue@{
+                                            if (findingMax) return@onContinue
+                                            cancelMax()
                                             cameFromAmount = true
                                             step = SendStep.Confirm
                                         },
@@ -909,6 +1045,7 @@ fun UnifiedSendScreen(
             activeMintUrl = activeMintUrl,
             unavailableReason = meltUnavailableReasonFor,
             onSelect = { mint ->
+                cancelMax()
                 mint?.let { selectedMintUrl = it.url }
                 mintPickerOpen = false
             },
@@ -1119,7 +1256,13 @@ private fun InputFace(
         CashuTextField(
             value = destination,
             onValueChange = onDestinationChange,
+            // Outermost size animation on the field itself: the method rows
+            // below slide as a long destination wraps instead of hopping a
+            // line while only the sheet's edge eases (see ReceiveEcashScreen).
             modifier = Modifier
+                .animateContentSize(
+                    animationSpec = tween(CashuMotion.SharedAxisDurationMs, easing = FastOutSlowInEasing),
+                )
                 .fillMaxWidth()
                 .padding(vertical = CashuTheme.spacing.default)
                 .testTag(UiTestTags.SendDestination),
@@ -1239,6 +1382,9 @@ private fun AmountFace(
     balanceText: String?,
     onPickMint: (() -> Unit)?,
     onUseMax: () -> Unit,
+    isFindingMax: Boolean,
+    notice: String?,
+    maxFeedback: String?,
     amountSats: Long,
     entryPrimary: AmountDisplayPrimary,
     onFlipEntryPrimary: (AmountDisplayPrimary) -> Unit,
@@ -1252,10 +1398,14 @@ private fun AmountFace(
     val mintBalance = mint?.balance ?: 0L
     val validation = UnifiedSendAmountEntry.validation(amountSats, mintBalance)
     val insufficient = validation == UnifiedSendAmountValidation.InsufficientBalance
+    // A Max that couldn't settle explains why; otherwise the balance check.
+    val noticeText = notice ?: "Insufficient balance".takeIf { insufficient } ?: maxFeedback
     val isFiatEntry = entryPrimary == AmountDisplayPrimary.Fiat
     // The mint selector states the available balance, so repeating it in the
     // note would add visual noise.
-    val note = if (insufficient) AmountNote("Insufficient balance", NoticeSeverity.Caution) else null
+    val note = noticeText?.let {
+        AmountNote(it, if (notice == null && !insufficient) NoticeSeverity.Info else NoticeSeverity.Caution)
+    }
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val noteRoom = entryNoteRoom(note, maxWidth - CashuTheme.spacing.comfortable * 2)
         Column(
@@ -1300,6 +1450,7 @@ private fun AmountFace(
                     // Gated on a spendable balance, the way Send Ecash already does
                     // it — an empty mint offered a Max that filled in zero.
                     onUseMax = onUseMax.takeIf { mintBalance > 0L },
+                    isFindingMax = isFindingMax,
                 )
                 Spacer(Modifier.height(CashuTheme.spacing.snug))
             }
@@ -1310,7 +1461,7 @@ private fun AmountFace(
                 onButtonClick = onContinue,
                 modifier = Modifier.leavingRoomAbove(amountHeroHeight(AmountScale.Compact) + noteRoom),
                 decimals = if (isFiatEntry) 2 else 0,
-                buttonEnabled = validation == UnifiedSendAmountValidation.Valid,
+                buttonEnabled = validation == UnifiedSendAmountValidation.Valid && !isFindingMax,
             )
         }
     }

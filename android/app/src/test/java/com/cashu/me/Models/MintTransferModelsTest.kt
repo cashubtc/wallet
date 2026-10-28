@@ -1,7 +1,6 @@
 package com.cashu.me.Models
 
 import com.cashu.me.Core.MintTransferEligibility.Blocker
-import com.cashu.me.Core.MintTransferInProgressException
 import com.cashu.me.Core.Protocols.StorageKeys
 import com.cashu.me.Core.Wallet.isInsufficientBalance
 import com.cashu.me.Core.Wallet.userFacingWalletMessage
@@ -182,10 +181,6 @@ class MintTransferModelsTest {
             MintTransferException.PaymentReturned().userFacingWalletMessage,
         )
         assertTrue(MintTransferException.InsufficientBalance(required = 42, available = 40).isInsufficientBalance)
-        assertEquals(
-            "A transfer involving this mint is still settling. Keep it connected until the transfer finishes.",
-            MintTransferInProgressException().userFacingWalletMessage,
-        )
     }
 
     // MARK: - Fixtures

@@ -3,6 +3,133 @@ import XCTest
 @testable import CashuWallet
 
 @MainActor
+final class CashuRequestDeliveryRecoveryTests: PaymentFixtureTestCase {
+    private func pay(_ wallet: Wallet, target: String = "unavailable",
+                     beforeReclaim: () async throws -> Void = {}) async throws {
+        let encoded = try await call(root + "/request", method: "POST", body: [
+            "target": fixture + root + "/" + target, "amount": 21, "mints": [wallet.mintUrl().url]
+        ])["request"] as! String
+        let request = try PaymentRequest.fromString(encoded: encoded)
+        let context = PendingSendRecovery(mintURL: wallet.mintUrl().url, unit: "sat")
+        let db = try database(of: wallet)
+        try await performRecoverablePaymentRequest(
+            context: context,
+            inspect: { ids in
+                var current = context
+                current.operationIDs = ids
+                let pending = try await wallet.getPendingSends()
+                let sagas = try await db.getIncompleteSagas()
+                let transactions = try await wallet.listTransactions(direction: .outgoing)
+                return try resolvePendingSendRecovery(
+                    context: current, mintURL: current.mintURL, sagaJSON: sagas, pendingIDs: pending,
+                    transactions: Dictionary(uniqueKeysWithValues: transactions.map {
+                        ($0.id.hex, $0.status == .completed ? SendRecoveryTransactionStatus.completed
+                            : $0.status == .pending ? .pending : .failed)
+                    }))
+            },
+            recover: { _ = try await wallet.recoverIncompleteSagas() },
+            prepare: { try await wallet.preparePayRequest(paymentRequest: request, customAmount: nil) },
+            reclaim: { id in
+                try await beforeReclaim()
+                _ = try await wallet.revokeSend(operationId: id)
+            }
+        )
+    }
+
+    func testFailedDeliveryReturnsSpendableFundsAcrossReopen() async throws {
+        let payer = try await makeWallet("controlled")
+        let recipient = try await makeWallet("controlled")
+        try await fund(payer, controlled: "controlled")
+        do { try await pay(payer); XCTFail("Expected returned payment") }
+        catch is CashuRequestDeliveryReturned { }
+        let pending = try await payer.getPendingSends()
+        XCTAssertTrue(pending.isEmpty)
+        let receipts = try await payer.listTransactions(direction: .outgoing)
+        XCTAssertEqual(receipts.count, 1)
+        XCTAssertEqual(receipts.first?.status, .failed)
+        let reopened = try await reopen(payer)
+        let available = try await balance(reopened)
+        XCTAssertEqual(available, 100)
+        let token = try await send(reopened, amount: 100).confirm(memo: nil)
+        let credited = try await receive(recipient, token: token)
+        XCTAssertEqual(credited, 100)
+    }
+
+    func testFailedAcknowledgementInvalidatesUnclaimedDeliveredToken() async throws {
+        let payer = try await makeWallet("controlled")
+        let recipient = try await makeWallet("controlled")
+        try await fund(payer, controlled: "controlled")
+        do { try await pay(payer, target: "receive?fail=true"); XCTFail("Expected returned payment") }
+        catch is CashuRequestDeliveryReturned { }
+        let encoded = try await call(root + "/received-token")["token"] as! String
+        let token = try Token.decode(encodedToken: encoded)
+        do { _ = try await receive(recipient, token: token); XCTFail("Revoked token must not redeem") }
+        catch { }
+        let senderBalance = try await balance(payer)
+        let receiverBalance = try await balance(recipient)
+        XCTAssertEqual(senderBalance, 100)
+        XCTAssertEqual(receiverBalance, 0)
+    }
+
+    func testRecipientClaimBeforeReclaimIsCompletedNotRefunded() async throws {
+        let payer = try await makeWallet("controlled")
+        let recipient = try await makeWallet("controlled")
+        try await fund(payer, controlled: "controlled")
+        do {
+            try await pay(payer, target: "receive?fail=true") {
+                let encoded = try await self.call(self.root + "/received-token")["token"] as! String
+                let credited = try await self.receive(recipient, token: Token.decode(encodedToken: encoded))
+                XCTAssertEqual(credited, 21)
+            }
+            XCTFail("Expected completed recovery")
+        } catch let recovery as PendingSendRecovery { XCTAssertEqual(recovery.outcome, .completed) }
+        let senderBalance = try await balance(payer)
+        let receiverBalance = try await balance(recipient)
+        XCTAssertEqual(senderBalance, 79)
+        XCTAssertEqual(receiverBalance, 21)
+    }
+
+    func testFailedReclaimRemainsPendingAndBlocksRetry() async throws {
+        let payer = try await makeWallet("controlled")
+        try await fund(payer, controlled: "controlled")
+        do {
+            try await pay(payer) { try await self.arm("/v1/swap", action: "reject", count: 20) }
+            XCTFail("Expected pending recovery")
+        } catch let recovery as PendingSendRecovery { XCTAssertEqual(recovery.outcome, .pending) }
+        let pending = try await payer.getPendingSends()
+        do { try await pay(payer); XCTFail("Expected retry blocked") }
+        catch let recovery as PendingSendRecovery { XCTAssertEqual(recovery.outcome, .pending) }
+        let after = try await payer.getPendingSends()
+        let available = try await balance(payer)
+        XCTAssertEqual(after, pending)
+        XCTAssertEqual(available, 79)
+    }
+
+    func testExistingSharedTokenIsNotReclaimed() async throws {
+        let payer = try await makeWallet("controlled")
+        let recipient = try await makeWallet("controlled")
+        try await fund(payer, controlled: "controlled")
+        let token = try await send(payer, amount: 21).confirm(memo: nil)
+        do { try await pay(payer); XCTFail("Expected existing pending send") }
+        catch let recovery as PendingSendRecovery { XCTAssertEqual(recovery.outcome, .pending) }
+        let credited = try await receive(recipient, token: token)
+        XCTAssertEqual(credited, 21)
+    }
+
+    func testSuccessfulDeliveryIsNotReclaimed() async throws {
+        let payer = try await makeWallet("controlled")
+        let recipient = try await makeWallet("controlled")
+        try await fund(payer, controlled: "controlled")
+        try await pay(payer, target: "receive")
+        let encoded = try await call(root + "/received-token")["token"] as! String
+        let credited = try await receive(recipient, token: Token.decode(encodedToken: encoded))
+        let available = try await balance(payer)
+        XCTAssertEqual(credited, 21)
+        XCTAssertEqual(available, 79)
+    }
+}
+
+@MainActor
 final class PendingSendRecoveryTests: XCTestCase {
     private enum Fault: Error { case transport, database }
     private let account = PendingSendRecovery(mintURL: "https://mint.example", unit: "sat")

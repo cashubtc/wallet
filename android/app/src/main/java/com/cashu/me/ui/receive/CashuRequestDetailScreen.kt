@@ -31,6 +31,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -128,6 +129,11 @@ fun CashuRequestDetailScreen(
 
     var displayedRequestId by rememberSaveable(requestId) { mutableStateOf(requestId) }
     val request = storeState.requests.firstOrNull { it.id == displayedRequestId }
+    // This screen confirms the request's payments, so home stays quiet.
+    DisposableEffect(cashuRequestStore, displayedRequestId) {
+        cashuRequestStore.beginWatching(displayedRequestId)
+        onDispose { cashuRequestStore.endWatching(displayedRequestId) }
+    }
     val requestReadiness = remember(settings, nostrState) {
         CashuRequestNostrReadiness.current(nostrService, settingsManager)
     }

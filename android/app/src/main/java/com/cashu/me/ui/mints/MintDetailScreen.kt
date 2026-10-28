@@ -76,6 +76,7 @@ import com.cashu.me.Core.Protocols.CurrencyRegistry
 import com.cashu.me.Core.SettingsManager
 import com.cashu.me.Core.Wallet.userFacingWalletMessage
 import com.cashu.me.Core.WalletManager
+import com.cashu.me.Core.mintRemovalConfirmationMessage
 import com.cashu.me.Core.shortenMintUrl
 import com.cashu.me.Models.MintInfo
 import com.cashu.me.Models.NutSupport
@@ -455,7 +456,12 @@ fun MintDetailScreen(
     if (confirmingRemove) {
         ActionConfirmationSheet(
             title = "Remove mint?",
-            message = "Remove ${mint?.name ?: "this mint"} from your wallet? Any unspent ecash on this mint will need to be restored from your seed phrase.",
+            message = mintRemovalConfirmationMessage(
+                mintName = mint?.name ?: "this mint",
+                hasUnfinishedTransfer = remember(mint?.url) {
+                    mint?.let { walletManager.hasUnfinishedMintTransfer(it.url) } == true
+                },
+            ),
             actionLabel = "Remove",
             destructive = true,
             onConfirm = {

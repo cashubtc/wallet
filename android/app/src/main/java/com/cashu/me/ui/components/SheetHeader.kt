@@ -1,6 +1,7 @@
 package com.cashu.me.ui.components
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
@@ -16,6 +17,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.heading
@@ -91,15 +96,26 @@ fun SheetHeader(
                     .semantics { heading() },
             )
         }
-        if (navigationIcon != null && onNavigationClick != null) {
-            IconButton(
-                onClick = onNavigationClick,
-                modifier = Modifier.align(Alignment.CenterStart),
-            ) {
-                ToolbarIcon(
-                    imageVector = navigationIcon,
-                    contentDescription = navigationContentDescription,
-                )
+        // The leading control fades in and out rather than popping: a sheet
+        // that grows a back chevron on a later step (Send's amount face) used
+        // to switch it on in the same frame the body swapped.
+        var lastNavigationIcon by remember { mutableStateOf(navigationIcon) }
+        if (navigationIcon != null) lastNavigationIcon = navigationIcon
+        val shownIcon = navigationIcon ?: lastNavigationIcon
+        AnimatedVisibility(
+            visible = navigationIcon != null && onNavigationClick != null,
+            modifier = Modifier.align(Alignment.CenterStart),
+            enter = fadeIn(spring(stiffness = Spring.StiffnessMedium)),
+            exit = fadeOut(spring(stiffness = Spring.StiffnessMedium)),
+            label = "sheet-header-navigation",
+        ) {
+            if (shownIcon != null) {
+                IconButton(onClick = { onNavigationClick?.invoke() }) {
+                    ToolbarIcon(
+                        imageVector = shownIcon,
+                        contentDescription = navigationContentDescription,
+                    )
+                }
             }
         }
         Row(

@@ -1,4 +1,44 @@
 import Foundation
+import Cdk
+
+struct CashuRequestDeliveryReturned: LocalizedError {
+    var errorDescription: String? {
+        "The payment couldn't be delivered. Unclaimed ecash was returned to your wallet. Mint fees may apply."
+    }
+}
+
+@MainActor
+func performRecoverablePaymentRequest(
+    context: PendingSendRecovery,
+    inspect: ([String]) async throws -> PendingSendRecovery,
+    recover: () async throws -> Void,
+    prepare: () async throws -> PreparedPaymentRequest,
+    reclaim: (String) async throws -> Void
+) async throws {
+    var deliveryFailed = false
+    do {
+        try await performRecoverableSend(context: context, inspect: inspect, recover: recover) { remember in
+            let prepared = try await prepare()
+            let operationID = prepared.operationId()
+            remember(operationID)
+            do {
+                try await prepared.confirm()
+            } catch let error as FfiError {
+                guard case .PaymentRequestDeliveryFailed(let failedID, _) = error,
+                      failedID == operationID else { throw error }
+                deliveryFailed = true
+                // Revoke only this attempt. The mint arbitrates a concurrent recipient claim.
+                // If reclaim fails, the normal recovery snapshot must resolve the outcome.
+                try? await reclaim(operationID)
+                throw error
+            }
+        }
+    } catch is FfiError where deliveryFailed {
+        // performRecoverableSend only rethrows the delivery error after proving
+        // no funds remain pending. Claimed/uncertain outcomes use PendingSendRecovery.
+        throw CashuRequestDeliveryReturned()
+    }
+}
 
 struct PendingSend: Identifiable, Equatable {
     let id: String

@@ -43,7 +43,7 @@ class WalletCashuRequestPaymentTest {
     }
 
     @Test
-    fun paymentFailureDoesNotRefreshBalanceOrTransactions() {
+    fun paymentFailureRefreshesReturnedFundsAndHistory() {
         val events = mutableListOf<String>()
 
         val result = runCatching {
@@ -63,6 +63,6 @@ class WalletCashuRequestPaymentTest {
         }
 
         assertEquals("payment failed", result.exceptionOrNull()?.message)
-        assertEquals(listOf("pay"), events)
+        assertEquals(listOf("pay", "refreshBalance", "loadTransactions"), events)
     }
 }

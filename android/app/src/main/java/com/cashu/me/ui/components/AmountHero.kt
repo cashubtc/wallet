@@ -68,6 +68,9 @@ private const val SymbolScale = 0.85f
  * never reflow the home canvas, but growing with the text size, so large-text
  * users are not cropped. That pair of properties is the whole reason the old
  * fixed `62.dp` had to go.
+ *
+ * [rollDigits] rolls the digits that changed instead of cross-fading the whole
+ * lockup — the home balance only, matching its iOS `.numericText`.
  */
 @Composable
 fun AmountHero(
@@ -76,6 +79,7 @@ fun AmountHero(
     modifier: Modifier = Modifier,
     color: Color = LocalContentColor.current,
     animated: Boolean = true,
+    rollDigits: Boolean = false,
     accessibilityPrefix: String? = null,
     /** Replaces the spoken amount outright, e.g. "Balance hidden" in private mode. */
     accessibilityLabel: String? = null,
@@ -94,6 +98,7 @@ fun AmountHero(
             style = style.copy(textAlign = TextAlign.Center),
             color = color,
             animated = animated,
+            rollDigits = rollDigits,
             maxLines = 1,
             autoSize = TextAutoSize.StepBased(
                 minFontSize = style.fontSize * AmountHeroMinScale,

@@ -27,8 +27,11 @@ internal fun validateNfcReceiveTerms(
     val source = normalizeNfcMint(sourceMint)
     val target = normalizeNfcMint(settlementMint)
     val allowed = request.mints.map(::normalizeNfcMint)
-    if (source == target || source in allowed) return NfcSettlementRoute.Direct
-    require(allowed.isEmpty()) { "This request only accepts ecash from the selected mint." }
+    if (allowed.isNotEmpty()) {
+        require(source in allowed) { "This request only accepts ecash from the selected mint." }
+        return NfcSettlementRoute.Direct
+    }
+    if (source == target) return NfcSettlementRoute.Direct
     require(tokenUnit.equals("sat", ignoreCase = true)) {
         "Foreign-mint conversion is currently available for sat requests only."
     }

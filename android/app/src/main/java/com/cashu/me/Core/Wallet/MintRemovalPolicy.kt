@@ -5,10 +5,16 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 
-/** A transfer into or out of the mint has been paid for and not finished. */
-internal class MintTransferInProgressException : IllegalStateException(
-    "A transfer involving this mint is still settling. Keep it connected until the transfer finishes.",
-)
+/**
+ * Removal keeps an unfinished transfer on this device, where adding the mint
+ * again finishes it. A seed restore cannot recover it, because no ecash has
+ * been issued for it yet.
+ */
+internal fun mintRemovalConfirmationMessage(mintName: String, hasUnfinishedTransfer: Boolean): String {
+    val message = "Remove $mintName from your wallet? Any unspent ecash on this mint will need to be restored from your seed phrase."
+    if (!hasUnfinishedTransfer) return message
+    return message + "\n\nA transfer with this mint hasn't finished. Add the mint again on this device to finish it."
+}
 
 /** Commit local mint metadata only after the native removal succeeds. */
 internal suspend fun removeMintWalletBeforeCommit(

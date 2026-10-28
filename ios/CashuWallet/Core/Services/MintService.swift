@@ -1,20 +1,17 @@
 import Foundation
 import Cdk
 
-enum MintRemovalPolicyError: LocalizedError {
-    /// A transfer into or out of the mint has been paid for and not finished.
-    case transferInProgress
-
-    var errorDescription: String? {
-        switch self {
-        case .transferInProgress:
-            return "A transfer involving this mint is still settling. Keep it connected until the transfer finishes."
-        }
-    }
-}
-
 @MainActor
 enum MintRemovalPolicy {
+    /// Removal keeps an unfinished transfer on this device, where adding the
+    /// mint again finishes it. A seed restore cannot recover it, because no
+    /// ecash has been issued for it yet.
+    nonisolated static func confirmationMessage(mintName: String, hasUnfinishedTransfer: Bool) -> String {
+        let message = "Remove \(mintName) from your wallet? Any unspent ecash on this mint will need to be restored from your seed phrase."
+        guard hasUnfinishedTransfer else { return message }
+        return message + "\n\nA transfer with this mint hasn't finished. Add the mint again on this device to finish it."
+    }
+
     static func normalizedUnits(_ registeredUnits: [String]) -> [String] {
         let units = registeredUnits
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }

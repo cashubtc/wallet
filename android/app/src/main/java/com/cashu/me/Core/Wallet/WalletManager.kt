@@ -426,7 +426,11 @@ class WalletManager(
             walletStore.setMintRemoved(normalized, removed = false)
             walletStore.saveMints(updated)
             if (mutableState.value.activeMint == null) walletStore.activeMintURL = fetched.url
-            loadCachedState(needsOnboarding = false)
+            // Adding a mint never ends onboarding by itself: the first-mint
+            // step hands off through the ASCII curtain, which calls
+            // completeOnboarding() once it has full cover. Flipping the gate
+            // here let the wallet show through for the curtain's first frames.
+            loadCachedState(needsOnboarding = mutableState.value.needsOnboarding)
             addedMintUrl = fetched.url
         }
 
@@ -458,10 +462,8 @@ class WalletManager(
         withLoading {
             val trackedMint = mutableState.value.mints.firstOrNull { it.url == mint.url }
                 ?: throw IllegalArgumentException("Mint is no longer tracked.")
-            // Removing either end would drop the wallet that finishes it.
-            if (walletStore.loadMintTransfers().hasUnfinishedTransfer(referencing = trackedMint.url)) {
-                throw MintTransferInProgressException()
-            }
+            // An unfinished transfer stays recorded and resumes when the mint
+            // is added again; the remove sheet says so.
             removeMintWalletBeforeCommit(
                 mintUrl = trackedMint.url,
                 removeWallets = gateway::removeWallets,
@@ -482,6 +484,10 @@ class WalletManager(
             scope.launch { nostrMintBackupService.backupCurrentMintsIfEnabled() }
         }
     }
+
+    /** A transfer into or out of the mint has been paid for and not finished. */
+    fun hasUnfinishedMintTransfer(mintUrl: String): Boolean =
+        walletStore.loadMintTransfers().hasUnfinishedTransfer(referencing = mintUrl)
 
     suspend fun setActiveMint(mint: MintInfo) {
         walletStore.activeMintURL = mint.url
@@ -618,12 +624,12 @@ class WalletManager(
         return gateway.fetchMintInfo(normalized)
     }
 
-    suspend fun createMintQuote(amount: Long?, method: PaymentMethodKind, unit: String = "sat", description: String? = null): MintQuoteInfo {
-        val active = mutableState.value.activeMint ?: throw IllegalStateException("No active mint.")
+    suspend fun createMintQuote(amount: Long?, method: PaymentMethodKind, unit: String = "sat", description: String? = null, targetMintUrl: String? = null): MintQuoteInfo {
+        val mintUrl = targetMintUrl ?: mutableState.value.activeMint?.url ?: throw IllegalStateException("No active mint.")
         val offerDescription = normalizedOfferDescription(description)
         return withLoadingResult {
             gateway.createMintQuote(
-                amount, method, active.url, unit,
+                amount, method, mintUrl, unit,
                 if (method == PaymentMethodKind.Bolt12) offerDescription else description,
             ).also {
                 mintQuoteSyncService.rememberMintQuoteTimestamp(it.id)
@@ -643,8 +649,8 @@ class WalletManager(
      * returns the offer description, so the match joins quotes with the
      * locally stored quote-intent memos keyed by quote id.
      */
-    suspend fun existingAmountlessBolt12Offer(unit: String, description: String? = null): MintQuoteInfo? {
-        val activeMint = mutableState.value.activeMint ?: return null
+    suspend fun existingAmountlessBolt12Offer(unit: String, description: String? = null, targetMintUrl: String? = null): MintQuoteInfo? {
+        val mintUrl = targetMintUrl ?: mutableState.value.activeMint?.url ?: return null
         val memosByQuoteId = LinkedHashMap<String, String?>()
         cashuRequestStore.state.value.requests.forEach { request ->
             // First-wins matches offer immutability (iOS `uniquingKeysWith`
@@ -660,18 +666,18 @@ class WalletManager(
         }
         return findExistingAmountlessBolt12Offer(
             quotes = quotes,
-            mintUrl = activeMint.url,
+            mintUrl = mintUrl,
             unit = unit,
             description = description,
         )
     }
 
     /** The active mint's deposit address to hand out again, if any (iOS parity). */
-    suspend fun existingOnchainMintQuote(): MintQuoteInfo? {
-        val activeMint = mutableState.value.activeMint ?: return null
+    suspend fun existingOnchainMintQuote(targetMintUrl: String? = null): MintQuoteInfo? {
+        val mintUrl = targetMintUrl ?: mutableState.value.activeMint?.url ?: return null
         return findReusableOnchainAddress(
             quotes = gateway.listUnissuedMintQuotes(),
-            mintUrl = activeMint.url,
+            mintUrl = mintUrl,
             nowEpochSeconds = System.currentTimeMillis() / 1000,
         )
     }
@@ -1326,8 +1332,14 @@ class WalletManager(
      * and never changes wallet state. Incoming rows carry a mint quote; outgoing
      * Lightning and on-chain rows a melt quote (iOS parity).
      */
-    suspend fun requestMintQuoteSnapshot(request: CashuRequest): MintQuoteInfo? {
-        val quoteID = request.quoteId ?: return null
+    suspend fun requestMintQuoteSnapshot(request: CashuRequest): MintQuoteInfo? =
+        request.quoteId?.let { storedMintQuoteSnapshot(it) }
+
+    /** Reopen the stored request without creating a replacement or selecting another mint. */
+    suspend fun storedReceiveQuote(quoteID: String?): MintQuoteInfo? =
+        resolveStoredReceiveQuote(quoteID, ::storedMintQuoteSnapshot)
+
+    private suspend fun storedMintQuoteSnapshot(quoteID: String): MintQuoteInfo? {
         return try {
             gateway.storedMintQuote(quoteID)
         } catch (cancelled: CancellationException) {
@@ -1561,15 +1573,18 @@ class WalletManager(
     ) {
         mintCashuRequestTopUpWithRetries(quoteId)
         try {
-            gateway.payCashuPaymentRequest(encoded, amountSats, targetMintUrl)
+            payCashuPaymentRequestAndRefresh(
+                encoded, amountSats, targetMintUrl,
+                payCashuPaymentRequest = { request, amount, mint -> gateway.payCashuPaymentRequest(request, amount, mint) },
+                refreshBalance = { refreshBalance() },
+                loadTransactions = { loadTransactions() },
+            )
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (failure: Throwable) {
             if (failure.isInsufficientBalance) throw CashuRequestMintSettling()
             throw failure
         }
-        refreshBalance()
-        loadTransactions()
     }
 
     private suspend fun mintCashuRequestTopUpWithRetries(quoteId: String) {

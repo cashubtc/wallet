@@ -4,6 +4,13 @@ import com.cashu.me.Models.MintQuoteInfo
 import com.cashu.me.Models.MintQuoteState
 import com.cashu.me.Models.PaymentMethodKind
 
+/** Reopen the stored artifact; missing or settled one-shot quotes retain receipts. */
+internal suspend fun resolveStoredReceiveQuote(
+    quoteId: String?, load: suspend (String) -> MintQuoteInfo?,
+): MintQuoteInfo? = quoteId?.let { load(it) }?.takeIf {
+    it.paymentMethod == PaymentMethodKind.Bolt12 || !it.hasSettledPayment
+}
+
 internal const val LOCAL_NEVER_EXPIRES_EPOCH_SECONDS: Long = 253_402_300_799L
 
 /** CDK's payer-facing decoder replaces control characters (including newlines) with �. */

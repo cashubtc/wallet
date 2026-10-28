@@ -58,6 +58,7 @@ struct ReceiveTokenDetailView: View {
     /// unit-native amount/fee formatting so a non-sat token isn't shown as sats.
     @State private var tokenUnit: String
     @State private var receiveFee: UInt64?
+    @State private var feeFailure: ReceiveFeeFailure?
     @State private var isValidToken = false
     /// The net amount CDK actually credited (token value minus the mint's
     /// receive-swap fee), set once the claim completes. Drives the success
@@ -182,7 +183,19 @@ struct ReceiveTokenDetailView: View {
     /// rows are hairline-on-canvas, matching every other detail surface.
     private var confirmContent: some View {
         PayFlowScaffold {
-            if isSatUnit {
+            if let feeFailure {
+                if isLoadingFee {
+                    SpinnerRing()
+                        .accessibilityLabel("Retrying fee preview")
+                } else {
+                    ConfirmCautionFace(message: feeFailure.title, detail: feeFailure.message)
+                        .accessibilityElement(children: .combine)
+                        .accessibilityIdentifier("receive-token-fee-failure")
+                        .onAppear {
+                            AccessibilityNotification.Announcement(feeFailure.title + ". " + feeFailure.message).post()
+                        }
+                }
+            } else if isSatUnit {
                 CurrencyAmountDisplay(
                     sats: netReceiveAmount,
                     primary: $settings.amountDisplayPrimary
@@ -198,7 +211,9 @@ struct ReceiveTokenDetailView: View {
         } details: {
             VStack(spacing: 16) {
                 VStack(spacing: 0) {
-                    if isLoadingFee {
+                    if feeFailure != nil {
+                        detailRow(label: "Amount", value: formatAmount(tokenAmount))
+                    } else if isLoadingFee {
                         PaymentDetailPair(label: "Fee") {
                             ProgressView().scaleEffect(0.8)
                         }
@@ -212,7 +227,7 @@ struct ReceiveTokenDetailView: View {
                             value: receiveFee == 0 ? "No fee" : formatFee(receiveFee)
                         )
                     } else {
-                        PaymentDetailPair(label: "Fee unavailable") {
+                        PaymentDetailPair(label: feeFailure?.title ?? "Fee unavailable") {
                             Button {
                                 Task { await calculateFee() }
                             } label: {
@@ -233,7 +248,7 @@ struct ReceiveTokenDetailView: View {
                 }
                 .padding(.horizontal)
 
-                if !mintIsKnown && !mintUrl.isEmpty {
+                if receiveFee != nil && !isLoadingFee && !mintIsKnown && !mintUrl.isEmpty {
                     InlineNotice(
                         message: "You haven't used \(shortMintUrl(mintUrl)) before. Receiving adds it to your wallet — only continue if you trust it.",
                         title: "New mint",
@@ -249,12 +264,23 @@ struct ReceiveTokenDetailView: View {
             }
         } footer: {
             VStack(spacing: 12) {
-                Button(action: receiveToken) {
-                    Text(reviewPresentation.claimActionTitle)
+                if feeFailure != nil {
+                    Button {
+                        Task { await calculateFee() }
+                    } label: {
+                        Text(isLoadingFee ? "Retrying…" : "Retry")
+                    }
+                    .accessibilityIdentifier("receive-token-retry")
+                    .glassButton()
+                    .disabled(isLoadingFee)
+                } else {
+                    Button(action: receiveToken) {
+                        Text(reviewPresentation.claimActionTitle)
+                    }
+                    .accessibilityIdentifier("receive-token-confirm")
+                    .glassButton()
+                    .disabled(!isValidToken || !tokenLockedToKnownKey || isLoadingFee || receiveFee == nil)
                 }
-                .accessibilityIdentifier("receive-token-confirm")
-                .glassButton()
-                .disabled(!isValidToken || !tokenLockedToKnownKey || isLoadingFee || receiveFee == nil)
 
                 if let secondaryActionTitle, let onSecondaryAction {
                     Button(action: onSecondaryAction) {
@@ -417,8 +443,10 @@ struct ReceiveTokenDetailView: View {
             let fee = try await walletManager.calculateReceiveFee(tokenString: tokenString)
             guard !Task.isCancelled else { return }
             receiveFee = fee
+            feeFailure = nil
         } catch {
             guard !Task.isCancelled else { return }
+            feeFailure = ReceiveFeeFailure.classify(error)
         }
         isLoadingFee = false
     }

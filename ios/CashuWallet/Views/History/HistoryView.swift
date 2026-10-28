@@ -41,19 +41,21 @@ struct HistoryView: View {
     // and live in the same date-grouped sections.
     private enum HistoryItem: Identifiable {
         case transaction(WalletTransaction)
-        case request(CashuRequest)
+        /// `activity` is the request's latest payment, or its creation while
+        /// it has none, so a request that just got paid sorts to the top.
+        case request(CashuRequest, activity: Date)
 
         var id: String {
             switch self {
             case .transaction(let t): return "tx-\(t.id)"
-            case .request(let r):     return "req-\(r.id)"
+            case .request(let r, _):  return "req-\(r.id)"
             }
         }
 
         var date: Date {
             switch self {
             case .transaction(let t): return t.date
-            case .request(let r):     return r.createdAt
+            case .request(_, let activity): return activity
             }
         }
     }
@@ -252,6 +254,15 @@ struct HistoryView: View {
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .contentMargins(.bottom, 32, for: .scrollContent)
+            // A payment landing while History shows plays the system list
+            // insertion: rows below glide down, the new row fades in where it
+            // sits. Keyed on the wallet's timeline only, so filter and search
+            // changes keep their own behaviour; the first load stays still.
+            // Reduce motion: rows change in place, nothing moves.
+            .animation(
+                didInitialLoad && !reduceMotion ? .smooth(duration: 0.4) : nil,
+                value: timelineKey
+            )
             .refreshable {
                 await walletManager.syncPendingMintQuotes(force: true)
                 await walletManager.syncPendingMeltQuotes()
@@ -291,8 +302,8 @@ struct HistoryView: View {
         switch item {
         case .transaction(let tx):
             transactionRow(transaction: tx)
-        case .request(let req):
-            cashuRequestRow(request: req)
+        case .request(let req, let activity):
+            cashuRequestRow(request: req, activity: activity)
         }
     }
 
@@ -363,6 +374,13 @@ struct HistoryView: View {
 
     // MARK: - Computed Properties
 
+    /// Identity and order of everything the wallet put on the timeline,
+    /// before filter and search.
+    private var timelineKey: [String] {
+        walletManager.transactions.map(\.id)
+            + requestStore.requests.map { "\($0.id)/\($0.receivedPayments.count)" }
+    }
+
     /// Set of CDK transaction ids that are claimed by some Cashu Request.
     /// These are suppressed from the timeline because the request row
     /// represents the same money event.
@@ -388,9 +406,13 @@ struct HistoryView: View {
             .filter { matchesFilter(transaction: $0) }
             .map(HistoryItem.transaction)
 
+        let transactionDates = Dictionary(
+            walletManager.transactions.map { ($0.id, $0.date) },
+            uniquingKeysWith: { first, _ in first }
+        )
         let reqItems: [HistoryItem] = requestStore.requests
             .filter { matchesFilter(request: $0) }
-            .map(HistoryItem.request)
+            .map { .request($0, activity: $0.lastActivityAt(transactionDates: transactionDates)) }
 
         let combined = (txItems + reqItems).sorted { $0.date > $1.date }
         return combined.filter { matchesSearch($0) }
@@ -416,7 +438,7 @@ struct HistoryView: View {
         switch item {
         case .transaction(let tx):
             return HistorySearch.matches(query: searchText, transaction: tx, mints: walletManager.mints)
-        case .request(let req):
+        case .request(let req, _):
             return HistorySearch.matches(
                 query: searchText,
                 request: req,
@@ -460,7 +482,7 @@ struct HistoryView: View {
 
     // MARK: - Cashu Request Row
 
-    private func cashuRequestRow(request: CashuRequest) -> some View {
+    private func cashuRequestRow(request: CashuRequest, activity: Date) -> some View {
         let isReceived = !request.receivedPayments.isEmpty
         let receivedAmount = totalReceived(for: request)
         return Button {
@@ -476,7 +498,7 @@ struct HistoryView: View {
                         .font(.body.weight(.medium))
                         .lineLimit(1)
 
-                    Text(TransactionRowView.formatRelativeDate(request.createdAt))
+                    Text(TransactionRowView.formatRelativeDate(activity))
                         .cashuText(.metadata)
                         .foregroundStyle(.secondary)
                 }

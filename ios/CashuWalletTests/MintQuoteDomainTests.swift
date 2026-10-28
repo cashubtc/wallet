@@ -3,6 +3,48 @@ import XCTest
 @testable import CashuWallet
 
 final class MintQuoteDomainTests: XCTestCase {
+    func testStoredReceiveLookupPreservesArtifactAndFallsBackWithoutAQuote() async {
+        let quote = MintQuoteInfo(
+            id: "saved", request: "lno1saved", amount: 123, isAmountless: false,
+            paymentMethod: .bolt12, state: .pending, expiry: nil, createdAt: nil,
+            unit: "eur", mintURL: "https://original-mint.example", description: "Coffee"
+        )
+        var lookups: [String] = []
+        func load(_ id: String) async -> MintQuoteInfo? {
+            lookups.append(id)
+            return id == quote.id ? quote : nil
+        }
+        let noID = await MintQuoteDomain.resolveStoredReceiveQuote(quoteID: nil, load: load)
+        XCTAssertNil(noID)
+        XCTAssertTrue(lookups.isEmpty)
+        let missing = await MintQuoteDomain.resolveStoredReceiveQuote(quoteID: "missing", load: load)
+        XCTAssertNil(missing)
+        let reopened = await MintQuoteDomain.resolveStoredReceiveQuote(quoteID: quote.id, load: load)
+        XCTAssertEqual(lookups, ["missing", "saved"])
+        XCTAssertEqual(reopened?.request, quote.request)
+        XCTAssertEqual(reopened?.mintURL, quote.mintURL)
+        XCTAssertEqual(reopened?.unit, "eur")
+        XCTAssertEqual(reopened?.amount, 123)
+        XCTAssertEqual(reopened?.description, "Coffee")
+    }
+
+    func testStoredReceiveRechecksSettlementButKeepsReusableOffers() async {
+        for method in [PaymentMethodKind.bolt11, .bolt12, .onchain] {
+            var quote = MintQuoteInfo(
+                id: "selected", request: "saved-request", amount: 21, isAmountless: false,
+                paymentMethod: method, state: .pending, expiry: nil, createdAt: nil
+            )
+            let unpaid = await MintQuoteDomain.resolveStoredReceiveQuote(quoteID: quote.id) { _ in quote }
+            XCTAssertNotNil(unpaid)
+            // A payment may settle after the History row was selected.
+            quote.state = .issued
+            quote.amountPaid = 21
+            quote.amountIssued = 21
+            let settled = await MintQuoteDomain.resolveStoredReceiveQuote(quoteID: quote.id) { _ in quote }
+            XCTAssertEqual(settled != nil, method == .bolt12)
+        }
+    }
+
     func testNormalizesDescriptionForPayerDisplay() {
         XCTAssertEqual(MintQuoteDomain.normalizedOfferDescription("  Coffee tips\r\n\tThank you ☕  "), "Coffee tips Thank you ☕")
         XCTAssertEqual(MintQuoteDomain.normalizedOfferDescription("Cof\u{0}fee"), "Coffee")

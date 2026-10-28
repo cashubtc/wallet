@@ -16,7 +16,7 @@ final class TransactionServiceTests: XCTestCase {
         )
     }
 
-    func testHomeActivityShowsOnlyLatestCompletedTransactions() {
+    func testHomeActivityShowsPendingOutgoingEcashAlongsideCompletedPayments() {
         let now = Date()
         var completedIncoming = transaction(
             id: "received-via-request",
@@ -46,12 +46,14 @@ final class TransactionServiceTests: XCTestCase {
             date: now.addingTimeInterval(30)
         )
 
+        let pendingReceive = transaction(id: "pending-receive", status: .pending,
+                                         date: now.addingTimeInterval(40), type: .incoming)
         let recent = HomeActivity.recentTransactions(
-            from: [completedIncoming, pending, failed, completedOutgoing, expired],
+            from: [completedIncoming, pending, pendingReceive, failed, completedOutgoing, expired],
             limit: 5
         )
 
-        XCTAssertEqual(recent.map(\.id), ["sent", "received-via-request"])
+        XCTAssertEqual(recent.map(\.id), ["pending-request", "sent", "received-via-request"])
         XCTAssertEqual(
             HomeActivity.recentTransactions(
                 from: [completedIncoming, completedOutgoing],

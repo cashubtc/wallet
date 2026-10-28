@@ -21,6 +21,8 @@
 		A0C011000000000000000001 /* WalletLifecycleUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0C011000000000000000002 /* WalletLifecycleUITests.swift */; };
 		AA9600000000000000000001 /* NPCServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA9600000000000000000002 /* NPCServiceTests.swift */; };
 		BD0100000000000000000002 /* ReceivedBalanceFeedback.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD0100000000000000000001 /* ReceivedBalanceFeedback.swift */; };
+		AA0100000000000000000002 /* HomeArrival.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000001 /* HomeArrival.swift */; };
+		AA0100000000000000000004 /* HomeArrivalTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0100000000000000000003 /* HomeArrivalTests.swift */; };
 		BD0100000000000000000004 /* ReceivedBalanceFeedbackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD0100000000000000000003 /* ReceivedBalanceFeedbackTests.swift */; };
 		F06000000000000000000004 /* FocusedMintQuoteMonitorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F06000000000000000000003 /* FocusedMintQuoteMonitorTests.swift */; };
 		EA1850000000000000000001 /* PaymentDetailContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA1850000000000000000002 /* PaymentDetailContent.swift */; };
@@ -259,6 +261,8 @@
 		A0C011000000000000000002 /* WalletLifecycleUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WalletLifecycleUITests.swift; path = CashuWalletUITests/WalletLifecycleUITests.swift; sourceTree = "<group>"; };
 		AA9600000000000000000002 /* NPCServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CashuWalletTests/NPCServiceTests.swift; sourceTree = "<group>"; };
 		BD0100000000000000000001 /* ReceivedBalanceFeedback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReceivedBalanceFeedback.swift; sourceTree = "<group>"; };
+		AA0100000000000000000001 /* HomeArrival.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeArrival.swift; sourceTree = "<group>"; };
+		AA0100000000000000000003 /* HomeArrivalTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HomeArrivalTests.swift; path = CashuWalletTests/HomeArrivalTests.swift; sourceTree = "<group>"; };
 		BD0100000000000000000003 /* ReceivedBalanceFeedbackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ReceivedBalanceFeedbackTests.swift; path = CashuWalletTests/ReceivedBalanceFeedbackTests.swift; sourceTree = "<group>"; };
 		F06000000000000000000003 /* FocusedMintQuoteMonitorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FocusedMintQuoteMonitorTests.swift; path = CashuWalletTests/FocusedMintQuoteMonitorTests.swift; sourceTree = "<group>"; };
 		EA1850000000000000000002 /* PaymentDetailContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaymentDetailContent.swift; sourceTree = "<group>"; };
@@ -522,6 +526,7 @@
 				T1B000000000000B /* ReceiveTokenMemoReviewTests.swift */,
 				T1B000000000000C /* HomeActionAccessibilityTests.swift */,
 				BD0100000000000000000003 /* ReceivedBalanceFeedbackTests.swift */,
+				AA0100000000000000000003 /* HomeArrivalTests.swift */,
 				F06000000000000000000003 /* FocusedMintQuoteMonitorTests.swift */,
 				T1B0000000000100 /* ConnectMintContextTests.swift */,
 				T1B000000000000D /* CashuRequestRouteExplanationTests.swift */,
@@ -685,6 +690,7 @@
 			children = (
 				2100000000000007 /* MainWalletView.swift */,
 				BD0100000000000000000001 /* ReceivedBalanceFeedback.swift */,
+				AA0100000000000000000001 /* HomeArrival.swift */,
 				2100000000000008 /* OnboardingView.swift */,
 				2100000000000C41 /* OnboardingChassis.swift */,
 				SE00000000000014 /* SeedWordEntry.swift */,
@@ -1166,6 +1172,7 @@
 				T2B000000000000B /* ReceiveTokenMemoReviewTests.swift in Sources */,
 				T2B000000000000C /* HomeActionAccessibilityTests.swift in Sources */,
 				BD0100000000000000000004 /* ReceivedBalanceFeedbackTests.swift in Sources */,
+				AA0100000000000000000004 /* HomeArrivalTests.swift in Sources */,
 				F06000000000000000000004 /* FocusedMintQuoteMonitorTests.swift in Sources */,
 				T2B0000000000100 /* ConnectMintContextTests.swift in Sources */,
 				T2B000000000000D /* CashuRequestRouteExplanationTests.swift in Sources */,
@@ -1249,6 +1256,7 @@
 				AB00000000000001 /* CashuRequest.swift in Sources */,
 				1100000000000007 /* MainWalletView.swift in Sources */,
 				BD0100000000000000000002 /* ReceivedBalanceFeedback.swift in Sources */,
+				AA0100000000000000000002 /* HomeArrival.swift in Sources */,
 				1100000000000008 /* OnboardingView.swift in Sources */,
 				1100000000000C41 /* OnboardingChassis.swift in Sources */,
 				1100000000000C55 /* OnboardingHandoff.swift in Sources */,
@@ -1531,7 +1539,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = CashuWallet/CashuWallet.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = D7AHD3GLH6;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -1549,7 +1557,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0.1;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-framework",
@@ -1570,7 +1578,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = CashuWallet/CashuWallet.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = D7AHD3GLH6;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -1588,7 +1596,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0.1;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-framework",

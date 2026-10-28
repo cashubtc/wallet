@@ -2,10 +2,12 @@ package com.cashu.me.Core.CDK
 
 import com.cashu.me.Core.PendingSendRecovery
 import com.cashu.me.Core.performRecoverableSend
+import com.cashu.me.Core.performRecoverablePaymentRequest
 import com.cashu.me.Models.MintUrlIdentity
 import com.cashu.me.Core.toDomainUnit
 
 import java.util.concurrent.ConcurrentHashMap
+import com.cashu.me.Core.Wallet.ReceiveFeeFailure
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -474,7 +476,7 @@ class CdkWalletGatewayImpl : WalletGateway {
         // Import only once. A retry must retain CDK's newer counters and saga
         // reservation instead of replacing them with an external quote snapshot.
         if (database?.getMintQuote(quote.id) == null) {
-            replaceStoredMintQuote(quote.toCdkMintQuote(mintUrl))
+            replaceStoredMintQuote(npcMintQuote(quote, mintUrl))
         }
         val proofs = walletFor(mintUrl).mintUnified(
             quoteId = quote.id,
@@ -947,20 +949,20 @@ class CdkWalletGatewayImpl : WalletGateway {
         // shows the token's gross value as if the redeem were free.
         val proofs = runCatching {
             token.proofs(wallet.keysets(null).map { it.toKeySetInfo() })
-        }.getOrElse { token.proofsSimple() }
+        }.getOrElse { error ->
+            // Keep the original connectivity failure for the receive review.
+            if (error is CancellationException || ReceiveFeeFailure.classify(error) == ReceiveFeeFailure.MintUnavailable) {
+                throw error
+            }
+            token.proofsSimple()
+        }
         if (proofs.isEmpty()) return@cdkCall 0
         // NUT-02 fee: sum each input's fee_ppk, then one ceil over the total.
         // Don't use wallet.calculateFee here — the 0.17.x FFI helper floor-
         // divides (ppk * count / 1000), reporting 0 where the mint charges 1.
-        runCatching {
-            val ppkByKeyset = mutableMapOf<String, Long>()
-            val totalPpk = proofs.sumOf { proof ->
-                ppkByKeyset.getOrPut(proof.keysetId) {
-                    wallet.getKeysetFeesById(proof.keysetId).toLong()
-                }
-            }
-            (totalPpk + 999) / 1000
-        }.getOrDefault(0L)
+        receiveFeeForKeysets(proofs.map { it.keysetId }) { keysetId ->
+            wallet.getKeysetFeesById(keysetId).toLong()
+        }
     }
 
     override suspend fun activeMintInputFeePpk(mintUrl: String): Long? = cdkCall {
@@ -1042,15 +1044,13 @@ class CdkWalletGatewayImpl : WalletGateway {
             ?: firstWallet().mintUrl().url
         val wallet = walletFor(mintUrl)
         val context = PendingSendRecovery(mintUrl, "sat")
-        performRecoverableSend(
+        performRecoverablePaymentRequest(
             context = context,
             inspect = { sendRecoverySnapshot(wallet, context, it) },
             recover = { wallet.recoverIncompleteSagas(); Unit },
-        ) { remember ->
-            val prepared = wallet.preparePayRequest(request, if (request.amount() == null) amount else null)
-            remember(prepared.operationId())
-            prepared.confirm()
-        }
+            prepare = { wallet.preparePayRequest(request, if (request.amount() == null) amount else null) },
+            reclaim = { wallet.revokeSend(it); Unit },
+        )
     }
 
     private suspend fun sendRecoverySnapshot(
@@ -1247,35 +1247,6 @@ class CdkWalletGatewayImpl : WalletGateway {
             updatedAtEpochSeconds = updatedAt.toLong(),
             unit = unit.toDomainUnit(),
         )
-    }
-
-    private fun NPCQuote.toCdkMintQuote(mintUrl: String): CdkMintQuote {
-        val amountValue = amount.takeIf { it > 0 }?.toCdkAmount()
-        val state = toCdkQuoteState()
-        return CdkMintQuote(
-            id = id,
-            amount = amountValue,
-            unit = CdkCurrencyUnit.Sat,
-            request = request.orEmpty(),
-            state = state,
-            expiry = expiryEpochSeconds?.takeIf { it > 0 }?.toULong() ?: 0uL,
-            mintUrl = CdkMintUrl(mintUrl),
-            amountIssued = if (state == CdkQuoteState.ISSUED) amountValue ?: CdkAmount(0uL) else CdkAmount(0uL),
-            amountPaid = if (isPaid || state == CdkQuoteState.ISSUED) amountValue ?: CdkAmount(0uL) else CdkAmount(0uL),
-            updatedAt = 0uL,
-            estimatedBlocks = null,
-            paymentMethod = CdkPaymentMethod.Bolt11,
-            secretKey = null,
-            usedByOperation = null,
-            version = 0u,
-        )
-    }
-
-    private fun NPCQuote.toCdkQuoteState(): CdkQuoteState = when (state?.uppercase()) {
-        "PAID" -> CdkQuoteState.PAID
-        "PENDING" -> CdkQuoteState.PENDING
-        "ISSUED" -> CdkQuoteState.ISSUED
-        else -> CdkQuoteState.UNPAID
     }
 
     private suspend fun replaceStoredMintQuote(quote: CdkMintQuote) {

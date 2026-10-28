@@ -37,19 +37,23 @@ final class ReceivedBalanceFeedbackTests: XCTestCase {
         XCTAssertNil(feedback.amount)
     }
 
-    func testRapidReceiptsGiveLatestAmountAFullDismissalTimer() async {
-        await assertReplacementSurvivesCancelledTimer(nextAmount: 21, clearFirst: false)
+    func testRapidReceiptsSumAndGetAFullDismissalTimer() async {
+        await assertReplacementSurvivesCancelledTimer(nextAmount: 21, clearFirst: false, expected: 22)
     }
 
-    func testRepeatedEqualReceiptsRestartDismissalTimer() async {
-        await assertReplacementSurvivesCancelledTimer(nextAmount: 1, clearFirst: false)
+    func testRepeatedEqualReceiptsSumAndRestartDismissalTimer() async {
+        await assertReplacementSurvivesCancelledTimer(nextAmount: 1, clearFirst: false, expected: 2)
     }
 
-    func testNewReceiptAfterReturningSurvivesOldCancelledTimer() async {
-        await assertReplacementSurvivesCancelledTimer(nextAmount: 1, clearFirst: true)
+    func testNewReceiptAfterReturningStartsFreshAndSurvivesOldCancelledTimer() async {
+        await assertReplacementSurvivesCancelledTimer(nextAmount: 1, clearFirst: true, expected: 1)
     }
 
-    private func assertReplacementSurvivesCancelledTimer(nextAmount: UInt64, clearFirst: Bool) async {
+    private func assertReplacementSurvivesCancelledTimer(
+        nextAmount: UInt64,
+        clearFirst: Bool,
+        expected: UInt64
+    ) async {
         let firstStarted = expectation(description: "First dismiss timer started")
         let nextStarted = expectation(description: "Next dismiss timer started")
         let firstFinished = expectation(description: "First dismiss timer finished")
@@ -66,7 +70,7 @@ final class ReceivedBalanceFeedbackTests: XCTestCase {
         await fulfillment(of: [nextStarted], timeout: 1)
         pendingSleeps.removeFirst().resume()
         await fulfillment(of: [firstFinished], timeout: 1)
-        XCTAssertEqual(feedback.amount, nextAmount)
+        XCTAssertEqual(feedback.amount, expected)
         XCTAssertEqual(durations, [.seconds(2.5), .seconds(2.5)])
 
         pendingSleeps.removeFirst().resume()

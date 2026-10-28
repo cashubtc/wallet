@@ -77,10 +77,8 @@ extension WalletManager {
         errorMessage = nil
         do {
             try await operationCoordinator.perform(kind: .removeMint) {
-                // Removing either end would drop the wallet that finishes it.
-                guard !self.walletStore.loadMintTransfers().hasUnfinishedTransfer(referencing: mint.url) else {
-                    throw MintRemovalPolicyError.transferInProgress
-                }
+                // An unfinished transfer stays recorded and resumes when the
+                // mint is added again; the remove sheet says so.
                 try await self.mintService.removeMint(mint)
                 ICloudRestoreState.removePendingMint(mint.url)
             }
@@ -98,6 +96,11 @@ extension WalletManager {
         Task { await NostrMintBackupService.shared.backupCurrentMintsIfEnabled() }
         SentryService.breadcrumb("Mint removed", category: "wallet.mint")
         return true
+    }
+
+    /// A transfer into or out of the mint has been paid for and not finished.
+    func hasUnfinishedMintTransfer(mintURL: String) -> Bool {
+        walletStore.loadMintTransfers().hasUnfinishedTransfer(referencing: mintURL)
     }
 
     func setActiveMint(_ mint: MintInfo) async throws {

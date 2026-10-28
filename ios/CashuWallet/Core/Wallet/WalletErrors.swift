@@ -45,20 +45,66 @@ struct WalletMessage {
     }
 }
 
+/// Receive preview failures must not turn an unknown fee into a free receive.
+enum ReceiveFeeFailure: Equatable {
+    case mintUnavailable
+    case unavailable
+
+    var title: String { self == .mintUnavailable ? "Mint unreachable" : "Fee unavailable" }
+    var message: String {
+        self == .mintUnavailable
+            ? "This mint may be offline. Check your connection and try again later."
+            : "Couldn't calculate the receive fee. Try again."
+    }
+
+    static func classify(_ error: Error) -> Self {
+        if let urlError = error as? URLError,
+           [.timedOut, .cannotFindHost, .cannotConnectToHost, .networkConnectionLost,
+            .dnsLookupFailed, .notConnectedToInternet, .secureConnectionFailed,
+            .serverCertificateUntrusted, .serverCertificateHasBadDate,
+            .serverCertificateHasUnknownRoot, .serverCertificateNotYetValid].contains(urlError.code) {
+            return .mintUnavailable
+        }
+        let raw: String
+        switch error {
+        case let ffi as Cdk.FfiError:
+            switch ffi {
+            case .Cdk(_, let message), .Internal(let message): raw = message
+            default: return .unavailable
+            }
+        case WalletError.networkError(let message): raw = message
+        default: raw = String(describing: error)
+        }
+        let normalized = raw.lowercased()
+        // A protocol/client rejection is not evidence that the mint is offline.
+        if normalized.range(of: #"(?:http|status|response)[^\n]{0,40}\b4\d{2}\b"#, options: .regularExpression) != nil {
+            return .unavailable
+        }
+        let serverFailure = normalized.range(of: #"(?:http|status|response)[^\n]{0,40}\b5\d{2}\b"#, options: .regularExpression) != nil
+        let transportFailure = [
+            "timeout", "timed out", "connection", "connect error", "cannot connect",
+            "error sending request", "dns", "failed to lookup address", "failed to resolve",
+            "network is unreachable", "network unreachable", "offline", "tls", "ssl",
+            "certificate", "couldn't reach", "could not reach", "http transport error",
+            "bad gateway", "service unavailable", "gateway timeout",
+        ].contains { normalized.contains($0) }
+        return serverFailure || transportFailure ? .mintUnavailable : .unavailable
+    }
+}
+
 // MARK: - Error Types
 
 enum WalletErrorMessage {
     /// Resolve an error to its user-facing message **and** severity.
     static func classified(for error: Error) -> WalletMessage {
+        if let returned = error as? CashuRequestDeliveryReturned {
+            return .error(returned.localizedDescription)
+        }
         if let recovery = error as? PendingSendRecovery {
             return .caution(recovery.localizedDescription).terminal()
         }
         if let checkpointError = error as? WalletCheckpointError {
             return .error(checkpointError.localizedDescription)
-        }
-        if let removalError = error as? MintRemovalPolicyError {
-            // Preserve app-owned safety guidance before generic CDK matching.
-            return .error(removalError.localizedDescription)
         }
         if let meltRecoveryError = error as? MeltPaymentRecoveryError {
             switch meltRecoveryError {

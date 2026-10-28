@@ -6,8 +6,44 @@ import com.cashu.me.Models.PaymentMethodKind
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import kotlinx.coroutines.runBlocking
 
 class MintQuoteDomainTest {
+    @Test fun storedReceiveLookupPreservesArtifactAndFallsBackWithoutAQuote() = runBlocking {
+        val quote = MintQuoteInfo(
+            id = "saved", request = "lno1saved", amount = 123,
+            paymentMethod = PaymentMethodKind.Bolt12, state = MintQuoteState.Pending,
+            expiryEpochSeconds = null, unit = "eur", mintUrl = "https://original-mint.example",
+            description = "Coffee",
+        )
+        val lookups = mutableListOf<String>()
+        val load: suspend (String) -> MintQuoteInfo? = { id ->
+            lookups.add(id)
+            quote.takeIf { it.id == id }
+        }
+        assertNull(resolveStoredReceiveQuote(null, load))
+        assertEquals(emptyList<String>(), lookups)
+        assertNull(resolveStoredReceiveQuote("missing", load))
+        assertEquals(quote, resolveStoredReceiveQuote(quote.id, load))
+        assertEquals(listOf("missing", "saved"), lookups)
+    }
+
+    @Test fun storedReceiveRechecksSettlementButKeepsReusableOffers() = runBlocking {
+        for (method in PaymentMethodKind.entries) {
+            val quote = MintQuoteInfo(
+                id = "selected", request = "saved-request", amount = 21,
+                paymentMethod = method, state = MintQuoteState.Pending, expiryEpochSeconds = null,
+            )
+            assertEquals(quote, resolveStoredReceiveQuote(quote.id) { quote })
+            // A payment may settle after the History row was selected.
+            val settled = quote.copy(state = MintQuoteState.Issued, amountPaid = 21, amountIssued = 21)
+            assertEquals(
+                settled.takeIf { method == PaymentMethodKind.Bolt12 },
+                resolveStoredReceiveQuote(quote.id) { settled },
+            )
+        }
+    }
+
     @Test
     fun normalizesDescriptionForPayerDisplay() {
         assertEquals("Coffee tips Thank you ☕", normalizedOfferDescription("  Coffee tips\r\n\tThank you ☕  "))

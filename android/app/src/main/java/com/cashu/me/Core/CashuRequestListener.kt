@@ -221,7 +221,13 @@ class CashuRequestListener(
                 tokenString = payload.token,
                 requestId = payload.requestId,
                 processedId = eventId,
-                confirmationOwner = ReceiveConfirmationOwner.Home,
+                // A detail screen showing the request confirms the payment
+                // itself; otherwise nothing on screen does, and home owns it.
+                confirmationOwner = if (payload.requestId?.let(cashuRequestStore::isWatching) == true) {
+                    ReceiveConfirmationOwner.InFlow
+                } else {
+                    ReceiveConfirmationOwner.Home
+                },
             )
             if (amount > 0 && !payload.requestId.isNullOrBlank()) {
                 cashuRequestStore.attachPayment(

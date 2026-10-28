@@ -92,10 +92,12 @@ final class MainTabUITests: UITestBase {
         )
         XCTAssertTrue(app.textFields["mints-add-url-field"].waitForExistence(timeout: 5))
 
-        app.navigationBars["Add by URL"].buttons.element(boundBy: 0).tap()
+        // Tap back once the push has settled: a bare tap mid-transition can
+        // land on nothing and leave the sheet on "Add by URL".
+        tapWhenReady(app.navigationBars["Add by URL"].buttons.element(boundBy: 0))
 
         XCTAssertTrue(
-            app.staticTexts["Add a mint first"].waitForExistence(timeout: 5),
+            app.staticTexts["Add a mint first"].waitForExistence(timeout: 10),
             "Back should return to the picker, not dismiss the sheet"
         )
     }
@@ -263,6 +265,40 @@ final class ActivityDetailUITests: XCTestCase {
         attachment.name = "cashu-request-large-text"
         attachment.lifetime = .keepAlways
         add(attachment)
+    }
+
+    func testLargeTextKeepsReceiveCopyPinnedAndDetailsCompact() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchEnvironment = ["SHOW_COMPONENT_CATALOG": "activity", "CI_INTEGRATION_TEST": "1",
+                                 "UITEST_RECEIVE_QUOTE": "1", "UITEST_DISABLE_ANIMATIONS": "1"]
+        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US",
+                               "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityL"]
+        app.launch()
+        defer { app.terminate() }
+        let address = app.buttons["unfunded-bitcoin"]
+        XCTAssertTrue(address.waitForExistence(timeout: 10))
+        address.tap()
+        let copy = app.buttons["Copy Address"]
+        XCTAssertTrue(copy.waitForExistence(timeout: 5))
+        XCTAssertTrue(copy.isHittable, "Copy must be visible without scrolling")
+        let copyFrame = copy.frame
+        app.scrollViews.firstMatch.swipeUp()
+        XCTAssertTrue(copy.isHittable)
+        XCTAssertEqual(copy.frame.minY, copyFrame.minY, accuracy: 1, "Copy must stay pinned while metadata scrolls")
+        let capture = XCTAttachment(screenshot: app.screenshot())
+        capture.name = "receive-large-text-pinned-copy"; capture.lifetime = .keepAlways; add(capture)
+        dismissReceipt(in: app)
+
+        app.buttons["sent-lightning"].tap()
+        let details = app.buttons["cashu.history.details"]
+        XCTAssertTrue(details.waitForExistence(timeout: 5))
+        XCTAssertEqual(details.staticTexts["Details"].frame.midY, details.images["chevron.right"].frame.midY,
+                       accuracy: 1, "The disclosure icon must stay beside the label at accessibility sizes")
+        let receipt = XCTAttachment(screenshot: app.screenshot())
+        receipt.name = "receipt-large-text-inline-disclosure"; receipt.lifetime = .keepAlways; add(receipt)
+        details.tap()
+        XCTAssertTrue(app.navigationBars["Details"].waitForExistence(timeout: 5))
     }
 
     func testOnchainStatusRowKeepsItsSizeAcrossEveryStage() {
@@ -488,7 +524,8 @@ final class ActivityDetailUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Details"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["Quote ID"].exists)
         let payment = app.buttons["cashu.history.details.payment.fixture-payment"]
-        let scroll = app.scrollViews.firstMatch
+        // Swipe the inspector, not the receipt scroll view underneath its sheet.
+        let scroll = app.scrollViews.containing(.button, identifier: "cashu.history.details.payment.fixture-payment").firstMatch
         for _ in 0..<8 {
             if payment.exists && scroll.frame.contains(payment.frame) { break }
             scroll.swipeUp()

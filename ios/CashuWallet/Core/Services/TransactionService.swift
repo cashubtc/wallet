@@ -22,6 +22,10 @@ class TransactionService: ObservableObject {
     /// Pending tokens that have been received but not yet claimed by user
     @Published var pendingReceiveTokens: [PendingReceiveToken] = []
 
+    /// False until the first load publishes `transactions`, and again after a
+    /// reset, so an empty list can be told apart from one not read yet.
+    @Published private(set) var hasLoadedTransactions = false
+
     // MARK: - Private Properties
 
     private let walletRepository: () -> WalletRepository?
@@ -235,7 +239,11 @@ class TransactionService: ObservableObject {
 
         // Restore from durable request metadata each load, even after payment/relaunch.
         let requests = walletStore.loadCashuRequests()
-        let rows = MintReceiptProjection.project(allTransactions).map { $0.restoringDescription(from: requests) }
+        // Deduplicate before receipt and transfer projection, so every consumer
+        // (including request totals) sees the same unique history.
+        var seenIDs = Set<String>()
+        let uniqueTransactions = allTransactions.filter { seenIDs.insert($0.id).inserted }
+        let rows = MintReceiptProjection.project(uniqueTransactions).map { $0.restoringDescription(from: requests) }
             .sorted { $0.date > $1.date }
         // Rows retained from a failed read may already be folded. The
         // projection leaves those as they are, so nothing is folded twice.
@@ -245,6 +253,7 @@ class TransactionService: ObservableObject {
             records: walletStore.loadMintTransfers(),
             mintName: { MintInfo.displayName(for: $0, in: mints) }
         )
+        if !hasLoadedTransactions { hasLoadedTransactions = true }
 
         // Post notification that transactions were updated
         NotificationCenter.default.post(name: .cashuTransactionsUpdated, object: nil)
@@ -257,6 +266,7 @@ class TransactionService: ObservableObject {
     func clearState() {
         transactions = []
         pendingReceiveTokens = []
+        hasLoadedTransactions = false
         NotificationCenter.default.post(name: .cashuTransactionsUpdated, object: nil)
     }
 

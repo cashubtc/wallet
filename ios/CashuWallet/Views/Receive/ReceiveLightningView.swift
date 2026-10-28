@@ -83,6 +83,30 @@ struct ReceiveLightningView: View {
     @State private var selectedReceiveUnit: String?
     @State private var showUnitPicker = false
 
+    init(quote: MintQuoteInfo? = nil) {
+        _mintQuote = State(initialValue: quote)
+        _selectedMethod = State(initialValue: quote?.paymentMethod ?? .bolt11)
+        _isAmountless = State(initialValue: quote?.isAmountless ?? false)
+        _quoteCreatedAt = State(initialValue: quote?.createdAt ?? quote?.updatedAt)
+        _offerDescription = State(initialValue: quote.flatMap {
+            CashuRequestStore.shared.intent(forQuoteId: $0.id)?.memo ?? $0.description
+        })
+        _offerDescriptionLoaded = State(initialValue: quote != nil)
+    }
+
+    @State private var showTechnicalDetails = false
+
+    private func detailTransaction(for quote: MintQuoteInfo) -> WalletTransaction? {
+        walletManager.transactions.first { $0.quoteId == quote.id || $0.id == quote.id }
+    }
+
+    @State private var requestContentHeight: CGFloat = 0
+    @State private var requestActionHeight: CGFloat = 0
+
+    private var showsCompactRequest: Bool {
+        mintQuote != nil && !isPaid && requestFailure == nil
+    }
+
     var body: some View {
         NavigationStack {
             Group {
@@ -126,8 +150,10 @@ struct ReceiveLightningView: View {
             // clear the safe-area inset so nothing overlaps.
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    SheetCloseButton()
+                if !showsCompactRequest {
+                    ToolbarItem(placement: .cancellationAction) {
+                        SheetCloseButton()
+                    }
                 }
 
                 if requestFailure == nil, let quote = mintQuote, !isPaid {
@@ -176,11 +202,13 @@ struct ReceiveLightningView: View {
                             .accessibilityLabel("Share request")
                         }
                     }
-                } else if requestFailure == nil && shouldShowMethodPicker && !isCreatingRequest && !isPaid {
+                } else if requestFailure == nil && shouldShowMethodPicker && !isPaid {
                     // Liquid Glass method switcher. On iOS 26 the toolbar renders
                     // bar buttons as glass, so this reads as a sibling of the
                     // close button by construction. Replaces the old inline
-                    // `methodChip` text affordance.
+                    // `methodChip` text affordance. Stays mounted while the
+                    // request is being created (disabled, not removed): dropping
+                    // toolbar items mid-tap re-laid out the bar in one frame.
                     ToolbarItem(placement: .topBarTrailing) {
                         Button {
                             HapticFeedback.selection()
@@ -190,6 +218,7 @@ struct ReceiveLightningView: View {
                                 .contentTransition(.symbolEffect(.replace))
                                 .toolbarIconTapTarget()
                         }
+                        .disabled(isCreatingRequest)
                         // Both reusable options share title + glyph, so the
                         // descriptor is what tells "fixed" from "any amount".
                         .accessibilityLabel("Receive method: \(selectedOption.friendlyTitle), \(selectedOption.friendlyDescriptor)")
@@ -200,7 +229,7 @@ struct ReceiveLightningView: View {
                 // Unit selector — only in the amount-entry state, for a mint that
                 // can mint more than one unit (on-chain is amountless, no unit).
                 // Declared after the method button so it sits to its right.
-                if requestFailure == nil, mintQuote == nil, !isCreatingRequest, selectedMethod != .onchain,
+                if requestFailure == nil, mintQuote == nil, selectedMethod != .onchain,
                    let mint = walletManager.activeMint, mint.supportsMultipleMintUnits {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button {
@@ -210,6 +239,7 @@ struct ReceiveLightningView: View {
                             Text(effectiveUnit.uppercased())
                                 .font(.subheadline.weight(.semibold))
                         }
+                        .disabled(isCreatingRequest)
                         .accessibilityLabel("Unit: \(effectiveUnit.uppercased())")
                         .accessibilityHint("Choose the unit to mint")
                     }
@@ -300,7 +330,10 @@ struct ReceiveLightningView: View {
             }
         }
         .accessibilityIdentifier("receive-lightning-screen")
-        .walletSheetSurface(fillsScreen: true)
+        .walletSheetSurface(fillsScreen: !showsCompactRequest)
+        .contentFitDetent(requestContentHeight + requestActionHeight, enabled: showsCompactRequest, estimate: 580, navigationBar: true)
+        .presentationDragIndicator(showsCompactRequest ? .visible : .automatic)
+        .accessibilityAction(.escape) { dismiss() }
     }
 
     // MARK: - Computed Properties
@@ -314,7 +347,10 @@ struct ReceiveLightningView: View {
     /// Fail closed: only mints that advertised NUT-04 bolt12 description=true
     /// get a Description row / description minting.
     private var mintSupportsBolt12Description: Bool {
-        walletManager.activeMint?.supportsBolt12MintDescription == true
+        if let mintQuote {
+            return walletManager.mints.first { $0.url == mintQuote.mintURL }?.supportsBolt12MintDescription == true
+        }
+        return walletManager.activeMint?.supportsBolt12MintDescription == true
     }
 
     /// Description threaded into mintQuote only when the mint advertises it.
@@ -397,7 +433,7 @@ struct ReceiveLightningView: View {
     /// mint it, otherwise the mint's default mintable unit. Auto-resets when the
     /// active mint changes to one that can't mint the selection.
     private var effectiveUnit: String {
-        walletManager.activeMint?.resolvedMintUnit(selectedReceiveUnit) ?? "sat"
+        mintQuote?.unit ?? walletManager.activeMint?.resolvedMintUnit(selectedReceiveUnit) ?? "sat"
     }
 
     private var isSatReceive: Bool { effectiveUnit.lowercased() == "sat" }
@@ -469,8 +505,13 @@ struct ReceiveLightningView: View {
             Spacer()
 
             // Under the amount, over the keypad — the same slot the send flows use.
-            if !isCreatingRequest, let mint = walletManager.activeMint {
+            // Stays mounted while the request is being created: removing it
+            // re-centred the hero amount 28pt lower in a single frame. Disabled
+            // rather than stripped of its chevron, which would re-centre the
+            // mint's name.
+            if let mint = walletManager.activeMint {
                 mintSelector(mint: mint)
+                    .disabled(isCreatingRequest)
                     // Aligned to the number pad below, not the CTA.
                     .padding(.horizontal, NumberPadMetrics.gutter)
                     .padding(.bottom, 8)
@@ -579,33 +620,16 @@ struct ReceiveLightningView: View {
 
     // MARK: - Request Display View
 
-    /// Routes the result screen by rail. Every reusable BOLT12 offer (amountless
-    /// or fixed) gets the calm, Cashu-Request-style metadata layout; BOLT11 and
-    /// on-chain keep the amount-hero + expiry-countdown layout in
-    /// `standardRequestDisplayView`.
+    /// Receive and History share the QR, amount, status, details, and actions.
     @ViewBuilder
-    /// Every receive rail shares the same QR, amount, status, inspector, and actions.
     private func requestDisplayView(quote: MintQuoteInfo) -> some View {
         VStack(spacing: 0) {
-            PaymentDetailContent(stableSizeKey: quote.id) { qrSize in
-                QRCodeView(
-                    content: quote.request,
-                    showControls: false,
-                    staticOnly: true,
+            PaymentDetailContent(fitsContent: true) { qrSize in
+                PaymentCodeCard(
+                    content: quote.request, size: qrSize,
                     onCopy: { copyRequest(quote.request) },
                     onShare: { shareQuoteRequest(quote.request) }
                 )
-                .frame(width: qrSize, height: qrSize)
-                .padding(16)
-                .background(Color.white, in: RoundedRectangle(cornerRadius: 20))
-                .contextMenu {
-                    Button(action: { copyRequest(quote.request) }) {
-                        Label("Copy", systemImage: "doc.on.doc")
-                    }
-                    ShareLink(item: quote.request) {
-                        Label("Share", systemImage: "square.and.arrow.up")
-                    }
-                }
                 .sheet(isPresented: $showShareSheet) {
                     ShareSheet(items: [qrShareText])
                 }
@@ -634,11 +658,14 @@ struct ReceiveLightningView: View {
                                 useBitcoinSymbol: settings.useBitcoinSymbol,
                                 onRetry: retryPendingMintQuote
                             )
-                            addressRow(quote.request)
+                            PaymentMetadataRow(label: "Address", value: PaymentRequestDecoder.middleTruncated(quote.request),
+                                               symbol: "doc.on.doc", hint: "Copies the Bitcoin address") {
+                                copyRequest(quote.request)
+                            }
                         }
-                        detailRow(label: "Mint", value: mintDisplayValue(for: quote) ?? "Unknown mint")
+                        PaymentMetadataRow(label: "Mint", value: mintDisplayValue(for: quote) ?? "Unknown mint")
                         if quote.paymentMethod == .bolt12 && mintSupportsBolt12Description {
-                            editableRow(
+                            PaymentMetadataRow(
                                 label: "Description",
                                 value: CashuRequestStore.shared.intent(forQuoteId: quote.id)?.memo
                                     ?? quote.description ?? "None",
@@ -649,28 +676,32 @@ struct ReceiveLightningView: View {
                             DescriptionDetailRow(description: description)
                         }
                         if quote.paymentMethod == .bolt12 {
-                            editableRow(
+                            PaymentMetadataRow(
                                 label: "Amount",
                                 value: quote.isAmountless ? "Any"
                                     : quote.amount.map { formatQuoteAmount($0, unit: quote.unit) } ?? "Any",
                                 action: { showReusableAmountPicker = true }
                             )
                             if quote.amountIssued > 0 {
-                                detailRow(label: "Total received",
+                                PaymentMetadataRow(label: "Total received",
                                           value: formatQuoteAmount(quote.amountIssued, unit: quote.unit))
                             }
                         }
                         if let created = quote.createdAt ?? quoteCreatedAt {
-                            detailRow(label: "Created",
+                            PaymentMetadataRow(label: "Created",
                                       value: created.formatted(date: .abbreviated, time: .shortened))
                         }
                         if let explorerURL = blockExplorerURL(for: quote) {
-                            explorerLinkRow(label: blockExplorerLabel(for: quote), url: explorerURL)
+                            PaymentExplorerLink(label: blockExplorerLabel(for: quote), url: explorerURL)
+                        }
+                        if CashuRequestStore.shared.intent(forQuoteId: quote.id) != nil || detailTransaction(for: quote) != nil {
+                            PaymentDetailsButton { showTechnicalDetails = true }
                         }
                     }
                     .padding(.horizontal, 4)
                 }
             }
+            .contentFitMeasured { requestContentHeight = $0 }
 
             Button(action: { copyRequest(quote.request) }) {
                 Text(copyButtonTitle(for: quote))
@@ -678,6 +709,18 @@ struct ReceiveLightningView: View {
             .flatSheetSecondaryButton()
             .padding(.horizontal)
             .padding(.bottom, 16)
+            .fixedSize(horizontal: false, vertical: true)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { requestActionHeight = $0 }
+        }
+        .sheet(isPresented: $showTechnicalDetails) {
+            if let request = CashuRequestStore.shared.intent(forQuoteId: quote.id) {
+                RequestTechnicalDetailsView(request: request)
+            } else if let transaction = detailTransaction(for: quote) {
+                TransactionTechnicalDetailsView(transaction: transaction)
+            }
+        }
+        .task(id: quote.id) {
+            await walletManager.loadTransactions(includeRemoteObservations: false)
         }
         .onAppear { startDisplayingQuote(quote) }
         .onChange(of: mintQuote?.id) {
@@ -816,77 +859,6 @@ struct ReceiveLightningView: View {
         }
     }
 
-    // MARK: - Detail Row
-
-    private func detailRow(label: String, value: String) -> some View {
-        PaymentDetailPair(label: label) {
-            Text(value)
-                .fontWeight(.regular)
-                .truncationMode(.middle)
-        }
-        .paymentDetailRow()
-    }
-
-    /// Same as `detailRow` but tappable, with a trailing pencil — used for the
-    /// Amount row on the reusable offer screen (mirrors the Cashu Request screen).
-    private func editableRow(label: String, value: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            PaymentDetailPair(label: label) {
-                Text(value)
-                    .fontWeight(.regular)
-                    .truncationMode(.middle)
-                Image(systemName: "pencil")
-                    .font(.footnote)
-                    .foregroundStyle(.tertiary)
-                    .padding(.leading, 4)
-            }
-            .paymentDetailRow(isInteractive: true)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityHint("Edits the \(label.lowercased())")
-    }
-
-    /// Same shape as `detailRow` but opens an external URL, with the trailing
-    /// arrow-up-right glyph settings uses for outbound links — used for the
-    /// on-chain block explorer row.
-    private func explorerLinkRow(label: String, url: URL) -> some View {
-        Link(destination: url) {
-            PaymentDetailPair(label: label) {
-                Image(systemName: "arrow.up.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-            }
-            .paymentDetailRow(isInteractive: true)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .simultaneousGesture(TapGesture().onEnded { HapticFeedback.selection() })
-        .accessibilityHint("Opens the block explorer in your browser")
-    }
-
-    /// The address as text, in the standard 8…6 cut, so it can be checked
-    /// against the sender's screen; tapping copies the full address.
-    private func addressRow(_ address: String) -> some View {
-        let shortAddress = PaymentRequestDecoder.middleTruncated(address)
-        return Button { copyRequest(address) } label: {
-            PaymentDetailPair(label: "Address") {
-                Text(shortAddress)
-                    .fontWeight(.regular)
-                Image(systemName: "doc.on.doc")
-                    .font(.footnote)
-                    .foregroundStyle(.tertiary)
-                    .padding(.leading, 4)
-            }
-            .paymentDetailRow(isInteractive: true)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Address")
-        .accessibilityValue(shortAddress)
-        .accessibilityHint("Copies the Bitcoin address")
-    }
-
     // MARK: - Status Badge
 
     @ViewBuilder
@@ -983,18 +955,6 @@ struct ReceiveLightningView: View {
 
     // MARK: - Helpers
 
-    private func formattedAmount(sats: UInt64?) -> String {
-        let amount = sats ?? 0
-        if settings.useBitcoinSymbol {
-            return "₿\(amount)"
-        }
-        return "\(amount) sat"
-    }
-
-    private func formatBalance(_ sats: UInt64) -> String {
-        AmountFormatter.sats(sats, useBitcoinSymbol: settings.useBitcoinSymbol)
-    }
-
     private func extractMintHost(_ url: String) -> String {
         URL(string: url)?.host ?? url
     }
@@ -1047,6 +1007,7 @@ struct ReceiveLightningView: View {
     }
 
     private func syncSelectedMethodWithActiveMint() {
+        guard mintQuote == nil else { return }
         // A different mint may not mint the previously-picked unit — clear the
         // explicit choice so `effectiveUnit` falls back to the new mint's default.
         selectedReceiveUnit = nil
@@ -1169,7 +1130,20 @@ struct ReceiveLightningView: View {
                     description: advertisedOfferDescription
                 )
                 guard !Task.isCancelled else { return }
-                mintQuote = quote
+                // `createMintQuote` reloads History (published, unanimated)
+                // right before it returns; landing in that run-loop pass folds
+                // this animated write into the unanimated update and the swap
+                // renders as a cut. Give the landing a pass of its own.
+                try? await Task.sleep(for: .milliseconds(1))
+                guard !Task.isCancelled else { return }
+                // The face swap carries `.transition(.opacity)`; it only plays
+                // when every body-read change of the landing is inside one
+                // animation, including the flag the Task's `defer` would
+                // otherwise clear outside it a moment later.
+                withAnimation(.smooth(duration: 0.3)) {
+                    mintQuote = quote
+                    isCreatingRequest = false
+                }
             } catch {
                 guard !Task.isCancelled else { return }
                 requestFailure = ReceiveRequestFailure(
@@ -1209,14 +1183,17 @@ struct ReceiveLightningView: View {
     /// reverting to the plain one.
     private func loadStoredOfferDescriptionIfNeeded() {
         guard !offerDescriptionLoaded else { return }
-        guard let mintUrl = walletManager.activeMint?.url else { return }
+        guard let mintUrl = mintQuote?.mintURL ?? walletManager.activeMint?.url else { return }
         guard mintSupportsBolt12Description else {
             offerDescription = nil
             offerDescriptionLoaded = true
             return
         }
-        offerDescription = CashuRequestStore.shared
-            .lastPresentedAmountlessOffer(mintURL: mintUrl, unit: effectiveUnit)?.memo
+        if let mintQuote {
+            offerDescription = CashuRequestStore.shared.intent(forQuoteId: mintQuote.id)?.memo ?? mintQuote.description
+        } else {
+            offerDescription = CashuRequestStore.shared.lastPresentedAmountlessOffer(mintURL: mintUrl, unit: effectiveUnit)?.memo
+        }
         offerDescriptionLoaded = true
     }
 
@@ -1230,7 +1207,7 @@ struct ReceiveLightningView: View {
         mintURL: String? = nil,
         unit: String? = nil
     ) {
-        let requestedMintURL = mintURL ?? walletManager.activeMint?.url
+        let requestedMintURL = mintURL ?? mintQuote?.mintURL ?? walletManager.activeMint?.url
         let requestedUnit = unit ?? effectiveUnit
         requestCreationTask?.cancel()
         isCreatingRequest = true
@@ -1267,8 +1244,14 @@ struct ReceiveLightningView: View {
                     )
                 }
                 guard !Task.isCancelled else { return }
-                quoteCreatedAt = quote.updatedAt ?? Date()
-                mintQuote = quote
+                // Own run-loop pass for the landing; see the BOLT11 path above.
+                try? await Task.sleep(for: .milliseconds(1))
+                guard !Task.isCancelled else { return }
+                withAnimation(.smooth(duration: 0.3)) {
+                    quoteCreatedAt = quote.updatedAt ?? Date()
+                    mintQuote = quote
+                    isCreatingRequest = false
+                }
             } catch {
                 guard !Task.isCancelled else { return }
                 requestFailure = ReceiveRequestFailure(
@@ -1295,7 +1278,7 @@ struct ReceiveLightningView: View {
 
     private func createRequest(method requestMethod: PaymentMethodKind, amountless: Bool, forceNew: Bool = false) {
         let requestedUnit = effectiveUnit
-        let requestedMintURL = walletManager.activeMint?.url
+        let requestedMintURL = mintQuote?.mintURL ?? walletManager.activeMint?.url
         // Onchain is always amountless (sender decides). Lightning/BOLT12 require a value.
         // Amount is in the active unit's base units (sats, or eur/usd cents, …).
         let requestAmount: UInt64? = (amountless || requestMethod == .onchain) ? nil : (amountBaseUnits > 0 ? amountBaseUnits : nil)
@@ -1335,10 +1318,16 @@ struct ReceiveLightningView: View {
                     )
                 }
                 guard !Task.isCancelled else { return }
+                // Own run-loop pass for the landing; see the BOLT11 path above.
+                try? await Task.sleep(for: .milliseconds(1))
+                guard !Task.isCancelled else { return }
                 // A reused address keeps the date it was made, the same date
                 // its History row shows.
-                quoteCreatedAt = quote.updatedAt ?? Date()
-                mintQuote = quote
+                withAnimation(.smooth(duration: 0.3)) {
+                    quoteCreatedAt = quote.updatedAt ?? Date()
+                    mintQuote = quote
+                    isCreatingRequest = false
+                }
             } catch {
                 guard !Task.isCancelled else { return }
                 requestFailure = ReceiveRequestFailure(
@@ -1434,7 +1423,10 @@ struct ReceiveLightningView: View {
             quoteStatusTask?.cancel()
             monitoredQuoteId = nil
             expiryTimer?.invalidate()
-            mintQuote = result.quote
+            // The refreshed quote lands in the same update as `isPaid`; set
+            // outside the animation it would turn the QR face's exit into a cut.
+            try? await Task.sleep(for: .milliseconds(1))
+            withAnimation(.smooth(duration: 0.3)) { mintQuote = result.quote }
             await completeReceivedQuote(receivedAmount: result.quote.amountIssued)
             return
         }
@@ -1542,8 +1534,22 @@ struct ReceiveLightningView: View {
             force: force,
             observingQuoteID: quote.id
         ), !Task.isCancelled, mintQuote?.id == quote.id else { return }
-        mintQuote = result.quote
-        mintRetryStatus = result.retryStatus
+        if result.hasSettledPayment {
+            // A settled refresh is followed by the paid swap in the same
+            // update; every body-read change of that update must sit inside
+            // the animation or the QR face's exit renders as a cut. The
+            // status check may have published wallet state as it returned,
+            // so the swap first takes a run-loop pass of its own.
+            try? await Task.sleep(for: .milliseconds(1))
+            guard !Task.isCancelled, mintQuote?.id == quote.id else { return }
+            withAnimation(.smooth(duration: 0.3)) {
+                mintQuote = result.quote
+                mintRetryStatus = result.retryStatus
+            }
+        } else {
+            mintQuote = result.quote
+            mintRetryStatus = result.retryStatus
+        }
 
         if result.quote.paymentMethod == .bolt12 {
             if let amount = reusablePaymentObservation.newlyIssuedAmount(result.quote.amountIssued) {
@@ -1565,28 +1571,35 @@ struct ReceiveLightningView: View {
     @MainActor
     private func completeReceivedQuote(receivedAmount: UInt64? = nil) async {
         guard !isPaid else { return }
-        self.receivedAmount = receivedAmount
-        isPaid = true
         expiryTimer?.invalidate()
+        // Every observed change of this update sits inside one animation —
+        // the paid flag, the monitor state, and the wallet notification the
+        // home screen listens to. Any of them landing outside it turned the
+        // QR face's fast exit into a single-frame cut.
+        withAnimation(.smooth(duration: 0.3)) {
+            self.receivedAmount = receivedAmount
+            isPaid = true
+            // Returning to a reusable QR starts monitoring again with the
+            // same issuance baseline, so the previous payment cannot replay
+            // success.
+            monitoredQuoteId = nil
 
-        // Fire the home-screen toast (same notification the NPC mint flow
-        // posts from WalletManager) so the user sees the receipt on the home
-        // screen after dismiss.
-        if let quote = mintQuote,
-           let amount = receivedAmount ?? quote.amount,
-           amount > 0 {
-            walletManager.postReceivedMintNotification(
-                amount: amount,
-                unit: quote.unit,
-                homeHaptic: false
-            )
+            // Fire the home-screen toast (same notification the NPC mint flow
+            // posts from WalletManager) so the user sees the receipt on the
+            // home screen after dismiss.
+            if let quote = mintQuote,
+               let amount = receivedAmount ?? quote.amount,
+               amount > 0 {
+                walletManager.postReceivedMintNotification(
+                    amount: amount,
+                    unit: quote.unit,
+                    homeHaptic: false
+                )
+            }
         }
 
-        // Returning to a reusable QR starts monitoring again with the same
-        // issuance baseline, so the previous payment cannot replay success.
         quoteStatusTask?.cancel()
         onchainObservationTask?.cancel()
-        monitoredQuoteId = nil
     }
 
 

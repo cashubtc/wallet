@@ -128,6 +128,11 @@ class WalletManager: ObservableObject {
         transactionService.transactions
     }
 
+    /// False until the first transaction load, and again after a reset.
+    var hasLoadedTransactions: Bool {
+        transactionService.hasLoadedTransactions
+    }
+
     /// Pending receive tokens
     var pendingReceiveTokens: [PendingReceiveToken] {
         transactionService.pendingReceiveTokens

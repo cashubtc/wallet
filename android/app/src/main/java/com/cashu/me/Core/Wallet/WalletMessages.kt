@@ -62,14 +62,10 @@ object WalletErrorMessages {
         "The wallet couldn't finish that action. Try again in a moment."
 
     fun classify(error: Throwable): WalletMessage {
+        if (error is com.cashu.me.Core.CashuRequestDeliveryReturned) return WalletMessage(error.message.orEmpty())
         if (error is PendingSendRecovery) return WalletMessage(error.message.orEmpty(), WalletMessageSeverity.Caution, isTerminal = true)
         if (error is org.cashudevkit.FfiException.PaymentRequestDeliveryFailed) {
             return WalletMessage("The delivery outcome is uncertain. Check the pending send before paying again.", WalletMessageSeverity.Caution, isTerminal = true)
-        }
-        // An application safety policy, not a transport failure. Its guidance
-        // contains "connected", which the raw network matcher catches.
-        if (error is com.cashu.me.Core.MintTransferInProgressException) {
-            return WalletMessage(checkNotNull(error.message))
         }
         if (error is MintTransferException) return transferMessage(error)
         if (error is com.cashu.me.Core.CDK.MeltPaymentRecoveryException) {
@@ -338,4 +334,33 @@ object WalletErrorMessages {
     private fun error(text: String) = WalletMessage(text, WalletMessageSeverity.Error)
     private fun caution(text: String) = WalletMessage(text, WalletMessageSeverity.Caution)
     private fun terminal(text: String) = WalletMessage(text, WalletMessageSeverity.Error, isTerminal = true)
+}
+
+/** Receive preview failures keep an unknown fee distinct from a free receive. */
+internal enum class ReceiveFeeFailure(val title: String, val message: String) {
+    MintUnavailable("Mint unreachable", "This mint may be offline. Check your connection and try again later."),
+    Unavailable("Fee unavailable", "Couldn't calculate the receive fee. Try again.");
+
+    companion object {
+        fun classify(error: Throwable): ReceiveFeeFailure {
+            val raw = when (error) {
+                is org.cashudevkit.FfiException.Cdk -> error.errorMessage
+                is org.cashudevkit.FfiException.Internal -> error.errorMessage
+                else -> error.toString()
+            }.lowercase()
+            // Client/protocol rejections do not imply that the mint is offline.
+            if (Regex("(?:http|status|response)[^\\n]{0,40}\\b4\\d{2}\\b").containsMatchIn(raw)) return Unavailable
+            val serverFailure = Regex("(?:http|status|response)[^\\n]{0,40}\\b5\\d{2}\\b").containsMatchIn(raw)
+            val transportFailure = error is java.net.ConnectException ||
+                error is java.net.UnknownHostException || error is java.net.SocketTimeoutException ||
+                error is javax.net.ssl.SSLException || listOf(
+                    "timeout", "timed out", "connection", "connect error", "cannot connect",
+                    "error sending request", "dns", "failed to lookup address", "failed to resolve",
+                    "network is unreachable", "network unreachable", "offline", "tls", "ssl",
+                    "certificate", "couldn't reach", "could not reach", "http transport error",
+                    "bad gateway", "service unavailable", "gateway timeout",
+                ).any(raw::contains)
+            return if (serverFailure || transportFailure) MintUnavailable else Unavailable
+        }
+    }
 }

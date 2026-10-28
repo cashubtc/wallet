@@ -440,6 +440,16 @@ enum SharedAxis {
         )
     }
 
+    /// The same staged fades without the travel, for faces that replace each
+    /// other in place: a status face and the confirm face it gives way to, or
+    /// one status title and the next. Crossed, they shared a slot mid-swap
+    /// ("Processing…" over the amount, then over "Payment Sent!"). Nothing
+    /// moves, so Reduce Motion keeps it.
+    static let fadeThrough: AnyTransition = .asymmetric(
+        insertion: .opacity.animation(.easeOut(duration: incomingFade).delay(outgoingFade)),
+        removal: .opacity.animation(.easeIn(duration: outgoingFade))
+    )
+
     /// Drives the swap — the content transition *and* the sheet detent moving
     /// alongside it, so they are one motion rather than two.
     static func animation(reduceMotion: Bool) -> Animation {

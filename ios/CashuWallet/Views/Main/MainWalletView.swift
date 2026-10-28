@@ -18,17 +18,26 @@ struct MainWalletView: View {
     /// container to the History tab. Lives at the call-site so
     /// MainWalletView stays decoupled from the Tab enum.
     var onViewAllHistory: () -> Void = {}
+    /// The History tab is showing. It plays arrivals itself, so home takes
+    /// them silently instead of replaying them on return.
+    var isHistoryTabSelected = false
 
     @EnvironmentObject var walletManager: WalletManager
     @EnvironmentObject var navigationManager: NavigationManager
     @ObservedObject var settings = SettingsManager.shared
     @ObservedObject var priceService = PriceService.shared
+    @ObservedObject private var appLock = AppLockManager.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.cashuFonts) private var fonts
     @Environment(\.scenePhase) private var scenePhase
 
     @State private var receivedFeedback = ReceivedBalanceFeedback()
+    @State private var arrival = HomeArrivalCoordinator()
+    /// False while a pushed page (Settings) or another tab hides the wallet.
+    @State private var isRootOnScreen = false
+    /// True from opening a transaction's sheet until it has finished leaving.
+    @State private var isDetailSheetUp = false
     @State private var contactlessCoordinator = ContactlessPaymentCoordinator()
     @State private var selectedTransaction: WalletTransaction?
     @State private var isSheetDismissing = false
@@ -68,15 +77,25 @@ struct MainWalletView: View {
         navigationManager.activeWalletSheet != nil || selectedTransaction != nil
     }
 
+    /// Balances as home shows them: held while something covers home, then
+    /// moved in the same beat as the rows.
+    private var shownBalancesByUnit: [String: UInt64] {
+        arrival.shown?.balancesByUnit ?? walletManager.balancesByUnit
+    }
+
+    private var shownSatBalance: UInt64 {
+        arrival.shown?.satBalance ?? walletManager.balance
+    }
+
     /// Units the home hero can page through: sat, then each held non-sat unit.
     private var homeUnits: [String] {
-        HomeBalance.homeBalanceUnits(walletManager.balancesByUnit)
+        HomeBalance.homeBalanceUnits(shownBalancesByUnit)
     }
 
     /// Page through every held currency, independently of mint advertisements.
     private var showsUnitPager: Bool {
         HomeBalance.showsUnitPager(
-            balancesByUnit: walletManager.balancesByUnit
+            balancesByUnit: shownBalancesByUnit
         )
     }
 
@@ -96,6 +115,9 @@ struct MainWalletView: View {
                     .frame(maxWidth: .infinity)
             }
             .scrollIndicators(.hidden)
+            // Pushing Settings or switching tabs takes the wallet off screen.
+            .onAppear { isRootOnScreen = true }
+            .onDisappear { isRootOnScreen = false }
             // Rows dissolve into the pinned top section as they scroll up.
             .scrollEdgeFade(top: topInsetHeight)
             .refreshable {
@@ -149,7 +171,7 @@ struct MainWalletView: View {
                 sheetView(for: sheet)
                     .observeBottomSheetDismissal { isSheetDismissing = $0 }
             }
-            .sheet(item: $selectedTransaction) { transaction in
+            .sheet(item: $selectedTransaction, onDismiss: { isDetailSheetUp = false }) { transaction in
                 TransactionDetailView(transaction: transaction)
                     .environmentObject(walletManager)
                     .observeBottomSheetDismissal { isSheetDismissing = $0 }
@@ -164,16 +186,24 @@ struct MainWalletView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .cashuTokenReceived)) { note in
             guard let amount = note.userInfo?["amount"] as? UInt64 else { return }
-            // The home balance + delta are sat-denominated. A non-sat receive
-            // (eur/usd/…) doesn't move the sat balance and is confirmed on its own
-            // success screen, so skip the delta rather than flash a misleading
-            // "+N sat".
-            let unit = note.userInfo?["unit"] as? String ?? "sat"
-            guard unit.lowercased() == "sat" else { return }
-            // Only background receives (poster sets "homeHaptic") buzz here; in-flow
-            // receives own the success haptic on their confirmation surface.
-            let playHaptic = note.userInfo?["homeHaptic"] as? Bool ?? false
-            showReceivedDelta(amount: amount, playHaptic: playHaptic)
+            // Only background receives (poster sets "homeHaptic") buzz and
+            // announce here; in-flow receives own both on their confirmation
+            // surface.
+            arrival.receive(HomeReceipt(
+                amount: amount,
+                unit: note.userInfo?["unit"] as? String ?? "sat",
+                homeOwned: note.userInfo?["homeHaptic"] as? Bool ?? false
+            ))
+        }
+        .onChange(of: liveState, initial: true) { _, state in
+            arrival.update(live: state.snapshot, rows: liveRecentItems, loaded: state.loaded)
+        }
+        .onChange(of: presence, initial: true) { _, newPresence in
+            arrival.setPresence(newPresence)
+        }
+        .onAppear {
+            arrival.onBeat = { playBeat($0) }
+            arrival.onConfirm = { confirmReceipts($0) }
         }
         .onDisappear { receivedFeedback.clear() }
         .onChange(of: scenePhase) { _, phase in
@@ -245,7 +275,7 @@ struct MainWalletView: View {
     private func unitBalanceHero(_ unit: String) -> some View {
         VStack(spacing: balanceLineSpacing) {
             if unit.lowercased() == "sat" {
-                let sats = walletManager.balancesByUnit["sat"] ?? walletManager.balance
+                let sats = shownBalancesByUnit["sat"] ?? shownSatBalance
                 let display = balanceDisplay(sats)
                 let primaryValue = balanceNumericValue(sats, primary: display.effectivePrimary)
                 let step = HomeBalanceCycle.current(
@@ -277,7 +307,7 @@ struct MainWalletView: View {
                 // balance. (De-greened 2026-07-05 — the balance roll carries the moment.)
                 balanceStatusLine(display, secondaryValue: balanceSecondaryNumericValue(sats, display: display))
             } else {
-                let amount = walletManager.balancesByUnit[unit] ?? 0
+                let amount = shownBalancesByUnit[unit] ?? 0
                 let currency = CurrencyRegistry.currency(forMintUnit: unit)
                 let formatted = CurrencyAmount(value: amount, currency: currency).formatted()
                 let parts = AmountParts.parse(formatted)
@@ -433,22 +463,48 @@ struct MainWalletView: View {
         return role
     }
 
-    /// Reuses the sanctioned payment-received celebration spring (Motion §6);
-    /// reduce-motion collapses it to a plain opacity cross-fade.
-    private var receivedDeltaAnimation: Animation {
-        reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.5, dampingFraction: 0.7)
+    // MARK: - Arrival Beat
+
+    /// One beat: the new rows push in and the balance rolls under one
+    /// animation, and the "+N", haptic and announcement land on the same
+    /// frame. Reads reduce-motion live because the coordinator calls this
+    /// outside a body pass.
+    private func playBeat(_ beat: HomeBeat) {
+        let reduceMotion = UIAccessibility.isReduceMotionEnabled
+        // The system list insertion: rows below glide down, the new row fades
+        // in where it sits. No bounce.
+        withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : .smooth(duration: 0.4)) {
+            arrival.present(beat)
+        }
+        // The "+N" sits under the sat balance only; a non-sat receive
+        // (eur/usd/…) rolls its own page without one rather than flash a
+        // misleading "+N sat".
+        if let sats = beat.deltas["sat"], sats > 0 {
+            // Reuses the sanctioned payment-received celebration spring
+            // (Motion §6); reduce-motion collapses it to a cross-fade. Shows
+            // the beat and re-arms a 2.5s dismiss timer; receipts that land
+            // while it shows add to it.
+            receivedFeedback.show(
+                amount: sats,
+                animation: reduceMotion
+                    ? .easeInOut(duration: 0.2)
+                    : .spring(response: 0.5, dampingFraction: 0.7)
+            )
+        }
+        confirmReceipts(beat.confirmations)
     }
 
-    /// Shows the beat and re-arms a 2.5s dismiss timer. Rapid receives coalesce
-    /// to last-write-wins: the prior timer is cancelled and the new amount takes
-    /// over. Fires the "sats landed" haptic only when the caller opts in
-    /// (`playHaptic`) — reserved for background receives no visible surface
-    /// confirms (npub.cash). In-flow receives (Lightning / ecash paste via
-    /// PaymentStatusView, a watched Cashu request) already own a success haptic,
-    /// so they leave it off to avoid a double-buzz.
-    private func showReceivedDelta(amount: UInt64, playHaptic: Bool) {
-        if playHaptic { HapticFeedback.notification(.success) }
-        receivedFeedback.show(amount: amount, animation: receivedDeltaAnimation)
+    /// The "sats landed" haptic and a polite spoken announcement, reserved for
+    /// background receives no visible surface confirms (npub.cash, a Lightning
+    /// payment landing on its own, an unwatched Cashu request). In-flow
+    /// receives already own both, so they never reach here.
+    private func confirmReceipts(_ receipts: [HomeReceipt]) {
+        guard !receipts.isEmpty else { return }
+        HapticFeedback.notification(.success)
+        var announcement = AttributedString(HomeReceipt.announcement(for: receipts))
+        // Queued behind whatever VoiceOver is reading, never cutting it off.
+        announcement.accessibilitySpeechAnnouncementPriority = .low
+        AccessibilityNotification.Announcement(announcement).post()
     }
 
     // MARK: - Action Buttons (Receive + Send)
@@ -555,6 +611,10 @@ struct MainWalletView: View {
                 recentList(items)
                     .padding(.top, 8)
                     .padding(.horizontal, 16)
+                    // Reduce motion: the list cross-fades as a whole instead
+                    // of rows sliding to make room.
+                    .id(reduceMotion ? items.map(\.id) : [])
+                    .transition(.opacity)
 
                 // Tail spacer so the last row can scroll under the
                 // Liquid Glass tab bar without sitting flush against it.
@@ -570,6 +630,7 @@ struct MainWalletView: View {
             ForEach(items) { item in
                 TransactionRowView(transaction: item, mints: walletManager.mints) {
                     HapticFeedback.selection()
+                    isDetailSheetUp = true
                     selectedTransaction = item
                 }
             }
@@ -602,11 +663,43 @@ struct MainWalletView: View {
 
     // MARK: - Recent payments
 
+    /// The rows home shows: the held set while a beat is pending, each row
+    /// rendered from the wallet's current copy of it.
     private var recentItems: [WalletTransaction] {
+        guard let shown = arrival.shown else { return liveRecentItems }
+        let live = Dictionary(
+            walletManager.transactions.map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        return shown.rows.compactMap { live[$0.id] ?? arrival.cachedRow(id: $0.id) }
+    }
+
+    private var liveRecentItems: [WalletTransaction] {
         HomeActivity.recentTransactions(
             from: walletManager.transactions,
             limit: recentRowCap
         )
+    }
+
+    private var liveState: LiveHomeState {
+        LiveHomeState(
+            snapshot: HomeSnapshot(
+                rows: liveRecentItems.map { .init(id: $0.id, isIncoming: $0.type == .incoming) },
+                balancesByUnit: walletManager.balancesByUnit,
+                satBalance: walletManager.balance
+            ),
+            loaded: walletManager.hasLoadedTransactions
+        )
+    }
+
+    private var presence: HomePresence {
+        if isHistoryTabSelected { return .seenElsewhere }
+        let covered = !isRootOnScreen
+            || navigationManager.isFlowSurfaceOpen
+            || isDetailSheetUp
+            || scenePhase != .active
+            || appLock.isLocked
+        return covered ? .covered : .onScreen
     }
 
     // MARK: - Transaction row (slimmer than HistoryView's variant)
@@ -721,9 +814,9 @@ struct MainWalletView: View {
                 .environmentObject(walletManager)
                 .presentationDetents([.large])
         case .receiveLightning:
+            // The request owns its compact detent; amount entry remains large.
             ReceiveLightningView()
                 .environmentObject(walletManager)
-                .presentationDetents([.large])
         case .connectMint:
             // Same surface the Send sheet shows when there are no mints — the
             // detents and canvas background live inside it.
@@ -785,6 +878,11 @@ struct MainWalletView: View {
         navigationManager.activeWalletSheet = nil
         onViewAllHistory()
     }
+}
+
+private struct LiveHomeState: Equatable {
+    let snapshot: HomeSnapshot
+    let loaded: Bool
 }
 
 private struct TopInsetHeightKey: PreferenceKey {

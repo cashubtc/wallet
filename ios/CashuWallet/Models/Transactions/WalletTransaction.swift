@@ -104,6 +104,14 @@ struct WalletTransaction: Identifiable {
         return quoteId ?? id
     }
 
+    /// Only live incoming requests reopen the receive screen. Funded addresses,
+    /// expired requests, outgoing payments, and transfers retain their receipt.
+    var liveReceiveQuoteID: String? {
+        guard transfer == nil, type == .incoming, kind != .ecash,
+              hasActionablePaymentCode else { return nil }
+        return quoteId ?? id
+    }
+
     /// Payment receipts retire their QR after settlement. Reusable offers remain
     /// available from their dedicated request detail screen.
     var hasActionablePaymentCode: Bool {
@@ -232,7 +240,7 @@ extension Array where Element == WalletTransaction {
     }
 }
 
-/// Recent includes completed payments and on-chain payments awaiting settlement.
+/// Recent includes completed payments and funds awaiting settlement or reclaim.
 enum HomeActivity {
     static func recentTransactions(
         from transactions: [WalletTransaction],
@@ -243,6 +251,7 @@ enum HomeActivity {
             // reached yet is only a request, like an unpaid invoice.
             .filter {
                 $0.status == .completed
+                    || ($0.kind == .ecash && $0.type == .outgoing && $0.status == .pending)
                     || ($0.kind == .onchain && $0.status == .pending && !$0.isUnfundedAddress)
             }
             .sorted { $0.date > $1.date }

@@ -4,6 +4,16 @@ import Cdk
 /// Pure mint-quote domain rules (Android `MintQuoteDomain.kt` parity) —
 /// extracted for unit testing.
 enum MintQuoteDomain {
+    /// History reopens the stored artifact; a missing or settled one-shot quote
+    /// falls back to its receipt. Reusable offers remain open after payment.
+    static func resolveStoredReceiveQuote(
+        quoteID: String?, load: (String) async -> MintQuoteInfo?
+    ) async -> MintQuoteInfo? {
+        guard let quoteID, let quote = await load(quoteID), !Task.isCancelled,
+              quote.paymentMethod == .bolt12 || !quote.hasSettledPayment else { return nil }
+        return quote
+    }
+
     /// Payer decoders render control characters, including newlines, as replacement glyphs.
     static func normalizedOfferDescription(_ raw: String?) -> String? {
         let printable = (raw ?? "").unicodeScalars.compactMap { scalar -> String? in

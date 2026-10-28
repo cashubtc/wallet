@@ -28,6 +28,26 @@ class CashuRequestStore(
     private val mutableState = MutableStateFlow(loadState())
     val state: StateFlow<CashuRequestStoreState> = mutableState.asStateFlow()
 
+    /**
+     * Requests a detail screen is showing. That screen confirms their
+     * payments itself, so home leaves out its haptic and announcement.
+     */
+    private val watchedRequestCounts = mutableMapOf<String, Int>()
+
+    @Synchronized
+    fun beginWatching(requestId: String) {
+        watchedRequestCounts[requestId] = (watchedRequestCounts[requestId] ?: 0) + 1
+    }
+
+    @Synchronized
+    fun endWatching(requestId: String) {
+        val count = watchedRequestCounts[requestId] ?: return
+        if (count > 1) watchedRequestCounts[requestId] = count - 1 else watchedRequestCounts.remove(requestId)
+    }
+
+    @Synchronized
+    fun isWatching(requestId: String): Boolean = requestId in watchedRequestCounts
+
     fun createNew(
         id: String = CashuRequest.newId(),
         amount: Long? = null,

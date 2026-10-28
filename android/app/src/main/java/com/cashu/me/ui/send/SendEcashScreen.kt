@@ -3,12 +3,15 @@ package com.cashu.me.ui.send
 import com.cashu.me.ui.components.PendingTokenClaimNotice
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -700,13 +703,18 @@ private fun InputFace(
         // The selector sits under the amount and over the keypad, not under the
         // toolbar: it qualifies the amount, so it reads as a setting on the way
         // to the action rather than a second header competing with the title.
-        if (!sending && activeMint != null) {
+        // Stays mounted while the token is being minted: removing both rows
+        // re-balances the column and drops the hero amount 64dp in a single
+        // frame, then pops it back when the face exits. It goes inert while
+        // sending rather than losing the picker and Max, which re-centred it.
+        if (activeMint != null) {
             AmountEntryMintSelector(
                 direction = MintSelectorDirection.Source,
                 mint = activeMint,
                 balanceText = balanceText,
                 onPickMint = onPickMint,
                 onUseMax = if (canUseMax) onUseMax else null,
+                enabled = !sending,
             )
             Spacer(Modifier.height(CashuTheme.spacing.snug))
         }
@@ -952,9 +960,21 @@ private fun GeneratedFace(
                 shareSubject = "Cashu token",
                 confirmationMessage = "Copied ecash token",
             )
-            PaymentConfirmationAmount(presentation = amountPresentation, generatedReceipt = true)
-            if (claimState == ClaimState.Checking) {
-                ClaimStatusRow(claimState = claimState)
+            // The amount and its status line share one slot so "Checking…" can
+            // grow in and shrink away (with its own gap) when polling starts or
+            // gives up; removing it outright hopped the rows below up a line.
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                PaymentConfirmationAmount(presentation = amountPresentation, generatedReceipt = true)
+                AnimatedVisibility(
+                    visible = claimState == ClaimState.Checking,
+                    enter = fadeIn(tween(220)) + expandVertically(tween(220)),
+                    exit = fadeOut(tween(220)) + shrinkVertically(tween(220)),
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Spacer(Modifier.height(CashuTheme.spacing.loose))
+                        ClaimStatusRow(claimState = ClaimState.Checking)
+                    }
+                }
             }
             if (!pollingEnabled) {
                 PendingTokenClaimNotice(manualCheckResult)

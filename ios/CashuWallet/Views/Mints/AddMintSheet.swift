@@ -156,6 +156,9 @@ struct AddMintFormView: View {
             do {
                 try await walletManager.addMint(url: urlToAdd)
                 HapticFeedback.selection()
+                // Resign the field before the sheet goes, so the keyboard
+                // slides down with it instead of vanishing in one frame.
+                urlFieldFocused = false
                 mintUrl = ""
                 onAdded()
             } catch {

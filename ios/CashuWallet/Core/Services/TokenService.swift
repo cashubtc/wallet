@@ -272,6 +272,11 @@ class TokenService: ObservableObject {
             let keysets = try await wallet.keysets(policy: nil).map { $0.info }
             proofs = try token.proofs(mintKeysets: keysets)
         } catch {
+            // Preserve connectivity failures instead of masking them with a
+            // missing-keyset error from decoding a token without mint metadata.
+            if error is CancellationError || ReceiveFeeFailure.classify(error) == .mintUnavailable {
+                throw error
+            }
             proofs = try token.proofsSimple()
         }
 

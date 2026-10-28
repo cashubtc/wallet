@@ -33,6 +33,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.cashu.me.App.AppContainer
 import com.cashu.me.ui.components.CanvasDivider
+import com.cashu.me.ui.home.HomeArrivalCoordinator
 import com.cashu.me.ui.navigation.CashuNavHost
 import com.cashu.me.ui.navigation.Routes
 import com.cashu.me.ui.navigation.TopTab
@@ -49,6 +50,8 @@ fun WalletScaffold(
     pendingMintScan: String?,
     onPendingMintScanConsumed: () -> Unit,
     onClaimReceiveToken: (String) -> Unit,
+    homeArrival: HomeArrivalCoordinator,
+    onReceiptSheetChanged: (Boolean) -> Unit,
     navController: NavHostController = rememberNavController(),
 ) {
     val backStack by navController.currentBackStackEntryAsState()
@@ -93,6 +96,8 @@ fun WalletScaffold(
             pendingMintScan = pendingMintScan,
             onPendingMintScanConsumed = onPendingMintScanConsumed,
             onClaimReceiveToken = onClaimReceiveToken,
+            homeArrival = homeArrival,
+            onReceiptSheetChanged = onReceiptSheetChanged,
         )
     }
 }

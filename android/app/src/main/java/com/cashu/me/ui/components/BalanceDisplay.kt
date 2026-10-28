@@ -1,6 +1,8 @@
 package com.cashu.me.ui.components
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
@@ -68,7 +70,8 @@ private sealed interface BalanceStatusLine {
 
 /**
  * Large hero balance with optional secondary line.
- * Numbers cross-fade on change via [AmountText].
+ * The balance and its fiat line roll the digits that changed (iOS
+ * `.numericText`); a sats ↔ fiat swap cross-fades. See [RollingAmountText].
  *
  * Primary and status lines use fixed heights so unit swaps / fiat show-hide never
  * reflow the home canvas (iOS MainWalletView parity).
@@ -127,6 +130,7 @@ fun BalanceDisplay(
             parts = amount.primaryParts,
             scale = AmountScale.Hero,
             modifier = primaryClickModifier,
+            rollDigits = true,
             accessibilityPrefix = "Balance",
             accessibilityLabel = HomeBalanceCycle.HiddenLabel.takeIf { hidden },
         )
@@ -143,6 +147,12 @@ fun BalanceDisplay(
             AnimatedContent(
                 targetState = statusLine,
                 transitionSpec = {
+                    if (initialState is BalanceStatusLine.Secondary && targetState is BalanceStatusLine.Secondary) {
+                        // Same slot, new value: the line rolls its own digits.
+                        // No size transform either — it would clip the digits
+                        // leaving a narrower amount mid-roll.
+                        return@AnimatedContent (EnterTransition.None togetherWith ExitTransition.None).using(null)
+                    }
                     // Celebration spring only when the delta beat lands; everything
                     // else (fiat return, plain show/hide) is a quiet cross-fade.
                     // Reduce-motion collapses the beat to the same cross-fade.
@@ -159,6 +169,9 @@ fun BalanceDisplay(
                     }
                     enter.togetherWith(fadeOut(spring(stiffness = Spring.StiffnessMedium)))
                 },
+                // Every fiat value shares one slot, so a new value reaches the
+                // same rolling text instead of fading in a fresh one.
+                contentKey = { line -> if (line is BalanceStatusLine.Secondary) BalanceStatusLine.Secondary::class else line },
                 label = "balance-status-line",
             ) { line ->
                 when (line) {
@@ -183,7 +196,7 @@ fun BalanceDisplay(
                             text = line.text,
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            animated = false,
+                            rollDigits = true,
                         )
                     BalanceStatusLine.None ->
                         // Keep the slot — invisible stand-in so height never collapses.
