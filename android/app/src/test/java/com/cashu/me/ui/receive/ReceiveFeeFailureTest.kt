@@ -2,6 +2,7 @@ package com.cashu.me.ui.receive
 
 import com.cashu.me.Core.Wallet.ReceiveFeeFailure
 import com.cashu.me.Models.TokenInfo
+import com.cashu.me.Models.ReceiveTokenPreview
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
@@ -20,7 +21,7 @@ class ReceiveFeeFailureTest {
         assertEquals("cashu-token", pendingReceiveTokenFrom(failed).token)
         assertEquals(2900L, pendingReceiveTokenFrom(failed).amount)
 
-        val retried = loadTokenReview("cashu-token", info, P2PKLockState.Unlocked) { 2L }
+        val retried = loadTokenReview("cashu-token", info, P2PKLockState.Unlocked) { ReceiveTokenPreview(info, 2L) }
         assertEquals(2L, retried.fee)
         assertNull(retried.feeFailure)
         assertTrue(retried.canClaim)
@@ -33,7 +34,17 @@ class ReceiveFeeFailureTest {
         assertEquals(ReceiveFeeFailure.Unavailable, failed.feeFailure)
         assertNull(failed.fee)
         assertFalse(failed.canClaim)
-        assertTrue(loadTokenReview("cashu-token", info, P2PKLockState.Unlocked) { 0L }.canClaim)
+        assertTrue(loadTokenReview("cashu-token", info, P2PKLockState.Unlocked) { ReceiveTokenPreview(info, 0L) }.canClaim)
+    }
+
+    @Test fun reviewUsesResolvedPreviewMetadata() = runBlocking {
+        val resolved = TokenInfo(42, "https://preview.invalid", "usd", "Resolved memo", 2)
+        val review = loadTokenReview("cashu-token", info, P2PKLockState.Unlocked) {
+            ReceiveTokenPreview(resolved, 1)
+        }
+        assertEquals(resolved, review.info)
+        assertEquals(1L, review.fee)
+        assertTrue(review.canClaim)
     }
 
     @Test fun cancellationIsNotAnOfflineMint() = runBlocking {

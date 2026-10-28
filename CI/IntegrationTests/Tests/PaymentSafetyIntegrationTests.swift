@@ -466,6 +466,23 @@ final class PaymentSafetyIntegrationTests: PaymentFixtureTestCase {
         XCTAssertEqual(received, 100)
     }
 
+    func testZeroFeeReceivePreviewMatchesRedemption() async throws {
+        let sender = try await makeWallet("controlled")
+        let receiver = try await makeWallet("controlled")
+        try await fund(sender, controlled: "controlled")
+        let token = try await send(sender, amount: 21).confirm(memo: nil)
+        let index = try XCTUnwrap(storeByWallet[ObjectIdentifier(receiver)])
+        let preview = try await stores[index].0.getTokenData(token: token)
+        XCTAssertEqual(preview.value.value, 21)
+        XCTAssertEqual(preview.unit, .sat)
+        XCTAssertEqual(preview.memo, "Payment test")
+        XCTAssertEqual(preview.redeemFee?.value, 0)
+        let before = try await balance(receiver)
+        XCTAssertEqual(before, 0)
+        let received = try await receive(receiver, token: token)
+        XCTAssertEqual(received, preview.value.value - (try XCTUnwrap(preview.redeemFee)).value)
+    }
+
     func testFeeChargingMintMaxSendAndReceiveConserveValue() async throws {
         try await assertFeeChargingMintMaxSendAndReceive(mint: "fees")
     }
@@ -483,10 +500,17 @@ final class PaymentSafetyIntegrationTests: PaymentFixtureTestCase {
         let prepared = try await send(sender, amount: 100)
         XCTAssertEqual(prepared.fee().value, 0, "Send max transfers existing proofs without a swap")
         let token = try await prepared.confirm(memo: nil)
-        let proofCount = prepared.proofs().count
+        let index = try XCTUnwrap(storeByWallet[ObjectIdentifier(receiver)])
+        let preview = try await stores[index].0.getTokenData(token: token)
+        let fee = try XCTUnwrap(preview.redeemFee).value
+        XCTAssertEqual(preview.value.value, 100)
+        XCTAssertEqual(preview.unit, .sat)
+        XCTAssertGreaterThan(fee, 0)
+        XCTAssertEqual(fee, UInt64(preview.proofs.count), "1000 ppk charges one unit per input proof")
+        let before = try await balance(receiver)
+        XCTAssertEqual(before, 0)
         let received = try await receive(receiver, token: token)
-        XCTAssertGreaterThan(proofCount, 0)
-        XCTAssertEqual(received, 100 - UInt64(proofCount), "1000 ppk charges one unit per input proof")
+        XCTAssertEqual(received, preview.value.value - fee)
         let senderBalance = try await balance(sender)
         let receiverBalance = try await balance(receiver)
         XCTAssertEqual(senderBalance, 0)

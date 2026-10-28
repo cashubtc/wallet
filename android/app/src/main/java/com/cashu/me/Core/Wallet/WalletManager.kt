@@ -1454,7 +1454,8 @@ class WalletManager(
         return reclaimPendingSend(sagaId, mintUrl, transaction.unit)
     }
 
-    suspend fun calculateReceiveFee(tokenString: String): Long = gateway.calculateReceiveFee(tokenString)
+    suspend fun previewReceiveToken(tokenString: String): com.cashu.me.Models.ReceiveTokenPreview =
+        gateway.previewReceiveToken(tokenString)
 
     suspend fun estimateCashuPaymentRequestFee(amountSats: Long, mintUrl: String): Long =
         gateway.estimateCashuPaymentRequestFee(amountSats, mintUrl)

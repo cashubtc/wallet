@@ -52,7 +52,7 @@ struct ReceiveTokenDetailView: View {
     @Environment(\.dismiss) var dismiss
     @ObservedObject private var settings = SettingsManager.shared
 
-    private let reviewPresentation: ReceiveTokenReviewPresentation
+    @State private var reviewPresentation: ReceiveTokenReviewPresentation
     @State private var tokenAmount: UInt64
     /// The token's own unit ("sat", "eur", "usd", or a custom string). Drives
     /// unit-native amount/fee formatting so a non-sat token isn't shown as sats.
@@ -105,7 +105,7 @@ struct ReceiveTokenDetailView: View {
         _tokenAmount = State(initialValue: amount)
         let unit = (decoded?.unit() ?? nil).map(PaymentRequestDecoder.unitDescription) ?? "sat"
         _tokenUnit = State(initialValue: unit)
-        reviewPresentation = ReceiveTokenReviewPresentation(rawMemo: decoded?.memo())
+        _reviewPresentation = State(initialValue: ReceiveTokenReviewPresentation(rawMemo: decoded?.memo()))
     }
 
     /// Whether the token is denominated in sats (the common path — keep the
@@ -440,9 +440,13 @@ struct ReceiveTokenDetailView: View {
         isLoadingFee = true
         receiveFee = nil
         do {
-            let fee = try await walletManager.calculateReceiveFee(tokenString: tokenString)
+            let preview = try await walletManager.previewReceiveToken(tokenString: tokenString)
             guard !Task.isCancelled else { return }
-            receiveFee = fee
+            tokenAmount = preview.info.amount
+            tokenUnit = preview.info.unit
+            mintUrl = preview.info.mint
+            reviewPresentation = ReceiveTokenReviewPresentation(rawMemo: preview.info.memo)
+            receiveFee = preview.fee
             feeFailure = nil
         } catch {
             guard !Task.isCancelled else { return }

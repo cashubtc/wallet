@@ -1,4 +1,5 @@
 import XCTest
+import Cdk
 @testable import CashuWallet
 
 @MainActor
@@ -56,11 +57,11 @@ final class TokenServiceTests: XCTestCase {
         }
     }
 
-    // MARK: - calculateReceiveFee — wallet not initialised
+    // MARK: - previewReceiveToken — wallet not initialised
 
-    func testCalculateReceiveFeeThrowsNotInitializedWhenNoRepository() async {
+    func testReceivePreviewThrowsNotInitializedWhenNoRepository() async {
         do {
-            _ = try await service.calculateReceiveFee(tokenString: "cashuAtest")
+            _ = try await service.previewReceiveToken(tokenString: "cashuAtest")
             XCTFail("Expected WalletError.notInitialized")
         } catch let err as WalletError {
             guard case .notInitialized = err else {
@@ -973,4 +974,127 @@ private actor StringRecorder {
     private var storedValues: [String] = []
     func append(_ value: String) { storedValues.append(value) }
     func values() -> [String] { storedValues }
+}
+
+@MainActor
+final class ReceiveTokenPreviewTests: XCTestCase {
+    func testUnknownFeeIsUnavailableButZeroIsConfirmed() throws {
+        XCTAssertThrowsError(try ReceiveTokenPreview(data: data(fee: nil))) { error in
+            XCTAssertEqual(ReceiveFeeFailure.classify(error), .unavailable)
+        }
+        XCTAssertEqual(try ReceiveTokenPreview(data: data(fee: 0)).fee, 0)
+    }
+
+    func testPreviewPreservesResolvedMetadataInEachUnit() throws {
+        for (unit, expected) in [(Cdk.CurrencyUnit.sat, "sat"), (.usd, "usd"), (.eur, "eur"), (.msat, "msat")] {
+            let preview = try ReceiveTokenPreview(data: data(fee: 2, unit: unit))
+            XCTAssertEqual(preview.info.amount, 8)
+            XCTAssertEqual(preview.info.unit, expected)
+            XCTAssertEqual(preview.info.memo, "Preview memo")
+            XCTAssertEqual(preview.info.mint, "https://preview.invalid")
+            XCTAssertEqual(preview.info.proofCount, 1)
+            XCTAssertEqual(preview.fee, 2)
+        }
+    }
+
+    func testCdkPreviewRoundsFeesAcrossKeysetsWithoutCreditingOrTrackingMint() async throws {
+        let ids = ["0011223344556677", "00ffeeddccbbaa99"]
+        for (fees, proofIDs, expected): ([UInt64], [String], UInt64) in [
+            ([0, 0], [ids[0]], 0),
+            ([100, 0], [ids[0]], 1),
+            ([1001, 0], [ids[0]], 2),
+            ([100, 800], [ids[0], ids[1], ids[0]], 1),
+        ] {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let db = try LifecycleSafeWalletDatabase(filePath: directory.appendingPathComponent("preview.sqlite").path)
+            let mint = MintUrl(url: "https://preview.invalid")
+            try await db.addMint(mintUrl: mint, mintInfo: nil)
+            try await db.addMintKeysets(mintUrl: mint, keysets: zip(ids, fees).map {
+                KeySetInfo(id: $0.0, unit: .sat, active: true, inputFeePpk: $0.1)
+            })
+            let repo = try WalletRepository(mnemonic: generateMnemonic(), store: customWalletStore(db: db))
+            let store = WalletStore(storage: InMemoryStorage())
+            let manager = WalletManager(walletStore: store)
+            manager.walletRepository = repo
+            let preview = try await manager.previewReceiveToken(tokenString: token(ids: proofIDs))
+            XCTAssertEqual(preview.fee, expected)
+            XCTAssertEqual(preview.info.amount, UInt64(proofIDs.count * 8))
+            XCTAssertEqual(preview.info.memo, "Preview memo")
+            XCTAssertEqual(preview.info.unit, "sat")
+            XCTAssertEqual(preview.info.proofCount, proofIDs.count)
+            let wallet = try await repo.getWallet(mintUrl: mint, unit: .sat)
+            let balance = try await wallet.totalBalance()
+            let transactions = try await wallet.listTransactions(direction: nil)
+            XCTAssertEqual(balance.value, 0)
+            XCTAssertTrue(transactions.isEmpty)
+            XCTAssertTrue(store.loadMints().isEmpty)
+            let candidates = try await ReceiveRecoveryCandidate.discover(database: db)
+            XCTAssertTrue(candidates.isEmpty)
+        }
+    }
+
+    func testCdkPreviewResolvesShortIDv2InTheTokensUnit() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let db = try LifecycleSafeWalletDatabase(filePath: directory.appendingPathComponent("preview.sqlite").path)
+        let mint = MintUrl(url: "https://preview.invalid")
+        try await db.addMint(mintUrl: mint, mintInfo: nil)
+        try await db.addMintKeysets(mintUrl: mint, keysets: [
+            KeySetInfo(id: "01abababababababababababababababababababababababababababababababab", unit: .usd, active: true, inputFeePpk: 100)
+        ])
+        let repo = try WalletRepository(mnemonic: generateMnemonic(), store: customWalletStore(db: db))
+        let encoded = "cashuBpGFtd2h0dHBzOi8vcHJldmlldy5pbnZhbGlkYXVjdXNkYWRsUHJldmlldyBtZW1vYXSBomFpSAGrq6urq6urYXCBo2FhCGFzaXByZXZpZXctMGFjWCECeb5mfvncu6xVoGKVzocLBwKb_NstzijZWfKBWxb4F5g"
+        XCTAssertThrowsError(try Token.decode(encodedToken: encoded).proofsSimple())
+        let service = TokenService(walletRepository: { repo }, getActiveMint: { nil })
+        let preview = try await service.previewReceiveToken(tokenString: encoded)
+        XCTAssertEqual(preview.info.amount, 8)
+        XCTAssertEqual(preview.info.unit, "usd")
+        XCTAssertEqual(preview.info.memo, "Preview memo")
+        XCTAssertEqual(preview.info.proofCount, 1)
+        XCTAssertEqual(preview.fee, 1)
+        let wallets = await repo.getWallets()
+        XCTAssertTrue(wallets.contains { $0.unit() == .usd })
+    }
+
+    func testCdkPreviewPropagatesMissingKeysetFees() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let db = try LifecycleSafeWalletDatabase(filePath: directory.appendingPathComponent("preview.sqlite").path)
+        let mint = MintUrl(url: "https://preview.invalid")
+        try await db.addMint(mintUrl: mint, mintInfo: nil)
+        try await db.addMintKeysets(mintUrl: mint, keysets: [
+            KeySetInfo(id: "0011223344556677", unit: .sat, active: true, inputFeePpk: 0)
+        ])
+        let repo = try WalletRepository(mnemonic: generateMnemonic(), store: customWalletStore(db: db))
+        let service = TokenService(walletRepository: { repo }, getActiveMint: { nil })
+        do {
+            _ = try await service.previewReceiveToken(tokenString: token(ids: ["00ffeeddccbbaa99"]))
+            XCTFail("A missing fee must not become a free receive")
+        } catch {
+            XCTAssertEqual(ReceiveFeeFailure.classify(error), .unavailable)
+        }
+    }
+
+    private func token(ids: [String], unit: String = "sat") throws -> String {
+        let proofs = ids.enumerated().map { index, id in
+            ["amount": 8, "id": id, "secret": "preview-\(index)",
+             "C": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"] as [String: Any]
+        }
+        let json: [String: Any] = ["token": [["mint": "https://preview.invalid", "proofs": proofs]],
+                                   "unit": unit, "memo": "Preview memo"]
+        return "cashuA" + (try JSONSerialization.data(withJSONObject: json)).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_")
+    }
+
+    private func data(fee: UInt64?, unit: Cdk.CurrencyUnit = .sat) -> TokenData {
+        TokenData(
+            mintUrl: MintUrl(url: "https://preview.invalid"),
+            proofs: [Proof(amount: Amount(value: 8), secret: "preview", c: "", keysetId: "", witness: nil, dleq: nil, p2pkE: nil)],
+            memo: "Preview memo", value: Amount(value: 8), unit: unit, redeemFee: fee.map { Amount(value: $0) }
+        )
+    }
 }

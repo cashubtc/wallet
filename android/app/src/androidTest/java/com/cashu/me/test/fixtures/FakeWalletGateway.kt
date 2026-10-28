@@ -19,6 +19,7 @@ import com.cashu.me.Models.NutSupport
 import com.cashu.me.Models.PaymentMethodKind
 import com.cashu.me.Models.RestoreMintResult
 import com.cashu.me.Models.SendTokenResult
+import com.cashu.me.Models.TokenInfo
 import com.cashu.me.Models.TransactionKind
 import com.cashu.me.Models.TransactionStatus
 import com.cashu.me.Models.TransactionType
@@ -466,7 +467,10 @@ class FakeWalletGateway(
         settlementMintUrl = normalize(settlementMintUrl),
     )
 
-    override suspend fun calculateReceiveFee(tokenString: String): Long = 0
+    override suspend fun previewReceiveToken(tokenString: String): com.cashu.me.Models.ReceiveTokenPreview =
+        com.cashu.me.Models.ReceiveTokenPreview(
+            checkNotNull(TokenInfo.parse(tokenString)), 0,
+        )
 
     override suspend fun activeMintInputFeePpk(mintUrl: String): Long? = 0
 

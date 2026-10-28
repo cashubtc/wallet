@@ -286,6 +286,20 @@ class PaymentSafetyLocalMintTest : PaymentFixtureTest() {
         assertEquals(100, receiver.receive(sender.send(100).token))
     }
 
+    @Test fun zeroFeeReceivePreviewMatchesRedemption() = runBlocking {
+        val sender = wallet("controlled")
+        val receiver = wallet("controlled")
+        sender.fund()
+        val token = sender.gateway.sendEcashToken(21, "Preview memo", null, sender.url).token
+        val preview = receiver.gateway.previewReceiveToken(token)
+        assertEquals(21L, preview.info.amount)
+        assertEquals("sat", preview.info.unit)
+        assertEquals("Preview memo", preview.info.memo)
+        assertEquals(0L, preview.fee)
+        assertEquals(0L, receiver.balance())
+        assertEquals(preview.info.amount - preview.fee, receiver.receive(token))
+    }
+
     @Test fun feeChargingMintMaxSendAndReceiveConserveValue() = runBlocking {
         assertFeeChargingMintMaxSendAndReceive("fees")
     }
@@ -302,10 +316,12 @@ class PaymentSafetyLocalMintTest : PaymentFixtureTest() {
         sender.fund()
         val sent = sender.send(100)
         assertEquals(0, sent.fee)
-        val fee = receiver.gateway.calculateReceiveFee(sent.token)
-        assertTrue(fee > 0)
+        val preview = receiver.gateway.previewReceiveToken(sent.token)
+        assertEquals(100L, preview.info.amount)
+        assertTrue(preview.fee > 0)
+        assertEquals(0L, receiver.balance())
         val received = receiver.receive(sent.token)
-        assertEquals(100 - fee, received)
+        assertEquals(preview.info.amount - preview.fee, received)
         assertEquals(0, sender.balance())
         assertEquals(received, receiver.balance())
     }
