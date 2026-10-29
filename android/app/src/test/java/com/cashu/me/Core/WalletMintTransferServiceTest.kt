@@ -207,6 +207,18 @@ class WalletMintTransferServiceTest {
     }
 
     @Test
+    fun `recovered payment keeps unknown fee when transfer completes`() = runBlocking {
+        val world = World()
+        world.meltFee = null
+        val plan = world.service.prepare(SOURCE_URL, DESTINATION_URL, amount = 40)
+
+        val outcome = world.service.execute(plan)
+
+        assertEquals(MintTransferOutcome.Completed(amount = 40, feePaid = null), outcome)
+        assertEquals(listOf(State.Completed), world.records.map { it.state })
+    }
+
+    @Test
     fun `max plan melts with its planned selection`() = runBlocking {
         val world = World()
         world.maxQuote = MaxQuote(amount = 80, feeReserve = 2, inputFee = 18)
@@ -485,6 +497,7 @@ class WalletMintTransferServiceTest {
 
         /** Whether a failing melt got far enough to leave a trace locally. */
         var meltLeavesEvidence = true
+        var meltFee: Long? = 1
         var meltSettlement = MeltSettlement.Settled
         var issues = true
 
@@ -545,7 +558,7 @@ class WalletMintTransferServiceTest {
                     }
                     startedMelts += quoteId
                     MeltPaymentResult(
-                        preimage = null, amount = meltQuotes[quoteId]?.amount ?: 0, feePaid = 1,
+                        preimage = null, amount = meltQuotes[quoteId]?.amount ?: 0, feePaid = meltFee,
                         mintUrl = mintUrl, settlement = meltSettlement,
                     )
                 },

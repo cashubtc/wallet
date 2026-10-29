@@ -655,13 +655,15 @@ class CdkWalletGatewayImpl : WalletGateway {
         )
         val settled = checked.state == CdkQuoteState.PAID || checked.state == CdkQuoteState.ISSUED
         val transaction = if (settled) runCatching {
-            wallet.listTransactions(CdkTransactionDirection.OUTGOING).lastOrNull { it.quoteId == quoteId }
+            wallet.listTransactions(CdkTransactionDirection.OUTGOING).lastOrNull {
+                it.quoteId == quoteId && it.status == CdkTransactionStatus.COMPLETED
+            }
         }.getOrNull() else null
         return MeltConfirmation(
             result = MeltPaymentResult(
                 preimage = transaction?.paymentProof ?: checked.paymentProof,
                 amount = transaction?.amount?.value?.toLong() ?: checked.amount.value.toLong(),
-                feePaid = transaction?.fee?.value?.toLong() ?: checked.feeReserve.value.toLong(),
+                feePaid = if (settled) transaction?.fee?.value?.toLong() else checked.feeReserve.value.toLong(),
                 mintUrl = wallet.mintUrl().url,
                 paymentMethod = checked.paymentMethod.toDomain(),
                 request = checked.request,

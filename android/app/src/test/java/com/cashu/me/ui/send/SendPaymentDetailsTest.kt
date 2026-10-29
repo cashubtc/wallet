@@ -60,6 +60,7 @@ class SendPaymentDetailsTest {
                     SendPaymentDetailKey.Destination,
                     SendPaymentDetailKey.Amount,
                     SendPaymentDetailKey.NetworkFee,
+                    SendPaymentDetailKey.Total,
                     SendPaymentDetailKey.Mint,
                 ),
                 expectedMethod = "On-chain",
@@ -298,12 +299,12 @@ class SendPaymentDetailsTest {
         assertEquals(expected, success.details.keys)
         assertEquals(expected, failure.details.keys)
         assertEquals(
-            processing.details.rows.map { it.label },
-            success.details.rows.map { it.label },
+            processing.details.rows.filter { it.key != SendPaymentDetailKey.Total }.map { it.label },
+            success.details.rows.filter { it.key != SendPaymentDetailKey.Total }.map { it.label },
         )
         assertEquals(
-            processing.details.rows.map { it.label },
-            failure.details.rows.map { it.label },
+            processing.details.rows.filter { it.key != SendPaymentDetailKey.Total }.map { it.label },
+            failure.details.rows.filter { it.key != SendPaymentDetailKey.Total }.map { it.label },
         )
     }
 
@@ -324,6 +325,53 @@ class SendPaymentDetailsTest {
         knownAmount = 21,
     )
 
+    @Test
+    fun settledMeltReplacesReserveWithActualFeeAndDebitIncludingZeroFee() {
+        val details = meltDetails()
+        assertEquals("Amount + fee reserve", details.rows.first { it.key == SendPaymentDetailKey.Total }.label)
+        assertEquals(SendPaymentDetailValue.Sats(24, true), details.value(SendPaymentDetailKey.Total))
+        for (fee in listOf(0L, 2L)) {
+            val settled = details.withMeltResult(meltResult(PaymentMethodKind.Bolt11, feePaid = fee))
+            assertEquals(SendPaymentDetailValue.Sats(fee), settled.value(SendPaymentDetailKey.NetworkFee))
+            assertEquals(SendPaymentDetailValue.Sats(21 + fee), settled.value(SendPaymentDetailKey.Total))
+            assertEquals("Total", settled.rows.first { it.key == SendPaymentDetailKey.Total }.label)
+        }
+    }
+
+    @Test
+    fun pendingMeltUsesReturnedBoundAndTotalIncludingInputFees() {
+        val pending = meltDetails().withMeltResult(meltResult(PaymentMethodKind.Bolt11, 5, MeltSettlement.Pending))
+        assertEquals(SendPaymentDetailValue.Sats(5, true), pending.value(SendPaymentDetailKey.NetworkFee))
+        assertEquals(SendPaymentDetailValue.Sats(26, true), pending.value(SendPaymentDetailKey.Total))
+        assertEquals("Amount + fee reserve", pending.rows.first { it.key == SendPaymentDetailKey.Total }.label)
+    }
+
+    @Test
+    fun recoveredSettledPaymentWithUnknownFeeDoesNotReuseReserveOrInventTotal() {
+        val settled = meltDetails().withMeltResult(meltResult(PaymentMethodKind.Bolt11, feePaid = null))
+        assertEquals(SendPaymentDetailValue.Unavailable, settled.value(SendPaymentDetailKey.NetworkFee))
+        assertEquals(SendPaymentDetailValue.Unavailable, settled.value(SendPaymentDetailKey.Total))
+        assertEquals("Total", settled.rows.first { it.key == SendPaymentDetailKey.Total }.label)
+    }
+
+    @Test
+    fun receiptUsesReturnedAmountAndRejectsTotalOverflow() {
+        val result = meltResult(PaymentMethodKind.Bolt11, feePaid = 2).copy(amount = 20)
+        val settled = meltDetails().withMeltResult(result)
+        assertEquals(SendPaymentDetailValue.Sats(20), settled.value(SendPaymentDetailKey.Amount))
+        assertEquals(SendPaymentDetailValue.Sats(22), settled.value(SendPaymentDetailKey.Total))
+        val overflow = meltDetails().withMeltResult(result.copy(amount = Long.MAX_VALUE))
+        assertEquals(SendPaymentDetailValue.Unavailable, overflow.value(SendPaymentDetailKey.Total))
+    }
+
+    private fun meltDetails() = buildSendPaymentDetails(
+        rail = LockedRail.Melt("lnbc1invoice", PaymentRequestDecodeResult.Bolt11(21, null), 21),
+        cashuRoute = null,
+        amountSats = 21,
+        mint = Mint,
+        meltQuote = meltQuote(PaymentMethodKind.Bolt11),
+    )
+
     private fun meltQuote(
         method: PaymentMethodKind,
         id: String = "quote",
@@ -340,7 +388,7 @@ class SendPaymentDetailsTest {
 
     private fun meltResult(
         method: PaymentMethodKind,
-        feePaid: Long = 1,
+        feePaid: Long? = 1,
         settlement: MeltSettlement = MeltSettlement.Settled,
     ) = MeltPaymentResult(
         preimage = "preimage",
@@ -368,6 +416,7 @@ class SendPaymentDetailsTest {
             SendPaymentDetailKey.Method,
             SendPaymentDetailKey.Amount,
             SendPaymentDetailKey.NetworkFee,
+            SendPaymentDetailKey.Total,
             SendPaymentDetailKey.Mint,
         )
     }

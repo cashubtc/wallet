@@ -153,3 +153,70 @@ final class MeltSettlementWaitTests: XCTestCase {
         return (residual, finish)
     }
 }
+
+@MainActor
+final class MeltPaymentSummaryTests: XCTestCase {
+    private let quote = MeltQuoteInfo(
+        id: "quote", mintUrl: "https://mint.example", amount: 21, feeReserve: 5,
+        paymentMethod: .bolt11, state: .unpaid, expiry: nil
+    )
+
+    private func summary(fee: UInt64?, settlement: MeltPaymentResult.Settlement = .settled,
+                         amount: UInt64 = 21) -> MeltPaymentSummary {
+        MeltPaymentSummary(quote: quote, result: MeltPaymentResult(
+            preimage: nil, amount: amount, feePaid: fee, mintUrl: quote.mintUrl, settlement: settlement
+        ))
+    }
+
+    private func sats(_ amount: UInt64) -> String { "\(amount) sat" }
+
+    func testConfirmationUsesExplicitFeeAndTotalUpperBounds() {
+        let details = MeltPaymentSummary(quote: quote)
+        XCTAssertEqual(details.fee, 5)
+        XCTAssertEqual(details.total, 26)
+        XCTAssertEqual(details.feeText(format: sats), "Up to 5 sat")
+        XCTAssertEqual(details.totalLabel, "Amount + fee reserve")
+        XCTAssertEqual(details.totalText(format: sats), "Up to 26 sat")
+    }
+
+    func testSettledReceiptUsesActualFeeAndDebitInsteadOfReserve() {
+        let details = summary(fee: 2)
+        XCTAssertEqual(details.feeText(format: sats), "2 sat")
+        XCTAssertEqual(details.total, 23)
+        XCTAssertEqual(details.totalLabel, "Total")
+        XCTAssertEqual(details.totalText(format: sats), "23 sat")
+        XCTAssertFalse(details.isUpperBound)
+    }
+
+    func testPendingReceiptUsesReturnedUpperBoundIncludingInputFees() {
+        let details = summary(fee: 7, settlement: .pending)
+        XCTAssertEqual(details.feeText(format: sats), "Up to 7 sat")
+        XCTAssertEqual(details.totalText(format: sats), "Up to 28 sat")
+        XCTAssertEqual(details.totalLabel, "Amount + fee reserve")
+    }
+
+    func testZeroActualFeeIsNotReplacedByReserve() {
+        let details = summary(fee: 0)
+        XCTAssertEqual(details.feeText(format: sats), "No fee")
+        XCTAssertEqual(details.total, 21)
+    }
+
+    func testRecoveredPaymentWithUnknownFeeHasNoInventedFeeOrDebit() {
+        let details = summary(fee: nil)
+        XCTAssertNil(details.fee)
+        XCTAssertNil(details.total)
+        XCTAssertEqual(details.feeText(format: sats), "Unavailable")
+        XCTAssertEqual(details.totalText(format: sats), "Unavailable")
+        XCTAssertFalse(details.isUpperBound)
+    }
+
+    func testReceiptUsesReturnedAmount() {
+        XCTAssertEqual(summary(fee: 2, amount: 20).total, 22)
+    }
+
+    func testOverflowDoesNotDisplayAnIncorrectTotal() {
+        let details = summary(fee: 1, amount: .max)
+        XCTAssertNil(details.total)
+        XCTAssertEqual(details.totalText(format: sats), "Unavailable")
+    }
+}

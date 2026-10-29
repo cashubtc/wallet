@@ -114,6 +114,17 @@ final class MintTransferEngineTests: XCTestCase {
         XCTAssertEqual(world.records.map(\.state), [.completed])
     }
 
+    func testRecoveredPaymentKeepsUnknownFeeWhenTransferCompletes() async throws {
+        let world = World()
+        world.meltFee = nil
+        let plan = try await world.engine.prepare(from: sourceURL, to: destinationURL, amount: 40)
+
+        let outcome = try await world.engine.execute(plan)
+
+        XCTAssertEqual(outcome, .completed(amount: 40, feePaid: nil))
+        XCTAssertEqual(world.records.map(\.state), [.completed])
+    }
+
     func testMaxPlanMeltsWithItsPlannedSelection() async throws {
         let world = World()
         world.maxQuote = (amount: 80, feeReserve: 2, inputFee: 18)
@@ -373,6 +384,7 @@ final class MintTransferEngineTests: XCTestCase {
         var meltError: Error?
         /// Whether a failing melt got far enough to leave a trace locally.
         var meltLeavesEvidence = true
+        var meltFee: UInt64? = 1
         var meltSettlement: MeltPaymentResult.Settlement = .settled
         var issues = true
 
@@ -440,7 +452,7 @@ final class MintTransferEngineTests: XCTestCase {
                     }
                     self.startedMelts.insert(quoteID)
                     return MeltPaymentResult(
-                        preimage: nil, amount: self.meltQuotes[quoteID]?.amount ?? 0, feePaid: 1,
+                        preimage: nil, amount: self.meltQuotes[quoteID]?.amount ?? 0, feePaid: self.meltFee,
                         mintUrl: mintURL, settlement: self.meltSettlement
                     )
                 },

@@ -1240,14 +1240,13 @@ class LightningService: ObservableObject {
         switch checkedQuote.state {
         case .paid, .issued:
             let transaction = try? await wallet.listTransactions(direction: .outgoing)
-                .last(where: { $0.quoteId == quoteId })
+                .last(where: { $0.quoteId == quoteId && $0.status == .completed })
             return MeltConfirmation(
                 result: MeltPaymentResult(
                     preimage: transaction?.paymentProof ?? checkedQuote.paymentProof,
                     amount: transaction?.amount.value
                         ?? (checkedQuote.amount.value > 0 ? checkedQuote.amount.value : fallbackQuote?.amount.value ?? 0),
-                    feePaid: transaction?.fee.value
-                        ?? (checkedQuote.feeReserve.value > 0 ? checkedQuote.feeReserve.value : fallbackQuote?.feeReserve.value ?? 0),
+                    feePaid: transaction?.fee.value,
                     mintUrl: mintURLString,
                     settlement: .settled
                 )

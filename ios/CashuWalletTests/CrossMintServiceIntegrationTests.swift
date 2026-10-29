@@ -36,7 +36,7 @@ final class CrossMintServiceIntegrationTests: PaymentFixtureTestCase {
         XCTAssertEqual(confirmation.result.settlement, .settled)
         XCTAssertEqual(confirmation.result.amount, amount)
         let left = try await balance(source)
-        XCTAssertEqual(left + amount + confirmation.result.feePaid, 100)
+        XCTAssertEqual(left + amount + (try XCTUnwrap(confirmation.result.feePaid)), 100)
         _ = try await call(root + "/pay/controlled", method: "POST", body: ["invoice": quotes.mintQuote.request])
         _ = try await awaitPaid(destination, id: quotes.mintQuote.id)
         let minted = try await service.mintTokens(quoteId: quotes.mintQuote.id)

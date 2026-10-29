@@ -110,7 +110,7 @@ data class MeltQuoteInfo(
 
 @Serializable
 enum class MeltSettlement {
-    /** The mint paid out synchronously; preimage/fee are final. */
+    /** The mint paid out; the fee is final when available after recovery. */
     Settled,
 
     /**
@@ -126,9 +126,24 @@ enum class MeltSettlement {
 data class MeltPaymentResult(
     val preimage: String?,
     val amount: Long,
-    val feePaid: Long,
+    /** Actual fee when settled, reserve upper bound when pending, null if unknown. */
+    val feePaid: Long?,
     val mintUrl: String,
     val paymentMethod: PaymentMethodKind? = null,
     val request: String? = null,
     val settlement: MeltSettlement = MeltSettlement.Settled,
 )
+
+/** The fee and debit shown on confirmation and receipt screens. */
+data class MeltPaymentSummary(
+    val amount: Long,
+    val fee: Long?,
+    val isUpperBound: Boolean,
+) {
+    constructor(quote: MeltQuoteInfo) : this(quote.amount, quote.feeReserve, true)
+    constructor(result: MeltPaymentResult) : this(result.amount, result.feePaid, result.settlement == MeltSettlement.Pending)
+
+    val total: Long?
+        get() = fee?.let { if (amount < 0 || it < 0 || amount > Long.MAX_VALUE - it) null else amount + it }
+    val totalLabel: String get() = if (isUpperBound) "Amount + fee reserve" else "Total"
+}
