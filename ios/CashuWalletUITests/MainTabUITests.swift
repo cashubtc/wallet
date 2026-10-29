@@ -127,14 +127,14 @@ final class ActivityDetailUITests: XCTestCase {
 
     private func dismissReceipt(in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
         let title = app.navigationBars.firstMatch
-        let grabber = app.buttons["Sheet Grabber"]
-        XCTAssertTrue(grabber.waitForExistence(timeout: 5), file: file, line: line)
-        // Drag the system handle, outside the receipt's scroll view. A slow
-        // title drag can leave a compact sheet open instead of dismissing it.
-        grabber.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-            .press(forDuration: 0.1,
-                   thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.98)),
-                   withVelocity: .fast, thenHoldForDuration: 0)
+        XCTAssertTrue(title.waitUntilEnabledAndHittable(timeout: 5), file: file, line: line)
+        // Start inside the navigation bar, below the system grabber's narrow
+        // hit region and outside the scrolling payment content. Release with
+        // enough velocity to dismiss both compact and full-height sheets.
+        title.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            .press(forDuration: 0.05,
+                   thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.95)),
+                   withVelocity: XCUIGestureVelocity(rawValue: 1_500), thenHoldForDuration: 0)
         XCTAssertTrue(title.waitForNonExistence(timeout: 5), "Receipt should dismiss", file: file, line: line)
     }
 
@@ -365,7 +365,8 @@ final class ActivityDetailUITests: XCTestCase {
     func testReceiptLayoutAndVisiblePaymentCode() {
         continueAfterFailure = false
         let app = XCUIApplication()
-        app.launchEnvironment = ["SHOW_COMPONENT_CATALOG": "activity", "CI_INTEGRATION_TEST": "1"]
+        app.launchEnvironment = ["SHOW_COMPONENT_CATALOG": "activity", "CI_INTEGRATION_TEST": "1",
+                                 "UITEST_DISABLE_ANIMATIONS": "1"]
         app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
         defer { app.terminate() }
@@ -373,6 +374,9 @@ final class ActivityDetailUITests: XCTestCase {
         for id in ["pending-lightning", "paid-lightning", "sent-lightning", "received-ecash", "received-bitcoin", "failed-lightning", "reusable-invoice", "cashu-request", "cashu-request-received", "cashu-request-usd"] {
             let row = app.buttons[id]
             XCTAssertTrue(row.waitForExistence(timeout: 10))
+            // Catalogue rows still exist behind a dismissing sheet. Wait for
+            // the previous presentation to release touches before opening the next.
+            XCTAssertTrue(row.waitUntilEnabledAndHittable(timeout: 5))
             row.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
             let isRequest = id == "reusable-invoice" || id.hasPrefix("cashu-request")
             XCTAssertTrue(app.staticTexts[isRequest ? "Created" : "Status"].waitForExistence(timeout: 5))
