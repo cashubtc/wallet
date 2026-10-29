@@ -78,6 +78,7 @@ fun SettingsScreen(
     onOpenPrivacy: () -> Unit,
     onOpenLicenses: () -> Unit,
     contentPadding: PaddingValues,
+    onOpenContactless: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val settings by settingsManager.state.collectAsState()
@@ -160,6 +161,9 @@ fun SettingsScreen(
             }
 
             item("payments-header") { SectionHeader("Payments") }
+            item("contactless") {
+                NavRow(title = "Contactless", leadingIcon = Icons.Outlined.Payments, onClick = onOpenContactless)
+            }
             item("lightning") {
                 NavRow(
                     title = "Lightning",

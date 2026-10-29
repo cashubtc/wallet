@@ -9,7 +9,8 @@ extension WalletManager {
         memo: String? = nil,
         p2pkPubkey: String? = nil,
         mintUrl preferredMintURL: String? = nil,
-        unit: String = "sat"
+        unit: String = "sat",
+        contactless: ContactlessSendCallbacks? = nil
     ) async throws -> SendTokenResult {
         let currencyUnit = PaymentRequestDecoder.currencyUnit(from: unit)
         let recoveryMintURL = preferredMintURL ?? activeMint?.url
@@ -38,7 +39,8 @@ extension WalletManager {
                 send: { remember in
                     try await self.tokenService.sendTokens(
                         amount: amount, memo: memo, p2pkPubkey: p2pkPubkey,
-                        mintUrl: preferredMintURL, unit: currencyUnit, onPrepared: remember
+                        mintUrl: preferredMintURL, unit: currencyUnit, onPrepared: remember,
+                        contactless: contactless
                     )
                 }
             )

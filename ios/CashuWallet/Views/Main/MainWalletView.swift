@@ -207,7 +207,13 @@ struct MainWalletView: View {
         }
         .onDisappear { receivedFeedback.clear() }
         .onChange(of: scenePhase) { _, phase in
+            if phase == .background || (phase != .active && !appLock.isAuthenticating) {
+                contactlessCoordinator.stop()
+            }
             if phase == .background { receivedFeedback.clear() }
+        }
+        .onChange(of: appLock.isLocked) { _, locked in
+            if locked { contactlessCoordinator.stop() }
         }
     }
 

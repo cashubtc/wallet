@@ -112,6 +112,9 @@ class AppLockManager(
         succeedWhenUnavailable = false,
     )
 
+    suspend fun authenticateContactless(activity: FragmentActivity?, reason: String): Boolean =
+        authenticate(activity, reason, succeedWhenUnavailable = false)
+
     private suspend fun authenticate(
         activity: FragmentActivity?,
         reason: String,

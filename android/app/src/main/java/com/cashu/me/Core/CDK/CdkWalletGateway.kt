@@ -82,6 +82,10 @@ interface CdkWalletGateway {
     suspend fun receiveRecoveryCandidates(): List<ReceiveRecoveryCandidate>
     suspend fun recoverReceiveAccount(candidate: ReceiveRecoveryCandidate): SagaRecoveryReport
     suspend fun sendEcashToken(amount: Long, memo: String?, p2pkPubkey: String?, mintUrl: String, unit: String = "sat", p2pkSigningKeys: List<String> = emptyList()): SendTokenResult
+
+    suspend fun sendContactlessToken(amount: Long, mintUrl: String, p2pkSigningKeys: List<String>,
+        callbacks: com.cashu.me.Core.Services.ContactlessSendCallbacks): SendTokenResult =
+        throw UnsupportedOperationException("Contactless payments are unavailable.")
     suspend fun receiveEcashToken(tokenString: String, p2pkSigningKeys: List<String> = emptyList()): Long
     suspend fun receiveNfcEcashToken(
         tokenString: String,

@@ -5,6 +5,8 @@ import com.cashu.me.Core.performRecoverableSend
 import com.cashu.me.Core.performRecoverablePaymentRequest
 import com.cashu.me.Models.MintUrlIdentity
 import com.cashu.me.Core.toDomainUnit
+import com.cashu.me.Core.Services.ContactlessSendCallbacks
+import com.cashu.me.Core.Services.completeContactlessSend
 
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
@@ -839,7 +841,13 @@ class CdkWalletGatewayImpl : WalletGateway {
         )
     }
 
-    override suspend fun sendEcashToken(amount: Long, memo: String?, p2pkPubkey: String?, mintUrl: String, unit: String, p2pkSigningKeys: List<String>): SendTokenResult = cdkCall {
+    override suspend fun sendEcashToken(amount: Long, memo: String?, p2pkPubkey: String?, mintUrl: String, unit: String, p2pkSigningKeys: List<String>): SendTokenResult =
+        sendPreparedEcash(amount, memo, p2pkPubkey, mintUrl, unit, p2pkSigningKeys, null)
+
+    override suspend fun sendContactlessToken(amount: Long, mintUrl: String, p2pkSigningKeys: List<String>, callbacks: ContactlessSendCallbacks): SendTokenResult =
+        sendPreparedEcash(amount, null, null, mintUrl, "sat", p2pkSigningKeys, callbacks)
+
+    private suspend fun sendPreparedEcash(amount: Long, memo: String?, p2pkPubkey: String?, mintUrl: String, unit: String, p2pkSigningKeys: List<String>, contactless: ContactlessSendCallbacks?): SendTokenResult = cdkCall {
         val cdkUnit = cdkUnit(unit)
         if (!unit.equals("sat", ignoreCase = true)) ensureWalletUnlocked(mintUrl, cdkUnit)
         val conditions = p2pkPubkey?.let { CdkSpendingConditions.P2pk(it, null) }
@@ -876,7 +884,13 @@ class CdkWalletGatewayImpl : WalletGateway {
             val prepared = wallet.prepareSend(amount.toCdkAmount(), sendOptions)
             remember(prepared.operationId())
             val fee = prepared.fee().value.toLong()
-            val token = prepared.confirm(memo)
+            val token = if (contactless == null) prepared.confirm(memo) else completeContactlessSend(
+                approve = { contactless.approve(Math.addExact(amount, fee)) },
+                confirm = { prepared.confirm(memo) },
+                cancel = { prepared.cancel() },
+                reclaim = { wallet.revokeSend(prepared.operationId()); Unit },
+                deliver = { contactless.deliver(it.encode()) },
+            )
             SendTokenResult(
                 token = token.encode(), fee = fee,
                 transactionId = SagaTransactionId.transactionIdHex(prepared.operationId()),

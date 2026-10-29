@@ -798,6 +798,7 @@ private fun AuthenticatedShell(container: AppContainer) {
 
             WalletFlow.Contactless -> ContactlessPayView(
                 walletManager = container.walletManager,
+                appLockManager = container.appLockManager,
                 onCompactSheetChanged = { flowUsesCompactSheet = it },
                 onDone = close,
                 onLightningRequest = { invoice ->

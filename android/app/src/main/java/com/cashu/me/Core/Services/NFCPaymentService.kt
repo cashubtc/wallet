@@ -39,15 +39,19 @@ object NFCPaymentInputDecoder {
 
 class NFCPaymentService(
     private val walletManager: WalletManager,
+    private val policy: ContactlessSpendPolicy,
+    private val isActive: () -> Boolean,
+    private val authenticate: suspend () -> Boolean,
+    private val showPayment: suspend (String) -> Unit,
 ) {
     fun decodeRequest(payload: String): PaymentRequestDecodeResult =
         PaymentRequestDecoder.decode(payload, includeCashuPaymentRequests = true, preferCashuPaymentRequests = true)
 
     fun decodePaymentInput(payload: String): NFCPaymentInput = NFCPaymentInputDecoder.decode(payload)
 
-    suspend fun preparePayment(payload: String): String {
-        return when (val input = decodePaymentInput(payload)) {
-            is NFCPaymentInput.CashuRequest -> prepareCashuRequest(input.summary)
+    suspend fun pay(payload: String, deliver: suspend (String) -> Unit) {
+        when (val input = decodePaymentInput(payload)) {
+            is NFCPaymentInput.CashuRequest -> payCashuRequest(input.summary, deliver)
             is NFCPaymentInput.LightningRequest -> {
                 throw IllegalStateException("Lightning NFC requests should be routed to Send.")
             }
@@ -56,7 +60,8 @@ class NFCPaymentService(
 
     fun tokenRecord(token: String) = NDEFTextRecordCoder.encode(token)
 
-    private suspend fun prepareCashuRequest(summary: com.cashu.me.Core.CashuPaymentRequestSummary): String {
+    private suspend fun payCashuRequest(summary: com.cashu.me.Core.CashuPaymentRequestSummary, deliver: suspend (String) -> Unit) {
+        check(isActive() && walletManager.state.value.isRuntimeReady) { ContactlessErrors.Inactive }
         val amount = summary.amount?.takeIf { it > 0 }
             ?: throw IllegalArgumentException("Cashu payment request requires an amount.")
         require(summary.isSatUnit) { "Only sat Cashu payment requests are supported." }
@@ -69,11 +74,25 @@ class NFCPaymentService(
             amountSats = amount,
         ) ?: throw IllegalArgumentException("No compatible mint has enough balance.")
 
-        return walletManager.sendTokens(
+        walletManager.sendContactlessToken(
             amount = amount,
-            memo = null,
-            p2pkPubkey = null,
             mintUrl = selectedMint.url,
-        ).token
+            callbacks = ContactlessSendCallbacks(
+                approve = { total ->
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
+                        val host = runCatching { java.net.URI(selectedMint.url).host }.getOrNull() ?: selectedMint.url
+                        val memo = summary.description?.lineSequence()?.joinToString(" ")?.take(120) ?: "None"
+                        showPayment("Amount: $amount sat\nMint: $host\nMemo: $memo\nTotal: $total sat")
+                        policy.authorizeAndRecord(total, isActive, authenticate)
+                    }
+                },
+                deliver = { token ->
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
+                        check(isActive()) { ContactlessErrors.Inactive }
+                        deliver(token)
+                    }
+                },
+            ),
+        )
     }
 }

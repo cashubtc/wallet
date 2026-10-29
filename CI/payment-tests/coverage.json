@@ -35,6 +35,9 @@
       "CashuRequestDeliveryRecoveryTests/testFailedReclaimRemainsPendingAndBlocksRetry",
       "CashuRequestDeliveryRecoveryTests/testExistingSharedTokenIsNotReclaimed",
       "CashuRequestDeliveryRecoveryTests/testSuccessfulDeliveryIsNotReclaimed",
+      "CashuRequestDeliveryRecoveryTests/testContactlessApprovalCancellationReleasesNativePreparation",
+      "CashuRequestDeliveryRecoveryTests/testContactlessWriteFailureReturnsNativeFundsAcrossReopen",
+      "CashuRequestDeliveryRecoveryTests/testContactlessSuccessfulDeliveryIsNotRevoked",
       "LiveCashuRequestRecoveryUITests/testFailedDeliveryReturnsBalanceWithoutManualRecovery"
     ],
     "full": [
@@ -69,6 +72,9 @@
       "PaymentSafetyLocalMintTest/abandonedCrossMintPlanLeavesNoUnissuedQuote",
       "PaymentSafetyLocalMintTest/crossMintMaxChangedInputFeeCancelsBeforeAnythingIsSpent",
       "PaymentSafetyLocalMintTest/cdkConcurrentReceiversCannotDoubleCredit",
+      "ContactlessPaymentLocalMintTest/approvalCancellationReleasesNativePreparation",
+      "ContactlessPaymentLocalMintTest/writeFailureReturnsNativeFundsAcrossReopen",
+      "ContactlessPaymentLocalMintTest/successfulDeliveryIsNotRevoked",
       "LiveMintSubscriptionTest/cdkQuoteSubscriptionAndIssuance",
       "LiveMintSubscriptionTest/nutshellQuoteSubscriptionAndIssuance",
       "LivePaymentJourneyTest/cdkReceivePayAndReopenHistory",
