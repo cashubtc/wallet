@@ -7,7 +7,6 @@ import com.cashu.me.Models.MintUrlIdentity
 import com.cashu.me.Core.toDomainUnit
 
 import java.util.concurrent.ConcurrentHashMap
-import com.cashu.me.Core.Wallet.ReceiveFeeFailure
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -44,6 +43,7 @@ import com.cashu.me.Models.NutSupport
 import com.cashu.me.Models.PaymentMethodKind
 import com.cashu.me.Models.RestoreMintResult
 import com.cashu.me.Models.SagaTransactionId
+import com.cashu.me.Models.ReceiveTokenPreview
 import com.cashu.me.Models.SendTokenResult
 import com.cashu.me.Models.TransactionKind
 import com.cashu.me.Models.TransactionStatus
@@ -845,7 +845,7 @@ class CdkWalletGatewayImpl : WalletGateway {
         val conditions = p2pkPubkey?.let { CdkSpendingConditions.P2pk(it, null) }
         // includeFee = false — the token carries exactly the requested amount;
         // the redeem fee is the recipient's cost and their wallet shows it
-        // (see ReceiveFeeEstimator). Crucially this lets Send Max move the
+        // (see the receive preview). Crucially this lets Send Max move the
         // whole balance: all proofs go out as-is, no swap, no fee — also on
         // fee-charging mints. The fee returned below is only the sender-side
         // change-swap fee (zero for a max send). Payment requests stay
@@ -938,31 +938,12 @@ class CdkWalletGatewayImpl : WalletGateway {
         settleForeignNfcTokenWithCdk(requireRepository(), checkNotNull(database), tokenString, settlementMintUrl)
     }
 
-    override suspend fun calculateReceiveFee(tokenString: String): Long = cdkCall {
+    override suspend fun previewReceiveToken(tokenString: String): ReceiveTokenPreview = cdkCall {
         val token = CdkToken.decode(tokenString)
-        val tokenUnit = token.unit() ?: CdkCurrencyUnit.Sat
-        ensureWalletUnlocked(token.mintUrl().url, tokenUnit)
-        val wallet = walletFor(token.mintUrl().url, tokenUnit)
-        // Resolve proofs with their FULL keyset ids: proofsSimple() can carry a
-        // short/legacy IDv2 keyset id that getKeysetFeesById below can't look
-        // up, which would fail the whole preview to 0 — the review screen then
-        // shows the token's gross value as if the redeem were free.
-        val proofs = runCatching {
-            token.proofs(wallet.keysets(null).map { it.toKeySetInfo() })
-        }.getOrElse { error ->
-            // Keep the original connectivity failure for the receive review.
-            if (error is CancellationException || ReceiveFeeFailure.classify(error) == ReceiveFeeFailure.MintUnavailable) {
-                throw error
-            }
-            token.proofsSimple()
-        }
-        if (proofs.isEmpty()) return@cdkCall 0
-        // NUT-02 fee: sum each input's fee_ppk, then one ceil over the total.
-        // Don't use wallet.calculateFee here — the 0.17.x FFI helper floor-
-        // divides (ppk * count / 1000), reporting 0 where the mint charges 1.
-        receiveFeeForKeysets(proofs.map { it.keysetId }) { keysetId ->
-            wallet.getKeysetFeesById(keysetId).toLong()
-        }
+        // CDK needs the token's per-unit wallet; app-level mint approval and
+        // visible mint tracking remain the caller's responsibility.
+        ensureWalletUnlocked(token.mintUrl().url, token.unit() ?: CdkCurrencyUnit.Sat)
+        requireRepository().getTokenData(token).toReceiveTokenPreview()
     }
 
     override suspend fun activeMintInputFeePpk(mintUrl: String): Long? = cdkCall {

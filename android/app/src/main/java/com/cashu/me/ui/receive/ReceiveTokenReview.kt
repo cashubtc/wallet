@@ -22,6 +22,7 @@ import com.cashu.me.Core.Wallet.walletMessage
 import com.cashu.me.Core.WalletManager
 import com.cashu.me.Models.PendingReceiveToken
 import com.cashu.me.Models.MintInfo
+import com.cashu.me.Models.ReceiveTokenPreview
 import com.cashu.me.Models.TokenInfo
 import com.cashu.me.ui.components.InspectorRow
 import com.cashu.me.ui.components.PaymentStatusPhase
@@ -154,16 +155,17 @@ internal suspend fun tokenReviewDetails(
             settingsManager.p2pkSigningKeysFor(targets).isNotEmpty()
         }.getOrDefault(false)
     }
-    return loadTokenReview(token, info, p2pkLock) { walletManager.calculateReceiveFee(token) }
+    return loadTokenReview(token, info, p2pkLock) { walletManager.previewReceiveToken(token) }
 }
 
 internal suspend fun loadTokenReview(
     token: String,
     info: TokenInfo,
     p2pkLock: P2PKLockState,
-    calculateFee: suspend () -> Long,
+    preview: suspend () -> ReceiveTokenPreview,
 ): TokenReview = try {
-    TokenReview(token, info, calculateFee(), p2pkLock)
+    val resolved = preview()
+    TokenReview(token, resolved.info, resolved.fee, p2pkLock)
 } catch (cancelled: CancellationException) {
     throw cancelled
 } catch (error: Exception) {

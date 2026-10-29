@@ -11,6 +11,7 @@ import com.cashu.me.Models.MintInfo
 import com.cashu.me.Models.MintQuoteInfo
 import com.cashu.me.Models.PaymentMethodKind
 import com.cashu.me.Models.RestoreMintResult
+import com.cashu.me.Models.ReceiveTokenPreview
 import com.cashu.me.Models.SendTokenResult
 import com.cashu.me.Models.WalletTransaction
 
@@ -87,7 +88,7 @@ interface CdkWalletGateway {
         p2pkSigningKeys: List<String> = emptyList(),
     ): NfcReceiveReceipt
     suspend fun settleForeignNfcToken(tokenString: String, settlementMintUrl: String): ForeignNfcSettlement
-    suspend fun calculateReceiveFee(tokenString: String): Long
+    suspend fun previewReceiveToken(tokenString: String): ReceiveTokenPreview
 
     /** Active sat keyset input fee in parts per thousand, or null when unavailable. */
     suspend fun activeMintInputFeePpk(mintUrl: String): Long?

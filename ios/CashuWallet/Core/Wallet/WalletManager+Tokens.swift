@@ -234,7 +234,7 @@ extension WalletManager {
         return try tokenService.decodeToken(tokenString: tokenString)
     }
 
-    func calculateReceiveFee(tokenString: String) async throws -> UInt64 {
+    func previewReceiveToken(tokenString: String) async throws -> ReceiveTokenPreview {
         // Fee preview must not track/enrich the mint: doing so adds it to the
         // visible mint list (hiding the "new mint" badge on a later scan) and
         // disturbs the keyset counter before the receive. tokenService creates
@@ -243,7 +243,7 @@ extension WalletManager {
             kind: .receiveFee,
             priority: .maintenance
         ) {
-            try await self.tokenService.calculateReceiveFee(tokenString: tokenString)
+            try await self.tokenService.previewReceiveToken(tokenString: tokenString)
         }
     }
 

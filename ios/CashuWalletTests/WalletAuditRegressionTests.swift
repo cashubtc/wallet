@@ -463,34 +463,6 @@ final class WalletAuditRegressionTests: XCTestCase {
         XCTAssertEqual(MintURLIdentity.normalized(" HTTPS://MINT.EXAMPLE:443/a/ "), "https://mint.example/a")
     }
 
-    func testReceiveFeeRoundsOnceAcrossKeysetsAndCachesLookups() async throws {
-        var lookedUp: [String] = []
-        let fee = try await TokenService.receiveFee(keysetIDs: ["a", "b", "a"]) { key in
-            lookedUp.append(key)
-            return key == "a" ? 100 : 800
-        }
-        XCTAssertEqual(fee, 1)
-        XCTAssertEqual(lookedUp, ["a", "b"])
-        let rounded = try await TokenService.receiveFee(keysetIDs: ["a"]) { _ in 1001 }
-        XCTAssertEqual(rounded, 2)
-    }
-
-    func testUnknownReceiveFeePropagatesFailureInsteadOfReportingZero() async {
-        do {
-            _ = try await TokenService.receiveFee(keysetIDs: ["missing"]) { _ in throw Failure.offline }
-            XCTFail("Unknown fees must not be presented as free")
-        } catch { XCTAssertTrue(error is Failure) }
-    }
-
-    func testExcessiveReceiveFeeCannotOverflow() async throws {
-        let single = try await TokenService.receiveFee(keysetIDs: ["a"]) { _ in UInt64.max }
-        XCTAssertEqual(single, UInt64.max / 1000 + 1)
-        do {
-            _ = try await TokenService.receiveFee(keysetIDs: ["a", "a"]) { _ in UInt64.max }
-            XCTFail("An invalid fee must fail without trapping")
-        } catch { }
-    }
-
     func testUnresolvedMintRecoveryBlocksAnotherMintAttempt() async {
         let original = quote(reservation: "operation")
         var didRecover = false
