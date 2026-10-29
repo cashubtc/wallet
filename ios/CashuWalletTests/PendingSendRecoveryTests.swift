@@ -3,7 +3,207 @@ import XCTest
 @testable import CashuWallet
 
 @MainActor
+final class ContactlessSpendPolicyTests: XCTestCase {
+    private var stored: Data?
+    private var time = Date(timeIntervalSince1970: 86_400)
+    private enum Fault: Error { case rejected, storage, write }
+    private func policy() -> ContactlessSpendPolicy {
+        ContactlessSpendPolicy(load: { self.stored }, save: { self.stored = $0 }, now: { self.time })
+    }
+
+    func testDefaultAndExactTapBoundary() async throws {
+        let p = policy()
+        XCTAssertEqual(try p.state().limits, ContactlessLimits(perTap: 1000, daily: 10000))
+        try await p.authorizeAndRecord(total: 1000, isActive: { true }, authenticate: { XCTFail("Unexpected authentication"); return false })
+        XCTAssertEqual(try p.state().spent, 1000)
+    }
+
+    func testLargerPaymentRequiresAuthentication() async throws {
+        let p = policy()
+        do { try await p.authorizeAndRecord(total: 1001, isActive: { true }, authenticate: { false }); XCTFail("Expected denial") }
+        catch ContactlessPaymentError.authentication { }
+        XCTAssertEqual(try p.state().spent, 0)
+        try await p.authorizeAndRecord(total: 1001, isActive: { true }, authenticate: { true })
+        XCTAssertEqual(try p.state().spent, 1001)
+    }
+
+    func testDailyCapIncludesTotalAndSurvivesRecreation() async throws {
+        try await policy().authorizeAndRecord(total: 9999, isActive: { true }, authenticate: { true })
+        do { try await policy().authorizeAndRecord(total: 2, isActive: { true }, authenticate: { true }); XCTFail("Expected cap") }
+        catch ContactlessPaymentError.dailyLimit { }
+        try await policy().authorizeAndRecord(total: 1, isActive: { true }, authenticate: { true })
+        XCTAssertEqual(try policy().state().spent, 10000)
+    }
+
+    func testDayRolloverAndClockRollback() async throws {
+        try await policy().authorizeAndRecord(total: 10000, isActive: { true }, authenticate: { true })
+        time = Date(timeIntervalSince1970: 0)
+        do { try await policy().authorizeAndRecord(total: 1, isActive: { true }, authenticate: { true }); XCTFail("Expected cap") }
+        catch ContactlessPaymentError.dailyLimit { }
+        time = Date(timeIntervalSince1970: 172800)
+        try await policy().authorizeAndRecord(total: 1, isActive: { true }, authenticate: { true })
+        XCTAssertEqual(try policy().state().spent, 1)
+    }
+
+    func testLimitsChangePreservesUsageAndZeroRequiresAuthentication() async throws {
+        let p = policy()
+        try await p.authorizeAndRecord(total: 1000, isActive: { true }, authenticate: { true })
+        try p.saveLimits(ContactlessLimits(perTap: 0, daily: 2000))
+        XCTAssertEqual(try p.state().spent, 1000)
+        do { try await p.authorizeAndRecord(total: 1, isActive: { true }, authenticate: { false }); XCTFail("Expected denial") }
+        catch ContactlessPaymentError.authentication { }
+    }
+
+    func testForegroundRecheckedAfterAuthentication() async throws {
+        let p = policy()
+        var active = true
+        do {
+            try await p.authorizeAndRecord(total: 1001, isActive: { active }, authenticate: { active = false; return true })
+            XCTFail("Expected stopped payment")
+        } catch ContactlessPaymentError.inactive { }
+        XCTAssertEqual(try p.state().spent, 0)
+    }
+
+    func testCorruptStateAndPersistenceFailuresFailClosed() async throws {
+        stored = Data("invalid".utf8)
+        do { try await policy().authorizeAndRecord(total: 1, isActive: { true }, authenticate: { true }); XCTFail("Expected storage error") }
+        catch ContactlessPaymentError.storage { }
+        let p = ContactlessSpendPolicy(load: { nil }, save: { _ in throw Fault.storage }, now: { self.time })
+        do { try await p.authorizeAndRecord(total: 1, isActive: { true }, authenticate: { true }); XCTFail("Expected storage error") }
+        catch Fault.storage { }
+    }
+
+    func testInvalidAndOverflowSizedLimitsAreRejected() async throws {
+        XCTAssertThrowsError(try policy().saveLimits(ContactlessLimits(perTap: 101, daily: 100)))
+        XCTAssertThrowsError(try policy().saveLimits(ContactlessLimits(perTap: 0, daily: 0)))
+        do { try await policy().authorizeAndRecord(total: UInt64.max, isActive: { true }, authenticate: { true }); XCTFail("Expected cap") }
+        catch ContactlessPaymentError.dailyLimit { }
+    }
+
+    func testRejectedApprovalCancelsBeforeConfirm() async throws {
+        var events: [String] = []
+        do {
+            _ = try await completeContactlessSend(
+                approve: { events.append("approve"); throw Fault.rejected },
+                confirm: { events.append("confirm"); return "token" },
+                cancel: { events.append("cancel") }, reclaim: { events.append("reclaim") },
+                deliver: { _ in events.append("deliver") })
+            XCTFail("Expected denial")
+        } catch Fault.rejected { }
+        XCTAssertEqual(events, ["approve", "cancel"])
+    }
+
+    func testWriteFailureReclaimsOnce() async throws {
+        var events: [String] = []
+        do {
+            _ = try await completeContactlessSend(
+                approve: { events.append("approve") }, confirm: { events.append("confirm"); return "token" },
+                cancel: { events.append("cancel") }, reclaim: { events.append("reclaim") },
+                deliver: { _ in events.append("deliver"); throw Fault.write })
+            XCTFail("Expected write failure")
+        } catch Fault.write { }
+        XCTAssertEqual(events, ["approve", "confirm", "deliver", "reclaim"])
+    }
+
+    func testSuccessDoesNotReclaim() async throws {
+        let result = try await completeContactlessSend(approve: {}, confirm: { "token" },
+            cancel: { XCTFail("cancel") }, reclaim: { XCTFail("reclaim") }, deliver: { XCTAssertEqual($0, "token") })
+        XCTAssertEqual(result, "token")
+    }
+
+    func testConcurrentApprovalCannotSpendTheSameBudget() async throws {
+        let p = policy()
+        var resume: CheckedContinuation<Bool, Never>?
+        let first = Task { try await p.authorizeAndRecord(total: 6000, isActive: { true }, authenticate: {
+            await withCheckedContinuation { resume = $0 }
+        }) }
+        while resume == nil { await Task.yield() }
+        do {
+            try await p.authorizeAndRecord(total: 6000, isActive: { true }, authenticate: { true })
+            XCTFail("Expected in-progress rejection")
+        } catch ContactlessPaymentError.busy { }
+        resume?.resume(returning: true)
+        try await first.value
+        XCTAssertEqual(try p.state().spent, 6000)
+    }
+
+    func testCancelledDeliveryStillRunsCleanup() async throws {
+        var started = false
+        var reclaimed = false
+        let payment = Task {
+            try await completeContactlessSend(approve: {}, confirm: { "token" },
+                cancel: { XCTFail("Must reclaim the confirmed token") },
+                reclaim: { try Task.checkCancellation(); reclaimed = true },
+                deliver: { _ in started = true; try await Task.sleep(for: .seconds(60)) })
+        }
+        while !started { await Task.yield() }
+        payment.cancel()
+        do { _ = try await payment.value; XCTFail("Expected cancellation") }
+        catch is CancellationError { }
+        XCTAssertTrue(reclaimed)
+    }
+}
+
+@MainActor
 final class CashuRequestDeliveryRecoveryTests: PaymentFixtureTestCase {
+    func testContactlessApprovalCancellationReleasesNativePreparation() async throws {
+        let payer = try await makeWallet("controlled")
+        try await fund(payer, controlled: "controlled")
+        let prepared = try await send(payer, amount: 21)
+        do {
+            _ = try await completeContactlessSend(
+                approve: { throw ContactlessPaymentError.authentication },
+                confirm: { try await prepared.confirm(memo: nil) },
+                cancel: { try await prepared.cancel() },
+                reclaim: { _ = try await payer.revokeSend(operationId: prepared.operationId()) },
+                deliver: { _ in XCTFail("Must not deliver") })
+            XCTFail("Expected cancelled approval")
+        } catch ContactlessPaymentError.authentication { }
+        let available = try await balance(payer)
+        let pending = try await payer.getPendingSends()
+        XCTAssertEqual(available, 100)
+        XCTAssertTrue(pending.isEmpty)
+    }
+
+    func testContactlessWriteFailureReturnsNativeFundsAcrossReopen() async throws {
+        let payer = try await makeWallet("controlled")
+        let receiver = try await makeWallet("controlled")
+        try await fund(payer, controlled: "controlled")
+        let prepared = try await send(payer, amount: 21)
+        do {
+            _ = try await completeContactlessSend(
+                approve: {}, confirm: { try await prepared.confirm(memo: nil) },
+                cancel: { try await prepared.cancel() },
+                reclaim: { _ = try await payer.revokeSend(operationId: prepared.operationId()) },
+                deliver: { _ in throw NFCPaymentError.nfcWriteFailed("Test write failure") })
+            XCTFail("Expected write failure")
+        } catch NFCPaymentError.nfcWriteFailed { }
+        let pending = try await payer.getPendingSends()
+        XCTAssertTrue(pending.isEmpty)
+        let reopened = try await reopen(payer)
+        let available = try await balance(reopened)
+        XCTAssertEqual(available, 100)
+        let token = try await send(reopened, amount: 100).confirm(memo: nil)
+        let received = try await receive(receiver, token: token)
+        XCTAssertEqual(received, 100)
+    }
+
+    func testContactlessSuccessfulDeliveryIsNotRevoked() async throws {
+        let payer = try await makeWallet("controlled")
+        let receiver = try await makeWallet("controlled")
+        try await fund(payer, controlled: "controlled")
+        let prepared = try await send(payer, amount: 21)
+        _ = try await completeContactlessSend(
+            approve: {}, confirm: { try await prepared.confirm(memo: nil) },
+            cancel: { XCTFail("Must not cancel") }, reclaim: { XCTFail("Must not reclaim") },
+            deliver: { token in
+                let received = try await self.receive(receiver, token: token)
+                XCTAssertEqual(received, 21)
+            })
+        let available = try await balance(payer)
+        XCTAssertEqual(available, 79)
+    }
+
     private func pay(_ wallet: Wallet, target: String = "unavailable",
                      beforeReclaim: () async throws -> Void = {}) async throws {
         let encoded = try await call(root + "/request", method: "POST", body: [

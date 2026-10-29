@@ -40,6 +40,9 @@ struct SettingsView: View {
                 }
 
                 sectionGroup(title: "Payments") {
+                    navRow("Contactless", icon: "wave.3.right") {
+                        ContactlessSettingsView()
+                    }
                     navRow("Lightning", icon: "bolt.fill") {
                         lightningDetailView
                     }

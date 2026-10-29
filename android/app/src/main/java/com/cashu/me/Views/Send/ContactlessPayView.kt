@@ -39,6 +39,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -51,6 +53,12 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
+import java.util.concurrent.atomic.AtomicBoolean
+import com.cashu.me.Core.AppLockManager
+import com.cashu.me.Core.Services.ContactlessSpendPolicy
+import com.cashu.me.ui.security.findFragmentActivity
 import com.cashu.me.Core.Services.NFCPaymentInput
 import com.cashu.me.Core.Services.NFCPaymentService
 import com.cashu.me.Core.Services.NFCReaderDelegate
@@ -74,6 +82,7 @@ import com.cashu.me.ui.components.PaymentStatusScreen
 @Composable
 fun ContactlessPayView(
     walletManager: WalletManager,
+    appLockManager: AppLockManager,
     modifier: Modifier = Modifier,
     onLightningRequest: (String) -> Unit,
     onDone: () -> Unit,
@@ -85,7 +94,10 @@ fun ContactlessPayView(
     val activity = remember(context) { context.findActivity() }
     val adapter = remember(context) { NfcAdapter.getDefaultAdapter(context) }
     val scope = rememberCoroutineScope()
-    val service = remember(walletManager) { NFCPaymentService(walletManager) }
+    val lockState by appLockManager.state.collectAsState()
+    var resumed by remember { mutableStateOf(lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) }
+    val inFlight = remember { AtomicBoolean(false) }
+    var paymentJob by remember { mutableStateOf<Job?>(null) }
     val currentDismissLockChanged by rememberUpdatedState(onDismissLockChanged)
     var nfcEnabled by remember(adapter) { mutableStateOf(adapter?.isEnabled == true) }
     var status by remember { mutableStateOf("Hold the phone near an NFC payment tag.") }
@@ -93,22 +105,43 @@ fun ContactlessPayView(
     var isProcessing by remember { mutableStateOf(false) }
     var paymentComplete by remember { mutableStateOf(false) }
     var lastPaymentAmount by remember { mutableStateOf<Long?>(null) }
-    val currentIsProcessing by rememberUpdatedState(isProcessing)
+    val service = remember(walletManager, appLockManager, lifecycleOwner) {
+        NFCPaymentService(walletManager, ContactlessSpendPolicy.get(context),
+            isActive = { lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+                && !appLockManager.state.value.isLocked },
+            authenticate = {
+                appLockManager.authenticateContactless(context.findFragmentActivity(), "Approve contactless payment")
+            },
+            showPayment = { status = it; withFrameNanos { } },
+        )
+    }
     val currentPaymentComplete by rememberUpdatedState(paymentComplete)
     LaunchedEffect(paymentComplete) { onCompactSheetChanged(!paymentComplete) }
 
     DisposableEffect(lifecycleOwner, adapter) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
+                resumed = true
                 nfcEnabled = adapter?.isEnabled == true
+            }
+            if (event == Lifecycle.Event.ON_PAUSE) {
+                resumed = false
+                if (!appLockManager.state.value.isAuthenticating) paymentJob?.cancel()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    DisposableEffect(activity, adapter, service, nfcEnabled, paymentComplete) {
-        if (activity != null && adapter != null && nfcEnabled && !paymentComplete) {
+    LaunchedEffect(lockState.isLocked) {
+        if (lockState.isLocked) paymentJob?.cancel()
+    }
+    DisposableEffect(Unit) {
+        onDispose { paymentJob?.cancel() }
+    }
+
+    DisposableEffect(activity, adapter, service, nfcEnabled, paymentComplete, resumed, lockState.isLocked) {
+        if (activity != null && adapter != null && nfcEnabled && !paymentComplete && resumed && !lockState.isLocked) {
             val flags = (
                 NfcAdapter.FLAG_READER_NFC_A or
                     NfcAdapter.FLAG_READER_NFC_B or
@@ -119,8 +152,12 @@ fun ContactlessPayView(
             adapter.enableReaderMode(
                 activity,
                 { tag ->
+                    if (!inFlight.compareAndSet(false, true)) return@enableReaderMode
                     scope.launch {
-                        if (currentIsProcessing || currentPaymentComplete) return@launch
+                      paymentJob = coroutineContext[Job]
+                      try {
+                        if (!lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+                            || appLockManager.state.value.isLocked || currentPaymentComplete) return@launch
                         isProcessing = true
                         currentDismissLockChanged(true)
                         paymentComplete = false
@@ -131,12 +168,12 @@ fun ContactlessPayView(
                             val payload = withContext(Dispatchers.IO) { readFirstNdefPayload(tag) }
                             when (val input = service.decodePaymentInput(payload)) {
                                 is NFCPaymentInput.CashuRequest -> {
-                                    status = "Preparing payment..."
                                     val amount = input.summary.amount
-                                    val token = service.preparePayment(payload)
-                                    status = "Writing payment..."
-                                    withContext(Dispatchers.IO) {
-                                        writeTextRecord(tag, service.tokenRecord(token))
+                                    withContext(Dispatchers.IO) { requireWritableTag(tag) }
+                                    service.pay(payload) { token ->
+                                        withContext(Dispatchers.IO) {
+                                            writeTextRecord(tag, service.tokenRecord(token))
+                                        }
                                     }
                                     lastPaymentAmount = amount
                                     paymentComplete = true
@@ -148,11 +185,14 @@ fun ContactlessPayView(
                                 }
                             }
                         }.onFailure { failure ->
+                            if (failure is CancellationException) throw failure
                             error = failure.message ?: "NFC payment failed."
-                            status = "Ready to scan again."
+                            status = "Check History before trying again."
                         }
+                      } finally {
                         isProcessing = false
                         currentDismissLockChanged(false)
+                      }
                     }
                 },
                 flags,
@@ -317,6 +357,14 @@ private fun writeTextRecord(tag: Tag, record: android.nfc.NdefRecord) {
     } finally {
         runCatching { ndef.close() }
     }
+}
+
+private fun requireWritableTag(tag: Tag) {
+    val ndef = Ndef.get(tag) ?: error("Tag does not support NDEF.")
+    try {
+        ndef.connect()
+        require(ndef.isWritable) { "NFC tag is not writable." }
+    } finally { runCatching { ndef.close() } }
 }
 
 

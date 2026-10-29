@@ -1,5 +1,6 @@
 import CoreNFC
 import Foundation
+import UIKit
 
 /// Orchestrates a contactless NFC payment with no custom SwiftUI chrome.
 /// The iOS native NFC scan sheet ("Hold Near Reader") is the entire user
@@ -13,29 +14,42 @@ import Foundation
 final class ContactlessPaymentCoordinator {
     private var delegate: NFCReaderDelegate?
     private var session: NFCNDEFReaderSession?
+    private var paymentTask: Task<Void, Never>?
+    private var sessionID = UUID()
+
+    func stop() {
+        sessionID = UUID()
+        paymentTask?.cancel()
+        session?.invalidate()
+        session = nil
+        delegate = nil
+    }
 
     func start(walletManager: WalletManager, navigationManager: NavigationManager) {
-        guard NFCNDEFReaderSession.readingAvailable else { return }
+        guard NFCNDEFReaderSession.readingAvailable, UIApplication.shared.applicationState == .active,
+              !AppLockManager.shared.isLocked, walletManager.isRuntimeReady,
+              paymentTask == nil else { return }
 
         // Tear down any prior session so a back-to-back trigger doesn't
         // leak readers.
-        session?.invalidate()
-        delegate = nil
-        session = nil
+        stop()
+        let id = sessionID
 
         let delegate = NFCReaderDelegate(
             onTagDetected: { [weak self] tag, session in
-                await self?.handleTagDetected(
-                    tag: tag,
-                    session: session,
-                    walletManager: walletManager,
-                    navigationManager: navigationManager
-                )
+                guard let self, self.sessionID == id, self.paymentTask == nil else { return }
+                self.paymentTask = Task {
+                    await self.handleTagDetected(tag: tag, session: session,
+                        walletManager: walletManager, navigationManager: navigationManager)
+                    self.paymentTask = nil
+                }
             },
             onError: { _ in
                 // iOS surfaces the error in its own sheet; no extra UI.
             },
             onSessionEnd: { [weak self] in
+                guard self?.sessionID == id else { return }
+                self?.paymentTask?.cancel()
                 self?.delegate = nil
                 self?.session = nil
             }
@@ -54,7 +68,16 @@ final class ContactlessPaymentCoordinator {
         walletManager: WalletManager,
         navigationManager: NavigationManager
     ) async {
-        let service = NFCPaymentService(walletManager: walletManager)
+        let service = NFCPaymentService(walletManager: walletManager, policy: .shared,
+            isActive: { [weak self] in
+                self?.session === session && UIApplication.shared.applicationState == .active
+                    && !AppLockManager.shared.isLocked && walletManager.isRuntimeReady
+            },
+            authenticate: {
+                await AppLockManager.shared.authenticateContactless(reason: "Approve contactless payment")
+            },
+            showPayment: { session.alertMessage = $0 }
+        )
 
         do {
             session.alertMessage = "Reading payment request..."
@@ -80,14 +103,16 @@ final class ContactlessPaymentCoordinator {
 
             switch input {
             case .creq(let request):
-                session.alertMessage = "Preparing payment..."
-                let token = try await service.prepareToken(for: request)
-
-                session.alertMessage = "Sending payment..."
-                do {
-                    try await tag.writeNDEF(NDEFTextRecord.makeMessage(with: token))
-                } catch {
-                    throw NFCPaymentError.nfcWriteFailed(error.localizedDescription)
+                let (status, capacity) = try await tag.queryNDEFStatus()
+                guard status == .readWrite else {
+                    throw NFCPaymentError.nfcWriteFailed("NFC tag is not writable.")
+                }
+                try await service.pay(request) { token in
+                    let message = NDEFTextRecord.makeMessage(with: token)
+                    guard message.length <= capacity else {
+                        throw NFCPaymentError.nfcWriteFailed("NFC tag is too small for payment token.")
+                    }
+                    try await tag.writeNDEF(message)
                 }
 
                 session.alertMessage = "Payment sent!"

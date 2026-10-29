@@ -259,6 +259,10 @@ final class AppLockManager: ObservableObject {
         await authenticate(reason: "Confirm to enable App Lock", succeedWhenUnavailable: false)
     }
 
+    func authenticateContactless(reason: String) async -> Bool {
+        await authenticate(reason: reason, succeedWhenUnavailable: false)
+    }
+
     #if DEBUG
     private static var authenticationFixture: String? {
         guard IntegrationTestConfig.shouldUseDeterministicUIRuntime else { return nil }

@@ -28,6 +28,7 @@ object Routes {
     const val SETTINGS_RESTORE = "settings/backup-restore/restore"
     const val SETTINGS_RECOVER_DEPOSIT = "settings/backup-restore/recover-deposit"
     const val SETTINGS_APP_LOCK = "settings/app-lock"
+    const val SETTINGS_CONTACTLESS = "settings/contactless"
     const val SETTINGS_LIGHTNING = "settings/lightning"
     const val SETTINGS_P2PK = "settings/p2pk"
     const val SETTINGS_P2PK_ADVANCED = "settings/p2pk/advanced"

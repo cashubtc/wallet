@@ -60,9 +60,19 @@ final class NFCPaymentService {
     }
 
     private let walletManager: WalletManager
+    private let policy: ContactlessSpendPolicy
+    private let isActive: () -> Bool
+    private let authenticate: () async -> Bool
+    private let showPayment: (String) -> Void
 
-    init(walletManager: WalletManager) {
+    init(walletManager: WalletManager, policy: ContactlessSpendPolicy,
+         isActive: @escaping () -> Bool, authenticate: @escaping () async -> Bool,
+         showPayment: @escaping (String) -> Void) {
         self.walletManager = walletManager
+        self.policy = policy
+        self.isActive = isActive
+        self.authenticate = authenticate
+        self.showPayment = showPayment
     }
 
     func decode(_ raw: String) throws -> NFCInput {
@@ -124,8 +134,9 @@ final class NFCPaymentService {
         }
     }
 
-    func prepareToken(for request: Cdk.PaymentRequest) async throws -> String {
-        guard let requestedAmount = request.amount() else {
+    func pay(_ request: Cdk.PaymentRequest, deliver: @escaping (String) async throws -> Void) async throws {
+        guard isActive(), walletManager.isRuntimeReady else { throw ContactlessPaymentError.inactive }
+        guard let requestedAmount = request.amount(), requestedAmount.value > 0 else {
             throw NFCPaymentError.noAmountSpecified
         }
 
@@ -147,15 +158,30 @@ final class NFCPaymentService {
         )
 
         do {
-            let result = try await walletManager.sendTokens(
+            _ = try await walletManager.sendTokens(
                 amount: amount,
                 memo: nil,
                 p2pkPubkey: nil,
-                mintUrl: selectedMint.url
+                mintUrl: selectedMint.url,
+                contactless: ContactlessSendCallbacks(
+                    approve: { total in
+                        let host = URL(string: selectedMint.url)?.host ?? selectedMint.url
+                        let memo = request.description()?.components(separatedBy: .newlines).joined(separator: " ").prefix(120)
+                        self.showPayment("Amount: \(amount) sat\nMint: \(host)\nMemo: \(memo.map(String.init) ?? "None")\nTotal: \(total) sat")
+                        await Task.yield()
+                        try await self.policy.authorizeAndRecord(total: total,
+                            isActive: self.isActive, authenticate: self.authenticate)
+                    },
+                    deliver: { token in
+                        guard self.isActive() else { throw ContactlessPaymentError.inactive }
+                        try await deliver(token)
+                    }
+                )
             )
-            return result.token
         } catch {
-            throw NFCPaymentError.tokenCreationFailed(error.userFacingWalletMessage)
+            await walletManager.refreshBalance()
+            await walletManager.loadTransactions()
+            throw error
         }
     }
 

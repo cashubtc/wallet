@@ -42,7 +42,7 @@ class TokenService: ObservableObject {
     ///   - amount: Amount to send in satoshis
     ///   - memo: Optional memo to include
     /// - Returns: Result containing token string and fee paid
-    func sendTokens(amount: UInt64, memo: String? = nil, p2pkPubkey: String? = nil, mintUrl preferredMintURL: String? = nil, unit: Cdk.CurrencyUnit = .sat, onPrepared: (String) -> Void = { _ in }) async throws -> SendTokenResult {
+    func sendTokens(amount: UInt64, memo: String? = nil, p2pkPubkey: String? = nil, mintUrl preferredMintURL: String? = nil, unit: Cdk.CurrencyUnit = .sat, onPrepared: (String) -> Void = { _ in }, contactless: ContactlessSendCallbacks? = nil) async throws -> SendTokenResult {
         guard let repo = walletRepository() else {
             throw WalletError.notInitialized
         }
@@ -112,7 +112,22 @@ class TokenService: ObservableObject {
         onPrepared(prepared.operationId())
         let fee = prepared.fee().value
 
-        let token = try await prepared.confirm(memo: memo)
+        let token: Token
+        if let contactless {
+            token = try await completeContactlessSend(
+                approve: {
+                    let (total, overflow) = amount.addingReportingOverflow(fee)
+                    guard !overflow else { throw ContactlessPaymentError.invalidLimits }
+                    try await contactless.approve(total)
+                },
+                confirm: { try await prepared.confirm(memo: memo) },
+                cancel: { try await prepared.cancel() },
+                reclaim: { _ = try await wallet.revokeSend(operationId: prepared.operationId()) },
+                deliver: { try await contactless.deliver($0.encode()) }
+            )
+        } else {
+            token = try await prepared.confirm(memo: memo)
+        }
         let tokenString = token.encode()
         // CDK 0.18 records the send as a Pending transaction whose id derives
         // from the send saga's operation id, so it can be computed here without
