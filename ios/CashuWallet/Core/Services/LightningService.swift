@@ -289,8 +289,8 @@ class LightningService: ObservableObject {
             )
             let quote = try await wallet.checkMintQuote(quoteId: quoteId)
             let paymentMethod = PaymentMethodKind.from(quote.paymentMethod) ?? storedPaymentMethod ?? .bolt11
-            let refreshedQuote = try await storedMintQuoteAfterStatusCheck(
-                quoteId: quoteId,
+            let refreshedQuote = try await persistCheckedMintQuoteMetadata(
+                quote,
                 paymentMethod: paymentMethod,
                 fallbackAmount: existingQuote.amount?.value
             )
@@ -1520,58 +1520,36 @@ class LightningService: ObservableObject {
         try await walletDatabase.addMintQuote(quote: quote)
     }
 
-    /// CDK persists status updates but returns the pre-write version. Adopt
-    /// its stored row, and write only app metadata that actually changes.
-    /// Database failures must not fall back to stale recovery ownership.
-    func storedMintQuoteAfterStatusCheck(
-        quoteId: String,
+    /// Persist only app metadata changes, retaining CDK's version and ownership.
+    func persistCheckedMintQuoteMetadata(
+        _ checkedQuote: MintQuote,
         paymentMethod: PaymentMethodKind,
         fallbackAmount: UInt64?
     ) async throws -> MintQuote {
+        let normalizedQuote = mintQuoteForLocalStorage(
+            checkedQuote, paymentMethod: paymentMethod, fallbackAmount: fallbackAmount
+        )
+        guard normalizedQuote.amount != checkedQuote.amount || normalizedQuote.expiry != checkedQuote.expiry else {
+            return checkedQuote
+        }
         guard let database = walletDatabase() else { throw WalletError.notInitialized }
-        guard let storedQuote = try await database.getMintQuote(quoteId: quoteId) else {
+        try await replaceStoredMintQuote(normalizedQuote, in: database)
+        guard let persisted = try await database.getMintQuote(quoteId: checkedQuote.id) else {
             throw WalletError.networkError("This receive request is no longer available.")
         }
-        let normalizedQuote = mintQuoteForLocalStorage(
-            storedQuote, paymentMethod: paymentMethod, fallbackAmount: fallbackAmount
-        )
-        if normalizedQuote.amount != storedQuote.amount || normalizedQuote.expiry != storedQuote.expiry {
-            try await replaceStoredMintQuote(normalizedQuote, in: database)
-            guard let persisted = try await database.getMintQuote(quoteId: quoteId) else {
-                throw WalletError.networkError("This receive request is no longer available.")
-            }
-            return persisted
-        }
-        return storedQuote
+        return persisted
     }
 
     private func refreshStoredOnchainMintQuoteStatus(
         _ existingQuote: MintQuote,
         fallbackAmount: UInt64?
     ) async throws -> MintQuote {
-        guard let repo = walletRepository(), let database = walletDatabase() else {
-            throw WalletError.notInitialized
-        }
-
+        guard let repo = walletRepository() else { throw WalletError.notInitialized }
         let wallet = try await repo.getWallet(mintUrl: existingQuote.mintUrl, unit: existingQuote.unit)
-        let storedQuote = try await MintQuoteRecovery.refresh(
-            check: { try await wallet.checkMintQuoteStatus(quoteId: existingQuote.id) },
-            reload: { try await database.getMintQuote(quoteId: existingQuote.id) }
+        let checkedQuote = try await wallet.checkMintQuoteStatus(quoteId: existingQuote.id)
+        return try await persistCheckedMintQuoteMetadata(
+            checkedQuote, paymentMethod: .onchain, fallbackAmount: fallbackAmount
         )
-        let refreshedQuote = mintQuoteForLocalStorage(
-            storedQuote,
-            paymentMethod: .onchain,
-            fallbackAmount: fallbackAmount
-        )
-
-        if refreshedQuote.amount != storedQuote.amount || refreshedQuote.expiry != storedQuote.expiry {
-            try await replaceStoredMintQuote(refreshedQuote, in: database)
-            guard let persisted = try await database.getMintQuote(quoteId: existingQuote.id) else {
-                throw WalletError.networkError("This receive request is no longer available.")
-            }
-            return persisted
-        }
-        return storedQuote
     }
 
     private func createOnchainMintQuote(mintURL: String) async throws -> MintQuoteInfo {

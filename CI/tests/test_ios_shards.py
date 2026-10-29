@@ -40,7 +40,7 @@ sys.exit(int(os.environ.get('TEST_EXIT_CODE', '0')))
 
     def test_every_ui_class_is_selected_exactly_once_including_future_classes(self):
         selections = []
-        for shard in ['unit', 'ui-lifecycle', 'ui-settings', 'ui-other']:
+        for shard in ['unit', 'ui-lifecycle', 'ui-settings', 'ui-live-payments', 'ui-other']:
             with self.subTest(shard=shard):
                 self.assertEqual(self.run_shard(shard).returncode, 0)
                 args = json.loads(self.record.read_text())
@@ -53,7 +53,11 @@ sys.exit(int(os.environ.get('TEST_EXIT_CODE', '0')))
         for case in ['CashuWalletTests/Payments/testPayment',
                      'CashuWalletUITests/WalletLifecycleUITests/testRestore',
                      'CashuWalletUITests/SettingsUITests/testSetting',
+                     'CashuWalletUITests/LiveBolt12DescriptionUITests/testOffer',
+                     'CashuWalletUITests/LiveCashuRequestRecoveryUITests/testRecovery',
                      'CashuWalletUITests/LiveCdkPaymentUITests/testPayment',
+                     'CashuWalletUITests/LiveMintTransferUITests/testTransfer',
+                     'CashuWalletUITests/LiveNutshellPaymentUITests/testPayment',
                      'CashuWalletUITests/FutureUITests/testNewJourney']:
             matches = lambda selector: case == selector or case.startswith(selector + '/')
             self.assertEqual(sum(any(map(matches, only)) and not any(map(matches, skip))

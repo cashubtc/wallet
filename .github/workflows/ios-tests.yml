@@ -92,7 +92,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [unit, ui-lifecycle, ui-settings, ui-other]
+        shard: [unit, ui-lifecycle, ui-settings, ui-live-payments, ui-other]
     env:
       SHARD: ${{ matrix.shard }}
     steps:
@@ -255,4 +255,4 @@ jobs:
       run: |
         python3 CI/payment-tests/check_coverage.py --platform ios --tier "$PAYMENT_TIER" --ios-json \
           ios-results/unit.json ios-results/ui-lifecycle.json \
-          ios-results/ui-settings.json ios-results/ui-other.json
+          ios-results/ui-settings.json ios-results/ui-live-payments.json ios-results/ui-other.json
