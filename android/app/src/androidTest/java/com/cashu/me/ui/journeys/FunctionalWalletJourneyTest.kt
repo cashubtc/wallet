@@ -275,6 +275,7 @@ class FunctionalWalletJourneyTest {
     fun lightningInvoiceQuoteConfirmPayUpdatesBalanceFeesAndHistory() {
         val fixture = launch(FixtureMode.FundedWithHistory)
         val fake = checkNotNull(fixture.fakeGateway)
+        fake.meltFeePaidOverride = 1
 
         robot.awaitTag(UiTestTags.WalletScreen)
             .tapTag(UiTestTags.WalletSend)
@@ -282,27 +283,34 @@ class FunctionalWalletJourneyTest {
             .typeIntoTag(UiTestTags.SendDestination, FixedBolt11Invoice)
             .awaitTag(UiTestTags.SendPaymentSubmit)
             .awaitText("Network fee")
-            // The confirm's fee/total rows honour the ₿-symbol setting now,
-            // same as the status terminal below.
-            .awaitText("₿2")
+            .awaitText("Up to ₿2")
+            .awaitText("Amount + fee reserve")
+            .awaitText("Up to ₿23")
             .tapTag(UiTestTags.SendPaymentSubmit)
             .awaitText("Payment sent")
             .awaitText("Network fee")
-            .awaitText("₿2")
+            .awaitText("₿1")
+            .awaitText("Total")
+            .awaitText("₿22")
+        compose.onNodeWithText("Up to ₿2").assertDoesNotExist()
+        compose.onNodeWithText("Up to ₿23").assertDoesNotExist()
 
-        assertEquals(477L, runBlocking { fake.totalBalance(FakeWalletGateway.TestMintUrl) })
+        assertEquals(478L, runBlocking { fake.totalBalance(FakeWalletGateway.TestMintUrl) })
         val paidTransaction = checkNotNull(
             fixture.container.walletManager.state.value.transactions.firstOrNull {
                 it.type == TransactionType.Outgoing && it.kind == TransactionKind.Lightning
             },
         )
-        assertEquals(2L, paidTransaction.fee)
+        assertEquals(1L, paidTransaction.fee)
 
         robot.tapText("Done")
             .awaitTag(UiTestTags.WalletScreen)
             .tapText("History")
             .awaitTag(UiTestTags.HistoryScreen)
-            .awaitTag(UiTestTags.transactionRow(paidTransaction.id))
+            .tapTag(UiTestTags.transactionRow(paidTransaction.id))
+            .awaitTag(UiTestTags.TransactionReceiptSheet)
+            .awaitTextWithinTag(UiTestTags.TransactionReceiptSheet, "Fee")
+            .awaitTextWithinTag(UiTestTags.TransactionReceiptSheet, "1 sat")
     }
 
     @Test
