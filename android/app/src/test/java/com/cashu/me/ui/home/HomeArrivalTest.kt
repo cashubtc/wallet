@@ -176,13 +176,34 @@ class HomeArrivalLedgerTest {
 
     @Test
     fun `announcement sums each unit`() {
-        assertEquals("Received 2,500 sat", homeReceiptAnnouncement(listOf(paid)))
+        assertEquals("Received 2,500 sat", homeReceiptAnnouncement(listOf(paid), hideBalances = false))
         assertEquals(
             "Received 2,500 sat",
             homeReceiptAnnouncement(
                 listOf(HomeReceipt(1_000, "sat", homeOwned = true), HomeReceipt(1_500, "SAT", homeOwned = true)),
+                hideBalances = false,
             ),
         )
+    }
+
+    @Test
+    fun `hidden announcement confirms payment without amount`() {
+        assertEquals("Payment received", homeReceiptAnnouncement(listOf(paid), hideBalances = true))
+    }
+
+    @Test
+    fun `hidden announcement is the same for multiple currencies`() {
+        val receipts = listOf(paid, HomeReceipt(789, "usd", homeOwned = true))
+        assertEquals("Payment received", homeReceiptAnnouncement(receipts, hideBalances = true))
+    }
+
+    @Test
+    fun `announcement uses current visibility for the same receipts`() {
+        val receipts = listOf(HomeReceipt(789, "usd", homeOwned = true))
+        val visible = homeReceiptAnnouncement(receipts, hideBalances = false)
+        assertEquals("Received \$7.89", visible)
+        assertEquals("Payment received", homeReceiptAnnouncement(receipts, hideBalances = true))
+        assertEquals(visible, homeReceiptAnnouncement(receipts, hideBalances = false))
     }
 
     private fun loaded(presence: HomePresence) = HomeArrivalLedger(presence).apply {

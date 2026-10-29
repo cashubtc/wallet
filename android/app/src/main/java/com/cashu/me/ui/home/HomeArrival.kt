@@ -416,11 +416,13 @@ internal val WalletState.hasLoadedTransactions: Boolean
 
 internal const val HOME_RECENT_LIMIT = 5
 
-/** "Received 2,500 sat", one amount per unit for receipts that land together. */
+/** Spoken receipt confirmation, respecting the current balance visibility. */
 internal fun homeReceiptAnnouncement(
     receipts: List<HomeReceipt>,
+    hideBalances: Boolean,
     formatter: AmountFormatter = AmountFormatter(),
 ): String {
+    if (hideBalances) return "Payment received"
     val totals = LinkedHashMap<String, Long>()
     receipts.forEach { totals[it.unitKey] = (totals[it.unitKey] ?: 0L) + it.amount }
     val amounts = totals.map { (unit, amount) ->

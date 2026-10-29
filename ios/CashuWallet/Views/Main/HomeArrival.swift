@@ -50,9 +50,9 @@ struct HomeReceipt: Equatable {
     /// Lowercased mint unit ("sat", "eur", …).
     var unitKey: String { unit.lowercased() }
 
-    /// "Received 2,500 sat", one amount per unit for receipts that land
-    /// together.
-    static func announcement(for receipts: [HomeReceipt]) -> String {
+    /// Spoken receipt confirmation, respecting the current balance visibility.
+    static func announcement(for receipts: [HomeReceipt], hideBalances: Bool) -> String {
+        if hideBalances { return "Payment received" }
         var totals: [(unit: String, amount: UInt64)] = []
         for receipt in receipts {
             let unit = receipt.unitKey

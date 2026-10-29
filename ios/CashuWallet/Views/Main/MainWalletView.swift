@@ -501,7 +501,10 @@ struct MainWalletView: View {
     private func confirmReceipts(_ receipts: [HomeReceipt]) {
         guard !receipts.isEmpty else { return }
         HapticFeedback.notification(.success)
-        var announcement = AttributedString(HomeReceipt.announcement(for: receipts))
+        var announcement = AttributedString(HomeReceipt.announcement(
+            for: receipts,
+            hideBalances: settings.hideBalances
+        ))
         // Queued behind whatever VoiceOver is reading, never cutting it off.
         announcement.accessibilitySpeechAnnouncementPriority = .low
         AccessibilityNotification.Announcement(announcement).post()
