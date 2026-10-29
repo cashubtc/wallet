@@ -149,14 +149,31 @@ final class HomeArrivalLedgerTests: XCTestCase {
     }
 
     func testAnnouncementSumsEachUnit() {
-        XCTAssertEqual(HomeReceipt.announcement(for: [paid]), "Received 2,500 sat")
+        XCTAssertEqual(HomeReceipt.announcement(for: [paid], hideBalances: false), "Received 2,500 sat")
         XCTAssertEqual(
             HomeReceipt.announcement(for: [
                 HomeReceipt(amount: 1_000, unit: "sat", homeOwned: true),
                 HomeReceipt(amount: 1_500, unit: "SAT", homeOwned: true),
-            ]),
+            ], hideBalances: false),
             "Received 2,500 sat"
         )
+    }
+
+    func testHiddenAnnouncementConfirmsPaymentWithoutAmount() {
+        XCTAssertEqual(HomeReceipt.announcement(for: [paid], hideBalances: true), "Payment received")
+    }
+
+    func testHiddenAnnouncementIsTheSameForMultipleCurrencies() {
+        let receipts = [paid, HomeReceipt(amount: 789, unit: "usd", homeOwned: true)]
+        XCTAssertEqual(HomeReceipt.announcement(for: receipts, hideBalances: true), "Payment received")
+    }
+
+    func testAnnouncementUsesCurrentVisibilityForTheSameReceipts() {
+        let receipts = [HomeReceipt(amount: 789, unit: "usd", homeOwned: true)]
+        let visible = HomeReceipt.announcement(for: receipts, hideBalances: false)
+        XCTAssertEqual(visible, "Received $7.89")
+        XCTAssertEqual(HomeReceipt.announcement(for: receipts, hideBalances: true), "Payment received")
+        XCTAssertEqual(HomeReceipt.announcement(for: receipts, hideBalances: false), visible)
     }
 
     private func loaded(_ presence: HomePresence) -> HomeArrivalLedger {

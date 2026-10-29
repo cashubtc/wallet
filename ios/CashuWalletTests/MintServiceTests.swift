@@ -849,4 +849,71 @@ final class MultiUnitSupportTests: XCTestCase {
         XCTAssertEqual(store.homeBalancePrimary, "fiat")
         XCTAssertEqual(store.amountDisplayPrimary, "fiat")
     }
+
+    // MARK: - Private balance cycle
+
+    func testSatPageCyclesBitcoinFiatHiddenBitcoin() {
+        XCTAssertEqual(HomeBalanceCycle.next(after: .unit, hasFiat: true, isSatPage: true), .fiat)
+        XCTAssertEqual(HomeBalanceCycle.next(after: .fiat, hasFiat: true, isSatPage: true), .hidden)
+        XCTAssertEqual(HomeBalanceCycle.next(after: .hidden, hasFiat: true, isSatPage: true), .unit)
+    }
+
+    func testCycleSkipsFiatWithoutAFiatLine() {
+        XCTAssertEqual(HomeBalanceCycle.next(after: .unit, hasFiat: false, isSatPage: true), .hidden)
+        XCTAssertEqual(HomeBalanceCycle.next(after: .hidden, hasFiat: false, isSatPage: true), .unit)
+    }
+
+    func testOtherUnitPagesNeverOfferFiat() {
+        XCTAssertEqual(HomeBalanceCycle.next(after: .unit, hasFiat: true, isSatPage: false), .hidden)
+        XCTAssertEqual(HomeBalanceCycle.next(after: .hidden, hasFiat: true, isSatPage: false), .unit)
+    }
+
+    func testCurrentStepFollowsTheEffectivePrimaryAndHiddenWins() {
+        // A stored fiat preference whose price dropped out renders bitcoin.
+        XCTAssertEqual(HomeBalanceCycle.current(isHidden: false, effectivePrimary: .sats, isSatPage: true), .unit)
+        XCTAssertEqual(HomeBalanceCycle.current(isHidden: false, effectivePrimary: .fiat, isSatPage: true), .fiat)
+        XCTAssertEqual(HomeBalanceCycle.current(isHidden: true, effectivePrimary: .fiat, isSatPage: true), .hidden)
+        XCTAssertEqual(HomeBalanceCycle.current(isHidden: false, effectivePrimary: .fiat, isSatPage: false), .unit)
+    }
+
+    func testHidingKeepsThePrimaryAndShowingLandsOnBitcoin() {
+        XCTAssertTrue(HomeBalanceCycle.settings(for: .hidden, keeping: .fiat) == (.fiat, true))
+        XCTAssertTrue(HomeBalanceCycle.settings(for: .unit, keeping: .fiat) == (.sats, false))
+        XCTAssertTrue(HomeBalanceCycle.settings(for: .fiat, keeping: .sats) == (.fiat, false))
+    }
+
+    func testCycleActionPhrasesNameTheNextStep() {
+        XCTAssertEqual(HomeBalanceCycle.actionPhrase(for: .hidden, fiatText: "$0.50", unitName: "sats"), "hide balance")
+        XCTAssertEqual(HomeBalanceCycle.actionPhrase(for: .fiat, fiatText: "$0.50", unitName: "sats"), "make $0.50 primary")
+        XCTAssertEqual(HomeBalanceCycle.actionPhrase(for: .unit, fiatText: nil, unitName: "sats"), "show balance in sats")
+        XCTAssertEqual(HomeBalanceCycle.actionPhrase(for: .unit, fiatText: nil, unitName: "USD"), "show balance in USD")
+    }
+
+    func testHiddenBalanceIsTheAsterisksAloneWithNoUnit() {
+        XCTAssertEqual(AmountFormatter.hiddenBalanceParts, AmountParts(value: "****", affix: .none))
+        XCTAssertEqual(AmountFormatter.hiddenBalanceParts.joined, "****")
+    }
+
+    func testHiddenAsterisksDropOntoTheDigitCentreLine() {
+        // SF draws "*" near the cap line; the drop brings its centre down to
+        // half the cap height, about a fifth of an em at hero size.
+        let fonts = CashuFonts.system
+        let drop = fonts.asteriskDrop(.sans, size: 52, weight: .semibold)
+        XCTAssertEqual(drop / 52, 0.18, accuracy: 0.03)
+        XCTAssertGreaterThan(fonts.asteriskDrop(.sans, size: 17, weight: .regular), 0)
+    }
+
+    func testHideBalancesDefaultsOffPersistsAndSurvivesWalletReset() {
+        let storage = InMemoryStorage()
+        let store = SettingsStore(storage: storage)
+        XCTAssertFalse(store.hideBalances)
+
+        store.hideBalances = true
+        store.clearWalletScopedData()
+
+        XCTAssertTrue(SettingsStore(storage: storage).hideBalances)
+        XCTAssertFalse(StorageKeys.walletBoundaryKeys.contains(StorageKeys.hideBalances))
+        XCTAssertEqual(store.homeBalancePrimary, "sats")
+        XCTAssertEqual(store.amountDisplayPrimary, "fiat")
+    }
 }

@@ -23,10 +23,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.cashu.me.Core.AmountFormatter
 import com.cashu.me.Models.TransactionStatus
 import com.cashu.me.Models.TransactionType
 import com.cashu.me.Models.WalletTransaction
@@ -44,6 +46,12 @@ data class TransactionRowModel(
     val timestamp: String,
     val primaryAmount: String,
     val secondaryAmount: String?,
+    /**
+     * Private mode: the amount becomes fixed asterisks with no sign (the colour
+     * stays) and reads "Amount hidden", so the real strings never reach the
+     * screen or the semantics tree.
+     */
+    val amountHidden: Boolean = false,
 )
 
 /**
@@ -72,18 +80,23 @@ fun TransactionRow(
         incoming -> CashuTheme.colors.received
         else -> MaterialTheme.colorScheme.onSurface
     }
-    val amountText = if (tx.status == TransactionStatus.Completed && incoming) "+${model.primaryAmount}" else model.primaryAmount
+    val hidden = model.amountHidden
+    val amountText = when {
+        hidden -> AmountFormatter.HiddenDigits
+        tx.status == TransactionStatus.Completed && incoming -> "+${model.primaryAmount}"
+        else -> model.primaryAmount
+    }
     // An unfunded deposit address has no amount yet: no trailing element, like
     // an any-amount Cashu Request that is still waiting.
     val showsAmount = !tx.isUnfundedAddress
-    val semanticAmount = amountText.takeIf { showsAmount }
+    val semanticAmount = (if (hidden) AmountFormatter.HiddenAmountLabel else amountText).takeIf { showsAmount }
     val semanticParts = listOfNotNull(
         model.title,
         // A transfer is neither; its title already says what it is.
         if (isTransfer) null else if (incoming) "Incoming" else "Outgoing",
         tx.displayStatusText,
         semanticAmount,
-        model.secondaryAmount?.takeIf { showsAmount },
+        model.secondaryAmount?.takeIf { showsAmount && !hidden },
         model.timestamp,
     )
     Row(
@@ -118,7 +131,12 @@ fun TransactionRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        if (showsAmount) Column(horizontalAlignment = Alignment.End) {
+        if (showsAmount) Column(
+            horizontalAlignment = Alignment.End,
+            // The row's own description already says "Amount hidden"; keep the
+            // fading-out digits from being read alongside it.
+            modifier = if (hidden) Modifier.clearAndSetSemantics {} else Modifier,
+        ) {
             AmountText(
                 text = amountText,
                 style = MaterialTheme.typography.bodyLarge
@@ -129,7 +147,9 @@ fun TransactionRow(
             )
             if (model.secondaryAmount != null) {
                 AmountText(
-                    text = model.secondaryAmount,
+                    // A no-break space, not nothing: the line keeps its height
+                    // and the fiat value fades out rather than snapping away.
+                    text = if (hidden) "\u00A0" else model.secondaryAmount,
                     style = MaterialTheme.typography.bodyMedium
                         .copy(fontWeight = FontWeight.Normal)
                         .withMonoDigits(),

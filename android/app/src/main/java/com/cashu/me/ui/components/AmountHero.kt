@@ -15,18 +15,21 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.BaselineShift
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.em
+import com.cashu.me.Core.AmountFormatter
 import com.cashu.me.Core.AmountParts
 import com.cashu.me.ui.theme.AmountScale
 import com.cashu.me.ui.theme.AmountUnitScale
 import com.cashu.me.ui.theme.BitcoinSymbol
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.asSubordinateUnit
+import com.cashu.me.ui.theme.oneStepDown
 
 /**
  * The gap between the numerals and a unit word, as a fraction of the value's
@@ -78,6 +81,8 @@ fun AmountHero(
     animated: Boolean = true,
     rollDigits: Boolean = false,
     accessibilityPrefix: String? = null,
+    /** Replaces the spoken amount outright, e.g. "Balance hidden" in private mode. */
+    accessibilityLabel: String? = null,
 ) {
     val style = CashuTheme.type.amount(scale)
     Box(
@@ -99,7 +104,9 @@ fun AmountHero(
                 minFontSize = style.fontSize * AmountHeroMinScale,
                 maxFontSize = style.fontSize,
             ),
-            semanticsLabel = accessibilityPrefix?.let { "$it: ${parts.spoken}" } ?: parts.spoken,
+            semanticsLabel = accessibilityLabel
+                ?: accessibilityPrefix?.let { "$it: ${parts.spoken}" }
+                ?: parts.spoken,
         )
     }
 }
@@ -148,7 +155,17 @@ private fun lockup(parts: AmountParts, style: TextStyle): AnnotatedString {
 
     return buildAnnotatedString {
         when (val affix = parts.affix) {
-            is AmountParts.Affix.None -> append(parts.value)
+            // A hidden balance steps down one weight. Geist's asterisk carries
+            // about 15% more ink than SF's at the same weight, so at the hero's
+            // semibold it reads heavier than the iOS mask; at medium it sits
+            // within 4% of it.
+            is AmountParts.Affix.None -> if (parts.value == AmountFormatter.HiddenDigits) {
+                withStyle(SpanStyle(fontWeight = (style.fontWeight ?: FontWeight.Normal).oneStepDown())) {
+                    append(parts.value)
+                }
+            } else {
+                append(parts.value)
+            }
             is AmountParts.Affix.Prefix -> {
                 withStyle(if (affix.symbol == "₿") bitcoinSymbolSpan else symbolSpan) {
                     append(affix.symbol)

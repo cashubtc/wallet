@@ -179,6 +179,13 @@ like a port, make the Android-native choice instead.
   The earlier per-digit odometer roll read as too much and was retired
   (2026-07-10). Home's received-delta beat still swaps into the fiat slot for
   2.5s with the sanctioned celebration spring (`BalanceDisplay`).
+- **Private balance** (2026-10-25): the home balance's tap cycle ends in a
+  private step that masks the hero, Recent rows and History rows with fixed asterisks.
+  It uses the same `AmountText` cross-fade as every other amount swap, and the
+  hero and rows keep their heights. The hidden hero's asterisks drop one weight
+  (semibold to medium), because Geist's asterisk is heavier than SF's; at
+  medium the two platforms' masks carry about the same ink. Scope and wording follow DESIGN.md, The
+  Private Balance Rule.
 - **Reduce-motion**: decorative loops (waiting pulses, spinner ring, bounces,
   cascades) render their resting state when system animations are off.
   `rememberReducedMotion()` is reactive — it observes

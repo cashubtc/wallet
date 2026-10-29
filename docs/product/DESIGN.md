@@ -1467,6 +1467,26 @@ Figure Rule (`.monospacedDigit()` +
 and fiat sub-line, non-sat pages show the amount in its own currency (no fiat
 conversion — eur is already fiat).
 
+**The Private Balance Rule (2026-10-25).** Tapping the home balance steps
+through bitcoin → fiat → private → bitcoin on the sat page, skipping fiat when
+there's no fiat line (fiat off, no price, under 1¢), and unit → private → unit
+on every other unit page, so the hero is always a button. Private
+(`settings.hideBalances`) is a device preference that persists across launches
+and wallet resets, and one switch for every page; leaving it always lands on
+bitcoin. While private:
+- the hero shows four fixed asterisks (`****`) and no ₿, sat or currency
+  symbol, so neither the length nor the unit hints at the amount;
+- the fiat line empties but keeps its slot, and the received beat reads `+****`
+  with its usual timing and haptic;
+- Recent and History rows show `****` with no sign, in the row's ink (green for
+  a receipt), and the fiat line keeps its height without its value.
+
+Screens opened on purpose keep real amounts: transaction detail, the Mints tab
+and every pay flow. VoiceOver and TalkBack read "Balance hidden" and name the
+next step ("Hide balance", "Show balance in sats"). iOS blurs the lockup into
+the asterisks (`.blurReplace`) and Android uses the balance cross-fade; bitcoin ↔
+fiat keeps its usual motion, and Reduce Motion fades on both.
+
 **The Bar-Band Rule (2026-08-05).** Onboarding draws no navigation bar, but every
 step reserves the same 44 pt band below the status bar, with two positions:
 **leading = back** (`OnboardingBackButton`) and **trailing = help**

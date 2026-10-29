@@ -43,11 +43,13 @@ struct CashuWalletApp: App {
             UIView.setAnimationsEnabled(false)
         }
         #if DEBUG
-        // A fresh UI-test wallet must not inherit App Lock from a previous
-        // test. Reset before either settings or the lock manager is created;
-        // persistence relaunches omit RESET_WALLET and keep the saved setting.
+        // A fresh UI-test wallet must not inherit App Lock or hidden balances
+        // from a previous test. Reset before either settings or the lock
+        // manager is created; persistence relaunches omit RESET_WALLET and keep
+        // the saved settings.
         if IntegrationTestConfig.isEnabled && IntegrationTestConfig.shouldResetWallet {
             SettingsStore.shared.appLockEnabled = false
+            SettingsStore.shared.hideBalances = false
         }
         #endif
         _walletManager = StateObject(wrappedValue: WalletManager())

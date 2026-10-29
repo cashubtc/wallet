@@ -98,6 +98,64 @@ final class WalletLifecycleUITests: UITestBase {
         XCTAssertTrue(app.staticTexts["Add a mint first"].waitForExistence(timeout: 5))
     }
 
+    /// The full balance cycle with fiat on: bitcoin → fiat → hidden → bitcoin.
+    /// Hidden masks History's row amount; opening the payment still shows it.
+    func testBalanceCyclesThroughFiatAndPrivate() {
+        createWalletWithMint()
+        receive(sats: "100")
+        assertBalance("100")
+
+        tapWhenReady(app.buttons["wallet-settings-button"])
+        let currency = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Currency")).firstMatch
+        tapWhenReady(currency)
+        tapWhenReady(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "USD, ")).firstMatch)
+        XCTAssertTrue(screen("settings-screen").waitForExistence(timeout: 5))
+        // UI tests don't auto-refresh the price; fetch the deterministic one.
+        tapWhenReady(currency)
+        tapWhenReady(app.buttons["Refresh price"])
+        XCTAssertTrue(
+            app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Updated")).firstMatch
+                .waitForExistence(timeout: 10)
+        )
+        tapWhenReady(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "USD, ")).firstMatch)
+        XCTAssertTrue(screen("settings-screen").waitForExistence(timeout: 5))
+        tapWhenReady(app.navigationBars.buttons.element(boundBy: 0))
+
+        let balance = app.buttons["wallet-balance-sat"]
+        XCTAssertTrue(balance.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["$0.10"].waitForExistence(timeout: 10), "The fiat line should appear")
+        tapWhenReady(balance)
+        waitForLabel(of: balance, matching: "label == %@", "Balance: $0.10")
+        tapWhenReady(balance)
+        waitForLabel(of: balance, matching: "label == %@", "Balance hidden")
+
+        tapTab("History")
+        let row = app.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH %@", "Lightning received, amount hidden")
+        ).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10), "History rows must not read the amount while hidden")
+        tapWhenReady(row)
+        XCTAssertTrue(
+            app.descendants(matching: .any)
+                .matching(NSPredicate(format: "label CONTAINS %@", "100"))
+                .firstMatch
+                .waitForExistence(timeout: 10),
+            "The transaction detail keeps the real amount"
+        )
+        // The receipt has no close button; drag its system grabber away.
+        let grabber = app.buttons["Sheet Grabber"]
+        XCTAssertTrue(grabber.waitForExistence(timeout: 5))
+        grabber.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            .press(forDuration: 0.1,
+                   thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.98)),
+                   withVelocity: .fast, thenHoldForDuration: 0)
+        XCTAssertTrue(grabber.waitForNonExistence(timeout: 5), "The receipt should dismiss")
+
+        tapTab("Wallet")
+        tapWhenReady(balance)
+        waitForLabel(of: balance, matching: "label BEGINSWITH %@", "Balance: 100")
+    }
+
     func testReceiveLightningPersistsBalanceAndHistory() {
         createWalletWithMint()
         receive(sats: "100")
@@ -320,6 +378,14 @@ final class WalletLifecycleUITests: UITestBase {
         tapWhenReady(app.buttons["wallet-action-send"])
         tapWhenReady(app.buttons["Ecash. Create ecash"])
         XCTAssertTrue(app.buttons["cashu.send.ecash.submit"].waitForExistence(timeout: 10))
+    }
+
+    private func waitForLabel(of element: XCUIElement, matching format: String, _ value: String) {
+        let match = XCTNSPredicateExpectation(predicate: NSPredicate(format: format, value), object: element)
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [match], timeout: 10), .completed,
+            "Expected a label matching \(format) \(value), got \"\(element.label)\""
+        )
     }
 
     private func assertBalance(_ amount: String) {

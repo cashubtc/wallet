@@ -175,6 +175,65 @@ enum HomeBalance {
     }
 }
 
+// MARK: - Home Balance Cycle
+
+/// What the home balance shows. Tapping it steps the sat page through
+/// bitcoin → fiat → hidden (skipping fiat when there's no fiat line) and every
+/// other unit page through unit → hidden. Hidden is one switch for all pages.
+enum HomeBalanceStep: Equatable {
+    /// Bitcoin on the sat page, the page's own unit elsewhere.
+    case unit
+    case fiat
+    case hidden
+}
+
+enum HomeBalanceCycle {
+    static let hiddenLabel = "Balance hidden"
+
+    /// The step on screen. Fiat comes from the effective primary, not the
+    /// stored preference, so a price that drops out reads as the unit step and
+    /// the next tap hides rather than landing on a fiat line that isn't there.
+    static func current(
+        isHidden: Bool,
+        effectivePrimary: AmountDisplayPrimary,
+        isSatPage: Bool
+    ) -> HomeBalanceStep {
+        if isHidden { return .hidden }
+        return isSatPage && effectivePrimary == .fiat ? .fiat : .unit
+    }
+
+    static func next(after step: HomeBalanceStep, hasFiat: Bool, isSatPage: Bool) -> HomeBalanceStep {
+        switch step {
+        case .unit: isSatPage && hasFiat ? .fiat : .hidden
+        case .fiat: .hidden
+        case .hidden: .unit
+        }
+    }
+
+    /// The settings a step writes. Hiding keeps the stored primary; showing
+    /// again always lands on bitcoin, from any page.
+    static func settings(
+        for step: HomeBalanceStep,
+        keeping primary: AmountDisplayPrimary
+    ) -> (primary: AmountDisplayPrimary, hidden: Bool) {
+        switch step {
+        case .unit: (.sats, false)
+        case .fiat: (.fiat, false)
+        case .hidden: (primary, true)
+        }
+    }
+
+    /// What the next tap does, phrased for "Double tap to …" and the named
+    /// accessibility action. `unitName` is "sats" or the page's currency code.
+    static func actionPhrase(for next: HomeBalanceStep, fiatText: String?, unitName: String) -> String {
+        switch next {
+        case .hidden: "hide balance"
+        case .fiat: "make \(fiatText ?? "fiat") primary"
+        case .unit: "show balance in \(unitName)"
+        }
+    }
+}
+
 // MARK: - Currency Registry
 
 /// Registry for looking up currencies by code

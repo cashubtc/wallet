@@ -7,6 +7,7 @@ import SwiftUI
 // Primary and secondary values use neighboring type sizes and weights so they
 // read as one amount block. See DESIGN.md —
 // The Amount Column Rule, The One Green Rule, The Fiat Sub-Amount Rule.
+// Private mode masks the digits like `TransactionAmountColumn`.
 struct CashuRequestAmountColumn: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -46,9 +47,14 @@ struct CashuRequestAmountColumn: View {
         amount: UInt64,
         received: Bool
     ) -> some View {
-        ZStack(alignment: .trailing) {
+        let hidden = settings.hideBalances
+        return ZStack(alignment: .trailing) {
             VStack(alignment: .trailing, spacing: 2) {
-                if received {
+                if hidden {
+                    HiddenDigitsText(role: .amountRow)
+                        .cashuText(.amountRow)
+                        .foregroundStyle(received ? .green : .secondary)
+                } else if received {
                     Text("+\(display.primary)")
                         .cashuAmount(.amountRow, value: Double(amount))
                         .foregroundStyle(.green)
@@ -61,16 +67,18 @@ struct CashuRequestAmountColumn: View {
                 }
 
                 if let secondary = display.secondary {
-                    Text(secondary)
+                    Text(hidden ? AmountFormatter.hiddenDigits : secondary)
                         .font(.subheadline)
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
+                        .opacity(hidden ? 0 : 1)
                 }
             }
-            .id(settings.homeBalancePrimary)
+            .id(AmountColumnSwap(primary: settings.homeBalancePrimary, hidden: hidden))
             .transition(.opacity)
         }
         .animation(swapAnimation, value: settings.homeBalancePrimary)
+        .animation(swapAnimation, value: hidden)
     }
 
     private var swapAnimation: Animation {
