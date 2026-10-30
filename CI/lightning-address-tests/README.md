@@ -1,7 +1,7 @@
 # Lightning Address native binding scenarios
 
 These opt-in tests exercise the production iOS `LightningService` and Android
-`CdkWalletGatewayImpl`, released 0.18.2 generated bindings, native CDK, SQLite,
+`CdkWalletGatewayImpl`, released 0.18.3 generated bindings, native CDK, SQLite,
 TLS LNURL endpoints, DNSSEC resolution, mint quote requests, and the production
 user-facing error mapper. They do not replace CDK functions or fabricate FFI
 exceptions. They stop at the melt quote: no real funds are paid.
@@ -9,11 +9,11 @@ exceptions. They stop at the melt quote: no real funds are paid.
 ## Trust and DNS isolation
 
 The release binaries use bitreq's fixed WebPKI roots and CDK's fixed DNS-over-TCP
-resolver addresses. The harness builds **the exact CDK v0.18.2 source with one
+resolver addresses. The harness builds **the exact CDK v0.18.3 source with one
 additive bitreq feature**, `async-https-rustls-probe`, to load a test CA through
 `SSL_CERT_FILE`. Resolver/payment code and the released Swift/Kotlin generated
 bindings are unchanged. This qualifies the native integration, not the
-byte-for-byte shipped binaries. Production package pins remain 0.18.2.
+byte-for-byte shipped binaries. Production packages are pinned to 0.18.3.
 
 All recipient HTTPS sockets are redirected to a local TLS server; TLS and invoice
 validation remain enabled. On iOS, a simulator-only DYLD interposer redirects
@@ -38,14 +38,14 @@ Run platforms serially: each scenario resets the shared stub state.
 
 ## Setup
 
-Use a temporary work directory outside the repository and download CDK v0.18.2
-sources with `gh api repos/cashubtc/cdk/tarball/v0.18.2`. Extract them there.
+Use a temporary work directory outside the repository and download CDK v0.18.3
+sources with `gh api repos/cashubtc/cdk/tarball/v0.18.3`. Extract them there.
 Create a Python 3.11+ virtual environment and install `requirements.txt`.
 Install Rust targets `aarch64-apple-ios-sim` and `aarch64-linux-android`.
 
 Set `WORK` to the temporary directory, `CDK_SOURCE` to the extracted source,
 `SWIFT_PACKAGES` to an existing resolved SwiftPM packages directory, `CDK_AAR` to
-the released `cdk-android-0.18.2.aar`, and `NDK` to an installed Android NDK.
+the released `cdk-android-0.18.3.aar`, and `NDK` to an installed Android NDK.
 No values are saved in the repository.
 
 ```sh
@@ -106,7 +106,7 @@ replacing only its arm64 native library for this invocation.
 | DNS connection fails after LNURL 404 | BIP-353 message; no mint quote |
 | LNURL 404, BOLT11-only mint | Unsupported BOLT12 message; no DNS or mint quote |
 
-CDK 0.18.2 rejects the BIP-353 URI in the public twelve.cash record because it
+CDK 0.18.3 rejects the BIP-353 URI in the public twelve.cash record because it
 contains an `lnurl` parameter alongside `lno` (`LNURL resolution not supported`).
 The successful DNS fallback case therefore uses the documented public BIP-353
 example with an on-chain address and BOLT12 offer, without `lnurl`. This upstream
@@ -114,4 +114,4 @@ limitation is separate from LNURL-first routing and is not repaired here.
 
 The LNURL stub intentionally signs a plain-description BOLT11 invoice whose
 description does not commit to its metadata. Successful native quotes therefore
-also verify that CDK 0.18.2 contains the fix behind the removed #2235 workaround.
+also verify that CDK 0.18.3 contains the fix behind the removed #2235 workaround.

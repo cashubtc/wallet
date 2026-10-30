@@ -109,7 +109,7 @@ jobs:
         path: |
           CI/.nutshell-venv
           CI/.cdk-bin
-        key: ios-test-mints-v2-macos-26-arm64-python-3.11-${{ hashFiles('CI/setup-nutshell.sh', 'CI/setup-cdk.sh') }}
+        key: ios-test-mints-v2-macos-26-arm64-python-3.11-${{ hashFiles('CI/setup-nutshell.sh', 'CI/nutshell-overrides.txt', 'CI/setup-cdk.sh') }}
     - uses: actions/download-artifact@v4
       with:
         name: ios-test-products

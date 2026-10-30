@@ -1092,7 +1092,7 @@ extension WalletManager {
         mnemonic: String,
         databaseURL: URL
     ) throws -> WalletLaunchRuntime {
-        let database = try LifecycleSafeWalletDatabase(filePath: databaseURL.path)
+        let database = try WalletSqliteDatabase(filePath: databaseURL.path)
         let repository = try WalletRepository(
             mnemonic: mnemonic,
             store: customWalletStore(db: database)

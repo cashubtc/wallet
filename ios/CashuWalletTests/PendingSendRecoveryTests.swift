@@ -537,14 +537,14 @@ final class PendingSendRecoveryTests: XCTestCase {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let path = directory.appendingPathComponent("wallet.sqlite").path
-        let database = try LifecycleSafeWalletDatabase(filePath: path)
+        let database = try WalletSqliteDatabase(filePath: path)
         let record = """
         {"id":"\(operationID)","kind":"send","mint_url":"https://mint.example","unit":"usd","amount":21,
          "state":{"type":"send","state":"token_created"},"quote_id":null,"created_at":1,"updated_at":1,"version":0,
          "data":{"kind":"send","data":{"amount":21,"memo":null,"counter_start":null,"counter_end":null,"token":"test-token","proofs":null}}}
         """
         try await database.addSaga(sagaJson: record)
-        let reopened = try LifecycleSafeWalletDatabase(filePath: path)
+        let reopened = try WalletSqliteDatabase(filePath: path)
         let persisted = try await reopened.getIncompleteSagas()
         let context = PendingSendRecovery(mintURL: account.mintURL, unit: "usd")
         let recovered = try resolvePendingSendRecovery(context: context, mintURL: context.mintURL,

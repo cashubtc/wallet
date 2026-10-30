@@ -1008,7 +1008,7 @@ final class ReceiveTokenPreviewTests: XCTestCase {
             let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             defer { try? FileManager.default.removeItem(at: directory) }
-            let db = try LifecycleSafeWalletDatabase(filePath: directory.appendingPathComponent("preview.sqlite").path)
+            let db = try WalletSqliteDatabase(filePath: directory.appendingPathComponent("preview.sqlite").path)
             let mint = MintUrl(url: "https://preview.invalid")
             try await db.addMint(mintUrl: mint, mintInfo: nil)
             try await db.addMintKeysets(mintUrl: mint, keysets: zip(ids, fees).map {
@@ -1039,7 +1039,7 @@ final class ReceiveTokenPreviewTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
-        let db = try LifecycleSafeWalletDatabase(filePath: directory.appendingPathComponent("preview.sqlite").path)
+        let db = try WalletSqliteDatabase(filePath: directory.appendingPathComponent("preview.sqlite").path)
         let mint = MintUrl(url: "https://preview.invalid")
         try await db.addMint(mintUrl: mint, mintInfo: nil)
         try await db.addMintKeysets(mintUrl: mint, keysets: [
@@ -1063,7 +1063,7 @@ final class ReceiveTokenPreviewTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
-        let db = try LifecycleSafeWalletDatabase(filePath: directory.appendingPathComponent("preview.sqlite").path)
+        let db = try WalletSqliteDatabase(filePath: directory.appendingPathComponent("preview.sqlite").path)
         let mint = MintUrl(url: "https://preview.invalid")
         try await db.addMint(mintUrl: mint, mintInfo: nil)
         try await db.addMintKeysets(mintUrl: mint, keysets: [
