@@ -80,3 +80,12 @@ Fresh Python 3.11 and 3.12 installations with package caches disabled succeed,
 and both mints serve `/v1/info` as Nutshell 0.21.0. Resolving the same requirements
 for Linux x86_64/Python 3.11 succeeds using published binary wheels. These
 checks cover the installer; hosted wallet test results remain a separate gate.
+
+## Receive sheet UI test
+
+The dismissal test now drags the native `Sheet Grabber` after waiting for it to
+be hittable, matching the existing currency-picker dismissal test. Dragging the
+interactive Ecash action could leave the sheet open on hosted runners. The test
+checks that the sheet's controls disappear, the wallet's Receive action is
+hittable again, and the sheet can be reopened. Both Receive UI tests pass three
+consecutive iterations on an isolated iOS 26.5 simulator. No product UI changed.
