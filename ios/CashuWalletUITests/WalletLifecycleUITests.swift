@@ -32,8 +32,13 @@ final class WalletLifecycleUITests: UITestBase {
         tapWhenReady(app.buttons["mints-add-clear-button"])
         app.textFields["mints-add-url-field"].typeText(cdkMintURL)
         tapWhenReady(app.buttons["mints-add-submit-button"])
+        // Adding a new mint can queue behind startup/recovery and fetch its
+        // keysets. CI can still show "Adding mint" after the row's old 30s
+        // deadline, so wait for successful addition before navigating.
+        XCTAssertTrue(app.textFields["mints-add-url-field"].waitForNonExistence(timeout: 90),
+                      "Adding the second mint should finish and dismiss the URL form")
         let second = mintRow(url: cdkMintURL)
-        tapWhenReady(second, timeout: 30)
+        tapWhenReady(second, timeout: 10)
         scrollTo("Set as Default")
         let setDefault = app.buttons["Set as Default"]
         tapWhenReady(setDefault)
