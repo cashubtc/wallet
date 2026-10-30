@@ -3,8 +3,8 @@ package com.cashu.me.ui.send
 import com.cashu.me.Core.CashuPaymentRequestRoute
 import com.cashu.me.Core.PaymentRequestDecodeResult
 import com.cashu.me.Models.MeltPaymentResult
+import com.cashu.me.Models.MeltPaymentSummary
 import com.cashu.me.Models.MeltQuoteInfo
-import com.cashu.me.Models.MeltSettlement
 import com.cashu.me.Models.MintInfo
 import java.net.URI
 
@@ -34,6 +34,7 @@ internal enum class SendPaymentDetailKey {
     Destination,
     Amount,
     NetworkFee,
+    Total,
     InputFee,
     Mint,
     Memo,
@@ -46,6 +47,7 @@ internal sealed interface SendPaymentDetailValue {
     data class Sats(
         val amount: Long,
         val isUpperBound: Boolean = false,
+        val excludesMintFees: Boolean = false,
     ) : SendPaymentDetailValue
     data object Pending : SendPaymentDetailValue
     data object Unavailable : SendPaymentDetailValue
@@ -84,12 +86,19 @@ internal data class SendPaymentDetails(
         replacing(SendPaymentDetailKey.Mint, SendPaymentDetailValue.Text(name))
 
     fun withMeltResult(result: MeltPaymentResult): SendPaymentDetails {
-        val feeValue = if (result.settlement == MeltSettlement.Pending) {
-            SendPaymentDetailValue.Sats(result.feePaid, isUpperBound = true)
-        } else {
-            SendPaymentDetailValue.Sats(result.feePaid)
-        }
-        return replacing(SendPaymentDetailKey.NetworkFee, feeValue)
+        val summary = MeltPaymentSummary(result)
+        val isMelt = rows.any { it.key == SendPaymentDetailKey.Total }
+        return copy(rows = rows.map { row ->
+            when (row.key) {
+                SendPaymentDetailKey.Amount -> if (isMelt) row.copy(value = SendPaymentDetailValue.Sats(summary.amount)) else row
+                SendPaymentDetailKey.NetworkFee -> row.copy(value = summary.fee.detailValue(summary.isUpperBound))
+                SendPaymentDetailKey.Total -> row.copy(
+                    label = summary.totalLabel,
+                    value = summary.total.detailValue(summary.isUpperBound),
+                )
+                else -> row
+            }
+        })
     }
 
     fun resolvingFailed(): SendPaymentDetails = copy(
@@ -115,7 +124,7 @@ internal data class SendPaymentDetails(
  * Documents the unified Send terminal row contract:
  *
  * - Melt rails: Method, on-chain Destination when applicable, Amount,
- *   Network fee, and Mint.
+ *   Network fee, Total, and Mint.
  * - Cashu Request: Method, Amount, Input/Network fee context, Mint when known,
  *   Memo when supplied, and a Route row when payment changes rails or needs a top-up.
  */
@@ -170,6 +179,19 @@ private fun buildMeltDetails(
             value = quote?.let {
                 SendPaymentDetailValue.Sats(it.feeReserve, isUpperBound = true)
             } ?: SendPaymentDetailValue.Pending,
+            valueMonospaced = true,
+        ),
+    )
+    add(
+        SendPaymentDetailRow(
+            key = SendPaymentDetailKey.Total,
+            label = "Amount + fee reserve",
+            value = quote?.let {
+                MeltPaymentSummary(it).total?.let { total ->
+                    SendPaymentDetailValue.Sats(total, excludesMintFees = true)
+                } ?: SendPaymentDetailValue.Unavailable
+            }
+                ?: SendPaymentDetailValue.Pending,
             valueMonospaced = true,
         ),
     )
@@ -300,3 +322,6 @@ private fun satsRow(
     value = SendPaymentDetailValue.Sats(value),
     valueMonospaced = true,
 )
+
+private fun Long?.detailValue(isUpperBound: Boolean): SendPaymentDetailValue =
+    this?.let { SendPaymentDetailValue.Sats(it, isUpperBound) } ?: SendPaymentDetailValue.Unavailable

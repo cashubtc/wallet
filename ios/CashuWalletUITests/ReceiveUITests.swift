@@ -46,6 +46,7 @@ final class ReceiveUITests: UITestBase {
             "Receive sheet should show the Bitcoin option"
         )
 
+        // Drag the sheet chrome so the method list cannot consume the gesture.
         let grabber = app.buttons["Sheet Grabber"]
         XCTAssertTrue(
             grabber.waitUntilEnabledAndHittable(timeout: 10),
@@ -60,7 +61,8 @@ final class ReceiveUITests: UITestBase {
             "Dragging the sheet grabber should dismiss the Receive sheet"
         )
         XCTAssertFalse(receiveDestinationField.exists)
-        XCTAssertTrue(receiveButton.waitUntilEnabledAndHittable(timeout: 5))
+        XCTAssertTrue(receiveButton.waitUntilEnabledAndHittable(timeout: 5),
+                      "Dismissing Receive should return control to the wallet")
 
         openReceiveSheet()
     }

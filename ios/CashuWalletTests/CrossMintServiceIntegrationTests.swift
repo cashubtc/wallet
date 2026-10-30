@@ -36,11 +36,35 @@ final class CrossMintServiceIntegrationTests: PaymentFixtureTestCase {
         XCTAssertEqual(confirmation.result.settlement, .settled)
         XCTAssertEqual(confirmation.result.amount, amount)
         let left = try await balance(source)
-        XCTAssertEqual(left + amount + confirmation.result.feePaid, 100)
+        XCTAssertEqual(left + amount + (try XCTUnwrap(confirmation.result.feePaid)), 100)
         _ = try await call(root + "/pay/controlled", method: "POST", body: ["invoice": quotes.mintQuote.request])
         _ = try await awaitPaid(destination, id: quotes.mintQuote.id)
         let minted = try await service.mintTokens(quoteId: quotes.mintQuote.id)
         XCTAssertEqual(minted, amount)
+    }
+
+    @MainActor
+    func testOrdinaryMeltIncludesPreparatorySwapFeeInActualDebit() async throws {
+        let source = try await makeWallet("fees")
+        try await fund(source, controlled: "fees")
+        let service = try service(holding: source)
+        let request = try await invoice(amount: 21)
+        let quote = try await source.meltQuote(method: .bolt11, request: request, options: nil, extra: nil)
+        // Inspect and cancel a preparation to establish that this case charges
+        // a swap fee, rather than accidentally exercising the skip-swap path.
+        let prepared = try await source.prepareMelt(quoteId: quote.id)
+        let swapFee = prepared.swapFee().value
+        XCTAssertGreaterThan(swapFee, 0)
+        try await prepared.cancel()
+        try await arm("/v1/melt/quote/bolt11/", action: "delay", method: "GET")
+
+        let confirmation = try await service.meltTokens(quoteId: quote.id, mintUrl: mintURL("fees"))
+        XCTAssertEqual(confirmation.result.settlement, .settled)
+        let fee = try XCTUnwrap(confirmation.result.feePaid)
+        let left = try await balance(source)
+        XCTAssertEqual(left + confirmation.result.amount + fee, 100)
+        let transaction = try await source.listTransactions(direction: .outgoing).last { $0.quoteId == quote.id }
+        XCTAssertEqual(fee, try XCTUnwrap(transaction).fee.value + swapFee)
     }
 
     /// A proof set that no longer costs what the quote was sized for must not

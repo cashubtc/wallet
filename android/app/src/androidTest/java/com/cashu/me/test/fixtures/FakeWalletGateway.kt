@@ -57,6 +57,8 @@ class FakeWalletGateway(
     var beforeMeltQuote: suspend () -> Unit = {}
     var lastMeltQuoteAmountSats: Long? = null
     var beforeMeltPayment: suspend () -> Unit = {}
+    /** Override the settled fee to exercise refunds of the quote reserve. */
+    var meltFeePaidOverride: Long? = null
     var pendingSendClaimed = false
     private val transactions = initialTransactions.toMutableList()
     private val mintQuotes = linkedMapOf<String, MutableStateFlow<MintQuoteInfo>>()
@@ -320,7 +322,9 @@ class FakeWalletGateway(
         beforeMeltPayment()
         failIfRequested()
         val quote = checkNotNull(meltQuotes[quoteId]) { "Unknown fake melt quote $quoteId" }
-        val total = quote.amount + quote.feeReserve
+        val feePaid = meltFeePaidOverride ?: quote.feeReserve
+        check(feePaid in 0..quote.feeReserve) { "Settled fee must fit the quote reserve." }
+        val total = quote.amount + feePaid
         check((balances[quote.mintUrl] ?: 0) >= total) { "Insufficient balance." }
         balances[quote.mintUrl] = checkNotNull(balances[quote.mintUrl]) - total
         meltQuotes[quoteId] = quote.copy(state = MeltQuoteState.Paid)
@@ -340,14 +344,14 @@ class FakeWalletGateway(
             dateEpochMillis = System.currentTimeMillis(),
             status = TransactionStatus.Completed,
             mintUrl = quote.mintUrl,
-            fee = quote.feeReserve,
+            fee = feePaid,
             invoice = quote.request,
         )
         return MeltConfirmation(
             result = MeltPaymentResult(
                 preimage = "deterministic-preimage",
                 amount = quote.amount,
-                feePaid = quote.feeReserve,
+                feePaid = feePaid,
                 mintUrl = quote.mintUrl,
                 paymentMethod = quote.paymentMethod,
                 request = quote.request,

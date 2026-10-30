@@ -32,6 +32,7 @@ import com.cashu.me.Core.mintQuoteStateForDomain
 import com.cashu.me.Core.PaymentRequestDecodeResult
 import com.cashu.me.Core.PaymentRequestDecoder
 import com.cashu.me.Core.PaymentRequestParser
+import com.cashu.me.Models.MeltFeeAccounting
 import com.cashu.me.Models.MeltPaymentResult
 import com.cashu.me.Models.MeltQuoteInfo
 import com.cashu.me.Models.MeltQuoteState
@@ -554,6 +555,8 @@ class CdkWalletGatewayImpl : WalletGateway {
             val operation = stored?.usedByOperation ?: throw failure
             return@cdkCall resolveMeltFailure(wallet, quoteId, operation)
         }
+        val swapFee = prepared.swapFee().value.toLong()
+        val preparationFee = prepared.totalFee().value.toLong()
         try {
             // `respond-async` lets the mint accept the payment and pay out in the
             // background (NUT-05) instead of holding the request open — the usual
@@ -565,7 +568,7 @@ class CdkWalletGatewayImpl : WalletGateway {
                         result = MeltPaymentResult(
                             preimage = finalized.preimage,
                             amount = finalized.amount.value.toLong(),
-                            feePaid = finalized.feePaid.value.toLong(),
+                            feePaid = MeltFeeAccounting.adding(finalized.feePaid.value.toLong(), swapFee),
                             mintUrl = wallet.mintUrl().url,
                             paymentMethod = quote?.paymentMethod?.toDomain(),
                             request = quote?.request,
@@ -594,7 +597,7 @@ class CdkWalletGatewayImpl : WalletGateway {
                                 result = MeltPaymentResult(
                                     preimage = finalized.preimage,
                                     amount = finalized.amount.value.toLong(),
-                                    feePaid = finalized.feePaid.value.toLong(),
+                                    feePaid = MeltFeeAccounting.adding(finalized.feePaid.value.toLong(), swapFee),
                                     mintUrl = wallet.mintUrl().url,
                                     paymentMethod = quote?.paymentMethod?.toDomain(),
                                     request = quote?.request,
@@ -605,15 +608,14 @@ class CdkWalletGatewayImpl : WalletGateway {
                         finalized != null ->
                             // A non-paid result still needs reservation checks before
                             // the UI may describe the funds as returned.
-                            resolveMeltFailure(wallet, quoteId, prepared.operationId())
+                            resolveMeltFailure(wallet, quoteId, prepared.operationId(), swapFee, preparationFee)
                         else -> MeltConfirmation(
-                            // Amount and fee aren't final until the payment settles;
-                            // report the quote's numbers (fee = reserve upper bound)
-                            // so the UI has facts to show.
+                            // The bound includes both the reserve and preparation
+                            // costs; the quote reserve alone excludes mint fees.
                             result = MeltPaymentResult(
                                 preimage = null,
                                 amount = quote?.amount?.value?.toLong() ?: 0,
-                                feePaid = quote?.feeReserve?.value?.toLong() ?: 0,
+                                feePaid = MeltFeeAccounting.adding(quote?.feeReserve?.value?.toLong(), preparationFee),
                                 mintUrl = wallet.mintUrl().url,
                                 paymentMethod = quote?.paymentMethod?.toDomain(),
                                 request = quote?.request,
@@ -629,11 +631,17 @@ class CdkWalletGatewayImpl : WalletGateway {
         } catch (recovery: MeltPaymentRecoveryException) {
             throw recovery
         } catch (_: Exception) {
-            resolveMeltFailure(wallet, quoteId, prepared.operationId())
+            resolveMeltFailure(wallet, quoteId, prepared.operationId(), swapFee, preparationFee)
         }
     }
 
-    private suspend fun resolveMeltFailure(wallet: CdkWallet, quoteId: String, operationId: String): MeltConfirmation {
+    private suspend fun resolveMeltFailure(
+        wallet: CdkWallet,
+        quoteId: String,
+        operationId: String,
+        swapFee: Long? = null,
+        preparationFee: Long? = null,
+    ): MeltConfirmation {
         val checked = resolveAmbiguousMelt(
             quoteId = quoteId,
             operationId = operationId,
@@ -649,13 +657,16 @@ class CdkWalletGatewayImpl : WalletGateway {
         )
         val settled = checked.state == CdkQuoteState.PAID || checked.state == CdkQuoteState.ISSUED
         val transaction = if (settled) runCatching {
-            wallet.listTransactions(CdkTransactionDirection.OUTGOING).lastOrNull { it.quoteId == quoteId }
+            wallet.listTransactions(CdkTransactionDirection.OUTGOING).lastOrNull {
+                it.quoteId == quoteId && it.status == CdkTransactionStatus.COMPLETED
+            }
         }.getOrNull() else null
         return MeltConfirmation(
             result = MeltPaymentResult(
                 preimage = transaction?.paymentProof ?: checked.paymentProof,
                 amount = transaction?.amount?.value?.toLong() ?: checked.amount.value.toLong(),
-                feePaid = transaction?.fee?.value?.toLong() ?: checked.feeReserve.value.toLong(),
+                feePaid = if (settled) MeltFeeAccounting.adding(transaction?.fee?.value?.toLong(), swapFee)
+                    else MeltFeeAccounting.adding(checked.feeReserve.value.toLong(), preparationFee),
                 mintUrl = wallet.mintUrl().url,
                 paymentMethod = checked.paymentMethod.toDomain(),
                 request = checked.request,
@@ -694,7 +705,7 @@ class CdkWalletGatewayImpl : WalletGateway {
             } catch (_: Exception) {
                 // The reservation outlived a failed cancel, so the quote is not
                 // reusable until recovery has released it.
-                return@cdkCall resolveMeltFailure(wallet, quoteId, prepared.operationId())
+                return@cdkCall resolveMeltFailure(wallet, quoteId, prepared.operationId(), 0, inputFee)
             }
             throw MeltInputFeeChangedException(expected = expectedInputFee, actual = inputFee)
         }
@@ -714,7 +725,7 @@ class CdkWalletGatewayImpl : WalletGateway {
                     result = MeltPaymentResult(
                         preimage = null,
                         amount = quote?.amount?.value?.toLong() ?: 0,
-                        feePaid = (quote?.feeReserve?.value?.toLong() ?: 0) + expectedInputFee,
+                        feePaid = MeltFeeAccounting.adding(quote?.feeReserve?.value?.toLong(), expectedInputFee),
                         mintUrl = wallet.mintUrl().url,
                         paymentMethod = quote?.paymentMethod?.toDomain(),
                         request = quote?.request,
@@ -735,14 +746,14 @@ class CdkWalletGatewayImpl : WalletGateway {
                     ),
                     pendingMelt = null,
                 )
-                else -> resolveMeltFailure(wallet, quoteId, prepared.operationId())
+                else -> resolveMeltFailure(wallet, quoteId, prepared.operationId(), 0, inputFee)
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (recovery: MeltPaymentRecoveryException) {
             throw recovery
         } catch (_: Exception) {
-            resolveMeltFailure(wallet, quoteId, prepared.operationId())
+            resolveMeltFailure(wallet, quoteId, prepared.operationId(), 0, inputFee)
         }
     }
 
