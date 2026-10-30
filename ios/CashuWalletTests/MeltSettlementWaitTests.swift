@@ -170,13 +170,13 @@ final class MeltPaymentSummaryTests: XCTestCase {
 
     private func sats(_ amount: UInt64) -> String { "\(amount) sat" }
 
-    func testConfirmationUsesExplicitFeeAndTotalUpperBounds() {
+    func testConfirmationDisclosesAdditionalMintFees() {
         let details = MeltPaymentSummary(quote: quote)
         XCTAssertEqual(details.fee, 5)
         XCTAssertEqual(details.total, 26)
         XCTAssertEqual(details.feeText(format: sats), "Up to 5 sat")
         XCTAssertEqual(details.totalLabel, "Amount + fee reserve")
-        XCTAssertEqual(details.totalText(format: sats), "Up to 26 sat")
+        XCTAssertEqual(details.totalText(format: sats), "26 sat + mint fees")
     }
 
     func testSettledReceiptUsesActualFeeAndDebitInsteadOfReserve() {
@@ -192,7 +192,7 @@ final class MeltPaymentSummaryTests: XCTestCase {
         let details = summary(fee: 7, settlement: .pending)
         XCTAssertEqual(details.feeText(format: sats), "Up to 7 sat")
         XCTAssertEqual(details.totalText(format: sats), "Up to 28 sat")
-        XCTAssertEqual(details.totalLabel, "Amount + fee reserve")
+        XCTAssertEqual(details.totalLabel, "Total")
     }
 
     func testZeroActualFeeIsNotReplacedByReserve() {
@@ -212,6 +212,21 @@ final class MeltPaymentSummaryTests: XCTestCase {
 
     func testReceiptUsesReturnedAmount() {
         XCTAssertEqual(summary(fee: 2, amount: 20).total, 22)
+    }
+
+    func testSettledFeeIncludesPreparationSwapAndPendingBoundIncludesAllInputFees() {
+        let paidFee = MeltFeeAccounting.adding(3, 2)
+        XCTAssertEqual(summary(fee: paidFee).totalText(format: sats), "26 sat")
+        let pendingFee = MeltFeeAccounting.adding(quote.feeReserve, 4)
+        XCTAssertEqual(summary(fee: pendingFee, settlement: .pending).totalText(format: sats), "Up to 30 sat")
+        XCTAssertEqual(MeltFeeAccounting.adding(3, 0), 3, "Skip-swap must not add an extra fee")
+    }
+
+    func testRecoveryWithUnknownPreparationCostsAndFeeOverflowHasNoInventedDebit() {
+        for fee in [MeltFeeAccounting.adding(2, nil), MeltFeeAccounting.adding(nil, 2),
+                    MeltFeeAccounting.adding(UInt64.max, 1)] {
+            XCTAssertEqual(summary(fee: fee).totalText(format: sats), "Unavailable")
+        }
     }
 
     func testOverflowDoesNotDisplayAnIncorrectTotal() {

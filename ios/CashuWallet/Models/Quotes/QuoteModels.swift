@@ -321,7 +321,7 @@ struct MeltPaymentResult {
     /// How the mint answered the melt confirmation. `.settled` is final; the fee
     /// can be unavailable after recovery. `.pending` means the mint accepted
     /// asynchronous NUT-05 processing — common for on-chain melts — so `preimage`
-    /// is nil and `feePaid` is an upper bound, including any planned input fee.
+    /// is nil and `feePaid` is an upper bound including input and preparatory swap fees.
     enum Settlement {
         case settled
         case pending
@@ -329,7 +329,7 @@ struct MeltPaymentResult {
 
     let preimage: String?
     let amount: UInt64
-    /// Actual fee when settled, reserve upper bound when pending, nil if unknown.
+    /// All payment fees, including a preparatory swap. Upper bound when pending; nil if unknown.
     let feePaid: UInt64?
     let mintUrl: String
     var settlement: Settlement = .settled
@@ -341,9 +341,12 @@ struct MeltPaymentSummary {
     let amount: UInt64
     let fee: UInt64?
     let isUpperBound: Bool
+    let excludesMintFees: Bool
 
     init(quote: MeltQuoteInfo, result: MeltPaymentResult? = nil) {
         amount = result?.amount ?? quote.amount
+        // A quote bounds the network fee; proof selection determines mint fees.
+        excludesMintFees = result == nil
         if let result {
             fee = result.feePaid
         } else {
@@ -358,7 +361,7 @@ struct MeltPaymentSummary {
         return sum.overflow ? nil : sum.partialValue
     }
 
-    var totalLabel: String { isUpperBound ? "Amount + fee reserve" : "Total" }
+    var totalLabel: String { excludesMintFees ? "Amount + fee reserve" : "Total" }
 
     func feeText(format: (UInt64) -> String) -> String {
         guard let fee else { return "Unavailable" }
@@ -368,6 +371,17 @@ struct MeltPaymentSummary {
 
     func totalText(format: (UInt64) -> String) -> String {
         guard let total else { return "Unavailable" }
+        if excludesMintFees { return "\(format(total)) + mint fees" }
         return isUpperBound ? "Up to \(format(total))" : format(total)
+    }
+}
+
+/// CDK's finalized melt fee excludes the input fee of its preparatory swap.
+/// Unknown components stay unknown; overflow must never wrap a displayed debit.
+enum MeltFeeAccounting {
+    static func adding(_ fee: UInt64?, _ additionalFee: UInt64?) -> UInt64? {
+        guard let fee, let additionalFee else { return nil }
+        let sum = fee.addingReportingOverflow(additionalFee)
+        return sum.overflow ? nil : sum.partialValue
     }
 }

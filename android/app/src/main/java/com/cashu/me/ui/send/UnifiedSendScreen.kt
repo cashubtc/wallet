@@ -1192,6 +1192,7 @@ private fun formatPaymentDetail(
     is SendPaymentDetailValue.Sats -> {
         val formatted = formatter.formatWalletSats(detailValue.amount, useBitcoinSymbol)
         when {
+            detailValue.excludesMintFees -> "$formatted + mint fees"
             detailValue.isUpperBound -> "Up to $formatted"
             row.key in FeeDetailKeys && detailValue.amount == 0L -> "No fee"
             else -> formatted
@@ -1614,7 +1615,7 @@ private fun ConfirmFace(
                     InspectorRow(
                         label = summary.totalLabel,
                         value = summary.total?.let { total ->
-                            "Up to ${formatter.formatWalletSats(total, useBitcoinSymbol)}"
+                            "${formatter.formatWalletSats(total, useBitcoinSymbol)} + mint fees"
                         } ?: "Unavailable",
                         valueMonospaced = true,
                     )

@@ -115,8 +115,8 @@ enum class MeltSettlement {
 
     /**
      * The mint accepted the melt for asynchronous (NUT-05) settlement —
-     * typical for on-chain. Amount/fee are the quote's numbers (fee = reserve
-     * upper bound) until the payment settles; the pending-melt watcher or
+     * typical for on-chain. The fee bound includes the quote reserve and
+     * prepared input/swap fees until the payment settles; the pending-melt watcher or
      * `syncPendingMeltQuotes` completes the bookkeeping (iOS parity).
      */
     Pending,
@@ -126,7 +126,7 @@ enum class MeltSettlement {
 data class MeltPaymentResult(
     val preimage: String?,
     val amount: Long,
-    /** Actual fee when settled, reserve upper bound when pending, null if unknown. */
+    /** All payment fees including a preparatory swap; upper bound when pending, null if unknown. */
     val feePaid: Long?,
     val mintUrl: String,
     val paymentMethod: PaymentMethodKind? = null,
@@ -139,11 +139,19 @@ data class MeltPaymentSummary(
     val amount: Long,
     val fee: Long?,
     val isUpperBound: Boolean,
+    val excludesMintFees: Boolean = false,
 ) {
-    constructor(quote: MeltQuoteInfo) : this(quote.amount, quote.feeReserve, true)
+    constructor(quote: MeltQuoteInfo) : this(quote.amount, quote.feeReserve, true, true)
     constructor(result: MeltPaymentResult) : this(result.amount, result.feePaid, result.settlement == MeltSettlement.Pending)
 
     val total: Long?
         get() = fee?.let { if (amount < 0 || it < 0 || amount > Long.MAX_VALUE - it) null else amount + it }
-    val totalLabel: String get() = if (isUpperBound) "Amount + fee reserve" else "Total"
+    val totalLabel: String get() = if (excludesMintFees) "Amount + fee reserve" else "Total"
+}
+
+/** Finalized CDK melt fees exclude the preparatory swap's input fee. */
+object MeltFeeAccounting {
+    fun adding(fee: Long?, additionalFee: Long?): Long? =
+        if (fee == null || additionalFee == null || fee < 0 || additionalFee < 0 || fee > Long.MAX_VALUE - additionalFee) null
+        else fee + additionalFee
 }

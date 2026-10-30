@@ -47,6 +47,7 @@ internal sealed interface SendPaymentDetailValue {
     data class Sats(
         val amount: Long,
         val isUpperBound: Boolean = false,
+        val excludesMintFees: Boolean = false,
     ) : SendPaymentDetailValue
     data object Pending : SendPaymentDetailValue
     data object Unavailable : SendPaymentDetailValue
@@ -185,7 +186,11 @@ private fun buildMeltDetails(
         SendPaymentDetailRow(
             key = SendPaymentDetailKey.Total,
             label = "Amount + fee reserve",
-            value = quote?.let { MeltPaymentSummary(it).total.detailValue(isUpperBound = true) }
+            value = quote?.let {
+                MeltPaymentSummary(it).total?.let { total ->
+                    SendPaymentDetailValue.Sats(total, excludesMintFees = true)
+                } ?: SendPaymentDetailValue.Unavailable
+            }
                 ?: SendPaymentDetailValue.Pending,
             valueMonospaced = true,
         ),

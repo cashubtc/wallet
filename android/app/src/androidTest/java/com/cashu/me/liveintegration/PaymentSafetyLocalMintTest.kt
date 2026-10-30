@@ -166,6 +166,21 @@ class PaymentSafetyLocalMintTest : PaymentFixtureTest() {
         }
     }
 
+    @Test fun ordinaryMeltOnFeeMintReportsEntireBalanceDebit() = runBlocking {
+        val payer = wallet("fees")
+        payer.fund()
+        val quote = payer.gateway.createMeltQuote(invoice(), null, payer.url)
+        arm("/v1/melt/quote/bolt11/", "delay", "GET")
+
+        val result = payer.gateway.meltTokens(quote.id, payer.url).result
+        assertEquals(MeltSettlement.Settled, result.settlement)
+        val fee = requireNotNull(result.feePaid)
+        assertEquals(100, payer.balance() + result.amount + fee)
+        val transaction = payer.gateway.listTransactions(mapOf(payer.url to listOf("sat")))
+            .single { it.quoteId == quote.id }
+        assertTrue("The reported fee must also include the preparatory swap", fee > transaction.fee)
+    }
+
     @Test fun lostMeltResponseRecoversWithoutSecondDebit() = runBlocking {
         val payer = wallet("cdk")
         payer.fund()

@@ -285,7 +285,7 @@ class FunctionalWalletJourneyTest {
             .awaitText("Network fee")
             .awaitText("Up to ₿2")
             .awaitText("Amount + fee reserve")
-            .awaitText("Up to ₿23")
+            .awaitText("₿23 + mint fees")
             .tapTag(UiTestTags.SendPaymentSubmit)
             .awaitText("Payment sent")
             .awaitText("Network fee")
@@ -293,7 +293,7 @@ class FunctionalWalletJourneyTest {
             .awaitText("Total")
             .awaitText("₿22")
         compose.onNodeWithText("Up to ₿2").assertDoesNotExist()
-        compose.onNodeWithText("Up to ₿23").assertDoesNotExist()
+        compose.onNodeWithText("₿23 + mint fees").assertDoesNotExist()
 
         assertEquals(478L, runBlocking { fake.totalBalance(FakeWalletGateway.TestMintUrl) })
         val paidTransaction = checkNotNull(

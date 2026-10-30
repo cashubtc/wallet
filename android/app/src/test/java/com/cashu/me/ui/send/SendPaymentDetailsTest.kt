@@ -4,6 +4,7 @@ import com.cashu.me.Core.CashuPaymentRequestRoute
 import com.cashu.me.Core.CashuPaymentRequestSummary
 import com.cashu.me.Core.PaymentRequestDecodeResult
 import com.cashu.me.Core.Wallet.WalletMessage
+import com.cashu.me.Models.MeltFeeAccounting
 import com.cashu.me.Models.MeltPaymentResult
 import com.cashu.me.Models.MeltQuoteInfo
 import com.cashu.me.Models.MeltQuoteState
@@ -329,7 +330,7 @@ class SendPaymentDetailsTest {
     fun settledMeltReplacesReserveWithActualFeeAndDebitIncludingZeroFee() {
         val details = meltDetails()
         assertEquals("Amount + fee reserve", details.rows.first { it.key == SendPaymentDetailKey.Total }.label)
-        assertEquals(SendPaymentDetailValue.Sats(24, true), details.value(SendPaymentDetailKey.Total))
+        assertEquals(SendPaymentDetailValue.Sats(24, excludesMintFees = true), details.value(SendPaymentDetailKey.Total))
         for (fee in listOf(0L, 2L)) {
             val settled = details.withMeltResult(meltResult(PaymentMethodKind.Bolt11, feePaid = fee))
             assertEquals(SendPaymentDetailValue.Sats(fee), settled.value(SendPaymentDetailKey.NetworkFee))
@@ -343,7 +344,7 @@ class SendPaymentDetailsTest {
         val pending = meltDetails().withMeltResult(meltResult(PaymentMethodKind.Bolt11, 5, MeltSettlement.Pending))
         assertEquals(SendPaymentDetailValue.Sats(5, true), pending.value(SendPaymentDetailKey.NetworkFee))
         assertEquals(SendPaymentDetailValue.Sats(26, true), pending.value(SendPaymentDetailKey.Total))
-        assertEquals("Amount + fee reserve", pending.rows.first { it.key == SendPaymentDetailKey.Total }.label)
+        assertEquals("Total", pending.rows.first { it.key == SendPaymentDetailKey.Total }.label)
     }
 
     @Test
@@ -362,6 +363,26 @@ class SendPaymentDetailsTest {
         assertEquals(SendPaymentDetailValue.Sats(22), settled.value(SendPaymentDetailKey.Total))
         val overflow = meltDetails().withMeltResult(result.copy(amount = Long.MAX_VALUE))
         assertEquals(SendPaymentDetailValue.Unavailable, overflow.value(SendPaymentDetailKey.Total))
+    }
+
+    @Test
+    fun paymentDebitIncludesSwapFeeAndPendingBoundIncludesAllPreparationFees() {
+        val fee = MeltFeeAccounting.adding(3, 2)
+        val settled = meltDetails().withMeltResult(meltResult(PaymentMethodKind.Bolt11, fee))
+        assertEquals(SendPaymentDetailValue.Sats(26), settled.value(SendPaymentDetailKey.Total))
+        val bound = MeltFeeAccounting.adding(3, 4)
+        val pending = meltDetails().withMeltResult(meltResult(PaymentMethodKind.Bolt11, bound, MeltSettlement.Pending))
+        assertEquals(SendPaymentDetailValue.Sats(28, true), pending.value(SendPaymentDetailKey.Total))
+        assertEquals(3L, MeltFeeAccounting.adding(3, 0))
+    }
+
+    @Test
+    fun unknownPreparationFeeAndOverflowDoNotInventDebits() {
+        for (fee in listOf(MeltFeeAccounting.adding(2, null), MeltFeeAccounting.adding(null, 2),
+            MeltFeeAccounting.adding(Long.MAX_VALUE, 1), MeltFeeAccounting.adding(-1, 2))) {
+            val recovered = meltDetails().withMeltResult(meltResult(PaymentMethodKind.Bolt11, fee))
+            assertEquals(SendPaymentDetailValue.Unavailable, recovered.value(SendPaymentDetailKey.Total))
+        }
     }
 
     private fun meltDetails() = buildSendPaymentDetails(
