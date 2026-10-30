@@ -138,12 +138,11 @@ final class LightningAddressBindingTests: XCTestCase {
         setenv("LIGHTNING_DNS_STUB", "1", 1)
     }
 
-    override func tearDown() {
-        // Native runtime destruction must happen outside an async context.
+    override func tearDown() async throws {
         repositories.removeAll()
         for path in paths { for suffix in ["", "-wal", "-shm"] { try? FileManager.default.removeItem(atPath: path + suffix) } }
         paths.removeAll()
-        super.tearDown()
+        try await super.tearDown()
     }
 
     private func call(_ path: String, body: [String: Any]? = nil) async throws -> [String: Any] {

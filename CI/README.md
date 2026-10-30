@@ -33,8 +33,12 @@ This directory contains the complete CI infrastructure for running end-to-end in
 
 CDK setup uses release binaries instead of compiling Rust in CI:
 
-- **CDK**: Downloads and verifies official stable `cdk-mintd 0.18.2`, including the native Apple Silicon binary, and initializes its database-backed configuration
+- **CDK**: Downloads and verifies official stable `cdk-mintd 0.18.3`, including the native Apple Silicon binary, and initializes its database-backed configuration
 - **Nutshell**: Installs official stable `cashu==0.21.0` from PyPI (exposes the `mint` binary)
+
+The [CDK 0.18.3 upgrade review](../docs/reviews/cdk-0.18.3-upgrade.md) documents
+the binding changes, removal of the iOS database teardown workaround, and native
+validation results.
 
 ## Quick Start
 

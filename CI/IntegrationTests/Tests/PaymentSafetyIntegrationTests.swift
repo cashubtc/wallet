@@ -23,12 +23,6 @@ class PaymentFixtureTestCase: XCTestCase {
 
     override func tearDown() async throws {
         if sessionID != nil { _ = try await call("/sessions/\(sessionID!)", method: "DELETE") }
-        // Keep repository handles alive until the synchronous teardown boundary:
-        // dropping the last native Tokio runtime from an async context is unsafe.
-        try await super.tearDown()
-    }
-
-    override func tearDown() {
         let paths = stores.map { $0.1 }
         storeByWallet.removeAll()
         walletHandles.removeAll()
@@ -38,7 +32,7 @@ class PaymentFixtureTestCase: XCTestCase {
         for path in paths {
             for suffix in ["", "-wal", "-shm"] { try? FileManager.default.removeItem(atPath: path + suffix) }
         }
-        super.tearDown()
+        try await super.tearDown()
     }
 
     func call(_ path: String, method: String = "GET", body: [String: Any]? = nil) async throws -> [String: Any] {
