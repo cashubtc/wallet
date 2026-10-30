@@ -165,7 +165,7 @@ class PaymentSafetyLocalMintTest : PaymentFixtureTest() {
             val result = payer.gateway.meltTokens(quote.id, payer.url).result
             assertEquals(MeltSettlement.Settled, result.settlement)
             assertEquals(21, result.amount)
-            assertEquals(100 - 21 - result.feePaid, payer.balance())
+            assertEquals(100 - 21 - requireNotNull(result.feePaid), payer.balance())
             payer.reopen()
             val history = payer.gateway.listTransactions(mapOf(payer.url to listOf("sat"))).filter { it.quoteId == quote.id }
             assertEquals(1, history.size)
@@ -176,6 +176,21 @@ class PaymentSafetyLocalMintTest : PaymentFixtureTest() {
                 assertEquals(21, recipient.gateway.mintTokens(incoming.id))
             }
         }
+    }
+
+    @Test fun ordinaryMeltOnFeeMintReportsEntireBalanceDebit() = runBlocking {
+        val payer = wallet("fees")
+        payer.fund()
+        val quote = payer.gateway.createMeltQuote(invoice(), null, payer.url)
+        arm("/v1/melt/quote/bolt11/", "delay", "GET")
+
+        val result = payer.gateway.meltTokens(quote.id, payer.url).result
+        assertEquals(MeltSettlement.Settled, result.settlement)
+        val fee = requireNotNull(result.feePaid)
+        assertEquals(100, payer.balance() + result.amount + fee)
+        val transaction = payer.gateway.listTransactions(mapOf(payer.url to listOf("sat")))
+            .single { it.quoteId == quote.id }
+        assertTrue("The reported fee must also include the preparatory swap", fee > transaction.fee)
     }
 
     @Test fun lostMeltResponseRecoversWithoutSecondDebit() = runBlocking {
@@ -449,7 +464,7 @@ class PaymentSafetyLocalMintTest : PaymentFixtureTest() {
         assertEquals(MintQuoteState.Unpaid, wallet.gateway.checkMintQuote(incoming.id).state)
         wallet.pay(incoming, "fees")
         assertEquals(40, wallet.gateway.mintTokens(incoming.id))
-        assertEquals(100 - 40 - result.feePaid, wallet.balance())
+        assertEquals(100 - 40 - requireNotNull(result.feePaid), wallet.balance())
         assertEquals(40, wallet.gateway.totalBalance(destination))
         assertEquals(1, wallet.history(wallet.url).count { it.quoteId == outgoing.id })
         assertEquals(1, wallet.history(destination).count { it.quoteId == incoming.id })
@@ -473,9 +488,9 @@ class PaymentSafetyLocalMintTest : PaymentFixtureTest() {
         assertEquals(amount, wallet.gateway.mintTokens(plan.mintQuote.id))
         // CDK reports the input fee inside the fee paid, and the unused part of
         // the reserve comes back as change rather than being lost.
-        assertEquals(100, wallet.balance() + amount + result.feePaid)
-        assertTrue(result.feePaid >= plan.inputFee)
-        assertTrue(result.feePaid <= plan.inputFee + plan.meltQuote.feeReserve)
+        assertEquals(100, wallet.balance() + amount + requireNotNull(result.feePaid))
+        assertTrue(requireNotNull(result.feePaid) >= plan.inputFee)
+        assertTrue(requireNotNull(result.feePaid) <= plan.inputFee + plan.meltQuote.feeReserve)
     }
 
     @Test fun crossMintTransferLostMeltResponseDoesNotDoubleDebit() = runBlocking {

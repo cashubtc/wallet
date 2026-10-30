@@ -110,13 +110,13 @@ data class MeltQuoteInfo(
 
 @Serializable
 enum class MeltSettlement {
-    /** The mint paid out synchronously; preimage/fee are final. */
+    /** The mint paid out; the fee is final when available after recovery. */
     Settled,
 
     /**
      * The mint accepted the melt for asynchronous (NUT-05) settlement —
-     * typical for on-chain. Amount/fee are the quote's numbers (fee = reserve
-     * upper bound) until the payment settles; the pending-melt watcher or
+     * typical for on-chain. The fee bound includes the quote reserve and
+     * prepared input/swap fees until the payment settles; the pending-melt watcher or
      * `syncPendingMeltQuotes` completes the bookkeeping (iOS parity).
      */
     Pending,
@@ -126,9 +126,32 @@ enum class MeltSettlement {
 data class MeltPaymentResult(
     val preimage: String?,
     val amount: Long,
-    val feePaid: Long,
+    /** All payment fees including a preparatory swap; upper bound when pending, null if unknown. */
+    val feePaid: Long?,
     val mintUrl: String,
     val paymentMethod: PaymentMethodKind? = null,
     val request: String? = null,
     val settlement: MeltSettlement = MeltSettlement.Settled,
 )
+
+/** The fee and debit shown on confirmation and receipt screens. */
+data class MeltPaymentSummary(
+    val amount: Long,
+    val fee: Long?,
+    val isUpperBound: Boolean,
+    val excludesMintFees: Boolean = false,
+) {
+    constructor(quote: MeltQuoteInfo) : this(quote.amount, quote.feeReserve, true, true)
+    constructor(result: MeltPaymentResult) : this(result.amount, result.feePaid, result.settlement == MeltSettlement.Pending)
+
+    val total: Long?
+        get() = fee?.let { if (amount < 0 || it < 0 || amount > Long.MAX_VALUE - it) null else amount + it }
+    val totalLabel: String get() = if (excludesMintFees) "Amount + fee reserve" else "Total"
+}
+
+/** Finalized CDK melt fees exclude the preparatory swap's input fee. */
+object MeltFeeAccounting {
+    fun adding(fee: Long?, additionalFee: Long?): Long? =
+        if (fee == null || additionalFee == null || fee < 0 || additionalFee < 0 || fee > Long.MAX_VALUE - additionalFee) null
+        else fee + additionalFee
+}

@@ -1205,7 +1205,12 @@ private fun StatusFace(
                 TransferDetailRow(label = "To", value = mintName(shown.destinationMintUrl))
                 val feeText = if (outcome is MintTransferOutcome.Completed) {
                     // A receipt records what happened; a zero fee is omitted.
-                    outcome.feePaid.takeIf { it > 0 }?.let { formatter.formatWalletSats(it, useBitcoinSymbol) }
+                    val fee = outcome.feePaid
+                    when {
+                        fee == null -> "Unavailable"
+                        fee == 0L -> null
+                        else -> formatter.formatWalletSats(fee, useBitcoinSymbol)
+                    }
                 } else {
                     formatter.formatWalletSats(shown.feeUpperBound, useBitcoinSymbol)
                 }
