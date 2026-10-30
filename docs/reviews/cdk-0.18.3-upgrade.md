@@ -63,3 +63,20 @@ establish public-mint or physical NFC interoperability.
 
 The opt-in Lightning Address source-rebuild harness was updated for matching
 0.18.3 inputs but was not rerun as part of this upgrade.
+
+## Fresh CI fixture installation
+
+The first hosted CI run stopped before wallet tests: refreshing the shared mint
+cache exposed Nutshell 0.21.0's unavailable `breez-sdk-spark>=0.17,<0.18`
+dependency. Earlier local validation reused an installed mint environment and
+did not cover that fresh-install path.
+
+The installer now uses pinned `uv` and an explicit override to Spark 0.18.0,
+while retaining the official Nutshell 0.21.0 package and existing dependency
+constraints. FakeWallet fixtures import Spark's module but do not initialize
+that backend. Both platform cache keys include the override file.
+
+Fresh Python 3.11 and 3.12 installations with package caches disabled succeed,
+and both mints serve `/v1/info` as Nutshell 0.21.0. Resolving the same requirements
+for Linux x86_64/Python 3.11 succeeds using published binary wheels. These
+checks cover the installer; hosted wallet test results remain a separate gate.

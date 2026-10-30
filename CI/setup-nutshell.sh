@@ -1,15 +1,15 @@
 #!/bin/bash
 set -euo pipefail
 
-# setup-nutshell.sh — Install Nutshell (cashu) via pip (prebuilt wheels on PyPI)
+# setup-nutshell.sh — Install Nutshell (cashu) from PyPI
 # Usage: ./CI/setup-nutshell.sh
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENV_DIR="${SCRIPT_DIR}/.nutshell-venv"
 
-echo "🔧 Setting up Nutshell (pip install from PyPI)..."
+echo "🔧 Setting up Nutshell from PyPI..."
 
-# Cashu 0.20.x currently depends on native packages that do not build cleanly
+# Nutshell depends on native packages that do not build cleanly
 # with the newest Python runtimes, so prefer a stable CI-compatible interpreter.
 if [ -n "${PYTHON:-}" ]; then
     PYTHON_BIN="$PYTHON"
@@ -49,13 +49,20 @@ fi
 # PyPI as the `cashu` package; it exposes the `mint` console script.
 "$PYTHON_BIN" -m venv "$VENV_DIR"
 "$VENV_DIR/bin/pip" install --upgrade pip
+# Use a pinned resolver with an explicit, narrowly scoped dependency override.
+# Nutshell 0.21.0 requires Breez Spark 0.17.x, which has no PyPI artifacts.
+# CI uses FakeWallet; Spark is imported by Nutshell but never initialized.
+# 0.18.0 provides the required imports on macOS and Linux.
+"$VENV_DIR/bin/pip" install "uv==0.11.8"
 # Official stable mint release and compatible transitive-dependency pins:
 #   - cashu==0.21.0: keep local and CI interoperability runs reproducible.
 #   - marshmallow<4: cashu depends on environs<10, which breaks against
 #     marshmallow 4.x (removed `__version_info__`) -> mint won't import.
 #   - limits<4: cashu hardcodes the `fixed-window-elastic-expiry` rate-limit
 #     strategy, removed in limits 4.x -> mint won't start.
-"$VENV_DIR/bin/pip" install "marshmallow<4" "limits<4" "cashu==0.21.0"
+"$VENV_DIR/bin/uv" pip install --python "$VENV_DIR/bin/python" \
+    --overrides "${SCRIPT_DIR}/nutshell-overrides.txt" \
+    "marshmallow<4" "limits<4" "cashu==0.21.0"
 
-echo "✅ Nutshell installed via pip into ${VENV_DIR}"
+echo "✅ Nutshell installed into ${VENV_DIR}"
 echo "📦 Binary: ${VENV_DIR}/bin/mint"
