@@ -33,8 +33,18 @@ This directory contains the complete CI infrastructure for running end-to-end in
 
 CDK setup uses release binaries instead of compiling Rust in CI:
 
-- **CDK**: Downloads and verifies official stable `cdk-mintd 0.18.2`, including the native Apple Silicon binary, and initializes its database-backed configuration
+- **CDK**: Downloads and verifies official stable `cdk-mintd 0.18.3`, including the native Apple Silicon binary, and initializes its database-backed configuration
 - **Nutshell**: Installs official stable `cashu==0.21.0` from PyPI (exposes the `mint` binary)
+
+Nutshell's published metadata requires Breez Spark 0.17.x, which has no PyPI
+artifacts. The installer uses pinned `uv` with `nutshell-overrides.txt` to resolve
+Spark 0.18.0 explicitly. The fixtures use FakeWallet; Spark's module is imported
+but its backend is never initialized. This override does not qualify Spark
+payments. Both platform caches include the override file in their keys.
+
+The [CDK 0.18.3 upgrade review](../docs/reviews/cdk-0.18.3-upgrade.md) documents
+the binding changes, removal of the iOS database teardown workaround, and native
+validation results.
 
 ## Quick Start
 

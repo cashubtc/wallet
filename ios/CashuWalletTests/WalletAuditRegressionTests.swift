@@ -246,7 +246,7 @@ final class WalletAuditRegressionTests: XCTestCase {
         for index in 0..<10 {
             let databaseURL = directory.appendingPathComponent("wallet-\(index).db")
             try autoreleasepool {
-                let database = try LifecycleSafeWalletDatabase(filePath: databaseURL.path)
+                let database = try WalletSqliteDatabase(filePath: databaseURL.path)
                 let repository = try WalletRepository(mnemonic: generateMnemonic(), store: customWalletStore(db: database))
                 withExtendedLifetime(repository) {}
             }
@@ -382,7 +382,7 @@ final class WalletAuditRegressionTests: XCTestCase {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let seed = try generateMnemonic()
-        let originalDB = try LifecycleSafeWalletDatabase(filePath: directory.appendingPathComponent("original.sqlite").path)
+        let originalDB = try WalletSqliteDatabase(filePath: directory.appendingPathComponent("original.sqlite").path)
         let original = try WalletRepository(mnemonic: seed, store: customWalletStore(db: originalDB))
         let url = MintUrl(url: mintURL)
         let active = MintInfo(url: mintURL, name: "Test mint", isActive: true, balance: 0)
@@ -396,7 +396,7 @@ final class WalletAuditRegressionTests: XCTestCase {
         _ = try await firstService.mintTokens(quoteId: first.id)
 
         // Same seed, fresh ledger: counters and proofs have not been restored.
-        let restoredDB = try LifecycleSafeWalletDatabase(filePath: directory.appendingPathComponent("restored.sqlite").path)
+        let restoredDB = try WalletSqliteDatabase(filePath: directory.appendingPathComponent("restored.sqlite").path)
         let restored = try WalletRepository(mnemonic: seed, store: customWalletStore(db: restoredDB))
         try await restored.createWallet(mintUrl: url, unit: .sat, targetProofCount: nil)
         let service = LightningService(walletRepository: { restored }, walletDatabase: { restoredDB }, getActiveMint: { active })
@@ -417,9 +417,9 @@ final class WalletAuditRegressionTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
-        weak var releasedDatabase: LifecycleSafeWalletDatabase?
+        weak var releasedDatabase: WalletSqliteDatabase?
         do {
-            let database = try LifecycleSafeWalletDatabase(filePath: directory.appendingPathComponent("wallet.sqlite").path)
+            let database = try WalletSqliteDatabase(filePath: directory.appendingPathComponent("wallet.sqlite").path)
             releasedDatabase = database
             let repository = try WalletRepository(mnemonic: generateMnemonic(), store: customWalletStore(db: database))
             try await repository.createWallet(mintUrl: MintUrl(url: mintURL), unit: .sat, targetProofCount: nil)

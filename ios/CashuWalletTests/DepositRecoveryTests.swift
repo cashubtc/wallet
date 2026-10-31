@@ -49,7 +49,7 @@ final class DepositRecoveryTests: XCTestCase {
     /// database. No seed replacement, keychain writes, or external mint funds.
     func testLostUSDDepositNeedsDeeperSearchAndIsClaimedOnlyOnce() async throws {
         try await withPaidQuote(unit: .usd, keyIndex: 1_000) { seed, id, url, directory, expected in
-            let db = try LifecycleSafeWalletDatabase(filePath: directory.appendingPathComponent("recovered.db").path)
+            let db = try WalletSqliteDatabase(filePath: directory.appendingPathComponent("recovered.db").path)
             let repo = try WalletRepository(mnemonic: seed, store: customWalletStore(db: db))
             let manager = WalletManager(walletStore: WalletStore(storage: InMemoryStorage()))
             manager.db = db
@@ -82,7 +82,7 @@ final class DepositRecoveryTests: XCTestCase {
 
     func testWrongSeedCannotClaimOrQueueTheDeposit() async throws {
         try await withPaidQuote(unit: .sat, keyIndex: 0) { _, id, url, directory, _ in
-            let db = try LifecycleSafeWalletDatabase(filePath: directory.appendingPathComponent("wrong-seed.db").path)
+            let db = try WalletSqliteDatabase(filePath: directory.appendingPathComponent("wrong-seed.db").path)
             let repo = try WalletRepository(mnemonic: generateMnemonic(), store: customWalletStore(db: db))
             let manager = WalletManager(walletStore: WalletStore(storage: InMemoryStorage()))
             manager.db = db
@@ -100,7 +100,7 @@ final class DepositRecoveryTests: XCTestCase {
 
     func testExistingQuoteIdentityIsCheckedBeforeRecovery() async throws {
         try await withPaidQuote(unit: .sat, keyIndex: 0) { seed, id, url, directory, _ in
-            let db = try LifecycleSafeWalletDatabase(filePath: directory.appendingPathComponent("identity.db").path)
+            let db = try WalletSqliteDatabase(filePath: directory.appendingPathComponent("identity.db").path)
             let repo = try WalletRepository(mnemonic: seed, store: customWalletStore(db: db))
             try await repo.createWallet(mintUrl: MintUrl(url: url), unit: .sat, targetProofCount: nil)
             let wallet = try await repo.getWallet(mintUrl: MintUrl(url: url), unit: .sat)
@@ -121,7 +121,7 @@ final class DepositRecoveryTests: XCTestCase {
     func testLostLightningOfferAndOnchainDepositRecoverOnlyOnce() async throws {
         for method in [PaymentMethodKind.bolt12, .onchain] {
             try await withPaidQuote(unit: .sat, keyIndex: 0, method: method) { seed, id, url, directory, expected in
-                let db = try LifecycleSafeWalletDatabase(filePath: directory.appendingPathComponent("restored.db").path)
+                let db = try WalletSqliteDatabase(filePath: directory.appendingPathComponent("restored.db").path)
                 let repo = try WalletRepository(mnemonic: seed, store: customWalletStore(db: db))
                 let manager = WalletManager(walletStore: WalletStore(storage: InMemoryStorage()))
                 manager.db = db; manager.walletRepository = repo; manager.isRuntimeReady = true
@@ -138,7 +138,7 @@ final class DepositRecoveryTests: XCTestCase {
 
     func testPriorIssuanceIsRestoredBeforeClaimingTheLostDeposit() async throws {
         try await withPaidQuote(unit: .sat, keyIndex: 0, priorIssued: 13) { seed, id, url, directory, expected in
-            let db = try LifecycleSafeWalletDatabase(filePath: directory.appendingPathComponent("after-loss.db").path)
+            let db = try WalletSqliteDatabase(filePath: directory.appendingPathComponent("after-loss.db").path)
             let repo = try WalletRepository(mnemonic: seed, store: customWalletStore(db: db))
             let manager = WalletManager(walletStore: WalletStore(storage: InMemoryStorage()))
             manager.db = db; manager.walletRepository = repo; manager.isRuntimeReady = true
@@ -169,7 +169,7 @@ final class DepositRecoveryTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         let request = try DepositRecoveryRequest(mintURL: url, quoteID: id, method: .onchain, unit: "sat", searchLimit: 1_000)
         do {
-            let db = try LifecycleSafeWalletDatabase(filePath: directory.appendingPathComponent("wrong.db").path)
+            let db = try WalletSqliteDatabase(filePath: directory.appendingPathComponent("wrong.db").path)
             let repo = try WalletRepository(mnemonic: generateMnemonic(), store: customWalletStore(db: db))
             let manager = WalletManager(walletStore: WalletStore(storage: InMemoryStorage()))
             manager.db = db; manager.walletRepository = repo; manager.isRuntimeReady = true
@@ -183,7 +183,7 @@ final class DepositRecoveryTests: XCTestCase {
         }
         let path = directory.appendingPathComponent("recovered.db").path
         do {
-            let db = try LifecycleSafeWalletDatabase(filePath: path)
+            let db = try WalletSqliteDatabase(filePath: path)
             let repo = try WalletRepository(mnemonic: seed, store: customWalletStore(db: db))
             let manager = WalletManager(walletStore: WalletStore(storage: InMemoryStorage()))
             manager.db = db; manager.walletRepository = repo; manager.isRuntimeReady = true
@@ -195,7 +195,7 @@ final class DepositRecoveryTests: XCTestCase {
             XCTAssertEqual(repeated.status, .alreadyClaimed)
             XCTAssertEqual(manager.balance, 21_000)
         }
-        let reopenedDB = try LifecycleSafeWalletDatabase(filePath: path)
+        let reopenedDB = try WalletSqliteDatabase(filePath: path)
         let reopened = try WalletRepository(mnemonic: seed, store: customWalletStore(db: reopenedDB))
         let balance = try await reopenedDB.getBalance(mintUrl: MintUrl(url: url), unit: .sat, state: [.unspent])
         XCTAssertEqual(balance, 21_000)
@@ -206,7 +206,7 @@ final class DepositRecoveryTests: XCTestCase {
         XCTAssertEqual(history.filter { $0.quoteId == id && $0.status == .completed }.count, 1)
         let token = try await TokenService(walletRepository: { reopened }, getActiveMint: { nil })
             .sendTokens(amount: 21_000, mintUrl: url).token
-        let receiverDB = try LifecycleSafeWalletDatabase(filePath: directory.appendingPathComponent("receiver.db").path)
+        let receiverDB = try WalletSqliteDatabase(filePath: directory.appendingPathComponent("receiver.db").path)
         let receiver = try WalletRepository(mnemonic: generateMnemonic(), store: customWalletStore(db: receiverDB))
         _ = try await TokenService(walletRepository: { receiver }, getActiveMint: { nil }).receiveTokens(tokenString: token)
         let received = try await receiverDB.getBalance(mintUrl: MintUrl(url: url), unit: .sat, state: [.unspent])
@@ -243,7 +243,7 @@ final class DepositRecoveryTests: XCTestCase {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let seed = try generateMnemonic()
-        let db = try LifecycleSafeWalletDatabase(filePath: directory.appendingPathComponent("original.db").path)
+        let db = try WalletSqliteDatabase(filePath: directory.appendingPathComponent("original.db").path)
         let repo = try WalletRepository(mnemonic: seed, store: customWalletStore(db: db))
         try await repo.createWallet(mintUrl: MintUrl(url: url), unit: unit, targetProofCount: nil)
         let wallet = try await repo.getWallet(mintUrl: MintUrl(url: url), unit: unit)

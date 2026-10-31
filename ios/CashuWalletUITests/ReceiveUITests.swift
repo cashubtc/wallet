@@ -46,22 +46,25 @@ final class ReceiveUITests: UITestBase {
             "Receive sheet should show the Bitcoin option"
         )
 
-        // Drag the sheet chrome, not an action inside its scroll view: that
-        // gesture can be consumed by scrolling or leave the sheet open.
-        let header = app.navigationBars["Receive"]
-        XCTAssertTrue(header.waitUntilEnabledAndHittable(timeout: 5))
-        header.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-            .press(forDuration: 0.05,
-                   thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.95)),
-                   withVelocity: XCUIGestureVelocity(rawValue: 1_500), thenHoldForDuration: 0)
+        // Drag the sheet chrome so the method list cannot consume the gesture.
+        let grabber = app.buttons["Sheet Grabber"]
+        XCTAssertTrue(
+            grabber.waitUntilEnabledAndHittable(timeout: 10),
+            "Receive sheet grabber should be ready for dismissal"
+        )
+        let dismissTarget = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.95))
+        grabber.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            .press(forDuration: 0.1, thenDragTo: dismissTarget)
 
         XCTAssertTrue(
-            receiveDestinationField.waitForNonExistence(timeout: 5),
-            "Receive sheet should dismiss after dragging down"
+            receiveEcashOption.waitForNonExistence(timeout: 10),
+            "Dragging the sheet grabber should dismiss the Receive sheet"
         )
-        XCTAssertTrue(receiveEcashOption.waitForNonExistence(timeout: 5))
+        XCTAssertFalse(receiveDestinationField.exists)
         XCTAssertTrue(receiveButton.waitUntilEnabledAndHittable(timeout: 5),
                       "Dismissing Receive should return control to the wallet")
+
+        openReceiveSheet()
     }
 
     func testBitcoinOptionOpensLightningFlow() throws {
