@@ -116,8 +116,8 @@ async def pay_controlled(key: str, mint: str, request: Request):
 async def cashu_request(key: str, request: Request):
     session(key)
     config = await request.json()
-    payload = {"i": key, "u": config.get("unit", "sat"), "d": "Payment fixture",
-               "t": [{"t": "post", "a": config["target"], "g": []}]}
+    transports = [] if config.get("transport") == "none" else [{"t": "post", "a": config["target"], "g": []}]
+    payload = {"i": key, "u": config.get("unit", "sat"), "d": "Payment fixture", "t": transports}
     if config.get("amount") is not None:
         payload["a"] = config["amount"]
     if config.get("mints"):
