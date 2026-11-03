@@ -207,7 +207,8 @@ struct MainWalletView: View {
         }
         .onDisappear { receivedFeedback.clear() }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .background || (phase != .active && !appLock.isAuthenticating) {
+            // Core NFC's system sheet can make the foreground scene inactive.
+            if phase == .background {
                 contactlessCoordinator.stop()
             }
             if phase == .background { receivedFeedback.clear() }

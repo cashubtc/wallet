@@ -70,7 +70,8 @@ final class ContactlessPaymentCoordinator {
     ) async {
         let service = NFCPaymentService(walletManager: walletManager, policy: .shared,
             isActive: { [weak self] in
-                self?.session === session && UIApplication.shared.applicationState == .active
+                // The native NFC sheet may leave the foreground app inactive.
+                self?.session === session && UIApplication.shared.applicationState != .background
                     && !AppLockManager.shared.isLocked && walletManager.isRuntimeReady
             },
             authenticate: {
