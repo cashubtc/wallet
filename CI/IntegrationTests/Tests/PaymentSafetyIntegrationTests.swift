@@ -780,6 +780,70 @@ final class PaymentSafetyIntegrationTests: PaymentFixtureTestCase {
     }
 }
 
+final class NfcPaymentRequestCompatibilityTests: PaymentFixtureTestCase {
+    func testPreparedInBandRequestsAwaitCdkSupportWithoutReservingFunds() async throws {
+        for amount: UInt64? in [21, nil] {
+            let payer = try await makeWallet("controlled")
+            let receiver = try await makeWallet("controlled")
+            try await fund(payer, controlled: "controlled")
+            let request = try await inBandRequest(mint: payer.mintUrl().url, amount: amount)
+            do {
+                let prepared = try await payer.preparePayRequest(paymentRequest: request,
+                    customAmount: amount == nil ? Amount(value: 21) : nil)
+                try await prepared.cancel()
+                XCTFail("Revisit the NFC integration when CDK supports prepared in-band requests")
+            } catch {
+                XCTAssertTrue(String(describing: error).contains("No transport available in payment request"),
+                    "The pinned CDK must fail specifically at the in-band transport boundary")
+            }
+            let pending = try await payer.getPendingSends()
+            let reserved = try await payer.totalReservedBalance()
+            XCTAssertTrue(pending.isEmpty)
+            XCTAssertEqual(reserved.value, 0)
+            let reopened = try await reopen(payer)
+            let available = try await balance(reopened)
+            XCTAssertEqual(available, 100)
+            let token = try await send(reopened, amount: 100).confirm(memo: nil)
+            let received = try await receive(receiver, token: token)
+            XCTAssertEqual(received, 100)
+        }
+    }
+
+    func testFixedNfcRequestAtZeroFeeMint() async throws {
+        try await assertCurrentNfcSend(mint: "controlled")
+    }
+
+    func testFixedNfcRequestReceiverFeeRegression() async throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["PAYMENT_KNOWN_REGRESSIONS"] == "1",
+                          "Pending #427 and upstream CDK support; see docs/reviews/nfc-request-payments.md")
+        try await assertCurrentNfcSend(mint: "fees")
+    }
+
+    private func inBandRequest(mint: String, amount: UInt64?) async throws -> PaymentRequest {
+        var config: [String: Any] = ["transport": "none", "mints": [mint]]
+        if let amount { config["amount"] = amount }
+        let encoded = try await call(root + "/request", method: "POST", body: config)["request"] as! String
+        let request = try PaymentRequest.fromString(encoded: encoded)
+        XCTAssertTrue(request.transports().isEmpty)
+        XCTAssertEqual(request.amount()?.value, amount)
+        return request
+    }
+
+    private func assertCurrentNfcSend(mint: String) async throws {
+        let payer = try await makeWallet(mint)
+        let receiver = try await makeWallet(mint)
+        try await fund(payer, controlled: mint)
+        let request = try await inBandRequest(mint: payer.mintUrl().url, amount: 21)
+        // Exercise the native send options currently used by NFCPaymentService.
+        let prepared = try await send(payer, amount: try XCTUnwrap(request.amount()).value)
+        let token = try await prepared.confirm(memo: nil)
+        let received = try await receive(receiver, token: token)
+        XCTAssertEqual(received, 21, "NFC payment requests must deliver the requested net amount")
+        let remaining = try await balance(payer)
+        XCTAssertEqual(remaining + 21 + prepared.fee().value, 100)
+    }
+}
+
 /// The expanded matrix is selected explicitly by the full/nightly CI tier.
 final class PaymentExtendedIntegrationTests: PaymentFixtureTestCase {
     override func setUp() async throws {
