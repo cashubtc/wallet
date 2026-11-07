@@ -339,8 +339,8 @@ enum MintReceiptProjection {
 /// it as a Lightning payment at the source and a Lightning receipt at the
 /// destination, with nothing connecting them. Given the wallet's own record of
 /// the pair, show one row: the source payment, retitled, with the destination
-/// receipt folded into its status. Durable transfers remain visible while
-/// their native payment history is unavailable.
+/// receipt folded into its status. Without a record, or without the source
+/// payment to anchor on, the CDK rows are left exactly as they are.
 enum MintTransferProjection {
     static func project(
         _ transactions: [WalletTransaction],
@@ -352,43 +352,22 @@ enum MintTransferProjection {
         var hidden = Set<Int>()
 
         for record in records where record.state != .draft {
-            let fallbackID = "mint-transfer:\(record.id)"
-            let payment = rows.firstIndex(where: {
-                      $0.id != fallbackID && $0.type == .outgoing && $0.quoteId == record.meltQuoteID
-                          && record.meltQuoteID != nil
+            guard let meltQuoteID = record.meltQuoteID,
+                  let anchor = rows.firstIndex(where: {
+                      $0.type == .outgoing && $0.quoteId == meltQuoteID
                           && sameMint($0.mintUrl, record.sourceMintURL)
-                  })
-            let arrivals = rows.indices.filter {
-                rows[$0].type == .incoming && rows[$0].quoteId == record.mintQuoteID
-                    && sameMint(rows[$0].mintUrl, record.destinationMintURL)
-            }
-            if payment != nil || !arrivals.isEmpty {
-                hidden.formUnion(rows.indices.filter { rows[$0].id == fallbackID })
-            }
-            if payment == nil && !arrivals.isEmpty { continue }
-            let anchor: Int
-            if let payment { anchor = payment }
-            else if let existing = rows.firstIndex(where: { $0.id == fallbackID }) { anchor = existing }
-            else {
-                rows.append(WalletTransaction(
-                    id: fallbackID, amount: record.amount, type: .outgoing, kind: .lightning,
-                    date: record.createdAt, status: .pending, mintUrl: record.sourceMintURL
-                ))
-                anchor = rows.count - 1
-            }
+                  }) else { continue }
             // A row retained from a failed read was folded on an earlier load.
             // Its status is already the transfer's, not the payment's, so it
             // is only ever moved forward to completed.
             let alreadyFolded = rows[anchor].transfer != nil
+            let arrivals = rows.indices.filter {
+                rows[$0].type == .incoming && rows[$0].quoteId == record.mintQuoteID
+                    && sameMint(rows[$0].mintUrl, record.destinationMintURL)
+            }
             let issued = record.state == .completed || arrivals.contains { rows[$0].status == .completed }
 
             var row = rows[anchor]
-            if row.id == fallbackID {
-                row.quoteId = record.meltQuoteID
-                row.paymentMethod = .bolt11
-                row.status = record.state == .failed ? .failed : .pending
-                row.statusNote = row.status == .pending ? "Checking transfer" : nil
-            }
             row.transfer = MintTransferLeg(
                 recordID: record.id,
                 sourceMintURL: record.sourceMintURL,
@@ -409,7 +388,7 @@ enum MintTransferProjection {
                     row.status = .pending
                     row.statusNote = "Arriving at \(mintName(record.destinationMintURL))"
                 } else if row.status == .pending {
-                    row.statusNote = row.id == fallbackID ? "Checking transfer" : "Payment in progress"
+                    row.statusNote = "Payment in progress"
                 }
             }
             rows[anchor] = row

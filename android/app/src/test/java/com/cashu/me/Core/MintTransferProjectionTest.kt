@@ -17,28 +17,13 @@ import org.junit.Test
 
 /** iOS parity: `MintTransferProjectionTests.swift`. */
 class MintTransferProjectionTest {
-
     @Test
-    fun committedTransferRemainsVisibleWithoutNativeTransactions() {
-        val row = project(emptyList(), listOf(record(State.Committed))).single()
-        assertEquals(40L, row.amount)
-        assertEquals(TransactionStatus.Pending, row.status)
-        assertEquals("transfer", row.transfer?.recordId)
-        assertEquals("mint-quote", row.mintQuoteIdForStatusRefresh)
-        assertEquals(null, row.invoice)
+    fun transferMetadataDoesNotCreateTransactions() {
+        for (state in State.entries) {
+            assertEquals(emptyList<WalletTransaction>(), project(emptyList(), listOf(record(state))))
+        }
     }
 
-    @Test
-    fun failedTransferRemainsVisibleWithoutNativeTransactions() {
-        assertEquals(TransactionStatus.Failed, project(emptyList(), listOf(record(State.Failed))).single().status)
-        assertEquals(emptyList<WalletTransaction>(), project(emptyList(), listOf(record(State.Draft))))
-    }
-
-    @Test
-    fun nativePaymentReplacesRetainedTransferPlaceholder() {
-        val placeholder = project(emptyList(), listOf(record(State.Committed)))
-        assertEquals(listOf("payment"), project(placeholder + payment(), listOf(record(State.Committed))).map { it.id })
-    }
     @Test
     fun completedTransferShowsAsOneNeutralRow() {
         val rows = project(listOf(payment(), receipt()), listOf(record(State.Completed)))
