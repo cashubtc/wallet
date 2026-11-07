@@ -36,6 +36,7 @@ missing, skipped, or unsuccessful required case. The existing suites still run.
 | Lost melt response after mint commit | Recovery, durable reopen, paid quote, one receipt, no second debit | PR |
 | Lost mint response after issuance | Recover the same paid quote after reopen; one receipt and no second credit | PR |
 | Failed Lightning backend | Balance restored and all funds spendable by another wallet | PR |
+| Held-funds recovery after reopening | Recover eligible abandoned reservations once; a separate native wallet redeems the recovered value | PR |
 | Insufficient funds / unavailable quote endpoint | Rejection without debit; remaining proofs spendable | PR |
 | Paid but unissued invoice | Reopen SQLite, sweep once, second sweep zero | PR |
 | Ecash claim after sender reopen | Pending operation persists; claimed token cannot be revoked or redeemed twice | PR |

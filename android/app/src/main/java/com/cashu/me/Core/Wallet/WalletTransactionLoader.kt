@@ -1,6 +1,7 @@
 package com.cashu.me.Core
 
 import com.cashu.me.Core.CDK.CdkWalletGateway
+import com.cashu.me.Core.CDK.mintRemovalUrlsMatch
 import com.cashu.me.Models.MintInfo
 import com.cashu.me.Models.MintQuoteInfo
 import com.cashu.me.Models.MintQuoteRetryState
@@ -224,7 +225,9 @@ internal class WalletTransactionLoader(
         transfers: List<MintTransferRecord>,
         mints: List<MintInfo>,
     ): List<WalletTransaction> =
-        MintTransferProjection.project(rows, transfers) { mintDisplayName(it, mints) }
+        MintTransferProjection.project(rows, transfers.filter { transfer ->
+            mints.any { mint -> mintRemovalUrlsMatch(mint.url, transfer.sourceMintUrl) || mintRemovalUrlsMatch(mint.url, transfer.destinationMintUrl) }
+        }) { mintDisplayName(it, mints) }.sortedByDescending { it.dateEpochMillis }
 }
 
 /** CDK stores an independent wallet per (mint, unit), including transaction history. */

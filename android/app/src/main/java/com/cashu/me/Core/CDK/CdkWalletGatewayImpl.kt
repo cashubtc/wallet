@@ -144,9 +144,14 @@ internal fun meltOptionsForLightningRequest(
     return CdkMeltOptions.Amountless(CdkAmount(amountMsat.toULong()))
 }
 
-class CdkWalletGatewayImpl : WalletGateway {
+class CdkWalletGatewayImpl internal constructor(
+    private val openDatabase: (String) -> CdkWalletSqliteDatabase,
+) : WalletGateway {
+    constructor() : this({ CdkWalletSqliteDatabase(it) })
     private var database: CdkWalletSqliteDatabase? = null
     private var repository: CdkWalletRepository? = null
+    // Admit owners before wallet services start, or after preparation has returned a failure.
+    private var abandonedOwners: Set<String> = emptySet()
     private val operationMutex = Mutex()
 
     // Confirmations that outlived their cap. They hold the native wallet and
@@ -169,7 +174,8 @@ class CdkWalletGatewayImpl : WalletGateway {
     override suspend fun openWalletRepository(mnemonic: String, databasePath: String) = cdkCall {
         residualSettlements.toList().joinAll()
         closeWalletRepositoryUnlocked()
-        val db = CdkWalletSqliteDatabase(databasePath)
+        val db = openDatabase(databasePath)
+        abandonedOwners = runCatching { abandonedReservationOwners(db) }.getOrDefault(emptySet())
         database = db
         repository = CdkWalletRepository(mnemonic, customWalletStore(db))
     }
@@ -237,6 +243,7 @@ class CdkWalletGatewayImpl : WalletGateway {
         runCatching { database?.close() }
         repository = null
         database = null
+        abandonedOwners = emptySet()
     }
 
     override suspend fun ensureWallet(mintUrl: String, unit: String) = cdkCall {
@@ -553,6 +560,7 @@ class CdkWalletGatewayImpl : WalletGateway {
             val stored = try { checkNotNull(database).getMeltQuote(quoteId) }
                 catch (_: Exception) { throw MeltPaymentRecoveryException(quoteId, null, unresolved = true) }
             val operation = stored?.usedByOperation ?: throw failure
+            recoverFailedPreparation(wallet, operation)
             return@cdkCall resolveMeltFailure(wallet, quoteId, operation)
         }
         val swapFee = prepared.swapFee().value.toLong()
@@ -696,6 +704,7 @@ class CdkWalletGatewayImpl : WalletGateway {
             val stored = try { checkNotNull(database).getMeltQuote(quoteId) }
                 catch (_: Exception) { throw MeltPaymentRecoveryException(quoteId, null, unresolved = true) }
             val operation = stored?.usedByOperation ?: throw failure
+            recoverFailedPreparation(wallet, operation)
             return@cdkCall resolveMeltFailure(wallet, quoteId, operation)
         }
         val inputFee = prepared.inputFeeWithoutSwap().value.toLong()
@@ -797,6 +806,8 @@ class CdkWalletGatewayImpl : WalletGateway {
             if (quote == null || quote.state != CdkQuoteState.UNPAID || quote.usedByOperation != null) {
                 return@cdkCall false
             }
+            val mint = quote.mintUrl ?: return@cdkCall false
+            if (db.getProofs(mint, quote.unit, listOf(org.cashudevkit.ProofState.RESERVED), null).isNotEmpty()) return@cdkCall false
             val attempts = db.listTransactions(null, CdkTransactionDirection.OUTGOING, null)
             attempts.none { it.quoteId == meltQuoteId && it.status == CdkTransactionStatus.PENDING }
         } catch (cancelled: CancellationException) {
@@ -834,11 +845,24 @@ class CdkWalletGatewayImpl : WalletGateway {
         SagaRecoveryReport(report.recovered.toLong(), report.compensated.toLong(), report.skipped.toLong(), report.failed.toLong())
     }
 
+    private suspend fun recoverFailedPreparation(wallet: CdkWallet, operation: String) {
+        abandonedOwners = abandonedOwners + operation
+        if (residualSettlements.isNotEmpty()) return
+        try {
+            val returned = abandonedReservationRecovery(checkNotNull(database), abandonedOwners).recover(wallet.mintUrl().url, "sat")
+            abandonedOwners = abandonedOwners - returned
+        } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { }
+    }
+
     override suspend fun recoverIncompleteSagas(mintUrl: String): SagaRecoveryReport = cdkCall {
         val report = walletFor(mintUrl, CdkCurrencyUnit.Sat).recoverIncompleteSagas()
+        val returned = if (residualSettlements.isEmpty()) {
+            abandonedReservationRecovery(checkNotNull(database), abandonedOwners).recover(mintUrl, "sat")
+        } else emptySet()
+        abandonedOwners = abandonedOwners - returned
         SagaRecoveryReport(
             recovered = report.recovered.toLong(),
-            compensated = report.compensated.toLong(),
+            compensated = report.compensated.toLong() + returned.size,
             skipped = report.skipped.toLong(),
             failed = report.failed.toLong(),
         )

@@ -31,7 +31,8 @@ extension WalletManager {
                     guard !Task.isCancelled else { break }
                     do {
                         let report = try await wallet.recoverIncompleteSagas()
-                        settledAny = settledAny || report.recovered > 0 || report.compensated > 0
+                        let returnedFunds = try await self.lightningService.recoverAbandonedReservations(wallet: wallet)
+                        settledAny = settledAny || returnedFunds || report.recovered > 0 || report.compensated > 0
                     } catch is CancellationError {
                         break
                     } catch {

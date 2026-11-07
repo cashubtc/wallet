@@ -5,6 +5,8 @@ import com.cashu.me.Models.MintTransferLeg
 import com.cashu.me.Models.MintTransferRecord
 import com.cashu.me.Models.TransactionStatus
 import com.cashu.me.Models.TransactionType
+import com.cashu.me.Models.TransactionKind
+import com.cashu.me.Models.PaymentMethodKind
 import com.cashu.me.Models.WalletTransaction
 
 /**
@@ -12,8 +14,8 @@ import com.cashu.me.Models.WalletTransaction
  * it as a Lightning payment at the source and a Lightning receipt at the
  * destination, with nothing connecting them. Given the wallet's own record of
  * the pair, show one row: the source payment, retitled, with the destination
- * receipt folded into its status. Without a record, or without the source
- * payment to anchor on, the CDK rows are left exactly as they are.
+ * receipt folded into its status. Durable transfers remain visible while
+ * their native payment history is unavailable.
  */
 internal object MintTransferProjection {
     fun project(
@@ -27,22 +29,39 @@ internal object MintTransferProjection {
 
         for (record in records) {
             if (record.state == MintTransferRecord.State.Draft) continue
-            val meltQuoteId = record.meltQuoteId ?: continue
-            val anchor = rows.indexOfFirst {
-                it.type == TransactionType.Outgoing && it.transfer == null && it.quoteId == meltQuoteId &&
+            val fallbackId = "mint-transfer:${record.id}"
+            var anchor = rows.indexOfFirst {
+                it.id != fallbackId && it.type == TransactionType.Outgoing && record.meltQuoteId != null && it.quoteId == record.meltQuoteId &&
                     sameMint(it.mintUrl, record.sourceMintUrl)
             }
-            if (anchor < 0) continue
             val arrivals = rows.indices.filter {
                 rows[it].type == TransactionType.Incoming && rows[it].quoteId == record.mintQuoteId &&
                     sameMint(rows[it].mintUrl, record.destinationMintUrl)
+            }
+            if (anchor >= 0 || arrivals.isNotEmpty()) hidden += rows.indices.filter { rows[it].id == fallbackId }
+            if (anchor < 0 && arrivals.isNotEmpty()) continue
+            if (anchor < 0) {
+                anchor = rows.indexOfFirst { it.id == fallbackId }
+                if (anchor < 0) {
+                    rows += WalletTransaction(
+                        id = fallbackId, amount = record.amount, type = TransactionType.Outgoing,
+                        kind = TransactionKind.Lightning, dateEpochMillis = record.createdAtEpochMillis,
+                        status = TransactionStatus.Pending, mintUrl = record.sourceMintUrl,
+                        quoteId = record.meltQuoteId, paymentMethod = PaymentMethodKind.Bolt11,
+                    )
+                    anchor = rows.lastIndex
+                }
             }
             val issued = record.state == MintTransferRecord.State.Completed ||
                 arrivals.any { rows[it].status == TransactionStatus.Completed }
 
             val payment = rows[anchor]
+            val fallback = payment.id == fallbackId
             val (status, statusNote) = when {
                 issued -> TransactionStatus.Completed to null
+                fallback && record.state == MintTransferRecord.State.Failed -> TransactionStatus.Failed to null
+                fallback -> TransactionStatus.Pending to "Checking transfer"
+                payment.transfer != null -> payment.status to payment.statusNote
                 // Paid at the source, not yet issued at the destination.
                 payment.status == TransactionStatus.Completed ->
                     TransactionStatus.Pending to "Arriving at ${mintName(record.destinationMintUrl)}"

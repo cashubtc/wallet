@@ -6,6 +6,26 @@ final class MintTransferProjectionTests: XCTestCase {
     private let source = "https://source.example"
     private let destination = "https://destination.example"
 
+    func testCommittedTransferRemainsVisibleWithoutNativeTransactions() throws {
+        let row = try XCTUnwrap(project([], [record(.committed)]).first)
+        XCTAssertEqual(row.amount, 40)
+        XCTAssertEqual(row.status, .pending)
+        XCTAssertEqual(row.transfer?.recordID, "transfer")
+        XCTAssertEqual(row.mintQuoteIdForStatusRefresh, "mint-quote")
+        XCTAssertNil(row.invoice)
+    }
+
+    func testFailedTransferRemainsVisibleWithoutNativeTransactions() throws {
+        XCTAssertEqual(try XCTUnwrap(project([], [record(.failed)]).first).status, .failed)
+        XCTAssertTrue(project([], [record(.draft)]).isEmpty)
+    }
+
+    func testNativePaymentReplacesRetainedTransferPlaceholder() {
+        let placeholder = project([], [record(.committed)])
+        let rows = project(placeholder + [payment()], [record(.committed)])
+        XCTAssertEqual(rows.map(\.id), ["payment"])
+    }
+
     func testCompletedTransferShowsAsOneNeutralRow() {
         let rows = project([payment(), receipt()], [record(.completed)])
 

@@ -250,9 +250,12 @@ class TransactionService: ObservableObject {
         let mints = walletStore.loadMints()
         transactions = MintTransferProjection.project(
             rows,
-            records: walletStore.loadMintTransfers(),
+            records: walletStore.loadMintTransfers().filter {
+                trackedMintUrls.contains(MintURLIdentity.normalized($0.sourceMintURL))
+                    || trackedMintUrls.contains(MintURLIdentity.normalized($0.destinationMintURL))
+            },
             mintName: { MintInfo.displayName(for: $0, in: mints) }
-        )
+        ).sorted { $0.date > $1.date }
         if !hasLoadedTransactions { hasLoadedTransactions = true }
 
         // Post notification that transactions were updated
