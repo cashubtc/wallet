@@ -24,11 +24,100 @@ import org.cashudevkit.WalletSqliteDatabase
 import org.cashudevkit.WalletStore
 import org.cashudevkit.MintUrl
 import org.cashudevkit.CurrencyUnit
+import org.cashudevkit.Amount
+import org.cashudevkit.PaymentMethod
+import org.cashudevkit.SplitTarget
+import org.cashudevkit.QuoteState
+import org.cashudevkit.FfiException
+import org.cashudevkit.customWalletStore
+import org.cashudevkit.generateMnemonic
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Test
+
+class AbandonedReservationLocalMintTest : PaymentFixtureTest() {
+    @Test fun failedPreparationReturnsFundsWithoutRestart() = runBlocking {
+        val directory = File(InstrumentationRegistry.getInstrumentation().targetContext.cacheDir, "preparation-${UUID.randomUUID()}")
+        directory.mkdirs()
+        lateinit var database: PreparationFailureDatabase
+        val gateway = CdkWalletGatewayImpl { PreparationFailureDatabase(it).also { db -> database = db } }
+        val mint = mintUrl("controlled")
+        try {
+            gateway.openWalletRepository(generateMnemonic(), File(directory, "wallet.sqlite").absolutePath)
+            gateway.ensureWallet(mint)
+            val deposit = gateway.createMintQuote(131072, PaymentMethodKind.Bolt11, mint, "sat")
+            call("$root/pay/controlled", "POST", buildJsonObject { put("invoice", deposit.request) })
+            kotlinx.coroutines.withTimeout(8000) {
+                while (gateway.checkMintQuote(deposit.id).state != MintQuoteState.Paid) delay(50)
+            }
+            gateway.mintTokens(deposit.id)
+            val quote = gateway.createMeltQuote(invoice(100000), null, mint)
+            database.rejectMelt = true
+            val failure = runCatching { gateway.meltTokens(quote.id, mint) }.exceptionOrNull()
+            assertTrue(failure is MeltPaymentRecoveryException && !failure.unresolved)
+            assertEquals(131072L, gateway.totalBalance(mint))
+        } finally {
+            gateway.closeWalletRepository()
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test fun heldFundsRecoverAfterReopenAndCanBeRedeemed() = runBlocking {
+        val directory = File(InstrumentationRegistry.getInstrumentation().targetContext.cacheDir, "held-funds-${UUID.randomUUID()}")
+        directory.mkdirs()
+        val path = File(directory, "wallet.sqlite").absolutePath
+        val seed = generateMnemonic()
+        val mint = mintUrl("controlled")
+        val db = PreparationFailureDatabase(path)
+        val repository = WalletRepository(seed, customWalletStore(db))
+        val gateway = CdkWalletGatewayImpl()
+        try {
+            repository.createWallet(MintUrl(mint), CurrencyUnit.Sat, null)
+            val source = repository.getWallet(MintUrl(mint), CurrencyUnit.Sat)
+            try {
+                val deposit = source.mintQuote(PaymentMethod.Bolt11, Amount(131072uL), null, null)
+                call("$root/pay/controlled", "POST", buildJsonObject { put("invoice", deposit.request) })
+                kotlinx.coroutines.withTimeout(8000) {
+                    while (source.checkMintQuote(deposit.id).state != QuoteState.PAID) delay(50)
+                }
+                source.mint(deposit.id, SplitTarget.None, null)
+                val quote = source.meltQuote(PaymentMethod.Bolt11, invoice(100000), null, null)
+                db.rejectMelt = true
+                assertTrue(runCatching { source.prepareMelt(quote.id) }.isFailure)
+                assertEquals(101000uL, source.totalReservedBalance().value)
+            } finally { source.close() }
+            repository.close()
+            db.close()
+            gateway.openWalletRepository(seed, path)
+            assertEquals(30072L, gateway.totalBalance(mint))
+            assertEquals(1L, gateway.recoverIncompleteSagas(mint).compensated)
+            assertEquals(0L, gateway.recoverIncompleteSagas(mint).compensated)
+            assertEquals(131072L, gateway.totalBalance(mint))
+            val receiver = wallet("controlled")
+            val sent = gateway.sendEcashToken(131072, null, null, mint)
+            assertEquals(131072L, receiver.receive(sent.token))
+            assertEquals(0L, gateway.totalBalance(mint))
+        } finally {
+            gateway.closeWalletRepository()
+            repository.close()
+            db.close()
+            directory.deleteRecursively()
+        }
+    }
+
+    private class PreparationFailureDatabase(path: String) : WalletSqliteDatabase(path) {
+        var rejectMelt = false
+        override suspend fun addSaga(sagaJson: String) {
+            if (rejectMelt && Json.parseToJsonElement(sagaJson).jsonObject["kind"]?.jsonPrimitive?.content == "melt") {
+                rejectMelt = false
+                throw FfiException.Internal("Test persistence failure")
+            }
+            super.addSaga(sagaJson)
+        }
+    }
+}
 
 /** Production native gateway, real SQLite and mint proofs; only transport is controlled. */
 open class PaymentFixtureTest {

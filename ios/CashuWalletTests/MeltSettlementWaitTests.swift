@@ -2,6 +2,94 @@ import XCTest
 import Cdk
 @testable import CashuWallet
 
+@MainActor
+final class AbandonedReservationRecoveryTests: XCTestCase {
+    func testReturnsHeldFundsOnceAndLeavesCurrentReservationsAlone() async throws {
+        let world = World()
+        let returned = try await world.recovery.recover(mintURL: World.mint, unit: "sat")
+        XCTAssertEqual(returned, ["old"])
+        let second = try await world.recovery.recover(mintURL: World.mint, unit: "sat")
+        XCTAssertTrue(second.isEmpty)
+        XCTAssertEqual(world.released, ["old"])
+        XCTAssertEqual(world.proofs.compactMap(\.owner), ["new"])
+    }
+
+    func testLiveOperationsAndPaymentsRemainHeld() async throws {
+        for blocker in ["operation", "payment", "activity"] {
+            let world = World()
+            world.blocker = blocker
+            let returned = try await world.recovery.recover(mintURL: World.mint, unit: "sat")
+            XCTAssertTrue(returned.isEmpty)
+            XCTAssertTrue(world.released.isEmpty)
+        }
+    }
+
+    func testPendingProofsAndChangedOwnershipRemainHeld() async throws {
+        let world = World()
+        world.unspent = false
+        let pending = try await world.recovery.recover(mintURL: World.mint, unit: "sat")
+        XCTAssertTrue(pending.isEmpty)
+        world.unspent = true
+        world.onCheck = { world.proofs = [] }
+        let changed = try await world.recovery.recover(mintURL: World.mint, unit: "sat")
+        XCTAssertTrue(changed.isEmpty)
+        XCTAssertTrue(world.released.isEmpty)
+    }
+
+    func testRequiresCompleteExplicitUnspentStates() {
+        func check(_ states: String) -> Bool {
+            AbandonedReservationRecovery.allUnspent(["a", "b"], response: Data("{\"states\":[\(states)]}".utf8))
+        }
+        XCTAssertTrue(check(#"{"Y":"b","state":"UNSPENT"},{"Y":"a","state":"UNSPENT"}"#))
+        XCTAssertFalse(check(#"{"Y":"a","state":"UNSPENT"}"#))
+        XCTAssertFalse(check(#"{"Y":"a","state":"UNSPENT"},{"Y":"b","state":"PENDING"}"#))
+        XCTAssertFalse(check(#"{"Y":"a","state":"UNSPENT"},{"Y":"b","state":"SPENT"}"#))
+        XCTAssertFalse(check(#"{"Y":"a","state":"UNSPENT"},{"Y":"a","state":"UNSPENT"}"#))
+    }
+
+    func testNetworkFailureAndMixedAccountsKeepFundsHeld() async throws {
+        let world = World()
+        world.offline = true
+        do {
+            _ = try await world.recovery.recover(mintURL: World.mint, unit: "sat")
+            XCTFail("A failed mint check cannot release funds")
+        } catch { }
+        XCTAssertTrue(world.released.isEmpty)
+        world.offline = false
+        world.proofs.append(ReservationProof(id: "other", owner: "old", mintURL: World.mint, unit: "usd", reserved: true))
+        let mixed = try await world.recovery.recover(mintURL: World.mint, unit: "sat")
+        XCTAssertTrue(mixed.isEmpty)
+        XCTAssertTrue(world.released.isEmpty)
+    }
+
+    private final class World {
+        static let mint = "https://mint.example"
+        var proofs = [
+            ReservationProof(id: "a", owner: "old", mintURL: mint, unit: "sat", reserved: true),
+            ReservationProof(id: "b", owner: "new", mintURL: mint, unit: "sat", reserved: true)
+        ]
+        var blocker = ""
+        var unspent = true
+        var offline = false
+        var onCheck: () -> Void = {}
+        var released: [String] = []
+        var recovery: AbandonedReservationRecovery {
+            AbandonedReservationRecovery(
+                eligibleOwners: ["old"], loadProofs: { self.proofs },
+                hasOperation: { _ in self.blocker == "operation" },
+                hasTransaction: { _ in self.blocker == "payment" },
+                hasActivity: { _, _ in self.blocker == "activity" },
+                checkUnspent: { _, _ in
+                    if self.offline { throw URLError(.timedOut) }
+                    self.onCheck()
+                    return self.unspent
+                },
+                release: { owner in self.released.append(owner); self.proofs.removeAll { $0.owner == owner } }
+            )
+        }
+    }
+}
+
 /// The bounded settlement wait for async (NUT-05) lightning melts: CDK's
 /// `PendingMelt.wait()` does the polling; the app only races it against a
 /// fallback cap. These drive the race with injected closures — no CDK runtime

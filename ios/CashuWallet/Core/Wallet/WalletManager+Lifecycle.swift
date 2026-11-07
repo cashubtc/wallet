@@ -408,6 +408,7 @@ extension WalletManager {
                     )
                 }.value
 
+                await lightningService.captureAbandonedReservations(database: runtime.db)
                 installLaunchRuntime(runtime, mnemonic: storedMnemonic)
                 // The app's initial listener start may have already returned
                 // without Nostr keys after a failed launch. Recover it here too.
@@ -1300,6 +1301,7 @@ extension WalletManager {
             let beforeSagaCount = (try? await db?.getIncompleteSagas().count) ?? -1
             let beforeReservedBalance = (try? await wallet.totalReservedBalance().value) ?? UInt64.max
             let report = try await wallet.recoverIncompleteSagas()
+            let returnedFunds = try await lightningService.recoverAbandonedReservations(wallet: wallet)
             let afterSagaCount = (try? await db?.getIncompleteSagas().count) ?? -1
             let afterReservedBalance = (try? await wallet.totalReservedBalance().value) ?? UInt64.max
             if report.recovered > 0 || report.compensated > 0 || report.skipped > 0 || report.failed > 0 {
@@ -1307,7 +1309,7 @@ extension WalletManager {
                     "wallet recovery resource=\(WalletOperationCoordinator.privacySafeIdentifier(mintUrl), privacy: .public) recovered=\(report.recovered, privacy: .public) compensated=\(report.compensated, privacy: .public) skipped=\(report.skipped, privacy: .public) failed=\(report.failed, privacy: .public) sagas_before=\(beforeSagaCount, privacy: .public) sagas_after=\(afterSagaCount, privacy: .public) reserved_before=\(beforeReservedBalance, privacy: .public) reserved_after=\(afterReservedBalance, privacy: .public)"
                 )
             }
-            return report.recovered > 0 || report.compensated > 0
+            return returnedFunds || report.recovered > 0 || report.compensated > 0
         } catch {
             AppLogger.wallet.error(
                 "wallet recovery failed resource=\(WalletOperationCoordinator.privacySafeIdentifier(mintUrl), privacy: .public) error_type=\(String(reflecting: type(of: error)), privacy: .public)"

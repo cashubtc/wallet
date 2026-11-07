@@ -93,6 +93,9 @@ func largestPayableMeltAmount(
 /// Handles minting (receiving via Lightning) and melting (paying via Lightning).
 @MainActor
 class LightningService: ObservableObject {
+    // Admit owners before wallet services start, or after preparation has returned a failure.
+    var abandonedReservationOwners: Set<String> = []
+    var walletDatabaseForReservationRecovery: WalletSqliteDatabase? { walletDatabase() }
     static func requiredMeltAmount(amount: UInt64, feeReserve: UInt64) throws -> UInt64 {
         let total = amount.addingReportingOverflow(feeReserve)
         guard !total.overflow else {
@@ -139,6 +142,7 @@ class LightningService: ObservableObject {
     func clearState() {
         isLoading = false
         mintQuotesInFlight.removeAll()
+        abandonedReservationOwners = []
     }
 
     func requireNoActiveMeltSettlement() throws {
@@ -965,6 +969,10 @@ class LightningService: ObservableObject {
             guard let operationID = reservedOperationID else {
                 throw error
             }
+            abandonedReservationOwners.insert(operationID)
+            do {
+                _ = try await recoverAbandonedReservations(wallet: wallet)
+            } catch is CancellationError { throw CancellationError() } catch { }
             return try await resolveMeltAfterAmbiguousFailure(
                 wallet: wallet,
                 quoteId: quoteId,
@@ -1200,6 +1208,9 @@ class LightningService: ObservableObject {
             guard let quote = try await database.getMeltQuote(quoteId: quoteID),
                   quote.state == .unpaid,
                   quote.usedByOperation == nil else { return false }
+            guard let mintURL = quote.mintUrl else { return false }
+            let held = try await database.getProofs(mintUrl: mintURL, unit: quote.unit, state: [.reserved], spendingConditions: nil)
+            guard held.isEmpty else { return false }
             let attempts = try await database.listTransactions(mintUrl: nil, direction: .outgoing, unit: nil)
             return !attempts.contains { $0.quoteId == quoteID && $0.status == .pending }
         } catch {

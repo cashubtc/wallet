@@ -2,9 +2,95 @@ import Cdk
 import XCTest
 @testable import CashuWallet
 
+private final class PreparationFailureDatabase: WalletSqliteDatabase, @unchecked Sendable {
+    private let lock = NSLock()
+    private var rejectMelt = false
+    func rejectNextMelt() { lock.withLock { rejectMelt = true } }
+    override func addSaga(sagaJson: String) async throws {
+        let json = try JSONSerialization.jsonObject(with: Data(sagaJson.utf8)) as? [String: Any]
+        let reject = lock.withLock {
+            guard rejectMelt, json?["kind"] as? String == "melt" else { return false }
+            rejectMelt = false
+            return true
+        }
+        if reject { throw FfiError.Internal(errorMessage: "Test persistence failure") }
+        try await super.addSaga(sagaJson: sagaJson)
+    }
+}
+
 /// The app's Lightning service moving ecash between two real local mints.
 /// Skipped without the payment fixture, like the CDK-level cases it builds on.
 final class CrossMintServiceIntegrationTests: PaymentFixtureTestCase {
+
+    @MainActor
+    func testFailedPreparationReturnsFundsWithoutRestart() async throws {
+        let (source, db, repo, _, _) = try await preparationWallet()
+        let request = try await invoice(amount: 100000)
+        let quote = try await source.meltQuote(method: .bolt11, request: request, options: nil, extra: nil)
+        let service = LightningService(walletRepository: { repo }, walletDatabase: { db }, getActiveMint: { nil })
+        db.rejectNextMelt()
+        do {
+            _ = try await service.meltTokens(quoteId: quote.id, mintUrl: source.mintUrl().url)
+            XCTFail("Expected the unpaid payment to be returned")
+        } catch MeltPaymentRecoveryError.compensated { }
+        let available = try await balance(source)
+        let held = try await source.totalReservedBalance().value
+        XCTAssertEqual(available, 131072)
+        XCTAssertEqual(held, 0)
+    }
+
+    @MainActor
+    private func preparationWallet() async throws -> (Wallet, PreparationFailureDatabase, WalletRepository, String, String) {
+        let seed = try generateMnemonic()
+        let path = NSTemporaryDirectory() + "held-funds-\(UUID().uuidString).sqlite"
+        let db = try PreparationFailureDatabase(filePath: path)
+        let repo = try WalletRepository(mnemonic: seed, store: customWalletStore(db: db))
+        stores.append((repo, path, seed))
+        databaseHandles.append(db)
+        let url = MintUrl(url: mintURL("controlled"))
+        try await repo.createWallet(mintUrl: url, unit: .sat, targetProofCount: nil)
+        let source = try await repo.getWallet(mintUrl: url, unit: .sat)
+        walletHandles.append(source)
+        try await fund(source, amount: 131072, controlled: "controlled")
+        return (source, db, repo, seed, path)
+    }
+
+    @MainActor
+    func testHeldFundsRecoverAfterReopenAndCanBeRedeemed() async throws {
+        let (source, db, _, seed, path) = try await preparationWallet()
+        let url = MintUrl(url: mintURL("controlled"))
+        let request = try await invoice(amount: 100000)
+        let quote = try await source.meltQuote(method: .bolt11, request: request, options: nil, extra: nil)
+        db.rejectNextMelt()
+        do {
+            _ = try await source.prepareMelt(quoteId: quote.id)
+            XCTFail("Expected preparation failure")
+        } catch { }
+        let held = try await source.totalReservedBalance().value
+        XCTAssertEqual(held, 101000)
+
+        let reopenedDB = try WalletSqliteDatabase(filePath: path)
+        let reopenedRepo = try WalletRepository(mnemonic: seed, store: customWalletStore(db: reopenedDB))
+        reopened.append(reopenedRepo)
+        databaseHandles.append(reopenedDB)
+        let reopenedSource = try await reopenedRepo.getWallet(mintUrl: url, unit: .sat)
+        walletHandles.append(reopenedSource)
+        let service = LightningService(walletRepository: { reopenedRepo }, walletDatabase: { reopenedDB }, getActiveMint: { nil })
+        await service.captureAbandonedReservations(database: reopenedDB)
+        _ = try await reopenedSource.recoverIncompleteSagas()
+        let recovered = try await service.recoverAbandonedReservations(wallet: reopenedSource)
+        XCTAssertTrue(recovered)
+        let repeated = try await service.recoverAbandonedReservations(wallet: reopenedSource)
+        XCTAssertFalse(repeated)
+        let available = try await balance(reopenedSource)
+        XCTAssertEqual(available, 131072)
+        let receiver = try await makeWallet("controlled")
+        let token = try await send(reopenedSource, amount: available).confirm(memo: nil)
+        let redeemed = try await receive(receiver, token: token)
+        XCTAssertEqual(redeemed, 131072)
+        let senderBalance = try await balance(reopenedSource)
+        XCTAssertEqual(senderBalance, 0)
+    }
 
     @MainActor
     func testMaxQuoteThenSkipSwapMeltSettlesAndKeepsTheChange() async throws {

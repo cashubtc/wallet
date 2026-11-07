@@ -18,6 +18,13 @@ import org.junit.Test
 /** iOS parity: `MintTransferProjectionTests.swift`. */
 class MintTransferProjectionTest {
     @Test
+    fun transferMetadataDoesNotCreateTransactions() {
+        for (state in State.entries) {
+            assertEquals(emptyList<WalletTransaction>(), project(emptyList(), listOf(record(state))))
+        }
+    }
+
+    @Test
     fun completedTransferShowsAsOneNeutralRow() {
         val rows = project(listOf(payment(), receipt()), listOf(record(State.Completed)))
 

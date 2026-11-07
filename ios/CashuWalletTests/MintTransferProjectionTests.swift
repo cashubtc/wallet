@@ -6,6 +6,13 @@ final class MintTransferProjectionTests: XCTestCase {
     private let source = "https://source.example"
     private let destination = "https://destination.example"
 
+    func testTransferMetadataDoesNotCreateTransactions() {
+        let states: [MintTransferRecord.State] = [.draft, .committed, .failed, .completed]
+        for state in states {
+            XCTAssertTrue(project([], [record(state)]).isEmpty)
+        }
+    }
+
     func testCompletedTransferShowsAsOneNeutralRow() {
         let rows = project([payment(), receipt()], [record(.completed)])
 
