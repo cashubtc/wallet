@@ -357,45 +357,48 @@ class MintIntegrationTestSuite: IntegrationTestBase {
         let mnemonic = try generateMnemonic()
         let mintURL = MintUrl(url: mintUrlStr)
 
-        let firstRepository = try WalletRepository(
-            mnemonic: mnemonic,
-            store: .sqlite(path: dbPath)
-        )
-        try await firstRepository.createWallet(
-            mintUrl: mintURL,
-            unit: .sat,
-            targetProofCount: nil
-        )
-        let firstWallet = try await firstRepository.getWallet(
-            mintUrl: mintURL,
-            unit: .sat
-        )
-
-        let firstQuote = try await firstWallet.mintQuote(
-            paymentMethod: .bolt12,
-            amount: nil,
-            description: nil,
-            extra: nil
-        )
-        let secondQuote = try await firstWallet.mintQuote(
-            paymentMethod: .bolt12,
-            amount: nil,
-            description: nil,
-            extra: nil
-        )
-        let quotes = [firstQuote, secondQuote]
+        let quotes: [MintQuote]
         var expectedOutstanding: UInt64 = 0
-        for quote in quotes {
-            let paid = try await waitForQuotePayment(
-                quoteId: quote.id,
-                method: .bolt12,
-                wallet: firstWallet
+        do {
+            let firstRepository = try WalletRepository(
+                mnemonic: mnemonic,
+                store: .sqlite(path: dbPath)
             )
-            expectedOutstanding += paid.amountPaid.value - paid.amountIssued.value
+            try await firstRepository.createWallet(
+                mintUrl: mintURL,
+                unit: .sat,
+                targetProofCount: nil
+            )
+            let firstWallet = try await firstRepository.getWallet(
+                mintUrl: mintURL,
+                unit: .sat
+            )
+
+            let firstQuote = try await firstWallet.mintQuote(
+                paymentMethod: .bolt12,
+                amount: nil,
+                description: nil,
+                extra: nil
+            )
+            let secondQuote = try await firstWallet.mintQuote(
+                paymentMethod: .bolt12,
+                amount: nil,
+                description: nil,
+                extra: nil
+            )
+            quotes = [firstQuote, secondQuote]
+            for quote in quotes {
+                let paid = try await waitForQuotePayment(
+                    quoteId: quote.id,
+                    method: .bolt12,
+                    wallet: firstWallet
+                )
+                expectedOutstanding += paid.amountPaid.value - paid.amountIssued.value
+            }
+            XCTAssertGreaterThan(expectedOutstanding, 0)
+            let balanceBeforeRestart = try await firstWallet.totalBalance()
+            XCTAssertEqual(balanceBeforeRestart.value, 0)
         }
-        XCTAssertGreaterThan(expectedOutstanding, 0)
-        let balanceBeforeRestart = try await firstWallet.totalBalance()
-        XCTAssertEqual(balanceBeforeRestart.value, 0)
 
         // Open a fresh repository over the same durable store at the exact
         // failure boundary: payment is recorded, but no ecash was issued.
@@ -404,8 +407,7 @@ class MintIntegrationTestSuite: IntegrationTestBase {
         // mint-generated quote id, and a BOLT12 quote additionally needs its
         // stored NUT-20 signing key association. A true database-loss test
         // requires an upstream/exported quote-backup format first.
-        // Keep the first FFI handle alive because explicitly destroying a CDK
-        // Tokio runtime inside an async XCTest context can itself panic.
+        // The original handles have left scope before this database reopen.
         let reopenedRepository = try WalletRepository(
             mnemonic: mnemonic,
             store: .sqlite(path: dbPath)
@@ -431,8 +433,6 @@ class MintIntegrationTestSuite: IntegrationTestBase {
         }
         let secondSweep = try await reopenedWallet.mintUnissuedQuotes()
         XCTAssertEqual(secondSweep.value, 0)
-
-        withExtendedLifetime((firstRepository, firstWallet)) {}
 
         for suffix in ["", "-shm", "-wal"] {
             try? FileManager.default.removeItem(atPath: dbPath + suffix)

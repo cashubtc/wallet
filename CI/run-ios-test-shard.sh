@@ -3,6 +3,14 @@
 # inside the runner: competing simulator clones previously caused AX timeouts.
 set -euo pipefail
 
+LIVE_PAYMENT_CLASSES=(
+  LiveBolt12DescriptionUITests
+  LiveCashuRequestRecoveryUITests
+  LiveCdkPaymentUITests
+  LiveMintTransferUITests
+  LiveNutshellPaymentUITests
+)
+
 case "${1:-}" in
   unit)
     TEST_ARGUMENTS=(-only-testing:CashuWalletTests)
@@ -13,11 +21,20 @@ case "${1:-}" in
   ui-settings)
     TEST_ARGUMENTS=(-only-testing:CashuWalletUITests/SettingsUITests)
     ;;
+  ui-live-payments)
+    TEST_ARGUMENTS=()
+    for class in "${LIVE_PAYMENT_CLASSES[@]}"; do
+      TEST_ARGUMENTS+=("-only-testing:CashuWalletUITests/$class")
+    done
+    ;;
   ui-other)
     # Include every other class, including future UI tests, automatically.
     TEST_ARGUMENTS=(-only-testing:CashuWalletUITests
       -skip-testing:CashuWalletUITests/WalletLifecycleUITests
       -skip-testing:CashuWalletUITests/SettingsUITests)
+    for class in "${LIVE_PAYMENT_CLASSES[@]}"; do
+      TEST_ARGUMENTS+=("-skip-testing:CashuWalletUITests/$class")
+    done
     ;;
   *) echo "Unknown iOS test shard: ${1:-missing}" >&2; exit 1 ;;
 esac

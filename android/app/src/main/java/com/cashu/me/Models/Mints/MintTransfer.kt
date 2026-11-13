@@ -192,9 +192,9 @@ fun List<MintTransferRecord>.setting(
 sealed interface MintTransferOutcome {
     /**
      * The destination issued [amount]. [feePaid] is what the source actually
-     * paid on top, including any input fee.
+     * paid on top, including any input fee, or null if unavailable after recovery.
      */
-    data class Completed(val amount: Long, val feePaid: Long) : MintTransferOutcome
+    data class Completed(val amount: Long, val feePaid: Long?) : MintTransferOutcome
 
     /** Money is in flight and will finish on its own. */
     data class Settling(val leg: Leg) : MintTransferOutcome

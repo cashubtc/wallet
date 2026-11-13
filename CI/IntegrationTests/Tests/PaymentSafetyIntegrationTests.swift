@@ -10,6 +10,7 @@ class PaymentFixtureTestCase: XCTestCase {
     var stores: [(WalletRepository, String, String)] = []
     var reopened: [WalletRepository] = []
     var walletHandles: [Wallet] = []
+    var databaseHandles: [WalletSqliteDatabase] = []
     var storeByWallet: [ObjectIdentifier: Int] = [:]
 
     override func setUp() async throws {
@@ -22,21 +23,16 @@ class PaymentFixtureTestCase: XCTestCase {
 
     override func tearDown() async throws {
         if sessionID != nil { _ = try await call("/sessions/\(sessionID!)", method: "DELETE") }
-        // Keep repository handles alive until the synchronous teardown boundary:
-        // dropping the last native Tokio runtime from an async context is unsafe.
-        try await super.tearDown()
-    }
-
-    override func tearDown() {
         let paths = stores.map { $0.1 }
         storeByWallet.removeAll()
         walletHandles.removeAll()
+        databaseHandles.removeAll()
         reopened.removeAll()
         stores.removeAll()
         for path in paths {
             for suffix in ["", "-wal", "-shm"] { try? FileManager.default.removeItem(atPath: path + suffix) }
         }
-        super.tearDown()
+        try await super.tearDown()
     }
 
     func call(_ path: String, method: String = "GET", body: [String: Any]? = nil) async throws -> [String: Any] {
@@ -98,7 +94,9 @@ class PaymentFixtureTestCase: XCTestCase {
     /// quote removals the app performs through its own database handle.
     func database(of wallet: Wallet) throws -> WalletSqliteDatabase {
         let index = try XCTUnwrap(storeByWallet[ObjectIdentifier(wallet)])
-        return try WalletSqliteDatabase(filePath: stores[index].1)
+        let database = try WalletSqliteDatabase(filePath: stores[index].1)
+        databaseHandles.append(database)
+        return database
     }
 
     func reopen(_ wallet: Wallet) async throws -> Wallet {
@@ -358,6 +356,31 @@ final class PaymentSafetyIntegrationTests: PaymentFixtureTestCase {
         XCTAssertTrue(records.contains { $0["fault"] as? String == "lose_response" && $0["forwarded"] as? Bool == true })
     }
 
+    func testStatusReturnsPersistedQuoteAfterOrphanRelease() async throws {
+        let wallet = try await makeWallet("controlled")
+        let quote = try await paidQuote(wallet, amount: 42, controlled: "controlled")
+        let database = try database(of: wallet)
+        let operation = UUID().uuidString.lowercased()
+        try await database.reserveMintQuote(quoteId: quote.id, operationId: operation)
+        let reservedRow = try await database.getMintQuote(quoteId: quote.id)
+        let reserved = try XCTUnwrap(reservedRow)
+        XCTAssertEqual(reserved.usedByOperation, operation)
+        let checked = try await wallet.checkMintQuoteStatus(quoteId: quote.id)
+        let storedRow = try await database.getMintQuote(quoteId: quote.id)
+        let stored = try XCTUnwrap(storedRow)
+        XCTAssertEqual(checked.version, stored.version)
+        XCTAssertNil(checked.usedByOperation)
+        XCTAssertEqual(checked.usedByOperation, stored.usedByOperation)
+        XCTAssertEqual(checked.amountPaid, stored.amountPaid)
+        XCTAssertEqual(checked.amountIssued, stored.amountIssued)
+        XCTAssertEqual(checked.amountPaid.value, 42)
+        try await database.addMintQuote(quote: checked)
+        let writtenRow = try await database.getMintQuote(quoteId: quote.id)
+        let written = try XCTUnwrap(writtenRow)
+        XCTAssertEqual(written.version, checked.version + 1)
+        XCTAssertNil(written.usedByOperation)
+    }
+
     func testLostMintResponseRecoversPaidQuoteExactlyOnce() async throws {
         try await assertLostMintResponse(mint: "controlled")
     }
@@ -372,8 +395,26 @@ final class PaymentSafetyIntegrationTests: PaymentFixtureTestCase {
         try await arm("/v1/mint/bolt11", action: "lose_response")
         do { _ = try await wallet.mint(quoteId: quote.id, amountSplitTarget: .none, spendingConditions: nil) } catch { }
         let recovered = try await reopen(wallet)
+        let checked = try await recovered.checkMintQuoteStatus(quoteId: quote.id)
+        let database = try database(of: recovered)
+        let storedRow = try await database.getMintQuote(quoteId: quote.id)
+        let stored = try XCTUnwrap(storedRow)
+        XCTAssertEqual(checked.version, stored.version)
+        XCTAssertEqual(checked.usedByOperation, stored.usedByOperation)
+        XCTAssertEqual(checked.amountPaid, stored.amountPaid)
+        XCTAssertEqual(checked.amountIssued, stored.amountIssued)
+        XCTAssertEqual(checked.amountPaid.value, 42)
+        XCTAssertEqual(checked.amountIssued.value, 42)
         _ = try await recovered.recoverIncompleteSagas()
         _ = try await recovered.mintUnissuedQuotes()
+        let settled = try await recovered.checkMintQuoteStatus(quoteId: quote.id)
+        let settledRow = try await database.getMintQuote(quoteId: quote.id)
+        let persisted = try XCTUnwrap(settledRow)
+        XCTAssertEqual(settled.version, persisted.version)
+        XCTAssertEqual(settled.usedByOperation, persisted.usedByOperation)
+        XCTAssertNil(settled.usedByOperation)
+        XCTAssertEqual(settled.amountPaid.value, 42)
+        XCTAssertEqual(settled.amountIssued.value, 42)
         let after = try await balance(recovered)
         XCTAssertEqual(after, 42)
         let second = try await recovered.mintUnissuedQuotes()
@@ -466,6 +507,23 @@ final class PaymentSafetyIntegrationTests: PaymentFixtureTestCase {
         XCTAssertEqual(received, 100)
     }
 
+    func testZeroFeeReceivePreviewMatchesRedemption() async throws {
+        let sender = try await makeWallet("controlled")
+        let receiver = try await makeWallet("controlled")
+        try await fund(sender, controlled: "controlled")
+        let token = try await send(sender, amount: 21).confirm(memo: nil)
+        let index = try XCTUnwrap(storeByWallet[ObjectIdentifier(receiver)])
+        let preview = try await stores[index].0.getTokenData(token: token)
+        XCTAssertEqual(preview.value.value, 21)
+        XCTAssertEqual(preview.unit, .sat)
+        XCTAssertEqual(preview.memo, "Payment test")
+        XCTAssertEqual(preview.redeemFee?.value, 0)
+        let before = try await balance(receiver)
+        XCTAssertEqual(before, 0)
+        let received = try await receive(receiver, token: token)
+        XCTAssertEqual(received, preview.value.value - (try XCTUnwrap(preview.redeemFee)).value)
+    }
+
     func testFeeChargingMintMaxSendAndReceiveConserveValue() async throws {
         try await assertFeeChargingMintMaxSendAndReceive(mint: "fees")
     }
@@ -483,10 +541,17 @@ final class PaymentSafetyIntegrationTests: PaymentFixtureTestCase {
         let prepared = try await send(sender, amount: 100)
         XCTAssertEqual(prepared.fee().value, 0, "Send max transfers existing proofs without a swap")
         let token = try await prepared.confirm(memo: nil)
-        let proofCount = prepared.proofs().count
+        let index = try XCTUnwrap(storeByWallet[ObjectIdentifier(receiver)])
+        let preview = try await stores[index].0.getTokenData(token: token)
+        let fee = try XCTUnwrap(preview.redeemFee).value
+        XCTAssertEqual(preview.value.value, 100)
+        XCTAssertEqual(preview.unit, .sat)
+        XCTAssertGreaterThan(fee, 0)
+        XCTAssertEqual(fee, UInt64(preview.proofs.count), "1000 ppk charges one unit per input proof")
+        let before = try await balance(receiver)
+        XCTAssertEqual(before, 0)
         let received = try await receive(receiver, token: token)
-        XCTAssertGreaterThan(proofCount, 0)
-        XCTAssertEqual(received, 100 - UInt64(proofCount), "1000 ppk charges one unit per input proof")
+        XCTAssertEqual(received, preview.value.value - fee)
         let senderBalance = try await balance(sender)
         let receiverBalance = try await balance(receiver)
         XCTAssertEqual(senderBalance, 0)

@@ -11,6 +11,7 @@ import com.cashu.me.Models.MintInfo
 import com.cashu.me.Models.MintQuoteInfo
 import com.cashu.me.Models.PaymentMethodKind
 import com.cashu.me.Models.RestoreMintResult
+import com.cashu.me.Models.ReceiveTokenPreview
 import com.cashu.me.Models.SendTokenResult
 import com.cashu.me.Models.WalletTransaction
 
@@ -81,13 +82,17 @@ interface CdkWalletGateway {
     suspend fun receiveRecoveryCandidates(): List<ReceiveRecoveryCandidate>
     suspend fun recoverReceiveAccount(candidate: ReceiveRecoveryCandidate): SagaRecoveryReport
     suspend fun sendEcashToken(amount: Long, memo: String?, p2pkPubkey: String?, mintUrl: String, unit: String = "sat", p2pkSigningKeys: List<String> = emptyList()): SendTokenResult
+
+    suspend fun sendContactlessToken(amount: Long, mintUrl: String, p2pkSigningKeys: List<String>,
+        callbacks: com.cashu.me.Core.Services.ContactlessSendCallbacks): SendTokenResult =
+        throw UnsupportedOperationException("Contactless payments are unavailable.")
     suspend fun receiveEcashToken(tokenString: String, p2pkSigningKeys: List<String> = emptyList()): Long
     suspend fun receiveNfcEcashToken(
         tokenString: String,
         p2pkSigningKeys: List<String> = emptyList(),
     ): NfcReceiveReceipt
     suspend fun settleForeignNfcToken(tokenString: String, settlementMintUrl: String): ForeignNfcSettlement
-    suspend fun calculateReceiveFee(tokenString: String): Long
+    suspend fun previewReceiveToken(tokenString: String): ReceiveTokenPreview
 
     /** Active sat keyset input fee in parts per thousand, or null when unavailable. */
     suspend fun activeMintInputFeePpk(mintUrl: String): Long?

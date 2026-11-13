@@ -842,8 +842,10 @@ struct MintTransferView: View {
         // list), the fee is the one paid, a zero fee is omitted, and the
         // total leaves with the reserve it was counted from.
         var rows = [PaymentStatusView.DetailRow(label: "Amount", isAmount: true, value: formatSats(plan.amount)), from, to]
-        if feePaid > 0 {
-            rows.append(.init(label: "Network fee", value: formatSats(feePaid)))
+        if let feePaid {
+            if feePaid > 0 { rows.append(.init(label: "Network fee", value: formatSats(feePaid))) }
+        } else {
+            rows.append(.init(label: "Network fee", value: "Unavailable"))
         }
         return rows
     }

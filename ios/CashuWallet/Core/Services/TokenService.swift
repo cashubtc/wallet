@@ -42,7 +42,7 @@ class TokenService: ObservableObject {
     ///   - amount: Amount to send in satoshis
     ///   - memo: Optional memo to include
     /// - Returns: Result containing token string and fee paid
-    func sendTokens(amount: UInt64, memo: String? = nil, p2pkPubkey: String? = nil, mintUrl preferredMintURL: String? = nil, unit: Cdk.CurrencyUnit = .sat, onPrepared: (String) -> Void = { _ in }) async throws -> SendTokenResult {
+    func sendTokens(amount: UInt64, memo: String? = nil, p2pkPubkey: String? = nil, mintUrl preferredMintURL: String? = nil, unit: Cdk.CurrencyUnit = .sat, onPrepared: (String) -> Void = { _ in }, contactless: ContactlessSendCallbacks? = nil) async throws -> SendTokenResult {
         guard let repo = walletRepository() else {
             throw WalletError.notInitialized
         }
@@ -112,7 +112,22 @@ class TokenService: ObservableObject {
         onPrepared(prepared.operationId())
         let fee = prepared.fee().value
 
-        let token = try await prepared.confirm(memo: memo)
+        let token: Token
+        if let contactless {
+            token = try await completeContactlessSend(
+                approve: {
+                    let (total, overflow) = amount.addingReportingOverflow(fee)
+                    guard !overflow else { throw ContactlessPaymentError.invalidLimits }
+                    try await contactless.approve(total)
+                },
+                confirm: { try await prepared.confirm(memo: memo) },
+                cancel: { try await prepared.cancel() },
+                reclaim: { _ = try await wallet.revokeSend(operationId: prepared.operationId()) },
+                deliver: { try await contactless.deliver($0.encode()) }
+            )
+        } else {
+            token = try await prepared.confirm(memo: memo)
+        }
         let tokenString = token.encode()
         // CDK 0.18 records the send as a Pending transaction whose id derives
         // from the send saga's operation id, so it can be computed here without
@@ -245,76 +260,20 @@ class TokenService: ObservableObject {
         return try Token.decode(encodedToken: tokenString)
     }
     
-    /// Calculate the fee for receiving a token
-    func calculateReceiveFee(tokenString: String) async throws -> UInt64 {
+    /// Resolve a receive preview without redeeming or reserving the token.
+    func previewReceiveToken(tokenString: String) async throws -> ReceiveTokenPreview {
         guard let repo = walletRepository() else {
             throw WalletError.notInitialized
         }
-        
-        // Decode the token
         let token = try Token.decode(encodedToken: tokenString)
-        let mintUrl = try token.mintUrl()
-        let tokenUnit = token.unit() ?? .sat
-
-        // Ensure the mint is added with the correct unit
-        try await repo.createWallet(mintUrl: mintUrl, unit: tokenUnit, targetProofCount: nil)
-
-        // Get the wallet for this mint
-        let wallet = try await repo.getWallet(mintUrl: mintUrl, unit: tokenUnit)
-
-        // Resolve proofs with their FULL keyset ids: proofsSimple() can carry a
-        // short/legacy IDv2 keyset id that getKeysetFeesById below can't look
-        // up, which used to fail the whole preview to 0 — the confirm screen
-        // then showed the token's gross value as if the redeem were free. Same
-        // trap checkTokenSpendable documents for checkProofsSpent.
-        let proofs: [Proof]
-        do {
-            let keysets = try await wallet.keysets(policy: nil).map { $0.info }
-            proofs = try token.proofs(mintKeysets: keysets)
-        } catch {
-            // Preserve connectivity failures instead of masking them with a
-            // missing-keyset error from decoding a token without mint metadata.
-            if error is CancellationError || ReceiveFeeFailure.classify(error) == .mintUnavailable {
-                throw error
-            }
-            proofs = try token.proofsSimple()
-        }
-
-        guard !proofs.isEmpty else {
-            return 0
-        }
-
-        // NUT-02 fee: sum each input's fee_ppk, then one ceil over the total.
-        // Don't use wallet.calculateFee here — the 0.17.x FFI helper floor-
-        // divides (ppk * count / 1000), reporting 0 where the mint charges 1.
-        return try await Self.receiveFee(keysetIDs: proofs.map(\.keysetId)) {
-            try await wallet.getKeysetFeesById(keysetId: $0)
-        }
+        // CDK requires the matching per-unit wallet. This does not approve or
+        // add the mint to the app's visible mint list.
+        try await repo.createWallet(
+            mintUrl: token.mintUrl(), unit: token.unit() ?? .sat, targetProofCount: nil
+        )
+        return try ReceiveTokenPreview(data: await repo.getTokenData(token: token))
     }
 
-    static func receiveFee(
-        keysetIDs: [String],
-        lookup: (String) async throws -> UInt64
-    ) async throws -> UInt64 {
-        var fees: [String: UInt64] = [:]
-        var total: UInt64 = 0
-        for keysetID in keysetIDs {
-            let fee: UInt64
-            if let cached = fees[keysetID] {
-                fee = cached
-            } else {
-                fee = try await lookup(keysetID)
-                fees[keysetID] = fee
-            }
-            let sum = total.addingReportingOverflow(fee)
-            guard !sum.overflow else {
-                throw WalletError.networkError("The mint returned an invalid receive fee.")
-            }
-            total = sum.partialValue
-        }
-        return total / 1000 + (total % 1000 == 0 ? 0 : 1)
-    }
-    
     // MARK: - Token Status
     
     /// Check if a token has been spent (claimed by recipient).

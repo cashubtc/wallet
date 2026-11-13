@@ -153,8 +153,8 @@ extension Array where Element == MintTransferRecord {
 /// How an executed transfer ended.
 enum MintTransferOutcome: Equatable {
     /// The destination issued `amount`. `feePaid` is what the source actually
-    /// paid on top, including any input fee.
-    case completed(amount: UInt64, feePaid: UInt64)
+    /// paid on top, including any input fee, or nil if recovery could not read it.
+    case completed(amount: UInt64, feePaid: UInt64?)
     /// Money is in flight and will finish on its own.
     case settling(Leg)
 

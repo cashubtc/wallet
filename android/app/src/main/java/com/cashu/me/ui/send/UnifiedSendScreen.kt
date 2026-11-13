@@ -100,6 +100,7 @@ import com.cashu.me.Core.normalizedMintUrlForSelection
 import com.cashu.me.Core.presentation
 import com.cashu.me.Core.routeForCashuPaymentRequest
 import com.cashu.me.Core.selectMintForMeltPayment
+import com.cashu.me.Models.MeltPaymentSummary
 import com.cashu.me.Models.MeltPaymentResult
 import com.cashu.me.Models.MeltQuoteInfo
 import com.cashu.me.Models.MeltSettlement
@@ -1191,8 +1192,9 @@ private fun formatPaymentDetail(
     is SendPaymentDetailValue.Sats -> {
         val formatted = formatter.formatWalletSats(detailValue.amount, useBitcoinSymbol)
         when {
-            row.key in FeeDetailKeys && detailValue.amount == 0L -> "No fee"
+            detailValue.excludesMintFees -> "$formatted + mint fees"
             detailValue.isUpperBound -> "Up to $formatted"
+            row.key in FeeDetailKeys && detailValue.amount == 0L -> "No fee"
             else -> formatted
         }
     }
@@ -1604,14 +1606,17 @@ private fun ConfirmFace(
                     )
                 }
                 quote?.let {
+                    val summary = MeltPaymentSummary(it)
                     InspectorRow(
                         label = "Network fee",
-                        value = formatter.formatWalletSats(it.feeReserve, useBitcoinSymbol),
+                        value = "Up to ${formatter.formatWalletSats(it.feeReserve, useBitcoinSymbol)}",
                         valueMonospaced = true,
                     )
                     InspectorRow(
-                        label = "Total",
-                        value = formatter.formatWalletSats(it.totalAmount, useBitcoinSymbol),
+                        label = summary.totalLabel,
+                        value = summary.total?.let { total ->
+                            "${formatter.formatWalletSats(total, useBitcoinSymbol)} + mint fees"
+                        } ?: "Unavailable",
                         valueMonospaced = true,
                     )
                 }

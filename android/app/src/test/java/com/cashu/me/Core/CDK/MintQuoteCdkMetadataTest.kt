@@ -2,7 +2,6 @@ package com.cashu.me.Core.CDK
 
 import com.cashu.me.Core.LOCAL_NEVER_EXPIRES_EPOCH_SECONDS
 import com.cashu.me.Models.PaymentMethodKind
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import org.cashudevkit.Amount as CdkAmount
 import org.cashudevkit.CurrencyUnit as CdkCurrencyUnit
@@ -12,47 +11,29 @@ import org.cashudevkit.PaymentMethod as CdkPaymentMethod
 import org.cashudevkit.QuoteState as CdkQuoteState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
 
 class MintQuoteCdkMetadataTest {
     @Test
-    fun paidStatusReloadUsesCurrentVersionAndAllowsMetadataWrite() = runBlocking {
-        var stored = quote(amount = null, paymentMethod = CdkPaymentMethod.Onchain, amountPaid = CdkAmount(1_000uL))
-        repeat(3) {
-            val checked = stored
-            val refreshed = refreshPersistedMintQuote(
-                check = {
-                    stored = checked.copy(version = checked.version + 1u)
-                    checked
-                },
-                reload = { stored },
-            )
-            assertTrue(refreshed.version > checked.version)
-            val normalized = persistMintQuoteMetadata(
-                refreshed, PaymentMethodKind.Onchain, null,
-                save = {
-                    check(it.version == stored.version) { "Concurrent update" }
-                    stored = it.copy(version = it.version + 1u)
-                },
-                reload = { stored },
-            )
-            assertEquals(stored, normalized)
-            assertEquals(1_000uL, normalized.amountPaid.value)
-            assertTrue(normalized.hasUnissuedOnchainCredit())
-        }
-    }
-
-    @Test
-    fun statusReloadKeepsRecoveryCountersAndClearedReservation() = runBlocking {
-        val old = quote(usedByOperation = "operation", amountPaid = CdkAmount(21uL))
-        val recovered = old.copy(version = 2u, usedByOperation = null, amountIssued = CdkAmount(21uL))
-        val refreshed = refreshPersistedMintQuote(check = { old }, reload = { recovered })
-        assertEquals(recovered, refreshed)
-        assertNull(refreshed.usedByOperation)
-        assertFalse(refreshed.hasUnissuedOnchainCredit())
+    fun currentStatusResultAllowsMetadataWrite() = runBlocking {
+        var stored = quote(amount = null, paymentMethod = CdkPaymentMethod.Onchain,
+            amountPaid = CdkAmount(1_000uL), usedByOperation = "operation").copy(version = 5u)
+        val checked = stored
+        val normalized = persistMintQuoteMetadata(
+            checked, PaymentMethodKind.Onchain, null,
+            save = {
+                check(it.version == stored.version && it.usedByOperation == stored.usedByOperation)
+                stored = it.copy(version = it.version + 1u)
+            },
+            reload = { stored },
+        )
+        assertEquals(stored, normalized)
+        assertEquals(6u, normalized.version)
+        assertEquals("operation", normalized.usedByOperation)
+        assertEquals(1_000uL, normalized.amountPaid.value)
+        assertEquals(0uL, normalized.amountIssued.value)
     }
 
     @Test
@@ -79,30 +60,6 @@ class MintQuoteCdkMetadataTest {
             assertTrue(error === failure)
         }
         assertEquals(1, attempts)
-    }
-
-    @Test
-    fun statusReloadFailsClosedForMissingQuoteOrReadFailure() = runBlocking {
-        try {
-            refreshPersistedMintQuote(check = { quote() }, reload = { null })
-            fail("Expected missing quote failure")
-        } catch (_: CdkGatewayUnavailable) { }
-        val failure = IllegalStateException("Database unavailable")
-        try {
-            refreshPersistedMintQuote(check = { quote() }, reload = { throw failure })
-            fail("Expected read failure")
-        } catch (error: IllegalStateException) {
-            assertTrue(error === failure)
-        }
-    }
-
-    @Test
-    fun cancelledStatusCheckDoesNotReloadOrContinue() = runBlocking {
-        try {
-            refreshPersistedMintQuote(check = { throw CancellationException() },
-                reload = { fail("Must not reload after cancellation"); null })
-            fail("Expected cancellation")
-        } catch (_: CancellationException) { }
     }
 
     @Test

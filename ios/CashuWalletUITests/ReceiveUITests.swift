@@ -46,14 +46,25 @@ final class ReceiveUITests: UITestBase {
             "Receive sheet should show the Bitcoin option"
         )
 
-        let dismissTarget = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.98))
-        receiveEcashOption.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        // Drag the sheet chrome so the method list cannot consume the gesture.
+        let grabber = app.buttons["Sheet Grabber"]
+        XCTAssertTrue(
+            grabber.waitUntilEnabledAndHittable(timeout: 10),
+            "Receive sheet grabber should be ready for dismissal"
+        )
+        let dismissTarget = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.95))
+        grabber.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
             .press(forDuration: 0.1, thenDragTo: dismissTarget)
 
         XCTAssertTrue(
-            receiveDestinationField.waitForNonExistence(timeout: 5),
-            "Receive sheet should dismiss after dragging down"
+            receiveEcashOption.waitForNonExistence(timeout: 10),
+            "Dragging the sheet grabber should dismiss the Receive sheet"
         )
+        XCTAssertFalse(receiveDestinationField.exists)
+        XCTAssertTrue(receiveButton.waitUntilEnabledAndHittable(timeout: 5),
+                      "Dismissing Receive should return control to the wallet")
+
+        openReceiveSheet()
     }
 
     func testBitcoinOptionOpensLightningFlow() throws {

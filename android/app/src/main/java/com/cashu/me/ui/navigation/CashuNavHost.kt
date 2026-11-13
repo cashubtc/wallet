@@ -184,6 +184,7 @@ fun CashuNavHost(
                 onClose = { navController.popBackStack() },
                 onOpenBackupRestore = { navController.navigate(Routes.SETTINGS_BACKUP_RESTORE) },
                 onOpenAppLock = { navController.navigate(Routes.SETTINGS_APP_LOCK) },
+                onOpenContactless = { navController.navigate(Routes.SETTINGS_CONTACTLESS) },
                 onOpenLightning = { navController.navigate(Routes.SETTINGS_LIGHTNING) },
                 onOpenLockedEcash = { navController.navigate(Routes.SETTINGS_P2PK) },
                 onOpenNostr = { navController.navigate(Routes.SETTINGS_NOSTR) },
@@ -218,6 +219,12 @@ fun CashuNavHost(
         composable(Routes.SETTINGS_APP_LOCK) {
             AppLockScreen(
                 settingsManager = container.settingsManager,
+                appLockManager = container.appLockManager,
+                onClose = { navController.popBackStack() },
+            )
+        }
+        composable(Routes.SETTINGS_CONTACTLESS) {
+            com.cashu.me.ui.settings.ContactlessSettingsScreen(
                 appLockManager = container.appLockManager,
                 onClose = { navController.popBackStack() },
             )

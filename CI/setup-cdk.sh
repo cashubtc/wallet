@@ -17,7 +17,7 @@ if [[ ! "$FAKE_DELAY_SECONDS" =~ ^[0-9]+$ ]]; then
     exit 1
 fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CDK_VERSION="0.18.2"
+CDK_VERSION="0.18.3"
 BIN_DIR="${SCRIPT_DIR}/.cdk-bin"
 WORK_DIR="${CDK_TEST_WORK_DIR:-${SCRIPT_DIR}/.cdk-workdir}"
 MINTD_BIN="${BIN_DIR}/cdk-mintd"
@@ -67,15 +67,15 @@ ARCH="$(uname -m)"
 case "${OS}-${ARCH}" in
     darwin-arm64|darwin-aarch64)
         ASSET_NAME="cdk-mintd-${CDK_VERSION}-aarch64-apple-darwin"
-        EXPECTED_SHA256="3e93c4735c265c8079acbb62c2d8f111cade1d737fa1e797ed846c3a656f78f8"
+        EXPECTED_SHA256="5ad74388ba0825a18e26f6bcd69a66ed5fed4d95c7b69cfb1802886263f5d2b9"
         ;;
     linux-arm64|linux-aarch64)
         ASSET_NAME="cdk-mintd-${CDK_VERSION}-aarch64"
-        EXPECTED_SHA256="8c94a9eb110a5ad1bc2d78bd9af94866f9590564d25e64fe56596659a4d44b8c"
+        EXPECTED_SHA256="bf6862ddeb606fa886e5188778d1c02e8a5cc5846777dc46089f8adcefd6c866"
         ;;
     linux-x86_64)
         ASSET_NAME="cdk-mintd-${CDK_VERSION}-x86_64"
-        EXPECTED_SHA256="0d33d68695f50f606df385bbb439862011fef73462df32d586ad014b8900c54f"
+        EXPECTED_SHA256="3a41003fcac0f54a164b6d9187c79ce05591947bb4b4b37c45a125fac813e3af"
         ;;
     *)
         echo "❌ No prebuilt cdk-mintd v${CDK_VERSION} binary for ${OS}/${ARCH}"

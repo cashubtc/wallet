@@ -15,3 +15,6 @@ data class TokenInfo(
         fun parse(tokenString: String): TokenInfo? = TokenParser.tokenInfo(tokenString)
     }
 }
+
+/** CDK's resolved metadata and a known redemption fee, ready for review. */
+data class ReceiveTokenPreview(val info: TokenInfo, val fee: Long)

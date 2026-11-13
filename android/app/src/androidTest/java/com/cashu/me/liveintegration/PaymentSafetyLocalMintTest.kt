@@ -19,11 +19,105 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.*
+import org.cashudevkit.WalletRepository
+import org.cashudevkit.WalletSqliteDatabase
+import org.cashudevkit.WalletStore
+import org.cashudevkit.MintUrl
+import org.cashudevkit.CurrencyUnit
+import org.cashudevkit.Amount
+import org.cashudevkit.PaymentMethod
+import org.cashudevkit.SplitTarget
+import org.cashudevkit.QuoteState
+import org.cashudevkit.FfiException
+import org.cashudevkit.customWalletStore
+import org.cashudevkit.generateMnemonic
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Test
+
+class AbandonedReservationLocalMintTest : PaymentFixtureTest() {
+    @Test fun failedPreparationReturnsFundsWithoutRestart() = runBlocking {
+        val directory = File(InstrumentationRegistry.getInstrumentation().targetContext.cacheDir, "preparation-${UUID.randomUUID()}")
+        directory.mkdirs()
+        lateinit var database: PreparationFailureDatabase
+        val gateway = CdkWalletGatewayImpl { PreparationFailureDatabase(it).also { db -> database = db } }
+        val mint = mintUrl("controlled")
+        try {
+            gateway.openWalletRepository(generateMnemonic(), File(directory, "wallet.sqlite").absolutePath)
+            gateway.ensureWallet(mint)
+            val deposit = gateway.createMintQuote(131072, PaymentMethodKind.Bolt11, mint, "sat")
+            call("$root/pay/controlled", "POST", buildJsonObject { put("invoice", deposit.request) })
+            kotlinx.coroutines.withTimeout(8000) {
+                while (gateway.checkMintQuote(deposit.id).state != MintQuoteState.Paid) delay(50)
+            }
+            gateway.mintTokens(deposit.id)
+            val quote = gateway.createMeltQuote(invoice(100000), null, mint)
+            database.rejectMelt = true
+            val failure = runCatching { gateway.meltTokens(quote.id, mint) }.exceptionOrNull()
+            assertTrue(failure is MeltPaymentRecoveryException && !failure.unresolved)
+            assertEquals(131072L, gateway.totalBalance(mint))
+        } finally {
+            gateway.closeWalletRepository()
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test fun heldFundsRecoverAfterReopenAndCanBeRedeemed() = runBlocking {
+        val directory = File(InstrumentationRegistry.getInstrumentation().targetContext.cacheDir, "held-funds-${UUID.randomUUID()}")
+        directory.mkdirs()
+        val path = File(directory, "wallet.sqlite").absolutePath
+        val seed = generateMnemonic()
+        val mint = mintUrl("controlled")
+        val db = PreparationFailureDatabase(path)
+        val repository = WalletRepository(seed, customWalletStore(db))
+        val gateway = CdkWalletGatewayImpl()
+        try {
+            repository.createWallet(MintUrl(mint), CurrencyUnit.Sat, null)
+            val source = repository.getWallet(MintUrl(mint), CurrencyUnit.Sat)
+            try {
+                val deposit = source.mintQuote(PaymentMethod.Bolt11, Amount(131072uL), null, null)
+                call("$root/pay/controlled", "POST", buildJsonObject { put("invoice", deposit.request) })
+                kotlinx.coroutines.withTimeout(8000) {
+                    while (source.checkMintQuote(deposit.id).state != QuoteState.PAID) delay(50)
+                }
+                source.mint(deposit.id, SplitTarget.None, null)
+                val quote = source.meltQuote(PaymentMethod.Bolt11, invoice(100000), null, null)
+                db.rejectMelt = true
+                assertTrue(runCatching { source.prepareMelt(quote.id) }.isFailure)
+                assertEquals(101000uL, source.totalReservedBalance().value)
+            } finally { source.close() }
+            repository.close()
+            db.close()
+            gateway.openWalletRepository(seed, path)
+            assertEquals(30072L, gateway.totalBalance(mint))
+            assertEquals(1L, gateway.recoverIncompleteSagas(mint).compensated)
+            assertEquals(0L, gateway.recoverIncompleteSagas(mint).compensated)
+            assertEquals(131072L, gateway.totalBalance(mint))
+            val receiver = wallet("controlled")
+            val sent = gateway.sendEcashToken(131072, null, null, mint)
+            assertEquals(131072L, receiver.receive(sent.token))
+            assertEquals(0L, gateway.totalBalance(mint))
+        } finally {
+            gateway.closeWalletRepository()
+            repository.close()
+            db.close()
+            directory.deleteRecursively()
+        }
+    }
+
+    private class PreparationFailureDatabase(path: String) : WalletSqliteDatabase(path) {
+        var rejectMelt = false
+        override suspend fun addSaga(sagaJson: String) {
+            if (rejectMelt && Json.parseToJsonElement(sagaJson).jsonObject["kind"]?.jsonPrimitive?.content == "melt") {
+                rejectMelt = false
+                throw FfiException.Internal("Test persistence failure")
+            }
+            super.addSaga(sagaJson)
+        }
+    }
+}
 
 /** Production native gateway, real SQLite and mint proofs; only transport is controlled. */
 open class PaymentFixtureTest {
@@ -83,6 +177,13 @@ open class PaymentFixtureTest {
             gateway.closeWalletRepository()
             gateway = CdkWalletGatewayImpl()
             open()
+        }
+        suspend fun <T> withNativeQuote(block: suspend (org.cashudevkit.Wallet, WalletSqliteDatabase) -> T): T {
+            val database = WalletSqliteDatabase(path)
+            val repository = WalletRepository(seed, WalletStore.Sqlite(path))
+            val native = repository.getWallet(MintUrl(url), CurrencyUnit.Sat)
+            try { return block(native, database) }
+            finally { native.close(); repository.close(); database.close() }
         }
         suspend fun balance() = gateway.totalBalance(url)
         suspend fun quote(amount: Long) = gateway.createMintQuote(amount, PaymentMethodKind.Bolt11, url, "sat")
@@ -153,7 +254,7 @@ class PaymentSafetyLocalMintTest : PaymentFixtureTest() {
             val result = payer.gateway.meltTokens(quote.id, payer.url).result
             assertEquals(MeltSettlement.Settled, result.settlement)
             assertEquals(21, result.amount)
-            assertEquals(100 - 21 - result.feePaid, payer.balance())
+            assertEquals(100 - 21 - requireNotNull(result.feePaid), payer.balance())
             payer.reopen()
             val history = payer.gateway.listTransactions(mapOf(payer.url to listOf("sat"))).filter { it.quoteId == quote.id }
             assertEquals(1, history.size)
@@ -164,6 +265,21 @@ class PaymentSafetyLocalMintTest : PaymentFixtureTest() {
                 assertEquals(21, recipient.gateway.mintTokens(incoming.id))
             }
         }
+    }
+
+    @Test fun ordinaryMeltOnFeeMintReportsEntireBalanceDebit() = runBlocking {
+        val payer = wallet("fees")
+        payer.fund()
+        val quote = payer.gateway.createMeltQuote(invoice(), null, payer.url)
+        arm("/v1/melt/quote/bolt11/", "delay", "GET")
+
+        val result = payer.gateway.meltTokens(quote.id, payer.url).result
+        assertEquals(MeltSettlement.Settled, result.settlement)
+        val fee = requireNotNull(result.feePaid)
+        assertEquals(100, payer.balance() + result.amount + fee)
+        val transaction = payer.gateway.listTransactions(mapOf(payer.url to listOf("sat")))
+            .single { it.quoteId == quote.id }
+        assertTrue("The reported fee must also include the preparatory swap", fee > transaction.fee)
     }
 
     @Test fun lostMeltResponseRecoversWithoutSecondDebit() = runBlocking {
@@ -186,6 +302,40 @@ class PaymentSafetyLocalMintTest : PaymentFixtureTest() {
         assertTrue(records.any { it.jsonObject["fault"]?.jsonPrimitive?.contentOrNull == "lose_response" && it.jsonObject["forwarded"]?.jsonPrimitive?.boolean == true })
     }
 
+    @Test fun statusCheckFailurePropagatesWithoutChangingQuote() = runBlocking {
+        val wallet = wallet("controlled")
+        val quote = wallet.quote(42)
+        wallet.withNativeQuote { _, database ->
+            val before = database.getMintQuote(quote.id)!!
+            arm("/v1/mint/quote/bolt11/", "reject", "GET")
+            expectError("503", "unavailable", "http") { wallet.gateway.checkMintQuote(quote.id) }
+            val after = database.getMintQuote(quote.id)!!
+            assertEquals(before, after)
+        }
+    }
+
+    @Test fun statusReturnsPersistedQuoteAfterOrphanRelease() = runBlocking {
+        val wallet = wallet("controlled")
+        val quote = wallet.pay(wallet.quote(42))
+        wallet.withNativeQuote { native, database ->
+            val operation = UUID.randomUUID().toString()
+            database.reserveMintQuote(quote.id, operation)
+            assertEquals(operation, database.getMintQuote(quote.id)!!.usedByOperation)
+            val checked = native.checkMintQuoteStatus(quote.id)
+            val stored = database.getMintQuote(quote.id)!!
+            assertEquals(stored.version, checked.version)
+            assertNull(checked.usedByOperation)
+            assertEquals(stored.usedByOperation, checked.usedByOperation)
+            assertEquals(stored.amountPaid, checked.amountPaid)
+            assertEquals(stored.amountIssued, checked.amountIssued)
+            assertEquals(42uL, checked.amountPaid.value)
+            database.addMintQuote(checked)
+            val written = database.getMintQuote(quote.id)!!
+            assertEquals(checked.version + 1u, written.version)
+            assertNull(written.usedByOperation)
+        }
+    }
+
     @Test fun lostMintResponseRecoversPaidQuoteExactlyOnce() = runBlocking {
         assertLostMintResponse("controlled")
     }
@@ -200,8 +350,27 @@ class PaymentSafetyLocalMintTest : PaymentFixtureTest() {
         arm("/v1/mint/bolt11", "lose_response")
         runCatching { wallet.gateway.mintTokens(quote.id) }
         wallet.reopen()
+        wallet.withNativeQuote { native, database ->
+            val checked = native.checkMintQuoteStatus(quote.id)
+            val stored = database.getMintQuote(quote.id)!!
+            assertEquals(stored.version, checked.version)
+            assertEquals(stored.usedByOperation, checked.usedByOperation)
+            assertEquals(stored.amountPaid, checked.amountPaid)
+            assertEquals(stored.amountIssued, checked.amountIssued)
+            assertEquals(42uL, checked.amountPaid.value)
+            assertEquals(42uL, checked.amountIssued.value)
+        }
         wallet.gateway.recoverIncompleteSagas(wallet.url)
         wallet.gateway.mintUnissuedQuotes(wallet.url, "sat")
+        wallet.withNativeQuote { native, database ->
+            val settled = native.checkMintQuoteStatus(quote.id)
+            val stored = database.getMintQuote(quote.id)!!
+            assertEquals(stored.version, settled.version)
+            assertEquals(stored.usedByOperation, settled.usedByOperation)
+            assertNull(settled.usedByOperation)
+            assertEquals(42uL, settled.amountPaid.value)
+            assertEquals(42uL, settled.amountIssued.value)
+        }
         assertEquals(42, wallet.balance())
         assertEquals(0, wallet.gateway.mintUnissuedQuotes(wallet.url, "sat"))
         assertEquals(1, wallet.gateway.listTransactions(mapOf(wallet.url to listOf("sat"))).count { it.quoteId == quote.id })
@@ -286,6 +455,20 @@ class PaymentSafetyLocalMintTest : PaymentFixtureTest() {
         assertEquals(100, receiver.receive(sender.send(100).token))
     }
 
+    @Test fun zeroFeeReceivePreviewMatchesRedemption() = runBlocking {
+        val sender = wallet("controlled")
+        val receiver = wallet("controlled")
+        sender.fund()
+        val token = sender.gateway.sendEcashToken(21, "Preview memo", null, sender.url).token
+        val preview = receiver.gateway.previewReceiveToken(token)
+        assertEquals(21L, preview.info.amount)
+        assertEquals("sat", preview.info.unit)
+        assertEquals("Preview memo", preview.info.memo)
+        assertEquals(0L, preview.fee)
+        assertEquals(0L, receiver.balance())
+        assertEquals(preview.info.amount - preview.fee, receiver.receive(token))
+    }
+
     @Test fun feeChargingMintMaxSendAndReceiveConserveValue() = runBlocking {
         assertFeeChargingMintMaxSendAndReceive("fees")
     }
@@ -302,10 +485,12 @@ class PaymentSafetyLocalMintTest : PaymentFixtureTest() {
         sender.fund()
         val sent = sender.send(100)
         assertEquals(0, sent.fee)
-        val fee = receiver.gateway.calculateReceiveFee(sent.token)
-        assertTrue(fee > 0)
+        val preview = receiver.gateway.previewReceiveToken(sent.token)
+        assertEquals(100L, preview.info.amount)
+        assertTrue(preview.fee > 0)
+        assertEquals(0L, receiver.balance())
         val received = receiver.receive(sent.token)
-        assertEquals(100 - fee, received)
+        assertEquals(preview.info.amount - preview.fee, received)
         assertEquals(0, sender.balance())
         assertEquals(received, receiver.balance())
     }
@@ -368,7 +553,7 @@ class PaymentSafetyLocalMintTest : PaymentFixtureTest() {
         assertEquals(MintQuoteState.Unpaid, wallet.gateway.checkMintQuote(incoming.id).state)
         wallet.pay(incoming, "fees")
         assertEquals(40, wallet.gateway.mintTokens(incoming.id))
-        assertEquals(100 - 40 - result.feePaid, wallet.balance())
+        assertEquals(100 - 40 - requireNotNull(result.feePaid), wallet.balance())
         assertEquals(40, wallet.gateway.totalBalance(destination))
         assertEquals(1, wallet.history(wallet.url).count { it.quoteId == outgoing.id })
         assertEquals(1, wallet.history(destination).count { it.quoteId == incoming.id })
@@ -392,9 +577,9 @@ class PaymentSafetyLocalMintTest : PaymentFixtureTest() {
         assertEquals(amount, wallet.gateway.mintTokens(plan.mintQuote.id))
         // CDK reports the input fee inside the fee paid, and the unused part of
         // the reserve comes back as change rather than being lost.
-        assertEquals(100, wallet.balance() + amount + result.feePaid)
-        assertTrue(result.feePaid >= plan.inputFee)
-        assertTrue(result.feePaid <= plan.inputFee + plan.meltQuote.feeReserve)
+        assertEquals(100, wallet.balance() + amount + requireNotNull(result.feePaid))
+        assertTrue(requireNotNull(result.feePaid) >= plan.inputFee)
+        assertTrue(requireNotNull(result.feePaid) <= plan.inputFee + plan.meltQuote.feeReserve)
     }
 
     @Test fun crossMintTransferLostMeltResponseDoesNotDoubleDebit() = runBlocking {

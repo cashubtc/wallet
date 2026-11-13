@@ -1140,6 +1140,27 @@ class WalletManager(
         }
     }
 
+    suspend fun sendContactlessToken(amount: Long, mintUrl: String,
+        callbacks: com.cashu.me.Core.Services.ContactlessSendCallbacks): SendTokenResult = withLoadingResult {
+        try {
+            gateway.sendContactlessToken(amount, mintUrl, settingsManager.allP2PKSigningKeyHexes(), callbacks)
+                .also { result ->
+                    try {
+                        result.transactionId?.let { id ->
+                            walletStore.saveSavedTokens(walletStore.loadSavedTokens() + (id to result.token))
+                        }
+                    } catch (error: Exception) {
+                        if (error is CancellationException) throw error
+                        AppLogger.wallet.error("Unable to cache confirmed send", error)
+                    }
+                }
+        } finally {
+            withContext(kotlinx.coroutines.NonCancellable) {
+                refreshAfterConfirmedSend({ refreshBalance() }, { loadTransactions() })
+            }
+        }
+    }
+
     suspend fun receiveTokens(tokenString: String): Long =
         receiveTokens(
             tokenString = tokenString,
@@ -1454,7 +1475,8 @@ class WalletManager(
         return reclaimPendingSend(sagaId, mintUrl, transaction.unit)
     }
 
-    suspend fun calculateReceiveFee(tokenString: String): Long = gateway.calculateReceiveFee(tokenString)
+    suspend fun previewReceiveToken(tokenString: String): com.cashu.me.Models.ReceiveTokenPreview =
+        gateway.previewReceiveToken(tokenString)
 
     suspend fun estimateCashuPaymentRequestFee(amountSats: Long, mintUrl: String): Long =
         gateway.estimateCashuPaymentRequestFee(amountSats, mintUrl)

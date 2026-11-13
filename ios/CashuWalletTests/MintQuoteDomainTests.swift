@@ -198,9 +198,9 @@ final class LiveBolt12DescriptionTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
-        weak var releasedDatabase: LifecycleSafeWalletDatabase?
+        weak var releasedDatabase: WalletSqliteDatabase?
         do {
-            let database = try LifecycleSafeWalletDatabase(filePath: directory.appendingPathComponent("wallet.sqlite").path)
+            let database = try WalletSqliteDatabase(filePath: directory.appendingPathComponent("wallet.sqlite").path)
             releasedDatabase = database
             let repository = try WalletRepository(mnemonic: generateMnemonic(), store: customWalletStore(db: database))
             try await repository.createWallet(mintUrl: MintUrl(url: url), unit: .sat, targetProofCount: nil)

@@ -28,7 +28,7 @@ final class StoredWalletAccountTests: XCTestCase {
         let mint = MintUrl(url: "https://offline.example")
         let id = String(repeating: "a", count: 64)
         do {
-            let db = try LifecycleSafeWalletDatabase(filePath: path)
+            let db = try WalletSqliteDatabase(filePath: path)
             // No USD advertisement remains, but the historical account does.
             try await db.addMint(mintUrl: mint, mintInfo: nil)
             try await db.addTransaction(transaction: Cdk.Transaction(
@@ -38,7 +38,7 @@ final class StoredWalletAccountTests: XCTestCase {
                 paymentRequest: nil, paymentProof: nil, paymentMethod: nil, sagaId: nil, status: .completed
             ))
         }
-        let db = try LifecycleSafeWalletDatabase(filePath: path)
+        let db = try WalletSqliteDatabase(filePath: path)
         let repo = try WalletRepository(mnemonic: mnemonic, store: customWalletStore(db: db))
         let wallets = await repo.getWallets()
         XCTAssertFalse(wallets.contains { $0.unit() == .usd })
@@ -208,7 +208,7 @@ final class StoredWalletAccountTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         let path = directory.appendingPathComponent("wallet.sqlite").path
         let mnemonic = try generateMnemonic()
-        let db = try LifecycleSafeWalletDatabase(filePath: path)
+        let db = try WalletSqliteDatabase(filePath: path)
         let repo = try WalletRepository(mnemonic: mnemonic, store: customWalletStore(db: db))
         try await repo.createWallet(mintUrl: mint, unit: .sat, targetProofCount: nil)
         let active = MintInfo(url: mintURL, name: "Local test mint", isActive: true, balance: 0)
@@ -252,7 +252,7 @@ final class StoredWalletAccountTests: XCTestCase {
         XCTAssertEqual(history.transactions.map(\.id), [completed.id.hex])
         XCTAssertEqual(history.transactions.first?.status, .completed)
         // A new database handle/repository must project durable real receipts too.
-        let reopenedDB = try LifecycleSafeWalletDatabase(filePath: path)
+        let reopenedDB = try WalletSqliteDatabase(filePath: path)
         let reopenedRepo = try WalletRepository(mnemonic: mnemonic, store: customWalletStore(db: reopenedDB))
         let reopenedHistory = TransactionService(walletRepository: { reopenedRepo }, walletDatabase: { reopenedDB },
             getTrackedMintUrls: { [mintURL] }, walletStore: WalletStore(storage: InMemoryStorage()))
@@ -281,7 +281,7 @@ final class StoredWalletAccountTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
-        let database = try LifecycleSafeWalletDatabase(filePath: directory.appendingPathComponent("wallet.sqlite").path)
+        let database = try WalletSqliteDatabase(filePath: directory.appendingPathComponent("wallet.sqlite").path)
         let reader = FailingAccountHistoryDatabase(database: database)
         let repo = try WalletRepository(mnemonic: generateMnemonic(), store: customWalletStore(db: database))
         let store = WalletStore(storage: InMemoryStorage())
@@ -362,7 +362,7 @@ final class StoredWalletAccountTests: XCTestCase {
         let mint = MintUrl(url: "https://offline.example:443")
         let mnemonic = try generateMnemonic()
         do {
-            let db = try LifecycleSafeWalletDatabase(filePath: path)
+            let db = try WalletSqliteDatabase(filePath: path)
             for direction in [Cdk.TransactionDirection.incoming, .outgoing] {
                 try await db.addTransaction(transaction: Cdk.Transaction(
                     id: TransactionId(hex: String(repeating: "a", count: 64)), mintUrl: mint,
@@ -374,7 +374,7 @@ final class StoredWalletAccountTests: XCTestCase {
             }
         }
         for _ in 0..<2 {
-            let db = try LifecycleSafeWalletDatabase(filePath: path)
+            let db = try WalletSqliteDatabase(filePath: path)
             let stored = try await db.listTransactions(mintUrl: nil, direction: nil, unit: nil)
             XCTAssertEqual(stored.count, 2)
             XCTAssertTrue(stored.allSatisfy { $0.status == .completed && $0.mintUrl.url == mint.url })

@@ -5,7 +5,7 @@ let package = Package(
     name: "CashuWalletIntegrationTests",
     platforms: [.macOS(.v13)],
     dependencies: [
-        .package(url: "https://github.com/cashubtc/cdk-swift", exact: "0.18.2")
+        .package(url: "https://github.com/cashubtc/cdk-swift", exact: "0.18.3")
     ],
     targets: [
         .testTarget(

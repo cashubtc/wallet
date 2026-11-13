@@ -10,7 +10,7 @@ final class ReceiveRecoveryTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
-        let db = try LifecycleSafeWalletDatabase(filePath: directory.appendingPathComponent("wallet.sqlite").path)
+        let db = try WalletSqliteDatabase(filePath: directory.appendingPathComponent("wallet.sqlite").path)
         let repo = try WalletRepository(mnemonic: generateMnemonic(), store: customWalletStore(db: db))
         let url = "https://mint.example/Mint"
         try await repo.createWallet(mintUrl: MintUrl(url: url), unit: .sat, targetProofCount: nil)
@@ -44,7 +44,7 @@ final class ReceiveRecoveryTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
-        let db = try LifecycleSafeWalletDatabase(filePath: directory.appendingPathComponent("wallet.sqlite").path)
+        let db = try WalletSqliteDatabase(filePath: directory.appendingPathComponent("wallet.sqlite").path)
         let repo = try WalletRepository(mnemonic: generateMnemonic(), store: customWalletStore(db: db))
         let source = "https://source.example"
         let destination = "https://destination.example"
@@ -121,7 +121,7 @@ final class ReceiveRecoveryTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         let seed = try generateMnemonic()
         let path = directory.appendingPathComponent("receiver.sqlite").path
-        let senderDB = try LifecycleSafeWalletDatabase(filePath: directory.appendingPathComponent("sender.sqlite").path)
+        let senderDB = try WalletSqliteDatabase(filePath: directory.appendingPathComponent("sender.sqlite").path)
         let sender = try WalletRepository(mnemonic: generateMnemonic(), store: customWalletStore(db: senderDB))
         let mint = MintUrl(url: mintURL)
         try await sender.createWallet(mintUrl: mint, unit: .sat, targetProofCount: nil)
@@ -135,7 +135,7 @@ final class ReceiveRecoveryTests: XCTestCase {
         let token = try await TokenService(walletRepository: { sender }, getActiveMint: { nil })
             .sendTokens(amount: 16, mintUrl: mintURL).token
         do {
-            let db = try LifecycleSafeWalletDatabase(filePath: path)
+            let db = try WalletSqliteDatabase(filePath: path)
             let repo = try WalletRepository(mnemonic: seed, store: customWalletStore(db: db))
             try await repo.createWallet(mintUrl: mint, unit: .sat, targetProofCount: nil)
             let previewCandidates = try await ReceiveRecoveryCandidate.discover(database: db)
@@ -149,7 +149,7 @@ final class ReceiveRecoveryTests: XCTestCase {
             }
         }
         try await control("offline")
-        let db = try LifecycleSafeWalletDatabase(filePath: path)
+        let db = try WalletSqliteDatabase(filePath: path)
         let repo = try WalletRepository(mnemonic: seed, store: customWalletStore(db: db))
         let candidates = try await ReceiveRecoveryCandidate.discover(database: db)
         XCTAssertEqual(candidates, [ReceiveRecoveryCandidate(mintURL: mintURL, unit: .sat)])

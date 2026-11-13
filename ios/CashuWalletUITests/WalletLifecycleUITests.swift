@@ -32,8 +32,13 @@ final class WalletLifecycleUITests: UITestBase {
         tapWhenReady(app.buttons["mints-add-clear-button"])
         app.textFields["mints-add-url-field"].typeText(cdkMintURL)
         tapWhenReady(app.buttons["mints-add-submit-button"])
+        // Adding a new mint can queue behind startup/recovery and fetch its
+        // keysets. CI can still show "Adding mint" after the row's old 30s
+        // deadline, so wait for successful addition before navigating.
+        XCTAssertTrue(app.textFields["mints-add-url-field"].waitForNonExistence(timeout: 90),
+                      "Adding the second mint should finish and dismiss the URL form")
         let second = mintRow(url: cdkMintURL)
-        tapWhenReady(second, timeout: 30)
+        tapWhenReady(second, timeout: 10)
         scrollTo("Set as Default")
         let setDefault = app.buttons["Set as Default"]
         tapWhenReady(setDefault)
@@ -54,9 +59,7 @@ final class WalletLifecycleUITests: UITestBase {
         XCTAssertTrue(app.buttons["Remove mint"].exists)
         tapWhenReady(app.buttons["Remove mint"])
         tapWhenReady(app.buttons["Remove"])
-        // The CDK mint registers more than one unit; removal must still finish
-        // and dismiss the detail screen before the process is killed.
-        XCTAssertTrue(app.buttons["Remove mint"].waitForNonExistence(timeout: 30))
+        waitForMintListAfterRemoval()
         XCTAssertTrue(second.waitForNonExistence(timeout: 15))
         assertDefaultMint(mintRow(url: mintURL))
         relaunchPreservingWallet()
@@ -79,6 +82,18 @@ final class WalletLifecycleUITests: UITestBase {
                        "The mint row should identify the persisted default mint", file: file, line: line)
     }
 
+    private func waitForMintListAfterRemoval(
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        // An empty accessibility snapshot can make disappearance checks pass
+        // while removal is still running. Require the destination list instead.
+        // Like adding a mint, removal can queue behind startup/recovery work.
+        XCTAssertTrue(app.buttons["mints-add-button"].waitForExistence(timeout: 90),
+                      "Mint removal should finish and return to the list before checking state or relaunching",
+                      file: file, line: line)
+    }
+
     func testRemovingLastMintReturnsToEmptyWalletAfterRelaunch() {
         createWalletWithMint()
         tapTab("Mints")
@@ -87,10 +102,7 @@ final class WalletLifecycleUITests: UITestBase {
         tapWhenReady(app.buttons["Remove mint"])
         XCTAssertTrue(app.staticTexts["Remove mint?"].waitForExistence(timeout: 5))
         tapWhenReady(app.buttons["Remove"])
-        // The list row is already absent while its detail screen is open.
-        // Wait for successful removal to dismiss that screen before killing
-        // the process; otherwise the pending operation can be interrupted.
-        XCTAssertTrue(app.buttons["Remove mint"].waitForNonExistence(timeout: 30))
+        waitForMintListAfterRemoval()
         XCTAssertTrue(mintRow(url: mintURL).waitForNonExistence(timeout: 15))
         relaunchPreservingWallet()
         XCTAssertTrue(app.staticTexts["Add a mint to get started"].waitForExistence(timeout: 10))

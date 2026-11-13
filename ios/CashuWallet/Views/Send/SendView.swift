@@ -1168,9 +1168,9 @@ struct UnifiedSendView: View {
     @State private var isFindingMax = false
     @State private var maxFeedback: String?
     @State private var selectedMint: MintInfo?
-    /// True when the mint accepted the melt for asynchronous (NUT-05) settlement —
-    /// typical for on-chain — so the success screen says "processing", not "sent".
-    @State private var meltSettlementPending = false
+    @State private var meltResult: MeltPaymentResult?
+    /// An asynchronously accepted melt is still processing after the sheet returns.
+    private var meltSettlementPending: Bool { meltResult?.settlement == .pending }
 
     // Cashu-request live fee (ported from CashuPaymentRequestPayView)
     @State private var feeState: FeeState = .idle
@@ -2213,6 +2213,7 @@ struct UnifiedSendView: View {
     /// state is the hero spinner, never skeleton rows.
     private func meltConfirmRows(_ quote: MeltQuoteInfo) -> some View {
         let isOnchain: Bool = { if case .melt(_, .onchain, _) = locked { return true } else { return false } }()
+        let summary = MeltPaymentSummary(quote: quote)
         return VStack(spacing: 0) {
             if isOnchain, case let .melt(request, _, _) = locked {
                 PaymentDetailTextRow(label: "To", value: request)
@@ -2222,11 +2223,11 @@ struct UnifiedSendView: View {
             }
             PaymentDetailTextRow(
                 label: "Network fee",
-                value: AmountFormatter.sats(quote.feeReserve, useBitcoinSymbol: settings.useBitcoinSymbol)
+                value: summary.feeText { AmountFormatter.sats($0, useBitcoinSymbol: settings.useBitcoinSymbol) }
             )
             PaymentDetailTextRow(
-                label: "Total",
-                value: AmountFormatter.sats(quote.totalAmount, useBitcoinSymbol: settings.useBitcoinSymbol)
+                label: summary.totalLabel,
+                value: summary.totalText { AmountFormatter.sats($0, useBitcoinSymbol: settings.useBitcoinSymbol) }
             )
         }
         .padding(.top, 16)
@@ -2298,8 +2299,9 @@ struct UnifiedSendView: View {
         switch locked {
         case .melt(let request, _, _):
             if let quote = meltQuote {
+                let summary = MeltPaymentSummary(quote: quote, result: meltResult)
                 // Status rows run Method → To → Amount →
-                // fee → Mint) so both Lightning/on-chain pay screens read alike and the
+                // fee → total → Mint) so both Lightning/on-chain pay screens read alike and the
                 // rows stay stable through processing.
                 rows.append(.init(label: "Method", value: meltPaymentMethod.displayName))
                 if quote.paymentMethod == .onchain {
@@ -2308,7 +2310,7 @@ struct UnifiedSendView: View {
                 rows.append(.init(
                     label: "Amount",
                     isAmount: true,
-                    value: AmountFormatter.sats(quote.amount, useBitcoinSymbol: settings.useBitcoinSymbol)
+                    value: AmountFormatter.sats(summary.amount, useBitcoinSymbol: settings.useBitcoinSymbol)
                 ))
                 if let explanation = activeRouteExplanation {
                     rows.append(.init(
@@ -2318,7 +2320,11 @@ struct UnifiedSendView: View {
                 }
                 rows.append(.init(
                     label: "Network fee",
-                    value: AmountFormatter.sats(quote.feeReserve, useBitcoinSymbol: settings.useBitcoinSymbol)
+                    value: summary.feeText { AmountFormatter.sats($0, useBitcoinSymbol: settings.useBitcoinSymbol) }
+                ))
+                rows.append(.init(
+                    label: summary.totalLabel,
+                    value: summary.totalText { AmountFormatter.sats($0, useBitcoinSymbol: settings.useBitcoinSymbol) }
                 ))
                 if let mint = mintInfo(for: quote) ?? activeMeltMint {
                     rows.append(.init(label: "Mint", value: mint.name))
@@ -2475,11 +2481,12 @@ struct UnifiedSendView: View {
         HapticFeedback.impact(.medium)
         errorMessage = nil
         meltRetryNeedsFreshQuote = false
+        meltResult = nil
         withAnimation(.smooth(duration: 0.3)) { step = .sending }
         Task { @MainActor in
             do {
                 let result = try await walletManager.meltTokens(quoteId: quote.id, mintUrl: quote.mintUrl)
-                meltSettlementPending = result.settlement == .pending
+                meltResult = result
                 withAnimation(.smooth(duration: 0.3)) { step = .sent }
             } catch {
                 // Keep errorMessage set so the confirm screen's notice + switch-mint

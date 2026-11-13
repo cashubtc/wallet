@@ -33,8 +33,18 @@ This directory contains the complete CI infrastructure for running end-to-end in
 
 CDK setup uses release binaries instead of compiling Rust in CI:
 
-- **CDK**: Downloads and verifies official stable `cdk-mintd 0.18.2`, including the native Apple Silicon binary, and initializes its database-backed configuration
+- **CDK**: Downloads and verifies official stable `cdk-mintd 0.18.3`, including the native Apple Silicon binary, and initializes its database-backed configuration
 - **Nutshell**: Installs official stable `cashu==0.21.0` from PyPI (exposes the `mint` binary)
+
+Nutshell's published metadata requires Breez Spark 0.17.x, which has no PyPI
+artifacts. The installer uses pinned `uv` with `nutshell-overrides.txt` to resolve
+Spark 0.18.0 explicitly. The fixtures use FakeWallet; Spark's module is imported
+but its backend is never initialized. This override does not qualify Spark
+payments. Both platform caches include the override file in their keys.
+
+The [CDK 0.18.3 upgrade review](../docs/reviews/cdk-0.18.3-upgrade.md) documents
+the binding changes, removal of the iOS database teardown workaround, and native
+validation results.
 
 ## Quick Start
 
@@ -233,20 +243,20 @@ the multi-currency UI journey; the historical profile name is used by both apps.
 1. Builds the app and both test bundles once on macOS with Xcode 26.5.
 2. Archives `Build/Products`, including the `.xctestrun` file, using tar to
    preserve executable permissions and framework symlinks.
-3. Runs four jobs on separate macOS runners using those exact products:
-   unit/mint integration, lifecycle UI, settings UI, and all remaining UI tests.
+3. Runs five jobs on separate macOS runners using those exact products:
+   unit/mint integration, lifecycle UI, settings UI, live payment UI, and all
+   remaining UI tests.
    Each job owns one simulator and its own local mint/fixture processes.
 4. Exports test results and timing summaries on every run, including successful
    runs. Failed jobs also upload full `.xcresult` bundles and diagnostic logs.
 5. Aggregates exported JSON on Linux, requires every job to succeed, and checks
-   the unchanged payment coverage manifest across all four reports. The final
+   the unchanged payment coverage manifest across all five reports. The final
    check keeps the existing `iOS Unit, Mint Integration & UI Tests` name.
 
 `CI/run-ios-test-shard.sh` defines the partitions. The remaining-UI partition
-includes the entire UI target and excludes only the two explicitly assigned
-classes, so new UI classes run automatically. The groups were chosen from a
-successful baseline: lifecycle took about 11 minutes, settings 9 minutes, and
-remaining UI tests 12 minutes. Unit/integration tests took about 3 minutes.
+includes the entire UI target and excludes the classes explicitly assigned to
+other shards, so new UI classes run automatically. The live payment journeys
+run separately to keep the remaining UI shard within its time limit.
 Tests run once and serially within each runner; matrix fail-fast is disabled so
 one failure does not cancel the other groups. A test step has a 25-minute bound
 inside a 35-minute job, leaving time for cleanup and diagnostics. Existing

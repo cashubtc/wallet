@@ -9,7 +9,8 @@ extension WalletManager {
         memo: String? = nil,
         p2pkPubkey: String? = nil,
         mintUrl preferredMintURL: String? = nil,
-        unit: String = "sat"
+        unit: String = "sat",
+        contactless: ContactlessSendCallbacks? = nil
     ) async throws -> SendTokenResult {
         let currencyUnit = PaymentRequestDecoder.currencyUnit(from: unit)
         let recoveryMintURL = preferredMintURL ?? activeMint?.url
@@ -38,7 +39,8 @@ extension WalletManager {
                 send: { remember in
                     try await self.tokenService.sendTokens(
                         amount: amount, memo: memo, p2pkPubkey: p2pkPubkey,
-                        mintUrl: preferredMintURL, unit: currencyUnit, onPrepared: remember
+                        mintUrl: preferredMintURL, unit: currencyUnit, onPrepared: remember,
+                        contactless: contactless
                     )
                 }
             )
@@ -234,7 +236,7 @@ extension WalletManager {
         return try tokenService.decodeToken(tokenString: tokenString)
     }
 
-    func calculateReceiveFee(tokenString: String) async throws -> UInt64 {
+    func previewReceiveToken(tokenString: String) async throws -> ReceiveTokenPreview {
         // Fee preview must not track/enrich the mint: doing so adds it to the
         // visible mint list (hiding the "new mint" badge on a later scan) and
         // disturbs the keyset counter before the receive. tokenService creates
@@ -243,7 +245,7 @@ extension WalletManager {
             kind: .receiveFee,
             priority: .maintenance
         ) {
-            try await self.tokenService.calculateReceiveFee(tokenString: tokenString)
+            try await self.tokenService.previewReceiveToken(tokenString: tokenString)
         }
     }
 
