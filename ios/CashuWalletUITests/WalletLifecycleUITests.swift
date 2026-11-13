@@ -293,6 +293,7 @@ final class WalletLifecycleUITests: UITestBase {
         app.launch()
         createWalletWithMint()
         receive(sats: "100")
+        assertBalance("100")
         tapWhenReady(app.buttons["wallet-settings-button"])
         tapWhenReady(app.buttons["Backup & Restore"])
         tapWhenReady(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Backup seed phrase")).firstMatch)
@@ -390,7 +391,7 @@ final class WalletLifecycleUITests: UITestBase {
 
     private func assertBalance(_ amount: String) {
         let balance = app.descendants(matching: .any).matching(
-            NSPredicate(format: "label MATCHES %@", "Balance: .*\\b" + amount + "\\b.*")
+            NSPredicate(format: "label MATCHES %@", "Balance: [^0-9]*" + NSRegularExpression.escapedPattern(for: amount) + "[^0-9.,]*")
         ).firstMatch
         XCTAssertTrue(balance.waitForExistence(timeout: 15), "Wallet must display the settled balance")
     }
