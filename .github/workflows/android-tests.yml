@@ -41,6 +41,7 @@ jobs:
           android/gradle/wrapper/gradle-wrapper.properties
 
     - name: Setup Python
+      id: python
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
@@ -55,7 +56,7 @@ jobs:
         path: |
           CI/.nutshell-venv
           CI/.cdk-bin
-        key: android-local-mints-${{ runner.os }}-${{ hashFiles('CI/setup-nutshell.sh', 'CI/setup-cdk.sh') }}
+        key: android-local-mints-v2-${{ runner.os }}-${{ runner.arch }}-python-${{ steps.python.outputs.python-version }}-${{ hashFiles('CI/setup-nutshell.sh', 'CI/nutshell-overrides.txt', 'CI/setup-cdk.sh') }}
 
     - name: Run Android JVM tests
       run: ./gradlew --no-daemon :app:testDebugUnitTest
@@ -64,9 +65,8 @@ jobs:
       working-directory: .
       run: |
         chmod +x CI/setup-nutshell.sh CI/setup-cdk.sh
-        if [ "${{ steps.mint-cache.outputs.cache-hit }}" != "true" ]; then
-          ./CI/setup-nutshell.sh
-        fi
+        # Repair cached virtualenvs when runner interpreter paths change.
+        PYTHON="$pythonLocation/bin/python" ./CI/setup-nutshell.sh
         ./CI/setup-cdk.sh 3339 android
 
     - name: Start Android local test mints
