@@ -544,6 +544,8 @@ struct HistoryView: View {
         let amountPart: String
         if amount == 0 {
             amountPart = "any amount"
+        } else if settings.hideBalances {
+            amountPart = AmountFormatter.hiddenRowAmountAccessibility
         } else {
             let display = AmountFormatter.displayMintUnitAmount(
                 amount: amount,

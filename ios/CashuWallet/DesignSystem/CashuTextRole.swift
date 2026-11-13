@@ -38,6 +38,11 @@ struct CashuTextRole: Equatable {
         }
     }
 
+    /// How far private mode's asterisks drop to sit on this role's digit centre.
+    func asteriskDrop(at typeSize: DynamicTypeSize, fonts: CashuFonts) -> CGFloat {
+        fonts.asteriskDrop(face, size: pointSize(at: typeSize), weight: weight)
+    }
+
     /// The line box this role occupies at the current text size.
     ///
     /// Containers that must reserve space for a hero use this instead of a

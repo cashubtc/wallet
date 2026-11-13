@@ -58,6 +58,7 @@ struct TransactionRowView: View {
     }
 
     private func formatAmount(_ transaction: WalletTransaction) -> String {
+        if settings.hideBalances { return AmountFormatter.hiddenRowAmountAccessibility }
         let value = AmountFormatter.displayMintUnitAmount(
             amount: transaction.amount,
             unit: transaction.unit,

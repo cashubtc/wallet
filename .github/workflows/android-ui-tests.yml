@@ -108,6 +108,7 @@ jobs:
           android/gradle/wrapper/gradle-wrapper.properties
 
     - name: Setup Python
+      id: python
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
@@ -150,14 +151,14 @@ jobs:
         path: |
           CI/.nutshell-venv
           CI/.cdk-bin
-        key: android-local-mints-${{ runner.os }}-${{ hashFiles('CI/setup-nutshell.sh', 'CI/nutshell-overrides.txt', 'CI/setup-cdk.sh') }}
+        key: android-local-mints-v2-${{ runner.os }}-${{ runner.arch }}-python-${{ steps.python.outputs.python-version }}-${{ hashFiles('CI/setup-nutshell.sh', 'CI/nutshell-overrides.txt', 'CI/setup-cdk.sh') }}
 
     - name: Setup local Nutshell mint
-      if: steps.mint-cache.outputs.cache-hit != 'true'
       working-directory: .
       run: |
         chmod +x CI/setup-nutshell.sh
-        ./CI/setup-nutshell.sh
+        # Repair cached virtualenvs when runner interpreter paths change.
+        PYTHON="$pythonLocation/bin/python" ./CI/setup-nutshell.sh
 
     - name: Setup local CDK mint
       working-directory: .

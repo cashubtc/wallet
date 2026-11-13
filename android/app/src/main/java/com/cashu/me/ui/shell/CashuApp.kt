@@ -320,6 +320,7 @@ private enum class AppGate { Loading, Onboarding, Shell }
 private fun AuthenticatedShell(container: AppContainer) {
     val navController = rememberNavController()
     val walletState by container.walletManager.state.collectAsState()
+    val settings by container.settingsManager.state.collectAsState()
     val isRuntimeReadyRef by rememberUpdatedState(walletState.isRuntimeReady)
     var scannerTarget by remember { mutableStateOf<ScannerTarget?>(null) }
     // The active money flow, hosted in a modal bottom sheet (iOS WalletFlow sheets).
@@ -384,11 +385,11 @@ private fun AuthenticatedShell(container: AppContainer) {
     val arrivalScope = rememberCoroutineScope()
     val homeArrival = remember { HomeArrivalCoordinator(arrivalScope) }
     val arrivalHaptics = rememberWalletHaptics()
-    var receiptAnnouncement by remember { mutableStateOf<String?>(null) }
+    var receiptAnnouncement by remember { mutableStateOf<List<HomeReceipt>?>(null) }
     SideEffect {
         homeArrival.onConfirm = { receipts ->
             arrivalHaptics.perform(WalletHaptic.Success)
-            receiptAnnouncement = homeReceiptAnnouncement(receipts)
+            receiptAnnouncement = receipts
         }
     }
     LaunchedEffect(receiptAnnouncement) {
@@ -561,7 +562,9 @@ private fun AuthenticatedShell(container: AppContainer) {
                 .size(1.dp)
                 .semantics {
                     liveRegion = LiveRegionMode.Polite
-                    receiptAnnouncement?.let { contentDescription = it }
+                    receiptAnnouncement?.let {
+                        contentDescription = homeReceiptAnnouncement(it, hideBalances = settings.hideBalances)
+                    }
                 },
         )
         AnimatedVisibility(

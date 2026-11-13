@@ -65,6 +65,8 @@ import com.cashu.me.Core.AmountDisplayText
 import com.cashu.me.Core.AmountFormatter
 import com.cashu.me.Core.displayMintUnitAmount
 import com.cashu.me.Core.HomeBalance
+import com.cashu.me.Core.HomeBalanceCycle
+import com.cashu.me.Core.HomeBalanceStep
 import com.cashu.me.Core.Protocols.CurrencyAmount
 import com.cashu.me.Core.Protocols.CurrencyRegistry
 import com.cashu.me.Core.PriceService
@@ -163,17 +165,12 @@ fun HomeScreen(
             useBitcoinSymbol = settings.useBitcoinSymbol,
         )
     }
-    val onSatBalanceClick: (() -> Unit)? = balanceDisplay.secondary?.let {
-        {
-            haptics.perform(WalletHaptic.Selection)
-            settingsManager.setHomeBalancePrimary(
-                if (balanceDisplay.effectivePrimary == AmountDisplayPrimary.Sats) {
-                    AmountDisplayPrimary.Fiat.rawValue
-                } else {
-                    AmountDisplayPrimary.Sats.rawValue
-                },
-            )
-        }
+    // Every step of the tap cycle (bitcoin → fiat → private) gets the same
+    // selection tick, fired here rather than from a state change so a price
+    // that drops out never buzzes.
+    val onBalanceCycle: (HomeBalanceStep) -> Unit = { next ->
+        haptics.perform(WalletHaptic.Selection)
+        settingsManager.applyHomeBalanceStep(next)
     }
 
     // The held rows, each rendered from the wallet's current copy of it; a
@@ -234,9 +231,10 @@ fun HomeScreen(
                         ),
                         balancesByUnit = shownBalancesByUnit,
                         satAmount = balanceDisplay,
+                        hidden = settings.hideBalances,
                         persistedUnit = settings.homeBalanceUnit,
                         onUnitSelected = settingsManager::setHomeBalanceUnit,
-                        onSatBalanceClick = onSatBalanceClick,
+                        onCycle = onBalanceCycle,
                         receivedDeltas = arrival.receivedDeltas,
                         formatter = formatter,
                         statusMessage = PREPARING_WALLET_LABEL.takeIf {
@@ -332,6 +330,7 @@ fun HomeScreen(
                                     timestamp = formatRelativeTimestamp(tx.dateEpochMillis),
                                     primaryAmount = amountDisplay.primary,
                                     secondaryAmount = amountDisplay.secondary,
+                                    amountHidden = settings.hideBalances,
                                 ),
                                 onClick = { onOpenTransaction(tx) },
                             )
@@ -443,15 +442,20 @@ private fun PinnedTop(
  * Multi-unit (iOS MainWalletView.unitBalanceHero): swipeable pager, sat first
  * then held non-sat units. Sat keeps the ₿/fiat toggle + secondary/delta line;
  * non-sat pages show their own currency with no fiat conversion.
+ *
+ * Every page is tappable and advances [HomeBalanceCycle]: bitcoin → fiat →
+ * private on the sat page, unit → private elsewhere. Private mode is one switch
+ * for every page, so swiping while hidden stays hidden.
  */
 @Composable
 private fun HomeBalanceHero(
     showsPager: Boolean,
     balancesByUnit: Map<String, Long>,
     satAmount: AmountDisplayText,
+    hidden: Boolean,
     persistedUnit: String,
     onUnitSelected: (String) -> Unit,
-    onSatBalanceClick: (() -> Unit)?,
+    onCycle: (HomeBalanceStep) -> Unit,
     receivedDeltas: Map<String, Long>,
     formatter: AmountFormatter,
     statusMessage: String?,
@@ -493,9 +497,8 @@ private fun HomeBalanceHero(
                 ) { page ->
                     val unit = units.getOrElse(page) { "sat" }
                     val isSat = unit.equals("sat", ignoreCase = true)
-                    val receivedDelta = receivedDeltas[unit.lowercase()]
-                        ?.let { receivedDeltaText(it, unit, formatter) }
-                    BalanceDisplay(
+                    UnitBalancePage(
+                        unit = unit,
                         amount = if (isSat) {
                             satAmount
                         } else {
@@ -508,20 +511,22 @@ private fun HomeBalanceHero(
                                 effectivePrimary = AmountDisplayPrimary.Sats,
                             )
                         },
-                        receivedDelta = receivedDelta,
+                        hidden = hidden,
+                        receivedDelta = receivedDeltas[unit.lowercase()],
+                        formatter = formatter,
                         statusMessage = statusMessage,
-                        onPrimaryClick = if (isSat) onSatBalanceClick else null,
-                        modifier = Modifier.fillMaxWidth(),
+                        onCycle = onCycle,
                     )
                 }
             } else {
-                BalanceDisplay(
+                UnitBalancePage(
+                    unit = "sat",
                     amount = satAmount,
-                    receivedDelta = receivedDeltas["sat"]
-                        ?.let { receivedDeltaText(it, "sat", formatter) },
+                    hidden = hidden,
+                    receivedDelta = receivedDeltas["sat"],
+                    formatter = formatter,
                     statusMessage = statusMessage,
-                    onPrimaryClick = onSatBalanceClick,
-                    modifier = Modifier.fillMaxWidth(),
+                    onCycle = onCycle,
                 )
             }
         }
@@ -562,8 +567,56 @@ private fun HomeBalanceHero(
     }
 }
 
-private fun receivedDeltaText(amount: Long, unit: String, formatter: AmountFormatter): String =
-    if (unit.equals("sat", ignoreCase = true)) {
+/**
+ * One unit's hero: masked in private mode, and always tappable, with the click
+ * label naming where the next tap goes.
+ */
+@Composable
+private fun UnitBalancePage(
+    unit: String,
+    amount: AmountDisplayText,
+    hidden: Boolean,
+    receivedDelta: Long?,
+    formatter: AmountFormatter,
+    statusMessage: String?,
+    onCycle: (HomeBalanceStep) -> Unit,
+) {
+    val isSat = unit.equals("sat", ignoreCase = true)
+    val current = HomeBalanceCycle.current(
+        isHidden = hidden,
+        effectivePrimary = amount.effectivePrimary,
+        isSatPage = isSat,
+    )
+    val next = HomeBalanceCycle.next(
+        after = current,
+        hasFiat = isSat && HomeBalanceCycle.hasFiat(amount),
+        isSatPage = isSat,
+    )
+    val phrase = HomeBalanceCycle.actionPhrase(
+        next = next,
+        fiatText = amount.secondary,
+        unitName = HomeBalanceCycle.unitName(unit),
+    )
+    BalanceDisplay(
+        amount = if (hidden) AmountFormatter.HiddenBalance else amount,
+        receivedDelta = receivedDelta?.let { receivedDeltaText(it, unit, formatter, hidden) },
+        statusMessage = statusMessage,
+        onPrimaryClick = { onCycle(next) },
+        primaryClickLabel = phrase.replaceFirstChar { it.uppercase() },
+        hidden = hidden,
+        modifier = Modifier.fillMaxWidth(),
+    )
+}
+
+private fun receivedDeltaText(
+    amount: Long,
+    unit: String,
+    formatter: AmountFormatter,
+    hidden: Boolean,
+): String =
+    if (hidden) {
+        AmountFormatter.HiddenDelta
+    } else if (unit.equals("sat", ignoreCase = true)) {
         "+" + formatter.formatSats(amount, includeUnit = false)
     } else {
         "+" + CurrencyAmount(

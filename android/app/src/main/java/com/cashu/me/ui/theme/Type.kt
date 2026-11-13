@@ -168,7 +168,7 @@ enum class AmountScale { Hero, Confirm, Compact, Row }
 const val AmountUnitScale = 0.5f
 
 /** One step down the weight ramp, for the subordinated unit. */
-private fun FontWeight.oneStepDown(): FontWeight = when (this) {
+internal fun FontWeight.oneStepDown(): FontWeight = when (this) {
     FontWeight.Bold -> FontWeight.SemiBold
     FontWeight.SemiBold -> FontWeight.Medium
     FontWeight.Medium -> FontWeight.Normal

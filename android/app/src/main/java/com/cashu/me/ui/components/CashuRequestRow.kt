@@ -12,6 +12,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.font.FontWeight
 import com.cashu.me.Core.AmountDisplayText
 import com.cashu.me.Core.AmountFormatter
@@ -87,6 +89,7 @@ fun CashuRequestRow(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     onLongClick: (() -> Unit)? = null,
+    amountHidden: Boolean = false,
 ) {
     val received = request.receivedPayments.isNotEmpty()
     Row(
@@ -120,10 +123,23 @@ fun CashuRequestRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        Column(horizontalAlignment = Alignment.End) {
+        Column(
+            horizontalAlignment = Alignment.End,
+            // Private mode: the amount reads "Amount hidden" and the fading-out
+            // digits never reach TalkBack.
+            modifier = if (amountHidden && primaryAmountText != null) {
+                Modifier.clearAndSetSemantics { contentDescription = AmountFormatter.HiddenAmountLabel }
+            } else {
+                Modifier
+            },
+        ) {
             if (primaryAmountText != null) {
                 AmountText(
-                    text = if (received) "+$primaryAmountText" else primaryAmountText,
+                    text = when {
+                        amountHidden -> AmountFormatter.HiddenDigits
+                        received -> "+$primaryAmountText"
+                        else -> primaryAmountText
+                    },
                     style = MaterialTheme.typography.bodyLarge
                         .copy(fontWeight = FontWeight.Medium)
                         .withMonoDigits(),
@@ -140,7 +156,8 @@ fun CashuRequestRow(
             }
             if (secondaryAmountText != null) {
                 AmountText(
-                    text = secondaryAmountText,
+                    // Keeps the line's height while the fiat value fades out.
+                    text = if (amountHidden) "\u00A0" else secondaryAmountText,
                     style = MaterialTheme.typography.bodyMedium
                         .copy(fontWeight = FontWeight.Normal)
                         .withMonoDigits(),

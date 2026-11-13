@@ -193,6 +193,30 @@ class AmountFormatter(
 
     companion object {
         /**
+         * Private mode's stand-in for an amount's digits. Always four, so the
+         * length never hints at how much is there.
+         */
+        const val HiddenDigits = "****"
+
+        /** The received beat in private mode, mirroring "+2,500" with its digits masked. */
+        const val HiddenDelta = "+$HiddenDigits"
+
+        /**
+         * The private-mode home hero on every page: the asterisks alone, with
+         * no ₿, sat or currency symbol, and no secondary line. Its parts are
+         * passed explicitly; [AmountParts.parse] has no digits to anchor on.
+         */
+        val HiddenBalance = AmountDisplayText(
+            primary = HiddenDigits,
+            secondary = null,
+            effectivePrimary = AmountDisplayPrimary.Sats,
+            primaryParts = AmountParts(HiddenDigits, AmountParts.Affix.None),
+        )
+
+        /** What TalkBack reads for a masked row amount. */
+        const val HiddenAmountLabel = "Amount hidden"
+
+        /**
          * The decimal separator to *show* for a locale. The keypad labels its
          * decimal key with this; raw entry strings stay canonical.
          */

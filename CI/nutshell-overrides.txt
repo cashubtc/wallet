@@ -1,3 +1,4 @@
-# Nutshell 0.21.0 declares >=0.17,<0.18, but 0.17 has no PyPI artifacts.
-# FakeWallet fixtures only import Spark's module; they do not run this backend.
-breez-sdk-spark==0.18.0
+# Nutshell 0.21.0 declares >=0.17,<0.18; those releases have no PyPI artifacts.
+# FakeWallet fixtures only import Spark; they do not run this backend.
+# Pin an available wheel verified with mint startup on macOS and Linux resolution.
+breez-sdk-spark==0.21.1

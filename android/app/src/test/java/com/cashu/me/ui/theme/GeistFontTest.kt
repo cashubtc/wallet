@@ -52,6 +52,36 @@ class GeistFontTest {
         val xHeightRatio: Float get() = s16(tables.getValue("OS/2") + 86) / unitsPerEm.toFloat()
         val ascentRatio: Float get() = s16(tables.getValue("hhea") + 4) / unitsPerEm.toFloat()
 
+        /** The vertical centre of [char]'s outline (default instance), as a fraction of the em. */
+        fun glyphMidRatio(char: Char): Float {
+            val glyph = glyphId(char.code)
+            val loca = tables.getValue("loca")
+            val longOffsets = s16(tables.getValue("head") + 50) == 1
+            val offset = if (longOffsets) u32(loca + glyph * 4).toInt() else u16(loca + glyph * 2) * 2
+            val header = tables.getValue("glyf") + offset
+            return (s16(header + 4) + s16(header + 8)) / 2f / unitsPerEm
+        }
+
+        /** Looks [code] up in the format 4 (Unicode BMP) character map. */
+        private fun glyphId(code: Int): Int {
+            val cmap = tables.getValue("cmap")
+            val subtable = (0 until u16(cmap + 2))
+                .map { cmap + u32(cmap + 4 + it * 8 + 4).toInt() }
+                .first { u16(it) == 4 }
+            val segments = u16(subtable + 6) / 2
+            val ends = subtable + 14
+            val starts = ends + segments * 2 + 2
+            val deltas = starts + segments * 2
+            val rangeOffsets = deltas + segments * 2
+            val segment = (0 until segments).first { code <= u16(ends + it * 2) }
+            require(code >= u16(starts + segment * 2)) { "No glyph for U+${code.toString(16)}" }
+            val delta = s16(deltas + segment * 2)
+            val rangeOffset = u16(rangeOffsets + segment * 2)
+            if (rangeOffset == 0) return (code + delta) and 0xFFFF
+            val index = rangeOffsets + segment * 2 + rangeOffset + (code - u16(starts + segment * 2)) * 2
+            return (u16(index) + delta) and 0xFFFF
+        }
+
         /** Every feature tag registered in a layout table. */
         fun features(table: String): Set<String> {
             val base = tables[table] ?: return emptySet()
@@ -128,6 +158,19 @@ class GeistFontTest {
         assertEquals(CashuFonts.Geist.ascentRatio, sans.ascentRatio, 0.001f)
         assertEquals(CashuFonts.Geist.capHeightRatio, mono.capHeightRatio, 0.001f)
         assertEquals(CashuFonts.Geist.ascentRatio, mono.ascentRatio, 0.001f)
+    }
+
+    /**
+     * Pins [CashuFonts.asteriskDropRatio]: how far private mode's asterisks
+     * drop for their centre to meet the digits' centre (half the cap height).
+     * Read from the shipped outline's default instance, which sits within a
+     * hundredth of an em of the weights amounts use, so a face whose `*` sits
+     * elsewhere (Roboto's needs 0.161) fails here instead of on screen.
+     */
+    @Test
+    fun `declared asterisk drop matches the shipped face`() {
+        val drop = sans.glyphMidRatio('*') - sans.capHeightRatio / 2f
+        assertEquals(CashuFonts.Geist.asteriskDropRatio, drop, 0.01f)
     }
 
     /**

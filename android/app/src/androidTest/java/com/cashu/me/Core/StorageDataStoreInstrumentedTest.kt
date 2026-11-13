@@ -272,6 +272,21 @@ class StorageDataStoreInstrumentedTest {
     }
 
     @Test
+    fun hiddenBalancesPersistAndSurviveWalletScopedClears() {
+        val storeName = uniqueStoreName("settings_store")
+        val store = SettingsStore(context, storeName)
+        assertFalse(store.hideBalances)
+
+        store.hideBalances = true
+        assertTrue(SettingsStore(context, storeName).hideBalances)
+
+        // A device preference, like the home balance primary: deleting or
+        // restoring a wallet keeps it.
+        store.clearWalletScopedData()
+        assertTrue(SettingsStore(context, storeName).hideBalances)
+    }
+
+    @Test
     fun legacyGlobalPriceCacheMigratesOnceToSelectedCurrency() {
         val storeName = uniqueStoreName("settings_store")
         val rawStore = DataStorePreferenceStore(context, storeName)
