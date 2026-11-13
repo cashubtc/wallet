@@ -52,7 +52,7 @@ fi
 # Use a pinned resolver with an explicit, narrowly scoped dependency override.
 # Nutshell 0.21.0 requires Breez Spark 0.17.x, which has no PyPI artifacts.
 # CI uses FakeWallet; Spark is imported by Nutshell but never initialized.
-# 0.18.0 provides the required imports on macOS and Linux.
+# 0.21.1 has available wheels and provides the required imports on macOS and Linux.
 "$VENV_DIR/bin/pip" install "uv==0.11.8"
 # Official stable mint release and compatible transitive-dependency pins:
 #   - cashu==0.21.0: keep local and CI interoperability runs reproducible.
