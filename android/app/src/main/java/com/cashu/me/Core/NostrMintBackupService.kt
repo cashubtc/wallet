@@ -12,8 +12,12 @@ data class NostrMintBackupState(
 )
 
 sealed class NostrMintBackupException(message: String) : IllegalStateException(message) {
-    class WebSocketsDisabled : NostrMintBackupException("Websocket connections are disabled.")
-    class NoRelays : NostrMintBackupException("No Nostr relays are configured.")
+    class WebSocketsDisabled : NostrMintBackupException(
+        "WebSocket connections are disabled. Enable them in Settings → Privacy, then try again.",
+    )
+    class NoRelays : NostrMintBackupException(
+        "No Nostr relays are configured. Add a relay in Settings → Nostr, then try again.",
+    )
     class NothingToBackUp : NostrMintBackupException("There are no mints to back up yet.")
     class RestoreIncomplete : NostrMintBackupException("Finish restoring the wallet before replacing its backup.")
 }

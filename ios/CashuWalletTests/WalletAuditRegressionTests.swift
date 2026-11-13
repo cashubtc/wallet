@@ -60,6 +60,30 @@ final class WalletAuditRegressionTests: XCTestCase {
 
 
     /// Run in a fresh test simulator: never replace an existing wallet fixture.
+    func testDifferentSeedRetryProtectsTheUnfinishedRestore() async throws {
+        let manager = WalletManager()
+        guard try manager.keychainService.loadMnemonic() == nil else {
+            throw XCTSkip("This integration regression requires an empty test wallet container.")
+        }
+        let phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+        let other = "legal winner thank year wave sausage worth useful legal winner thank yellow"
+        try await manager.initializeRestoredWallet(mnemonic: phrase)
+        let database = try XCTUnwrap(manager.db)
+        do {
+            try await manager.initializeRestoredWallet(mnemonic: other)
+            XCTFail("An unfinished restore must preserve both wallet databases")
+        } catch {
+            XCTAssertTrue(error.userFacingWalletMessage.contains("Finish the current restore"))
+        }
+        XCTAssertTrue(manager.db === database)
+        XCTAssertEqual(try manager.keychainService.loadMnemonic(), phrase)
+        try await manager.initializeRestoredWallet(mnemonic: phrase)
+        let completed = await manager.completeRestore()
+        XCTAssertTrue(completed)
+        try await manager.deleteWallet()
+    }
+
+    /// Run in a fresh test simulator: never replace an existing wallet fixture.
     func testSameSeedRestoreKeepsNativeQuoteKeyCounterAndRepository() async throws {
         let manager = WalletManager()
         guard try manager.keychainService.loadMnemonic() == nil else {

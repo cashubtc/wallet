@@ -11,6 +11,42 @@ private struct RawMintError: Error, CustomStringConvertible {
 }
 
 final class WalletErrorMessageTests: XCTestCase {
+    @MainActor
+    func testMintSearchExplainsHowToEnableDisabledWebsockets() async {
+        let settings = SettingsManager.shared
+        let previous = settings.useWebsockets
+        defer { settings.useWebsockets = previous }
+        settings.useWebsockets = false
+        do {
+            _ = try await NostrMintBackupService.shared.fetchBackedUpMintURLs()
+            XCTFail("A disabled relay connection cannot search for a backup")
+        } catch {
+            XCTAssertTrue(error is NostrMintBackupError)
+            XCTAssertEqual(error.userFacingWalletMessage,
+                           "WebSocket connections are disabled. Enable them in Settings → Privacy, then try again.")
+        }
+        XCTAssertFalse(NostrMintBackupService.shared.isSearching)
+    }
+
+    func testMintSearchSettingsSurviveWalletReplacementButFreshStorageHasDefaults() {
+        let storage = InMemoryStorage()
+        let store = SettingsStore(storage: storage)
+        store.useWebsockets = false
+        store.nostrRelays = []
+        store.clearWalletScopedData()
+        let reopened = SettingsStore(storage: storage)
+        XCTAssertFalse(reopened.useWebsockets)
+        XCTAssertTrue(reopened.nostrRelays.isEmpty)
+        let fresh = SettingsStore(storage: InMemoryStorage())
+        XCTAssertTrue(fresh.useWebsockets)
+        XCTAssertFalse(fresh.nostrRelays.isEmpty)
+    }
+
+    func testMintSearchWithNoRelaysExplainsWhereToConfigureThem() {
+        XCTAssertEqual(NostrMintBackupError.noRelays.userFacingWalletMessage,
+                       "No Nostr relays are configured. Add a relay in Settings → Nostr, then try again.")
+    }
+
 
     func testReceiveFeeIdentifiesUnavailableMint() {
         for raw in [
