@@ -142,9 +142,9 @@ enum NostrMintBackupError: LocalizedError {
         case .notInitialized:
             return "Wallet is not initialized."
         case .noRelays:
-            return "No Nostr relays are configured."
+            return "No Nostr relays are configured. Add a relay in Settings → Nostr, then try again."
         case .webSocketsDisabled:
-            return "Websocket connections are disabled."
+            return "WebSocket connections are disabled. Enable them in Settings → Privacy, then try again."
         case .nothingToBackUp:
             return "There are no mints to back up yet."
         }

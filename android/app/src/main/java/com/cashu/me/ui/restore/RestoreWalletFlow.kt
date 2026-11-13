@@ -465,8 +465,7 @@ class RestoreMintsStagingState internal constructor(
         }
     }
 
-    /// True once a lookup has finished, however it finished — drives the
-    /// empty-state line's "no backup found" wording.
+    /// Only a successful lookup can establish that no backup was found.
     var backupSearchCompleted by mutableStateOf(false)
         private set
 
@@ -488,6 +487,8 @@ class RestoreMintsStagingState internal constructor(
         // view-layer courtesy; refuse re-entry here so a second call can never
         // double-stage the same backup.
         if (nostrMintBackupService.state.value.isSearching) return
+        backupSearchCompleted = false
+        setNotice(null)
         scope.launch {
             runCatching { nostrMintBackupService.fetchBackedUpMintUrls() }
                 .onSuccess { urls ->
@@ -511,7 +512,6 @@ class RestoreMintsStagingState internal constructor(
                     backupSearchCompleted = true
                 }
                 .onFailure {
-                    backupSearchCompleted = true
                     // Through the shared mapper, never the raw message — a
                     // relay failure here surfaced as a raw CDK FFI dump.
                     setNotice(it.userFacingWalletMessage, NoticeSeverity.Error)
