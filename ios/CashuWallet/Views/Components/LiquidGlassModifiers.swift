@@ -9,6 +9,11 @@ extension EnvironmentValues {
     /// Compact sheets use an explicit tonal hierarchy; large flat sheets retain
     /// their existing semantic fills, and the wallet canvas keeps Liquid Glass.
     @Entry var bottomSheetSurfaceStyle: BottomSheetSurfaceStyle = .glass
+
+    /// Set by ``View/contentFitDetent(_:enabled:estimate:navigationBar:step:stepResize:)``
+    /// so ``View/contentFitMeasured(_:)`` can report the sheet's top chrome from
+    /// inside the `NavigationStack`, where the navigation bar is visible.
+    @Entry var contentFitChrome: ContentFitChrome?
 }
 
 enum BottomSheetSurfaceStyle {
@@ -527,6 +532,7 @@ private struct WalletCanvasBackground: View {
 private struct ContentFitMeasure: ViewModifier {
     let onHeight: (CGFloat) -> Void
 
+    @Environment(\.contentFitChrome) private var chrome
     @State private var bodyHeight: CGFloat = 0
     @State private var containerHeight: CGFloat = 0
 
@@ -549,6 +555,14 @@ private struct ContentFitMeasure: ViewModifier {
         } action: { newHeight in
             containerHeight = newHeight
             publish()
+        }
+        // The grabber area and the inline navigation bar, as this sheet
+        // actually lays them out. Unlike the height, this inset does not move
+        // with the detent, so feeding it back into the detent is no loop.
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.safeAreaInsets.top
+        } action: { top in
+            chrome?.top = top
         }
     }
 
@@ -591,6 +605,9 @@ private struct ContentFitDetent: ViewModifier {
     @State private var knownPerStep: [AnyHashable?: PresentationDetent] = [:]
     @State private var moving = false
     @State private var moves = 0
+    /// The sheet's own chrome, read rather than assumed. See ``measuredChrome``.
+    @State private var chrome = ContentFitChrome()
+    @State private var rootInsets: EdgeInsets?
 
     @MainActor
     init(
@@ -630,13 +647,15 @@ private struct ContentFitDetent: ViewModifier {
         for contentHeight: CGFloat,
         enabled: Bool,
         estimate: CGFloat,
-        navigationBar: Bool
+        navigationBar: Bool,
+        measuredChrome: CGFloat? = nil
     ) -> PresentationDetent {
         guard enabled else { return .large }
         return .height(ContentFitSheetMetrics.detentHeight(
             for: contentHeight,
             estimate: estimate,
-            hasNavigationBar: navigationBar
+            hasNavigationBar: navigationBar,
+            measuredChrome: measuredChrome
         ))
     }
 
@@ -645,8 +664,40 @@ private struct ContentFitDetent: ViewModifier {
             for: contentHeight,
             enabled: enabled,
             estimate: estimate,
-            navigationBar: navigationBar
+            navigationBar: navigationBar,
+            measuredChrome: measuredChrome
         )
+    }
+
+    /// What the detent has to add to the body, from the sheet's own layout.
+    ///
+    /// A `.height` detent leaves out the window's bottom safe area: UIKit adds
+    /// that below the requested height itself. So the detent needs the chrome
+    /// above the body, plus any bottom inset the sheet keeps beyond the
+    /// window's, which is negative where a sheet keeps less than the window.
+    ///
+    /// The top comes from the body, inside the `NavigationStack`, so it
+    /// includes the inline navigation bar. It is never less than the root's own
+    /// top inset, which covers bare sheets whose body sits in a nested scroll
+    /// view. The bottom comes from the root, because a body with a pinned
+    /// button below it (Receive's request) does not touch the bottom edge, and
+    /// it is capped at the window's inset, because a focused field adds the
+    /// keyboard to it.
+    ///
+    /// Until the body reports, a sheet with a navigation bar keeps the assumed
+    /// chrome rather than a bare root's, which would be short by the whole bar.
+    private var measuredChrome: CGFloat? {
+        guard let rootInsets else { return nil }
+        let top: CGFloat
+        if let bodyTop = chrome.top {
+            top = max(bodyTop, rootInsets.top)
+        } else if !navigationBar {
+            top = rootInsets.top
+        } else {
+            return nil
+        }
+        let windowBottom = ContentFitSheetMetrics.windowBottomInset
+        return top + min(rootInsets.bottom, windowBottom) - windowBottom
     }
 
     /// The height being moved to, plus the one currently selected.
@@ -679,6 +730,12 @@ private struct ContentFitDetent: ViewModifier {
 
     func body(content: Content) -> some View {
         content
+            .environment(\.contentFitChrome, chrome)
+            .onGeometryChange(for: EdgeInsets.self) { proxy in
+                proxy.safeAreaInsets
+            } action: { insets in
+                rootInsets = insets
+            }
             .presentationDetents(detents, selection: $selection)
             .onAppear { apply(detent) }
             .onChange(of: detent) { _, newDetent in apply(newDetent) }
@@ -720,15 +777,37 @@ private extension Duration {
 
 // MARK: - Content-Fit Sheet Metrics
 
+/// The top chrome of one content-fit sheet, written by the measured body and
+/// read by the detent. Handed down through the environment, so any measured
+/// body inside the sheet, a pushed step included, can write to it.
+@Observable
+@MainActor
+final class ContentFitChrome {
+    /// The measured body's top safe-area inset: the inline navigation bar plus
+    /// whatever the sheet keeps above it. `nil` until a body reports.
+    var top: CGFloat?
+}
+
 /// The one place the content-fit sheet arithmetic lives. Every partial-height
 /// sheet in the app — Send's compact input, Receive, Add mint, connect-a-mint,
 /// onboarding's "What is ecash?" — hugs its content through
 /// ``View/contentFitMeasured(_:)`` +
 /// ``View/contentFitDetent(_:enabled:estimate:navigationBar:)``.
+///
+/// The chrome around the body is measured from the sheet itself. The constants
+/// below only cover the first frame, before that measurement lands. Measured on
+/// iOS 26.5 and 27, the inline navigation bar takes 70pt, not 44, which left
+/// every sheet with a title 26pt short; on Receive's request that put the
+/// Details row under the Copy button. On iOS 18 they added the home-indicator
+/// inset that UIKit already adds, leaving sheets without a title 34pt too tall.
+///
+/// Measure in the sheet's own coordinates, never in `.global`: iOS 27 draws a
+/// partial-height sheet scaled to its inset width (386 / 402 on an 18 Pro), so
+/// global frames come out about 4% smaller than the layout they hold.
 @MainActor
 enum ContentFitSheetMetrics {
-    /// Inline navigation bar — the only chrome that actually consumes layout
-    /// height above the body.
+    /// Fallback for the inline navigation bar until the sheet's own top inset
+    /// is measured.
     ///
     /// Notably absent: the drag indicator. `presentationDragIndicator` draws the
     /// grabber as an *overlay* over the content's own top padding, so reserving
@@ -738,9 +817,9 @@ enum ContentFitSheetMetrics {
     /// indicator gets the safe-area inset below that.
     static let navigationBar: CGFloat = 44
 
-    /// Chrome above the measured body. The bottom safe area is *not* folded in
-    /// here — it's 34pt on Face ID devices and 0 on home-button ones, so it's
-    /// resolved per device in ``detentHeight(for:estimate:hasNavigationBar:)``.
+    /// Fallback chrome above the measured body. The bottom safe area is *not*
+    /// folded in here — it's 34pt on Face ID devices and 0 on home-button ones,
+    /// so it's resolved per device in ``detentHeight(for:estimate:hasNavigationBar:measuredChrome:)``.
     static func chrome(hasNavigationBar: Bool) -> CGFloat {
         hasNavigationBar ? navigationBar : 0
     }
@@ -753,29 +832,43 @@ enum ContentFitSheetMetrics {
     /// unclamped detent would silently pin the sheet to full height.
     static let maxScreenFraction: CGFloat = 0.9
 
+    /// - Parameter measuredChrome: the sheet's own chrome above and below the
+    ///   body, once measured. `nil` uses the fallback constants.
     static func detentHeight(
         for contentHeight: CGFloat,
         estimate: CGFloat = bodyEstimate,
-        hasNavigationBar: Bool = true
+        hasNavigationBar: Bool = true,
+        measuredChrome: CGFloat? = nil
     ) -> CGFloat {
         let body = contentHeight > 0 ? contentHeight : estimate
         let window = activeWindow
-        let bottomInset: CGFloat
-        if #available(iOS 26, *) {
-            // iOS 26's floating glass sheets already rest above the home
-            // indicator, so the window's bottom inset no longer applies to
-            // sheet content — folding it in lands as dead space under the
-            // sheet's own bottom padding (visible under onboarding's "Got it").
-            bottomInset = 0
+        let wanted: CGFloat
+        if let measuredChrome {
+            wanted = body + measuredChrome
         } else {
-            bottomInset = window?.safeAreaInsets.bottom ?? 0
+            let bottomInset: CGFloat
+            if #available(iOS 26, *) {
+                // iOS 26's floating glass sheets already rest above the home
+                // indicator, so the window's bottom inset no longer applies to
+                // sheet content — folding it in lands as dead space under the
+                // sheet's own bottom padding (visible under onboarding's "Got it").
+                bottomInset = 0
+            } else {
+                bottomInset = window?.safeAreaInsets.bottom ?? 0
+            }
+            wanted = body + chrome(hasNavigationBar: hasNavigationBar) + bottomInset
         }
-        let wanted = body + chrome(hasNavigationBar: hasNavigationBar) + bottomInset
         // Read the ceiling from the *screen*, never from the sheet's own
         // geometry — the latter would reintroduce the feedback loop this whole
         // mechanism exists to avoid.
         guard let screenHeight = window?.screen.bounds.height, screenHeight > 0 else { return wanted }
         return min(wanted, screenHeight * maxScreenFraction)
+    }
+
+    /// The bottom safe area UIKit adds under every `.height` detent: 34pt on
+    /// Face ID iPhones, 0 on home-button ones.
+    static var windowBottomInset: CGFloat {
+        activeWindow?.safeAreaInsets.bottom ?? 0
     }
 
     private static var activeWindow: UIWindow? {
