@@ -381,20 +381,40 @@ struct SheetCloseButton: View {
             if let action { action() } else { dismiss() }
         } label: {
             Image(systemName: "xmark")
-                .frame(width: 44, height: 44)
-                .contentShape(Rectangle())
+                .toolbarIconTapTarget()
         }
         .accessibilityLabel("Close")
     }
 }
 
+/// Sizes the label of an icon-only toolbar button.
+///
+/// Liquid Glass draws the button's capsule itself and sizes it to the label, so
+/// a hard 44×44 frame there stretches the capsule sideways: the home screen's
+/// gear and scanner, and every sheet's close button, rendered visibly wider and
+/// fatter than the system back button beside them. From iOS 26 the label is
+/// left alone so the system sizes and hit-tests these the way it does its own.
+///
+/// Before iOS 26 a toolbar icon carries no background, so it keeps the explicit
+/// HIG-minimum 44×44pt tap target.
+private struct ToolbarIconTapTarget: ViewModifier {
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(iOS 26, *) {
+            content
+        } else {
+            content
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+    }
+}
+
 extension View {
-    /// Expands an icon-only toolbar button's label to the HIG-minimum 44×44pt
-    /// tap target. Apply inside the label, on the `Image`.
+    /// Gives an icon-only toolbar button's label the platform's own sizing.
+    /// Apply inside the label, on the `Image`.
     func toolbarIconTapTarget() -> some View {
-        self
-            .frame(width: 44, height: 44)
-            .contentShape(Rectangle())
+        modifier(ToolbarIconTapTarget())
     }
 }
 
