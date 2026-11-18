@@ -1,3 +1,5 @@
+import base64
+import cbor2
 import json
 import unittest
 
@@ -65,6 +67,20 @@ class PaymentFixtureTests(unittest.TestCase):
         self.assertEqual(decoded.amount_msat, 21000)
         self.assertEqual(decoded.description, script)
         self.assertTrue(decoded.has_expired())
+
+    def test_in_band_requests_preserve_amount_mints_and_omit_delivery_transport(self):
+        for amount in [21, None]:
+            config = {"transport": "none", "mints": ["https://mint.example"], "amount": amount}
+            encoded = self.client.post(self.root + '/request', json=config).json()['request'][5:]
+            request = cbor2.loads(base64.urlsafe_b64decode(encoded + '=' * (-len(encoded) % 4)))
+            self.assertEqual(request['t'], [])
+            self.assertEqual(request['m'], config['mints'])
+            self.assertEqual(request.get('a'), amount)
+            self.assertEqual(request['u'], 'sat')
+
+        encoded = self.client.post(self.root + '/request', json={"target": "https://receiver.example"}).json()['request'][5:]
+        request = cbor2.loads(base64.urlsafe_b64decode(encoded + '=' * (-len(encoded) % 4)))
+        self.assertEqual(request['t'], [{"t": "post", "a": "https://receiver.example", "g": []}])
 
     def test_relay_replays_only_matching_session_events(self):
         event = encode_event('0' * 63 + '1', 1059, [['p', 'recipient']], 'ciphertext')
