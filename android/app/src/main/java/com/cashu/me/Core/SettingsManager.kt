@@ -1,6 +1,5 @@
 package com.cashu.me.Core
 
-import java.security.SecureRandom
 import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -156,7 +155,6 @@ class SettingsManager internal constructor(
     private val secureStorage: SecureStorage,
     private val p2pkStore: P2PKMetadataStore,
 ) : MintDiscoverySettings {
-    private val secureRandom = SecureRandom()
     private val pendingLegacyP2PKSecrets = mutableMapOf<String, String>()
 
     constructor(settingsStore: SettingsStore, secureStorage: SecureStorage) : this(
@@ -338,7 +336,8 @@ class SettingsManager internal constructor(
         persistP2PKMetadata(p2pkStore.keys + key)
     }
 
-    fun generateP2PKKey(): P2PKKeyInfo = addP2PKPrivateKey(generateRandomPrivateKey())
+    fun generateP2PKKey(): P2PKKeyInfo =
+        addP2PKPrivateKey(NostrService.hexToBytes(CdkNostrKeys.generateSecretKeyHex()))
 
     fun importP2PKNsec(nsec: String) {
         val trimmed = nsec.trim()
@@ -673,16 +672,6 @@ class SettingsManager internal constructor(
         if (unresolvedIds != pendingIds) {
             runCatching { p2pkStore.pendingDeletionIds = unresolvedIds }
         }
-    }
-
-    private fun generateRandomPrivateKey(): ByteArray {
-        repeat(10) {
-            val key = ByteArray(32).also(secureRandom::nextBytes)
-            if (runCatching { NostrService.schnorrSign(ByteArray(32), key) }.isSuccess) {
-                return key
-            }
-        }
-        error("Failed to generate secure key.")
     }
 
     private fun secureP2PKPrivateKey(id: String): String =
