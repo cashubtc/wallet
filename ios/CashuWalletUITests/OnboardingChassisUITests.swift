@@ -421,3 +421,29 @@ final class OnboardingChassisUITests: UITestBase {
     }
 
 }
+
+/// Keep the animated Welcome background active so this journey exercises
+/// the rendering work that can delay taps after the seed screen appears.
+final class AnimatedSeedOnboardingUITests: UITestBase {
+    override func launchEnvironment(for mode: LaunchMode) -> [String: String] {
+        var environment = super.launchEnvironment(for: mode)
+        environment.removeValue(forKey: "UITEST_DISABLE_ANIMATIONS")
+        return environment
+    }
+
+    func testSeedControlsRespondAfterAnimatedWelcome() {
+        tapWhenReady(app.buttons["onboarding-create-wallet"], timeout: 30)
+        let reveal = app.buttons["Reveal seed phrase"]
+        XCTAssertTrue(reveal.waitForExistence(timeout: 10))
+        let start = ProcessInfo.processInfo.systemUptime
+        reveal.tap()
+        XCTAssertTrue(reveal.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["••••••"].firstMatch.waitForNonExistence(timeout: 5))
+        tapWhenReady(app.buttons["onboarding-ack-seed"])
+        tapWhenReady(app.buttons["onboarding-saved-seed"])
+        XCTAssertTrue(app.buttons["onboarding-skip-mint"].waitForExistence(timeout: 5))
+        // XCTest can spend a minute waiting for the main loop inside tap()
+        // and still pass every existence check once the app recovers.
+        XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - start, 20)
+    }
+}
