@@ -9,7 +9,7 @@ class CashuRequestCreationTest {
     fun newRequestIsUnrestrictedByDefault() {
         val request = store().createNostrCashuRequest(
             id = "unrestricted",
-            nostrPubkeyHex = NostrService.publicKeyHex(PRIVATE_KEY_HEX),
+            nostrPubkeyHex = PUBLIC_KEY_HEX,
             relays = listOf("wss://relay.example"),
         )
 
@@ -25,7 +25,7 @@ class CashuRequestCreationTest {
         val request = store().createNostrCashuRequest(
             id = "restricted",
             selectedMintUrl = "https://mint.example",
-            nostrPubkeyHex = NostrService.publicKeyHex(PRIVATE_KEY_HEX),
+            nostrPubkeyHex = PUBLIC_KEY_HEX,
             relays = listOf("wss://relay.example"),
         )
 
@@ -50,7 +50,8 @@ class CashuRequestCreationTest {
     }
 
     private companion object {
-        private const val PRIVATE_KEY_HEX =
-            "0000000000000000000000000000000000000000000000000000000000000001"
+        // x-only public key of secret key 1 (the secp256k1 generator point).
+        private const val PUBLIC_KEY_HEX =
+            "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
     }
 }

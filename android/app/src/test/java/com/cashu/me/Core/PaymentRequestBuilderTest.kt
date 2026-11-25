@@ -10,7 +10,7 @@ import org.junit.Test
 class PaymentRequestBuilderTest {
     @Test
     fun nprofileEncodesPubkeyAndRelays() {
-        val pubkeyHex = NostrService.publicKeyHex(PRIVATE_KEY_HEX)
+        val pubkeyHex = PUBLIC_KEY_HEX
         val nprofile = PaymentRequestBuilder.makeNprofile(
             pubkeyHex = pubkeyHex,
             relays = listOf("wss://relay.example"),
@@ -32,7 +32,7 @@ class PaymentRequestBuilderTest {
             unit = "sat",
             mints = listOf("https://mint.example"),
             description = "coffee",
-            nostrPubkeyHex = NostrService.publicKeyHex(PRIVATE_KEY_HEX),
+            nostrPubkeyHex = PUBLIC_KEY_HEX,
             relays = listOf("wss://relay.example"),
         )
 
@@ -81,7 +81,7 @@ class PaymentRequestBuilderTest {
 
     @Test
     fun nostrReadinessReturnsNormalizedDeliverableConfiguration() {
-        val publicKey = NostrService.publicKeyHex(PRIVATE_KEY_HEX)
+        val publicKey = PUBLIC_KEY_HEX
 
         val readiness = CashuRequestNostrReadiness.evaluate(
             isIdentityInitialized = true,
@@ -127,7 +127,7 @@ class PaymentRequestBuilderTest {
     fun nostrReadinessNamesRelaySettingWhenNoUsableRelayExists() {
         val readiness = CashuRequestNostrReadiness.evaluate(
             isIdentityInitialized = true,
-            publicKeyHex = NostrService.publicKeyHex(PRIVATE_KEY_HEX),
+            publicKeyHex = PUBLIC_KEY_HEX,
             privateKeyHex = PRIVATE_KEY_HEX,
             relays = listOf("", "https://relay.example", "wss://"),
             listenerEnabled = true,
@@ -145,7 +145,7 @@ class PaymentRequestBuilderTest {
     fun nostrReadinessKeepsRequestBuildableWhenListeningIsOff() {
         val readiness = CashuRequestNostrReadiness.evaluate(
             isIdentityInitialized = true,
-            publicKeyHex = NostrService.publicKeyHex(PRIVATE_KEY_HEX),
+            publicKeyHex = PUBLIC_KEY_HEX,
             privateKeyHex = PRIVATE_KEY_HEX,
             relays = listOf("wss://relay.example"),
             listenerEnabled = false,
@@ -155,7 +155,7 @@ class PaymentRequestBuilderTest {
             CashuRequestNostrReadiness.Blocked(
                 "Cashu Request listening is off. Turn on Settings → Privacy → Listen for payment requests, then try again.",
                 requestConfiguration = CashuRequestNostrReadiness.RequestConfiguration(
-                    publicKeyHex = NostrService.publicKeyHex(PRIVATE_KEY_HEX),
+                    publicKeyHex = PUBLIC_KEY_HEX,
                     relays = listOf("wss://relay.example"),
                 ),
             ),
@@ -167,7 +167,7 @@ class PaymentRequestBuilderTest {
     fun listenerDisabledReadinessUsesRequestDetailNotice() {
         val readiness = CashuRequestNostrReadiness.evaluate(
             isIdentityInitialized = true,
-            publicKeyHex = NostrService.publicKeyHex(PRIVATE_KEY_HEX),
+            publicKeyHex = PUBLIC_KEY_HEX,
             privateKeyHex = PRIVATE_KEY_HEX,
             relays = listOf("wss://relay.example"),
             listenerEnabled = false,
@@ -184,6 +184,9 @@ class PaymentRequestBuilderTest {
 
     private companion object {
         private const val PRIVATE_KEY_HEX = "0000000000000000000000000000000000000000000000000000000000000001"
+        // x-only public key of PRIVATE_KEY_HEX (the secp256k1 generator point).
+        private const val PUBLIC_KEY_HEX =
+            "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
 
         private fun ByteArray.hex(): String = joinToString("") { "%02x".format(it) }
     }
