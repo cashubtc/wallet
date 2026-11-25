@@ -5,7 +5,7 @@ import Security
 class KeychainService: SecureStorageProtocol {
     private let serviceName = "com.cashu.me"
     private let mnemonicKey = "wallet_mnemonic"
-    private let nostrPrivateKeyKey = "nostr_private_key"
+    static let nostrPrivateKeyKey = "nostr_private_key"
     
     // MARK: - Mnemonic Operations
     
@@ -37,22 +37,22 @@ class KeychainService: SecureStorageProtocol {
     
     /// Save Nostr private key to Keychain (hex format)
     func saveNostrPrivateKey(_ privateKeyHex: String) throws {
-        try saveSecret(privateKeyHex, forKey: nostrPrivateKeyKey)
+        try saveSecret(privateKeyHex, forKey: Self.nostrPrivateKeyKey)
     }
     
     /// Load Nostr private key from Keychain
     func loadNostrPrivateKey() throws -> String? {
-        try loadSecret(forKey: nostrPrivateKeyKey)
+        try loadSecret(forKey: Self.nostrPrivateKeyKey)
     }
     
     /// Delete Nostr private key from Keychain
     func deleteNostrPrivateKey() throws {
-        try deleteSecret(forKey: nostrPrivateKeyKey)
+        try deleteSecret(forKey: Self.nostrPrivateKeyKey)
     }
     
     /// Check if custom Nostr private key exists
     func hasNostrPrivateKey() -> Bool {
-        hasSecret(forKey: nostrPrivateKeyKey)
+        hasSecret(forKey: Self.nostrPrivateKeyKey)
     }
 
     // MARK: - Generic Secure Storage
