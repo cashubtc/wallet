@@ -857,11 +857,8 @@ struct AsciiFieldView: View {
     // MARK: Frame
 
     private func draw(in context: inout GraphicsContext, size: CGSize, t: Double) {
-        cache.rebuildIfNeeded(
-            context: context,
-            scheme: colorScheme,
-            forceSynthesizedPeak: forceSynthesizedPeak
-        )
+        cache.updatePeak(forceSynthesized: forceSynthesizedPeak)
+        let alphas = colorScheme == .dark ? RenderCache.darkRamp : RenderCache.lightRamp
 
         let cellW = AsciiFieldTerrain.cellW
         let cellH = AsciiFieldTerrain.cellH
@@ -971,96 +968,76 @@ struct AsciiFieldView: View {
                 if alpha <= 0 { continue }
                 context.opacity = alpha
             }
-            let isPeak = level >= AsciiFieldTerrain.peakLevel
-            let isCurrency = level == AsciiFieldTerrain.currencyLevel
+            let ink = CGMutablePath()
             var i = 0
             while i < points.count {
                 let px = points[i]
                 let py = points[i + 1]
                 i += 2
-                let resolved: GraphicsContext.ResolvedText
-                if isCurrency {
-                    resolved = cache.currency[AsciiFieldTerrain.currencyGlyphIndex(px: px, py: py)]
-                } else if isPeak {
-                    resolved = cache.peakText
-                } else {
-                    resolved = cache.base[level]
+                let glyph: CGPath
+                switch level {
+                case AsciiFieldTerrain.currencyLevel:
+                    glyph = cache.currency[AsciiFieldTerrain.currencyGlyphIndex(px: px, py: py)]
+                case AsciiFieldTerrain.peakLevel:
+                    glyph = cache.peak
+                default:
+                    glyph = cache.base[level]
                 }
-                context.draw(resolved, at: CGPoint(x: px, y: py))
-                if isPeak && !cache.peak.isNative {
-                    drawPeakStrokes(in: &context, px: px, py: py)
-                }
+                ink.addPath(glyph, transform: CGAffineTransform(translationX: px, y: py))
             }
+            context.fill(Path(ink), with: .color(.primary.opacity(alphas[level])))
         }
-    }
-
-    /// The synthesized ₿'s four stroke stubs: two verticals piercing the B,
-    /// ±DX from center, LEN points beyond its measured ink top and bottom.
-    private func drawPeakStrokes(in context: inout GraphicsContext, px: Double, py: Double) {
-        let w = AsciiFieldPeakGlyph.strokeWidth
-        let len = AsciiFieldPeakGlyph.strokeLength
-        let dx = AsciiFieldPeakGlyph.strokeDX
-        let xl = px - dx - w / 2
-        let xr = px + dx - w / 2
-        let topY = py + cache.peak.inkTopOffset - len
-        let bottomY = py + cache.peak.inkBottomOffset
-        let shading = GraphicsContext.Shading.color(cache.peakStrokeColor)
-        context.fill(Path(CGRect(x: xl, y: topY, width: w, height: len)), with: shading)
-        context.fill(Path(CGRect(x: xr, y: topY, width: w, height: len)), with: shading)
-        context.fill(Path(CGRect(x: xl, y: bottomY, width: w, height: len)), with: shading)
-        context.fill(Path(CGRect(x: xr, y: bottomY, width: w, height: len)), with: shading)
     }
 
     // MARK: Cache
 
-    /// Per-scheme resolved glyphs and reusable buckets. Text is resolved once
-    /// per (glyph × level) — never inside the frame loop.
+    /// Drawing the decorative cells as text queues accessibility annotations
+    /// for every glyph on every frame, even though the Canvas is hidden from
+    /// VoiceOver. Cache centered outlines and paint one path per ink level.
     private final class RenderCache {
-        var scheme: ColorScheme?
-        var forceSynthesizedPeak = false
-        /// Levels 0–2, one glyph each.
-        var base: [GraphicsContext.ResolvedText] = []
-        /// Level 3's three currency glyphs.
-        var currency: [GraphicsContext.ResolvedText] = []
-        var peakText: GraphicsContext.ResolvedText!
-        var peak = AsciiFieldPeakGlyph.probe()
-        var peakStrokeColor = Color.primary
+        static let lightRamp = [0.17, 0.37, 0.56, 0.68, 0.75]
+        static let darkRamp = [0.25, 0.32, 0.44, 0.63, 0.83]
+        private static let font = UIFont.monospacedSystemFont(ofSize: AsciiFieldTerrain.fontSize, weight: .regular)
+        let base = AsciiFieldTerrain.levelGlyph.map(outline)
+        let currency = AsciiFieldTerrain.currencyGlyphs.map(outline)
+        private(set) var peak = peakOutline(forceSynthesized: false)
+        private var forceSynthesizedPeak = false
         /// Interleaved (px, py) per level, reused every frame.
         var buckets: [[Double]] = Array(repeating: [], count: 5)
 
-        /// The zinc ramp converted to opacities on semantic ink (the design
-        /// system allows no custom colors). Deliberately asymmetric between
-        /// schemes: the site mirrors its hex array, which lands on different
-        /// perceived alphas against black paper vs white paper — using one
-        /// column for both would flatten dark mode's peaks and overweight its
-        /// dots.
-        private static let ramp: [ColorScheme: [Double]] = [
-            .light: [0.17, 0.37, 0.56, 0.68, 0.75],
-            .dark: [0.25, 0.32, 0.44, 0.63, 0.83],
-        ]
+        func updatePeak(forceSynthesized: Bool) {
+            guard forceSynthesized != forceSynthesizedPeak else { return }
+            forceSynthesizedPeak = forceSynthesized
+            peak = Self.peakOutline(forceSynthesized: forceSynthesized)
+        }
 
-        func rebuildIfNeeded(context: GraphicsContext, scheme: ColorScheme, forceSynthesizedPeak: Bool) {
-            if self.scheme == scheme && self.forceSynthesizedPeak == forceSynthesizedPeak { return }
-            self.scheme = scheme
-            if self.forceSynthesizedPeak != forceSynthesizedPeak {
-                self.forceSynthesizedPeak = forceSynthesizedPeak
-                peak = AsciiFieldPeakGlyph.probe(forceSynthesized: forceSynthesizedPeak)
+        private static func outline(_ symbol: String) -> CGPath {
+            let range = CFRange(location: 0, length: symbol.utf16.count)
+            let face = CTFontCreateForString(font as CTFont, symbol as CFString, range)
+            var character = symbol.utf16.first!
+            var glyph = CGGlyph()
+            CTFontGetGlyphsForCharacters(face, &character, &glyph, 1)
+            var advance = CGSize.zero
+            CTFontGetAdvancesForGlyphs(face, .horizontal, &glyph, &advance, 1)
+            var transform = CGAffineTransform(a: 1, b: 0, c: 0, d: -1,
+                                              tx: -advance.width / 2, ty: font.ascender - font.lineHeight / 2)
+            return CTFontCreatePathForGlyph(face, glyph, &transform) ?? CGMutablePath()
+        }
+
+        private static func peakOutline(forceSynthesized: Bool) -> CGPath {
+            let peak = AsciiFieldPeakGlyph.probe(forceSynthesized: forceSynthesized)
+            let path = CGMutablePath()
+            path.addPath(outline(peak.glyph))
+            if !peak.isNative {
+                let width = AsciiFieldPeakGlyph.strokeWidth
+                let length = AsciiFieldPeakGlyph.strokeLength
+                for x in [-AsciiFieldPeakGlyph.strokeDX, AsciiFieldPeakGlyph.strokeDX] {
+                    for y in [peak.inkTopOffset - length, peak.inkBottomOffset] {
+                        path.addRect(CGRect(x: x - width / 2, y: y, width: width, height: length))
+                    }
+                }
             }
-            let alphas = Self.ramp[scheme] ?? Self.ramp[.light]!
-            let font = Font.system(size: AsciiFieldTerrain.fontSize, design: .monospaced)
-            func resolve(_ glyph: String, _ level: Int) -> GraphicsContext.ResolvedText {
-                context.resolve(
-                    Text(verbatim: glyph)
-                        .font(font)
-                        .foregroundStyle(Color.primary.opacity(alphas[level]))
-                )
-            }
-            base = AsciiFieldTerrain.levelGlyph.enumerated().map { resolve($1, $0) }
-            currency = AsciiFieldTerrain.currencyGlyphs.map {
-                resolve($0, AsciiFieldTerrain.currencyLevel)
-            }
-            peakText = resolve(peak.glyph, AsciiFieldTerrain.peakLevel)
-            peakStrokeColor = Color.primary.opacity(alphas[AsciiFieldTerrain.peakLevel])
+            return path
         }
     }
 }
