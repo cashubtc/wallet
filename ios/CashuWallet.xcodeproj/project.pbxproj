@@ -14,6 +14,7 @@
 		B31C4D1CFAF7CACE05FD6444 /* RestoreFlowState.swift in Sources */ = {isa = PBXBuildFile; fileRef = D970446550B7B4DA6830462C /* RestoreFlowState.swift */; };
 		A50100000000000000000001 /* TransactionRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50100000000000000000002 /* TransactionRowView.swift */; };
 		C41000000000000000000001 /* CDKCashuRequestInboxTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C41000000000000000000002; };
+		C42200000000000000000001 /* NostrKeysTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42200000000000000000002; };
 		C41000000000000000000003 /* nostr-inbox.json in Resources */ = {isa = PBXBuildFile; fileRef = C41000000000000000000004; };
 		E20100000000000000000001 /* PaymentSafetyIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20100000000000000000002; };
 		A0C011000000000000000005 /* UITestNWCService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0C011000000000000000006 /* UITestNWCService.swift */; };
@@ -74,7 +75,6 @@
 		6A8EC94A2F2590000058C21B /* PriceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A8EC94B2F2590000058C21B /* PriceService.swift */; };
 		6A8EC94C2F25A0000058C21B /* NostrService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A8EC94D2F25A0000058C21B /* NostrService.swift */; };
 		6A8EC94E2F25A0000058C21B /* NPCService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A8EC94F2F25A0000058C21B /* NPCService.swift */; };
-		6A8EC95B2F26983E0058C21B /* P256K in Frameworks */ = {isa = PBXBuildFile; productRef = 6A8EC95A2F26983E0058C21B /* P256K */; };
 		720E47A62FEC721E00E02CD0 /* Cdk in Frameworks */ = {isa = PBXBuildFile; productRef = 720E47A52FEC721E00E02CD0 /* Cdk */; };
 		72AF0EF32FEF2165001AD6AC /* Sentry in Frameworks */ = {isa = PBXBuildFile; productRef = AACC000000000002 /* Sentry */; };
 		72AF0EF52FEF2300001AD6AC /* SentryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72AF0EF42FEF2300001AD6AC /* SentryService.swift */; };
@@ -255,6 +255,7 @@
 		D970446550B7B4DA6830462C /* RestoreFlowState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RestoreFlowState.swift; sourceTree = "<group>"; };
 		A50100000000000000000002 /* TransactionRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransactionRowView.swift; sourceTree = "<group>"; };
 		C41000000000000000000002 /* CDKCashuRequestInboxTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CashuWalletTests/CDKCashuRequestInboxTests.swift; sourceTree = "<group>"; };
+		C42200000000000000000002 /* NostrKeysTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CashuWalletTests/NostrKeysTests.swift; sourceTree = "<group>"; };
 		C41000000000000000000004 /* nostr-inbox.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../CI/fixtures/nostr-inbox.json"; sourceTree = SOURCE_ROOT; };
 		E20100000000000000000002 /* PaymentSafetyIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PaymentSafetyIntegrationTests.swift; path = ../CI/IntegrationTests/Tests/PaymentSafetyIntegrationTests.swift; sourceTree = "<group>"; };
 		A0C011000000000000000006 /* UITestNWCService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = UITestNWCService.swift; path = CashuWallet/Core/UITestNWCService.swift; sourceTree = "<group>"; };
@@ -477,7 +478,6 @@
 			files = (
 				72AF0EF32FEF2165001AD6AC /* Sentry in Frameworks */,
 				720E47A62FEC721E00E02CD0 /* Cdk in Frameworks */,
-				6A8EC95B2F26983E0058C21B /* P256K in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -533,6 +533,7 @@
 				T1B0000000000100 /* ConnectMintContextTests.swift */,
 				T1B000000000000D /* CashuRequestRouteExplanationTests.swift */,
 				C41000000000000000000002 /* CDKCashuRequestInboxTests.swift */,
+				C42200000000000000000002 /* NostrKeysTests.swift */,
 				C41000000000000000000004 /* nostr-inbox.json */,
 				C0A100000000000000000001 /* CashuRequestPaymentObservationTests.swift */,
 				T1B000000000000E /* CrashReportSanitizerTests.swift */,
@@ -1010,7 +1011,6 @@
 			);
 			name = CashuWallet;
 			packageProductDependencies = (
-				6A8EC95A2F26983E0058C21B /* P256K */,
 				720E47A52FEC721E00E02CD0 /* Cdk */,
 				AACC000000000002 /* Sentry */,
 			);
@@ -1087,7 +1087,6 @@
 			);
 			mainGroup = 4000000000000000;
 			packageReferences = (
-				7200000000000002 /* XCRemoteSwiftPackageReference "swift-secp256k1" */,
 				720E47A42FEC721E00E02CD0 /* XCRemoteSwiftPackageReference "cdk-swift" */,
 				AACC000000000001 /* XCRemoteSwiftPackageReference "sentry-cocoa" */,
 			);
@@ -1180,6 +1179,7 @@
 				T2B0000000000100 /* ConnectMintContextTests.swift in Sources */,
 				T2B000000000000D /* CashuRequestRouteExplanationTests.swift in Sources */,
 				C41000000000000000000001 /* CDKCashuRequestInboxTests.swift in Sources */,
+				C42200000000000000000001 /* NostrKeysTests.swift in Sources */,
 				C0A100000000000000000002 /* CashuRequestPaymentObservationTests.swift in Sources */,
 				T2B000000000000E /* CrashReportSanitizerTests.swift in Sources */,
 				T2B000000000000F /* HistorySearchTests.swift in Sources */,
@@ -1702,14 +1702,6 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		7200000000000002 /* XCRemoteSwiftPackageReference "swift-secp256k1" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/21-DOT-DEV/swift-secp256k1.git";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 0.18.0;
-			};
-		};
 		720E47A42FEC721E00E02CD0 /* XCRemoteSwiftPackageReference "cdk-swift" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/cashubtc/cdk-swift";
@@ -1729,11 +1721,6 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		6A8EC95A2F26983E0058C21B /* P256K */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 7200000000000002 /* XCRemoteSwiftPackageReference "swift-secp256k1" */;
-			productName = P256K;
-		};
 		720E47A52FEC721E00E02CD0 /* Cdk */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 720E47A42FEC721E00E02CD0 /* XCRemoteSwiftPackageReference "cdk-swift" */;

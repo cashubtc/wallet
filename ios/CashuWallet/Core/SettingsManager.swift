@@ -1,5 +1,5 @@
 import SwiftUI
-import P256K
+import Cdk
 
 // MARK: - Settings Manager
 
@@ -246,7 +246,7 @@ class SettingsManager: ObservableObject {
 
     @discardableResult
     func generateP2PKKey() throws -> P2PKKey {
-        let key = try createP2PKKey(privateKeyBytes: generateRandomPrivateKeyBytes())
+        let key = try createP2PKKey(privateKeyHex: nostrGenerateSecretKey())
         try storeP2PKKey(key)
         return key
     }
@@ -672,33 +672,30 @@ class SettingsManager: ObservableObject {
         try settingsStore.saveP2PKPendingDeletionIDs(pendingIDs)
     }
 
-    private func generateRandomPrivateKeyBytes() throws -> [UInt8] {
-        for _ in 0..<10 {
-            var randomBytes = [UInt8](repeating: 0, count: 32)
-            let status = SecRandomCopyBytes(kSecRandomDefault, randomBytes.count, &randomBytes)
-            guard status == errSecSuccess else {
-                throw SettingsFeatureError.randomGenerationFailed
-            }
-
-            if (try? P256K.Schnorr.PrivateKey(dataRepresentation: randomBytes)) != nil {
-                return randomBytes
-            }
-        }
-
-        throw SettingsFeatureError.randomGenerationFailed
-    }
-
     private func createP2PKKey(privateKeyBytes: [UInt8]) throws -> P2PKKey {
         guard privateKeyBytes.count == 32 else {
             throw SettingsFeatureError.invalidNsec
         }
+        return try createP2PKKey(privateKeyHex: Data(privateKeyBytes).hexEncodedString)
+    }
 
-        let privateKey = try P256K.Schnorr.PrivateKey(dataRepresentation: privateKeyBytes)
-        let privateKeyHex = Data(privateKey.dataRepresentation).hexEncodedString
-        let publicKeyHex = Data(privateKey.xonly.bytes).hexEncodedString
+    private func createP2PKKey(privateKeyHex: String) throws -> P2PKKey {
+        let normalizedHex = privateKeyHex.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard normalizedHex.count == 64,
+              let data = Data(hexString: normalizedHex),
+              data.count == 32 else {
+            throw SettingsFeatureError.invalidNsec
+        }
+
+        let publicKeyHex: String
+        do {
+            publicKeyHex = try nostrGetPubkey(nostrSecretKey: normalizedHex)
+        } catch {
+            throw SettingsFeatureError.invalidNsec
+        }
         let p2pkPublicKey = "02\(publicKeyHex)"
 
-        return P2PKKey(publicKey: p2pkPublicKey, privateKey: privateKeyHex, used: false, usedCount: 0)
+        return P2PKKey(publicKey: p2pkPublicKey, privateKey: normalizedHex, used: false, usedCount: 0)
     }
 
     private static func hasUsablePrivateKey(_ key: P2PKKey) -> Bool {
@@ -706,13 +703,13 @@ class SettingsManager: ObservableObject {
     }
 
     private static func hasUsablePrivateKey(publicKey: String, privateKey: String) -> Bool {
-        guard privateKey.count == 64 else { return false }
-        guard let data = Data(hexString: privateKey) else { return false }
-        let bytes = Array(data)
-        guard let secret = try? P256K.Schnorr.PrivateKey(dataRepresentation: bytes) else {
+        guard privateKey.count == 64,
+              let data = Data(hexString: privateKey),
+              data.count == 32,
+              let derivedXOnly = try? nostrGetPubkey(nostrSecretKey: data.hexEncodedString) else {
             return false
         }
-        let derivedPublicKey = "02" + Data(secret.xonly.bytes).hexEncodedString
+        let derivedPublicKey = "02" + derivedXOnly
         return normalizeP2PKPublicKeyForComparison(derivedPublicKey)
             == normalizeP2PKPublicKeyForComparison(publicKey)
     }

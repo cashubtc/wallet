@@ -1,7 +1,6 @@
 import Foundation
 import SwiftUI
-import Security
-import P256K
+import Cdk
 
 // MARK: - Signer Type
 
@@ -25,8 +24,7 @@ enum NostrSignerType: String, Codable, CaseIterable {
     }
 }
 
-/// Service for Nostr key management and NIP-98 HTTP authentication
-/// Uses swift-secp256k1 P256K library for proper BIP-340 Schnorr signatures
+/// Service for Nostr key management, backed by CDK's Nostr key APIs
 @MainActor
 class NostrService: ObservableObject {
     static let shared = NostrService()
@@ -54,14 +52,26 @@ class NostrService: ObservableObject {
     
     // MARK: - Private Properties
     
-    private var privateKey: P256K.Schnorr.PrivateKey?
+    private struct DerivedKeypair {
+        let privateKeyHex: String
+        let publicKeyHex: String
+        let npub: String
+        let nsec: String
+    }
+
+    private var privateKeyHex: String?
     private var currentSeed: Data?  // Store seed for switching back
-    private let keychain = KeychainService()
-    private let settingsStore = SettingsStore.shared
+    private let secureStorage: SecureStorageProtocol
+    private let settingsStore: SettingsStore
     
     // MARK: - Initialization
     
-    private init() {
+    init(
+        secureStorage: SecureStorageProtocol = KeychainService(),
+        settingsStore: SettingsStore = .shared
+    ) {
+        self.secureStorage = secureStorage
+        self.settingsStore = settingsStore
         // Load saved signer type
         if let savedType = settingsStore.nostrSignerType,
            let type = NostrSignerType(rawValue: savedType) {
@@ -71,6 +81,30 @@ class NostrService: ObservableObject {
     
     // MARK: - Key Derivation
     
+    /// Returns the 64-character hex x-only public key for a 64-character hex secret key, derived by CDK.
+    static func publicKeyHex(forPrivateKeyHex hex: String) throws -> String {
+        let normalizedHex = hex.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard normalizedHex.count == 64,
+              let data = Data(hexString: normalizedHex),
+              data.count == 32 else {
+            throw NostrError.invalidPrivateKey
+        }
+        do {
+            let publicKeyHex = try nostrGetPubkey(nostrSecretKey: normalizedHex)
+            guard publicKeyHex.count == 64,
+                  let pubKeyData = Data(hexString: publicKeyHex),
+                  pubKeyData.count == 32 else {
+                throw NostrError.keypairCreationFailed
+            }
+            return publicKeyHex
+        } catch let error as NostrError {
+            throw error
+        } catch {
+            print("Failed to create Nostr keys: \(error)")
+            throw NostrError.keypairCreationFailed
+        }
+    }
+
     /// Derive Nostr keypair from the wallet's NIP-06 secret key
     /// The caller passes the NIP-06-derived secret key (m/44'/1237'/0'/0/0
     /// from the BIP39 seed); the first 32 bytes are used as the private key.
@@ -83,73 +117,77 @@ class NostrService: ObservableObject {
         self.currentSeed = seed
         
         // Check if we should use a custom private key
-        if signerType == .privateKey, let customKeyHex = try? keychain.loadNostrPrivateKey() {
-            try setPrivateKey(fromHex: customKeyHex)
+        if signerType == .privateKey,
+           let customKeyHex = try? secureStorage.loadSecret(forKey: KeychainService.nostrPrivateKeyKey) {
+            let derived = try Self.makeDerivedKeypair(fromHex: customKeyHex)
+            apply(derived)
             return
         }
         
         // Use seed-derived key
-        signerType = .seed
         let privateKeyBytes = Array(seed.prefix(32))
-        try setPrivateKey(fromBytes: privateKeyBytes)
+        let derived = try Self.makeDerivedKeypair(fromBytes: privateKeyBytes)
+        signerType = .seed
+        apply(derived)
     }
     
-    /// Set private key from raw bytes
-    private func setPrivateKey(fromBytes privateKeyBytes: [UInt8]) throws {
+    private static func makeDerivedKeypair(fromBytes privateKeyBytes: [UInt8]) throws -> DerivedKeypair {
+        guard privateKeyBytes.count == 32 else {
+            throw NostrError.invalidPrivateKey
+        }
+        return try makeDerivedKeypair(fromHex: Data(privateKeyBytes).hexEncodedString)
+    }
+
+    private static func makeDerivedKeypair(fromHex hex: String) throws -> DerivedKeypair {
+        let normalizedHex = hex.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard normalizedHex.count == 64,
+              let privateKeyData = Data(hexString: normalizedHex),
+              privateKeyData.count == 32 else {
+            throw NostrError.invalidPrivateKey
+        }
+        let publicKeyHex = try publicKeyHex(forPrivateKeyHex: normalizedHex)
+        guard let pubKeyData = Data(hexString: publicKeyHex), pubKeyData.count == 32 else {
+            throw NostrError.keypairCreationFailed
+        }
         do {
-            // Create P256K Schnorr private key
-            let privKey = try P256K.Schnorr.PrivateKey(dataRepresentation: privateKeyBytes)
-            self.privateKey = privKey
-            
-            // Get x-only public key (32 bytes)
-            let xonlyPubKey = privKey.xonly
-            let pubKeyBytes = xonlyPubKey.bytes
-            
-            // Set public key hex
-            self.publicKeyHex = Data(pubKeyBytes).hexEncodedString
-            
-            // Convert to bech32 npub
-            self.npub = try Bech32.encode(hrp: "npub", data: Data(pubKeyBytes))
-            
-            // Convert private key to nsec for display/export
-            self.nsec = try Bech32.encode(hrp: "nsec", data: Data(privateKeyBytes))
-            
-            self.isInitialized = true
-            
-            print("Nostr keypair initialized (\(signerType.displayName)):")
-            print("  pubkey: \(publicKeyHex)")
-            print("  npub: \(npub)")
+            let npub = try Bech32.encode(hrp: "npub", data: pubKeyData)
+            let nsec = try Bech32.encode(hrp: "nsec", data: privateKeyData)
+            return DerivedKeypair(
+                privateKeyHex: normalizedHex,
+                publicKeyHex: publicKeyHex,
+                npub: npub,
+                nsec: nsec
+            )
         } catch {
             print("Failed to create Nostr keys: \(error)")
             throw NostrError.keypairCreationFailed
         }
     }
-    
-    /// Set private key from hex string
-    private func setPrivateKey(fromHex hex: String) throws {
-        guard let data = Data(hexString: hex), data.count == 32 else {
-            throw NostrError.invalidPrivateKey
-        }
-        try setPrivateKey(fromBytes: Array(data))
+
+    private func apply(_ derived: DerivedKeypair) {
+        self.privateKeyHex = derived.privateKeyHex
+        self.publicKeyHex = derived.publicKeyHex
+        self.npub = derived.npub
+        self.nsec = derived.nsec
+        self.isInitialized = true
+        
+        print("Nostr keypair initialized (\(signerType.displayName)):")
+        print("  pubkey: \(publicKeyHex)")
+        print("  npub: \(npub)")
     }
     
     // MARK: - Key Management
     
     /// Generate a new random Nostr keypair
     func generateRandomKeypair() throws {
-        var randomBytes = [UInt8](repeating: 0, count: 32)
-        let status = SecRandomCopyBytes(kSecRandomDefault, 32, &randomBytes)
-        guard status == errSecSuccess else {
-            throw NostrError.randomGenerationFailed
-        }
+        let derived = try Self.makeDerivedKeypair(fromHex: nostrGenerateSecretKey())
         
-        // Save to keychain
-        let hexKey = Data(randomBytes).hexEncodedString
-        try keychain.saveNostrPrivateKey(hexKey)
+        // Save to secure storage before updating observable state
+        try secureStorage.saveSecret(derived.privateKeyHex, forKey: KeychainService.nostrPrivateKeyKey)
         
         // Set as current key
         signerType = .privateKey
-        try setPrivateKey(fromBytes: randomBytes)
+        apply(derived)
         
         print("Generated new random Nostr keypair")
     }
@@ -162,13 +200,15 @@ class NostrService: ObservableObject {
             throw NostrError.invalidNsec
         }
         
-        // Save to keychain
-        let hexKey = Data(privateKeyBytes).hexEncodedString
-        try keychain.saveNostrPrivateKey(hexKey)
+        // Validate and derive via CDK before touching secure storage or state
+        let derived = try Self.makeDerivedKeypair(fromBytes: privateKeyBytes)
+        
+        // Save to secure storage
+        try secureStorage.saveSecret(derived.privateKeyHex, forKey: KeychainService.nostrPrivateKeyKey)
         
         // Set as current key
         signerType = .privateKey
-        try setPrivateKey(fromBytes: privateKeyBytes)
+        apply(derived)
         
         print("Imported nsec successfully")
     }
@@ -179,13 +219,15 @@ class NostrService: ObservableObject {
             throw NostrError.noSeedAvailable
         }
         
-        // Delete custom key from keychain
-        try? keychain.deleteNostrPrivateKey()
+        let privateKeyBytes = Array(seed.prefix(32))
+        let derived = try Self.makeDerivedKeypair(fromBytes: privateKeyBytes)
+        
+        // Delete custom key from secure storage
+        try? secureStorage.deleteSecret(forKey: KeychainService.nostrPrivateKeyKey)
         
         // Switch back to seed
         signerType = .seed
-        let privateKeyBytes = Array(seed.prefix(32))
-        try setPrivateKey(fromBytes: privateKeyBytes)
+        apply(derived)
         
         print("Reset to seed-derived Nostr key")
     }
@@ -197,9 +239,10 @@ class NostrService: ObservableObject {
             try resetToSeedKey()
         case .privateKey:
             // Check if we have a custom key stored
-            if let customKeyHex = try? keychain.loadNostrPrivateKey() {
+            if let customKeyHex = try? secureStorage.loadSecret(forKey: KeychainService.nostrPrivateKeyKey) {
+                let derived = try Self.makeDerivedKeypair(fromHex: customKeyHex)
                 signerType = .privateKey
-                try setPrivateKey(fromHex: customKeyHex)
+                apply(derived)
             } else {
                 // No custom key exists, generate one
                 try generateRandomKeypair()
@@ -209,16 +252,16 @@ class NostrService: ObservableObject {
     
     /// Check if a custom private key is stored
     func hasCustomPrivateKey() -> Bool {
-        return keychain.hasNostrPrivateKey()
+        return secureStorage.hasSecret(forKey: KeychainService.nostrPrivateKeyKey)
     }
 
     func resetForWalletBoundary(deleteStoredKey: Bool = true) {
         if deleteStoredKey {
-            try? keychain.deleteNostrPrivateKey()
+            try? secureStorage.deleteSecret(forKey: KeychainService.nostrPrivateKeyKey)
         }
         settingsStore.nostrSignerType = nil
         signerType = .seed
-        privateKey = nil
+        privateKeyHex = nil
         currentSeed = nil
         publicKeyHex = ""
         npub = ""
@@ -231,10 +274,7 @@ class NostrService: ObservableObject {
 
     /// Get private key hex (for internal use)
     func getPrivateKeyHex() -> String? {
-        guard let privKey = privateKey else { return nil }
-        // Get raw bytes from the private key
-        let bytes = privKey.dataRepresentation
-        return Data(bytes).hexEncodedString
+        privateKeyHex
     }
     
 }
