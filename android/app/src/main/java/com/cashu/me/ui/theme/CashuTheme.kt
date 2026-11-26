@@ -59,6 +59,7 @@ fun CashuTheme(
     }
 
     val fonts = CashuFonts.Geist
+    val reducedMotion = LocalReducedMotion.current ?: observeReducedMotion()
 
     CompositionLocalProvider(
         LocalCashuColors provides cashuColors,
@@ -66,6 +67,7 @@ fun CashuTheme(
         LocalCashuIconSizes provides CashuIconSizes(),
         LocalCashuFonts provides fonts,
         LocalCashuTypeRoles provides cashuTypeRoles(fonts),
+        LocalReducedMotion provides reducedMotion,
     ) {
         MaterialExpressiveTheme(
             colorScheme = colorScheme,

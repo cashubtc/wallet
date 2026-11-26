@@ -34,6 +34,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -93,17 +94,16 @@ private val GhostLabelMorphBlur = 1.5.dp
  * than coincidental.
  */
 @Composable
-private fun rememberPressScale(interactionSource: MutableInteractionSource): Float {
+private fun rememberPressScale(interactionSource: MutableInteractionSource): State<Float> {
     val pressed by interactionSource.collectIsPressedAsState()
     val reduceMotion = rememberReducedMotion()
     val compress = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
     val release = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
-    val scale by animateFloatAsState(
+    return animateFloatAsState(
         targetValue = if (pressed && !reduceMotion) PressedScale else 1f,
         animationSpec = if (pressed) compress else release,
         label = "press-scale",
     )
-    return scale
 }
 
 /**
@@ -112,16 +112,15 @@ private fun rememberPressScale(interactionSource: MutableInteractionSource): Flo
  * reason as [rememberPressScale], and on the same critically-damped pair.
  */
 @Composable
-private fun rememberPressAlpha(interactionSource: MutableInteractionSource): Float {
+private fun rememberPressAlpha(interactionSource: MutableInteractionSource): State<Float> {
     val pressed by interactionSource.collectIsPressedAsState()
     val dim = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
     val restore = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
-    val alpha by animateFloatAsState(
+    return animateFloatAsState(
         targetValue = if (pressed) TextLinkPressedAlpha else 1f,
         animationSpec = if (pressed) dim else restore,
         label = "press-alpha",
     )
-    return alpha
 }
 
 /**
@@ -158,7 +157,7 @@ fun PrimaryButton(
     colors: ButtonColors? = null,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
-    val scale = rememberPressScale(interactionSource)
+    val scaleState = rememberPressScale(interactionSource)
     // Resolve the enabled/disabled pair first, then ease the two resolved colors:
     // a CTA that keeps its slot across a step change (the onboarding chassis keys
     // its slot cross-fade on style, not on colors) would otherwise hard-cut its
@@ -189,6 +188,7 @@ fun PrimaryButton(
             .fillMaxWidth()
             .heightIn(min = ButtonMinHeight)
             .graphicsLayer {
+                val scale = scaleState.value
                 scaleX = scale
                 scaleY = scale
             }
@@ -275,7 +275,7 @@ fun SecondaryButton(
     compact: Boolean = false,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
-    val scale = rememberPressScale(interactionSource)
+    val scaleState = rememberPressScale(interactionSource)
     val target = if (compact) ButtonDefaults.filledTonalButtonColors(
         containerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.11f),
         contentColor = MaterialTheme.colorScheme.onSurface,
@@ -299,6 +299,7 @@ fun SecondaryButton(
             .fillMaxWidth()
             .heightIn(min = if (compact) 56.dp else ButtonMinHeight)
             .graphicsLayer {
+                val scale = scaleState.value
                 scaleX = scale
                 scaleY = scale
             },
@@ -348,14 +349,14 @@ fun GhostButton(
 ) {
     val textStyle = context.labelStyle
     val interactionSource = remember { MutableInteractionSource() }
-    val alpha = rememberPressAlpha(interactionSource)
+    val alphaState = rememberPressAlpha(interactionSource)
     // Captured outside the non-composable transitionSpec lambda (see PrimaryButton).
     val morphEnterSpec = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
     val morphExitSpec = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
     val morphSizeSpec = MaterialTheme.motionScheme.defaultSpatialSpec<IntSize>()
     TextButton(
         onClick = onClick,
-        modifier = modifier.graphicsLayer { this.alpha = alpha },
+        modifier = modifier.graphicsLayer { alpha = alphaState.value },
         enabled = enabled,
         interactionSource = interactionSource,
         colors = if (contentColor != Color.Unspecified) {

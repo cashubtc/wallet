@@ -1,5 +1,7 @@
 package com.cashu.me.ui.components
 
+import android.graphics.RenderEffect
+import android.graphics.Shader
 import android.os.Build
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.EnterExitState
@@ -10,6 +12,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -17,6 +20,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.TileMode
+import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
@@ -118,6 +122,32 @@ fun AnimatedVisibilityScope.morphBlur(
             BlurEffect(radiusPx, radiusPx, TileMode.Decal)
         } else {
             null
+        }
+    }
+}
+
+/**
+ * Draw-phase animated blur. Reads [radiusState] inside [graphicsLayer] so
+ * animating the blur radius never invalidates composition of the blurred
+ * subtree, and clears `renderEffect` once the radius settles to `<= 0.5px`.
+ *
+ * `RenderEffect` requires API 31 ([Build.VERSION_CODES.S]); below that this
+ * modifier is a no-op.
+ */
+fun Modifier.animatedBlur(radiusState: State<Dp>): Modifier {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return this
+    return graphicsLayer {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val radiusPx = radiusState.value.toPx()
+            renderEffect = if (radiusPx > 0.5f) {
+                RenderEffect.createBlurEffect(
+                    radiusPx,
+                    radiusPx,
+                    Shader.TileMode.CLAMP,
+                ).asComposeRenderEffect()
+            } else {
+                null
+            }
         }
     }
 }

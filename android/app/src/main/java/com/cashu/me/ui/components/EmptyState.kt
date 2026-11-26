@@ -129,8 +129,9 @@ fun EmptyState(
             modifier = Modifier
                 .size(size.iconSize)
                 .graphicsLayer {
-                    scaleX = if (allowsEntranceMotion) iconBounce else 1f
-                    scaleY = if (allowsEntranceMotion) iconBounce else 1f
+                    val bounce = if (allowsEntranceMotion) iconBounce.value else 1f
+                    scaleX = bounce
+                    scaleY = bounce
                 },
         )
         Spacer(Modifier.height(size.iconGap))

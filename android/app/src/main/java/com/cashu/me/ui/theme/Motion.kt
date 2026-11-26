@@ -15,6 +15,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -72,15 +73,6 @@ fun fadeThrough(): ContentTransform =
         fadeOut(tween(CashuMotion.SharedAxisOutMs))
 
 /**
- * True when the user has disabled system animations (animator duration scale 0)
- * — the Android convention for reduce-motion. Decorative loops (waiting pulses,
- * cascades) should render their resting state instead.
- *
- * Reactive: observes [Settings.Global.ANIMATOR_DURATION_SCALE] so toggling the
- * developer/accessibility setting mid-session is respected without recreating
- * the composition.
- */
-/**
  * iOS onboarding entrance-stagger twin (`OnboardingView.stagger`): content
  * blocks rise 12dp into place while sharpening from a 3dp blur, 400ms,
  * [CashuMotion.StaggerStepMs] per index. No opacity — the step crossfade owns
@@ -129,8 +121,17 @@ fun rememberAppeared(): Boolean {
     return appeared
 }
 
+/**
+ * Ambient reduce-motion flag provided once by [CashuTheme] so the live tree
+ * registers a single [ContentObserver] for
+ * [Settings.Global.ANIMATOR_DURATION_SCALE]. `null` indicates no provider is in
+ * scope (for example standalone previews or tests outside [CashuTheme]), in
+ * which case [rememberReducedMotion] falls back to a local observer.
+ */
+val LocalReducedMotion = compositionLocalOf<Boolean?> { null }
+
 @Composable
-fun rememberReducedMotion(): Boolean {
+internal fun observeReducedMotion(): Boolean {
     val context = LocalContext.current
     val resolver = context.contentResolver
 
@@ -140,7 +141,7 @@ fun rememberReducedMotion(): Boolean {
         1f,
     ) == 0f
 
-    var reduced by remember { mutableStateOf(read()) }
+    var reduced by remember(resolver) { mutableStateOf(read()) }
     DisposableEffect(resolver) {
         val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
             override fun onChange(selfChange: Boolean) {
@@ -156,3 +157,17 @@ fun rememberReducedMotion(): Boolean {
     }
     return reduced
 }
+
+/**
+ * True when the user has disabled system animations (animator duration scale 0)
+ * — the Android convention for reduce-motion. Decorative loops (waiting pulses,
+ * cascades) should render their resting state instead.
+ *
+ * Reactive: reads [LocalReducedMotion] provided once at [CashuTheme] so
+ * toggling the developer/accessibility setting mid-session is respected without
+ * registering a [ContentObserver] per call site, falling back to a local
+ * observer only when called outside [CashuTheme].
+ */
+@Composable
+fun rememberReducedMotion(): Boolean =
+    LocalReducedMotion.current ?: observeReducedMotion()

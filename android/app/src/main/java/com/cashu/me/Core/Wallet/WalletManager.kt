@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -1801,10 +1802,9 @@ class WalletManager(
         // shows the one reusable-invoice row rather than duplicate payments.
         cashuRequestStore.reconcileIncomingQuotePayments(result.transactions)
         update {
-            copy(
-                transactions = result.transactions,
-                pendingReceiveTokens = result.pendingReceiveTokens,
-                transactionUpdateVersion = nextTransactionUpdateVersion(transactionUpdateVersion),
+            withLoadedTransactions(
+                loadedTransactions = result.transactions,
+                loadedPendingReceiveTokens = result.pendingReceiveTokens,
             )
         }
     }
@@ -2118,7 +2118,7 @@ class WalletManager(
     }
 
     private fun update(transform: WalletState.() -> WalletState) {
-        mutableState.value = mutableState.value.transform()
+        mutableState.update { it.transform() }
     }
 
     private fun publishReceivedPayment(

@@ -31,7 +31,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
-import coil.decode.DataSource
 import coil.imageLoader
 import coil.request.ImageRequest
 import coil.request.SuccessResult
@@ -73,6 +72,7 @@ fun MintAvatar(
         }
 
         val sizePx = with(LocalDensity.current) { size.roundToPx().coerceAtLeast(1) }
+        val decodeSizePx = MintLogoBitmapCache.decodeSizePx(sizePx)
         // Sync process-wide hit — first frame after tab remount shows the logo,
         // matching iOS `CachedAsyncImage`'s memory seed.
         var bitmap by remember(iconUrl) {
@@ -80,24 +80,24 @@ fun MintAvatar(
         }
 
         LaunchedEffect(iconUrl, sizePx) {
-            val hadCachedFrame = bitmap != null
+            val sufficient = MintLogoBitmapCache.getIfSufficient(iconUrl, sizePx)
+            if (sufficient != null) {
+                if (bitmap !== sufficient) {
+                    bitmap = sufficient
+                }
+                return@LaunchedEffect
+            }
             val result = context.imageLoader.execute(
                 ImageRequest.Builder(context)
                     .data(iconUrl)
-                    .size(sizePx)
-                    .memoryCacheKey(iconUrl)
+                    .size(decodeSizePx)
+                    .memoryCacheKey("$iconUrl@$decodeSizePx")
                     .diskCacheKey(iconUrl)
                     .build(),
             )
             if (result is SuccessResult) {
                 val decoded = result.drawable.toBitmap()
-                // Keep the seeded frame on remount (disk or memory). Only swap when
-                // the network returns a fresher image so icon updates still fade in.
-                if (hadCachedFrame && result.dataSource != DataSource.NETWORK) {
-                    bitmap?.let { MintLogoBitmapCache.put(iconUrl, it) }
-                    return@LaunchedEffect
-                }
-                MintLogoBitmapCache.put(iconUrl, decoded)
+                MintLogoBitmapCache.put(iconUrl, decoded, decodedMaxPx = decodeSizePx)
                 bitmap = decoded
             }
         }
