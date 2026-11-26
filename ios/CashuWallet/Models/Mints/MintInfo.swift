@@ -93,6 +93,14 @@ struct MintPreviewInfo {
 }
 
 extension MintInfo {
+    /// Compares every persisted field except `lastUpdated`, so an unchanged
+    /// NUT-06 refresh does not rewrite storage or re-emit UI state.
+    func hasSameMetadata(as other: MintInfo) -> Bool {
+        var comparable = self
+        comparable.lastUpdated = other.lastUpdated
+        return comparable == other
+    }
+
     static func displayName(for url: String, in mints: [MintInfo]) -> String {
         func normalized(_ value: String) -> String {
             MintURLIdentity.normalized(value)

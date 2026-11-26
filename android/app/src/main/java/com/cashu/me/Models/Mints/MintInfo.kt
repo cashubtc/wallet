@@ -46,6 +46,13 @@ data class MintInfo(
     val id: String get() = url
 
     /**
+     * Compares every persisted field except [lastUpdatedEpochMillis], so an
+     * unchanged NUT-06 refresh does not rewrite storage or re-emit wallet state.
+     */
+    fun hasSameContentAs(other: MintInfo): Boolean =
+        copy(lastUpdatedEpochMillis = other.lastUpdatedEpochMillis) == other
+
+    /**
      * Mint (receive) rails with the pre-fetch compatibility default: a mint whose
      * NUT-06 metadata was never fetched is assumed BOLT11; a mint that reported
      * an empty list stays empty.

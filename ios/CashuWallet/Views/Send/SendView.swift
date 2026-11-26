@@ -3410,6 +3410,7 @@ struct AddMintToPaySheet: View {
     /// CDK mint-info previews keyed by mint URL. Rows show host + monogram
     /// immediately and upgrade to real name + icon as these land.
     @State private var previews: [String: MintPreview] = [:]
+    @State private var previewTask: Task<Void, Never>?
 
     private struct MintPreview {
         let name: String?
@@ -3438,6 +3439,7 @@ struct AddMintToPaySheet: View {
                 VStack(spacing: 0) {
                     ForEach(mints, id: \.self) { url in
                         Button {
+                            cancelPreviews()
                             dismiss()
                             onSelect(url)
                         } label: {
@@ -3460,6 +3462,7 @@ struct AddMintToPaySheet: View {
         .presentationDragIndicator(.visible)
         .compactBottomSheetSurface()
         .onAppear(perform: loadPreviews)
+        .onDisappear(perform: cancelPreviews)
     }
 
     @ViewBuilder
@@ -3504,12 +3507,22 @@ struct AddMintToPaySheet: View {
     private func mintHost(_ url: String) -> String { URL(string: url)?.host ?? url }
 
     private func loadPreviews() {
-        for url in mints where previews[url] == nil {
-            Task { @MainActor in
-                guard let info = await walletManager.fetchMintPreviewInfo(url: url) else { return }
+        cancelPreviews()
+        let pendingURLs = mints.filter { previews[$0] == nil }
+        guard !pendingURLs.isEmpty else { return }
+        previewTask = Task { @MainActor in
+            for url in pendingURLs {
+                guard !Task.isCancelled else { return }
+                guard let info = await walletManager.fetchMintPreviewInfo(url: url) else { continue }
+                guard !Task.isCancelled else { return }
                 previews[url] = MintPreview(name: info.name, iconUrl: info.iconUrl)
             }
         }
+    }
+
+    private func cancelPreviews() {
+        previewTask?.cancel()
+        previewTask = nil
     }
 }
 

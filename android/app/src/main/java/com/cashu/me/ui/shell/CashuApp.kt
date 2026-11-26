@@ -218,18 +218,25 @@ private fun CashuAppContent(container: AppContainer) {
     }
     // App-process foreground (not Activity): M3 ModalBottomSheet runs in its own
     // Dialog window and can ON_STOP the Activity while the user is still in the
-    // app. Quote detection must keep running — iOS scenePhase parity.
+    // app. Quote, price, and NPC polling must track app-process foreground — iOS
+    // scenePhase parity.
     DisposableEffect(container) {
         val processLifecycle = ProcessLifecycleOwner.get().lifecycle
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_START -> {
+                    container.priceService.startAutoRefresh()
+                    if (container.runtimePolicy.startExternalListeners) {
+                        container.npcService.startBackgroundRefresh()
+                    }
                     if (container.runtimePolicy.pollQuotesInForeground && isRuntimeReadyRef) {
                         container.walletManager.onAppEnteredForeground()
                     }
                 }
                 Lifecycle.Event.ON_STOP -> {
                     container.walletManager.stopPendingQuoteForegroundPolling()
+                    container.priceService.stopAutoRefresh()
+                    container.npcService.stopBackgroundRefresh()
                 }
                 else -> Unit
             }
@@ -238,6 +245,8 @@ private fun CashuAppContent(container: AppContainer) {
         onDispose {
             processLifecycle.removeObserver(observer)
             container.walletManager.stopPendingQuoteForegroundPolling()
+            container.priceService.stopAutoRefresh()
+            container.npcService.stopBackgroundRefresh()
         }
     }
 

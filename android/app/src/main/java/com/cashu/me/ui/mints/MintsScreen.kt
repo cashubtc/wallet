@@ -40,6 +40,7 @@ import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.material3.rememberTopAppBarState
@@ -102,6 +103,7 @@ fun MintsScreen(
     var addMintInitialUrl by remember { mutableStateOf("") }
     var discoveryOpen by remember { mutableStateOf(false) }
     var removalError by remember { mutableStateOf<String?>(null) }
+    var refreshing by remember { mutableStateOf(false) }
 
     LaunchedEffect(scannedMintUrl) {
         val payload = scannedMintUrl?.trim().orEmpty()
@@ -141,16 +143,36 @@ fun MintsScreen(
             TabTopBar(title = "Mints", scrollBehavior = scrollBehavior)
         },
     ) { padding ->
-        LazyColumn(
+        PullToRefreshBox(
+            isRefreshing = refreshing,
+            onRefresh = {
+                if (!refreshing) {
+                    refreshing = true
+                    scope.launch {
+                        try {
+                            walletManager.refreshMintInfo(force = true)
+                        } catch (cancellation: CancellationException) {
+                            throw cancellation
+                        } catch (_: Throwable) {
+                            // Best-effort refresh; per-mint errors are logged by WalletManager.
+                        } finally {
+                            refreshing = false
+                        }
+                    }
+                }
+            },
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
-            contentPadding = PaddingValues(
-                start = CashuTheme.spacing.comfortable,
-                end = CashuTheme.spacing.comfortable,
-                bottom = CashuTheme.spacing.section,
-            ),
         ) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                    start = CashuTheme.spacing.comfortable,
+                    end = CashuTheme.spacing.comfortable,
+                    bottom = CashuTheme.spacing.section,
+                ),
+            ) {
             if (removalError != null) {
                 item("removal-error") {
                     InlineNotice(
@@ -241,6 +263,7 @@ fun MintsScreen(
                     title = "Discover mints",
                     onClick = { discoveryOpen = true },
                 )
+            }
             }
         }
     }

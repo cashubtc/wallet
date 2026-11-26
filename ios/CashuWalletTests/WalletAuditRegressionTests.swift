@@ -1,4 +1,5 @@
 import Cdk
+import SwiftUI
 import XCTest
 import SQLite3
 @testable import CashuWallet
@@ -732,6 +733,78 @@ final class WalletAuditRegressionTests: XCTestCase {
             XCTFail("Expected cancellation at the wallet boundary")
         } catch { XCTAssertTrue(error is CancellationError) }
         try await coordinator.perform(kind: .balance) {}
+    }
+
+    func testSceneForegroundResumeGateIgnoresColdLaunchAndTransientInactiveTransitions() {
+        var gate = SceneForegroundResumeGate()
+
+        // Cold launch: inactive -> active must not fire foreground resume.
+        XCTAssertFalse(gate.handleTransition(from: .inactive, to: .active))
+
+        // Face ID / Share Sheet / Control Center: active -> inactive -> active.
+        XCTAssertFalse(gate.handleTransition(from: .active, to: .inactive))
+        XCTAssertFalse(gate.handleTransition(from: .inactive, to: .active))
+
+        // True background -> foreground (standard iOS path passes through .inactive).
+        XCTAssertFalse(gate.handleTransition(from: .active, to: .inactive))
+        XCTAssertFalse(gate.handleTransition(from: .inactive, to: .background))
+        XCTAssertFalse(gate.handleTransition(from: .background, to: .inactive))
+        XCTAssertTrue(gate.handleTransition(from: .inactive, to: .active))
+
+        // Subsequent transient inactive transition does not re-trigger resume.
+        XCTAssertFalse(gate.handleTransition(from: .active, to: .inactive))
+        XCTAssertFalse(gate.handleTransition(from: .inactive, to: .active))
+
+        // Direct background -> active transition also triggers resume once.
+        XCTAssertTrue(gate.handleTransition(from: .background, to: .active))
+        XCTAssertFalse(gate.handleTransition(from: .inactive, to: .active))
+    }
+
+    func testCoordinatorPrioritizesUserInitiatedOverMaintenanceAndSignalsWaiter() async throws {
+        let coordinator = WalletOperationCoordinator(watchdogThreshold: 0)
+        let holderEntered = expectation(description: "Maintenance holds the lane")
+        var releaseHolder: CheckedContinuation<Void, Never>?
+        var executionOrder: [String] = []
+
+        let holder = Task {
+            try await coordinator.perform(kind: .mintInfo, priority: .maintenance) {
+                await withCheckedContinuation {
+                    releaseHolder = $0
+                    holderEntered.fulfill()
+                }
+                let waitingUser = await coordinator.hasWaitingUserOperation()
+                XCTAssertTrue(waitingUser)
+                executionOrder.append("holder")
+            }
+        }
+        await fulfillment(of: [holderEntered], timeout: 3)
+
+        let queuedMaintenance = Task {
+            try await coordinator.perform(kind: .mintInfo, priority: .maintenance) {
+                executionOrder.append("maintenance")
+            }
+        }
+        let deadline1 = Date().addingTimeInterval(3)
+        while await coordinator.snapshot().waitingCount < 1, Date() < deadline1 {
+            await Task.yield()
+        }
+
+        let queuedUser = Task {
+            try await coordinator.perform(kind: .receiveFee, priority: .userInitiated) {
+                executionOrder.append("userInitiated")
+            }
+        }
+        let deadline2 = Date().addingTimeInterval(3)
+        while await coordinator.snapshot().waitingUserOperationCount < 1, Date() < deadline2 {
+            await Task.yield()
+        }
+
+        releaseHolder?.resume()
+        try await holder.value
+        try await queuedUser.value
+        try await queuedMaintenance.value
+
+        XCTAssertEqual(executionOrder, ["holder", "userInitiated", "maintenance"])
     }
 
     private func quote(reservation: String?, issued: UInt64 = 0) -> MintQuote {

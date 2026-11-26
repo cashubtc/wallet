@@ -420,7 +420,259 @@ final class MintServiceTests: XCTestCase {
         XCTAssertEqual(s2.mints[0].name, "Saved")
     }
 
+    // MARK: - MintInfo semantic equality & 5-minute refresh TTL
+
+    func testHasSameMetadataIgnoresLastUpdatedAndDetectsSemanticChanges() {
+        let base = MintInfo(
+            url: "https://mint.example.com",
+            name: "Example Mint",
+            description: "Desc",
+            isActive: true,
+            balance: 100,
+            iconUrl: "https://mint.example.com/icon.png",
+            units: ["sat", "usd"],
+            mintUnits: ["sat"],
+            supportedMintMethods: [.bolt11],
+            supportedMeltMethods: [.bolt11],
+            supportsBolt12MintDescription: false,
+            supportsAmountlessBolt11Melt: true,
+            bolt11Sat: Bolt11SatCapability(canMint: true, canMelt: true, mintMin: 1, mintMax: 1000, meltMin: 1, meltMax: 1000),
+            lastUpdated: Date(timeIntervalSince1970: 1_000)
+        )
+
+        var timestampOnlyChange = base
+        timestampOnlyChange.lastUpdated = Date(timeIntervalSince1970: 9_999)
+        XCTAssertNotEqual(base, timestampOnlyChange)
+        XCTAssertTrue(base.hasSameMetadata(as: timestampOnlyChange))
+
+        var nameChanged = base
+        nameChanged.name = "Renamed Mint"
+        XCTAssertFalse(base.hasSameMetadata(as: nameChanged))
+
+        var unitsChanged = base
+        unitsChanged.units = ["sat", "eur"]
+        XCTAssertFalse(base.hasSameMetadata(as: unitsChanged))
+
+        var capabilityChanged = base
+        capabilityChanged.bolt11Sat?.canMelt = false
+        XCTAssertFalse(base.hasSameMetadata(as: capabilityChanged))
+    }
+
+    func testRefreshMintInfoSkipsUnchangedPersistenceAndRespectsFiveMinuteTTL() async {
+        let storage = CountingStorage()
+        let ws = WalletStore(storage: storage)
+        var currentNow = Date(timeIntervalSince1970: 10_000)
+        let staleDate = currentNow.addingTimeInterval(-600)
+        var fetchCount = 0
+
+        let s = MintService(
+            walletRepository: { nil },
+            walletStore: ws,
+            now: { currentNow },
+            refreshMintFetcher: { existing, fetchedAt in
+                fetchCount += 1
+                var unchanged = existing
+                unchanged.lastUpdated = fetchedAt
+                return unchanged
+            }
+        )
+        let initialMint = MintInfo(
+            url: "https://mint.example.com",
+            name: "Stable Mint",
+            description: "Unchanged",
+            isActive: true,
+            balance: 42,
+            lastUpdated: staleDate
+        )
+        s.mints = [initialMint]
+        s.activeMint = initialMint
+        let writesBeforeRefresh = storage.writeCount
+
+        // First passive refresh: mint is stale so it fetches, but semantic
+        // fields did not change so storage is NOT rewritten and lastUpdated stays intact.
+        XCTAssertTrue(s.hasStaleMintInfo(force: false))
+        await s.refreshMintInfo(force: false)
+        XCTAssertEqual(fetchCount, 1)
+        XCTAssertEqual(storage.writeCount, writesBeforeRefresh)
+        XCTAssertEqual(s.mints[0].lastUpdated, staleDate)
+
+        // Within 5 minutes: in-memory freshness cache skips redundant fetches.
+        currentNow = currentNow.addingTimeInterval(299)
+        XCTAssertFalse(s.hasStaleMintInfo(force: false))
+        await s.refreshMintInfo(force: false)
+        XCTAssertEqual(fetchCount, 1)
+        XCTAssertEqual(storage.writeCount, writesBeforeRefresh)
+
+        // Explicit pull-to-refresh (`force: true`) bypasses the TTL.
+        XCTAssertTrue(s.hasStaleMintInfo(force: true))
+        await s.refreshMintInfo(force: true)
+        XCTAssertEqual(fetchCount, 2)
+        XCTAssertEqual(storage.writeCount, writesBeforeRefresh)
+
+        // Once 5 minutes elapse since the last check, passive refresh runs again.
+        currentNow = currentNow.addingTimeInterval(300)
+        XCTAssertTrue(s.hasStaleMintInfo(force: false))
+        await s.refreshMintInfo(force: false)
+        XCTAssertEqual(fetchCount, 3)
+        XCTAssertEqual(storage.writeCount, writesBeforeRefresh)
+    }
+
+    func testRefreshMintInfoPersistsWhenSemanticFieldChanges() async {
+        let storage = CountingStorage()
+        let ws = WalletStore(storage: storage)
+        var currentNow = Date(timeIntervalSince1970: 20_000)
+        let staleDate = currentNow.addingTimeInterval(-600)
+        var fetchCount = 0
+
+        let s = MintService(
+            walletRepository: { nil },
+            walletStore: ws,
+            now: { currentNow },
+            refreshMintFetcher: { existing, fetchedAt in
+                fetchCount += 1
+                var updated = existing
+                updated.name = "Updated Mint"
+                updated.supportedMeltMethods = [.bolt11, .bolt12]
+                updated.lastUpdated = fetchedAt
+                return updated
+            }
+        )
+        let initialMint = MintInfo(
+            url: "https://mint.example.com",
+            name: "Old Name",
+            description: nil,
+            isActive: true,
+            balance: 100,
+            lastUpdated: staleDate
+        )
+        s.mints = [initialMint]
+        s.activeMint = initialMint
+        let writesBeforeRefresh = storage.writeCount
+
+        await s.refreshMintInfo(force: false)
+
+        XCTAssertEqual(fetchCount, 1)
+        XCTAssertGreaterThan(storage.writeCount, writesBeforeRefresh)
+        XCTAssertEqual(s.mints[0].name, "Updated Mint")
+        XCTAssertEqual(s.mints[0].supportedMeltMethods, [.bolt11, .bolt12])
+        XCTAssertEqual(s.activeMint?.name, "Updated Mint")
+        XCTAssertEqual(s.mints[0].lastUpdated, currentNow)
+
+        // Next passive check within TTL does not refetch.
+        currentNow = currentNow.addingTimeInterval(60)
+        await s.refreshMintInfo(force: false)
+        XCTAssertEqual(fetchCount, 1)
+    }
+
+    func testRefreshMintInfoFailedFetchDoesNotMarkMintFresh() async {
+        let storage = CountingStorage()
+        let ws = WalletStore(storage: storage)
+        let currentNow = Date(timeIntervalSince1970: 30_000)
+        let staleDate = currentNow.addingTimeInterval(-600)
+        var fetchCount = 0
+
+        let s = MintService(
+            walletRepository: { nil },
+            walletStore: ws,
+            now: { currentNow },
+            refreshMintFetcher: { existing, fetchedAt in
+                fetchCount += 1
+                if fetchCount == 1 {
+                    throw RepositoryFailure.unavailable
+                }
+                var updated = existing
+                updated.name = "Recovered Name"
+                updated.lastUpdated = fetchedAt
+                return updated
+            }
+        )
+        s.mints = [
+            MintInfo(
+                url: "https://mint.example.com",
+                name: "Initial",
+                description: nil,
+                isActive: true,
+                balance: 0,
+                lastUpdated: staleDate
+            )
+        ]
+
+        await s.refreshMintInfo(force: false)
+        XCTAssertEqual(fetchCount, 1)
+        XCTAssertEqual(s.mints[0].name, "Initial")
+
+        // Failure must not populate freshness cache; immediate retry fetches.
+        await s.refreshMintInfo(force: false)
+        XCTAssertEqual(fetchCount, 2)
+        XCTAssertEqual(s.mints[0].name, "Recovered Name")
+    }
+
+    func testRefreshMintInfoStopsIteratingWhenTaskIsCancelled() async {
+        let gate = NativeRemovalGate()
+        let currentNow = Date(timeIntervalSince1970: 40_000)
+        let staleDate = currentNow.addingTimeInterval(-600)
+        var fetchedURLs: [String] = []
+
+        let s = MintService(
+            walletRepository: { nil },
+            walletStore: WalletStore(storage: InMemoryStorage()),
+            now: { currentNow },
+            refreshMintFetcher: { existing, fetchedAt in
+                fetchedURLs.append(existing.url)
+                if existing.url == "https://first.example.com" {
+                    await gate.suspendUntilReleased()
+                }
+                var updated = existing
+                updated.lastUpdated = fetchedAt
+                return updated
+            }
+        )
+        s.mints = [
+            MintInfo(url: "https://first.example.com", name: "First", isActive: true, balance: 0, lastUpdated: staleDate),
+            MintInfo(url: "https://second.example.com", name: "Second", isActive: true, balance: 0, lastUpdated: staleDate),
+        ]
+
+        let refreshTask = Task { @MainActor in
+            await s.refreshMintInfo(force: false)
+        }
+        for _ in 0..<100 {
+            if await gate.hasStarted() { break }
+            await Task.yield()
+        }
+        refreshTask.cancel()
+        await gate.release()
+        await refreshTask.value
+
+        XCTAssertEqual(fetchedURLs, ["https://first.example.com"])
+    }
+
     // MARK: - Helpers
+
+    private final class CountingStorage: StorageProtocol {
+        private let inner = InMemoryStorage()
+        private(set) var writeCount = 0
+
+        func set<T: Codable>(_ value: T, forKey key: String) throws {
+            writeCount += 1
+            try inner.set(value, forKey: key)
+        }
+
+        func get<T: Codable>(forKey key: String) throws -> T? {
+            try inner.get(forKey: key)
+        }
+
+        func remove(forKey key: String) throws {
+            try inner.remove(forKey: key)
+        }
+
+        func exists(forKey key: String) -> Bool {
+            inner.exists(forKey: key)
+        }
+
+        func keys(withPrefix prefix: String) -> [String] {
+            inner.keys(withPrefix: prefix)
+        }
+    }
 
     private func mint(_ url: String, name: String) -> MintInfo {
         MintInfo(url: url, name: name, description: nil, isActive: true, balance: 0)

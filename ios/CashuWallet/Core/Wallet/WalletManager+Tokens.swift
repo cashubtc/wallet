@@ -243,7 +243,7 @@ extension WalletManager {
         // the throwaway CDK wallet entry it needs for the calculation itself.
         return try await operationCoordinator.perform(
             kind: .receiveFee,
-            priority: .maintenance
+            priority: .userInitiated
         ) {
             try await self.tokenService.previewReceiveToken(tokenString: tokenString)
         }

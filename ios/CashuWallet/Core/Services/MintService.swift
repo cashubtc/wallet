@@ -85,19 +85,48 @@ class MintService: ObservableObject {
     /// Whether an operation is in progress
     @Published var isLoading = false
     
+    // MARK: - Constants
+
+    /// Minimum interval between passive NUT-06 metadata fetches for a mint.
+    static let infoRefreshTTL: TimeInterval = 5 * 60
+
+    static func shouldRefreshMintInfo(
+        lastUpdated: Date,
+        lastChecked: Date?,
+        now: Date,
+        force: Bool
+    ) -> Bool {
+        if force { return true }
+        let lastFreshness: Date
+        if let lastChecked {
+            lastFreshness = max(lastUpdated, lastChecked)
+        } else {
+            lastFreshness = lastUpdated
+        }
+        guard lastFreshness <= now else { return true }
+        return now.timeIntervalSince(lastFreshness) >= infoRefreshTTL
+    }
+
     // MARK: - Dependencies
     
     private let walletRepository: () -> WalletRepository?
     private let walletStore: WalletStore
+    private let now: @MainActor () -> Date
+    private let refreshMintFetcher: (@MainActor (MintInfo, Date) async throws -> MintInfo?)?
+    private var lastCheckedAtByURL: [String: Date] = [:]
     
     // MARK: - Initialization
     
     init(
         walletRepository: @escaping () -> WalletRepository?,
-        walletStore: WalletStore = WalletStore()
+        walletStore: WalletStore = WalletStore(),
+        now: @escaping @MainActor () -> Date = Date.init,
+        refreshMintFetcher: (@MainActor (MintInfo, Date) async throws -> MintInfo?)? = nil
     ) {
         self.walletRepository = walletRepository
         self.walletStore = walletStore
+        self.now = now
+        self.refreshMintFetcher = refreshMintFetcher
     }
     
     // MARK: - Public Methods
@@ -136,13 +165,16 @@ class MintService: ObservableObject {
         let wallet = try await repo.getWallet(mintUrl: mintUrlObj, unit: .sat)
         let info = try await wallet.fetchMintInfo()
 
-        let mintInfo = await makeMintInfo(
+        let fetchedAt = now()
+        let mintInfo = makeMintInfo(
             url: normalizedUrl,
             existing: nil,
-            fetchedInfo: info
+            fetchedInfo: info,
+            now: fetchedAt
         )
         
         walletStore.setMintRemoved(url: normalizedUrl, removed: false)
+        lastCheckedAtByURL[normalizedUrl] = fetchedAt
         mints.append(mintInfo)
         saveMints()
         
@@ -195,6 +227,7 @@ class MintService: ObservableObject {
                 // Persist the exclusion first so a relaunch cannot rediscover
                 // retained CDK proofs if metadata removal is interrupted.
                 self.walletStore.setMintRemoved(url: mint.url, removed: true)
+                self.lastCheckedAtByURL.removeValue(forKey: self.normalizeUrl(mint.url))
                 self.mints = MintRemovalPolicy.removingMint(
                     withURL: mint.url,
                     from: self.mints
@@ -253,21 +286,55 @@ class MintService: ObservableObject {
         mints = []
         activeMint = nil
         isLoading = false
+        lastCheckedAtByURL.removeAll()
+    }
+
+    /// Whether at least one tracked mint is due for a NUT-06 metadata refresh.
+    func hasStaleMintInfo(force: Bool = false) -> Bool {
+        guard !mints.isEmpty else { return false }
+        if force { return true }
+        let checkNow = now()
+        return mints.contains { mint in
+            Self.shouldRefreshMintInfo(
+                lastUpdated: mint.lastUpdated,
+                lastChecked: lastCheckedAtByURL[normalizeUrl(mint.url)],
+                now: checkNow,
+                force: false
+            )
+        }
     }
     
-    /// Refresh mint info and payment capabilities for all configured mints.
-    func refreshMintInfo() async {
-        guard let repo = walletRepository() else { return }
+    /// Refresh mint info and payment capabilities for configured mints.
+    /// Passive calls (`force == false`) skip mints refreshed or checked within
+    /// `infoRefreshTTL`; explicit pull-to-refresh passes `force == true`.
+    func refreshMintInfo(force: Bool = false) async {
+        let repo = walletRepository()
+        guard repo != nil || refreshMintFetcher != nil else { return }
         var updated = false
 
-        for i in mints.indices {
+        for mintURL in mints.map(\.url) {
+            guard !Task.isCancelled else { break }
+            guard let index = mints.firstIndex(where: { $0.url == mintURL }) else { continue }
+            let existing = mints[index]
+            let normalizedURL = normalizeUrl(existing.url)
+            guard Self.shouldRefreshMintInfo(
+                lastUpdated: existing.lastUpdated,
+                lastChecked: lastCheckedAtByURL[normalizedURL],
+                now: now(),
+                force: force
+            ) else {
+                continue
+            }
+
             do {
-                if try await refreshMintInfo(at: i, using: repo) {
+                if try await refreshMintInfo(for: existing, normalizedURL: normalizedURL, using: repo) {
                     updated = true
                 }
+            } catch is CancellationError {
+                break
             } catch {
                 AppLogger.wallet.error(
-                    "mint info refresh failed resource=\(WalletOperationCoordinator.privacySafeIdentifier(self.mints[i].url), privacy: .public) error_type=\(String(reflecting: type(of: error)), privacy: .public)"
+                    "mint info refresh failed resource=\(WalletOperationCoordinator.privacySafeIdentifier(existing.url), privacy: .public) error_type=\(String(reflecting: type(of: error)), privacy: .public)"
                 )
             }
         }
@@ -374,11 +441,14 @@ class MintService: ObservableObject {
             }
             let wallet = try await repo.getWallet(mintUrl: mintUrlObj, unit: .sat)
             let info = try await wallet.fetchMintInfo()
-            let enriched = await makeMintInfo(
+            let fetchedAt = now()
+            let enriched = makeMintInfo(
                 url: normalizedUrl,
                 existing: existingIndex.map { mints[$0] },
-                fetchedInfo: info
+                fetchedInfo: info,
+                now: fetchedAt
             )
+            lastCheckedAtByURL[normalizedUrl] = fetchedAt
 
             if let existingIndex {
                 mints[existingIndex] = enriched
@@ -424,20 +494,54 @@ class MintService: ObservableObject {
     // MARK: - Private Methods
 
     private func refreshMintInfo(
-        at index: Int,
-        using repo: WalletRepository
+        for existing: MintInfo,
+        normalizedURL: String,
+        using repo: WalletRepository?
     ) async throws -> Bool {
-        let mintUrl = MintUrl(url: mints[index].url)
-        let wallet = try await repo.getWallet(mintUrl: mintUrl, unit: .sat)
-        let info = try await wallet.fetchMintInfo()
-        let refreshedMint = await makeMintInfo(
-            url: mints[index].url,
-            existing: mints[index],
-            fetchedInfo: info
-        )
+        let refreshedMint: MintInfo
+        let checkedAt: Date
 
-        guard refreshedMint != mints[index] else { return false }
-        mints[index] = refreshedMint
+        if let refreshMintFetcher {
+            let fetchTime = now()
+            guard let candidate = try await refreshMintFetcher(existing, fetchTime) else {
+                return false
+            }
+            checkedAt = now()
+            refreshedMint = candidate
+        } else {
+            guard let repo else { return false }
+            let mintUrl = MintUrl(url: existing.url)
+            let wallet = try await repo.getWallet(mintUrl: mintUrl, unit: .sat)
+            guard let info = try await wallet.fetchMintInfo() else {
+                return false
+            }
+            checkedAt = now()
+            refreshedMint = makeMintInfo(
+                url: existing.url,
+                existing: existing,
+                fetchedInfo: info,
+                now: checkedAt
+            )
+        }
+
+        guard !Task.isCancelled else { return false }
+
+        // Record freshness in memory even when semantic fields did not change,
+        // so repeated Mints tab visits respect the TTL without dirtying storage.
+        lastCheckedAtByURL[normalizedURL] = checkedAt
+
+        guard let currentIndex = mints.firstIndex(where: { $0.url == existing.url }) else {
+            return false
+        }
+        let current = mints[currentIndex]
+        // Compare semantic fields ignoring `lastUpdated` before mutating state
+        // or writing storage, preserving any live balance update that landed.
+        var candidate = refreshedMint
+        candidate.balance = current.balance
+        candidate.isActive = current.isActive
+        guard !candidate.hasSameMetadata(as: current) else { return false }
+        candidate.lastUpdated = checkedAt
+        mints[currentIndex] = candidate
         return true
     }
     
@@ -529,15 +633,17 @@ class MintService: ObservableObject {
     private func makeMintInfo(
         url: String,
         existing: MintInfo?,
-        fetchedInfo: Cdk.MintInfo?
-    ) async -> MintInfo {
+        fetchedInfo: Cdk.MintInfo?,
+        now: Date
+    ) -> MintInfo {
         var mintInfo = existing ?? MintInfo(
             url: url,
             name: fetchedInfo?.name ?? "Unknown Mint",
             description: fetchedInfo?.description,
             isActive: true,
             balance: 0,
-            iconUrl: fetchedInfo?.iconUrl
+            iconUrl: fetchedInfo?.iconUrl,
+            lastUpdated: now
         )
 
         if let fetchedInfo {
@@ -586,7 +692,7 @@ class MintService: ObservableObject {
             )
         }
 
-        mintInfo.lastUpdated = Date()
+        mintInfo.lastUpdated = now
         return mintInfo
     }
 
