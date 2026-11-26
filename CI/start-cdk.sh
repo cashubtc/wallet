@@ -6,11 +6,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BIN_DIR="${SCRIPT_DIR}/.cdk-bin"
-WORK_DIR="${SCRIPT_DIR}/.cdk-workdir"
-LOG_FILE="${SCRIPT_DIR}/.cdk.log"
-PID_FILE="${SCRIPT_DIR}/.cdk.pid"
+WORK_DIR="${CDK_TEST_WORK_DIR:-${SCRIPT_DIR}/.cdk-workdir}"
+LOG_FILE="${CDK_TEST_LOG_FILE:-${SCRIPT_DIR}/.cdk.log}"
+PID_FILE="${CDK_TEST_PID_FILE:-${SCRIPT_DIR}/.cdk.pid}"
 
-MINTD_BIN="${BIN_DIR}/cdk-mintd"
+MINTD_BIN="${CDK_MINTD_BIN:-${BIN_DIR}/cdk-mintd}"
 
 if [ ! -x "$MINTD_BIN" ]; then
     echo "❌ cdk-mintd not found. Run ./CI/setup-cdk.sh first"

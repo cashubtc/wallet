@@ -88,3 +88,6 @@ CI/.nutshell-venv
 CI/payment-tests/__pycache__/
 
 CI/lightning-address-tests/__pycache__/
+
+## Local CDK builds (never committed)
+ios/LocalPackages/

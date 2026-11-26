@@ -777,7 +777,7 @@ private final class OnchainStatusWallet: Wallet, @unchecked Sendable {
     override func restore() async throws -> Restored {
         restoreCalls += 1
         if failRestore { throw URLError(.notConnectedToInternet) }
-        return Restored(spent: Amount(value: 0), unspent: Amount(value: 0), pending: Amount(value: 0))
+        return Restored(spent: Amount(value: 0), unspent: Amount(value: 0), pending: Amount(value: 0), nextKeysetIndices: [:])
     }
 
     override func checkMintQuoteStatus(quoteId: String) async throws -> MintQuote {

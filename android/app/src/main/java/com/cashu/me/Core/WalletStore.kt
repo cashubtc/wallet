@@ -6,6 +6,8 @@ import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
+import com.cashu.me.Core.CDK.MintRestoreCheckpoint
+import com.cashu.me.Core.CDK.MintRestoreCheckpoints
 import com.cashu.me.Core.Protocols.StorageKeys
 import com.cashu.me.Models.CashuRequest
 import com.cashu.me.Models.MintInfo
@@ -17,7 +19,7 @@ import com.cashu.me.Models.WalletTransaction
 class WalletStore(
     context: Context,
     storeName: String = "wallet_store",
-) : CashuRequestPersistence {
+) : CashuRequestPersistence, MintRestoreCheckpoints {
     private val store = DataStorePreferenceStore(context.applicationContext, storeName)
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
@@ -45,6 +47,26 @@ class WalletStore(
             if (removed) listOf(url) else emptyList()
         if (updated != current) saveList(StorageKeys.walletRemovedMintUrls, String.serializer(), updated)
     }
+
+    /** Resume checkpoint for an interrupted seed restore, keyed by normalized mint URL. */
+    @Synchronized
+    override fun load(mintUrl: String): MintRestoreCheckpoint? =
+        loadMap(StorageKeys.walletRestoreCheckpoints, MintRestoreCheckpoint.serializer())[restoreCheckpointKey(mintUrl)]
+
+    @Synchronized
+    override fun save(mintUrl: String, checkpoint: MintRestoreCheckpoint?) {
+        val all = loadMap(StorageKeys.walletRestoreCheckpoints, MintRestoreCheckpoint.serializer()).toMutableMap()
+        val key = restoreCheckpointKey(mintUrl)
+        if (checkpoint == null) all.remove(key) else all[key] = checkpoint
+        if (all.isEmpty()) {
+            store.removeKeys(listOf(StorageKeys.walletRestoreCheckpoints))
+        } else {
+            saveMap(StorageKeys.walletRestoreCheckpoints, MintRestoreCheckpoint.serializer(), all)
+        }
+    }
+
+    private fun restoreCheckpointKey(mintUrl: String): String =
+        com.cashu.me.Models.MintUrlIdentity.comparisonKey(mintUrl) ?: mintUrl
 
     fun loadBalancesByUnit(): Map<String, Long> =
         loadMap(StorageKeys.walletBalancesByUnit, Long.serializer())

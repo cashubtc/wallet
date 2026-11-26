@@ -441,7 +441,7 @@ class WalletManager(
                 runCatching {
                     restoreProofsForAddedMint(
                         mintUrl = mintUrl,
-                        restoreMint = { withContext(Dispatchers.IO) { gateway.restoreMint(it) } },
+                        restoreMint = { withContext(Dispatchers.IO) { gateway.restoreMint(it, walletStore) } },
                     )
                     if (mutableState.value.mints.none { it.url == mintUrl }) return@runCatching
                     refreshBalance()
@@ -499,7 +499,7 @@ class WalletManager(
             val normalized = MintUrlIdentity.withDefaultScheme(url)
             MintUrlIdentity.validationError(normalized, allowCleartextLocalTestMints)?.let { throw IllegalArgumentException(it) }
             val trackedMintUrl = ensureMintTracked(normalized)
-            val result = withContext(Dispatchers.IO) { gateway.restoreMint(trackedMintUrl) }
+            val result = withContext(Dispatchers.IO) { gateway.restoreMint(trackedMintUrl, walletStore) }
             refreshBalance()
             loadTransactions()
             result

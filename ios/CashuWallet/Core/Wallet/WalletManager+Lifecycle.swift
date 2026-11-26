@@ -533,7 +533,7 @@ extension WalletManager {
             _ = try await wallet.recoverIncompleteSagas()
             guard let db = self.db else { throw WalletError.notInitialized }
             try await MintRestoreSafety.requireSafe(database: db, mintURL: normalizedUrl)
-            let restored = try await wallet.restore()
+            let restored = try await self.resumableRestore(wallet: wallet, mintURL: normalizedUrl)
 
             // Ensure mint is in our saved list
             await self.mintService.ensureMintTracked(url: normalizedUrl, name: mintName)
@@ -547,10 +547,27 @@ extension WalletManager {
                 mintUrl: normalizedUrl,
                 mintName: mintName,
                 iconUrl: info?.iconUrl,
-                spent: restored.spent.value,
-                unspent: restored.unspent.value,
-                pending: restored.pending.value
+                spent: restored.spent,
+                unspent: restored.unspent,
+                pending: restored.pending
             )
+        }
+    }
+
+    /// Seed restore that continues from the last saved position; see `ResumableMintRestore`.
+    private func resumableRestore(
+        wallet: Wallet,
+        mintURL: String
+    ) async throws -> (spent: UInt64, unspent: UInt64, pending: UInt64) {
+        do {
+            return try await ResumableMintRestore.run(store: walletStore, mintURL: mintURL) { options in
+                try await wallet.restoreWithOpts(opts: options)
+            }
+        } catch let interrupted as MintRestoreInterrupted {
+            // Batches recovered before the failure are already persisted.
+            await self.refreshBalanceAssumingWalletOperationLease()
+            AppLogger.wallet.error("Restore interrupted for \(mintURL); resume positions saved: \(interrupted.reason)")
+            throw interrupted
         }
     }
 

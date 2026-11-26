@@ -1,0 +1,16 @@
+[package]
+name = "restore-stress"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Builds a seed-recoverable wallet with many proofs against a fakewallet mint, to exercise long-running NUT-13 restores."
+
+# Pinned to the commit of cashubtc/cdk#2696 (resumable seed recovery).
+[dependencies]
+cdk = { git = "https://github.com/a1denvalu3/cdk", rev = "d60f84019", default-features = false, features = ["wallet"] }
+cdk-sqlite = { git = "https://github.com/a1denvalu3/cdk", rev = "d60f84019", default-features = false, features = ["wallet"] }
+bip39 = "2.0"
+anyhow = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
+
+[workspace]
