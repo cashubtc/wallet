@@ -104,13 +104,10 @@ extension WalletManager {
     }
 
     func setActiveMint(_ mint: MintInfo) async throws {
-        try await operationCoordinator.perform(
-            kind: .mintInfo,
-            resourceID: mint.url
-        ) {
-            try await self.mintService.setActiveMint(mint)
-        }
-        await refreshBalance()
+        // Switching the default mint only updates local metadata and does not
+        // alter balances or touch CDK/SQLite, so it does not need the
+        // repository coordinator lease or a balance refresh.
+        try await mintService.setActiveMint(mint)
     }
 
     /// Whether the given mint URL is already tracked by the wallet.
@@ -119,10 +116,14 @@ extension WalletManager {
     }
 
 
-    func refreshMintInfo() async {
+    func refreshMintInfo(force: Bool = false) async {
+        guard mintService.hasStaleMintInfo(force: force) else { return }
         do {
-            try await operationCoordinator.perform(kind: .mintInfo) {
-                await self.mintService.refreshMintInfo()
+            try await operationCoordinator.perform(
+                kind: .mintInfo,
+                priority: force ? .userInitiated : .maintenance
+            ) {
+                await self.mintService.refreshMintInfo(force: force)
             }
         } catch {
             // Cancellation is expected when the owning view disappears.
@@ -171,6 +172,8 @@ extension WalletManager {
                 }
                 return MintPreviewInfo(name: info.name, iconUrl: info.iconUrl, methods: methods)
             }
+        } catch is CancellationError {
+            return nil
         } catch {
             AppLogger.wallet.error(
                 "mint preview failed resource=\(WalletOperationCoordinator.privacySafeIdentifier(normalized), privacy: .public) error_type=\(String(reflecting: type(of: error)), privacy: .public)"

@@ -108,6 +108,8 @@ class NPCService internal constructor(
     private var paymentCheckJob: Job? = null
     private var connectionAttempt: Deferred<Unit>? = null
     private var sessionGeneration = 0L
+    @Volatile
+    private var isBackgroundRefreshPaused = false
     private var client: NPCClient? = null
     private var nostrSecretKey: String? = null
     private var nostrPublicKey: String? = null
@@ -355,7 +357,7 @@ class NPCService internal constructor(
         connectionAttempt = null
         paymentCheckJob?.cancel()
         paymentCheckJob = null
-        stopBackgroundRefresh()
+        cancelBackgroundRefreshJob()
         client?.close()
         client = null
         update {
@@ -469,14 +471,14 @@ class NPCService internal constructor(
     private fun applyPollingPreferences() {
         val settings = settingsState.value
         val state = mutableState.value
-        val shouldRun = shouldRunPeriodicInvoiceChecks(
+        val shouldRun = !isBackgroundRefreshPaused && shouldRunPeriodicInvoiceChecks(
             isEnabled = state.isEnabled,
             isInitialized = state.isInitialized,
             checkIncomingInvoices = settings.checkIncomingInvoices,
             periodicallyCheckIncomingInvoices = settings.periodicallyCheckIncomingInvoices,
         )
         if (!shouldRun) {
-            stopBackgroundRefresh()
+            cancelBackgroundRefreshJob()
             return
         }
         if (refreshJob?.isActive == true) return
@@ -490,7 +492,25 @@ class NPCService internal constructor(
         }
     }
 
-    private fun stopBackgroundRefresh() {
+    /**
+     * Resume periodic npub.cash polling when the app enters the foreground
+     * (iOS `NPCService.initializeIfEnabled` foreground parity). Safe and idempotent.
+     */
+    fun startBackgroundRefresh() {
+        isBackgroundRefreshPaused = false
+        initializeIfEnabled()
+    }
+
+    /**
+     * Pause periodic npub.cash polling while the app is backgrounded
+     * (iOS `NPCService.stopBackgroundRefresh` parity). Safe and idempotent.
+     */
+    fun stopBackgroundRefresh() {
+        isBackgroundRefreshPaused = true
+        cancelBackgroundRefreshJob()
+    }
+
+    private fun cancelBackgroundRefreshJob() {
         refreshJob?.cancel()
         refreshJob = null
     }

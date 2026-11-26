@@ -120,6 +120,7 @@ class WalletManager(
         issue = { quoteId -> issueMintTransferQuote(quoteId) },
     )
     private val focusedMintQuoteMonitor = FocusedMintQuoteMonitor()
+    private val mintInfoRefresher = MintInfoRefresher()
     private val transactionLoader = WalletTransactionLoader(walletStore, gateway)
     private val npcQuotesInFlight = mutableSetOf<String>()
     private var processedNPCQuotes = walletStore.loadProcessedNPCQuotes().toMutableSet()
@@ -396,6 +397,7 @@ class WalletManager(
                 npcService.resetForWalletBoundary()
                 nostrMintBackupService.resetForWalletBoundary()
                 cashuRequestListener?.resetForWalletBoundary(restart = false)
+                mintInfoRefresher.clear()
                 MintLogoBitmapCache.clear()
                 update {
                     WalletState(
@@ -424,6 +426,7 @@ class WalletManager(
                 ?: throw IllegalStateException("Mint did not return info via CDK.")
             val updated = mutableState.value.mints + fetched
             walletStore.setMintRemoved(normalized, removed = false)
+            mintInfoRefresher.recordChecked(fetched.url)
             walletStore.saveMints(updated)
             if (mutableState.value.activeMint == null) walletStore.activeMintURL = fetched.url
             // Adding a mint never ends onboarding by itself: the first-mint
@@ -471,6 +474,7 @@ class WalletManager(
                 // Persist the exclusion before deleting metadata so retained
                 // CDK proofs cannot reconnect this mint after a relaunch.
                 walletStore.setMintRemoved(trackedMint.url, removed = true)
+                mintInfoRefresher.forget(trackedMint.url)
                 val updated = mutableState.value.mints.filterNot { it.url == trackedMint.url }
                 walletStore.saveMints(updated)
                 if (walletStore.activeMintURL == trackedMint.url) {
@@ -538,57 +542,37 @@ class WalletManager(
     }
 
     /**
-     * Refresh NUT-06 mint metadata for every tracked mint. Does not toggle
+     * Refresh NUT-06 mint metadata for tracked mints. Does not toggle
      * [WalletState.isLoading] — call from the Mints screen so the list stays
      * interactive while names/icons update in place (iOS `refreshMintInfo`).
+     *
+     * Passive calls (`force = false`) skip mints refreshed or checked within
+     * [MintInfoRefresher.DEFAULT_TTL_MILLIS]; explicit pull-to-refresh passes
+     * `force = true`.
      */
-    suspend fun refreshMintInfo() {
+    suspend fun refreshMintInfo(force: Boolean = false) {
         val current = mutableState.value.mints
         if (current.isEmpty()) return
 
-        var changed = false
-        val updated = current.map { mint ->
-            val fetched = runCatching {
-                gateway.ensureWallet(mint.url)
-                gateway.fetchMintInfo(mint.url)
-            }.onFailure {
-                AppLogger.wallet.error("Failed to refresh mint info for ${mint.url}", it)
-            }.getOrNull() ?: return@map mint
+        val updatesByUrl = mintInfoRefresher.refresh(
+            mints = current,
+            force = force,
+            fetchMintInfo = { url ->
+                gateway.ensureWallet(url)
+                gateway.fetchMintInfo(url)
+            },
+            onFetchFailed = { url, error ->
+                AppLogger.wallet.error("Failed to refresh mint info for $url", error)
+            },
+        )
+        if (updatesByUrl.isEmpty()) return
 
-            val merged = mint.copy(
-                name = fetched.name.takeUnless { it == "Unknown Mint" } ?: mint.name,
-                description = fetched.description ?: mint.description,
-                iconUrl = fetched.iconUrl ?: mint.iconUrl,
-                units = fetched.units.ifEmpty { mint.units },
-                mintUnits = fetched.mintUnits.ifEmpty { mint.mintUnits },
-                // A live report is authoritative — including a reported-empty
-                // list (the mint dropped a rail); only an unknown (unfetched)
-                // value keeps the previously stored one.
-                supportedMintMethods = fetched.supportedMintMethods ?: mint.supportedMintMethods,
-                supportedMeltMethods = fetched.supportedMeltMethods ?: mint.supportedMeltMethods,
-                // Live NUT-04 advertisement is authoritative, including false
-                // (the mint dropped description support).
-                supportsBolt12MintDescription = fetched.supportsBolt12MintDescription,
-                // Same for NUT-05 amountless; only an unread value keeps the stored one.
-                supportsAmountlessBolt11Melt = fetched.supportsAmountlessBolt11Melt
-                    ?: mint.supportsAmountlessBolt11Melt,
-                // Likewise authoritative once reported: a mint that pauses a
-                // direction or drops the rail must stop being offered for
-                // transfers. Only an unreported value keeps the stored one.
-                bolt11Sat = fetched.bolt11Sat ?: mint.bolt11Sat,
-                lastUpdatedEpochMillis = System.currentTimeMillis(),
-                balance = mint.balance,
-                isActive = mint.isActive,
-            )
-            if (merged != mint) {
-                changed = true
-                merged
-            } else {
-                mint
-            }
+        val updated = mutableState.value.mints.map { liveMint ->
+            updatesByUrl[liveMint.url]?.copy(
+                balance = liveMint.balance,
+                isActive = liveMint.isActive,
+            ) ?: liveMint
         }
-
-        if (!changed) return
         walletStore.saveMints(updated)
         update {
             copy(
@@ -1421,19 +1405,38 @@ class WalletManager(
             gateway.checkTokenSpendable(token, mintUrl)
         }
 
-    suspend fun checkAllPendingTokens(): Int {
+    /**
+     * Checks pending sent tokens across tracked mints.
+     *
+     * Passive startup/foreground sweeps keep `showLoading = false` so they
+     * never toggle global [WalletState.isLoading] across the UI.
+     */
+    suspend fun checkAllPendingTokens(showLoading: Boolean = false): Int {
         if (!mutableState.value.isRuntimeReady) return 0
 
-        return withLoadingResult {
+        val runCheck: suspend () -> Int = {
             var claimedCount = 0
             var foundPending = false
             transactionUnitsByMint(mutableState.value.mints).forEach { (mintUrl, units) ->
                 units.forEach { unit ->
-                    gateway.listPendingSendOperationIds(mintUrl, unit).forEach { operationId ->
+                    val operationIds = try {
+                        gateway.listPendingSendOperationIds(mintUrl, unit)
+                    } catch (cancellation: CancellationException) {
+                        throw cancellation
+                    } catch (error: Throwable) {
+                        AppLogger.wallet.error("Pending send maintenance failed for $mintUrl ($unit)", error)
+                        emptyList()
+                    }
+                    operationIds.forEach { operationId ->
                         foundPending = true
-                        val claimed = runCatching {
+                        val claimed = try {
                             gateway.checkPendingSendClaimed(mintUrl, operationId, unit)
-                        }.getOrDefault(false)
+                        } catch (cancellation: CancellationException) {
+                            throw cancellation
+                        } catch (error: Throwable) {
+                            AppLogger.wallet.error("Pending send status check failed for $mintUrl ($unit)", error)
+                            false
+                        }
                         if (claimed) claimedCount += 1
                     }
                 }
@@ -1447,6 +1450,8 @@ class WalletManager(
             }
             claimedCount
         }
+
+        return if (showLoading) withLoadingResult(runCheck) else runCheck()
     }
 
     /**
@@ -1899,6 +1904,7 @@ class WalletManager(
         pendingMeltWaiters.clear()
         nwcManager.stop()
         gateway.closeWalletRepository()
+        mintInfoRefresher.clear()
         update { copy(isRuntimeReady = false) }
 
         runWalletReplacementCommit(
@@ -2060,6 +2066,7 @@ class WalletManager(
         )
         val updated = if (placeholder == null) current + enriched else
             current.map { if (it == placeholder) enriched else it }
+        if (fetched != null) mintInfoRefresher.recordChecked(enriched.url)
         walletStore.saveMints(updated)
         if (walletStore.activeMintURL == null) walletStore.activeMintURL = enriched.url
         update {

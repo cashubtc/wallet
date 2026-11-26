@@ -84,7 +84,7 @@ class PriceService: ObservableObject {
         self.currencyCode = settingsStore.priceCurrencyCode
         loadCachedPrice()
         
-        // The first network refresh is started by SettingsManager after the
+        // The first network refresh is started by CashuWalletApp once the
         // initial wallet UI has had a chance to render cached values.
     }
     
@@ -169,6 +169,7 @@ class PriceService: ObservableObject {
     /// Start auto-refresh timer
     func startAutoRefresh() {
         stopAutoRefresh()
+        guard enableAutoRefresh && isEnabled else { return }
         
         initialFetchTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 1_000_000_000)

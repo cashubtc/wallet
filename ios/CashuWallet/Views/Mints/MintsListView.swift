@@ -66,6 +66,9 @@ struct MintsListView: View {
                 MintTransferView(openedFromMintURL: presentation.mintURL)
                     .environmentObject(walletManager)
             }
+            .refreshable {
+                await walletManager.refreshMintInfo(force: true)
+            }
             .task {
                 await walletManager.refreshMintInfo()
             }

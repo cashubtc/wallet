@@ -47,15 +47,18 @@ class PriceService internal constructor(
     private val nowEpochMillis: () -> Long = System::currentTimeMillis,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
     private val enableAutoRefresh: Boolean = true,
+    private val initialRefreshDelayMillis: Long = 1_000L,
+    private val refreshIntervalMillis: Long = 60_000L,
 ) {
     private val mutableState = MutableStateFlow(loadStateFromStore())
     val state: StateFlow<PriceState> = mutableState.asStateFlow()
     private var refreshJob: Job? = null
     private val requestLock = Any()
     private var requestGeneration = 0L
+    private var isForegroundActive = true
 
     init {
-        if (enableAutoRefresh && mutableState.value.isEnabled) startAutoRefresh()
+        if (enableAutoRefresh && mutableState.value.isEnabled) launchAutoRefreshIfEligible()
     }
 
     fun syncFromSettings(refresh: Boolean = false) {
@@ -72,10 +75,12 @@ class PriceService internal constructor(
                 },
             ).also { mutableState.value = it }
         }
-        if (enableAutoRefresh && updated.isEnabled) {
-            startAutoRefresh()
-        } else {
-            stopAutoRefresh()
+        synchronized(requestLock) {
+            if (enableAutoRefresh && updated.isEnabled && isForegroundActive) {
+                launchAutoRefreshLocked()
+            } else {
+                cancelAutoRefreshLocked()
+            }
         }
         if (refresh && updated.isEnabled) refresh()
     }
@@ -164,18 +169,47 @@ class PriceService internal constructor(
         )
     }
 
-    private fun startAutoRefresh() {
+    /**
+     * Resume periodic price polling when the app enters the foreground.
+     * Safe and idempotent; does nothing when disabled or already running.
+     */
+    fun startAutoRefresh() {
+        synchronized(requestLock) {
+            isForegroundActive = true
+            launchAutoRefreshLocked()
+        }
+    }
+
+    /**
+     * Pause periodic price polling when the app enters the background.
+     * Safe and idempotent.
+     */
+    fun stopAutoRefresh() {
+        synchronized(requestLock) {
+            isForegroundActive = false
+            cancelAutoRefreshLocked()
+        }
+    }
+
+    private fun launchAutoRefreshIfEligible() {
+        synchronized(requestLock) {
+            launchAutoRefreshLocked()
+        }
+    }
+
+    private fun launchAutoRefreshLocked() {
+        if (!enableAutoRefresh || !mutableState.value.isEnabled || !isForegroundActive) return
         if (refreshJob?.isActive == true) return
         refreshJob = scope.launch {
-            delay(1_000)
+            delay(initialRefreshDelayMillis)
             while (isActive) {
                 refreshBitcoinPrice()
-                delay(60_000)
+                delay(refreshIntervalMillis)
             }
         }
     }
 
-    private fun stopAutoRefresh() {
+    private fun cancelAutoRefreshLocked() {
         refreshJob?.cancel()
         refreshJob = null
     }

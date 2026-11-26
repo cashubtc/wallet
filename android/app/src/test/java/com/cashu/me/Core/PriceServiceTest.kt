@@ -2,9 +2,14 @@ package com.cashu.me.Core
 
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -89,6 +94,49 @@ class PriceServiceTest {
         assertTrue(request.isCancelled)
         assertFalse(service.state.value.isFetching)
         assertNull(service.state.value.errorMessage)
+    }
+
+    @Test(timeout = 10_000)
+    fun stopAutoRefreshPausesPollingAndStartAutoRefreshResumesIdempotently() = runBlocking {
+        val settings = FakePriceSettings(priceEnabled = true, priceCurrencyCode = "USD")
+        val fetched = Channel<String>(Channel.UNLIMITED)
+        val testScope = CoroutineScope(coroutineContext + SupervisorJob(coroutineContext[Job]))
+        val service = PriceService(
+            settingsStore = settings,
+            priceFetcher = { currency ->
+                fetched.trySend(currency)
+                100_000.0
+            },
+            scope = testScope,
+            enableAutoRefresh = true,
+            initialRefreshDelayMillis = 10L,
+            refreshIntervalMillis = 15L,
+        )
+        try {
+            assertEquals("USD", fetched.receive())
+
+            // Stopping is idempotent and halts periodic polling.
+            service.stopAutoRefresh()
+            service.stopAutoRefresh()
+            while (fetched.tryReceive().isSuccess) {
+                // Drain any in-flight emission that completed before cancel.
+            }
+            delay(50)
+            assertTrue(fetched.tryReceive().isFailure)
+
+            // Settings sync while backgrounded must not restart polling.
+            service.syncFromSettings(refresh = false)
+            delay(50)
+            assertTrue(fetched.tryReceive().isFailure)
+
+            // Returning to foreground resumes polling idempotently.
+            service.startAutoRefresh()
+            service.startAutoRefresh()
+            assertEquals("USD", fetched.receive())
+        } finally {
+            service.stopAutoRefresh()
+            testScope.cancel()
+        }
     }
 
     private class ControlledPriceFetcher {

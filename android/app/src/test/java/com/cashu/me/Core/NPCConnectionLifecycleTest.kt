@@ -7,6 +7,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
@@ -192,6 +193,36 @@ class NPCConnectionLifecycleTest {
         } finally { fixture.close() }
     }
 
+    @Test(timeout = 10_000)
+    fun stopBackgroundRefreshPausesPeriodicPollingUntilStartBackgroundRefresh() = runBlocking {
+        val fixture = Fixture(this, periodicChecks = true)
+        try {
+            fixture.service.initializeWithSeed(byteArrayOf(1))
+            fixture.awaitRequest()
+            val connection = async { fixture.service.connect() }
+            fixture.client.complete()
+            connection.await()
+            assertTrue(fixture.service.state.value.isConnected)
+
+            // Wait for periodic polling to tick at least once.
+            fixture.client.polls.receive()
+
+            // Backgrounding pauses periodic polling idempotently.
+            fixture.service.stopBackgroundRefresh()
+            fixture.service.stopBackgroundRefresh()
+            while (fixture.client.polls.tryReceive().isSuccess) {
+                // Drain any poll emitted before cancellation settled.
+            }
+            delay(50)
+            assertTrue(fixture.client.polls.tryReceive().isFailure)
+
+            // Returning to foreground resumes periodic polling idempotently.
+            fixture.service.startBackgroundRefresh()
+            fixture.service.startBackgroundRefresh()
+            fixture.client.polls.receive()
+        } finally { fixture.close() }
+    }
+
     private class Fixture(parent: CoroutineScope, enabled: Boolean = true, periodicChecks: Boolean = false) {
         private val scope = CoroutineScope(parent.coroutineContext + SupervisorJob(parent.coroutineContext[Job]))
         var client = ControlledClient()
@@ -227,12 +258,16 @@ class NPCConnectionLifecycleTest {
     /** Deliberately ignores cancellation, like a late native/network callback. */
     private class ControlledClient : NPCClient {
         val started = Channel<Unit>(Channel.UNLIMITED)
+        val polls = Channel<Unit>(Channel.UNLIMITED)
         var closed = false
         private var continuation: Continuation<List<NPCQuote>>? = null
         private var requestCount = 0
         override suspend fun getQuotes(): List<NPCQuote> {
             requestCount += 1
-            if (requestCount > 1) return emptyList()
+            if (requestCount > 1) {
+                polls.trySend(Unit)
+                return emptyList()
+            }
             return suspendCoroutine {
                 continuation = it
                 started.trySend(Unit)

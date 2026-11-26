@@ -27,12 +27,41 @@ func withBackgroundWriteAssertion<T>(
     return try await work()
 }
 
+/// Tracks whether the app actually entered `.background` before becoming
+/// `.active`, so transient `.active -> .inactive -> .active` interruptions
+/// (Face ID, Share Sheet, Control Center, Core NFC) do not restart services or
+/// fire foreground network bursts.
+struct SceneForegroundResumeGate {
+    private(set) var needsForegroundResume = false
+
+    mutating func handleTransition(from oldPhase: ScenePhase, to newPhase: ScenePhase) -> Bool {
+        switch newPhase {
+        case .background:
+            needsForegroundResume = true
+            return false
+        case .active:
+            let shouldResume = needsForegroundResume || oldPhase == .background
+            needsForegroundResume = false
+            return shouldResume
+        case .inactive:
+            if oldPhase == .background {
+                needsForegroundResume = true
+            }
+            return false
+        @unknown default:
+            return false
+        }
+    }
+}
+
 @main
 struct CashuWalletApp: App {
     @StateObject private var walletManager: WalletManager
     @StateObject private var navigationManager: NavigationManager
     @StateObject private var appLockManager: AppLockManager
     @Environment(\.scenePhase) private var scenePhase
+    @State private var foregroundResumeGate = SceneForegroundResumeGate()
+    @State private var foregroundResumeTask: Task<Void, Never>?
 
     init() {
         // Repair stdout/stderr before anything can touch the CDK FFI, so a broken
@@ -89,6 +118,15 @@ struct CashuWalletApp: App {
                             SentryService.initialize()
                         }
                         await walletManager.initialize()
+                        // Start price refresh deterministically on cold launch
+                        // once initial wallet state is loaded; scenePhase
+                        // resume is gated on returning from background.
+                        _ = SettingsManager.shared
+                        if scenePhase != .background,
+                           !IntegrationTestConfig.isEnabled,
+                           PriceService.shared.isEnabled {
+                            PriceService.shared.startAutoRefresh()
+                        }
                         guard IntegrationTestConfig.shouldRunPaymentServices else { return }
                         CashuRequestListener.shared.attach(walletManager: walletManager)
                         CashuRequestListener.shared.requestStart()
@@ -107,17 +145,32 @@ struct CashuWalletApp: App {
                     transaction.disablesAnimations = true
                 }
             }
-            .onChange(of: scenePhase) { _, newPhase in
+            .onChange(of: scenePhase) { oldPhase, newPhase in
                 guard IntegrationTestConfig.shouldRunPaymentServices else { return }
+                let shouldResumeFromBackground = foregroundResumeGate.handleTransition(
+                    from: oldPhase,
+                    to: newPhase
+                )
                 switch newPhase {
                 case .active:
+                    guard shouldResumeFromBackground else { break }
                     CashuRequestListener.shared.requestStart()
-                    if SettingsManager.shared.checkSentTokens {
-                        Task { await walletManager.checkAllPendingTokens() }
+                    // Sequence passive foreground sweeps in a single Task so
+                    // performIfIdle calls do not race and drop each other.
+                    foregroundResumeTask?.cancel()
+                    foregroundResumeTask = Task {
+                        await walletManager.syncPendingMintQuotesIfStale()
+                        guard !Task.isCancelled else { return }
+                        await walletManager.syncPendingMeltQuotes()
+                        guard !Task.isCancelled else { return }
+                        if SettingsManager.shared.checkSentTokens {
+                            await walletManager.checkAllPendingTokens()
+                        }
+                        guard !Task.isCancelled else { return }
+                        if walletManager.isRuntimeReady {
+                            await NWCManager.shared.startIfEnabled()
+                        }
                     }
-                    Task { await walletManager.syncPendingMintQuotesIfStale() }
-                    Task { await walletManager.syncPendingMeltQuotes() }
-                    Task { await NWCManager.shared.startIfEnabled() }
                     // Recover enabled services and re-arm polling after backgrounding.
                     if !IntegrationTestConfig.isEnabled {
                         Task { await NPCService.shared.initializeIfEnabled() }
@@ -129,6 +182,8 @@ struct CashuWalletApp: App {
                 case .inactive:
                     break
                 case .background:
+                    foregroundResumeTask?.cancel()
+                    foregroundResumeTask = nil
                     CashuRequestListener.shared.requestStop()
                     // Quiesce the timers so no fresh mint network + wallet-DB write kicks
                     // off during the brief background-transition window before suspension.

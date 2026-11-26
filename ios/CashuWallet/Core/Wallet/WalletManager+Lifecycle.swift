@@ -1208,12 +1208,17 @@ extension WalletManager {
             await self.refreshBalance()
             guard !Task.isCancelled else { return }
 
-            let recoveredWalletState = await self.performBestEffortWalletStartupMaintenance()
+            let recoveredWalletState = await self.performBestEffortWalletStartupRecovery()
             guard !Task.isCancelled else { return }
 
             if recoveredWalletState {
                 await self.refreshBalance()
             }
+            guard !Task.isCancelled else { return }
+
+            // Refresh stale keysets at maintenance priority so foreground user
+            // actions never wait behind startup keyset HTTP calls.
+            await self.refreshStartupKeysetsIfNeeded()
             guard !Task.isCancelled else { return }
 
             // These passive passes acquire only if the recovery lane is now
@@ -1228,32 +1233,28 @@ extension WalletManager {
     }
 
     /// Returns true when saga recovery changed local wallet state and balances
-    /// should be read again.
-    private func performBestEffortWalletStartupMaintenance() async -> Bool {
+    /// should be read again. Runs at `.recovery` priority for local saga
+    /// reconciliation only; keyset HTTP refreshes run separately at `.maintenance`.
+    private func performBestEffortWalletStartupRecovery() async -> Bool {
         do {
             return try await operationCoordinator.perform(
                 kind: .recovery,
                 priority: .recovery,
                 protectsBackgroundExecution: true
             ) {
-                await self.performBestEffortWalletStartupMaintenanceAssumingLease()
+                await self.performBestEffortWalletStartupRecoveryAssumingLease()
             }
         } catch {
             return false
         }
     }
 
-    private func performBestEffortWalletStartupMaintenanceAssumingLease() async -> Bool {
+    private func performBestEffortWalletStartupRecoveryAssumingLease() async -> Bool {
         guard walletRepository != nil else { return false }
         let reconciledReceipts = await reconcileReceivedAccountsAssumingLease()
         let mintUrls = trackedMintUrlsForWalletAccess()
-        guard !mintUrls.isEmpty else { return false }
+        guard !mintUrls.isEmpty else { return reconciledReceipts }
 
-        let now = Date().timeIntervalSince1970
-        let storedKeysetRefreshTimestamps = walletStore.loadMintKeysetRefreshTimestamps()
-        var keysetRefreshTimestamps = storedKeysetRefreshTimestamps
-            .filter { mintUrls.contains($0.key) }
-        var timestampsChanged = keysetRefreshTimestamps != storedKeysetRefreshTimestamps
         var recoveredWalletState = reconciledReceipts
 
         let wallets = await trackedWalletsAssumingWalletOperationLease()
@@ -1262,14 +1263,83 @@ extension WalletManager {
             let mintWallets = wallets.filter {
                 MintURLIdentity.normalized($0.mintUrl().url) == MintURLIdentity.normalized(mintUrlString)
             }
+            for wallet in mintWallets {
+                guard !Task.isCancelled else { break }
+                if await recoverIncompleteSagasIfNeeded(wallet: wallet, mintUrl: mintUrlString) {
+                    recoveredWalletState = true
+                }
+            }
+        }
+
+        // After saga recovery, so a transfer interrupted mid-melt is judged on
+        // its recovered state rather than mistaken for one that never started.
+        await discardAbandonedMintTransferDraftsAssumingWalletOperationLease()
+
+        return recoveredWalletState
+    }
+
+    private func refreshStartupKeysetsIfNeeded() async {
+        guard walletRepository != nil else { return }
+        let mintUrls = trackedMintUrlsForWalletAccess()
+        guard !mintUrls.isEmpty else { return }
+
+        let now = Date().timeIntervalSince1970
+        let storedKeysetRefreshTimestamps = walletStore.loadMintKeysetRefreshTimestamps()
+        let prunedTimestamps = storedKeysetRefreshTimestamps.filter { mintUrls.contains($0.key) }
+        if prunedTimestamps != storedKeysetRefreshTimestamps {
+            walletStore.saveMintKeysetRefreshTimestamps(prunedTimestamps)
+        }
+
+        let dueMintUrls = mintUrls.filter {
+            WalletStartupPolicy.shouldRefreshKeysets(
+                lastRefresh: prunedTimestamps[$0],
+                now: now
+            )
+        }
+        guard !dueMintUrls.isEmpty else { return }
+
+        do {
+            try await operationCoordinator.perform(
+                kind: .mintInfo,
+                priority: .maintenance
+            ) {
+                await self.refreshStartupKeysetsAssumingLease(
+                    mintUrls: dueMintUrls,
+                    storedKeysetRefreshTimestamps: prunedTimestamps,
+                    now: now
+                )
+            }
+        } catch {
+            // Best-effort maintenance; remaining mints stay due for the next launch.
+        }
+    }
+
+    private func refreshStartupKeysetsAssumingLease(
+        mintUrls: [String],
+        storedKeysetRefreshTimestamps: [String: TimeInterval],
+        now: TimeInterval
+    ) async {
+        guard walletRepository != nil else { return }
+        var keysetRefreshTimestamps = storedKeysetRefreshTimestamps
+        var timestampsChanged = false
+
+        let wallets = await trackedWalletsAssumingWalletOperationLease()
+        mintLoop: for mintUrlString in mintUrls {
+            guard !Task.isCancelled else { break }
+            if await operationCoordinator.hasWaitingUserOperation() { break }
+
+            let mintWallets = wallets.filter {
+                MintURLIdentity.normalized($0.mintUrl().url) == MintURLIdentity.normalized(mintUrlString)
+            }
             var refreshedAllKeysets = !mintWallets.isEmpty
             for wallet in mintWallets {
                 guard !Task.isCancelled else {
                     refreshedAllKeysets = false
-                    break
+                    break mintLoop
                 }
-                if await recoverIncompleteSagasIfNeeded(wallet: wallet, mintUrl: mintUrlString) {
-                    recoveredWalletState = true
+                if await operationCoordinator.hasWaitingUserOperation() {
+                    refreshedAllKeysets = false
+                    break mintLoop
                 }
                 let refreshed = await refreshKeysetsIfNeeded(
                     wallet: wallet,
@@ -1285,15 +1355,9 @@ extension WalletManager {
             }
         }
 
-        // After saga recovery, so a transfer interrupted mid-melt is judged on
-        // its recovered state rather than mistaken for one that never started.
-        await discardAbandonedMintTransferDraftsAssumingWalletOperationLease()
-
         if timestampsChanged {
             walletStore.saveMintKeysetRefreshTimestamps(keysetRefreshTimestamps)
         }
-
-        return recoveredWalletState
     }
 
     private func recoverIncompleteSagasIfNeeded(wallet: Wallet, mintUrl: String) async -> Bool {
