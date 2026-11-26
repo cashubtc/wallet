@@ -60,8 +60,10 @@ import com.cashu.me.Core.AmountParts
 import com.cashu.me.Core.WalletHaptic
 import com.cashu.me.Core.rememberWalletHaptics
 import com.cashu.me.ui.theme.AmountScale
+import com.cashu.me.ui.theme.CashuMotion
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.fadeThrough
+import com.cashu.me.ui.theme.quietSpec
 import com.cashu.me.ui.theme.rememberReducedMotion
 
 // Exact geometry shared with iOS PaymentStatusView / PayFlowScaffold.
@@ -169,7 +171,7 @@ fun PaymentStatusScreen(
     LaunchedEffect(Unit) { appeared = true }
     val entranceAlpha by animateFloatAsState(
         targetValue = if (appeared) 1f else 0f,
-        animationSpec = spring(stiffness = Spring.StiffnessMedium),
+        animationSpec = quietSpec(),
         label = "status-entrance-alpha",
     )
     val entranceScale by animateFloatAsState(
@@ -238,9 +240,9 @@ fun PaymentStatusScreen(
                             // Only completed payments get overshoot. Failure and pending
                             // settle without bounce; reduced motion keeps the fade alone.
                             val enter = if (reducedMotion || targetState == PaymentStatusPhase.Processing) {
-                                fadeIn(tween(200))
+                                fadeIn(tween(CashuMotion.StatusFadeInMs))
                             } else {
-                                fadeIn(tween(200)) + scaleIn(
+                                fadeIn(tween(CashuMotion.StatusFadeInMs)) + scaleIn(
                                     animationSpec = spring(
                                         dampingRatio = if (targetState == PaymentStatusPhase.Success && !settlementPending) {
                                             0.7f
@@ -252,7 +254,7 @@ fun PaymentStatusScreen(
                                     initialScale = 0.9f,
                                 )
                             }
-                            enter togetherWith fadeOut(tween(150))
+                            enter togetherWith fadeOut(tween(CashuMotion.StatusFadeOutMs))
                         },
                         label = "payment-status-glyph",
                     ) { current ->

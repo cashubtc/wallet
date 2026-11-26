@@ -7,7 +7,10 @@ import android.os.Looper
 import android.provider.Settings
 import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -58,7 +61,31 @@ object CashuMotion {
     const val SharedAxisOutMs = 90
     const val SharedAxisInMs = 210
     const val SharedAxisDurationMs = 300
+
+    /** A sheet body giving way to the payment status screen, and back. */
+    const val StatusFadeInMs = 200
+    const val StatusFadeOutMs = 150
 }
+
+/**
+ * The spring behind every quiet change in place: an amount, a sheet title or a
+ * field hint cross-fading, a control dimming. Medium stiffness, no bounce, and
+ * a spring rather than a tween so a second change mid-way retargets instead of
+ * restarting. Retune the feel here, not at a call site.
+ */
+fun <T> quietSpec(): FiniteAnimationSpec<T> = spring(stiffness = Spring.StiffnessMedium)
+
+/** [quietSpec] as a ready-made `AnimatedContent` cross-fade (iOS `CashuMotion.crossFade`). */
+fun quietFade(): ContentTransform =
+    fadeIn(quietSpec()) togetherWith fadeOut(quietSpec())
+
+/**
+ * A sheet body giving way to the payment status screen: the arriving face
+ * fades in a touch slower than the leaving one fades out, so the two are never
+ * equally legible at once.
+ */
+fun statusSwap(): ContentTransform =
+    fadeIn(tween(CashuMotion.StatusFadeInMs)) togetherWith fadeOut(tween(CashuMotion.StatusFadeOutMs))
 
 /**
  * The shared axis's staged fades without the travel (iOS `SharedAxis.fadeThrough`),

@@ -85,9 +85,9 @@ struct LightningAddressSettingsSection: View {
             }
         }
         .task { await npcService.initializeIfEnabled() }
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: npcService.isEnabled)
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: npcService.errorMessage)
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: settings.checkIncomingInvoices)
+        .animation(reduceMotion ? nil : CashuMotion.crossFade, value: npcService.isEnabled)
+        .animation(reduceMotion ? nil : CashuMotion.crossFade, value: npcService.errorMessage)
+        .animation(reduceMotion ? nil : CashuMotion.crossFade, value: settings.checkIncomingInvoices)
         .backdropSheet(isPresented: $showMintPicker) {
             // Titled after the row that opened it, so the sheet reads as a
             // continuation of the tap rather than a new context.
@@ -403,7 +403,7 @@ struct LightningAddressReceiveContent: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .animation(reduceMotion ? nil : .smooth(duration: 0.3), value: receivedAmount != nil)
+            .animation(reduceMotion ? nil : CashuMotion.reflow, value: receivedAmount != nil)
             .navigationTitle("Lightning Address")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.hidden, for: .navigationBar)

@@ -127,7 +127,7 @@ struct SeedWordEntryField: View {
         }
         .padding(.horizontal, OnboardingMetrics.gutter)
         .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: entry.completions)
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: rejected)
+        .animation(reduceMotion ? nil : CashuMotion.crossFade, value: rejected)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.26), value: entry.isReviewing)
     }
 
@@ -304,8 +304,8 @@ private struct SeedWordProgressRail: View {
                     )
             }
         }
-        .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: entry.index)
-        .animation(reduceMotion ? nil : .smooth(duration: 0.3), value: entry.isComplete)
+        .animation(reduceMotion ? nil : CashuMotion.flip, value: entry.index)
+        .animation(reduceMotion ? nil : CashuMotion.reflow, value: entry.isComplete)
         // Tap jumps; press-and-hold then drag scrubs through the words, the
         // focused word tracking the finger live, releasing wherever it is
         // (jumps are live, so release needs no handler). UIKit recognizers

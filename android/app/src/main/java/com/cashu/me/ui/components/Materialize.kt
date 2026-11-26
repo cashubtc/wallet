@@ -4,10 +4,8 @@ import android.os.Build
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.core.FiniteAnimationSpec
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -21,6 +19,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.cashu.me.ui.theme.quietSpec
 import com.cashu.me.ui.theme.rememberReducedMotion
 
 // iOS AnyTransition.materializeBlur sharpens from a 4pt radius.
@@ -56,7 +55,7 @@ fun Modifier.materializeBlur(delayMillis: Int = 0): Modifier {
         targetValue = if (materialized) 0f else with(LocalDensity.current) {
             MaterializeBlurRadius.toPx()
         },
-        animationSpec = spring(stiffness = Spring.StiffnessMedium),
+        animationSpec = quietSpec(),
         label = "materialize-blur",
     )
     return this.graphicsLayer {
@@ -98,7 +97,7 @@ fun Modifier.materializeBlur(delayMillis: Int = 0): Modifier {
 @Composable
 fun AnimatedVisibilityScope.morphBlur(
     radius: Dp = MorphBlurRadius,
-    enterSpec: FiniteAnimationSpec<Float> = spring(stiffness = Spring.StiffnessMedium),
+    enterSpec: FiniteAnimationSpec<Float> = quietSpec(),
     exitSpec: FiniteAnimationSpec<Float> = enterSpec,
 ): Modifier {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || rememberReducedMotion()) {

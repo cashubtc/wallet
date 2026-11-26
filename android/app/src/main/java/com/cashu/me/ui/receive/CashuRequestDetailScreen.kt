@@ -1,10 +1,6 @@
 package com.cashu.me.ui.receive
 
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -52,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
+import com.cashu.me.ui.theme.statusSwap
 import java.text.DateFormat
 import java.util.Date
 import java.net.URI
@@ -253,7 +250,7 @@ fun CashuRequestDetailScreen(
     // .animation(.smooth(duration: 0.3)) on the same beat).
     AnimatedContent(
         targetState = showSuccessTerminal,
-        transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(150)) },
+        transitionSpec = { statusSwap() },
         label = "creq-detail-terminal",
     ) { terminal ->
         if (terminal && request != null && successPayment != null) {

@@ -273,7 +273,7 @@ struct HistoryView: View {
                     if reduceMotion {
                         proxy.scrollTo(firstId, anchor: .top)
                     } else {
-                        withAnimation(.snappy(duration: 0.25)) {
+                        withAnimation(CashuMotion.flip) {
                             proxy.scrollTo(firstId, anchor: .top)
                         }
                     }

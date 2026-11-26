@@ -365,7 +365,7 @@ struct OnboardingView: View {
 
     private func advance(to step: OnboardingStep) {
         resetAppeared(for: step)
-        withAnimation(.easeInOut(duration: 0.28)) {
+        withAnimation(CashuMotion.stepSwap) {
             currentStep = step
             applyAsciiFieldMorph(for: step)
         }
@@ -373,7 +373,7 @@ struct OnboardingView: View {
 
     private func retreat(to step: OnboardingStep) {
         resetAppeared(for: step)
-        withAnimation(.easeInOut(duration: 0.28)) {
+        withAnimation(CashuMotion.stepSwap) {
             currentStep = step
             applyAsciiFieldMorph(for: step)
         }
@@ -615,7 +615,7 @@ struct OnboardingView: View {
     private var seedAcknowledgeRow: some View {
         Button(action: {
             HapticFeedback.selection()
-            withAnimation(.snappy) { seedAcknowledged.toggle() }
+            withAnimation(CashuMotion.settle) { seedAcknowledged.toggle() }
         }) {
             HStack(spacing: 12) {
                 Image(systemName: seedAcknowledged ? "checkmark.circle.fill" : "circle")
@@ -624,7 +624,7 @@ struct OnboardingView: View {
                     .contentTransition(.symbolEffect(.replace))
                     // Value-scoped so the checkbox flip stays animated
                     // under the chassis' step-change shield.
-                    .animation(.snappy, value: seedAcknowledged)
+                    .animation(CashuMotion.settle, value: seedAcknowledged)
                 Text("I've written down my seed phrase and stored it safely.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -686,8 +686,8 @@ struct OnboardingView: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .animation(.snappy, value: errorMessage)
-        .animation(.snappy, value: walletManager.errorMessage)
+        .animation(CashuMotion.settle, value: errorMessage)
+        .animation(CashuMotion.settle, value: walletManager.errorMessage)
         .onAppear {
             triggerEntrance { welcomeAppeared = true }
         }
@@ -823,7 +823,7 @@ struct OnboardingView: View {
             // Detection blocks on a keychain query + KV-store flush. Run it off
             // the main actor so it can't hitch the crossfade into this screen.
             let info = await WalletManager.detectICloudBackupOffMain()
-            withAnimation(reduceMotion ? nil : .snappy) {
+            withAnimation(reduceMotion ? nil : CashuMotion.settle) {
                 detectedICloudBackup = info
                 isDetectingICloudBackup = false
             }
@@ -919,7 +919,7 @@ struct OnboardingView: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .animation(.snappy, value: errorMessage)
+        .animation(CashuMotion.settle, value: errorMessage)
         .onAppear {
             triggerEntrance { iCloudPreviewAppeared = true }
         }
@@ -1023,7 +1023,7 @@ struct OnboardingView: View {
         // change — `.restoring` empties the stack entirely. It has to ride the
         // same transaction `advance`/`retreat` use, or the slot's transition has
         // nothing to animate against and the button snaps away.
-        withAnimation(.easeInOut(duration: 0.28)) {
+        withAnimation(CashuMotion.stepSwap) {
             iCloudRestorePhase = .restoring
         }
         errorMessage = nil
@@ -1035,7 +1035,7 @@ struct OnboardingView: View {
                 }
                 HapticFeedback.notification(.success)
             } catch {
-                withAnimation(.easeInOut(duration: 0.28)) {
+                withAnimation(CashuMotion.stepSwap) {
                     iCloudRestorePhase = .preview
                 }
                 errorMessage = error.userFacingWalletMessage
@@ -1209,7 +1209,7 @@ struct OnboardingView: View {
     /// window where the words sit unblurred.
     private func toggleSeedReveal() {
         HapticFeedback.selection()
-        withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) {
+        withAnimation(reduceMotion ? nil : CashuMotion.flip) {
             seedRevealed.toggle()
         }
     }
@@ -1247,7 +1247,7 @@ struct OnboardingView: View {
             firstMintList
                 .padding(.top, 16)
         }
-        .animation(.snappy, value: firstMintError)
+        .animation(CashuMotion.settle, value: firstMintError)
         .onAppear {
             triggerEntrance { firstMintAppeared = true }
         }
@@ -1273,7 +1273,7 @@ struct OnboardingView: View {
             } else {
                 Button(action: {
                     HapticFeedback.selection()
-                    withAnimation(.snappy) { showCustomMintInput = true }
+                    withAnimation(CashuMotion.settle) { showCustomMintInput = true }
                 }) {
                     HStack(spacing: 6) {
                         Image(systemName: "plus")
@@ -1313,7 +1313,7 @@ struct OnboardingView: View {
 
         Button(action: {
             HapticFeedback.selection()
-            withAnimation(.snappy) {
+            withAnimation(CashuMotion.settle) {
                 if selected {
                     selectedMintUrls.remove(url)
                 } else {
@@ -1404,7 +1404,7 @@ struct OnboardingView: View {
         }
         HapticFeedback.selection()
         firstMintError = nil
-        withAnimation(.snappy) {
+        withAnimation(CashuMotion.settle) {
             customMintUrls.append(normalized)
             selectedMintUrls.insert(normalized)
             customMintInput = ""
@@ -1513,7 +1513,7 @@ struct OnboardingView: View {
                     .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
             }
         }
-        .animation(.snappy, value: errorMessage)
+        .animation(CashuMotion.settle, value: errorMessage)
         .onAppear {
             triggerEntrance { restoreInputAppeared = true }
             // Word-by-word entry is keyboard-driven, so the field autofocuses —
@@ -1604,8 +1604,8 @@ struct OnboardingView: View {
             restoreMintsList
                 .padding(.top, 16)
         }
-        .animation(.snappy, value: restoreMintError)
-        .animation(.snappy, value: restore.mintsToRestore.isEmpty)
+        .animation(CashuMotion.settle, value: restoreMintError)
+        .animation(CashuMotion.settle, value: restore.mintsToRestore.isEmpty)
         .onAppear {
             // Land calm — don't pop the keyboard on arrival (it can carry over
             // from the seed screen's crossfade).
@@ -1887,7 +1887,7 @@ struct OnboardingView: View {
                 }
                 .onChange(of: currentRestoringUrl) { _, active in
                     guard let active else { return }
-                    withAnimation(.snappy) { proxy.scrollTo(active, anchor: .center) }
+                    withAnimation(CashuMotion.settle) { proxy.scrollTo(active, anchor: .center) }
                 }
                 // Both edges here, unlike the staging step: this list
                 // auto-scrolls to whichever mint is working, so rows cross both
@@ -1898,8 +1898,8 @@ struct OnboardingView: View {
             }
         }
         .padding(.top, 8)
-        .animation(.snappy, value: restoreTotalRecovered)
-        .animation(.snappy, value: restoreAllSettled)
+        .animation(CashuMotion.settle, value: restoreTotalRecovered)
+        .animation(CashuMotion.settle, value: restoreAllSettled)
         .onAppear {
             triggerEntrance { restoreProgressAppeared = true }
         }
@@ -2127,12 +2127,12 @@ struct OnboardingView: View {
         Task { @MainActor in
             for url in restore.restoringMints {
                 if case .recovered = restore.restorePhases[url] { continue }   // keep successes on retry-all
-                withAnimation(.snappy) { restore.restorePhases[url] = .restoring }
+                withAnimation(CashuMotion.settle) { restore.restorePhases[url] = .restoring }
                 do {
                     let result = try await walletManager.restoreFromMint(url: url)
-                    withAnimation(.snappy) { restore.restorePhases[url] = .recovered(result) }
+                    withAnimation(CashuMotion.settle) { restore.restorePhases[url] = .recovered(result) }
                 } catch {
-                    withAnimation(.snappy) { restore.restorePhases[url] = .failed(error.userFacingWalletMessage) }
+                    withAnimation(CashuMotion.settle) { restore.restorePhases[url] = .failed(error.userFacingWalletMessage) }
                     AppLogger.wallet.error("Restore error for \(url): \(error)")
                 }
             }
@@ -2141,12 +2141,12 @@ struct OnboardingView: View {
 
     private func retry(_ url: String) {
         Task { @MainActor in
-            withAnimation(.snappy) { restore.restorePhases[url] = .restoring }
+            withAnimation(CashuMotion.settle) { restore.restorePhases[url] = .restoring }
             do {
                 let result = try await walletManager.restoreFromMint(url: url)
-                withAnimation(.snappy) { restore.restorePhases[url] = .recovered(result) }
+                withAnimation(CashuMotion.settle) { restore.restorePhases[url] = .recovered(result) }
             } catch {
-                withAnimation(.snappy) { restore.restorePhases[url] = .failed(error.userFacingWalletMessage) }
+                withAnimation(CashuMotion.settle) { restore.restorePhases[url] = .failed(error.userFacingWalletMessage) }
                 AppLogger.wallet.error("Retry restore error for \(url): \(error)")
             }
         }

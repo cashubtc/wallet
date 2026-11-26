@@ -13,7 +13,7 @@ struct PressableButtonStyle: ButtonStyle {
             .animation(
                 reduceMotion
                     ? nil
-                    : .snappy(duration: configuration.isPressed ? 0.09 : 0.18),
+                    : CashuMotion.press(isPressed: configuration.isPressed),
                 value: configuration.isPressed
             )
     }

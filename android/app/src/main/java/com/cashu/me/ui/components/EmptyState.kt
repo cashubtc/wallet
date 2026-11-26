@@ -31,6 +31,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.cashu.me.ui.theme.quietSpec
 import com.cashu.me.ui.theme.rememberReducedMotion
 import com.cashu.me.ui.theme.CashuTheme
 
@@ -90,7 +91,7 @@ fun EmptyState(
     LaunchedEffect(allowsEntranceMotion) { appeared = true }
     val alpha by animateFloatAsState(
         targetValue = if (appeared) 1f else 0f,
-        animationSpec = spring(stiffness = Spring.StiffnessMedium),
+        animationSpec = quietSpec(),
         label = "empty-entrance-alpha",
     )
     val settle by animateFloatAsState(

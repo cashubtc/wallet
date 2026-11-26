@@ -92,7 +92,7 @@ struct MintTransferRouteView: View {
         // A different mint taking the slot is the only change that morphs
         // (DESIGN.md §6, animation 8); the caption stays put, and the
         // chevron keeps its place after the name.
-        .animation(reduceMotion ? .easeInOut(duration: 0.2) : .snappy(duration: 0.28), value: mint.id)
+        .animation(reduceMotion ? CashuMotion.crossFade : .snappy(duration: 0.28), value: mint.id)
     }
 
     /// The old mint's lines go out of focus as the new one's come into it, in
@@ -223,8 +223,8 @@ struct MintTransferRouteView: View {
                 }
             }
             // Opacity alone, so Reduce Motion keeps the same fade.
-            .animation(.easeInOut(duration: 0.2), value: isUsingMax)
-            .animation(.easeInOut(duration: 0.2), value: isFindingMax)
+            .animation(CashuMotion.crossFade, value: isUsingMax)
+            .animation(CashuMotion.crossFade, value: isFindingMax)
             // At the trailing edge, or under the balance when stacked.
             .frame(minWidth: 44, minHeight: 44, alignment: alignment)
             .contentShape(Rectangle())

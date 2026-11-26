@@ -69,7 +69,7 @@ struct P2PKSettingsSection: View {
             }
 
             SettingsSectionGroup("When sending") {
-                Toggle(isOn: $settings.showP2PKButtonInDrawer.animation(.easeInOut(duration: 0.2))) {
+                Toggle(isOn: $settings.showP2PKButtonInDrawer.animation(CashuMotion.crossFade)) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Quick lock to my key")
                             .font(.body)
@@ -375,8 +375,8 @@ private struct AdvancedKeysView: View {
         .navigationTitle("Advanced Keys")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
-        .animation(.easeInOut(duration: 0.2), value: settings.p2pkKeys)
-        .animation(.easeInOut(duration: 0.2), value: actionError)
+        .animation(CashuMotion.crossFade, value: settings.p2pkKeys)
+        .animation(CashuMotion.crossFade, value: actionError)
         .backdropSheet(isPresented: $showImport) {
             ImportP2PKSheet { nsec in
                 try settings.importP2PKNsec(nsec)
@@ -550,7 +550,7 @@ private struct DeviceKeyDetailView: View {
         .onAppear { nameText = key?.nickname ?? "" }
         .onDisappear { saveName() }
         .onChange(of: key == nil) { _, removed in if removed { dismiss() } }
-        .animation(.easeInOut(duration: 0.2), value: actionError)
+        .animation(CashuMotion.crossFade, value: actionError)
         .backdropSheet(item: $activeQR) { payload in
             QRCodeDetailSheet(title: payload.title, content: payload.content)
         }
@@ -729,7 +729,7 @@ struct PrivateKeyRevealSheet: View {
         )
         .presentationDragIndicator(.visible)
         .flatBottomSheetSurface()
-        .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: revealed)
+        .animation(reduceMotion ? nil : CashuMotion.flip, value: revealed)
     }
 
     /// Revealing always requires authentication, regardless of the App Lock setting.

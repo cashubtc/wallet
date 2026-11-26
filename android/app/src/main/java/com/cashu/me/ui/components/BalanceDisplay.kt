@@ -36,6 +36,7 @@ import com.cashu.me.Core.AmountParts
 import com.cashu.me.Core.HomeBalanceCycle
 import com.cashu.me.ui.theme.AmountScale
 import com.cashu.me.ui.theme.CashuTheme
+import com.cashu.me.ui.theme.quietSpec
 import com.cashu.me.ui.theme.rememberReducedMotion
 import com.cashu.me.ui.theme.withMonoDigits
 
@@ -157,7 +158,7 @@ fun BalanceDisplay(
                     // else (fiat return, plain show/hide) is a quiet cross-fade.
                     // Reduce-motion collapses the beat to the same cross-fade.
                     val enter = if (targetState is BalanceStatusLine.Delta && !reduceMotion) {
-                        fadeIn(spring(stiffness = Spring.StiffnessMedium)) + scaleIn(
+                        fadeIn(quietSpec()) + scaleIn(
                             animationSpec = spring(
                                 dampingRatio = 0.7f,
                                 stiffness = Spring.StiffnessMediumLow,
@@ -165,9 +166,9 @@ fun BalanceDisplay(
                             initialScale = 0.9f,
                         )
                     } else {
-                        fadeIn(spring(stiffness = Spring.StiffnessMedium))
+                        fadeIn(quietSpec())
                     }
-                    enter.togetherWith(fadeOut(spring(stiffness = Spring.StiffnessMedium)))
+                    enter.togetherWith(fadeOut(quietSpec()))
                 },
                 // Every fiat value shares one slot, so a new value reaches the
                 // same rolling text instead of fading in a fresh one.

@@ -5,8 +5,6 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -131,6 +129,8 @@ import com.cashu.me.ui.components.leavingRoomAbove
 import com.cashu.me.ui.settings.P2PKKeyDisplay
 import com.cashu.me.ui.testing.UiTestTags
 import com.cashu.me.ui.theme.CashuTheme
+import com.cashu.me.ui.theme.quietSpec
+import com.cashu.me.ui.theme.statusSwap
 import com.cashu.me.ui.theme.withMonoDigits
 import com.cashu.me.ui.theme.AmountScale
 import com.cashu.me.Core.PendingSendRecovery
@@ -629,7 +629,7 @@ private fun InputFace(
             } else {
                 MaterialTheme.colorScheme.onSurface
             },
-            animationSpec = spring(stiffness = Spring.StiffnessMedium),
+            animationSpec = quietSpec(),
             label = "amount-color",
         )
         // The mint selector states the available balance, so repeating it in
@@ -909,7 +909,7 @@ private fun GeneratedFace(
     // face fades into it instead of hard-cutting.
     AnimatedContent(
         targetState = claimState == ClaimState.Claimed,
-        transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(150)) },
+        transitionSpec = { statusSwap() },
         label = "send-ecash-claimed-terminal",
     ) { claimed ->
         if (claimed) {

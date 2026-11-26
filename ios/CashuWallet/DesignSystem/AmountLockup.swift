@@ -124,7 +124,9 @@ struct AmountLockup: View {
         // Centred inside the animation, so the lockup re-centres in step with
         // the glyphs sliding within it.
         .frame(maxWidth: .infinity)
-        .animation(reduceMotion ? .easeOut(duration: 0.2) : .snappy, value: parts)
+        // An explicit quarter second: a bare `.snappy` is a half-second spring,
+        // and this runs on every key press.
+        .animation(reduceMotion ? CashuMotion.reducedFade : CashuMotion.flip, value: parts)
         .accessibilityElement(children: .combine)
     }
 

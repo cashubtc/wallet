@@ -511,7 +511,7 @@ private final class ConfirmationToastPresenter: ObservableObject {
 
         let animation: Animation? = UIAccessibility.isReduceMotionEnabled
             ? nil
-            : .spring(response: 0.38, dampingFraction: 0.9)
+            : CashuMotion.toastEnter
         withAnimation(animation) {
             toast = ConfirmationToastMessage(text: message)
         }
@@ -520,7 +520,7 @@ private final class ConfirmationToastPresenter: ObservableObject {
         dismissTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(2.2))
             guard !Task.isCancelled, let self else { return }
-            withAnimation(UIAccessibility.isReduceMotionEnabled ? nil : .easeOut(duration: 0.14)) {
+            withAnimation(UIAccessibility.isReduceMotionEnabled ? nil : CashuMotion.toastExit) {
                 self.toast = nil
             }
         }
@@ -662,7 +662,7 @@ private struct ErrorBannerModifier: ViewModifier {
                         message: message,
                         severity: severity,
                         retry: retry,
-                        onDismiss: { withAnimation(.snappy) { self.message = nil } }
+                        onDismiss: { withAnimation(CashuMotion.settle) { self.message = nil } }
                     )
                     .padding(.horizontal)
                     .padding(.bottom, 8)
@@ -678,6 +678,6 @@ private struct ErrorBannerModifier: ViewModifier {
                     )
                 }
             }
-            .animation(reduceMotion ? nil : .snappy, value: message)
+            .animation(reduceMotion ? nil : CashuMotion.settle, value: message)
     }
 }

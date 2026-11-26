@@ -545,7 +545,7 @@ struct RestoreWalletView: View {
                     .transition(.opacity)
             }
         }
-        .animation(.easeInOut(duration: 0.28), value: step)
+        .animation(CashuMotion.stepSwap, value: step)
         .navigationTitle("Restore")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
@@ -718,7 +718,7 @@ struct RestoreWalletView: View {
             .padding(.bottom, 16)
             .background(.background)
         }
-        .animation(.snappy, value: mintError)
+        .animation(CashuMotion.settle, value: mintError)
         .onAppear { mintFieldFocused = false }
     }
 
@@ -814,8 +814,8 @@ struct RestoreWalletView: View {
             .frame(maxWidth: .infinity)
             .padding(.top, 12)
             .padding(.bottom, 16)
-            .animation(.snappy, value: restoreTotalRecovered)
-            .animation(.snappy, value: restoreAllSettled)
+            .animation(CashuMotion.settle, value: restoreTotalRecovered)
+            .animation(CashuMotion.settle, value: restoreAllSettled)
 
             ScrollViewReader { proxy in
                 ScrollView {
@@ -830,7 +830,7 @@ struct RestoreWalletView: View {
                 }
                 .onChange(of: currentRestoringUrl) { _, active in
                     guard let active else { return }
-                    withAnimation(.snappy) { proxy.scrollTo(active, anchor: .center) }
+                    withAnimation(CashuMotion.settle) { proxy.scrollTo(active, anchor: .center) }
                 }
             }
         }
@@ -1021,12 +1021,12 @@ struct RestoreWalletView: View {
         Task { @MainActor in
             for url in restore.restoringMints {
                 if case .recovered = restore.restorePhases[url] { continue }   // keep successes on retry-all
-                withAnimation(.snappy) { restore.restorePhases[url] = .restoring }
+                withAnimation(CashuMotion.settle) { restore.restorePhases[url] = .restoring }
                 do {
                     let result = try await walletManager.restoreFromMint(url: url)
-                    withAnimation(.snappy) { restore.restorePhases[url] = .recovered(result) }
+                    withAnimation(CashuMotion.settle) { restore.restorePhases[url] = .recovered(result) }
                 } catch {
-                    withAnimation(.snappy) { restore.restorePhases[url] = .failed(error.userFacingWalletMessage) }
+                    withAnimation(CashuMotion.settle) { restore.restorePhases[url] = .failed(error.userFacingWalletMessage) }
                     AppLogger.wallet.error("Restore error for \(url): \(error)")
                 }
             }
@@ -1035,12 +1035,12 @@ struct RestoreWalletView: View {
 
     private func retry(_ url: String) {
         Task { @MainActor in
-            withAnimation(.snappy) { restore.restorePhases[url] = .restoring }
+            withAnimation(CashuMotion.settle) { restore.restorePhases[url] = .restoring }
             do {
                 let result = try await walletManager.restoreFromMint(url: url)
-                withAnimation(.snappy) { restore.restorePhases[url] = .recovered(result) }
+                withAnimation(CashuMotion.settle) { restore.restorePhases[url] = .recovered(result) }
             } catch {
-                withAnimation(.snappy) { restore.restorePhases[url] = .failed(error.userFacingWalletMessage) }
+                withAnimation(CashuMotion.settle) { restore.restorePhases[url] = .failed(error.userFacingWalletMessage) }
                 AppLogger.wallet.error("Retry restore error for \(url): \(error)")
             }
         }
@@ -1213,7 +1213,7 @@ struct ImportP2PKSheet: View {
             }
             .padding(.horizontal)
             .padding(.bottom, 16)
-            .animation(.easeInOut(duration: 0.2), value: validationError)
+            .animation(CashuMotion.crossFade, value: validationError)
             .navigationTitle("Import a key")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.hidden, for: .navigationBar)
@@ -1312,7 +1312,7 @@ struct BackupView: View {
         )
         .presentationDragIndicator(.visible)
         .flatBottomSheetSurface()
-        .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: showWords)
+        .animation(reduceMotion ? nil : CashuMotion.flip, value: showWords)
     }
 
     /// Revealing always requires authentication, regardless of the App Lock setting.
@@ -1342,6 +1342,7 @@ struct ICloudBackupSettingsView: View {
     @State private var showEnableConfirm = false
     @State private var showDisableConfirm = false
     @State private var didBackUp = false
+    @State private var backedUpResetTask: Task<Void, Never>?
     @State private var backupError: String?
 
     var body: some View {
@@ -1385,8 +1386,10 @@ struct ICloudBackupSettingsView: View {
                         if didBackUp {
                             Label("Backed up", systemImage: "checkmark")
                                 .foregroundStyle(.green)
+                                .transition(.opacity)
                         } else {
                             Text("Back Up Now")
+                                .transition(.opacity)
                         }
                     }
                 }
@@ -1419,6 +1422,7 @@ struct ICloudBackupSettingsView: View {
         }
         .bottomSheetBackdropHost()
         .errorBanner($backupError, retry: { backUpNow() })
+        .onDisappear { backedUpResetTask?.cancel() }
     }
 
     private var enabledBinding: Binding<Bool> {
@@ -1437,9 +1441,14 @@ struct ICloudBackupSettingsView: View {
             backupError = message
             return
         }
-        didBackUp = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-            didBackUp = false
+        withAnimation(CashuMotion.crossFade) { didBackUp = true }
+        // One pending reset at a time: a second tap restarts the three seconds
+        // instead of inheriting what is left of the first.
+        backedUpResetTask?.cancel()
+        backedUpResetTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled else { return }
+            withAnimation(CashuMotion.crossFade) { didBackUp = false }
         }
     }
 
@@ -1562,8 +1571,8 @@ struct ImportNsecSheet: View {
         )
         .presentationDragIndicator(.visible)
         .flatBottomSheetSurface()
-        .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: step)
-        .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: errorMessage)
+        .animation(reduceMotion ? nil : CashuMotion.flip, value: step)
+        .animation(reduceMotion ? nil : CashuMotion.flip, value: errorMessage)
     }
 
     @ViewBuilder private var entryFace: some View {

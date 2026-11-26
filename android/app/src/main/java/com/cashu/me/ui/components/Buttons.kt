@@ -3,9 +3,7 @@ package com.cashu.me.ui.components
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -51,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.style.TextAlign
 import com.cashu.me.ui.theme.CashuTheme
+import com.cashu.me.ui.theme.quietSpec
 import com.cashu.me.ui.theme.rememberReducedMotion
 
 // Full-width CTAs (incl. home Receive/Send). +10% over the original 58/16
@@ -168,12 +167,12 @@ fun PrimaryButton(
     val target = colors ?: neutralActionButtonColors()
     val container by animateColorAsState(
         targetValue = if (active) target.containerColor else target.disabledContainerColor,
-        animationSpec = spring(stiffness = Spring.StiffnessMedium),
+        animationSpec = quietSpec(),
         label = "primary-button-container",
     )
     val content by animateColorAsState(
         targetValue = if (active) target.contentColor else target.disabledContentColor,
-        animationSpec = spring(stiffness = Spring.StiffnessMedium),
+        animationSpec = quietSpec(),
         label = "primary-button-content",
     )
     // AnimatedContent's transitionSpec lambda is not composable, so the
@@ -285,12 +284,12 @@ fun SecondaryButton(
     // for again turns back on without a hard cut.
     val container by animateColorAsState(
         targetValue = if (enabled) target.containerColor else target.disabledContainerColor,
-        animationSpec = spring(stiffness = Spring.StiffnessMedium),
+        animationSpec = quietSpec(),
         label = "secondary-button-container",
     )
     val content by animateColorAsState(
         targetValue = if (enabled) target.contentColor else target.disabledContentColor,
-        animationSpec = spring(stiffness = Spring.StiffnessMedium),
+        animationSpec = quietSpec(),
         label = "secondary-button-content",
     )
     FilledTonalButton(

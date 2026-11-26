@@ -76,7 +76,7 @@ struct SendView: View {
                                 // rule): when the claim lands, the QR clears
                                 // quickly so the success terminal's staged
                                 // check owns the moment.
-                                removal: .opacity.animation(.easeInOut(duration: 0.2))
+                                removal: .opacity.animation(CashuMotion.crossFade)
                             ))
                     }
                 } else {
@@ -85,9 +85,9 @@ struct SendView: View {
                             : SharedAxis.transition(forward: true, reduceMotion: false))
                 }
             }
-            .animation(.smooth(duration: 0.3), value: generatedToken != nil)
-            .animation(.smooth(duration: 0.3), value: tokenClaimed)
-            .animation(.smooth(duration: 0.3), value: tokenCreationFailure != nil)
+            .animation(CashuMotion.reflow, value: generatedToken != nil)
+            .animation(CashuMotion.reflow, value: tokenClaimed)
+            .animation(CashuMotion.reflow, value: tokenCreationFailure != nil)
             .navigationBarTitleDisplayMode(.inline)
             .navigationTitle(generatedToken != nil ? "Pending Ecash" : "Send Ecash")
             // Match the Lightning Invoice screen: float the title + chrome
@@ -236,7 +236,7 @@ struct SendView: View {
                             value: Double(amountBaseUnits),
                             isDimmed: isInsufficientBalance
                         )
-                        .animation(.snappy, value: isInsufficientBalance)
+                        .animation(CashuMotion.settle, value: isInsufficientBalance)
                         if let sendInputNote {
                             AmountNoteLine(note: sendInputNote)
                                 .transition(.asymmetric(insertion: .opacity, removal: .identity))
@@ -247,7 +247,7 @@ struct SendView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .animation(reduceMotion ? .easeInOut(duration: 0.2) : .snappy(duration: 0.25), value: sendInputNote)
+            .animation(reduceMotion ? CashuMotion.crossFade : CashuMotion.flip, value: sendInputNote)
 
             // The selector sits under the amount and over the keypad, not under
             // the toolbar: it qualifies the amount, so it reads as a setting on
@@ -672,8 +672,8 @@ struct SendView: View {
                             .transition(.opacity)
                         }
                     }
-                    .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.5, dampingFraction: 0.7), value: tokenClaimed)
-                    .animation(.easeInOut(duration: 0.2), value: isCheckingClaim)
+                    .animation(reduceMotion ? CashuMotion.crossFade : CashuMotion.celebration, value: tokenClaimed)
+                    .animation(CashuMotion.crossFade, value: isCheckingClaim)
 
                     if !settings.checkSentTokens {
                         switch manualClaimCheckResult {
@@ -855,7 +855,7 @@ struct SendView: View {
                 // Every body-read change of the landing goes inside one
                 // animation. `isGenerating` cleared after the do/catch landed
                 // outside it in the same update and cut the swap as well.
-                withAnimation(.smooth(duration: 0.3)) {
+                withAnimation(CashuMotion.reflow) {
                     generatedToken = result.token
                     generatedTokenMintURL = mint.url
                     generatedTokenUnit = unit
@@ -865,7 +865,7 @@ struct SendView: View {
                 }
                 HapticFeedback.notification(.success)
             } catch let recovery as PendingSendRecovery {
-                withAnimation(.smooth(duration: 0.3)) {
+                withAnimation(CashuMotion.reflow) {
                     sendRecovery = recovery
                     isGenerating = false
                 }
@@ -881,7 +881,7 @@ struct SendView: View {
                 } else {
                     failure = walletMessage.text
                 }
-                withAnimation(.smooth(duration: 0.3)) {
+                withAnimation(CashuMotion.reflow) {
                     tokenCreationFailure = failure
                     errorMessage = nil
                     isGenerating = false
@@ -974,7 +974,7 @@ struct SendView: View {
                     // own (the claim check publishes wallet state as it returns),
                     // or the swap renders as a cut.
                     try? await Task.sleep(for: .milliseconds(1))
-                    withAnimation(.smooth(duration: 0.3)) {
+                    withAnimation(CashuMotion.reflow) {
                         tokenClaimed = true
                         isCheckingClaim = false
                     }
@@ -1019,7 +1019,7 @@ struct SendView: View {
                     isCheckingClaim = false
                     return
                 }
-                withAnimation(.smooth(duration: 0.3)) {
+                withAnimation(CashuMotion.reflow) {
                     manualClaimCheckResult = outcome
                     if case .claimed = outcome {
                         tokenClaimed = true
@@ -1425,9 +1425,9 @@ struct UnifiedSendView: View {
             }
             .frame(maxWidth: .infinity, alignment: .top)
             .frame(maxHeight: prefersCompactSheet ? nil : .infinity, alignment: .top)
-            .animation(.smooth(duration: 0.3), value: step)
-            .animation(.smooth(duration: 0.3), value: locked != nil)
-            .animation(.smooth(duration: 0.3), value: amountlessMeltBlock)
+            .animation(CashuMotion.reflow, value: step)
+            .animation(CashuMotion.reflow, value: locked != nil)
+            .animation(CashuMotion.reflow, value: amountlessMeltBlock)
             .navigationTitle(connectMintRoute?.navigationTitle ?? "Send")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -1713,7 +1713,7 @@ struct UnifiedSendView: View {
         feeTask?.cancel()
         feeState = .idle
         errorMessage = nil
-        withAnimation(.smooth(duration: 0.3)) { step = .input }
+        withAnimation(CashuMotion.reflow) { step = .input }
     }
 
     // MARK: Auto-advance
@@ -1843,7 +1843,7 @@ struct UnifiedSendView: View {
                         note: amountStepNote,
                         holdsNoteLine: true
                     )
-                    .animation(reduceMotion ? .easeInOut(duration: 0.2) : .snappy(duration: 0.25), value: amountStepNote)
+                    .animation(reduceMotion ? CashuMotion.crossFade : CashuMotion.flip, value: amountStepNote)
 
                     Spacer(minLength: 0)
 
@@ -1975,12 +1975,12 @@ struct UnifiedSendView: View {
         // a cut.
         switch locked {
         case .melt:
-            withAnimation(.smooth(duration: 0.3)) {
+            withAnimation(CashuMotion.reflow) {
                 step = .confirm
                 fetchMeltQuote()
             }
         case .cashuRequest:
-            withAnimation(.smooth(duration: 0.3)) {
+            withAnimation(CashuMotion.reflow) {
                 step = .confirm
                 recomputeFee()
             }
@@ -1999,7 +1999,7 @@ struct UnifiedSendView: View {
         // outside it in the same update turns the cross-fade into a cut. The
         // error goes now, since the amount screen says it too; the quote and
         // fee are cleared once the confirm face has faded out as it was.
-        withAnimation(.smooth(duration: 0.3)) {
+        withAnimation(CashuMotion.reflow) {
             cancelMeltQuote()
             errorMessage = nil
             step = .amount
@@ -2199,8 +2199,8 @@ struct UnifiedSendView: View {
             .padding(.horizontal)
             .padding(.bottom, 16)
         }
-        .animation(.smooth(duration: 0.3), value: meltQuote != nil)
-        .animation(.smooth(duration: 0.3), value: errorMessage != nil)
+        .animation(CashuMotion.reflow, value: meltQuote != nil)
+        .animation(CashuMotion.reflow, value: errorMessage != nil)
     }
 
     private var meltCompatibleMints: [MintInfo] {
@@ -2376,7 +2376,7 @@ struct UnifiedSendView: View {
             onViewHistory: onViewHistory,
             onDone: onClose,
             onRetry: {
-                withAnimation(.smooth(duration: 0.3)) { step = .confirm }
+                withAnimation(CashuMotion.reflow) { step = .confirm }
                 if meltRetryNeedsFreshQuote {
                     // CDK confirmed compensation, so the prior quote is no
                     // longer reused. Fetching a new quote is part of retry.
@@ -2400,7 +2400,7 @@ struct UnifiedSendView: View {
             return
         }
         // Retry Quote swaps the face too, so these animate wherever they run.
-        withAnimation(.smooth(duration: 0.3)) {
+        withAnimation(CashuMotion.reflow) {
             cancelMeltQuote()
             isWorking = true
             errorMessage = nil
@@ -2425,7 +2425,7 @@ struct UnifiedSendView: View {
                 // The quote landing swaps the waiting face for confirm. The
                 // working flag clears in the same animation; left to the
                 // `defer` it would land outside it and cut the swap.
-                withAnimation(.smooth(duration: 0.3)) {
+                withAnimation(CashuMotion.reflow) {
                     isWorking = false
                     meltQuote = quote
                     if let resolved = mintInfo(for: quote) { selectedMint = resolved }
@@ -2434,7 +2434,7 @@ struct UnifiedSendView: View {
                 guard !Task.isCancelled else { return }
                 // Quote creation is a preflight, not a payment. Keep its failure inline
                 // on confirm so it can never be presented as a failed melt.
-                withAnimation(.smooth(duration: 0.3)) {
+                withAnimation(CashuMotion.reflow) {
                     isWorking = false
                     presentError(from: error)
                 }
@@ -2482,18 +2482,18 @@ struct UnifiedSendView: View {
         errorMessage = nil
         meltRetryNeedsFreshQuote = false
         meltResult = nil
-        withAnimation(.smooth(duration: 0.3)) { step = .sending }
+        withAnimation(CashuMotion.reflow) { step = .sending }
         Task { @MainActor in
             do {
                 let result = try await walletManager.meltTokens(quoteId: quote.id, mintUrl: quote.mintUrl)
                 meltResult = result
-                withAnimation(.smooth(duration: 0.3)) { step = .sent }
+                withAnimation(CashuMotion.reflow) { step = .sent }
             } catch {
                 // Keep errorMessage set so the confirm screen's notice + switch-mint
                 // CTA reappear when the user taps Try Again.
                 presentError(from: error)
                 meltRetryNeedsFreshQuote = error.meltRetryRequiresFreshQuote
-                withAnimation(.smooth(duration: 0.3)) { step = .failed }
+                withAnimation(CashuMotion.reflow) { step = .failed }
             }
         }
     }
@@ -2699,7 +2699,7 @@ struct UnifiedSendView: View {
         activeRouteExplanation = creqRouteExplanation
         HapticFeedback.impact(.medium)
         errorMessage = nil
-        withAnimation(.smooth(duration: 0.3)) { step = .sending }
+        withAnimation(CashuMotion.reflow) { step = .sending }
         Task { @MainActor in
             do {
                 try await walletManager.payCashuPaymentRequest(
@@ -2707,10 +2707,10 @@ struct UnifiedSendView: View {
                     customAmountSats: creq.amount == nil ? paymentAmountForCreq : nil,
                     preferredMintURL: mint.url
                 )
-                withAnimation(.smooth(duration: 0.3)) { step = .sent }
+                withAnimation(CashuMotion.reflow) { step = .sent }
             } catch {
                 presentError(from: error)
-                withAnimation(.smooth(duration: 0.3)) { step = .failed }
+                withAnimation(CashuMotion.reflow) { step = .failed }
             }
         }
     }
@@ -2722,7 +2722,7 @@ struct UnifiedSendView: View {
         activeRouteExplanation = creqRouteExplanation
         HapticFeedback.impact(.medium)
         errorMessage = nil
-        withAnimation(.smooth(duration: 0.3)) { step = .sending }
+        withAnimation(CashuMotion.reflow) { step = .sending }
         Task { @MainActor in
             do {
                 try await walletManager.addMintAndPayCashuRequest(
@@ -2731,10 +2731,10 @@ struct UnifiedSendView: View {
                     targetMintURL: targetMintURL,
                     onStage: { _ in }
                 )
-                withAnimation(.smooth(duration: 0.3)) { step = .sent }
+                withAnimation(CashuMotion.reflow) { step = .sent }
             } catch let topUp as NeedsExternalTopUp {
                 // No held mint can fund it — return to confirm, then show the top-up QR.
-                withAnimation(.smooth(duration: 0.3)) { step = .confirm }
+                withAnimation(CashuMotion.reflow) { step = .confirm }
                 try? await Task.sleep(nanoseconds: 300_000_000)
                 topUpContext = TopUpContext(
                     summary: creq,
@@ -2747,10 +2747,10 @@ struct UnifiedSendView: View {
                     "Still settling — your balance will update shortly. Try again in a moment.",
                     severity: .caution
                 )
-                withAnimation(.smooth(duration: 0.3)) { step = .failed }
+                withAnimation(CashuMotion.reflow) { step = .failed }
             } catch {
                 presentError(from: error)
-                withAnimation(.smooth(duration: 0.3)) { step = .failed }
+                withAnimation(CashuMotion.reflow) { step = .failed }
             }
         }
     }
