@@ -7,6 +7,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.IosShare
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheetDefaults
+import androidx.compose.material3.ModalBottomSheetProperties
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.SheetState
@@ -30,6 +32,7 @@ fun ActivityDetailSheet(
     ),
     onBackdropVisibilityChanged: (Boolean) -> Unit = {},
     sheetGesturesEnabled: Boolean = true,
+    properties: ModalBottomSheetProperties = ModalBottomSheetDefaults.properties,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     CashuModalBottomSheet(
@@ -39,6 +42,7 @@ fun ActivityDetailSheet(
             else MaterialTheme.colorScheme.background,
         onBackdropVisibilityChanged = onBackdropVisibilityChanged,
         sheetGesturesEnabled = sheetGesturesEnabled,
+        properties = properties,
     ) {
         CompactSheetContent {
             Column(modifier = modifier.fillMaxWidth()) {

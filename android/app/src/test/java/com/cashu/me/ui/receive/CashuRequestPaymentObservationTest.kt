@@ -77,6 +77,29 @@ class CashuRequestPaymentObservationTest {
         assertTrue(shouldKeepNfcSessionMounted(true, NfcReceivePhase.Waiting))
     }
 
+    @Test
+    fun `dismissal is locked only during active NFC transfer phases`() {
+        val activePhases = listOf(
+            NfcReceivePhase.Connected,
+            NfcReceivePhase.Receiving,
+            NfcReceivePhase.Validating,
+            NfcReceivePhase.Redeeming,
+            NfcReceivePhase.Converting,
+        )
+        for (phase in activePhases) {
+            assertTrue("Expected $phase to lock dismissal", phase.isNfcTransferActive())
+        }
+        val dismissiblePhases = listOf(
+            NfcReceivePhase.Inactive,
+            NfcReceivePhase.Waiting,
+            NfcReceivePhase.Success,
+            NfcReceivePhase.Failure,
+        )
+        for (phase in dismissiblePhases) {
+            assertFalse("Expected $phase to allow dismissal", phase.isNfcTransferActive())
+        }
+    }
+
     private fun payment(id: String, amount: Long = 1) = CashuRequestPayment(
         transactionId = id,
         amount = amount,

@@ -1,5 +1,6 @@
 package com.cashu.me.ui.receive
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -26,6 +27,7 @@ import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.ModalBottomSheetProperties
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
@@ -148,6 +150,9 @@ fun CashuRequestDetailScreen(
     val offerNfcReceive = request?.shouldOfferNfcReceive() == true
     val keepNfcSessionMounted = shouldKeepNfcSessionMounted(offerNfcReceive, nfcState.phase)
     val nfcTransferActive = keepNfcSessionMounted && nfcState.phase.isNfcTransferActive()
+
+    // Block back dismissal in the full-screen host while an NFC exchange is in flight.
+    BackHandler(enabled = nfcTransferActive) {}
 
     // Edits share an identity within one currency. A unit change preserves the
     // old intent and displays the new one, including after a mint changes unit.
@@ -295,6 +300,7 @@ fun CashuRequestDetailScreen(
                 { context.shareText(current.encoded, subject = current.displayTitle) }
             },
             asActivitySheet = asActivitySheet,
+            dismissLocked = nfcTransferActive,
             onBackdropVisibilityChanged = onBackdropVisibilityChanged,
         ) { padding ->
             if (request == null) {
@@ -559,21 +565,29 @@ private fun CashuRequestDetailContainer(
     onClose: () -> Unit,
     onShare: (() -> Unit)?,
     asActivitySheet: Boolean,
+    dismissLocked: Boolean = false,
     onBackdropVisibilityChanged: (Boolean) -> Unit,
     content: @Composable (PaddingValues) -> Unit,
 ) {
     if (asActivitySheet) {
         ActivityDetailSheet(
             title = title,
-            onDismissRequest = onClose,
+            onDismissRequest = { if (!dismissLocked) onClose() },
             onShare = onShare,
+            sheetGesturesEnabled = !dismissLocked,
+            properties = ModalBottomSheetProperties(shouldDismissOnBackPress = !dismissLocked),
             onBackdropVisibilityChanged = onBackdropVisibilityChanged,
         ) {
             content(PaddingValues())
         }
     } else {
         Scaffold(topBar = {
-            CashuRequestDetailTopBar(title = title, onClose = onClose, onShare = onShare)
+            CashuRequestDetailTopBar(
+                title = title,
+                onClose = { if (!dismissLocked) onClose() },
+                closeEnabled = !dismissLocked,
+                onShare = onShare,
+            )
         }, content = content)
     }
 }
@@ -591,7 +605,7 @@ internal fun shouldKeepNfcSessionMounted(
     NfcReceivePhase.Failure,
 )
 
-private fun NfcReceivePhase.isNfcTransferActive(): Boolean = this in setOf(
+internal fun NfcReceivePhase.isNfcTransferActive(): Boolean = this in setOf(
     NfcReceivePhase.Connected,
     NfcReceivePhase.Receiving,
     NfcReceivePhase.Validating,
@@ -679,6 +693,7 @@ internal fun CashuRequestSuccessTerminal(
 private fun CashuRequestDetailTopBar(
     title: String,
     onClose: () -> Unit,
+    closeEnabled: Boolean = true,
     onShare: (() -> Unit)?,
 ) {
     CenterAlignedTopAppBar(
@@ -689,7 +704,7 @@ private fun CashuRequestDetailTopBar(
             )
         },
         navigationIcon = {
-            IconButton(onClick = onClose) {
+            IconButton(onClick = onClose, enabled = closeEnabled) {
                 ToolbarIcon(
                     imageVector = Icons.Outlined.Close,
                     contentDescription = "Close",

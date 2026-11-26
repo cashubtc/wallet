@@ -19,6 +19,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -40,6 +41,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -48,6 +50,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -59,6 +63,7 @@ import com.cashu.me.Models.CashuRequest
 import com.cashu.me.ui.components.PaymentStatusPhase
 import com.cashu.me.ui.components.PaymentStatusScreen
 import com.cashu.me.ui.receive.CashuRequestReceiptRows
+import com.cashu.me.ui.receive.isNfcTransferActive
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.rememberReducedMotion
 
@@ -250,19 +255,41 @@ fun NfcReceiveOverlay(
             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
         }
     }
-    AnimatedVisibility(
-        visible = visible,
-        enter = fadeIn(spring(stiffness = Spring.StiffnessMedium)),
-        exit = fadeOut(spring(stiffness = Spring.StiffnessMedium)),
-    ) {
-        Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-            NfcReceiveOverlayContent(
-                state = state,
-                successAmountLabel = successAmountLabel,
-                successMintName = successMintName,
-                onSuccessDone = onSuccessDone,
-                onRetry = coordinator::clearResult,
-            )
+    val transitionState = remember { MutableTransitionState(false) }
+    transitionState.targetState = visible
+    // Host inside a full-screen Dialog so the overlay always renders above
+    // ActivityDetailSheet's ModalBottomSheet window when opened from History.
+    if (transitionState.currentState || transitionState.targetState) {
+        Dialog(
+            onDismissRequest = {
+                when (state.phase) {
+                    NfcReceivePhase.Success -> onSuccessDone()
+                    NfcReceivePhase.Failure -> coordinator.clearResult()
+                    else -> Unit
+                }
+            },
+            properties = DialogProperties(
+                usePlatformDefaultWidth = false,
+                decorFitsSystemWindows = false,
+                dismissOnBackPress = !state.phase.isNfcTransferActive(),
+                dismissOnClickOutside = false,
+            ),
+        ) {
+            AnimatedVisibility(
+                visibleState = transitionState,
+                enter = fadeIn(spring(stiffness = Spring.StiffnessMedium)),
+                exit = fadeOut(spring(stiffness = Spring.StiffnessMedium)),
+            ) {
+                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    NfcReceiveOverlayContent(
+                        state = state,
+                        successAmountLabel = successAmountLabel,
+                        successMintName = successMintName,
+                        onSuccessDone = onSuccessDone,
+                        onRetry = coordinator::clearResult,
+                    )
+                }
+            }
         }
     }
 }
