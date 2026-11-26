@@ -58,7 +58,6 @@ landed and where it differs from the plan. Still open, most valuable first:
 1. **016 Part B**: capture its five sites before and after, then propose it.
 2. **005**, then the rest of **003**: the remaining onboarding work on Android.
 3. **008**: confirm on a device with animations off, then retire.
-4. The two open decisions below.
 
 ## Dependencies
 
@@ -85,10 +84,10 @@ Recorded so the next audit does not re-open them.
 - **Toasts** match across platforms: slide and fade in, fade out, 2.2 s hold, replaced cleanly by a second toast.
 - **Copy feedback** on iOS goes through one shared toast at every site.
 
-## Open decisions (not planned yet)
+## Two platform differences, left as they are (decided 2026-11-26)
 
-- **Home balance tap on iOS rolls the digits.** Tapping the balance to switch bitcoin ↔ fiat changes the number's value as far as SwiftUI can tell, so the digits roll for half a second (`ios/CashuWallet/DesignSystem/CashuTextRole.swift:251`) as if money had moved. Android cross-fades a unit change (`ui/components/RollingAmountText.kt`, "A change of format (sats ↔ fiat, another unit) cross-fades"). Decide whether iOS should match.
-- **Typing an amount on Android cross-fades the whole number on every key** (`ui/components/Amount.kt:152-155` via `ui/components/AmountFlipDisplay.kt:174-183`), while iOS moves it glyph by glyph (`ios/CashuWallet/DesignSystem/AmountLockup.swift:108-129`). Because the number is centred, the old and new strings overlap half a digit apart for the length of the fade. Needs a look on a device, then a decision: leave it, make typing instant on Android, or bring the glyph entry across.
+- **Switching the home balance between bitcoin and fiat rolls the digits on iOS and cross-fades on Android.** Left alone. The iOS roll was kept on purpose when the hidden balance was added (`ios/CashuWallet/Views/Main/MainWalletView.swift`, `balanceHeroButton`: "Bitcoin ↔ fiat stays inside this branch, so the digits still roll"), and `docs/android/DESIGN-ANDROID.md` records the cross-fade as Android's own choice. Neither is a defect.
+- **Typing an amount moves glyph by glyph on iOS and cross-fades the whole number on Android.** Left alone. The cross-fade is Android's documented behaviour for every amount (`docs/android/DESIGN-ANDROID.md`, "Numbers are quiet") and lasts about 150 ms. Revisit only if the number looks smeared while typing on a real phone: that was a worry from reading the code, not something seen on screen.
 
 ## Not covered by the 2026-11-26 audit
 
