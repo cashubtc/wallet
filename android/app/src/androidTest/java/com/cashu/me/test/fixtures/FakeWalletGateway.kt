@@ -3,6 +3,7 @@ package com.cashu.me.test.fixtures
 import com.cashu.me.Core.CDK.CrossMintQuotes
 import com.cashu.me.Core.CDK.ForeignNfcSettlement
 import com.cashu.me.Core.CDK.MeltConfirmation
+import com.cashu.me.Core.CDK.MintRestoreCheckpoints
 import com.cashu.me.Core.CDK.NfcReceiveReceipt
 import com.cashu.me.Core.CDK.NwcServiceHandle
 import com.cashu.me.Core.CDK.SagaRecoveryReport
@@ -180,7 +181,7 @@ class FakeWalletGateway(
         return mintInfo.getOrPut(normalized) { defaultMint(normalized) }
     }
 
-    override suspend fun restoreMint(mintUrl: String): RestoreMintResult {
+    override suspend fun restoreMint(mintUrl: String, checkpoints: MintRestoreCheckpoints): RestoreMintResult {
         val normalized = normalize(mintUrl)
         return RestoreMintResult(
             mintUrl = normalized,
