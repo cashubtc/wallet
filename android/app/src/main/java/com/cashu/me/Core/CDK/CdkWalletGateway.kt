@@ -39,7 +39,10 @@ interface CdkWalletGateway {
      */
     suspend fun removeWallets(mintUrl: String): Boolean
     suspend fun fetchMintInfo(mintUrl: String): MintInfo?
-    suspend fun restoreMint(mintUrl: String): RestoreMintResult
+    suspend fun restoreMint(
+        mintUrl: String,
+        checkpoints: MintRestoreCheckpoints = MintRestoreCheckpoints.None,
+    ): RestoreMintResult
     /** Local CDK accounts, independent of the mint's current advertisements. */
     suspend fun storedAccounts(): List<WalletAccountReference>
     suspend fun storedAccountBalance(account: WalletAccountReference): Long

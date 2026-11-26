@@ -67,6 +67,9 @@ object WalletErrorMessages {
         if (error is org.cashudevkit.FfiException.PaymentRequestDeliveryFailed) {
             return WalletMessage("The delivery outcome is uncertain. Check the pending send before paying again.", WalletMessageSeverity.Caution, isTerminal = true)
         }
+        if (error is com.cashu.me.Core.CDK.MintRestoreInterrupted) {
+            return WalletMessage(checkNotNull(error.message), WalletMessageSeverity.Caution)
+        }
         if (error is MintTransferException) return transferMessage(error)
         if (error is com.cashu.me.Core.CDK.MeltPaymentRecoveryException) {
             return WalletMessage(
@@ -80,6 +83,7 @@ object WalletErrorMessages {
         val raw = when (error) {
             is org.cashudevkit.FfiException.Cdk -> error.errorMessage
             is org.cashudevkit.FfiException.Internal -> error.errorMessage
+            is org.cashudevkit.FfiException.RestoreInterrupted -> error.errorMessage
             else -> error.message ?: error.toString()
         }
 

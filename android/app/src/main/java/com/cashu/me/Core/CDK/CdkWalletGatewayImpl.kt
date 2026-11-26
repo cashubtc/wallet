@@ -274,20 +274,20 @@ class CdkWalletGatewayImpl internal constructor(
         walletFor(mintUrl).fetchMintInfo()?.toDomain(mintUrl)
     }
 
-    override suspend fun restoreMint(mintUrl: String): RestoreMintResult = cdkCall {
+    override suspend fun restoreMint(mintUrl: String, checkpoints: MintRestoreCheckpoints): RestoreMintResult = cdkCall {
         ensureWalletUnlocked(mintUrl)
         val wallet = walletFor(mintUrl)
         val info = runCatching { wallet.fetchMintInfo() }.getOrNull()
         wallet.recoverIncompleteSagas()
         requireSafeMintRestore(checkNotNull(database), mintUrl)
-        val restored = wallet.restore()
+        val restored = ResumableMintRestore.run(checkpoints, mintUrl) { options -> wallet.restoreWithOpts(options) }
         RestoreMintResult(
             mintUrl = mintUrl,
             mintName = info?.name ?: "Unknown Mint",
             iconUrl = info?.iconUrl,
-            spent = restored.spent.value.toLong(),
-            unspent = restored.unspent.value.toLong(),
-            pending = restored.pending.value.toLong(),
+            spent = restored.spent,
+            unspent = restored.unspent,
+            pending = restored.pending,
         )
     }
 

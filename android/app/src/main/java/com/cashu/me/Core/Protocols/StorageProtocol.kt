@@ -57,6 +57,7 @@ object StorageKeys {
     const val walletMintQuoteTimestamps = "wallet.mintQuoteTimestamps"
     const val walletMintQuoteSchedules = "wallet.mintQuoteSchedules.v1"
     const val walletMintTransfers = "wallet.mintTransfers.v1"
+    const val walletRestoreCheckpoints = "wallet.restoreCheckpoints.v1"
     const val walletProcessedNPCQuotes = "wallet.processedNPCQuotes"
     const val walletProcessedCashuRequests = "wallet.processedCashuRequests"
     const val walletProcessedNip17GiftWraps = "wallet.processedNip17GiftWraps"
@@ -151,6 +152,7 @@ object StorageKeys {
         walletMintQuoteTimestamps,
         walletMintQuoteSchedules,
         walletMintTransfers,
+        walletRestoreCheckpoints,
         walletProcessedNPCQuotes,
         walletProcessedCashuRequests,
         walletProcessedNip17GiftWraps,
