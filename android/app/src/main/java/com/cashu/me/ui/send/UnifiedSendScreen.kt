@@ -808,7 +808,7 @@ fun UnifiedSendScreen(
             if (current != null) {
                 Column(modifier = Modifier.fillMaxSize()) {
                     if (current is SendStatus.Failed && current.recovery != null) {
-                        PendingSendRecoveryContent(current.recovery, walletManager, onClose, Modifier.weight(1f), { recoveringSend = it })
+                        PendingSendRecoveryContent(current.recovery, walletManager, settingsManager, priceService, onClose, Modifier.weight(1f), { recoveringSend = it })
                     } else SendStatusTerminal(
                         status = current,
                         formatter = formatter,

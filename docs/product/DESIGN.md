@@ -304,8 +304,10 @@ What this system explicitly rejects, pulled verbatim from docs/product/PRODUCT.m
   mint kept one), or "No Pending Ecash". A send the wallet can't confirm wears
   the caution triangle, "Couldn't Confirm Send", with Check Again alone.
   With several tokens out, they show one at a time, swiped sideways, with a
-  dot for each under them; Check Status and Reclaim act on the one on show. Android writes the titles in
-  sentence case, like its other send terminals. `PendingSendRecoveryView`
+  dot for each under them; Check Status and Reclaim act on the one on show.
+  The amount follows the wallet's bitcoin sign and fiat settings, as on
+  Send. Android writes the titles in sentence case, like its other send
+  terminals. `PendingSendRecoveryView`
   (iOS) / `PendingSendRecoveryContent` (Android).
 - Idle QR screens have no waiting clock, glow, or label. Active claim progress,
   actionable failures, expiry, and received totals remain. A failed Lightning

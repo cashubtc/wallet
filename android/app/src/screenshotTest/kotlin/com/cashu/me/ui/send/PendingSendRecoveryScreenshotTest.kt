@@ -34,6 +34,7 @@ private fun RecoveryPreview(
     darkTheme: Boolean = true,
     activity: SendRecoveryActivity = SendRecoveryActivity.Idle,
     notice: SendRecoveryNotice? = null,
+    amounts: SendRecoveryAmounts = SendRecoveryAmounts("sat"),
 ) {
     CashuTheme(darkTheme = darkTheme) {
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -56,6 +57,7 @@ private fun RecoveryPreview(
                     onReclaim = {},
                     onDone = {},
                     modifier = Modifier.weight(1f),
+                    amounts = amounts,
                 )
             }
         }
@@ -83,4 +85,20 @@ fun pendingEcashSeveralScreenshot() = RecoveryPreview(SendRecoveryOutcome.Pendin
 fun sendUnconfirmedScreenshot() = RecoveryPreview(
     SendRecoveryOutcome.Unverified,
     notice = SendRecoveryNotice("Check your connection and try again.", NoticeSeverity.Error, "Couldn't check status"),
+)
+
+/** The wallet's own amount settings: "sat" instead of the bitcoin sign, with the fiat line. */
+@PreviewTest
+@Preview(name = "pending-ecash-sat-fiat", widthDp = 412, heightDp = 915, uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Composable
+fun pendingEcashSatFiatScreenshot() = RecoveryPreview(
+    SendRecoveryOutcome.Pending,
+    OneSend.map { it.copy(amount = 2_100) },
+    amounts = SendRecoveryAmounts(
+        unit = "sat",
+        useBitcoinSymbol = false,
+        showFiat = true,
+        btcPrice = 100_000.0,
+        currencyCode = "USD",
+    ),
 )

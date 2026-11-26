@@ -61,8 +61,11 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.cashu.me.Core.PendingSend
 import com.cashu.me.Core.PendingSendRecovery
-import com.cashu.me.Core.Protocols.CurrencyAmount
-import com.cashu.me.Core.Protocols.CurrencyRegistry
+import com.cashu.me.Core.AmountDisplayPrimary
+import com.cashu.me.Core.AmountFormatter
+import com.cashu.me.Core.PriceService
+import com.cashu.me.Core.SettingsManager
+import com.cashu.me.Core.displayMintUnitAmount
 import com.cashu.me.Core.SendRecoveryOutcome
 import com.cashu.me.Core.TransactionDisplay
 import com.cashu.me.Core.Wallet.walletMessage
@@ -97,6 +100,43 @@ internal data class SendRecoveryNotice(
     val isToast: Boolean get() = severity != NoticeSeverity.Error
 }
 
+/**
+ * How amounts read, from the wallet's settings: the hero with its fiat line,
+ * and plain text for the fee and the toast. Without settings (previews) it is
+ * the unit's own format with no fiat.
+ */
+internal class SendRecoveryAmounts(
+    val unit: String,
+    val useBitcoinSymbol: Boolean = true,
+    val preferredPrimary: String = AmountDisplayPrimary.Sats.rawValue,
+    val showFiat: Boolean = false,
+    val btcPrice: Double? = null,
+    val currencyCode: String = "USD",
+) {
+    private val formatter = AmountFormatter()
+
+    fun hero(amount: Long): PaymentConfirmationAmountPresentation = paymentConfirmationAmountPresentation(
+        amount = amount,
+        unit = unit,
+        preferredPrimary = preferredPrimary,
+        showFiat = showFiat,
+        btcPrice = btcPrice,
+        currencyCode = currencyCode,
+        useBitcoinSymbol = useBitcoinSymbol,
+        formatter = formatter,
+    )
+
+    fun text(amount: Long): String = formatter.displayMintUnitAmount(
+        amount = amount,
+        unit = unit,
+        preferredPrimary = AmountDisplayPrimary.Sats.rawValue,
+        showFiat = false,
+        btcPrice = null,
+        currencyCode = currencyCode,
+        useBitcoinSymbol = useBitcoinSymbol,
+    ).primary
+}
+
 /** What a reclaim brought back, for the settled screen's amount and fee. */
 internal data class ReclaimedEcash(val amount: Long, val fee: Long)
 
@@ -129,12 +169,24 @@ private val PageDotSize = 7.dp
 internal fun PendingSendRecoveryContent(
     initial: PendingSendRecovery,
     walletManager: WalletManager,
+    settingsManager: SettingsManager,
+    priceService: PriceService,
     onDone: () -> Unit,
     modifier: Modifier = Modifier,
     onWorkingChanged: (Boolean) -> Unit = {},
 ) {
     val walletState by walletManager.state.collectAsState()
+    val settings by settingsManager.state.collectAsState()
+    val priceState by priceService.state.collectAsState()
     var recovery by remember(initial) { mutableStateOf(initial) }
+    val amounts = SendRecoveryAmounts(
+        unit = recovery.unit,
+        useBitcoinSymbol = settings.useBitcoinSymbol,
+        preferredPrimary = settings.amountDisplayPrimary,
+        showFiat = settings.showFiatBalance,
+        btcPrice = priceState.btcPrice.takeIf { it > 0 },
+        currencyCode = priceState.currencyCode,
+    )
     // An unverified snapshot is checked on arrival, so it opens on the spinner
     // instead of flashing the caution it may never need.
     var activity by remember(initial) {
@@ -191,6 +243,7 @@ internal fun PendingSendRecoveryContent(
                     reclaimFailure = reclaimFailure,
                     checkFailed = checkFailed,
                     returned = returned,
+                    formatAmount = amounts::text,
                 )
                 if (result?.isToast == true) toast?.show(result.message) else notice = result
             } finally {
@@ -205,6 +258,7 @@ internal fun PendingSendRecoveryContent(
         activity = activity,
         notice = notice,
         reclaimed = reclaimed,
+        amounts = amounts,
         mintName = mintDisplayName(recovery.mintUrl, walletState.mints),
         // History holds the send under its operation ID, which is all that
         // says when this ecash left.
@@ -240,6 +294,7 @@ internal fun sendRecoveryNotice(
     reclaimFailure: String?,
     checkFailed: Boolean,
     returned: ReclaimedEcash?,
+    formatAmount: (Long) -> String = SendRecoveryAmounts(snapshot.unit)::text,
 ): SendRecoveryNotice? {
     val pending = snapshot.outcome == SendRecoveryOutcome.Pending
     return when {
@@ -255,7 +310,7 @@ internal fun sendRecoveryNotice(
             severity = NoticeSeverity.Error,
         )
         returned != null && pending -> SendRecoveryNotice(
-            message = "Reclaimed ${sendRecoveryAmount(returned.amount, snapshot.unit)}",
+            message = "Reclaimed ${formatAmount(returned.amount)}",
             severity = NoticeSeverity.Success,
         )
         checkedOnly && pending -> SendRecoveryNotice(
@@ -266,8 +321,6 @@ internal fun sendRecoveryNotice(
     }
 }
 
-private fun sendRecoveryAmount(amount: Long, unit: String): String =
-    CurrencyAmount(amount, CurrencyRegistry.currencyForMintUnit(unit)).formatted()
 
 /** The screen without its wallet, so each face can be rendered from fixed state. */
 @Composable
@@ -282,6 +335,7 @@ internal fun PendingSendRecoveryLayout(
     onReclaim: (PendingSend) -> Unit,
     onDone: () -> Unit,
     modifier: Modifier = Modifier,
+    amounts: SendRecoveryAmounts = SendRecoveryAmounts(recovery.unit),
 ) {
     val working = activity != SendRecoveryActivity.Idle
     val settled = recovery.outcome == SendRecoveryOutcome.Completed || recovery.outcome == SendRecoveryOutcome.Returned
@@ -302,6 +356,7 @@ internal fun PendingSendRecoveryLayout(
         when (current) {
             SendRecoveryFace.Tokens -> TokensFace(
                 recovery = recovery,
+                amounts = amounts,
                 checking = activity == SendRecoveryActivity.Checking,
                 working = working,
                 notice = notice,
@@ -321,7 +376,7 @@ internal fun PendingSendRecoveryLayout(
                 },
                 successAmount = reclaimed
                     ?.takeIf { recovery.outcome == SendRecoveryOutcome.Returned }
-                    ?.let { sendRecoveryAmount(it.amount, recovery.unit) },
+                    ?.let { amounts.text(it.amount) },
                 onDone = onDone,
                 rows = {
                     reclaimed
@@ -329,7 +384,7 @@ internal fun PendingSendRecoveryLayout(
                         ?.let {
                             InspectorRow(
                                 label = "Fee",
-                                value = sendRecoveryAmount(it.fee, recovery.unit),
+                                value = amounts.text(it.fee),
                                 valueMonospaced = true,
                             )
                         }
@@ -349,6 +404,7 @@ internal fun PendingSendRecoveryLayout(
 @Composable
 private fun TokensFace(
     recovery: PendingSendRecovery,
+    amounts: SendRecoveryAmounts,
     checking: Boolean,
     working: Boolean,
     notice: SendRecoveryNotice?,
@@ -445,7 +501,7 @@ private fun TokensFace(
                             val send = recovery.sends[index]
                             TokenBlock(
                                 send = send,
-                                unit = recovery.unit,
+                                amounts = amounts,
                                 qrSize = qrSize,
                                 sent = sentLabel(send.id),
                                 mintName = mintName,
@@ -471,7 +527,7 @@ private fun TokensFace(
                 } else if (shown != null) {
                     TokenBlock(
                         send = shown,
-                        unit = recovery.unit,
+                        amounts = amounts,
                         qrSize = qrSize,
                         sent = sentLabel(shown.id),
                         mintName = mintName,
@@ -545,7 +601,7 @@ private fun PageDots(count: Int, current: Int, modifier: Modifier = Modifier) {
 @Composable
 private fun TokenBlock(
     send: PendingSend,
-    unit: String,
+    amounts: SendRecoveryAmounts,
     qrSize: Dp,
     sent: String?,
     mintName: String,
@@ -554,7 +610,6 @@ private fun TokenBlock(
     modifier: Modifier = Modifier,
     dotsRoom: Boolean = false,
 ) {
-    val amount = sendRecoveryAmount(send.amount, unit)
     val clipboard = LocalClipboard.current
     val confirmationToastController = LocalConfirmationToastController.current
     val scope = rememberCoroutineScope()
@@ -580,14 +635,7 @@ private fun TokenBlock(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(TokensBlockSpacing),
         ) {
-            PaymentConfirmationAmount(
-                presentation = PaymentConfirmationAmountPresentation(
-                    primary = amount,
-                    alternate = null,
-                    talkBackDescription = "Amount, $amount",
-                ),
-                generatedReceipt = true,
-            )
+            PaymentConfirmationAmount(presentation = amounts.hero(send.amount), generatedReceipt = true)
             if (send.token == null) {
                 Text(
                     text = "This token can't be shown, but you can still check its status or reclaim it.",
