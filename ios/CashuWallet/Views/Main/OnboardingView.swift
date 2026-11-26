@@ -2026,6 +2026,8 @@ struct OnboardingView: View {
         // view-layer courtesy; refuse re-entry here so a second call can never
         // double-stage the same backup.
         guard !nostrBackupService.isSearching else { return }
+        mintBackupSearchCompleted = false
+        setRestoreMintNotice(nil)
         HapticFeedback.selection()
 
         Task { @MainActor in
@@ -2048,7 +2050,6 @@ struct OnboardingView: View {
                 }
                 mintBackupSearchCompleted = true
             } catch {
-                mintBackupSearchCompleted = true
                 AppLogger.wallet.error("Mint backup lookup failed: \(error)")
                 // Through the shared mapper, never `localizedDescription` —
                 // a relay failure here surfaced as a raw CDK FFI dump.

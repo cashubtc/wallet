@@ -5,6 +5,16 @@ import org.junit.Test
 
 class NostrMintBackupServiceTest {
     @Test
+    fun discoverySettingsErrorsKeepTheirRecoveryGuidance() {
+        for (error in listOf(
+            NostrMintBackupException.WebSocketsDisabled(),
+            NostrMintBackupException.NoRelays(),
+        )) {
+            assertEquals(error.message, com.cashu.me.Core.Wallet.WalletErrorMessages.classify(error).text)
+        }
+    }
+
+    @Test
     fun keepsOnlyWebsocketRelays() {
         val relays = listOf(
             "wss://relay.damus.io",

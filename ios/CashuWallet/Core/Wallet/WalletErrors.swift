@@ -97,6 +97,9 @@ enum ReceiveFeeFailure: Equatable {
 enum WalletErrorMessage {
     /// Resolve an error to its user-facing message **and** severity.
     static func classified(for error: Error) -> WalletMessage {
+        if let backupError = error as? NostrMintBackupError {
+            return .error(backupError.localizedDescription)
+        }
         if let returned = error as? CashuRequestDeliveryReturned {
             return .error(returned.localizedDescription)
         }
