@@ -1,6 +1,6 @@
 # 015 — Give the busiest iOS taps a short, explicit curve
 
-- **Status**: DONE (typing speed still to be picked by eye)
+- **Status**: DONE
 - **Commit**: e61dcb3c (`main`; the audit ran on a branch at 18ba3c89, one PR behind)
 - **Severity**: HIGH
 - **Category**: Easing & duration, on high-frequency surfaces
@@ -141,10 +141,12 @@ way the Transfer glyph turn was picked.
 ## Outcome (2026-11-26, branch `polish/motion-audit`)
 
 All five lines carry `.snappy(duration: 0.25)`; after plan 016 they read
-`CashuMotion.flip`. The app builds. Not done: the three-column clip (0.5, 0.25,
-0.18) for the typed amount. Until that pick is made the typed amount runs at
-0.25, the plan's starting value. To try 0.18, change the one line in
-`AmountLockup.swift` that animates on `parts`.
+`CashuMotion.flip`. The app builds.
+
+The typing speed is settled at 0.25 s. Both it and 0.18 s were recorded (table
+below). At 0.25 s a digit settles in about 200 ms, half the old time, and still
+visibly comes into focus as it lands; at 0.18 s that effect is almost gone. It
+also keeps one speed for everything tapped often.
 
 ### Measured on the simulator (2026-11-26, PR #483)
 
