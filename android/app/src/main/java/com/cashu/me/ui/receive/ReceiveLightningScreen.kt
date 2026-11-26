@@ -78,6 +78,8 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.cashu.me.ui.theme.CashuMotion
+import com.cashu.me.ui.theme.statusSwap
 import java.text.DateFormat
 import java.util.Date
 import kotlinx.coroutines.Job
@@ -621,7 +623,7 @@ fun ReceiveLightningScreen(
     // its own entrance stages the check → title → rows.
     AnimatedContent(
         targetState = successInfo,
-        transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(150)) },
+        transitionSpec = { statusSwap() },
         contentKey = { it != null },
         label = "receive-ln-terminal",
     ) { terminal ->
@@ -1693,14 +1695,14 @@ private fun MintQuoteSettlementStatus(
         targetState = state,
         transitionSpec = {
             (
-                fadeIn(tween(200)) + scaleIn(
+                fadeIn(tween(CashuMotion.StatusFadeInMs)) + scaleIn(
                     animationSpec = spring(
                         dampingRatio = 0.7f,
                         stiffness = Spring.StiffnessMediumLow,
                     ),
                     initialScale = 0.9f,
                 )
-                ) togetherWith fadeOut(tween(150))
+                ) togetherWith fadeOut(tween(CashuMotion.StatusFadeOutMs))
         },
         label = "mint-quote-settlement-status",
     ) { current ->

@@ -8,9 +8,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -129,6 +127,7 @@ import com.cashu.me.ui.restore.rememberSeedPhraseEntryState
 import com.cashu.me.ui.restore.restoreSeedInstallErrorMessage
 import com.cashu.me.ui.restore.runSeedChecksum
 import com.cashu.me.ui.testing.UiTestTags
+import com.cashu.me.ui.theme.quietSpec
 import com.cashu.me.ui.theme.scaledBy
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.rememberAppeared
@@ -1357,7 +1356,7 @@ private fun SeedGrid(words: List<String>, revealed: Boolean) {
     // passes through radius 0.
     val blurRadius by animateFloatAsState(
         targetValue = if (!revealed && canBlur) SeedBlurRadius.value else 0f,
-        animationSpec = spring(stiffness = Spring.StiffnessMedium),
+        animationSpec = quietSpec(),
         label = "seed-reveal-blur",
     )
     val fade = if (!revealed && !canBlur) SeedUnblurredAlpha else 1f

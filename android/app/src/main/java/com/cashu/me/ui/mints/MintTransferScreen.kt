@@ -5,15 +5,12 @@ import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animate
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -110,8 +107,11 @@ import com.cashu.me.ui.send.PaymentConfirmationAmount
 import com.cashu.me.ui.send.UnifiedSendAmountEntry
 import com.cashu.me.ui.testing.UiTestTags
 import com.cashu.me.ui.theme.AmountScale
+import com.cashu.me.ui.theme.CashuMotion
 import com.cashu.me.ui.theme.CashuTheme
+import com.cashu.me.ui.theme.quietSpec
 import com.cashu.me.ui.theme.rememberReducedMotion
+import com.cashu.me.ui.theme.statusSwap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -573,7 +573,7 @@ fun MintTransferScreen(
         AnimatedContent(
             targetState = status,
             modifier = Modifier.weight(1f).fillMaxWidth(),
-            transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(150)) },
+            transitionSpec = { statusSwap() },
             label = "mint-transfer-terminal",
             contentKey = { it != null },
         ) { shownStatus ->
@@ -795,7 +795,7 @@ private fun EntryFace(
         } else {
             MaterialTheme.colorScheme.onSurface
         },
-        animationSpec = spring(stiffness = Spring.StiffnessMedium),
+        animationSpec = quietSpec(),
         label = "amount-color",
     )
     // A note takes the conversion line under the amount.
@@ -987,7 +987,7 @@ private fun ReviewFace(
                     modifier = Modifier.fillMaxWidth(),
                     contentAlignment = Alignment.TopCenter,
                     transitionSpec = {
-                        (fadeIn(tween(200)) togetherWith fadeOut(tween(150))).using(null)
+                        statusSwap().using(null)
                     },
                     label = "mint-transfer-review",
                     contentKey = { shown ->
@@ -1067,8 +1067,8 @@ private fun ReviewFace(
             // polite live region announces it.
             AnimatedVisibility(
                 visible = content.requoted && content.plan != null && !content.pending && content.failure == null,
-                enter = fadeIn(spring(stiffness = Spring.StiffnessMedium)),
-                exit = fadeOut(spring(stiffness = Spring.StiffnessMedium)),
+                enter = fadeIn(quietSpec()),
+                exit = fadeOut(quietSpec()),
             ) {
                 InlineNotice(
                     text = "The fee was updated. Check it and transfer again.",
@@ -1082,7 +1082,7 @@ private fun ReviewFace(
                 targetState = content,
                 modifier = Modifier.fillMaxWidth(),
                 transitionSpec = {
-                    (fadeIn(tween(200)) togetherWith fadeOut(tween(150))).using(null)
+                    statusSwap().using(null)
                 },
                 label = "mint-transfer-review-action",
                 contentKey = { shown ->
@@ -1218,7 +1218,7 @@ private fun StatusFace(
                 AnimatedContent(
                     targetState = feeText,
                     modifier = Modifier.fillMaxWidth(),
-                    transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(150)) },
+                    transitionSpec = { statusSwap() },
                     label = "mint-transfer-fee",
                 ) { shownFee ->
                     if (shownFee != null) {
@@ -1227,8 +1227,8 @@ private fun StatusFace(
                 }
                 AnimatedVisibility(
                     visible = successAmount == null,
-                    enter = fadeIn(tween(200)) + expandVertically(),
-                    exit = fadeOut(tween(150)) + shrinkVertically(),
+                    enter = fadeIn(tween(CashuMotion.StatusFadeInMs)) + expandVertically(),
+                    exit = fadeOut(tween(CashuMotion.StatusFadeOutMs)) + shrinkVertically(),
                 ) {
                     TransferDetailRow(
                         label = "Total",

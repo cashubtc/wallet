@@ -61,6 +61,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.currentStateAsState
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.cashu.me.ui.theme.quietSpec
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -285,9 +286,9 @@ private fun CashuAppContent(container: AppContainer) {
         AnimatedContent(
             targetState = gate,
             transitionSpec = {
-                (fadeIn(spring(stiffness = Spring.StiffnessMedium)) +
-                    scaleIn(initialScale = 0.98f, animationSpec = spring(stiffness = Spring.StiffnessMedium)))
-                    .togetherWith(fadeOut(spring(stiffness = Spring.StiffnessMedium)))
+                (fadeIn(quietSpec()) +
+                    scaleIn(initialScale = 0.98f, animationSpec = quietSpec()))
+                    .togetherWith(fadeOut(quietSpec()))
             },
             label = "app-gate",
         ) { target ->
@@ -857,10 +858,10 @@ private val paymentRoutes = setOf(
 // Camera-surface overlay motion: slide up over the shell, slide back down on close.
 private val overlayEnter = slideInVertically(
     spring(stiffness = Spring.StiffnessMediumLow, visibilityThreshold = IntOffset.VisibilityThreshold),
-) { it / 5 } + fadeIn(spring(stiffness = Spring.StiffnessMedium))
+) { it / 5 } + fadeIn(quietSpec())
 private val overlayExit = slideOutVertically(
     spring(stiffness = Spring.StiffnessMediumLow, visibilityThreshold = IntOffset.VisibilityThreshold),
-) { it / 5 } + fadeOut(spring(stiffness = Spring.StiffnessMedium))
+) { it / 5 } + fadeOut(quietSpec())
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable

@@ -4,9 +4,6 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.exclude
@@ -30,6 +27,7 @@ import com.cashu.me.ui.components.rememberSheetDismissAction
 import com.cashu.me.ui.components.CompactSheetContent
 import com.cashu.me.ui.navigation.TopTab
 import com.cashu.me.ui.theme.CashuTheme
+import com.cashu.me.ui.theme.quietFade
 
 /**
  * The money flows presented over the shell (iOS `WalletFlow` sheets).
@@ -186,8 +184,7 @@ fun WalletFlowSheetHost(
                 AnimatedContent(
                     targetState = flow,
                     transitionSpec = {
-                        fadeIn(spring(stiffness = Spring.StiffnessMedium))
-                            .togetherWith(fadeOut(spring(stiffness = Spring.StiffnessMedium)))
+                        quietFade()
                     },
                     label = "wallet-flow",
                 ) { current ->

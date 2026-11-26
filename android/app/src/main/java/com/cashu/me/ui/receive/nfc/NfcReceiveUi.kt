@@ -60,6 +60,7 @@ import com.cashu.me.ui.components.PaymentStatusPhase
 import com.cashu.me.ui.components.PaymentStatusScreen
 import com.cashu.me.ui.receive.CashuRequestReceiptRows
 import com.cashu.me.ui.theme.CashuTheme
+import com.cashu.me.ui.theme.quietSpec
 import com.cashu.me.ui.theme.rememberReducedMotion
 
 private const val NfcIndicatorResizeMillis = 220
@@ -252,8 +253,8 @@ fun NfcReceiveOverlay(
     }
     AnimatedVisibility(
         visible = visible,
-        enter = fadeIn(spring(stiffness = Spring.StiffnessMedium)),
-        exit = fadeOut(spring(stiffness = Spring.StiffnessMedium)),
+        enter = fadeIn(quietSpec()),
+        exit = fadeOut(quietSpec()),
     ) {
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             NfcReceiveOverlayContent(

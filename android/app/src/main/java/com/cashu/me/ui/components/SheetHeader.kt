@@ -2,11 +2,8 @@ package com.cashu.me.ui.components
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -30,6 +27,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.cashu.me.ui.theme.CashuTheme
+import com.cashu.me.ui.theme.quietFade
+import com.cashu.me.ui.theme.quietSpec
 
 // Chrome under the system drag handle. Fixed height, not a minimum: a leading
 // back arrow is a 48dp target, so a `heightIn(40.dp)` header grew by 8dp the
@@ -75,8 +74,7 @@ fun SheetHeader(
         AnimatedContent(
             targetState = title,
             transitionSpec = {
-                fadeIn(spring(stiffness = Spring.StiffnessMedium))
-                    .togetherWith(fadeOut(spring(stiffness = Spring.StiffnessMedium)))
+                quietFade()
             },
             label = "sheet-header-title",
             modifier = Modifier
@@ -105,8 +103,8 @@ fun SheetHeader(
         AnimatedVisibility(
             visible = navigationIcon != null && onNavigationClick != null,
             modifier = Modifier.align(Alignment.CenterStart),
-            enter = fadeIn(spring(stiffness = Spring.StiffnessMedium)),
-            exit = fadeOut(spring(stiffness = Spring.StiffnessMedium)),
+            enter = fadeIn(quietSpec()),
+            exit = fadeOut(quietSpec()),
             label = "sheet-header-navigation",
         ) {
             if (shownIcon != null) {

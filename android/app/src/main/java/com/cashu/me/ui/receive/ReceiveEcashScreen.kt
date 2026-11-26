@@ -3,8 +3,6 @@ package com.cashu.me.ui.receive
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -45,6 +43,8 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
+import com.cashu.me.ui.theme.quietFade
+import com.cashu.me.ui.theme.quietSpec
 import kotlinx.coroutines.delay
 import com.cashu.me.Core.CashuRequestStore
 import com.cashu.me.Core.CashuRequestNostrReadiness
@@ -260,8 +260,7 @@ fun ReceiveEcashScreen(
                     AnimatedContent(
                         targetState = input.isNotBlank(),
                         transitionSpec = {
-                            fadeIn(spring(stiffness = Spring.StiffnessMedium))
-                                .togetherWith(fadeOut(spring(stiffness = Spring.StiffnessMedium)))
+                            quietFade()
                         },
                         label = "input-trailing",
                     ) { hasInput ->
@@ -290,17 +289,16 @@ fun ReceiveEcashScreen(
                 targetState = inputHint,
                 transitionSpec = {
                     if (reduceMotion) {
-                        fadeIn(spring(stiffness = Spring.StiffnessMedium)) togetherWith
-                            fadeOut(spring(stiffness = Spring.StiffnessMedium))
+                        quietFade()
                     } else {
-                        (fadeIn(spring(stiffness = Spring.StiffnessMedium)) +
+                        (fadeIn(quietSpec()) +
                             expandVertically(
-                                animationSpec = spring(stiffness = Spring.StiffnessMedium),
+                                animationSpec = quietSpec(),
                                 expandFrom = Alignment.Top,
                             )) togetherWith
-                            (fadeOut(spring(stiffness = Spring.StiffnessMedium)) +
+                            (fadeOut(quietSpec()) +
                                 shrinkVertically(
-                                    animationSpec = spring(stiffness = Spring.StiffnessMedium),
+                                    animationSpec = quietSpec(),
                                     shrinkTowards = Alignment.Top,
                                 ))
                     }

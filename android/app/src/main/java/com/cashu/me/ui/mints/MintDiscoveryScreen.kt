@@ -54,6 +54,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.cashu.me.ui.theme.quietSpec
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import com.cashu.me.Core.AppLogger
@@ -337,7 +338,7 @@ private fun DiscoveryRow(
             contentAlignment = Alignment.Center,
             transitionSpec = {
                 (
-                    fadeIn(spring(stiffness = Spring.StiffnessMedium)) +
+                    fadeIn(quietSpec()) +
                         scaleIn(
                             animationSpec = spring(
                                 dampingRatio = 0.7f,
@@ -345,7 +346,7 @@ private fun DiscoveryRow(
                             ),
                             initialScale = 0.9f,
                         )
-                    ).togetherWith(fadeOut(spring(stiffness = Spring.StiffnessMedium)))
+                    ).togetherWith(fadeOut(quietSpec()))
             },
             label = "discovery-trailing",
         ) { rowState ->
