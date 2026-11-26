@@ -836,41 +836,91 @@ private final class ReplacementJournalStorage: SecureStorageProtocol {
 /// Fee-aware Max for Lightning and on-chain sends. Mirrors Android's
 /// `MeltMaxAmountTest`.
 final class SendMaxMeltAmountTests: XCTestCase {
+    private static let mintURL = "https://mint.example"
+
+    private func makeQuote(
+        id: String,
+        amount: UInt64,
+        feeReserve: UInt64,
+        mintURL: String = SendMaxMeltAmountTests.mintURL,
+        state: MeltQuoteState = .unpaid,
+        expiry: UInt64? = 2_000
+    ) -> MeltQuoteInfo {
+        MeltQuoteInfo(
+            id: id,
+            mintUrl: mintURL,
+            amount: amount,
+            feeReserve: feeReserve,
+            paymentMethod: .bolt11,
+            state: state,
+            expiry: expiry
+        )
+    }
+
     private func largest(
         balance: UInt64,
         reserve: @escaping (UInt64) -> UInt64,
         quotes: inout Int
-    ) async throws -> UInt64? {
+    ) async throws -> PayableMeltQuote? {
         var count = 0
         let result = try await largestPayableMeltAmount(balance: balance) { amount in
             count += 1
-            return amount + reserve(amount)
+            let fee = reserve(amount)
+            let total = amount + fee
+            if total > balance {
+                return .insufficientBalance(requiredTotal: total)
+            }
+            return .quote(self.makeQuote(id: "quote-\(count)-\(amount)", amount: amount, feeReserve: fee))
         }
         quotes = count
         return result
     }
 
-    func testFlatReserveSettlesOnTheSecondQuote() async throws {
+    func testFlatReserveSettlesOnTheSecondQuoteAndReturnsWinningQuote() async throws {
         var quotes = 0
         let payable = try await largest(balance: 1_314, reserve: { _ in 13 }, quotes: &quotes)
-        XCTAssertEqual(payable, 1_301)
+        let winner = try XCTUnwrap(payable)
+        XCTAssertEqual(winner.amount, 1_301)
+        XCTAssertEqual(winner.quote.id, "quote-2-1301")
+        XCTAssertEqual(winner.quote.amount, 1_301)
+        XCTAssertEqual(winner.quote.feeReserve, 13)
+        XCTAssertEqual(winner.quote.mintUrl, Self.mintURL)
         XCTAssertEqual(quotes, 2)
     }
 
-    func testPercentageReserveWithFloorFitsTheBalance() async throws {
+    func testPercentageReserveWithFloorFitsTheBalanceAndReturnsWinningQuote() async throws {
         var quotes = 0
         // 1% rounded up, at least 2 sat — a common Lightning backend shape.
         let reserve: (UInt64) -> UInt64 = { max(2, ($0 + 99) / 100) }
         let payable = try await largest(balance: 1_314, reserve: reserve, quotes: &quotes)
-        XCTAssertEqual(payable, 1_300)
+        let winner = try XCTUnwrap(payable)
+        XCTAssertEqual(winner.amount, 1_300)
+        XCTAssertEqual(winner.quote.amount, 1_300)
+        XCTAssertEqual(winner.quote.feeReserve, reserve(1_300))
         XCTAssertLessThanOrEqual(1_300 + reserve(1_300), 1_314)
         XCTAssertGreaterThan(1_301 + reserve(1_301), 1_314, "1,300 is the largest amount that fits")
+    }
+
+    func testOvershootingQuoteProbeStepsDownAndReturnsWinningQuote() async throws {
+        var count = 0
+        let payable = try await largestPayableMeltAmount(balance: 500) { amount in
+            count += 1
+            return .quote(self.makeQuote(id: "quote-\(count)-\(amount)", amount: amount, feeReserve: 2))
+        }
+        let winner = try XCTUnwrap(payable)
+        XCTAssertEqual(winner.amount, 498)
+        XCTAssertEqual(winner.quote.id, "quote-2-498")
+        XCTAssertEqual(winner.quote.amount, 498)
+        XCTAssertEqual(winner.quote.feeReserve, 2)
+        XCTAssertEqual(count, 2)
     }
 
     func testNoReserveKeepsTheWholeBalanceWithOneQuote() async throws {
         var quotes = 0
         let payable = try await largest(balance: 500, reserve: { _ in 0 }, quotes: &quotes)
-        XCTAssertEqual(payable, 500)
+        let winner = try XCTUnwrap(payable)
+        XCTAssertEqual(winner.amount, 500)
+        XCTAssertEqual(winner.quote.id, "quote-1-500")
         XCTAssertEqual(quotes, 1)
     }
 
@@ -882,7 +932,9 @@ final class SendMaxMeltAmountTests: XCTestCase {
 
     func testInconclusiveQuotesDoNotReportAnEmptyBalance() async {
         do {
-            _ = try await largestPayableMeltAmount(balance: 100, rounds: 1) { $0 + 2 }
+            _ = try await largestPayableMeltAmount(balance: 100, rounds: 1) {
+                .insufficientBalance(requiredTotal: $0 + 2)
+            }
             XCTFail("Expected an inconclusive calculation error")
         } catch {
             XCTAssertTrue(error.localizedDescription.contains("Try again or enter an amount"))
@@ -897,5 +949,75 @@ final class SendMaxMeltAmountTests: XCTestCase {
         } catch {
             XCTAssertTrue(error is MintDown)
         }
+    }
+
+    func testCachedMaxMeltQuoteMatchesOnlyFreshMatchingSelection() {
+        let quote = makeQuote(id: "q-498", amount: 498, feeReserve: 2, expiry: 2_000)
+        let cached = CachedMaxMeltQuote(
+            request: "alice@example.com",
+            amount: 498,
+            mintURL: "https://mint.example/",
+            quote: quote
+        )
+
+        XCTAssertTrue(
+            cached.matches(
+                request: "alice@example.com",
+                amount: 498,
+                mintURL: "https://mint.example",
+                now: Date(timeIntervalSince1970: 1_999)
+            )
+        )
+        XCTAssertFalse(
+            cached.matches(
+                request: "alice@example.com",
+                amount: 498,
+                mintURL: "https://mint.example",
+                now: Date(timeIntervalSince1970: 2_001)
+            ),
+            "Expired quote must not be reused"
+        )
+        XCTAssertFalse(
+            cached.matches(
+                request: "alice@example.com",
+                amount: 490,
+                mintURL: "https://mint.example",
+                now: Date(timeIntervalSince1970: 1_999)
+            ),
+            "Edited or fiat-rounded amount must not reuse a quote for a different amount"
+        )
+        XCTAssertFalse(
+            cached.matches(
+                request: "alice@example.com",
+                amount: 498,
+                mintURL: "https://other-mint.example",
+                now: Date(timeIntervalSince1970: 1_999)
+            ),
+            "Switched mint must not reuse the previous mint's quote"
+        )
+        XCTAssertFalse(
+            cached.matches(
+                request: "bob@example.com",
+                amount: 498,
+                mintURL: "https://mint.example",
+                now: Date(timeIntervalSince1970: 1_999)
+            ),
+            "Different recipient must not reuse the previous quote"
+        )
+        let paidCached = CachedMaxMeltQuote(
+            request: "alice@example.com",
+            amount: 498,
+            mintURL: "https://mint.example",
+            quote: makeQuote(id: "q-paid", amount: 498, feeReserve: 2, state: .paid, expiry: 2_000)
+        )
+        XCTAssertFalse(
+            paidCached.matches(
+                request: "alice@example.com",
+                amount: 498,
+                mintURL: "https://mint.example",
+                now: Date(timeIntervalSince1970: 1_999)
+            ),
+            "Only unpaid quotes may be reused"
+        )
     }
 }

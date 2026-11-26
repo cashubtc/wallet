@@ -445,20 +445,11 @@ struct SendView: View {
     }
 
     /// Writes a base-unit amount into the keypad string in the current entry
-    /// mode. Fiat entry is coarser than sats, so the cents round-trip can land
-    /// above the target — which would leave a Send Max fill unsendable — and
-    /// gets trimmed a cent at a time until it fits.
+    /// mode. Fiat entry is coarser than sats, so the cents round-trip is
+    /// trimmed via `AmountFormatter.maxEntryString` until it fits `baseUnits`.
     private func fillAmount(baseUnits: UInt64) {
         if isSatSend {
-            // Balance is sats; express it in the current entry unit so the keypad
-            // string keeps its meaning.
-            amountString = AmountFormatter.entryConverted(raw: String(baseUnits), from: .sats, to: entryUnit)
-            guard entryUnit == .fiat else { return }
-            var cents = AmountFormatter.entryBaseUnits(raw: amountString, decimals: 2)
-            while cents > 0, AmountFormatter.entrySats(raw: amountString, unit: .fiat) > baseUnits {
-                cents -= 1
-                amountString = AmountFormatter.entryString(baseUnits: cents, decimals: 2)
-            }
+            amountString = AmountFormatter.maxEntryString(maxSats: baseUnits, unit: entryUnit)
         } else {
             amountString = AmountFormatter.entryString(baseUnits: baseUnits, decimals: sendUnitDecimals)
         }
@@ -1162,6 +1153,7 @@ struct UnifiedSendView: View {
     // Amount + melt quote
     @State private var amountString = ""
     @State private var meltQuote: MeltQuoteInfo?
+    @State private var cachedMaxMeltQuote: CachedMaxMeltQuote?
     @State private var meltQuoteTask: Task<Void, Never>?
     /// Fee-aware Max for melts quotes the mint before filling the keypad.
     @State private var maxTask: Task<Void, Never>?
@@ -1471,6 +1463,7 @@ struct UnifiedSendView: View {
             .onChange(of: destination) { handleDestinationChange() }
             .onChange(of: currentAmountMint?.id) { _, _ in
                 cancelMax()
+                cachedMaxMeltQuote = nil
                 maxFeedback = nil
                 if step == .amount { errorMessage = nil }
             }
@@ -1703,6 +1696,7 @@ struct UnifiedSendView: View {
 
     private func editRecipient() {
         cancelMeltQuote()
+        cachedMaxMeltQuote = nil
         HapticFeedback.selection()
         if let onEditDestination {
             onEditDestination()
@@ -1812,6 +1806,7 @@ struct UnifiedSendView: View {
         activeRouteExplanation = routeExplanation
         selectedMint = nil
         meltQuote = nil
+        cachedMaxMeltQuote = nil
         errorMessage = nil
     }
 
@@ -1859,6 +1854,7 @@ struct UnifiedSendView: View {
                         get: { amountString },
                         set: { value in
                             cancelMax()
+                            cachedMaxMeltQuote = nil
                             errorMessage = nil
                             maxFeedback = nil
                             amountString = value
@@ -1914,6 +1910,7 @@ struct UnifiedSendView: View {
         guard let mint = currentAmountMint else { return }
         HapticFeedback.selection()
         maxTask?.cancel()
+        cachedMaxMeltQuote = nil
         guard case let .melt(request, mode, decoded) = locked else {
             fillAmount(sats: mint.balance)
             return
@@ -1927,21 +1924,28 @@ struct UnifiedSendView: View {
             do {
                 let payable = try await largestPayableMeltAmount(balance: mint.balance) { amount in
                     do {
-                        return try await requestMeltQuote(
+                        let quote = try await requestMeltQuote(
                             request: request, mode: mode, decoded: decoded,
                             amount: amount, mintURL: mint.url
-                        ).totalAmount
-                    } catch NFCPaymentError.insufficientBalance(let required, _) {
+                        )
+                        return .quote(quote)
+                    } catch NFCPaymentError.insufficientBalance(let required, _) where required > mint.balance {
                         // The quote didn't fit; its required total is what we need.
-                        return required
+                        return .insufficientBalance(requiredTotal: required)
                     }
                 }
                 // Typing or leaving the keypad meanwhile wins over a late result.
                 guard !Task.isCancelled, step == .amount, amountString == entryBeforeMax,
                       currentAmountMint?.id == mint.id else { return }
                 if let payable {
-                    fillAmount(sats: payable)
-                    if payable < mint.balance {
+                    fillAmount(sats: payable.amount)
+                    cachedMaxMeltQuote = CachedMaxMeltQuote(
+                        request: request,
+                        amount: payable.amount,
+                        mintURL: mint.url,
+                        quote: payable.quote
+                    )
+                    if payable.amount < mint.balance {
                         maxFeedback = "Amount adjusted for the network fee."
                     }
                 } else {
@@ -1962,7 +1966,7 @@ struct UnifiedSendView: View {
     }
 
     private func fillAmount(sats: UInt64) {
-        amountString = AmountFormatter.entryConverted(raw: String(sats), from: .sats, to: entryUnit)
+        amountString = AmountFormatter.maxEntryString(maxSats: sats, unit: entryUnit)
     }
 
     private func continueFromAmount() {
@@ -1977,7 +1981,7 @@ struct UnifiedSendView: View {
         case .melt:
             withAnimation(.smooth(duration: 0.3)) {
                 step = .confirm
-                fetchMeltQuote()
+                fetchMeltQuote(allowCachedMaxQuote: true)
             }
         case .cashuRequest:
             withAnimation(.smooth(duration: 0.3)) {
@@ -2094,6 +2098,7 @@ struct UnifiedSendView: View {
     /// notice), and the amount over its fee/total rows once the quote lands.
     private var meltConfirmBody: some View {
         let displayAmount = meltQuote?.amount ?? knownMeltAmount ?? 0
+        let payButtonTitle = "Pay \(AmountFormatter.sats(displayAmount, useBitcoinSymbol: settings.useBitcoinSymbol))"
         let canPay = meltQuote.map { hasSufficientBalance(for: $0) } ?? false
         let quotePending = meltQuote == nil && errorMessage == nil
         // A quote that landed but exceeds the mint's balance is the same user
@@ -2179,19 +2184,19 @@ struct UnifiedSendView: View {
                     } else {
                         // Nothing actionable — the X closes; the ask stays
                         // visible on the disabled commit.
-                        Button(action: payMelt) { Text("Pay \(displayAmount) sat") }
+                        Button(action: payMelt) { Text(payButtonTitle) }
                             .flatSheetSecondaryButton()
                             .disabled(true)
                     }
                 } else if meltQuote == nil {
                     // Quiet secondary, kept only for transient failures
                     // (network, mint down) where retrying can actually work.
-                    Button(action: fetchMeltQuote) { Text("Retry Quote") }
+                    Button(action: { fetchMeltQuote() }) { Text("Retry Quote") }
                         .flatSheetSecondaryButton()
                 } else {
                     // Quiet tonal, like the Cashu request's Pay and Transfer's
                     // commit; Android's neutral fill is the same.
-                    Button(action: payMelt) { Text("Pay \(displayAmount) sat") }
+                    Button(action: payMelt) { Text(payButtonTitle) }
                         .flatSheetSecondaryButton()
                         .disabled(isWorking || !canPay)
                 }
@@ -2389,7 +2394,7 @@ struct UnifiedSendView: View {
 
     // MARK: Melt quote + pay
 
-    private func fetchMeltQuote() {
+    private func fetchMeltQuote(allowCachedMaxQuote: Bool = false) {
         guard case let .melt(request, mode, decoded) = locked else {
             cancelMeltQuote()
             return
@@ -2399,6 +2404,17 @@ struct UnifiedSendView: View {
             presentError("No mint supports \(meltPaymentMethod.displayName) payments.")
             return
         }
+        let amount = amountSats
+        if allowCachedMaxQuote,
+           let cached = cachedMaxMeltQuote,
+           cached.matches(request: request, amount: amount, mintURL: mint.url) {
+            cancelMeltQuote()
+            errorMessage = nil
+            meltQuote = cached.quote
+            if let resolved = mintInfo(for: cached.quote) { selectedMint = resolved }
+            return
+        }
+        cachedMaxMeltQuote = nil
         // Retry Quote swaps the face too, so these animate wherever they run.
         withAnimation(.smooth(duration: 0.3)) {
             cancelMeltQuote()
@@ -2406,7 +2422,6 @@ struct UnifiedSendView: View {
             errorMessage = nil
             meltQuote = nil
         }
-        let amount = amountSats
         meltQuoteTask = Task { @MainActor in
             defer { if !Task.isCancelled { isWorking = false } }
             do {
@@ -2479,6 +2494,7 @@ struct UnifiedSendView: View {
     private func payMelt() {
         guard step == .confirm, !isWorking, let quote = meltQuote else { return }
         HapticFeedback.impact(.medium)
+        cachedMaxMeltQuote = nil
         errorMessage = nil
         meltRetryNeedsFreshQuote = false
         meltResult = nil
@@ -2606,6 +2622,7 @@ struct UnifiedSendView: View {
                 minimumAmount: meltMinAmount,
                 onSelect: { mint in
                     selectedMint = mint
+                    cachedMaxMeltQuote = nil
                     errorMessage = nil
                     if step == .confirm { fetchMeltQuote() }
                 }

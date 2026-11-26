@@ -308,16 +308,62 @@ enum AmountFormatter {
         return formatter
     }()
 
-    /// Satoshis represented by a typed string in the given entry unit.
-    @MainActor
-    static func entrySats(raw: String, unit: AmountDisplayPrimary) -> UInt64 {
+    /// Satoshis represented by a typed string in the given entry unit at `btcPrice`.
+    static func entrySats(raw: String, unit: AmountDisplayPrimary, btcPrice: Double) -> UInt64 {
         switch unit {
         case .sats:
             return entryBaseUnits(raw: raw, decimals: 0)
         case .fiat:
             let cents = entryBaseUnits(raw: raw, decimals: fiatDecimals)
-            return PriceService.shared.fiatToSats(Double(cents) / 100)
+            return fiatToSats(Double(cents) / 100, btcPrice: btcPrice)
         }
+    }
+
+    /// Satoshis represented by a typed string in the given entry unit.
+    @MainActor
+    static func entrySats(raw: String, unit: AmountDisplayPrimary) -> UInt64 {
+        entrySats(raw: raw, unit: unit, btcPrice: PriceService.shared.btcPriceUSD)
+    }
+
+    /// Raw entry string for a maximum satoshis balance in `unit`, guaranteed
+    /// never to convert back to more than `maxSats`. Fiat entry is coarser than
+    /// sats, so the rounded conversion can land above the balance and leave a
+    /// Send Max fill unsendable; trimming a cent at a time keeps it within the
+    /// limit (Android `UnifiedSendAmountEntry.maxRawForBalance` parity).
+    static func maxEntryString(
+        maxSats: UInt64,
+        unit: AmountDisplayPrimary,
+        btcPrice: Double
+    ) -> String {
+        guard maxSats > 0 else { return "" }
+        switch unit {
+        case .sats:
+            return String(maxSats)
+        case .fiat:
+            guard btcPrice.isFinite, btcPrice > 0 else { return "" }
+            let fiatValue = Double(maxSats) / 100_000_000.0 * btcPrice
+            var cents = entryBaseUnits(raw: fiatEntryString(fiatValue), decimals: fiatDecimals)
+            var raw = entryString(baseUnits: cents, decimals: fiatDecimals)
+            while cents > 0, entrySats(raw: raw, unit: .fiat, btcPrice: btcPrice) > maxSats {
+                cents -= 1
+                raw = entryString(baseUnits: cents, decimals: fiatDecimals)
+            }
+            return raw
+        }
+    }
+
+    /// Raw entry string for a maximum satoshis balance using the active
+    /// `PriceService` rate.
+    @MainActor
+    static func maxEntryString(maxSats: UInt64, unit: AmountDisplayPrimary) -> String {
+        maxEntryString(maxSats: maxSats, unit: unit, btcPrice: PriceService.shared.btcPriceUSD)
+    }
+
+    private static func fiatToSats(_ fiat: Double, btcPrice: Double) -> UInt64 {
+        guard btcPrice.isFinite, btcPrice > 0, fiat > 0 else { return 0 }
+        let sats = (fiat / btcPrice * 100_000_000.0).rounded()
+        guard sats.isFinite, sats >= 0, sats < Double(UInt64.max) else { return 0 }
+        return UInt64(sats)
     }
 
     // MARK: - Live amount entry in an explicit mint unit
