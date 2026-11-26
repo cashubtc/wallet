@@ -21,6 +21,9 @@ CDK_VERSION="0.18.3"
 BIN_DIR="${SCRIPT_DIR}/.cdk-bin"
 WORK_DIR="${CDK_TEST_WORK_DIR:-${SCRIPT_DIR}/.cdk-workdir}"
 MINTD_BIN="${BIN_DIR}/cdk-mintd"
+# CDK_MINTD_BIN points at a locally built cdk-mintd (for example from an
+# unreleased CDK branch) and skips the pinned release download and version check.
+LOCAL_MINTD_BIN="${CDK_MINTD_BIN:-}"
 
 case "$PROFILE" in
     default)
@@ -61,6 +64,11 @@ esac
 
 echo "🔧 Setting up CDK mint (v${CDK_VERSION}) on port ${PORT} with ${PROFILE} profile..."
 
+if [ -n "$LOCAL_MINTD_BIN" ]; then
+    [ -x "$LOCAL_MINTD_BIN" ] || { echo "❌ CDK_MINTD_BIN is not executable: $LOCAL_MINTD_BIN" >&2; exit 1; }
+    MINTD_BIN="$LOCAL_MINTD_BIN"
+    echo "✅ Using local cdk-mintd: $MINTD_BIN"
+else
 OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
 ARCH="$(uname -m)"
 
@@ -121,6 +129,7 @@ chmod +x "$MINTD_BIN"
 if ! "$MINTD_BIN" --version | grep -q "$CDK_VERSION"; then
     echo "❌ Downloaded cdk-mintd did not report version $CDK_VERSION"
     exit 1
+fi
 fi
 
 mkdir -p "$WORK_DIR"
