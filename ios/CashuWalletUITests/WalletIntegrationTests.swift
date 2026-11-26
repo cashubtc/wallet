@@ -408,3 +408,60 @@ final class LiveMintTransferUITests: LivePaymentUITestBase {
         XCTAssertFalse(row(titled: "Lightning paid").firstMatch.exists)
     }
 }
+
+/// Ecash that was sent and never claimed holds back the next send from its
+/// mint. The screen that says so has to settle it in place.
+final class LivePendingEcashUITests: LivePaymentUITestBase {
+    func testUnclaimedEcashHoldsTheNextSendUntilItIsReclaimed() throws {
+        createWalletWithMint()
+        receiveThroughUI()
+
+        createEcash(digits: ["1", "6"])
+        XCTAssertTrue(app.staticTexts["Pending Ecash"].waitForExistence(timeout: 30))
+        tapWhenReady(app.buttons["Close"])
+        waitForMainTab()
+
+        // The second send finds the first token still out.
+        createEcash(digits: ["2", "1"])
+        let reclaim = app.buttons["cashu.send.reclaim"]
+        XCTAssertTrue(reclaim.waitForExistence(timeout: 30), "The unclaimed token must hold this send back")
+        XCTAssertTrue(app.staticTexts["Pending Ecash"].exists)
+        capture("pending-ecash")
+
+        tapWhenReady(app.buttons["cashu.send.check-recovery"])
+        XCTAssertTrue(app.staticTexts["Not claimed yet"].waitForExistence(timeout: 30))
+        capture("pending-ecash-checked")
+
+        tapWhenReady(reclaim)
+        let confirm = app.buttons.matching(
+            NSPredicate(format: "label == %@ AND identifier != %@", "Reclaim", "cashu.send.reclaim")
+        ).firstMatch
+        XCTAssertTrue(confirm.waitForExistence(timeout: 10))
+        capture("reclaim-confirmation")
+        tapWhenReady(confirm)
+        XCTAssertTrue(app.staticTexts["Ecash Reclaimed"].waitForExistence(timeout: 30))
+        capture("ecash-reclaimed")
+
+        tapWhenReady(app.buttons["Done"])
+        waitForMainTab()
+        let balance = app.descendants(matching: .any).matching(NSPredicate(
+            format: "label BEGINSWITH %@ AND label CONTAINS %@", "Balance", "100"
+        )).firstMatch
+        XCTAssertTrue(balance.waitForExistence(timeout: 10), "Reclaiming must return the whole amount")
+    }
+
+    private func createEcash(digits: [String]) {
+        tapWhenReady(app.buttons["wallet-action-send"])
+        tapWhenReady(app.buttons["Ecash. Create ecash"])
+        XCTAssertTrue(app.buttons["cashu.send.ecash.submit"].waitForExistence(timeout: 10))
+        for digit in digits { tapWhenReady(app.buttons[digit]) }
+        tapWhenReady(app.buttons["cashu.send.ecash.submit"])
+    }
+
+    private func capture(_ name: String) {
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+}

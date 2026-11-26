@@ -21,6 +21,7 @@ struct ComponentCatalogView: View {
     /// scrolling, and so each pairs with its Android counterpart.
     enum Page {
         case matrix, variants, activity, history, onchainStatus, transfer, awaitingMint
+        case sendRecovery(SendRecoveryCatalog.Variant)
 
         init(rawValue: String?) {
             switch rawValue {
@@ -30,7 +31,21 @@ struct ComponentCatalogView: View {
             case "onchain-status": self = .onchainStatus
             case "transfer": self = .transfer
             case "awaiting-mint": self = .awaitingMint
+            case "send-recovery": self = .sendRecovery(.pending)
+            case "send-recovery-multiple": self = .sendRecovery(.multiple)
+            case "send-recovery-no-token": self = .sendRecovery(.noToken)
+            case "send-recovery-unconfirmed": self = .sendRecovery(.unconfirmed)
+            case "send-recovery-claimed": self = .sendRecovery(.claimed)
+            case "send-recovery-returned": self = .sendRecovery(.returned)
+            case "send-recovery-sheet": self = .sendRecovery(.sheet)
             default: self = .matrix
+            }
+        }
+
+        var fillsScreen: Bool {
+            switch self {
+            case .awaitingMint, .sendRecovery: return true
+            default: return false
             }
         }
     }
@@ -58,11 +73,13 @@ struct ComponentCatalogView: View {
                 handRolledVariants
             case .awaitingMint:
                 AwaitingMintCatalog()
+            case .sendRecovery(let variant):
+                SendRecoveryCatalog(variant: variant)
             }
             Spacer(minLength: 0)
         }
-        // The status face fills the screen; page padding would inset it.
-        .padding(page == .awaitingMint ? 0 : 16)
+        // The status faces fill the screen; page padding would inset them.
+        .padding(page.fillsScreen ? 0 : 16)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -252,6 +269,84 @@ private struct AwaitingMintCatalog: View {
                 Text("Viewed history")
                     .accessibilityIdentifier("awaiting-mint-viewed-history")
             }
+        }
+    }
+}
+
+/// The screen for ecash that left the wallet and has not been claimed, from
+/// fixed snapshots, so each face can be checked without a mint or a held token.
+struct SendRecoveryCatalog: View {
+    enum Variant { case pending, multiple, noToken, unconfirmed, claimed, returned, sheet }
+
+    let variant: Variant
+    @EnvironmentObject private var walletManager: WalletManager
+
+    private static let mintURL = "https://mint.minibits.cash/Bitcoin"
+    private static let token = "cashuBo2FteCJodHRwczovL21pbnQubWluaWJpdHMuY2FzaC9CaXRjb2luYXVjc2F0YXSBomFpSABQBVDwSUFGYXCEpGFhAWFzeEBjYXRhbG9nLXNlY3JldC0wMDAxLWNhdGFsb2ctc2VjcmV0LTAwMDEtY2F0YWxvZy1zZWNyZXQtMDAwMS1jYXRhbG9nYWNYIQJjYXRhbG9nLXNpZ25hdHVyZS0wMDAxLWNhdGFsb2ctc2lnbmF0dXJlYWSjYWVYIGNhdGFsb2ctZGxlcS1lLTAwMDEtY2F0YWxvZy1kbGVxLWVhc1ggY2F0YWxvZy1kbGVxLXMtMDAwMS1jYXRhbG9nLWRsZXEtc2FyWCBjYXRhbG9nLWRsZXEtci0wMDAxLWNhdGFsb2ctZGxlcS1y"
+
+    private var recovery: PendingSendRecovery {
+        let send = PendingSend(id: "catalog-send-1", amount: 16, token: Self.token)
+        var recovery = PendingSendRecovery(mintURL: Self.mintURL, unit: "sat", operationIDs: [send.id])
+        switch variant {
+        case .pending, .sheet:
+            recovery.sends = [send]
+            recovery.outcome = .pending
+        case .multiple:
+            recovery.sends = [send, PendingSend(id: "catalog-send-2", amount: 2100, token: Self.token + "Mg")]
+            recovery.operationIDs = recovery.sends.map(\.id)
+            recovery.outcome = .pending
+        case .noToken:
+            recovery.sends = [PendingSend(id: send.id, amount: send.amount, token: nil)]
+            recovery.outcome = .pending
+        case .unconfirmed:
+            recovery.outcome = .unverified
+        case .claimed:
+            recovery.outcome = .completed
+        case .returned:
+            recovery.outcome = .returned
+        }
+        return recovery
+    }
+
+    var body: some View {
+        faces
+            .onAppear {
+                // History holds each send under its operation ID; the screen
+                // reads the date from there.
+                walletManager.transactionService.transactions = recovery.sends.map { send in
+                    WalletTransaction(
+                        id: "catalog-\(send.id)", amount: send.amount, type: .outgoing, kind: .ecash,
+                        date: Date(timeIntervalSince1970: 1_795_554_600), status: .pending,
+                        mintUrl: Self.mintURL, sagaId: send.id
+                    )
+                }
+            }
+    }
+
+    @ViewBuilder
+    private var faces: some View {
+        if variant == .sheet {
+            // History opens it as a sheet of its own, with no navigation bar.
+            Color.clear
+                .sheet(isPresented: .constant(true)) {
+                    PendingSendRecoveryView(recovery: recovery, onDone: {})
+                        .environmentObject(walletManager)
+                }
+        } else {
+            // The chrome of the Cashu Request pay sheet, one of the flows it
+            // takes over.
+            NavigationStack {
+                PendingSendRecoveryView(recovery: recovery, onDone: {})
+                    .navigationTitle("Pay Cashu Request")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbarBackground(.hidden, for: .navigationBar)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            SheetCloseButton(action: {})
+                        }
+                    }
+            }
+            .walletSheetSurface(fillsScreen: true)
         }
     }
 }
