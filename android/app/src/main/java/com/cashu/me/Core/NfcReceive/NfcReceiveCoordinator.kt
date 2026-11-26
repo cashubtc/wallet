@@ -208,6 +208,7 @@ class NfcReceiveCoordinator(
             tokenUnit = unit,
             grossAmount = grossAmount,
             settlementMint = session.settlementMint,
+            trackedMints = walletManager.state.value.mints,
         )
         val (amountReceived, transactionId) = if (route == NfcSettlementRoute.Direct) {
             mutableState.value = NfcReceiveState(NfcReceivePhase.Redeeming, "Securing ecash", sourceMint = sourceMint)

@@ -19,11 +19,10 @@ internal fun compatibleMintsForCashuPaymentRequest(
     request: CashuPaymentRequestSummary,
     mints: List<MintInfo>,
 ): List<MintInfo> {
-    val accepted = request.mints
-        .mapNotNull(::normalizedMintUrlForSelection)
-        .toSet()
+    val accepted = request.mints.filter { normalizedMintUrlForSelection(it) != null }
     if (accepted.isEmpty()) return mints
-    return mints.filter { mint -> normalizedMintUrlForSelection(mint.url) in accepted }
+    // A federation entry is accepted when the request lists any of its members.
+    return mints.filter { mint -> accepted.any(mint::matchesMintUrl) }
 }
 
 internal fun selectMintForCashuPaymentRequest(

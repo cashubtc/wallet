@@ -40,10 +40,9 @@ internal fun selectCashuRequestFundingSource(
     targetMintUrl: String,
     requiredAmountSats: Long,
 ): MintInfo? {
-    val normalizedTarget = normalizedMintUrlForSelection(targetMintUrl)
     return mints
         .asSequence()
-        .filter { normalizedMintUrlForSelection(it.url) != normalizedTarget }
+        .filterNot { it.matchesMintUrl(targetMintUrl) }
         .filter { PaymentMethodKind.Bolt11 in it.effectiveMeltMethods }
         .filter { it.balance >= requiredAmountSats }
         .sortedWith(compareByDescending<MintInfo> { it.balance }.thenBy { it.name.lowercase() })

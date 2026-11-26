@@ -88,3 +88,7 @@ CI/.nutshell-venv
 CI/payment-tests/__pycache__/
 
 CI/lightning-address-tests/__pycache__/
+
+# Locally generated CDK bindings (cdk/scripts/update-mobile-bindings.sh); never committed
+ios/Packages/cdk-swift-local/
+android/cdk-local/

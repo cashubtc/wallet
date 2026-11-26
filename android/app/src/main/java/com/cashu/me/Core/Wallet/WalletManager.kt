@@ -1,5 +1,6 @@
 package com.cashu.me.Core
 
+import com.cashu.me.Models.mintMatching
 import com.cashu.me.Models.MintUrlIdentity
 import java.net.URL
 import java.text.Normalizer
@@ -34,6 +35,7 @@ import org.cashudevkit.PendingMelt
 import org.cashudevkit.QuoteState as CdkQuoteState
 import org.cashudevkit.npubcashDeriveSecretKeyFromSeed
 import com.cashu.me.Core.CDK.CdkWalletGateway
+import com.cashu.me.Core.CDK.FederationInfo
 import com.cashu.me.Core.Platform.WalletDatabasePathManager
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
@@ -262,6 +264,8 @@ class WalletManager(
             // background maintenance contends for CDK's operation mutex.
             kotlinx.coroutines.yield()
             if (hasStoredWallet) {
+                runCatching { registerTrackedFederations() }
+                    .onFailure { AppLogger.wallet.error("Federation registration check failed", it) }
                 reconcileReceivedAccounts()
                 runCatching { refreshBalance() }
                     .onFailure { AppLogger.wallet.error("Deferred balance refresh failed", it) }
@@ -411,27 +415,50 @@ class WalletManager(
     suspend fun addMint(url: String) {
         var addedMintUrl: String? = null
         withLoading {
-            val normalized = MintUrlIdentity.withDefaultScheme(url)
-            MintUrlIdentity.validationError(normalized, allowCleartextLocalTestMints)?.let { throw IllegalArgumentException(it) }
-            if (mutableState.value.mints.any { it.url == normalized }) {
-                throw IllegalArgumentException("Mint already exists.")
+            val input = url.trim()
+            val added = if (isFederationInviteCode(input)) {
+                // An invite names the federation directly; CDK validates and
+                // registers it before the wallet entry is written.
+                val federation = gateway.addFederationInvite(input)
+                if (mutableState.value.mints.entryForFederation(federation) != null) {
+                    throw IllegalArgumentException(FederationAlreadyExistsMessage)
+                }
+                federationMintEntry(federation, runCatching { gateway.fetchMintInfo(federation.localMintUrl) }.getOrNull())
+            } else {
+                val normalized = MintUrlIdentity.withDefaultScheme(input)
+                MintUrlIdentity.validationError(normalized, allowCleartextLocalTestMints)?.let { throw IllegalArgumentException(it) }
+                // Any member URL of a tracked federation is that federation.
+                mutableState.value.mints.mintMatching(normalized)?.let { existing ->
+                    throw IllegalArgumentException(
+                        if (existing.isFederation) FederationAlreadyExistsMessage else "Mint already exists.",
+                    )
+                }
+                // Connect and commit first so the Mints view responds promptly.
+                // NUT-09 recovery starts below on the app-lifetime scope and
+                // refreshes balances/history after it completes.
+                gateway.ensureWallet(normalized)
+                val fetched = gateway.fetchMintInfo(normalized)
+                    ?: throw IllegalStateException("Mint did not return info via CDK.")
+                if (fetched.advertisesFederation) {
+                    val federation = gateway.addFederationMintUrl(normalized)
+                    if (mutableState.value.mints.entryForFederation(federation) != null) {
+                        throw IllegalArgumentException(FederationAlreadyExistsMessage)
+                    }
+                    federationMintEntry(federation, fetched)
+                } else {
+                    fetched
+                }
             }
-            // Connect and commit first so the Mints view responds promptly.
-            // NUT-09 recovery starts below on the app-lifetime scope and
-            // refreshes balances/history after it completes.
-            gateway.ensureWallet(normalized)
-            val fetched = gateway.fetchMintInfo(normalized)
-                ?: throw IllegalStateException("Mint did not return info via CDK.")
-            val updated = mutableState.value.mints + fetched
-            walletStore.setMintRemoved(normalized, removed = false)
+            val updated = mutableState.value.mints + added
+            walletStore.setMintRemoved(added.url, removed = false)
             walletStore.saveMints(updated)
-            if (mutableState.value.activeMint == null) walletStore.activeMintURL = fetched.url
+            if (mutableState.value.activeMint == null) walletStore.activeMintURL = added.url
             // Adding a mint never ends onboarding by itself: the first-mint
             // step hands off through the ASCII curtain, which calls
             // completeOnboarding() once it has full cover. Flipping the gate
             // here let the wallet show through for the curtain's first frames.
             loadCachedState(needsOnboarding = mutableState.value.needsOnboarding)
-            addedMintUrl = fetched.url
+            addedMintUrl = added.url
         }
 
         addedMintUrl?.let { mintUrl ->
@@ -477,6 +504,10 @@ class WalletManager(
                     walletStore.activeMintURL = updated.firstOrNull()?.url
                 }
                 loadCachedState(needsOnboarding = false)
+            }
+            trackedMint.federation?.let { federation ->
+                runCatching { gateway.removeFederation(federation.federationId) }
+                    .onFailure { AppLogger.wallet.error("Failed to unregister federation ${trackedMint.url}", it) }
             }
             refreshBalance()
         }
@@ -547,6 +578,7 @@ class WalletManager(
         if (current.isEmpty()) return
 
         var changed = false
+        val newlyFederated = mutableListOf<String>()
         val updated = current.map { mint ->
             val fetched = runCatching {
                 gateway.ensureWallet(mint.url)
@@ -554,6 +586,7 @@ class WalletManager(
             }.onFailure {
                 AppLogger.wallet.error("Failed to refresh mint info for ${mint.url}", it)
             }.getOrNull() ?: return@map mint
+            if (fetched.advertisesFederation && mint.federation == null) newlyFederated += mint.url
 
             val merged = mint.copy(
                 name = fetched.name.takeUnless { it == "Unknown Mint" } ?: mint.name,
@@ -588,13 +621,25 @@ class WalletManager(
             }
         }
 
-        if (!changed) return
-        walletStore.saveMints(updated)
-        update {
-            copy(
-                mints = updated,
-                activeMint = activeMintFrom(updated),
-            )
+        if (changed) {
+            walletStore.saveMints(updated)
+            update {
+                copy(
+                    mints = updated,
+                    activeMint = activeMintFrom(updated),
+                )
+            }
+        }
+
+        // A tracked mint that now advertises a federation (an entry saved
+        // before federation support, or by a restore) becomes the federation.
+        newlyFederated.forEach { mintUrl ->
+            runCatching { gateway.addFederationMintUrl(mintUrl) }
+                .onSuccess { federation ->
+                    val mint = mutableState.value.mints.firstOrNull { it.url == mintUrl }
+                    if (mint != null && mint.matchesMintUrl(federation.localMintUrl)) trackFederation(federation, mint)
+                }
+                .onFailure { AppLogger.wallet.error("Failed to register federation for $mintUrl", it) }
         }
     }
 
@@ -1230,12 +1275,7 @@ class WalletManager(
         return amount
     }
 
-    fun isMintKnown(url: String): Boolean {
-        val normalized = normalizedMintUrlForSelection(url) ?: return false
-        return state.value.mints.any {
-            normalizedMintUrlForSelection(it.url) == normalized
-        }
-    }
+    fun isMintKnown(url: String): Boolean = state.value.mints.mintMatching(url) != null
 
     suspend fun receiveNfcCashuRequestPayment(
         tokenString: String,
@@ -1994,6 +2034,7 @@ class WalletManager(
         if (walletStore.isMintRemoved(normalized)) return
         val current = walletStore.loadMints()
         val existing = current.firstOrNull { com.cashu.me.Core.CDK.mintRemovalUrlsMatch(it.url, normalized) }
+            ?: current.firstOrNull { it.federation?.hasMember(normalized) == true }
         if (existing != null && unit in existing.units) return
         val updated = if (existing == null) {
             current + MintInfo(url = normalized, name = "Unknown Mint", units = listOf(unit))
@@ -2031,6 +2072,10 @@ class WalletManager(
 
     private suspend fun ensureMintTracked(url: String): String {
         val normalized = MintUrlIdentity.withDefaultScheme(url)
+        // A member URL of a tracked federation is already tracked.
+        walletStore.loadMints()
+            .firstOrNull { it.federation?.hasMember(normalized) == true }
+            ?.let { return it.url }
         walletStore.setMintRemoved(normalized, removed = false)
         runCatching { gateway.ensureWallet(normalized) }
             .onFailure { AppLogger.wallet.error("CDK wallet preparation is not available yet for $normalized", it) }
@@ -2049,6 +2094,12 @@ class WalletManager(
             com.cashu.me.Core.CDK.mintRemovalUrlsMatch(it.url, normalized)
         }
         if (walletStore.isMintRemoved(normalized)) return normalized
+        if (fetched?.advertisesFederation == true) {
+            val federation = runCatching { gateway.addFederationMintUrl(normalized) }
+                .onFailure { AppLogger.wallet.error("Failed to register federation for $normalized", it) }
+                .getOrNull()
+            if (federation != null) return trackFederation(federation, fetched)
+        }
         val enriched = fetched?.copy(
             url = placeholder?.url ?: normalized,
             units = (placeholder?.units.orEmpty() + fetched.units).distinct(),
@@ -2070,6 +2121,44 @@ class WalletManager(
             )
         }
         return enriched.url
+    }
+
+    /** Save [federation] as one entry, folding in any entries for its member URLs. */
+    private fun trackFederation(federation: FederationInfo, info: MintInfo?): String {
+        val entry = federationMintEntry(federation, info)
+        val (updated, replaced) = walletStore.loadMints().withFederationEntry(federation, entry)
+        walletStore.setMintRemoved(entry.url, removed = false)
+        walletStore.saveMints(updated)
+        val active = walletStore.activeMintURL
+        if (active == null || replaced.any { it.url == active }) walletStore.activeMintURL = entry.url
+        update {
+            copy(
+                mints = updated,
+                activeMint = activeMintFrom(updated),
+                balance = updated.sumOf { it.balance },
+            )
+        }
+        return entry.url
+    }
+
+    /**
+     * Register every tracked federation the open wallet database does not
+     * know, such as after a database rebuilt by recovery. CDK reactivates
+     * registered ones on its own.
+     */
+    private suspend fun registerTrackedFederations() {
+        val tracked = mutableState.value.mints
+        if (tracked.isEmpty()) return
+        val registered = gateway.listFederations()
+        tracked.forEach { mint ->
+            val metadata = mint.federation ?: return@forEach
+            if (registered.any { it.federationId == metadata.federationId }) return@forEach
+            runCatching { gateway.addFederationMintUrl(mint.url) }
+                .onSuccess { federation ->
+                    if (mint.matchesMintUrl(federation.localMintUrl)) trackFederation(federation, mint)
+                }
+                .onFailure { AppLogger.wallet.error("Failed to register federation ${mint.url}", it) }
+        }
     }
 
     private suspend fun deriveNostrKey(mnemonic: String) {

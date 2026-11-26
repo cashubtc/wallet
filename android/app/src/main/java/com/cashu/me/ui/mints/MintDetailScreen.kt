@@ -78,6 +78,7 @@ import com.cashu.me.Core.Wallet.userFacingWalletMessage
 import com.cashu.me.Core.WalletManager
 import com.cashu.me.Core.mintRemovalConfirmationMessage
 import com.cashu.me.Core.shortenMintUrl
+import com.cashu.me.Models.FederationMintMetadata
 import com.cashu.me.Models.MintInfo
 import com.cashu.me.Models.NutSupport
 import com.cashu.me.ui.components.ActionConfirmationSheet
@@ -220,6 +221,8 @@ fun MintDetailScreen(
                     onRetry = { refreshNonce += 1 },
                 )
             }
+
+            mint.federation?.let { federation -> FederationMembersSection(federation) }
 
             // About: short description reads primary/white; the long description
             // (iOS `descriptionLong`) reads muted and clamps to three lines with a
@@ -531,6 +534,13 @@ private fun HeaderBlock(mint: MintInfo, isActive: Boolean) {
             overflow = TextOverflow.Ellipsis,
         )
         CopyUrlChip(url = mint.url)
+        mint.federation?.let { federation ->
+            FederationBadge(
+                federation = federation,
+                textStyle = MaterialTheme.typography.labelLarge,
+                iconSize = 18.dp,
+            )
+        }
         if (isActive) {
             Text(
                 text = "Default mint",
@@ -546,6 +556,50 @@ private fun HeaderBlock(mint: MintInfo, isActive: Boolean) {
             )
         }
     }
+}
+
+/**
+ * Members of a federation: one mint run jointly by several operators, each
+ * with its own URL. Any member URL reaches the same balance.
+ */
+@Composable
+private fun FederationMembersSection(federation: FederationMintMetadata) {
+    SectionHeader("Federation members")
+    Column(modifier = Modifier.fillMaxWidth()) {
+        federation.memberMintUrls.forEach { memberUrl ->
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(
+                        horizontal = CashuTheme.spacing.comfortable,
+                        vertical = CashuTheme.spacing.default,
+                    ),
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Public,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp),
+                )
+                Text(
+                    text = shortenMintUrl(memberUrl),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.MiddleEllipsis,
+                )
+            }
+        }
+    }
+    Text(
+        text = "${federation.signatureThreshold} of ${federation.memberCount} members must sign to issue ecash. " +
+            "Any member's URL reaches this same mint.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = CashuTheme.spacing.comfortable),
+    )
 }
 
 /// Tappable URL chip, matching iOS `copyUrlChip`: the shortened URL keeps a

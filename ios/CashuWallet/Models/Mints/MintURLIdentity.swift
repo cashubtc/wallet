@@ -24,3 +24,13 @@ enum MintURLIdentity {
         return components.string ?? trimmed
     }
 }
+
+/// A `cashufed…` federation invite: everything a wallet needs to find and
+/// verify a federation, as one string to paste or scan.
+enum FederationInvite {
+    static let prefix = "cashufed"
+
+    static func isInvite(_ raw: String) -> Bool {
+        raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().hasPrefix(prefix)
+    }
+}

@@ -152,6 +152,9 @@ class CdkWalletGatewayImpl internal constructor(
     private var repository: CdkWalletRepository? = null
     // Admit owners before wallet services start, or after preparation has returned a failure.
     private var abandonedOwners: Set<String> = emptySet()
+    // Federations registered in the open database (CDK reactivates them when
+    // the repository opens). Used to recognise member-URL aliases.
+    private var federations: List<FederationInfo> = emptyList()
     private val operationMutex = Mutex()
 
     // Confirmations that outlived their cap. They hold the native wallet and
@@ -177,7 +180,11 @@ class CdkWalletGatewayImpl internal constructor(
         val db = openDatabase(databasePath)
         abandonedOwners = runCatching { abandonedReservationOwners(db) }.getOrDefault(emptySet())
         database = db
-        repository = CdkWalletRepository(mnemonic, customWalletStore(db))
+        val opened = CdkWalletRepository(mnemonic, customWalletStore(db))
+        repository = opened
+        federations = runCatching { opened.listFederations().map { it.toFederationInfo() } }
+            .onFailure { com.cashu.me.Core.AppLogger.wallet.error("Unable to list registered federations", it) }
+            .getOrDefault(emptyList())
     }
 
     override suspend fun closeWalletRepository() = cdkCall {
@@ -244,6 +251,7 @@ class CdkWalletGatewayImpl internal constructor(
         repository = null
         database = null
         abandonedOwners = emptySet()
+        federations = emptyList()
     }
 
     override suspend fun ensureWallet(mintUrl: String, unit: String) = cdkCall {
@@ -272,6 +280,53 @@ class CdkWalletGatewayImpl internal constructor(
         // app's saved list (callers own that).
         ensureWalletUnlocked(mintUrl)
         walletFor(mintUrl).fetchMintInfo()?.toDomain(mintUrl)
+    }
+
+    override suspend fun addFederationMintUrl(mintUrl: String): FederationInfo = cdkCall {
+        rememberFederation(
+            requireRepository().addFederationMintUrl(CdkMintUrl(normalizeMintUrl(mintUrl)), null).toFederationInfo(),
+        )
+    }
+
+    override suspend fun addFederationInvite(inviteCode: String): FederationInfo = cdkCall {
+        rememberFederation(requireRepository().addFederationInvite(inviteCode.trim(), null).toFederationInfo())
+    }
+
+    override suspend fun listFederations(): List<FederationInfo> = cdkCall {
+        requireRepository().listFederations().map { it.toFederationInfo() }.also { federations = it }
+    }
+
+    override suspend fun removeFederation(federationId: String) = cdkCall {
+        requireRepository().removeFederation(federationId)
+        federations = federations.filterNot { it.federationId == federationId }
+    }
+
+    private fun rememberFederation(info: FederationInfo): FederationInfo {
+        federations = federations.filterNot { it.federationId == info.federationId } + info
+        return info
+    }
+
+    /**
+     * The wallet an incoming token redeems into. A token can name a federation
+     * member this wallet has not registered yet; such a member serves the same
+     * keysets but cannot sign alone, so the federation is registered first
+     * (the caller has already gated receiving from an unknown mint).
+     */
+    private suspend fun receiveWalletFor(mintUrl: String, unit: CdkCurrencyUnit): CdkWallet {
+        if (federations.federationFor(mintUrl) == null) {
+            ensureWalletUnlocked(mintUrl, unit)
+            val advertisesFederation = runCatching {
+                walletFor(mintUrl, unit).loadMintInfo().isFederation
+            }.getOrDefault(false)
+            if (advertisesFederation) {
+                rememberFederation(
+                    requireRepository().addFederationMintUrl(CdkMintUrl(normalizeMintUrl(mintUrl)), null)
+                        .toFederationInfo(),
+                )
+            }
+        }
+        ensureWalletUnlocked(mintUrl, unit)
+        return walletFor(mintUrl, unit)
     }
 
     override suspend fun restoreMint(mintUrl: String): RestoreMintResult = cdkCall {
@@ -931,8 +986,7 @@ class CdkWalletGatewayImpl internal constructor(
         // Redeem into the token's own unit — a usd/eur token must never target
         // the sat wallet.
         val tokenUnit = token.unit() ?: CdkCurrencyUnit.Sat
-        ensureWalletUnlocked(mintUrl, tokenUnit)
-        val amount = walletFor(mintUrl, tokenUnit).receive(
+        val amount = receiveWalletFor(mintUrl, tokenUnit).receive(
             token = token,
             options = CdkReceiveOptions(
                 amountSplitTarget = CdkSplitTarget.None,
@@ -951,8 +1005,7 @@ class CdkWalletGatewayImpl internal constructor(
         val token = CdkToken.decode(tokenString)
         val mintUrl = token.mintUrl().url
         val tokenUnit = token.unit() ?: CdkCurrencyUnit.Sat
-        ensureWalletUnlocked(mintUrl, tokenUnit)
-        val wallet = walletFor(mintUrl, tokenUnit)
+        val wallet = receiveWalletFor(mintUrl, tokenUnit)
         val existingIds = wallet.listTransactions(CdkTransactionDirection.INCOMING)
             .map { it.id.hex }
             .toSet()
@@ -1058,9 +1111,16 @@ class CdkWalletGatewayImpl internal constructor(
         val amount = request.amount() ?: customAmountSats?.takeIf { it > 0 }?.toCdkAmount()
             ?: throw CdkGatewayUnavailable("Cashu payment request requires an amount.")
         val candidateMints = request.mints().map(::normalizeMintUrl)
+        // A federation entry matches a request that lists any of its members.
+        val preferredFederation = federations.federationFor(preferredMintURL)
         val preferredMint = preferredMintURL
             ?.let(::normalizeMintUrl)
-            ?.takeIf { candidateMints.isEmpty() || it in candidateMints }
+            ?.takeIf { preferred ->
+                candidateMints.isEmpty() || candidateMints.any { candidate ->
+                    mintRemovalUrlsMatch(candidate, preferred) ||
+                        (preferredFederation != null && federations.federationFor(candidate) == preferredFederation)
+                }
+            }
         val mintUrl = preferredMint
             ?: candidateMints.firstOrNull()
             ?: firstWallet().mintUrl().url
@@ -1244,6 +1304,7 @@ class CdkWalletGatewayImpl internal constructor(
                 webSocket = nuts.nut20Supported,
             ),
             lastUpdatedEpochMillis = System.currentTimeMillis(),
+            advertisesFederation = isFederation,
         )
     }
 

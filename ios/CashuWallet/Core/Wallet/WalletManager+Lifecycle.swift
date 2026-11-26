@@ -523,16 +523,27 @@ extension WalletManager {
             try await walletRepository.createWallet(mintUrl: mintUrl, unit: .sat, targetProofCount: nil)
 
             // Get the wallet instance
-            let wallet = try await walletRepository.getWallet(mintUrl: mintUrl, unit: .sat)
+            var wallet = try await walletRepository.getWallet(mintUrl: mintUrl, unit: .sat)
 
             // Fetch mint info for display name
             let info = try? await wallet.fetchMintInfo()
             let mintName = info?.name ?? "Unknown Mint"
 
+            // A federation member: register the federation before restoring,
+            // so NUT-09 runs against the federation rather than one member.
+            // Registration re-creates the wallet, so fetch it again.
+            if info?.isFederation == true {
+                _ = try await walletRepository.addFederationMintUrl(mintUrl: mintUrl, targetProofCount: nil)
+                wallet = try await walletRepository.getWallet(mintUrl: mintUrl, unit: .sat)
+            }
+
             // Perform NUT-09 restore - this derives proofs from the seed and checks their state with the mint
             _ = try await wallet.recoverIncompleteSagas()
             guard let db = self.db else { throw WalletError.notInitialized }
-            try await MintRestoreSafety.requireSafe(database: db, mintURL: normalizedUrl)
+            try await MintRestoreSafety.requireSafe(
+                database: db,
+                mintURL: MintURLIdentity.normalized(wallet.mintUrl().url)
+            )
             let restored = try await wallet.restore()
 
             // Ensure mint is in our saved list

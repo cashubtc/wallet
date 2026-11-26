@@ -2,6 +2,27 @@ package com.cashu.me.Models
 
 import kotlinx.serialization.Serializable
 
+/**
+ * A federation is one mint run jointly by several members, each with its own
+ * public URL. The wallet keeps it as a single entry keyed by [MintInfo.url]
+ * (CDK's local mint URL); every member URL addresses the same mint.
+ */
+@Serializable
+data class FederationMintMetadata(
+    val federationId: String,
+    val memberMintUrls: List<String>,
+    val memberCount: Int,
+    val signatureThreshold: Int,
+) {
+    /** Short label shared with iOS, e.g. "Federation · 3 of 5". */
+    val summaryLabel: String get() = "Federation · $signatureThreshold of $memberCount"
+
+    fun hasMember(url: String?): Boolean {
+        val key = MintUrlIdentity.comparisonKey(url) ?: return false
+        return memberMintUrls.any { MintUrlIdentity.comparisonKey(it) == key }
+    }
+}
+
 @Serializable
 data class MintInfo(
     val url: String,
@@ -42,8 +63,26 @@ data class MintInfo(
     val motd: String? = null,
     val nutSupport: NutSupport = NutSupport(),
     val lastUpdatedEpochMillis: Long = System.currentTimeMillis(),
+    // Set when this entry is a federation. Null for ordinary mints and for
+    // records persisted before federation support.
+    val federation: FederationMintMetadata? = null,
+    // Live NUT-06 flag: the mint advertises federation metadata. Not persisted
+    // as identity; [federation] is what marks a saved entry as a federation.
+    @kotlinx.serialization.Transient
+    val advertisesFederation: Boolean = false,
 ) {
     val id: String get() = url
+
+    val isFederation: Boolean get() = federation != null
+
+    /**
+     * Whether [other] addresses this mint: the same URL, or, for a federation,
+     * any member URL.
+     */
+    fun matchesMintUrl(other: String?): Boolean {
+        val key = MintUrlIdentity.comparisonKey(other) ?: return false
+        return MintUrlIdentity.comparisonKey(url) == key || federation?.hasMember(other) == true
+    }
 
     /**
      * Mint (receive) rails with the pre-fetch compatibility default: a mint whose
@@ -84,6 +123,16 @@ data class MintInfo(
         candidates.contains("sat") -> "sat"
         else -> candidates.sorted().firstOrNull() ?: "sat"
     }
+}
+
+/**
+ * The tracked mint [url] addresses. An exact URL match wins over a federation
+ * member alias, so two entries can never compete for the same URL.
+ */
+fun List<MintInfo>.mintMatching(url: String?): MintInfo? {
+    val key = MintUrlIdentity.comparisonKey(url) ?: return null
+    return firstOrNull { MintUrlIdentity.comparisonKey(it.url) == key }
+        ?: firstOrNull { it.federation?.hasMember(url) == true }
 }
 
 /**

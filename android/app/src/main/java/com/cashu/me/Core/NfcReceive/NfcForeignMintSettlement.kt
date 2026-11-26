@@ -39,6 +39,11 @@ internal suspend fun settleForeignNfcTokenWithCdk(
     repository.createWallet(org.cashudevkit.MintUrl(sourceMint), CurrencyUnit.Sat, null)
     val sourceWallet = repository.getWallet(org.cashudevkit.MintUrl(sourceMint), CurrencyUnit.Sat)
     val targetWallet = repository.getWallet(org.cashudevkit.MintUrl(targetMint), CurrencyUnit.Sat)
+    // Federation members resolve to one wallet; a token from a member of the
+    // settlement federation is not foreign.
+    require(!com.cashu.me.Core.CDK.mintRemovalUrlsMatch(sourceWallet.mintUrl().url, targetWallet.mintUrl().url)) {
+        "Source and settlement mint are the same."
+    }
     val received = sourceWallet.receive(
         token,
         ReceiveOptions(SplitTarget.None, emptyList(), emptyList(), emptyMap()),

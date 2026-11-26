@@ -1038,14 +1038,8 @@ struct CashuPaymentRequestPayView: View {
     }
 
     private var candidateMints: [MintInfo] {
-        guard !request.mints.isEmpty else {
-            return walletManager.mints
-        }
-
-        let requestedMintURLs = Set(request.mints.map(normalizedMintURL))
-        return walletManager.mints.filter {
-            requestedMintURLs.contains(normalizedMintURL($0.url))
-        }
+        // Alias-aware: a federation entry matches any member URL listed.
+        MintSelection.matching(walletManager.mints, requestedURLs: request.mints)
     }
 
     private var selectedPaymentMint: MintInfo? {
@@ -1088,10 +1082,6 @@ struct CashuPaymentRequestPayView: View {
             }
             return lhs.balance > rhs.balance
         }.first
-    }
-
-    private func normalizedMintURL(_ urlString: String) -> String {
-        MintURLIdentity.normalized(urlString)
     }
 
     private func payRequest() {

@@ -32,8 +32,8 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import kotlinx.coroutines.launch
 import com.cashu.me.Core.Wallet.userFacingWalletMessage
 import com.cashu.me.Core.WalletManager
-import com.cashu.me.Core.mintUrlCandidates
-import com.cashu.me.Core.normalizeUserMintUrl
+import com.cashu.me.Core.mintInputCandidates
+import com.cashu.me.Core.normalizeUserMintInput
 import com.cashu.me.ui.components.CashuModalBottomSheet
 import com.cashu.me.ui.components.CashuTextField
 import com.cashu.me.ui.components.CompactSheetContent
@@ -72,7 +72,10 @@ fun AddMintFormBody(
 
     fun pasteFromClipboard() {
         val clipboardText = clipboard.getText()?.text
-        val candidate = clipboardText?.let { mintUrlCandidates(it).firstOrNull() }
+        // A federation invite pastes like a mint URL; addMint registers it.
+        val candidate = clipboardText?.let {
+            mintInputCandidates(it, allowCleartextLocalTestMints).firstOrNull()
+        }
         when {
             // The affordance only shows when the clipboard holds something, so
             // this branch is a guard against the clipboard changing underneath
@@ -88,7 +91,7 @@ fun AddMintFormBody(
     }
 
     fun addMint() {
-        val normalized = normalizeUserMintUrl(
+        val normalized = normalizeUserMintInput(
             url,
             allowCleartextLocalTestMints = allowCleartextLocalTestMints,
         )
@@ -157,7 +160,8 @@ fun AddMintFormBody(
             // The label and placeholder already say "enter a mint URL"; the only
             // load-bearing sentence here is the trust one.
             text = "Mints are run by third parties; this wallet isn't affiliated " +
-                "with any of them. Only add a mint you trust.",
+                "with any of them. Only add a mint you trust. " +
+                "A federation member's URL or a federation invite adds the whole federation.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

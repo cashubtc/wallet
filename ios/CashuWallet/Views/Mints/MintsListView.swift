@@ -137,6 +137,15 @@ struct MintsListView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+                    if let federation = mint.federation {
+                        Label(federation.badgeText, systemImage: "person.3")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .accessibilityLabel(
+                                "Federation, \(federation.signatureThreshold) of \(federation.memberCount) members sign"
+                            )
+                    }
                 }
                 Spacer()
                 Text("\(mint.balance) sat")

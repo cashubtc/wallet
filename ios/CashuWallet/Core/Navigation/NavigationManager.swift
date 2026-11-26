@@ -198,7 +198,9 @@ final class NavigationManager: ObservableObject {
             return .accept
         case .mintURL(let url):
             UIPasteboard.general.string = url
-            return .notice(message: "Mint URL copied to clipboard")
+            return .notice(message: FederationInvite.isInvite(url)
+                ? "Federation invite copied to clipboard"
+                : "Mint URL copied to clipboard")
         case .unrecognized:
             return .reject(
                 message: "This QR code isn't a payment code we recognize. Scan a Lightning invoice, ecash token, or Cashu Request."
@@ -287,6 +289,10 @@ enum ScanRouter {
         case .lightningAddress:
             return .send(.melt(request: trimmed, mode: .lightning, decoded: decoded), explanation: nil)
         case .cashuPaymentRequest, .unrecognized:
+            // A federation invite is added like a mint URL.
+            if FederationInvite.isInvite(trimmed) {
+                return .mintURL(trimmed)
+            }
             if trimmed.lowercased().hasPrefix("https://"), trimmed.contains("mint") {
                 return .mintURL(trimmed)
             }

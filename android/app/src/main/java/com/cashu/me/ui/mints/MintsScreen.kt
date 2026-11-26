@@ -66,7 +66,7 @@ import com.cashu.me.Core.SettingsManager
 import com.cashu.me.Core.Wallet.userFacingWalletMessage
 import com.cashu.me.Core.WalletManager
 import com.cashu.me.Core.mintRemovalConfirmationMessage
-import com.cashu.me.Core.normalizeUserMintUrl
+import com.cashu.me.Core.normalizeUserMintInput
 import com.cashu.me.Core.shortenMintUrl
 import com.cashu.me.Models.MintInfo
 import com.cashu.me.ui.components.ActionConfirmationSheet
@@ -106,7 +106,7 @@ fun MintsScreen(
     LaunchedEffect(scannedMintUrl) {
         val payload = scannedMintUrl?.trim().orEmpty()
         if (payload.isNotEmpty()) {
-            addMintInitialUrl = normalizeUserMintUrl(
+            addMintInitialUrl = normalizeUserMintInput(
                 payload,
                 allowCleartextLocalTestMints = allowCleartextLocalTestMints,
             ) ?: payload
@@ -474,6 +474,12 @@ private fun MintRow(
                     maxLines = 1,
                     overflow = TextOverflow.MiddleEllipsis,
                 )
+                mint.federation?.let { federation ->
+                    FederationBadge(
+                        federation = federation,
+                        modifier = Modifier.testTag(UiTestTags.mintFederationLabel(mint.url)),
+                    )
+                }
             }
             // Quiet trailing balance (iOS: "N sat" subheadline secondary).
             // Payment-method chips live in Mint Detail, not on list rows.

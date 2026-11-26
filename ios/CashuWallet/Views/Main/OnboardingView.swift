@@ -1394,7 +1394,11 @@ struct OnboardingView: View {
             }
             return
         }
-        guard let normalized = normalizedMintURL(from: customMintInput) else {
+        // A federation invite is staged as is; adding it registers the federation.
+        let trimmedInput = customMintInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let normalized = FederationInvite.isInvite(trimmedInput)
+            ? trimmedInput
+            : normalizedMintURL(from: customMintInput) else {
             setFirstMintNotice("That doesn't look like a mint URL.", severity: .caution)
             return
         }
@@ -2101,6 +2105,7 @@ struct OnboardingView: View {
     /// mint's own profile pic. Best-effort failures leave the monogram fallback
     /// in place.
     private func fetchStagedMintInfo(_ url: String) {
+        guard !FederationInvite.isInvite(url) else { return }
         guard restore.stagedMintIconUrls[url] == nil, restore.stagedMintNames[url] == nil else { return }
         Task { @MainActor in
             guard let info = await walletManager.fetchMintPreviewInfo(url: url) else { return }

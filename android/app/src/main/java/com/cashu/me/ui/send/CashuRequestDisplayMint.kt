@@ -1,8 +1,8 @@
 package com.cashu.me.ui.send
 
+import com.cashu.me.Models.mintMatching
 import com.cashu.me.Core.CashuPaymentRequestRoute
 import com.cashu.me.Core.CashuPaymentRequestSummary
-import com.cashu.me.Core.normalizedMintUrlForSelection
 import com.cashu.me.Core.selectMintForCashuPaymentRequest
 import com.cashu.me.Models.MintInfo
 
@@ -17,7 +17,7 @@ internal fun cashuRequestDisplayMint(
 ): MintInfo? = when (route) {
     is CashuPaymentRequestRoute.PayWithEcash -> route.mint
     is CashuPaymentRequestRoute.AcquireThenPay -> route.targetMintUrl?.let { target ->
-        mints.firstOrNull { normalizedMintUrlForSelection(it.url) == normalizedMintUrlForSelection(target) }
+        mints.mintMatching(target)
     }
     CashuPaymentRequestRoute.MissingAmount -> request?.let {
         selectMintForCashuPaymentRequest(it, mints, selectedMintUrl, activeMintUrl, amountSats = null)

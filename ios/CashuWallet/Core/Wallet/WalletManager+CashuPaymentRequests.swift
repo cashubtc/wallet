@@ -300,9 +300,8 @@ extension WalletManager {
     /// of `amount` into the target mint. Highest balance first; final
     /// affordability (incl. the melt fee reserve) is confirmed by `createMeltQuote`.
     private func fundingSourceMint(excluding targetMintURL: String, amount: UInt64) -> MintInfo? {
-        let targetHost = MintURLIdentity.normalized(targetMintURL)
         return mints
-            .filter { MintURLIdentity.normalized($0.url) != targetHost }
+            .filter { !$0.matches(mintURL: targetMintURL) }
             .filter { $0.supportedMeltMethods.contains(.bolt11) }
             .filter { $0.balance >= amount }
             .max { $0.balance < $1.balance }

@@ -71,6 +71,13 @@ final class ScanRouterTests: XCTestCase {
         XCTAssertEqual(url, "https://mint.example.com")
     }
 
+    func testFederationInviteIsCopiedNotRouted() {
+        guard case .mintURL(let invite) = route("  cashufedAexampleinvite  ") else {
+            return XCTFail("expected .mintURL")
+        }
+        XCTAssertEqual(invite, "cashufedAexampleinvite")
+    }
+
     func testJunkIsUnrecognized() {
         guard case .unrecognized = route("hello world") else {
             return XCTFail("expected .unrecognized")

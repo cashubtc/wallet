@@ -67,6 +67,7 @@ struct MintDetailView: View {
                 .padding(.bottom, 24)
 
                 // Saved metadata remains visible during initial loading and retries.
+                federationSection
                 aboutSection
                 motdSection
                 capabilitiesSection
@@ -131,6 +132,7 @@ struct MintDetailView: View {
                 .font(.title3.weight(.semibold))
                 .multilineTextAlignment(.center)
             copyUrlChip
+            if let federation = liveMint.federation { federationBadge(federation) }
             if isDefaultMint { defaultBadge }
         }
         .frame(maxWidth: .infinity)
@@ -155,6 +157,20 @@ struct MintDetailView: View {
             .background(Color.accentColor.opacity(0.12), in: Capsule())
             .foregroundStyle(.primary)
             .accessibilityLabel("This is your default mint")
+    }
+
+    /// Federation entries are one mint run by several members; say so, and
+    /// how many of them must sign. Same copy as the mint list (and Android).
+    private func federationBadge(_ federation: FederationMintMetadata) -> some View {
+        Label(federation.badgeText, systemImage: "person.3")
+            .font(.caption.weight(.medium))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(.quaternary.opacity(0.6), in: Capsule())
+            .foregroundStyle(.secondary)
+            .accessibilityLabel(
+                "Federation. \(federation.signatureThreshold) of \(federation.memberCount) members must sign."
+            )
     }
 
     @ViewBuilder
@@ -325,6 +341,43 @@ struct MintDetailView: View {
         .buttonStyle(.plain)
         .disabled(isLoading)
         .accessibilityLabel(isLoading ? "Checking mint connection" : "Retry mint connection")
+    }
+
+    // MARK: - Federation
+
+    /// The members behind a federation entry. Any of these URLs reaches the
+    /// same mint and balance; the wallet talks to them together.
+    @ViewBuilder
+    private var federationSection: some View {
+        if let federation = liveMint.federation {
+            section("Federation members") {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(federation.memberMintUrls, id: \.self) { memberURL in
+                        HStack(spacing: 12) {
+                            Image(systemName: "server.rack")
+                                .font(.body)
+                                .foregroundStyle(.secondary)
+                                .frame(width: 24)
+                                .accessibilityHidden(true)
+                            Text(memberURL)
+                                .font(.body)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .textSelection(.enabled)
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.vertical, 10)
+                        .padding(.horizontal, 4)
+                    }
+                    Text("\(federation.signatureThreshold) of \(federation.memberCount) members must sign to issue ecash. Any member's URL reaches this same mint.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 4)
+                        .padding(.top, 6)
+                }
+            }
+        }
     }
 
     // MARK: - About / Message

@@ -88,7 +88,7 @@ struct AddMintFormView: View {
 
             // The label and placeholder already say "enter a mint URL"; the only
             // load-bearing sentence here is the trust one.
-            Text("Mints are run by third parties; this wallet isn't affiliated with any of them. Only add a mint you trust.")
+            Text("Mints are run by third parties; this wallet isn't affiliated with any of them. Only add a mint you trust. A federation member's URL or a federation invite adds the whole federation.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -103,7 +103,7 @@ struct AddMintFormView: View {
                 Button("Paste", action: pasteFromClipboard)
                     .flatSheetSecondaryButton()
                     .disabled(isAdding)
-                    .accessibilityHint("Pastes a mint URL from the clipboard")
+                    .accessibilityHint("Pastes a mint URL or federation invite from the clipboard")
                     .accessibilityIdentifier("mints-add-paste-button")
 
                 Button(action: addMint) {
@@ -142,7 +142,7 @@ struct AddMintFormView: View {
             mintUrl = normalized
             errorMessage = nil
         } else {
-            errorMessage = "No mint URL in your clipboard. Copy the mint's address, then paste."
+            errorMessage = "No mint URL or federation invite in your clipboard. Copy the mint's address, then paste."
         }
     }
 
@@ -168,12 +168,17 @@ struct AddMintFormView: View {
         }
     }
 
-    /// Pulls the first plausible mint URL from free-form pasted text.
-    private static func normalizedMintUrl(from raw: String) -> String? {
+    /// Pulls the first plausible mint URL or federation invite from free-form
+    /// pasted text. Internal for tests.
+    static func normalizedMintUrl(from raw: String) -> String? {
         let separators = CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: ",;"))
         let candidates = raw.components(separatedBy: separators).filter { !$0.isEmpty }
         for rawCandidate in candidates {
             var candidate = rawCandidate.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+            // A federation invite is added as is; the wallet resolves it.
+            if FederationInvite.isInvite(candidate) {
+                return candidate
+            }
             if !candidate.hasPrefix("http://") && !candidate.hasPrefix("https://") {
                 candidate = "https://" + candidate
             }

@@ -39,6 +39,24 @@ interface CdkWalletGateway {
      */
     suspend fun removeWallets(mintUrl: String): Boolean
     suspend fun fetchMintInfo(mintUrl: String): MintInfo?
+
+    /**
+     * Discover a federation through any member [mintUrl], register it in the
+     * wallet database and activate it. The repository reactivates registered
+     * federations on every open; re-adding one keeps its local mint URL.
+     */
+    suspend fun addFederationMintUrl(mintUrl: String): FederationInfo =
+        throw CdkGatewayUnavailable("Federations are not supported by this wallet.")
+
+    /** Same as [addFederationMintUrl], from a `cashufed…` invite code. */
+    suspend fun addFederationInvite(inviteCode: String): FederationInfo =
+        throw CdkGatewayUnavailable("Federations are not supported by this wallet.")
+
+    /** Federations registered in the open wallet database. */
+    suspend fun listFederations(): List<FederationInfo> = emptyList()
+
+    /** Unregister a federation when its wallet entry is removed. */
+    suspend fun removeFederation(federationId: String) = Unit
     suspend fun restoreMint(mintUrl: String): RestoreMintResult
     /** Local CDK accounts, independent of the mint's current advertisements. */
     suspend fun storedAccounts(): List<WalletAccountReference>
@@ -177,6 +195,18 @@ interface CdkWalletGateway {
      */
     suspend fun meltEndedUnpaid(meltQuoteId: String?): Boolean
 }
+
+/** Public, non-secret metadata of a registered federation. */
+data class FederationInfo(
+    val federationId: String,
+    /** The URL the wallet is keyed by; one of [memberMintUrls]. */
+    val localMintUrl: String,
+    val memberMintUrls: List<String>,
+    val memberCount: Int,
+    val signatureThreshold: Int,
+    val consensusThreshold: Int,
+    val units: List<String>,
+)
 
 /** A destination mint quote and the source melt quote that pays it. */
 data class CrossMintQuotes(

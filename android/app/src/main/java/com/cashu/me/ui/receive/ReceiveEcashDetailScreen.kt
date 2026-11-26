@@ -108,7 +108,10 @@ fun ReceiveEcashDetailScreen(
         (parsed as? TokenParseOutcome.Ok)?.let {
             receiveMintTrust(
                 mintUrl = it.info.mint,
-                knownMintUrls = walletState.mints.map { mint -> mint.url },
+                // Federation member URLs address the tracked federation entry.
+                knownMintUrls = walletState.mints.flatMap { mint ->
+                    listOf(mint.url) + mint.federation?.memberMintUrls.orEmpty()
+                },
             )
         }
     }

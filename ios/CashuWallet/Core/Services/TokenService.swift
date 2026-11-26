@@ -17,15 +17,21 @@ class TokenService: ObservableObject {
     
     private let walletRepository: () -> WalletRepository?
     private let getActiveMint: () -> MintInfo?
+    /// Runs before a token's mint gets its CDK wallet, so a federation the
+    /// wallet hasn't seen yet is registered first (see
+    /// `MintService.prepareFederationIfAdvertised`).
+    private let prepareTokenMint: (String) async -> Void
     
     // MARK: - Initialization
     
     init(
         walletRepository: @escaping () -> WalletRepository?,
-        getActiveMint: @escaping () -> MintInfo?
+        getActiveMint: @escaping () -> MintInfo?,
+        prepareTokenMint: @escaping (String) async -> Void = { _ in }
     ) {
         self.walletRepository = walletRepository
         self.getActiveMint = getActiveMint
+        self.prepareTokenMint = prepareTokenMint
     }
 
     // MARK: - State
@@ -165,6 +171,7 @@ class TokenService: ObservableObject {
         let tokenUnit = token.unit() ?? .sat
 
         // Ensure the mint is added with the correct unit
+        await prepareTokenMint(tokenMintUrl.url)
         try await repo.createWallet(mintUrl: tokenMintUrl, unit: tokenUnit, targetProofCount: nil)
 
         // Offer the full signing set (primary seed-derived key + stored keys) so a
@@ -214,6 +221,8 @@ class TokenService: ObservableObject {
                 AppLogger.wallet.info(
                     "wallet-op native-call kind=receive resource=\(WalletOperationCoordinator.privacySafeIdentifier(tokenMintUrl.url), privacy: .public) attempt=\(attempt + 1, privacy: .public)"
                 )
+                // A federation token minted through another member names that
+                // member's URL; CDK resolves it to the federation's wallet.
                 let amount = try await wallet.receive(token: token, options: receiveOptions)
                 if let matchingLocalP2PKKey {
                     SettingsManager.shared.markP2PKKeyUsed(publicKey: matchingLocalP2PKKey.publicKey)
@@ -266,10 +275,13 @@ class TokenService: ObservableObject {
             throw WalletError.notInitialized
         }
         let token = try Token.decode(encodedToken: tokenString)
+        let tokenMintUrl = try token.mintUrl()
+        let tokenUnit = token.unit() ?? .sat
         // CDK requires the matching per-unit wallet. This does not approve or
         // add the mint to the app's visible mint list.
+        await prepareTokenMint(tokenMintUrl.url)
         try await repo.createWallet(
-            mintUrl: token.mintUrl(), unit: token.unit() ?? .sat, targetProofCount: nil
+            mintUrl: tokenMintUrl, unit: tokenUnit, targetProofCount: nil
         )
         return try ReceiveTokenPreview(data: await repo.getTokenData(token: token))
     }

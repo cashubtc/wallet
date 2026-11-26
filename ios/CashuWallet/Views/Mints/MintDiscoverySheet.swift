@@ -115,7 +115,7 @@ struct MintDiscoveryList: View {
     private func isAlreadyAdded(_ mint: DiscoveredMint) -> Bool {
         addStates[mint.url] == .added
             || walletManager.mints.contains(where: {
-                canonicalDiscoveredMintURL($0.url) == mint.url
+                canonicalDiscoveredMintURL($0.url) == mint.url || $0.matches(mintURL: mint.url)
             })
     }
 

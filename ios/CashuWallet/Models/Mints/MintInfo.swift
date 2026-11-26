@@ -43,8 +43,42 @@ struct MintInfo: Identifiable, Equatable, Codable {
     /// rather than reading as "unsupported".
     var bolt11Sat: Bolt11SatCapability? = nil
 
+    /// Present when this entry is a CDK federation: several member mints that
+    /// act as one mint with one balance. `url` is the federation's local mint
+    /// URL, the one the CDK wallet is keyed by. Nil for a standalone mint.
+    var federation: FederationMintMetadata? = nil
+
     /// Last updated timestamp
     var lastUpdated: Date = Date()
+}
+
+/// Public, non-secret description of a federation entry. The CDK wallet
+/// repository stores the federation config itself and reactivates it on
+/// launch; the app keeps only what it needs to display the federation and to
+/// recognise any member URL as this entry.
+struct FederationMintMetadata: Equatable, Codable {
+    let federationId: String
+    let memberMintUrls: [String]
+    let memberCount: Int
+    let signatureThreshold: Int
+
+    init(federationId: String, memberMintUrls: [String], memberCount: Int, signatureThreshold: Int) {
+        self.federationId = federationId
+        self.memberMintUrls = memberMintUrls.map(MintURLIdentity.normalized)
+        self.memberCount = memberCount
+        self.signatureThreshold = signatureThreshold
+    }
+
+    /// "3 of 5": how many members must sign out of how many there are.
+    var thresholdSummary: String { "\(signatureThreshold) of \(memberCount)" }
+
+    /// The badge shown in the mint list and mint detail. Same copy on Android.
+    var badgeText: String { "Federation · \(thresholdSummary)" }
+
+    func hasMember(_ url: String) -> Bool {
+        let identity = MintURLIdentity.normalized(url)
+        return memberMintUrls.contains { MintURLIdentity.normalized($0) == identity }
+    }
 }
 
 /// The (bolt11, sat) pair as advertised under NUT-04 and NUT-05 — the rail a
@@ -93,14 +127,35 @@ struct MintPreviewInfo {
 }
 
 extension MintInfo {
+    var isFederation: Bool { federation != nil }
+
+    /// True when `mintURL` names this entry: its own URL or, for a federation,
+    /// any member's URL. Tokens, payment requests and quotes can carry any
+    /// member's URL, while CDK keys the wallet by the local URL only.
+    func matches(mintURL: String) -> Bool {
+        MintURLIdentity.normalized(url) == MintURLIdentity.normalized(mintURL)
+            || federation?.hasMember(mintURL) == true
+    }
+
+    /// The tracked entry `url` names, by its own URL first so a standalone
+    /// mint never loses to a federation that happens to list it.
+    static func tracked(_ url: String, in mints: [MintInfo]) -> MintInfo? {
+        let identity = MintURLIdentity.normalized(url)
+        return mints.first { MintURLIdentity.normalized($0.url) == identity }
+            ?? mints.first { $0.matches(mintURL: url) }
+    }
+
+    /// The URL the wallet keys `url` by: a federation member's URL maps to the
+    /// federation entry's URL; anything else is returned normalised.
+    static func canonicalURL(for url: String, in mints: [MintInfo]) -> String {
+        tracked(url, in: mints)?.url ?? MintURLIdentity.normalized(url)
+    }
+
     static func displayName(for url: String, in mints: [MintInfo]) -> String {
-        func normalized(_ value: String) -> String {
-            MintURLIdentity.normalized(value)
-        }
-        let name = mints.first { normalized($0.url) == normalized(url) }?.name
+        let name = tracked(url, in: mints)?.name
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if let name, !name.isEmpty { return name }
-        return URL(string: url)?.host ?? normalized(url)
+        return URL(string: url)?.host ?? MintURLIdentity.normalized(url)
     }
 
     /// True when the mint advertises more than one unit, so a unit chooser is
@@ -171,6 +226,7 @@ extension MintInfo {
         case supportsAmountlessBolt11Melt
         case onchainMintConfirmations
         case bolt11Sat
+        case federation
         case lastUpdated
     }
 
@@ -192,6 +248,7 @@ extension MintInfo {
         supportsAmountlessBolt11Melt = try container.decodeIfPresent(Bool.self, forKey: .supportsAmountlessBolt11Melt)
         onchainMintConfirmations = try container.decodeIfPresent(Int.self, forKey: .onchainMintConfirmations)
         bolt11Sat = try container.decodeIfPresent(Bolt11SatCapability.self, forKey: .bolt11Sat)
+        federation = try container.decodeIfPresent(FederationMintMetadata.self, forKey: .federation)
         lastUpdated = try container.decodeIfPresent(Date.self, forKey: .lastUpdated) ?? Date()
     }
 
@@ -211,6 +268,7 @@ extension MintInfo {
         try container.encodeIfPresent(supportsAmountlessBolt11Melt, forKey: .supportsAmountlessBolt11Melt)
         try container.encodeIfPresent(onchainMintConfirmations, forKey: .onchainMintConfirmations)
         try container.encodeIfPresent(bolt11Sat, forKey: .bolt11Sat)
+        try container.encodeIfPresent(federation, forKey: .federation)
         try container.encode(lastUpdated, forKey: .lastUpdated)
     }
 }
@@ -221,8 +279,7 @@ extension MintInfo {
 enum MintSelection {
     static func matching(_ mints: [MintInfo], requestedURLs: [String]) -> [MintInfo] {
         guard !requestedURLs.isEmpty else { return mints }
-        let identities = Set(requestedURLs.map(MintURLIdentity.normalized))
-        return mints.filter { identities.contains(MintURLIdentity.normalized($0.url)) }
+        return mints.filter { mint in requestedURLs.contains { mint.matches(mintURL: $0) } }
     }
 
     static func select(
@@ -233,12 +290,12 @@ enum MintSelection {
         let candidates = matching(mints, requestedURLs: requestedURLs)
         guard !candidates.isEmpty else { throw NFCPaymentError.noMatchingMint(requestedMints: requestedURLs) }
         if let preferredURL,
-           let mint = candidates.first(where: { MintURLIdentity.normalized($0.url) == MintURLIdentity.normalized(preferredURL) }) {
+           let mint = candidates.first(where: { $0.matches(mintURL: preferredURL) }) {
             if mint.balance >= amount { return mint }
             if requiresPreferredBalance { throw NFCPaymentError.insufficientBalance(required: amount, available: mint.balance) }
         }
         if let activeURL,
-           let mint = candidates.first(where: { MintURLIdentity.normalized($0.url) == MintURLIdentity.normalized(activeURL) }),
+           let mint = candidates.first(where: { $0.matches(mintURL: activeURL) }),
            mint.balance >= amount { return mint }
         guard let mint = candidates.first(where: { $0.balance >= amount }) else {
             throw NFCPaymentError.insufficientBalance(required: amount, available: candidates.map(\.balance).max() ?? 0)

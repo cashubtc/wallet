@@ -71,6 +71,7 @@ import com.cashu.me.Core.Navigation.CashuRoute
 import com.cashu.me.Core.PaymentRequestDecodeResult
 import com.cashu.me.Core.PaymentRequestDecoder
 import com.cashu.me.Core.TokenParser
+import com.cashu.me.Core.isFederationInviteCode
 import com.cashu.me.Core.WalletHaptic
 import com.cashu.me.Core.rememberWalletHaptics
 import com.cashu.me.Views.Components.ScannerView
@@ -319,6 +320,8 @@ private enum class AppGate { Loading, Onboarding, Shell }
 @Composable
 private fun AuthenticatedShell(container: AppContainer) {
     val navController = rememberNavController()
+    val shellClipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+    val shellToasts = LocalConfirmationToastController.current
     val walletState by container.walletManager.state.collectAsState()
     val settings by container.settingsManager.state.collectAsState()
     val isRuntimeReadyRef by rememberUpdatedState(walletState.isRuntimeReady)
@@ -612,6 +615,12 @@ private fun AuthenticatedShell(container: AppContainer) {
                             pendingMintScan = it
                             navController.navigateToTab(TopTab.Mints)
                         },
+                        // The wallet scanner has no add-mint context, so an
+                        // invite is handed to the clipboard (iOS parity).
+                        onFederationInvite = {
+                            shellClipboard.setText(androidx.compose.ui.text.AnnotatedString(it))
+                            shellToasts?.show("Federation invite copied to clipboard")
+                        },
                         // A key scanned for the ecash lock reopens Send Ecash;
                         // the sheet judges validity on return (its single
                         // validation path for every key intake).
@@ -898,6 +907,7 @@ private fun routeScannedPayload(
     onReceiveDetail: (String) -> Unit,
     onSend: (String) -> Unit,
     onMint: (String) -> Unit,
+    onFederationInvite: (String) -> Unit,
     onP2pkKey: (String) -> Unit,
 ) {
     val trimmed = payload.trim()
@@ -907,6 +917,10 @@ private fun routeScannedPayload(
             return
         }
         ScannerTarget.Auto -> Unit
+    }
+    if (isFederationInviteCode(trimmed)) {
+        onFederationInvite(trimmed.trim('"', '\''))
+        return
     }
     TokenParser.extractToken(trimmed)?.let {
         onReceiveDetail(it)

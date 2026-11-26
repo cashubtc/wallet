@@ -76,6 +76,7 @@ const val P2pkRecipientConfirmation = "cashu.send.ecash.p2pk-recipient"
     fun seedSuggestion(index: Int): String = "cashu.restore.seed.suggestion.$index"
 
     fun mintRow(url: String): String = "cashu.mint.${url.hashCode().toUInt().toString(16)}"
+    fun mintFederationLabel(url: String): String = "cashu.mint.federation.${url.hashCode().toUInt().toString(16)}"
 
     fun transactionRow(id: String): String = "cashu.history.${id.hashCode().toUInt().toString(16)}"
 }

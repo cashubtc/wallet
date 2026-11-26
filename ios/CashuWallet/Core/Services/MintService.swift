@@ -102,8 +102,9 @@ class MintService: ObservableObject {
     
     // MARK: - Public Methods
     
-    /// Add a new mint to the wallet
-    /// - Parameter url: The mint URL to add
+    /// Add a standalone mint or a federation to the wallet.
+    /// - Parameter url: A mint URL, a federation member's URL, or a
+    ///   `cashufed…` federation invite.
     /// - Throws: WalletError if already exists or if initialization fails
     func addMint(url: String) async throws -> MintInfo {
         isLoading = true
@@ -112,16 +113,22 @@ class MintService: ObservableObject {
         guard let repo = walletRepository() else {
             throw WalletError.notInitialized
         }
+
+        let input = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        if FederationInvite.isInvite(input) {
+            return try await addFederation(invite: input, using: repo)
+        }
         
         // Normalize URL
-        let normalizedUrl = normalizeUrl(url)
+        let normalizedUrl = normalizeUrl(input)
 
         // Validate HTTPS
         if let validationError = validateMintUrl(normalizedUrl) {
             throw WalletError.networkError(validationError)
         }
 
-        // Check if already exists locally
+        // Check if already exists locally, including as a member of a
+        // federation that is already added.
         if isMintTracked(url: normalizedUrl) {
             throw WalletError.mintAlreadyExists
         }
@@ -135,6 +142,17 @@ class MintService: ObservableObject {
         // Get wallet and fetch mint info
         let wallet = try await repo.getWallet(mintUrl: mintUrlObj, unit: .sat)
         let info = try await wallet.fetchMintInfo()
+
+        // A federation member advertises it in its info. Register the whole
+        // federation, which re-creates this wallet with the federated
+        // connector, and keep one entry for it.
+        if info?.isFederation == true {
+            let federationInfo = try await repo.addFederationMintUrl(
+                mintUrl: mintUrlObj,
+                targetProofCount: nil
+            )
+            return try await saveFederation(federationInfo, replacing: nil, using: repo)
+        }
 
         let mintInfo = await makeMintInfo(
             url: normalizedUrl,
@@ -153,6 +171,128 @@ class MintService: ObservableObject {
 
         return mintInfo
     }
+
+    /// Adds a federation from an invite. The invite is decoded offline first,
+    /// so an invite for a federation already in the list says so before any
+    /// network work.
+    private func addFederation(invite: String, using repo: WalletRepository) async throws -> MintInfo {
+        let inspected: FederationWalletInfo
+        do {
+            inspected = try inspectFederationInvite(inviteCode: invite)
+        } catch {
+            throw WalletError.networkError("This federation invite isn't valid.")
+        }
+        if trackedIndex(forFederation: inspected) != nil {
+            throw WalletError.mintAlreadyExists
+        }
+        let federationInfo = try await repo.addFederationInvite(inviteCode: invite, targetProofCount: nil)
+        return try await saveFederation(federationInfo, replacing: nil, using: repo)
+    }
+
+    /// Saves a federation the repository has just registered as one entry,
+    /// keyed by the federation's local mint URL. `replacing` is an entry for
+    /// one of its members that becomes the federation entry (a placeholder
+    /// from an incoming token, or a member added before it was recognised).
+    @discardableResult
+    private func saveFederation(
+        _ federationInfo: FederationWalletInfo,
+        replacing replacedIndex: Int?,
+        using repo: WalletRepository
+    ) async throws -> MintInfo {
+        guard federationInfo.units.contains(where: { PaymentRequestDecoder.unitDescription($0) == "sat" }) else {
+            throw WalletError.networkError("This federation doesn't support sats.")
+        }
+        let metadata = Self.federationMetadata(from: federationInfo)
+        let canonicalURL = MintURLIdentity.normalized(federationInfo.walletConfig.localMintUrl.url)
+        if replacedIndex == nil, trackedIndex(forFederation: federationInfo) != nil {
+            throw WalletError.mintAlreadyExists
+        }
+
+        // Fetch info through the federated wallet the repository installed;
+        // never reuse a Wallet obtained before registration.
+        let wallet = try await repo.getWallet(mintUrl: MintUrl(url: canonicalURL), unit: .sat)
+        let fetchedInfo = try? await wallet.fetchMintInfo()
+
+        var base: MintInfo?
+        if let replacedIndex {
+            let replaced = mints[replacedIndex]
+            if MintURLIdentity.normalized(replaced.url) == canonicalURL {
+                base = replaced
+            } else {
+                // The local URL differs from the entry's URL. Carry the cached
+                // balance and units over to an entry under the local URL.
+                var moved = MintInfo(url: canonicalURL, name: replaced.name, description: replaced.description,
+                                     isActive: replaced.isActive, balance: replaced.balance, iconUrl: replaced.iconUrl)
+                moved.units = replaced.units
+                base = moved
+            }
+        }
+        let mintInfo = await makeMintInfo(
+            url: canonicalURL,
+            existing: base,
+            fetchedInfo: fetchedInfo,
+            federation: metadata
+        )
+
+        walletStore.setMintRemoved(url: canonicalURL, removed: false)
+        let wasActive = replacedIndex.map { activeMint?.url == mints[$0].url } ?? false
+        if let replacedIndex {
+            mints[replacedIndex] = mintInfo
+        } else {
+            mints.append(mintInfo)
+        }
+        saveMints()
+
+        if activeMint == nil || wasActive {
+            activeMint = mintInfo
+        }
+        return mintInfo
+    }
+
+    /// Index of the entry for this federation: same federation id, or an
+    /// entry for its local URL or any member URL.
+    private func trackedIndex(forFederation info: FederationWalletInfo) -> Int? {
+        let urls = [info.walletConfig.localMintUrl.url] + info.memberMintUrls.map(\.url)
+        return mints.firstIndex { mint in
+            mint.federation?.federationId == info.federationId
+                || urls.contains { mint.matches(mintURL: $0) }
+        }
+    }
+
+    nonisolated static func federationMetadata(from info: FederationWalletInfo) -> FederationMintMetadata {
+        FederationMintMetadata(
+            federationId: info.federationId,
+            memberMintUrls: info.memberMintUrls.map(\.url),
+            memberCount: Int(info.memberCount),
+            signatureThreshold: Int(info.signatureThreshold)
+        )
+    }
+
+    /// Before ecash from a mint the wallet doesn't track is redeemed or
+    /// previewed: when that mint is a federation member, register the
+    /// federation first, so the swap runs against the federation rather than
+    /// a single member. Tracked mints and known federations cost nothing.
+    func prepareFederationIfAdvertised(url: String) async {
+        guard let repo = walletRepository(),
+              MintInfo.tracked(url, in: mints) == nil else { return }
+        let normalizedURL = normalizeUrl(url)
+        if (try? await registeredFederation(for: normalizedURL, using: repo)) != nil {
+            return
+        }
+        do {
+            let mintUrl = MintUrl(url: normalizedURL)
+            if await !repo.hasMint(mintUrl: mintUrl) {
+                try await repo.createWallet(mintUrl: mintUrl, unit: .sat, targetProofCount: nil)
+            }
+            let wallet = try await repo.getWallet(mintUrl: mintUrl, unit: .sat)
+            guard try await wallet.fetchMintInfo()?.isFederation == true else { return }
+            _ = try await repo.addFederationMintUrl(mintUrl: mintUrl, targetProofCount: nil)
+        } catch {
+            AppLogger.wallet.error(
+                "federation check failed resource=\(WalletOperationCoordinator.privacySafeIdentifier(normalizedURL), privacy: .public) error_type=\(String(reflecting: type(of: error)), privacy: .public)"
+            )
+        }
+    }
     
     /// Remove one mint by stable identity. Array offsets can shift while this
     /// operation waits in the repository coordinator.
@@ -166,31 +306,45 @@ class MintService: ObservableObject {
         }) else {
             throw WalletError.networkError("Mint is no longer tracked.")
         }
-        let registeredWalletUnits = await repo.getWallets()
-            .filter { wallet in
-                MintRemovalPolicy.matches(wallet.mintUrl().url, mint.url)
+        let registeredUnits: [String]
+        let removeNative: (String, String) async throws -> Void
+        if let federation = mint.federation {
+            // One call drops the federation's registration and every unit's
+            // wallet, so it isn't reactivated on the next launch. Proofs stay
+            // in the database, as with removeWallet.
+            registeredUnits = ["sat"]
+            removeNative = { _, _ in
+                _ = try await repo.removeFederation(federationId: federation.federationId)
             }
-            .map { $0.unit() }
-        // Policy units are normalized strings; remove by the registered CDK
-        // unit so a custom unit's original casing still matches its wallet.
-        var walletUnitsByName: [String: CurrencyUnit] = [:]
-        for unit in registeredWalletUnits {
-            let names = MintRemovalPolicy.normalizedUnits([PaymentRequestDecoder.unitDescription(unit)])
-            if let name = names.first, walletUnitsByName[name] == nil {
-                walletUnitsByName[name] = unit
+        } else {
+            let registeredWalletUnits = await repo.getWallets()
+                .filter { wallet in
+                    MintRemovalPolicy.matches(wallet.mintUrl().url, mint.url)
+                }
+                .map { $0.unit() }
+            // Policy units are normalized strings; remove by the registered CDK
+            // unit so a custom unit's original casing still matches its wallet.
+            var walletUnitsByName: [String: CurrencyUnit] = [:]
+            for unit in registeredWalletUnits {
+                let names = MintRemovalPolicy.normalizedUnits([PaymentRequestDecoder.unitDescription(unit)])
+                if let name = names.first, walletUnitsByName[name] == nil {
+                    walletUnitsByName[name] = unit
+                }
             }
-        }
-
-        try await MintRemovalPolicy.removeBeforeCommit(
-            mint: mint,
-            registeredUnits: registeredWalletUnits.map(PaymentRequestDecoder.unitDescription),
-            removeWallet: { mintURL, unit in
+            registeredUnits = registeredWalletUnits.map(PaymentRequestDecoder.unitDescription)
+            removeNative = { mintURL, unit in
                 try await repo.removeWallet(
                     mintUrl: MintUrl(url: mintURL),
                     currencyUnit: walletUnitsByName[unit]
                         ?? PaymentRequestDecoder.currencyUnit(from: unit)
                 )
-            },
+            }
+        }
+
+        try await MintRemovalPolicy.removeBeforeCommit(
+            mint: mint,
+            registeredUnits: registeredUnits,
+            removeWallet: removeNative,
             commitMetadata: {
                 // Persist the exclusion first so a relaunch cannot rediscover
                 // retained CDK proofs if metadata removal is interrupted.
@@ -234,9 +388,30 @@ class MintService: ObservableObject {
     /// Prepare wallet repository entries for the currently loaded mints.
     func prepareLoadedMintsInRepository() async {
         guard let repo = walletRepository() else { return }
+
+        // The repository persists registered federations and reactivates them
+        // when it is constructed. A federation entry it doesn't know (a mint
+        // list carried over from a backup onto a fresh database) is registered
+        // again through its own URL before its wallet is created.
+        if mints.contains(where: \.isFederation) {
+            let registered = Set(((try? await repo.listFederations()) ?? []).map(\.federationId))
+            for mint in mints {
+                guard let federation = mint.federation,
+                      !registered.contains(federation.federationId) else { continue }
+                do {
+                    _ = try await repo.addFederationMintUrl(mintUrl: MintUrl(url: mint.url), targetProofCount: nil)
+                } catch {
+                    AppLogger.wallet.error(
+                        "federation registration failed resource=\(WalletOperationCoordinator.privacySafeIdentifier(mint.url), privacy: .public) error_type=\(String(reflecting: type(of: error)), privacy: .public)"
+                    )
+                }
+            }
+        }
         
         // Add each mint to wallet repository (with unit)
         // Always call createWallet to ensure the unit is set, even if mint exists.
+        // For a registered federation the repository installs the federated
+        // connector itself.
         for mint in mints {
             do {
                 let mintUrl = MintUrl(url: mint.url)
@@ -269,6 +444,20 @@ class MintService: ObservableObject {
                 AppLogger.wallet.error(
                     "mint info refresh failed resource=\(WalletOperationCoordinator.privacySafeIdentifier(self.mints[i].url), privacy: .public) error_type=\(String(reflecting: type(of: error)), privacy: .public)"
                 )
+            }
+        }
+
+        // Member lists can change; the repository holds the current config.
+        if mints.contains(where: \.isFederation),
+           let federations = try? await repo.listFederations() {
+            for i in mints.indices {
+                guard let current = mints[i].federation,
+                      let info = federations.first(where: { $0.federationId == current.federationId }) else { continue }
+                let metadata = Self.federationMetadata(from: info)
+                if metadata != current {
+                    mints[i].federation = metadata
+                    updated = true
+                }
             }
         }
 
@@ -314,14 +503,26 @@ class MintService: ObservableObject {
     
     /// Whether a mint with the given URL is already tracked.
     func isMintTracked(url: String) -> Bool {
-        mints.contains { MintRemovalPolicy.matches($0.url, normalizeUrl(url)) }
+        MintInfo.tracked(normalizeUrl(url), in: mints) != nil
+    }
+
+    /// The URL of the tracked entry `url` names, or nil. A federation member's
+    /// URL resolves to the federation entry's URL.
+    func trackedMintURL(for url: String) -> String? {
+        MintInfo.tracked(normalizeUrl(url), in: mints)?.url
+    }
+
+    private func trackedIndex(for url: String) -> Int? {
+        guard let tracked = MintInfo.tracked(url, in: mints) else { return nil }
+        return mints.firstIndex { $0.url == tracked.url }
     }
 
     /// Persist receipt evidence before metadata lookup or network recovery.
     func trackReceivedMintLocally(url: String, unit: CurrencyUnit) {
         let normalized = normalizeUrl(url)
-        guard !walletStore.isMintRemoved(url: normalized) else { return }
-        if let index = mints.firstIndex(where: { MintRemovalPolicy.matches($0.url, normalized) }) {
+        let trackedIndex = trackedIndex(for: normalized)
+        guard !walletStore.isMintRemoved(url: trackedIndex.map { mints[$0].url } ?? normalized) else { return }
+        if let index = trackedIndex {
             let unitName = PaymentRequestDecoder.unitDescription(unit)
             if !mints[index].units.contains(unitName) {
                 mints[index].units.append(unitName)
@@ -348,8 +549,9 @@ class MintService: ObservableObject {
     ///   user-selected active mint and the mint's balance are preserved.
     func ensureMintTracked(url: String, name: String? = nil) async {
         let normalizedUrl = normalizeUrl(url)
-        walletStore.setMintRemoved(url: normalizedUrl, removed: false)
-        let existingIndex = mints.firstIndex(where: { MintRemovalPolicy.matches($0.url, normalizedUrl) })
+        // A federation member's URL names the federation entry.
+        let existingIndex = trackedIndex(for: normalizedUrl)
+        walletStore.setMintRemoved(url: existingIndex.map { mints[$0].url } ?? normalizedUrl, removed: false)
 
         // Already tracked with real metadata — nothing to do.
         if let existingIndex, !mintNeedsEnrichment(mints[existingIndex]) {
@@ -374,6 +576,24 @@ class MintService: ObservableObject {
             }
             let wallet = try await repo.getWallet(mintUrl: mintUrlObj, unit: .sat)
             let info = try await wallet.fetchMintInfo()
+
+            // A federation member becomes (or joins) the one federation entry.
+            if info?.isFederation == true {
+                let federationInfo: FederationWalletInfo
+                if let registered = try await registeredFederation(for: normalizedUrl, using: repo) {
+                    federationInfo = registered
+                } else {
+                    federationInfo = try await repo.addFederationMintUrl(mintUrl: mintUrlObj, targetProofCount: nil)
+                }
+                let targetIndex = existingIndex ?? trackedIndex(forFederation: federationInfo)
+                if let targetIndex, mints[targetIndex].isFederation,
+                   !mintNeedsEnrichment(mints[targetIndex]) {
+                    return
+                }
+                try await saveFederation(federationInfo, replacing: targetIndex, using: repo)
+                return
+            }
+
             let enriched = await makeMintInfo(
                 url: normalizedUrl,
                 existing: existingIndex.map { mints[$0] },
@@ -397,6 +617,15 @@ class MintService: ObservableObject {
             if existingIndex == nil {
                 appendPlaceholderMint(url: normalizedUrl, name: name)
             }
+        }
+    }
+
+    /// The federation the repository already has registered for `url` (its
+    /// local URL or a member URL). Local lookup, no network.
+    private func registeredFederation(for url: String, using repo: WalletRepository) async throws -> FederationWalletInfo? {
+        try await repo.listFederations().first { info in
+            MintRemovalPolicy.matches(info.walletConfig.localMintUrl.url, url)
+                || info.memberMintUrls.contains { MintRemovalPolicy.matches($0.url, url) }
         }
     }
 
@@ -430,6 +659,18 @@ class MintService: ObservableObject {
         let mintUrl = MintUrl(url: mints[index].url)
         let wallet = try await repo.getWallet(mintUrl: mintUrl, unit: .sat)
         let info = try await wallet.fetchMintInfo()
+        // A mint added before it was recognised as a federation member (or
+        // before it joined one) turns into the federation entry.
+        if info?.isFederation == true, !mints[index].isFederation {
+            let federationInfo: FederationWalletInfo
+            if let registered = try await registeredFederation(for: mints[index].url, using: repo) {
+                federationInfo = registered
+            } else {
+                federationInfo = try await repo.addFederationMintUrl(mintUrl: mintUrl, targetProofCount: nil)
+            }
+            try await saveFederation(federationInfo, replacing: index, using: repo)
+            return true
+        }
         let refreshedMint = await makeMintInfo(
             url: mints[index].url,
             existing: mints[index],
@@ -529,7 +770,8 @@ class MintService: ObservableObject {
     private func makeMintInfo(
         url: String,
         existing: MintInfo?,
-        fetchedInfo: Cdk.MintInfo?
+        fetchedInfo: Cdk.MintInfo?,
+        federation: FederationMintMetadata? = nil
     ) async -> MintInfo {
         var mintInfo = existing ?? MintInfo(
             url: url,
@@ -584,6 +826,10 @@ class MintService: ObservableObject {
                 },
                 meltingDisabled: fetchedInfo.nuts.nut05.disabled
             )
+        }
+
+        if let federation {
+            mintInfo.federation = federation
         }
 
         mintInfo.lastUpdated = Date()

@@ -98,7 +98,10 @@ class WalletManager: ObservableObject {
     /// Token operations service
     private(set) lazy var tokenService = TokenService(
         walletRepository: { [weak self] in self?.walletRepository },
-        getActiveMint: { [weak self] in self?.activeMint }
+        getActiveMint: { [weak self] in self?.activeMint },
+        prepareTokenMint: { [weak self] url in
+            await self?.mintService.prepareFederationIfAdvertised(url: url)
+        }
     )
     
     /// Lightning operations service

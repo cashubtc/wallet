@@ -422,8 +422,139 @@ final class MintServiceTests: XCTestCase {
 
     // MARK: - Helpers
 
+    // MARK: - Federations
+
+    func testFederationMemberURLMatchesTrackedFederation() {
+        service.mints = [federationMint()]
+
+        XCTAssertTrue(service.isMintTracked(url: "https://member-2.example.com/"))
+        XCTAssertTrue(service.isMintTracked(url: "HTTPS://Member-3.example.com"))
+        XCTAssertFalse(service.isMintTracked(url: "https://other.example.com"))
+        XCTAssertEqual(service.trackedMintURL(for: "member-2.example.com"), "https://member-1.example.com")
+    }
+
+    func testStandaloneMintDoesNotMatchOtherURLs() {
+        let standalone = mint("https://mint.example.com", name: "Mint")
+        XCTAssertFalse(standalone.isFederation)
+        XCTAssertTrue(standalone.matches(mintURL: "https://mint.example.com/"))
+        XCTAssertFalse(standalone.matches(mintURL: "https://member-2.example.com"))
+    }
+
+    func testCanonicalURLMapsMembersToFederationEntry() {
+        let mints = [mint("https://mint.example.com", name: "Mint"), federationMint()]
+
+        XCTAssertEqual(MintInfo.canonicalURL(for: "https://member-3.example.com/", in: mints), "https://member-1.example.com")
+        XCTAssertEqual(MintInfo.canonicalURL(for: "https://mint.example.com/", in: mints), "https://mint.example.com")
+        XCTAssertEqual(MintInfo.canonicalURL(for: "https://unknown.example.com/", in: mints), "https://unknown.example.com")
+        XCTAssertEqual(MintInfo.displayName(for: "https://member-2.example.com", in: mints), "Federation")
+    }
+
+    func testExactURLWinsOverFederationMembership() {
+        // A standalone entry for a URL keeps it even when a federation lists it.
+        let standalone = mint("https://member-2.example.com", name: "Standalone")
+        let mints = [federationMint(), standalone]
+
+        XCTAssertEqual(MintInfo.tracked("https://member-2.example.com", in: mints)?.name, "Standalone")
+    }
+
+    func testPaymentRequestMintSelectionAcceptsAnyFederationMember() throws {
+        var federation = federationMint()
+        federation.balance = 500
+        let other = mint("https://mint.example.com", name: "Mint")
+
+        let matching = MintSelection.matching([other, federation], requestedURLs: ["https://member-4.example.com"])
+        XCTAssertEqual(matching.map(\.url), ["https://member-1.example.com"])
+
+        let selected = try MintSelection.select(
+            from: [other, federation],
+            requestedURLs: ["https://member-5.example.com"],
+            amount: 100,
+            preferredURL: "https://member-2.example.com"
+        )
+        XCTAssertEqual(selected.url, "https://member-1.example.com")
+    }
+
+    func testReceivedTokenFromFederationMemberDoesNotAddPlaceholder() {
+        service.mints = [federationMint()]
+
+        service.trackReceivedMintLocally(url: "https://member-4.example.com", unit: .sat)
+
+        XCTAssertEqual(service.mints.count, 1)
+        XCTAssertTrue(service.mints[0].isFederation)
+    }
+
+    func testEnsureMintTrackedRecognisesFederationMemberWithoutNetwork() async {
+        // No repository: a member URL must resolve to the existing entry
+        // instead of falling through to a placeholder.
+        service.mints = [federationMint()]
+
+        await service.ensureMintTracked(url: "https://member-5.example.com")
+
+        XCTAssertEqual(service.mints.map(\.url), ["https://member-1.example.com"])
+    }
+
+    func testFederationMetadataPersistsToStore() {
+        let storage = InMemoryStorage()
+        let ws = WalletStore(storage: storage)
+        let s = MintService(walletRepository: { nil }, walletStore: ws)
+        s.mints = [federationMint()]
+        s.saveMints()
+
+        let restored = MintService(walletRepository: { nil }, walletStore: ws)
+        restored.loadCachedMints()
+
+        XCTAssertEqual(restored.mints.first?.federation, federationMint().federation)
+        XCTAssertTrue(restored.mints.first?.isFederation == true)
+        XCTAssertTrue(restored.isMintTracked(url: "https://member-3.example.com"))
+    }
+
+    func testMintRecordWithoutFederationDecodesAsStandalone() throws {
+        let json = #"{"url":"https://mint.example.com","name":"Mint"}"#
+        let decoded = try JSONDecoder().decode(MintInfo.self, from: Data(json.utf8))
+        XCTAssertNil(decoded.federation)
+        XCTAssertFalse(decoded.isFederation)
+    }
+
+    func testFederationBadgeCopyMatchesAndroid() {
+        XCTAssertEqual(federationMint().federation?.badgeText, "Federation · 3 of 5")
+    }
+
+    func testFederationMetadataNormalizesMemberURLs() {
+        let metadata = FederationMintMetadata(
+            federationId: "id",
+            memberMintUrls: ["https://Member-1.example.com/"],
+            memberCount: 1,
+            signatureThreshold: 1
+        )
+        XCTAssertEqual(metadata.memberMintUrls, ["https://member-1.example.com"])
+        XCTAssertTrue(metadata.hasMember("https://MEMBER-1.example.com/"))
+    }
+
+    func testFederationInviteDetection() {
+        XCTAssertTrue(FederationInvite.isInvite("  cashufedAexample"))
+        XCTAssertTrue(FederationInvite.isInvite("CASHUFEDAexample"))
+        XCTAssertFalse(FederationInvite.isInvite("cashuBexampletoken"))
+        XCTAssertFalse(FederationInvite.isInvite("https://member-1.example.com"))
+    }
+
+    func testAddMintPasteKeepsFederationInvite() {
+        XCTAssertEqual(AddMintFormView.normalizedMintUrl(from: " cashufedAexample\n"), "cashufedAexample")
+        XCTAssertEqual(AddMintFormView.normalizedMintUrl(from: "member-1.example.com/"), "https://member-1.example.com")
+    }
+
     private func mint(_ url: String, name: String) -> MintInfo {
         MintInfo(url: url, name: name, description: nil, isActive: true, balance: 0)
+    }
+
+    private func federationMint() -> MintInfo {
+        var federation = mint("https://member-1.example.com", name: "Federation")
+        federation.federation = FederationMintMetadata(
+            federationId: "federation-id",
+            memberMintUrls: (1...5).map { "https://member-\($0).example.com" },
+            memberCount: 5,
+            signatureThreshold: 3
+        )
+        return federation
     }
 }
 
