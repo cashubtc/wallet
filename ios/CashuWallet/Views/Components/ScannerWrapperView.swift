@@ -559,7 +559,7 @@ struct CashuPaymentRequestPayView: View {
                 }
               }
             }
-            .animation(.smooth(duration: 0.3), value: paymentPhase != nil)
+            .animation(CashuMotion.reflow, value: paymentPhase != nil)
             .navigationTitle("Pay Cashu Request")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -1112,7 +1112,7 @@ struct CashuPaymentRequestPayView: View {
         isPaying = true
         errorMessage = nil
         HapticFeedback.impact(.medium)
-        withAnimation(.smooth(duration: 0.3)) { paymentPhase = .processing }
+        withAnimation(CashuMotion.reflow) { paymentPhase = .processing }
 
         Task { @MainActor in
             do {
@@ -1123,14 +1123,14 @@ struct CashuPaymentRequestPayView: View {
                 )
                 // Every creq payment lands on the shared success face, matching
                 // the Lightning/on-chain payment vocabulary.
-                withAnimation(.smooth(duration: 0.3)) { paymentPhase = .success }
+                withAnimation(CashuMotion.reflow) { paymentPhase = .success }
             } catch {
                 sendRecovery = error as? PendingSendRecovery
                 let walletMessage = error.walletMessage
                 errorMessage = walletMessage.text
                 errorSeverity = walletMessage.severity
                 paymentAwaitsMint = walletMessage.awaitsMintConfirmation
-                withAnimation(.smooth(duration: 0.3)) {
+                withAnimation(CashuMotion.reflow) {
                     paymentPhase = .failure(
                         message: walletMessage.text,
                         isCaution: walletMessage.severity == .caution,
@@ -1150,7 +1150,7 @@ struct CashuPaymentRequestPayView: View {
         isPaying = true
         errorMessage = nil
         HapticFeedback.impact(.medium)
-        withAnimation(.smooth(duration: 0.3)) { paymentPhase = .processing }
+        withAnimation(CashuMotion.reflow) { paymentPhase = .processing }
 
         Task { @MainActor in
             do {
@@ -1160,11 +1160,11 @@ struct CashuPaymentRequestPayView: View {
                     targetMintURL: targetMintURL,
                     onStage: { _ in }
                 )
-                withAnimation(.smooth(duration: 0.3)) { paymentPhase = .success }
+                withAnimation(CashuMotion.reflow) { paymentPhase = .success }
             } catch let topUp as NeedsExternalTopUp {
                 // No held mint can fund it — clear the status screen first, then show
                 // the Lightning top-up invoice sheet.
-                withAnimation(.smooth(duration: 0.3)) { paymentPhase = nil }
+                withAnimation(CashuMotion.reflow) { paymentPhase = nil }
                 try? await Task.sleep(nanoseconds: 350_000_000)
                 topUpContext = TopUpContext(
                     summary: request,
@@ -1177,14 +1177,14 @@ struct CashuPaymentRequestPayView: View {
                 errorMessage = text
                 errorSeverity = .caution
                 paymentAwaitsMint = false
-                withAnimation(.smooth(duration: 0.3)) { paymentPhase = .failure(message: text, isCaution: true) }
+                withAnimation(CashuMotion.reflow) { paymentPhase = .failure(message: text, isCaution: true) }
             } catch {
                 sendRecovery = error as? PendingSendRecovery
                 let walletMessage = error.walletMessage
                 errorMessage = walletMessage.text
                 errorSeverity = walletMessage.severity
                 paymentAwaitsMint = walletMessage.awaitsMintConfirmation
-                withAnimation(.smooth(duration: 0.3)) {
+                withAnimation(CashuMotion.reflow) {
                     paymentPhase = .failure(
                         message: walletMessage.text,
                         isCaution: walletMessage.severity == .caution,
@@ -1232,7 +1232,7 @@ struct CashuPaymentRequestPayView: View {
                 onComplete?()
                 dismiss()
             },
-            onRetry: { withAnimation(.smooth(duration: 0.3)) { paymentPhase = nil } }
+            onRetry: { withAnimation(CashuMotion.reflow) { paymentPhase = nil } }
         )
     }
 
@@ -1542,7 +1542,7 @@ struct CashuTopUpInvoiceSheet: View {
                         }
 
                         statusRow
-                            .animation(.smooth(duration: 0.3), value: phase)
+                            .animation(CashuMotion.reflow, value: phase)
 
                         if let errorMessage {
                             InlineNotice(message: errorMessage, severity: errorSeverity)
@@ -1638,7 +1638,7 @@ struct CashuTopUpInvoiceSheet: View {
                 }
                 guard state == .paid || state == .issued else { continue }
 
-                withAnimation(.smooth(duration: 0.3)) { phase = .paying }
+                withAnimation(CashuMotion.reflow) { phase = .paying }
                 do {
                     try await walletManager.finishTopUpAndPayCashuRequest(
                         context.summary,
@@ -1646,13 +1646,13 @@ struct CashuTopUpInvoiceSheet: View {
                         targetMintURL: context.targetMintURL,
                         targetQuoteId: context.quote.id
                     )
-                    withAnimation(.smooth(duration: 0.3)) { phase = .done }
+                    withAnimation(CashuMotion.reflow) { phase = .done }
                     HapticFeedback.notification(.success)
                     try? await Task.sleep(nanoseconds: 1_000_000_000)
                     onComplete()
                 } catch {
                     let walletMessage = error.walletMessage
-                    withAnimation(.smooth(duration: 0.3)) {
+                    withAnimation(CashuMotion.reflow) {
                         errorMessage = walletMessage.text
                         errorSeverity = walletMessage.severity
                         phase = .awaitingPayment   // let the retries/History backstop settle it

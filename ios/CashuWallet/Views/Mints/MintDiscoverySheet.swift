@@ -80,7 +80,7 @@ struct MintDiscoveryList: View {
                     .accessibilityElement(children: .combine)
                 }
             }
-            .animation(reduceMotion ? nil : .smooth(duration: 0.3), value: addStates)
+            .animation(reduceMotion ? nil : CashuMotion.reflow, value: addStates)
             .searchable(
                 text: $searchText,
                 placement: .navigationBarDrawer(displayMode: .always),
@@ -197,13 +197,13 @@ struct MintDiscoveryList: View {
 
     private func add(_ mint: DiscoveredMint) {
         guard addStates[mint.url] != .adding, addStates[mint.url] != .added else { return }
-        withAnimation(reduceMotion ? nil : .smooth(duration: 0.3)) {
+        withAnimation(reduceMotion ? nil : CashuMotion.reflow) {
             addStates[mint.url] = .adding
         }
         Task { @MainActor in
             do {
                 try await walletManager.addMint(url: mint.url)
-                withAnimation(reduceMotion ? nil : .smooth(duration: 0.3)) {
+                withAnimation(reduceMotion ? nil : CashuMotion.reflow) {
                     addStates[mint.url] = .added
                 }
                 HapticFeedback.notification(.success)
@@ -211,7 +211,7 @@ struct MintDiscoveryList: View {
             } catch is CancellationError {
                 addStates[mint.url] = nil
             } catch {
-                withAnimation(reduceMotion ? nil : .smooth(duration: 0.3)) {
+                withAnimation(reduceMotion ? nil : CashuMotion.reflow) {
                     addStates[mint.url] = .failed(error.userFacingWalletMessage)
                 }
                 HapticFeedback.notification(.error)

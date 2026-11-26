@@ -73,7 +73,7 @@ struct RecoverDepositView: View {
                 Button {
                     focusedField = nil
                     HapticFeedback.selection()
-                    withAnimation(.easeInOut(duration: 0.2)) { showOptions.toggle() }
+                    withAnimation(CashuMotion.crossFade) { showOptions.toggle() }
                 } label: {
                     HStack {
                         VStack(alignment: .leading, spacing: 3) {

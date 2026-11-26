@@ -133,7 +133,7 @@ struct CurrencyAmountDisplay: View {
                 isDimmed: isDimmed,
                 isEntry: entryRaw != nil
             )
-            .animation(reduceMotion ? .easeOut(duration: 0.2) : .snappy(duration: 0.25), value: isDimmed)
+            .animation(reduceMotion ? CashuMotion.reducedFade : CashuMotion.flip, value: isDimmed)
 
             // The whole pair is the toggle, matching Home. Keeping the support
             // line visually plain avoids implying that only the smaller value
@@ -152,7 +152,7 @@ struct CurrencyAmountDisplay: View {
 
     private func flip() {
         guard fiatAvailable else { return }
-        withAnimation(reduceMotion ? .easeOut(duration: 0.2) : .snappy(duration: 0.25)) {
+        withAnimation(reduceMotion ? CashuMotion.reducedFade : CashuMotion.flip) {
             primary.toggle()
         }
     }

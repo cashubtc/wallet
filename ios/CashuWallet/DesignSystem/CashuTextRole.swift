@@ -244,11 +244,11 @@ private struct NumericTransitionModifier: ViewModifier {
             if reduceMotion {
                 content
                     .contentTransition(.opacity)
-                    .animation(.easeOut(duration: 0.2), value: value)
+                    .animation(CashuMotion.reducedFade, value: value)
             } else {
                 content
                     .contentTransition(.numericText(value: value))
-                    .animation(.snappy, value: value)
+                    .animation(CashuMotion.valueRoll, value: value)
             }
         } else {
             content

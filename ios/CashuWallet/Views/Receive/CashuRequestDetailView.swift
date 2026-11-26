@@ -62,14 +62,14 @@ struct CashuRequestDetailView: View {
                     // owns the moment.
                     .transition(.asymmetric(
                         insertion: .opacity,
-                        removal: .opacity.animation(.easeInOut(duration: 0.2))
+                        removal: .opacity.animation(CashuMotion.crossFade)
                     ))
             } else {
                 Text("Request not found")
                     .foregroundStyle(.secondary)
             }
         }
-        .animation(.smooth(duration: 0.3), value: showPaymentSuccess)
+        .animation(CashuMotion.reflow, value: showPaymentSuccess)
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
         .toolbarBackground(.hidden, for: .navigationBar)

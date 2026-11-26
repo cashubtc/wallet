@@ -146,7 +146,7 @@ struct ReceiveTokenDetailView: View {
                 confirmContent
             }
             }
-            .animation(.smooth(duration: 0.3), value: phase)
+            .animation(CashuMotion.reflow, value: phase)
             // Opacity-only fade on screen entry (once). Sits OUTSIDE the phase-morph
             // scope above; each .animation keys on a different value, so the entry
             // fade and the confirm→success morph never cross-animate each other.
@@ -312,7 +312,7 @@ struct ReceiveTokenDetailView: View {
             successTitle: "Payment Received!",
             failureTitle: "Couldn't Receive",
             onDone: { finish() },
-            onRetry: { withAnimation(.smooth(duration: 0.3)) { self.phase = nil } }   // back to the confirm screen
+            onRetry: { withAnimation(CashuMotion.reflow) { self.phase = nil } }   // back to the confirm screen
         )
     }
 
@@ -463,7 +463,7 @@ struct ReceiveTokenDetailView: View {
         }
 
         errorMessage = nil
-        withAnimation(.smooth(duration: 0.3)) { phase = .processing }
+        withAnimation(CashuMotion.reflow) { phase = .processing }
         Task {
             // Minimum on-screen time for the "Claiming…" spinner, run
             // concurrently with the real redeem so we wait max(network, 0.5s) —
@@ -496,7 +496,7 @@ struct ReceiveTokenDetailView: View {
                             userInfo: ["amount": receivedAmount, "fee": paidFee, "unit": tokenUnit]
                         )
                     }
-                    withAnimation(.smooth(duration: 0.3)) { phase = .success }
+                    withAnimation(CashuMotion.reflow) { phase = .success }
                 }
             } catch {
                 try? await minHold   // let the spinner settle before the failure
@@ -506,7 +506,7 @@ struct ReceiveTokenDetailView: View {
                     // side — not the inline confirm-screen notice. PaymentStatusView
                     // owns the error haptic, so don't buzz here.
                     let message = error.walletMessage
-                    withAnimation(.smooth(duration: 0.3)) {
+                    withAnimation(CashuMotion.reflow) {
                         phase = .failure(
                             message: message.text,
                             isCaution: message.severity == .caution,

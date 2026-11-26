@@ -236,7 +236,7 @@ struct PaymentStatusView: View {
                         // Top-aligned so the line sits under the title, not
                         // floated mid-slot (Android parity).
                         .frame(minHeight: 44, alignment: .top)
-                        .animation(.smooth(duration: 0.3), value: processingMessage)
+                        .animation(CashuMotion.reflow, value: processingMessage)
                     } else {
                         // Reserved slot so success ↔ failure never nudges the icon above it.
                         Text(statusMessage ?? " ")
@@ -251,7 +251,7 @@ struct PaymentStatusView: View {
                 }
                 .opacity(bandVisible ? 1 : 0)
                 .offset(y: staged && !entered ? 8 : 0)
-                .animation(.smooth(duration: 0.3).delay(0.12), value: entered)
+                .animation(CashuMotion.reflow.delay(0.12), value: entered)
             }
             .frame(minHeight: 220, alignment: .top)
         } details: {
@@ -270,7 +270,7 @@ struct PaymentStatusView: View {
                 // never blur; these rows are money values.
                 .opacity(bandVisible ? 1 : 0)
                 .offset(y: staged && !entered ? 6 : 0)
-                .animation(.smooth(duration: 0.3).delay(0.2), value: entered)
+                .animation(CashuMotion.reflow.delay(0.2), value: entered)
             }
         } footer: {
             VStack(spacing: 12) {
@@ -284,10 +284,10 @@ struct PaymentStatusView: View {
             // Rides beat 3 as opacity only — the hit target never moves,
             // and opacity keeps hit-testing, so Done works from frame 1.
             .opacity(bandVisible ? 1 : 0)
-            .animation(.smooth(duration: 0.3).delay(0.2), value: entered)
+            .animation(CashuMotion.reflow.delay(0.2), value: entered)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .animation(.smooth(duration: 0.3), value: phaseKey)
+        .animation(CashuMotion.reflow, value: phaseKey)
         .onChange(of: phase) { _, newPhase in
             handlePhase(newPhase, announce: true)
         }
@@ -345,7 +345,7 @@ struct PaymentStatusView: View {
                         .opacity(bandVisible ? 1 : 0)
                         .scaleEffect(staged && !entered ? 0.92 : 1)
                         .blur(radius: staged && !entered ? 4 : 0)
-                        .animation(.spring(response: 0.5, dampingFraction: 0.7), value: entered)
+                        .animation(CashuMotion.celebration, value: entered)
                         .transition(reduceMotion ? .opacity : .scale(scale: 0.92).combined(with: .opacity).combined(with: .materializeBlur))
                 }
             case .failure(_, let isCaution, _):

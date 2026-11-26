@@ -92,7 +92,7 @@ struct MintDetailView: View {
                 Text(liveMint.name)
                     .font(.headline)
                     .opacity(showNavTitle ? 1 : 0)
-                    .animation(.easeInOut(duration: 0.2), value: showNavTitle)
+                    .animation(CashuMotion.crossFade, value: showNavTitle)
             }
             ToolbarItem(placement: .topBarTrailing) {
                 ShareLink(item: liveMint.url) {
@@ -347,7 +347,7 @@ struct MintDetailView: View {
                             .lineLimit(aboutExpanded ? nil : 3)
                         if longDesc.count > 160 {
                             Button(aboutExpanded ? "Show less" : "Read more") {
-                                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+                                withAnimation(reduceMotion ? nil : CashuMotion.crossFade) {
                                     aboutExpanded.toggle()
                                 }
                             }
@@ -406,7 +406,7 @@ struct MintDetailView: View {
     private func nutDisclosure(_ nuts: Cdk.Nuts) -> some View {
         DisclosureGroup(
             isExpanded: $nutsExpanded.animation(
-                reduceMotion ? nil : .easeInOut(duration: 0.2)
+                reduceMotion ? nil : CashuMotion.crossFade
             )
         ) {
             VStack(spacing: 0) {

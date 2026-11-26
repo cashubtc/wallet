@@ -126,7 +126,7 @@ struct AmountLockup: View {
         .frame(maxWidth: .infinity)
         // An explicit quarter second: a bare `.snappy` is a half-second spring,
         // and this runs on every key press.
-        .animation(reduceMotion ? .easeOut(duration: 0.2) : .snappy(duration: 0.25), value: parts)
+        .animation(reduceMotion ? CashuMotion.reducedFade : CashuMotion.flip, value: parts)
         .accessibilityElement(children: .combine)
     }
 
