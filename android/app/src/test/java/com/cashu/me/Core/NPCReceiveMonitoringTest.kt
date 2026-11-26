@@ -177,20 +177,111 @@ class NPCReceiveMonitoringTest {
         } finally { fixture.close() }
     }
 
-    private class Fixture(parent: CoroutineScope, allowChecks: Boolean = true) {
+    @Test(timeout = 10_000)
+    fun startupWithPeriodicChecksDoesNotDuplicateInitialGetQuotes() = runBlocking {
+        val fixture = Fixture(this, allowChecks = true, periodicChecks = true, refreshIntervalMillis = 60_000L)
+        try {
+            fixture.service.setAutomaticClaim(false)
+            val paid = NPCQuote("paid", 21, "https://mint.example", state = "PAID",
+                locked = false, createdAtEpochSeconds = 100, paidAtEpochSeconds = 101)
+            fixture.quotes = listOf(paid)
+            fixture.service.initializeWithSeed(byteArrayOf(1))
+            withTimeout(1_000) {
+                while (fixture.service.state.value.lastCheckEpochMillis == null) yield()
+            }
+            assertEquals("Initial connect + startup check must share one getQuotes call", 1, fixture.requests)
+            assertEquals(listOf("paid"), fixture.service.state.value.pendingPaidQuotes.map { it.id })
+        } finally { fixture.close() }
+    }
+
+    @Test(timeout = 10_000)
+    fun disconnectedMonitorCheckReusesConnectionQuotes() = runBlocking {
+        val fixture = Fixture(this, allowChecks = true, periodicChecks = false, receiveRefreshIntervalMillis = 60_000L)
+        try {
+            fixture.service.setAutomaticClaim(false)
+            fixture.failNextGetQuotes = true
+            fixture.service.initializeWithSeed(byteArrayOf(1))
+            withTimeout(1_000) {
+                while (fixture.service.state.value.errorMessage == null) yield()
+            }
+            assertFalse(fixture.service.state.value.isConnected)
+            assertEquals(1, fixture.requests)
+
+            fixture.quotes = listOf(NPCQuote("old", 21, "https://mint.example", state = "PAID",
+                locked = false, createdAtEpochSeconds = 100, paidAtEpochSeconds = 101))
+            val session = NPCReceiveSession(fixture.service.state.value.lightningAddress)
+            val monitor = launch { fixture.service.monitorPayments(session) }
+            withTimeout(1_000) { while (session.priorPaidQuoteIds.value == null) yield() }
+            assertEquals(setOf("old"), session.priorPaidQuoteIds.value)
+            assertEquals("Reconnect + initial baseline must perform one getQuotes call", 2, fixture.requests)
+            monitor.cancelAndJoin()
+        } finally { fixture.close() }
+    }
+
+    @Test(timeout = 10_000)
+    fun changeMintTracksLoadingStateAcrossSuccessAndFailure() = runBlocking {
+        val fixture = Fixture(this, allowChecks = false)
+        try {
+            fixture.service.initializeWithSeed(byteArrayOf(1))
+            fixture.service.connect()
+
+            val mintChangeStarted = CompletableDeferred<Unit>()
+            val mintChangeGate = CompletableDeferred<String>()
+            fixture.onSetMintUrl = {
+                mintChangeStarted.complete(Unit)
+                mintChangeGate.await()
+            }
+
+            fixture.service.changeMint("https://mint-a.example")
+            mintChangeStarted.await()
+            assertTrue(fixture.service.state.value.isChangingMint)
+
+            mintChangeGate.complete("https://mint-a.example")
+            withTimeout(1_000) { while (fixture.service.state.value.isChangingMint) yield() }
+            assertEquals("https://mint-a.example", fixture.service.state.value.selectedMintUrl)
+            assertNull(fixture.service.state.value.errorMessage)
+
+            fixture.onSetMintUrl = { throw IllegalStateException("Mint rejected") }
+            fixture.service.changeMint("https://mint-b.example")
+            withTimeout(1_000) {
+                while (fixture.service.state.value.isChangingMint || fixture.service.state.value.errorMessage == null) yield()
+            }
+            assertFalse(fixture.service.state.value.isChangingMint)
+            assertNotNull(fixture.service.state.value.errorMessage)
+        } finally { fixture.close() }
+    }
+
+    private class Fixture(
+        parent: CoroutineScope,
+        allowChecks: Boolean = true,
+        periodicChecks: Boolean = false,
+        refreshIntervalMillis: Long = 120_000L,
+        receiveRefreshIntervalMillis: Long = 10L,
+    ) {
         private val scope = CoroutineScope(parent.coroutineContext + SupervisorJob())
         val settings = MutableStateFlow(SettingsState(checkIncomingInvoices = allowChecks,
-            periodicallyCheckIncomingInvoices = false))
+            periodicallyCheckIncomingInvoices = periodicChecks))
         var requests = 0
         var quotes = emptyList<NPCQuote>()
+        var failNextGetQuotes = false
+        var onSetMintUrl: (suspend (String) -> String)? = null
         val service = NPCService(
             prefs = InMemorySharedPreferences(mutableMapOf(StorageKeys.npcEnabled to true)),
             settingsState = settings,
             scope = scope,
-            receiveRefreshIntervalMillis = 10,
+            refreshIntervalMillis = refreshIntervalMillis,
+            receiveRefreshIntervalMillis = receiveRefreshIntervalMillis,
             makeClient = { _, _ -> object : NPCClient {
-                override suspend fun getQuotes(): List<NPCQuote> { requests += 1; return quotes }
-                override suspend fun setMintUrl(mintUrl: String): String = mintUrl
+                override suspend fun getQuotes(): List<NPCQuote> {
+                    requests += 1
+                    if (failNextGetQuotes) {
+                        failNextGetQuotes = false
+                        throw IllegalStateException("Offline")
+                    }
+                    return quotes
+                }
+                override suspend fun setMintUrl(mintUrl: String): String =
+                    onSetMintUrl?.invoke(mintUrl) ?: mintUrl
                 override fun close() = Unit
             } },
             deriveKeys = { "01".repeat(32) to "02".repeat(32) },

@@ -77,6 +77,7 @@ import com.cashu.me.ui.components.scrollEdgeFade
 import com.cashu.me.ui.theme.CapsuleShape
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.withMonoDigits
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -389,9 +390,11 @@ class RestoreMintsStagingState internal constructor(
         staged = staged + normalized
         setNotice(null)
         scope.launch {
-            runCatching { walletManager.fetchLiveMintInfo(normalized) }
-                .getOrNull()
-                ?.let { previews[normalized] = it }
+            try {
+                walletManager.fetchLiveMintInfo(normalized)?.let { previews[normalized] = it }
+            } catch (t: Throwable) {
+                if (t is CancellationException) throw t
+            }
         }
         return true
     }
@@ -489,33 +492,33 @@ class RestoreMintsStagingState internal constructor(
         // double-stage the same backup.
         if (nostrMintBackupService.state.value.isSearching) return
         scope.launch {
-            runCatching { nostrMintBackupService.fetchBackedUpMintUrls() }
-                .onSuccess { urls ->
-                    val normalized = urls.mapNotNull(::normalizeMintUrl)
-                    var added = 0
-                    for (url in normalized) {
-                        if (stageUrl(url, showDuplicate = false, showInvalid = false)) added++
-                    }
-                    when {
-                        added > 0 ->
-                            setNotice("Added $added mint${if (added == 1) "" else "s"} from your backup.")
-                        // When the list is empty the empty-state line is on
-                        // screen already saying this — speak here only when it
-                        // isn't.
-                        normalized.isEmpty() ->
-                            if (staged.isNotEmpty()) {
-                                setNotice("No backup of your mint list found.", NoticeSeverity.Caution)
-                            }
-                        else -> setNotice("Backup found. Its mints are already in the list.")
-                    }
-                    backupSearchCompleted = true
+            try {
+                val urls = nostrMintBackupService.fetchBackedUpMintUrls()
+                val normalized = urls.mapNotNull(::normalizeMintUrl)
+                var added = 0
+                for (url in normalized) {
+                    if (stageUrl(url, showDuplicate = false, showInvalid = false)) added++
                 }
-                .onFailure {
-                    backupSearchCompleted = true
-                    // Through the shared mapper, never the raw message — a
-                    // relay failure here surfaced as a raw CDK FFI dump.
-                    setNotice(it.userFacingWalletMessage, NoticeSeverity.Error)
+                when {
+                    added > 0 ->
+                        setNotice("Added $added mint${if (added == 1) "" else "s"} from your backup.")
+                    // When the list is empty the empty-state line is on
+                    // screen already saying this — speak here only when it
+                    // isn't.
+                    normalized.isEmpty() ->
+                        if (staged.isNotEmpty()) {
+                            setNotice("No backup of your mint list found.", NoticeSeverity.Caution)
+                        }
+                    else -> setNotice("Backup found. Its mints are already in the list.")
                 }
+                backupSearchCompleted = true
+            } catch (t: Throwable) {
+                if (t is CancellationException) throw t
+                backupSearchCompleted = true
+                // Through the shared mapper, never the raw message — a
+                // relay failure here surfaced as a raw CDK FFI dump.
+                setNotice(t.userFacingWalletMessage, NoticeSeverity.Error)
+            }
         }
     }
 
@@ -973,11 +976,13 @@ class RestoreProgressState internal constructor(
 
     internal suspend fun restoreMint(url: String) {
         phases[url] = RestoreMintPhase.Restoring
-        runCatching { walletManager.restoreFromMint(url) }
-            .onSuccess { phases[url] = RestoreMintPhase.Recovered(it) }
-            .onFailure {
-                phases[url] = restoreMintFailurePhase(it)
-            }
+        try {
+            val result = walletManager.restoreFromMint(url)
+            phases[url] = RestoreMintPhase.Recovered(result)
+        } catch (t: Throwable) {
+            if (t is CancellationException) throw t
+            phases[url] = restoreMintFailurePhase(t)
+        }
     }
 
     internal suspend fun restoreAll() {

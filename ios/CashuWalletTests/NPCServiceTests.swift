@@ -545,6 +545,124 @@ final class NPCServiceTests: XCTestCase {
         service.disconnect()
     }
 
+    func testLightningAddressShowsQRAndActionsImmediatelyWhilePreparingOffline() async throws {
+        XCTAssertTrue(LightningAddressReceiveContent.showsQRCodeAndActions(for: "npub1example@npubx.cash"))
+        XCTAssertFalse(LightningAddressReceiveContent.showsQRCodeAndActions(for: ""))
+        XCTAssertFalse(LightningAddressReceiveContent.showsQRCodeAndActions(for: "   "))
+
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let model = AddressReceiptPresentationModel()
+        model.preparing = true
+        var announcements: [String] = []
+        let host = UIHostingController(rootView: AddressReceiptPresentationHarness(
+            model: model, dynamicTypeSize: .large, announce: { announcements.append($0) }))
+        let window = UIWindow(windowScene: scene)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            host.dismiss(animated: false)
+            window.isHidden = true
+            window.rootViewController = nil
+            previous?.makeKeyAndVisible()
+        }
+        try await Task.sleep(for: .milliseconds(300))
+        model.statusMessage = "Couldn't reach npub.cash."
+        try await Task.sleep(for: .milliseconds(150))
+        XCTAssertEqual(announcements, ["Couldn't reach npub.cash."])
+    }
+
+    func testInitialConnectAndCheckDeduplicateBackToBackGetQuotes() async throws {
+        let client = ControlledNPCClient()
+        let settings = makeSettings(enabled: true)
+        settings.checkIncomingInvoices = true
+        settings.periodicallyCheckIncomingInvoices = false
+        let service = NPCService(settingsStore: settings, refreshInterval: 60, makeClient: { _, _ in client })
+        service.automaticClaim = false
+        try service.initializeWithSeed(Data(repeating: 1, count: 64))
+        await client.nextRequest()
+        client.complete(.success([
+            NpubCashQuote(id: "paid-1", amount: 21, unit: "sat", createdAt: 100, paidAt: 101,
+                          expiresAt: nil, mintUrl: "https://mint.example", request: nil,
+                          state: "PAID", locked: false)
+        ]))
+        for _ in 0..<100 where service.lastCheck == nil {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertNotNil(service.lastCheck)
+        XCTAssertEqual(client.requestCount, 1, "Initial connect and startup check must share one getQuotes call")
+        service.disconnect()
+    }
+
+    func testDisconnectedMonitorReusesConnectionQuotesForSessionBaseline() async throws {
+        let client = ControlledNPCClient()
+        let settings = makeSettings(enabled: true)
+        settings.checkIncomingInvoices = true
+        settings.periodicallyCheckIncomingInvoices = false
+        let service = NPCService(settingsStore: settings, refreshInterval: 60, receiveRefreshInterval: 60,
+                                 makeClient: { _, _ in client })
+        service.automaticClaim = false
+        try service.initializeWithSeed(Data(repeating: 1, count: 64))
+        await client.nextRequest()
+        client.complete(.failure(URLError(.notConnectedToInternet)))
+        for _ in 0..<100 where service.errorMessage == nil {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertFalse(service.isConnected)
+        XCTAssertEqual(client.requestCount, 1)
+
+        let session = NPCReceiveSession(address: service.lightningAddress)
+        let monitor = Task { await service.monitorPayments(session) }
+        await client.nextRequest()
+        client.complete(.success([
+            NpubCashQuote(id: "old", amount: 21, unit: "sat", createdAt: 100, paidAt: 101,
+                          expiresAt: nil, mintUrl: "https://mint.example", request: nil,
+                          state: "PAID", locked: false)
+        ]))
+        for _ in 0..<100 where session.priorPaidQuoteIDs == nil {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(session.priorPaidQuoteIDs, ["old"])
+        XCTAssertEqual(client.requestCount, 2, "Reconnect and baseline preparation must perform one getQuotes call")
+        monitor.cancel()
+        await monitor.value
+        service.disconnect()
+    }
+
+    func testChangeMintTracksLoadingStateAcrossSuccessAndFailure() async throws {
+        let client = ControlledNPCClient()
+        let service = makeService(client: client)
+        try service.initializeWithSeed(Data(repeating: 1, count: 64))
+        await client.nextRequest()
+        let connection = Task { await service.connect() }
+        client.complete(.success([]))
+        await connection.value
+
+        client.suspendSetMintUrl = true
+        let changeTask = Task { try await service.changeMint(to: "https://mint-a.example") }
+        await client.nextSetMintRequest()
+        XCTAssertTrue(service.isChangingMint)
+        client.completeSetMint(.success(NpubCashUserResponse(
+            error: false, pubkey: "", mintUrl: "https://mint-a.example", lockQuote: false
+        )))
+        try await changeTask.value
+        XCTAssertFalse(service.isChangingMint)
+        XCTAssertEqual(service.selectedMintUrl, "https://mint-a.example")
+
+        let failingTask = Task { try await service.changeMint(to: "https://mint-b.example") }
+        await client.nextSetMintRequest()
+        XCTAssertTrue(service.isChangingMint)
+        client.completeSetMint(.failure(URLError(.cannotConnectToHost)))
+        do {
+            try await failingTask.value
+            XCTFail("Expected changeMint failure")
+        } catch {
+            // Expected failure
+        }
+        XCTAssertFalse(service.isChangingMint)
+        service.disconnect()
+    }
+
     private func assertLateResponseIgnored(_ response: Result<[NpubCashQuote], Error>) async throws {
         let client = ControlledNPCClient()
         let service = makeService(client: client)
@@ -610,8 +728,38 @@ private final class ControlledNPCClient: NpubCashClientProtocol {
         continuation?.resume(with: result)
     }
 
+    var suspendSetMintUrl = false
+    private var unobservedSetMintRequests = 0
+    private var setMintStarted: CheckedContinuation<Void, Never>?
+    private var setMintResponse: CheckedContinuation<NpubCashUserResponse, Error>?
+
     func setMintUrl(mintUrl: String) async throws -> NpubCashUserResponse {
-        NpubCashUserResponse(error: false, pubkey: "", mintUrl: mintUrl, lockQuote: false)
+        guard suspendSetMintUrl else {
+            return NpubCashUserResponse(error: false, pubkey: "", mintUrl: mintUrl, lockQuote: false)
+        }
+        return try await withCheckedThrowingContinuation { continuation in
+            setMintResponse = continuation
+            if let setMintStarted {
+                self.setMintStarted = nil
+                setMintStarted.resume()
+            } else {
+                unobservedSetMintRequests += 1
+            }
+        }
+    }
+
+    func nextSetMintRequest() async {
+        if unobservedSetMintRequests > 0 {
+            unobservedSetMintRequests -= 1
+            return
+        }
+        await withCheckedContinuation { setMintStarted = $0 }
+    }
+
+    func completeSetMint(_ result: Result<NpubCashUserResponse, Error>) {
+        let continuation = setMintResponse
+        setMintResponse = nil
+        continuation?.resume(with: result)
     }
     func getMissingQuotes(quoteIds: [String]) async throws -> [NpubCashQuote] { [] }
     func getUserInfo() async throws -> NpubCashUserResponse { throw NPCError.invalidResponse }
@@ -622,6 +770,7 @@ private final class ControlledNPCClient: NpubCashClientProtocol {
 private final class AddressReceiptPresentationModel: ObservableObject {
     @Published var amount: String?
     @Published var statusMessage: String?
+    @Published var preparing = false
 }
 
 private struct AddressReceiptPresentationHarness: View {
@@ -635,6 +784,7 @@ private struct AddressReceiptPresentationHarness: View {
                 address: "npub1" + String(repeating: "q", count: 58) + "@example.com",
                 receivedAmount: model.amount,
                 statusMessage: model.statusMessage,
+                preparing: model.preparing,
                 announce: announce
             )
                 .canvasSheetBackground()

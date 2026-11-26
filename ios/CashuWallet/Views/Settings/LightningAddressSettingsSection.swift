@@ -195,22 +195,28 @@ struct LightningAddressSettingsSection: View {
 
                 Spacer(minLength: 8)
 
-                Text(selectedMintDisplayName)
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                if npcService.isChangingMint {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Text(selectedMintDisplayName)
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
 
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.tertiary)
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                }
             }
             .padding(.horizontal, 4)
             .padding(.vertical, 14)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Receiving mint: \(selectedMintDisplayName)")
+        .disabled(npcService.isChangingMint)
+        .accessibilityLabel("Receiving mint: \(npcService.isChangingMint ? "Updating" : selectedMintDisplayName)")
         .accessibilityHint("Choose which mint claims incoming Lightning payments")
     }
 
@@ -423,28 +429,33 @@ struct LightningAddressReceiveContent: View {
         }
     }
 
+    static func showsQRCodeAndActions(for address: String) -> Bool {
+        !address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     private var waitingContent: some View {
-        GeometryReader { geometry in
+        let hasAddress = Self.showsQRCodeAndActions(for: address)
+        return GeometryReader { geometry in
             ScrollView {
                 VStack(spacing: 24) {
-                    if preparing {
-                        ProgressView("Preparing to receive…")
-                    } else {
+                    if hasAddress {
                         QRCodeView(content: address, showControls: false)
                             .padding()
                             .frame(width: min(280, geometry.size.width - 48),
                                    height: min(280, geometry.size.width - 48))
                             .background(Color.white)
                             .clipShape(.rect(cornerRadius: 16))
+                        Text(address)
+                            .font(.system(.subheadline, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .padding(.horizontal, 24)
+                            .accessibilityLabel("Lightning address")
+                            .accessibilityValue(address)
+                    } else if preparing {
+                        ProgressView("Preparing to receive…")
                     }
-                    Text(address)
-                        .font(.system(.subheadline, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .padding(.horizontal, 24)
-                        .accessibilityLabel("Lightning address")
-                        .accessibilityValue(address)
                     if let statusMessage {
                         Text(statusMessage)
                             .font(.subheadline)
@@ -469,7 +480,7 @@ struct LightningAddressReceiveContent: View {
             .scrollBounceBehavior(.basedOnSize)
         }
         .safeAreaInset(edge: .bottom) {
-            if !preparing {
+            if hasAddress {
                 HStack(spacing: 12) {
                     Button("Copy") {
                         UIPasteboard.general.string = address

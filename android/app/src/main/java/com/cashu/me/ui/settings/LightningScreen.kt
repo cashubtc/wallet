@@ -234,6 +234,7 @@ fun LightningScreen(
                             trailingValue = walletState.mints
                                 .firstOrNull { it.url == npcState.selectedMintUrl }?.name
                                 ?: LightningAddressSettingsCopy.SelectMintFallback,
+                            loading = npcState.isChangingMint,
                             onClick = { mintPickerOpen = true },
                         )
                     }

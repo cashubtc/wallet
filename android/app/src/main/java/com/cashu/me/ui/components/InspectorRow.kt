@@ -34,6 +34,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
@@ -81,6 +82,7 @@ fun InspectorRow(
     modifier: Modifier = Modifier,
     leadingIcon: ImageVector? = null,
     editable: Boolean = false,
+    enabled: Boolean = true,
     onClick: (() -> Unit)? = null,
     trailingIcon: ImageVector? = null,
     trailingIconTint: Color? = null,
@@ -113,7 +115,10 @@ fun InspectorRow(
         val stacked = style != InspectorRowStyle.Standard &&
             (density.fontScale > 1.3f || labelWidth + valueWidth > availableWidth)
         val rowMod = if (onClick != null) {
-            Modifier.heightIn(min = 48.dp).clickable(onClick = onClick)
+            Modifier
+                .heightIn(min = 48.dp)
+                .clickable(enabled = enabled, onClick = onClick)
+                .alpha(if (enabled) 1f else 0.5f)
         } else {
             Modifier
         }

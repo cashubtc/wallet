@@ -41,7 +41,7 @@ data class NPCPaymentReceipt(
             session.priorPaidQuoteIds.value?.let { quoteId !in it } == true
 }
 
-/** A baseline is captured before exposing the QR and retained across foreground changes. */
+/** A baseline is captured asynchronously on the first check while the QR is visible and retained across foreground changes. */
 class NPCReceiveSession(val address: String) {
     private val mutablePriorPaidQuoteIds = MutableStateFlow<Set<String>?>(null)
     val priorPaidQuoteIds = mutablePriorPaidQuoteIds.asStateFlow()
@@ -74,6 +74,7 @@ data class NPCState(
     val isInitialized: Boolean = false,
     val isConnected: Boolean = false,
     val isLoading: Boolean = false,
+    val isChangingMint: Boolean = false,
     val isCheckingPayments: Boolean = false,
     val errorMessage: String? = null,
     val pendingPaidQuotes: List<NPCQuote> = emptyList(),
@@ -106,8 +107,9 @@ class NPCService internal constructor(
     private val domain = "npubx.cash"
     private var refreshJob: Job? = null
     private var paymentCheckJob: Job? = null
-    private var connectionAttempt: Deferred<Unit>? = null
+    private var connectionAttempt: Deferred<List<NPCQuote>?>? = null
     private var sessionGeneration = 0L
+    private var mintChangeGeneration = 0L
     private var client: NPCClient? = null
     private var nostrSecretKey: String? = null
     private var nostrPublicKey: String? = null
@@ -166,7 +168,7 @@ class NPCService internal constructor(
     /** Recover an enabled address on startup, foreground, or settings entry. */
     fun initializeIfEnabled() {
         scope.launch {
-            connect()
+            connectReturningInitialQuotes()
             applyPollingPreferences()
         }
     }
@@ -180,29 +182,36 @@ class NPCService internal constructor(
         scope.launch {
             if (!mutableState.value.isEnabled) return@launch
             val session = sessionGeneration
-            update { copy(isLoading = true, errorMessage = null) }
+            val generation = ++mintChangeGeneration
+            update { copy(isLoading = true, isChangingMint = true, errorMessage = null) }
             val result = runCatching {
                 connect()
                 if (!isCurrentSession(session)) throw CancellationException()
                 setRemoteMint(mintUrl)
             }
             if (!isCurrentSession(session)) return@launch
+            val isLatest = mintChangeGeneration == generation
             result.onSuccess { selected ->
                 prefs.edit().putString(StorageKeys.npcSelectedMint, selected).apply()
                 update {
                     copy(
                         selectedMintUrl = selected,
                         configuredMintUrl = selected,
-                        isLoading = false,
+                        isLoading = if (isLatest) false else isLoading,
+                        isChangingMint = if (isLatest) false else isChangingMint,
                         isConnected = true,
                         errorMessage = null,
                     )
                 }
             }.onFailure { error ->
-                if (error is CancellationException) throw error
+                if (error is CancellationException) {
+                    if (isLatest) update { copy(isLoading = false, isChangingMint = false) }
+                    throw error
+                }
                 update {
                     copy(
-                        isLoading = false,
+                        isLoading = if (isLatest) false else isLoading,
+                        isChangingMint = if (isLatest) false else isChangingMint,
                         errorMessage = ActionErrorMessages.message(error, ActionErrorMessages.Context.LightningMint),
                     )
                 }
@@ -211,8 +220,12 @@ class NPCService internal constructor(
     }
 
     fun checkAndClaimPayments() {
+        checkAndClaimPayments(prefetchedQuotes = null)
+    }
+
+    private fun checkAndClaimPayments(prefetchedQuotes: List<NPCQuote>?) {
         if (paymentCheckJob?.isActive == true) return
-        paymentCheckJob = scope.launch { checkAndClaimPaymentsNow() }
+        paymentCheckJob = scope.launch { checkAndClaimPaymentsNow(prefetchedQuotes) }
     }
 
     /** The visible sheet owns this job; an already-started claim keeps its app lifetime. */
@@ -284,11 +297,15 @@ class NPCService internal constructor(
     }
 
     internal suspend fun connect() {
+        connectReturningInitialQuotes()
+    }
+
+    private suspend fun connectReturningInitialQuotes(): List<NPCQuote>? {
         val current = mutableState.value
         val secretKey = nostrSecretKey
-        if (!current.isEnabled || !current.isInitialized || secretKey == null) return
-        if (current.isConnected && client != null) return
-        connectionAttempt?.let { it.await(); return }
+        if (!current.isEnabled || !current.isInitialized || secretKey == null) return null
+        if (current.isConnected && client != null) return null
+        connectionAttempt?.let { return it.await() }
 
         val session = sessionGeneration
         update { copy(isConnected = false, isLoading = true, errorMessage = null) }
@@ -297,17 +314,18 @@ class NPCService internal constructor(
             establishConnection(secretKey, session)
         }
         connectionAttempt = attempt
-        attempt.await()
+        return attempt.await()
     }
 
-    private suspend fun establishConnection(secretKey: String, session: Long) {
+    private suspend fun establishConnection(secretKey: String, session: Long): List<NPCQuote>? {
         var candidate: NPCClient? = null
+        var fetchedQuotes: List<NPCQuote>? = null
         try {
             val connectedClient = makeClient(baseUrl, secretKey)
             candidate = connectedClient
             val quotes = connectedClient.getQuotes()
             currentCoroutineContext().ensureActive()
-            if (!isCurrentSession(session)) return
+            if (!isCurrentSession(session)) return null
             val selected = mutableState.value.selectedMintUrl
             val configured = if (selected != null) {
                 try {
@@ -321,25 +339,28 @@ class NPCService internal constructor(
                 quotes.firstNotNullOfOrNull { it.mintUrl }.orEmpty()
             }
             currentCoroutineContext().ensureActive()
-            if (!isCurrentSession(session)) return
+            if (!isCurrentSession(session)) return null
             client = connectedClient
             candidate = null // Ownership passes to the active session.
+            fetchedQuotes = quotes
             update {
                 copy(configuredMintUrl = configured, isConnected = true, errorMessage = null)
             }
+            return quotes
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
-            if (!isCurrentSession(session)) return
+            if (!isCurrentSession(session)) return null
             update {
                 copy(isConnected = false, errorMessage = ActionErrorMessages.message(error, ActionErrorMessages.Context.LightningConnection))
             }
+            return null
         } finally {
             candidate?.close()
             if (isCurrentSession(session)) {
                 connectionAttempt = null
                 update { copy(isLoading = false) }
-                applyPollingPreferences()
+                applyPollingPreferences(initialQuotes = fetchedQuotes)
             }
         }
     }
@@ -349,6 +370,7 @@ class NPCService internal constructor(
 
     private fun disconnect() {
         sessionGeneration += 1
+        mintChangeGeneration += 1
         receiveSessions.clear()
         observedPaidQuoteIds.clear()
         connectionAttempt?.cancel()
@@ -362,6 +384,7 @@ class NPCService internal constructor(
             copy(
                 isConnected = false,
                 isLoading = false,
+                isChangingMint = false,
                 isCheckingPayments = false,
                 errorMessage = null,
                 pendingPaidQuotes = emptyList(),
@@ -370,15 +393,25 @@ class NPCService internal constructor(
         }
     }
 
-    private suspend fun checkAndClaimPaymentsNow() {
+    private suspend fun checkAndClaimPaymentsNow(prefetchedQuotes: List<NPCQuote>? = null) {
         val settings = settingsState.value
         if (!mutableState.value.isEnabled || !settings.checkIncomingInvoices) return
         val session = sessionGeneration
-        if (!mutableState.value.isConnected) connect()
+        val initialQuotes = if (prefetchedQuotes != null) {
+            prefetchedQuotes
+        } else if (!mutableState.value.isConnected || client == null) {
+            connectReturningInitialQuotes()
+        } else {
+            null
+        }
         if (!isCurrentSession(session) || !mutableState.value.isConnected) return
 
         update { copy(isCheckingPayments = true, errorMessage = null) }
-        val result = runCatching { fetchQuotes() }
+        val result = if (initialQuotes != null) {
+            Result.success(initialQuotes)
+        } else {
+            runCatching { fetchQuotes() }
+        }
         if (!isCurrentSession(session)) return
         result.onSuccess { quotes ->
             observedPaidQuoteIds += quotes.filter { it.isPaid || it.state.equals("ISSUED", ignoreCase = true) }.map { it.id }
@@ -466,7 +499,7 @@ class NPCService internal constructor(
         return "02$publicKey"
     }
 
-    private fun applyPollingPreferences() {
+    private fun applyPollingPreferences(initialQuotes: List<NPCQuote>? = null) {
         val settings = settingsState.value
         val state = mutableState.value
         val shouldRun = shouldRunPeriodicInvoiceChecks(
@@ -479,10 +512,20 @@ class NPCService internal constructor(
             stopBackgroundRefresh()
             return
         }
-        if (refreshJob?.isActive == true) return
+        if (refreshJob?.isActive == true) {
+            // If periodic polling started before the initial connection finished,
+            // it skipped the immediate check and went to sleep; consume the fresh
+            // connection snapshot now instead of waiting a full interval.
+            if (initialQuotes != null && mutableState.value.isConnected) {
+                checkAndClaimPayments(prefetchedQuotes = initialQuotes)
+            }
+            return
+        }
         refreshJob = scope.launch {
             // Delay after failure so recovery never recursively retries.
-            if (mutableState.value.isConnected) checkAndClaimPayments()
+            if (mutableState.value.isConnected) {
+                checkAndClaimPayments(prefetchedQuotes = initialQuotes)
+            }
             while (isActive) {
                 delay(refreshIntervalMillis)
                 checkAndClaimPayments()

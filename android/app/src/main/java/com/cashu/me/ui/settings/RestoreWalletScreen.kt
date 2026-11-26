@@ -33,6 +33,7 @@ import com.cashu.me.ui.restore.RestoreMintsStep
 import com.cashu.me.ui.restore.RestoreProgressStep
 import com.cashu.me.ui.restore.RestoreSeedStep
 import com.cashu.me.ui.restore.restoreSeedInstallErrorMessage
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 private sealed interface InAppRestoreStep {
@@ -59,6 +60,7 @@ fun RestoreWalletScreen(
     val scope = rememberCoroutineScope()
     var step: InAppRestoreStep by remember { mutableStateOf(InAppRestoreStep.Seed) }
     var restoring by remember { mutableStateOf(false) }
+    var restoreGeneration by remember { mutableStateOf(0L) }
     var seedError by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
@@ -115,14 +117,28 @@ fun RestoreWalletScreen(
                     onBack = null,
                     onValidateChecksum = { walletManager.validateMnemonic(it) },
                     onNext = { mnemonic ->
-                        scope.launch {
-                            restoring = true
-                            seedError = null
-                            val normalized = MnemonicInput.normalize(mnemonic)
-                            runCatching { walletManager.initializeRestoredWallet(normalized) }
-                                .onSuccess { step = InAppRestoreStep.Mints(normalized) }
-                                .onFailure { seedError = restoreSeedInstallErrorMessage(it) }
-                            restoring = false
+                        if (!restoring) {
+                            val generation = ++restoreGeneration
+                            scope.launch {
+                                restoring = true
+                                seedError = null
+                                val normalized = MnemonicInput.normalize(mnemonic)
+                                try {
+                                    walletManager.initializeRestoredWallet(normalized)
+                                    if (restoreGeneration == generation) {
+                                        step = InAppRestoreStep.Mints(normalized)
+                                    }
+                                } catch (t: Throwable) {
+                                    if (t is CancellationException) throw t
+                                    if (restoreGeneration == generation) {
+                                        seedError = restoreSeedInstallErrorMessage(t)
+                                    }
+                                } finally {
+                                    if (restoreGeneration == generation) {
+                                        restoring = false
+                                    }
+                                }
+                            }
                         }
                     },
                 )
@@ -146,9 +162,13 @@ fun RestoreWalletScreen(
                     stagedPreviews = current.previews,
                     onContinue = {
                         scope.launch {
-                            runCatching { walletManager.completeRestore() }
-                                .onSuccess { onClose() }
-                                .onFailure { walletManager.reportRestoreCompletionFailure() }
+                            try {
+                                walletManager.completeRestore()
+                                onClose()
+                            } catch (t: Throwable) {
+                                if (t is CancellationException) throw t
+                                walletManager.reportRestoreCompletionFailure()
+                            }
                         }
                     },
                 )

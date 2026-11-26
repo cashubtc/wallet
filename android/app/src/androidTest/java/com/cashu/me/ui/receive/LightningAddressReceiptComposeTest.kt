@@ -27,22 +27,45 @@ class LightningAddressReceiptComposeTest {
     private val address = "npub1" + "q".repeat(58) + "@example.com"
 
     @Test
-    fun qrAndShareWaitUntilTheInitialInvoiceSnapshotIsReady() {
+    fun qrAndActionsAppearImmediatelyWhilePreparing() {
         val preparing = mutableStateOf(true)
         compose.setCashuContent {
             LightningAddressModal(onDismiss = {}) {
                 LightningAddressReceiveContent(address = address, onDismiss = {}, preparing = preparing.value)
             }
         }
-        compose.onNodeWithText("Preparing to receive…").assertIsDisplayed()
-        compose.onNodeWithText("Copy").assertDoesNotExist()
-        compose.onNodeWithText("Share").assertDoesNotExist()
-        compose.onNodeWithContentDescription("QR code. Long press for copy and share options.").assertDoesNotExist()
-        compose.runOnIdle { preparing.value = false }
         compose.onNodeWithText("Preparing to receive…").assertDoesNotExist()
+        compose.onNodeWithText(address).assertIsDisplayed()
         compose.onNodeWithText("Copy").assertIsDisplayed()
         compose.onNodeWithText("Share").assertIsDisplayed()
         compose.onNodeWithContentDescription("QR code. Long press for copy and share options.").assertIsDisplayed()
+        compose.runOnIdle { preparing.value = false }
+        compose.onNodeWithText("Copy").assertIsDisplayed()
+        compose.onNodeWithText("Share").assertIsDisplayed()
+        compose.onNodeWithContentDescription("QR code. Long press for copy and share options.").assertIsDisplayed()
+    }
+
+    @Test
+    fun offlinePreparingShowsStatusAndRetryWithoutHidingQrOrActions() {
+        var retries = 0
+        compose.setCashuContent {
+            LightningAddressModal(onDismiss = {}) {
+                LightningAddressReceiveContent(
+                    address = address,
+                    onDismiss = {},
+                    statusMessage = "Couldn't reach npub.cash.",
+                    onRetry = { retries++ },
+                    preparing = true,
+                )
+            }
+        }
+        compose.onNodeWithContentDescription("QR code. Long press for copy and share options.").assertIsDisplayed()
+        compose.onNodeWithText(address).assertIsDisplayed()
+        compose.onNodeWithText("Copy").assertIsDisplayed()
+        compose.onNodeWithText("Share").assertIsDisplayed()
+        compose.onNodeWithText("Couldn't reach npub.cash.").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Try again").performScrollTo().assertIsDisplayed().performClick()
+        assertEquals(1, retries)
     }
 
     @Test

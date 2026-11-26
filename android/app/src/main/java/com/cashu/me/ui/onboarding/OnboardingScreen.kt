@@ -135,6 +135,7 @@ import com.cashu.me.ui.theme.rememberAppeared
 import com.cashu.me.ui.theme.rememberReducedMotion
 import com.cashu.me.ui.theme.riseIn
 import com.cashu.me.ui.theme.withSlashedZero
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -253,6 +254,7 @@ internal fun OnboardingScreen(
     var retryingStartup by remember { mutableStateOf(false) }
     var createError by remember { mutableStateOf<String?>(null) }
     var restoring by remember { mutableStateOf(false) }
+    var restoreGeneration by remember { mutableStateOf(0L) }
     var restoreError by remember { mutableStateOf<String?>(null) }
     val seedState = rememberSeedPhraseEntryState()
     val seedClipboard = LocalClipboardManager.current
@@ -294,8 +296,15 @@ internal fun OnboardingScreen(
                 // The handoff curtain flips the gate at full cover. Leave
                 // `finishing` set — this subtree is torn down at the flip, and
                 // re-enabling the CTA mid-sweep would invite a second run.
-                handoff.begin { runCatching { walletManager.completeOnboarding() } }
+                handoff.begin {
+                    try {
+                        walletManager.completeOnboarding()
+                    } catch (t: Throwable) {
+                        if (t is CancellationException) throw t
+                    }
+                }
             } catch (t: Throwable) {
+                if (t is CancellationException) throw t
                 firstMintError = current?.let {
                     "Couldn't connect to ${shortenMintUrl(it)}. Check the URL or try another mint."
                 } ?: (t.message ?: "Couldn't set up the wallet.")
@@ -319,8 +328,12 @@ internal fun OnboardingScreen(
     // so a fast tap waits for this installation instead of racing a second one.
     LaunchedEffect(step) {
         val firstMintStep = step as? OnboardingStep.FirstMint ?: return@LaunchedEffect
-        runCatching { ensureWalletInstalled(firstMintStep.mnemonic) }
-            .onFailure { firstMintError = it.userFacingWalletMessage }
+        try {
+            ensureWalletInstalled(firstMintStep.mnemonic)
+        } catch (t: Throwable) {
+            if (t is CancellationException) throw t
+            firstMintError = t.userFacingWalletMessage
+        }
     }
 
     // A URL can be staged before repository preparation finishes. Keying this
@@ -329,9 +342,11 @@ internal fun OnboardingScreen(
     LaunchedEffect(walletInstalled, firstMint.customUrls) {
         if (!walletInstalled) return@LaunchedEffect
         firstMint.customUrls.filterNot { it in firstMint.customPreviews }.forEach { url ->
-            runCatching { walletManager.fetchLiveMintInfo(url) }
-                .getOrNull()
-                ?.let { firstMint.customPreviews[url] = it }
+            try {
+                walletManager.fetchLiveMintInfo(url)?.let { firstMint.customPreviews[url] = it }
+            } catch (t: Throwable) {
+                if (t is CancellationException) throw t
+            }
         }
     }
 
@@ -369,6 +384,7 @@ internal fun OnboardingScreen(
                             ?: walletManager.generateMnemonicForOnboarding()
                         step = OnboardingStep.ShowMnemonic(mnemonic)
                     } catch (t: Throwable) {
+                        if (t is CancellationException) throw t
                         createError = t.message ?: "Couldn't create a wallet."
                     } finally {
                         creating = false
@@ -428,21 +444,33 @@ internal fun OnboardingScreen(
                 primary = ChassisAction(
                     label = "Continue",
                     onClick = {
-                        // iOS initializeAndProceed: install the restored wallet
-                        // before the mint-staging step so the repository is keyed
-                        // to this seed — the Nostr backup search derives its keys
-                        // from it.
-                        scope.launch {
-                            restoring = true
-                            restoreError = null
-                            val normalized = MnemonicInput.normalize(seedState.phrase)
-                            runCatching { walletManager.initializeRestoredWallet(normalized) }
-                                .onSuccess {
-                                    restoreMintsStaging.reset()
-                                    step = OnboardingStep.RestoreMints(normalized)
+                        if (!restoring) {
+                            val generation = ++restoreGeneration
+                            // iOS initializeAndProceed: install the restored wallet
+                            // before the mint-staging step so the repository is keyed
+                            // to this seed — the Nostr backup search derives its keys
+                            // from it.
+                            scope.launch {
+                                restoring = true
+                                restoreError = null
+                                val normalized = MnemonicInput.normalize(seedState.phrase)
+                                try {
+                                    walletManager.initializeRestoredWallet(normalized)
+                                    if (restoreGeneration == generation) {
+                                        restoreMintsStaging.reset()
+                                        step = OnboardingStep.RestoreMints(normalized)
+                                    }
+                                } catch (t: Throwable) {
+                                    if (t is CancellationException) throw t
+                                    if (restoreGeneration == generation) {
+                                        restoreError = restoreSeedInstallErrorMessage(t)
+                                    }
+                                } finally {
+                                    if (restoreGeneration == generation) {
+                                        restoring = false
+                                    }
                                 }
-                                .onFailure { restoreError = restoreSeedInstallErrorMessage(it) }
-                            restoring = false
+                            }
                         }
                     },
                     enabled = seedState.isComplete && !seedState.isReviewing && !restoring,
@@ -484,8 +512,12 @@ internal fun OnboardingScreen(
                         state.finishing = true
                         walletManager.clearError()
                         handoff.begin {
-                            runCatching { walletManager.completeRestore() }
-                                .onFailure { walletManager.reportRestoreCompletionFailure() }
+                            try {
+                                walletManager.completeRestore()
+                            } catch (t: Throwable) {
+                                if (t is CancellationException) throw t
+                                walletManager.reportRestoreCompletionFailure()
+                            }
                         }
                     }
                 },

@@ -160,6 +160,9 @@ private fun LightningAddressReceiveSession(
     )
 }
 
+internal fun shouldShowLightningAddressQrAndActions(address: String): Boolean =
+    address.isNotBlank()
+
 /** Fixed full-screen layout. Only the QR/receipt content crossfades on payment. */
 @Composable
 internal fun LightningAddressReceiveContent(
@@ -176,6 +179,7 @@ internal fun LightningAddressReceiveContent(
     val context = LocalContext.current
     val toast = LocalConfirmationToastController.current
     val reducedMotion = rememberReducedMotion()
+    val hasAddress = shouldShowLightningAddressQrAndActions(address)
     Column(Modifier.fillMaxSize().testTag("lightning-address-modal-content")) {
         SheetHeader(
             title = "Lightning Address",
@@ -212,21 +216,23 @@ internal fun LightningAddressReceiveContent(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.Center,
                         ) {
-                            if (preparing) {
+                            if (hasAddress) {
+                                QrCard(address, size = qrSize, staticOnly = true,
+                                    shareSubject = "Lightning Address", confirmationMessage = "Copied lightning address")
+                                Spacer(Modifier.height(CashuTheme.spacing.comfortable))
+                                Text(
+                                    text = address,
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontFamily = CashuTheme.fonts.mono).withSlashedZero(),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.MiddleEllipsis,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            } else if (preparing) {
                                 CircularProgressIndicator()
                                 Text("Preparing to receive…", modifier = Modifier.padding(top = 16.dp))
-                            } else QrCard(address, size = qrSize, staticOnly = true,
-                                shareSubject = "Lightning Address", confirmationMessage = "Copied lightning address")
-                            Spacer(Modifier.height(CashuTheme.spacing.comfortable))
-                            Text(
-                                text = address,
-                                style = MaterialTheme.typography.bodyMedium.copy(fontFamily = CashuTheme.fonts.mono).withSlashedZero(),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.MiddleEllipsis,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.fillMaxWidth(),
-                            )
+                            }
                             if (statusMessage != null) {
                                 Spacer(Modifier.height(CashuTheme.spacing.comfortable))
                                 Text(statusMessage, style = MaterialTheme.typography.bodyMedium,
@@ -239,7 +245,7 @@ internal fun LightningAddressReceiveContent(
                             }
                         }
                     }
-                    if (!preparing) Row(
+                    if (hasAddress) Row(
                         Modifier.fillMaxWidth().padding(horizontal = CashuTheme.spacing.comfortable)
                             .padding(bottom = CashuTheme.spacing.comfortable),
                         horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
