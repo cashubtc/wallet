@@ -141,6 +141,51 @@ run that work directory with `cdk-mintd`, and point
 `TEST_RUNNER_BOLT12_DESCRIPTION_MINT_URL` at it for iOS. Android enables its journey
 with `cashu.liveBolt12Descriptions=true` and its fixture mint URL argument.
 
+## Long-running seed restore (resumable recovery)
+
+Exercises restore of a wallet with tens of thousands of derived secrets, and
+resuming it after the mint connection drops mid-scan. It needs a CDK build that
+includes resumable seed recovery (cashubtc/cdk#2696) on both the mint and the
+app bindings. A full scan takes tens of minutes.
+
+```bash
+# 1. Mint from the CDK checkout (fakewallet + sqlite)
+cargo build --release -p cdk-mintd --no-default-features --features "sqlite fakewallet"
+export CDK_MINTD_BIN=$PWD/target/release/cdk-mintd CDK_TEST_WORK_DIR=/tmp/restore-mint \
+       CDK_TEST_LOG_FILE=/tmp/restore-mint.log CDK_TEST_PID_FILE=/tmp/restore-mint.pid
+./CI/setup-cdk.sh 3340 default && ./CI/start-cdk.sh
+
+# 2. Fund a seed: 40 rounds x 500 sat as 1-sat proofs, with periodic swaps
+MNEMONIC="legal winner thank year wave sausage worth useful legal winner thank yellow"
+(cd CI/restore-stress && cargo run --release -- http://127.0.0.1:3340 "$MNEMONIC" 40 500 3)
+
+# 3. Fault-injection proxy in front of the mint
+python3 CI/restore-fault-proxy.py --port 3341 --mint-port 3340 &
+```
+
+`restore-fault-proxy.py` forwards everything and only touches `POST /v1/restore`.
+Control it with `POST /__restore/config {"fail_after": N, "mode": "drop"|"503",
+"delay_ms": M}`, `/__restore/heal` and `/__restore/stats`.
+
+`RestoreResumeIntegrationTests` (iOS) drives it end to end and skips without the
+fixture:
+
+```bash
+TEST_RUNNER_RESTORE_STRESS_MINT_URL=http://127.0.0.1:3341 \
+TEST_RUNNER_RESTORE_STRESS_CONTROL_URL=http://127.0.0.1:3341 \
+TEST_RUNNER_RESTORE_STRESS_MNEMONIC="$MNEMONIC" \
+TEST_RUNNER_RESTORE_STRESS_EXPECTED=20000 \
+xcodebuild test -project ios/CashuWallet.xcodeproj -scheme CashuWallet \
+  -destination 'platform=iOS Simulator,name=iPhone 17' \
+  -only-testing:CashuWalletTests/RestoreResumeIntegrationTests
+```
+
+The test restores once cleanly to count the restore requests, cuts the mint off a
+third of the way through a second restore, checks the saved resume positions,
+resumes, and asserts the recovered balance matches and no finished batch was
+scanned twice. Build the local bindings with `ios/Scripts/build-local-cdk-swift.sh`
+and `android/scripts/build-local-cdk-android.sh`.
+
 ## Test Coverage
 
 The integration tests verify **CDK-Swift ↔ real mint** compatibility:

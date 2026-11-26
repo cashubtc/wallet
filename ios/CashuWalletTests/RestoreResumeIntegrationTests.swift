@@ -102,4 +102,30 @@ final class RestoreResumeIntegrationTests: XCTestCase {
         XCTAssertLessThanOrEqual(firstLeg + secondLeg, baselineRequests + 8,
                                  "resume repeated finished batches: \(firstLeg) + \(secondLeg) vs \(baselineRequests)")
     }
+
+    /// A killed app loses the in-memory result, so no checkpoint is saved. Proofs
+    /// and counters persisted per batch survive. Measures what a relaunch costs:
+    /// a full rescan versus starting at the stored counters (`Lookback(0)`).
+    func testRelaunchAfterKillRecoversEverythingFromPersistedState() async throws {
+        let fixture = try fixture()
+        for (label, start) in [("fromZero", RestoreStart?.none), ("lookback0", .lookback(count: 0))] {
+            _ = try await control(fixture, "heal")
+            let wallet = try await freshWallet(fixture)
+            let first = try await control(fixture, "stats")
+            _ = try await control(fixture, "config", ["fail_after": 40, "mode": "drop"])
+            do {
+                _ = try await wallet.restoreWithOpts(opts: Nut13Options(batchSize: 100, maxGap: 3, start: nil))
+                XCTFail("Restore should have been interrupted")
+            } catch FfiError.RestoreInterrupted {}
+            // Simulated kill: the partial result and positions are discarded.
+            _ = try await control(fixture, "heal")
+            let afterKill = try await control(fixture, "stats")
+
+            let restored = try await wallet.restoreWithOpts(opts: Nut13Options(batchSize: 100, maxGap: 3, start: start))
+            let relaunchRequests = try await control(fixture, "stats").forwarded - afterKill.forwarded
+            let balance = try await wallet.totalBalance().value
+            print("RESTORE_KILL_RESULT strategy=\(label) firstLeg=\(afterKill.forwarded - first.forwarded) relaunchRequests=\(relaunchRequests) reportedUnspent=\(restored.unspent.value) balance=\(balance)")
+            XCTAssertEqual(balance, fixture.expected, "\(label): wallet balance after relaunch")
+        }
+    }
 }
