@@ -15,19 +15,24 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
+import com.google.zxing.common.BitMatrix
 import com.google.zxing.qrcode.QRCodeWriter
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import org.cashudevkit.Token as CdkToken
 import org.cashudevkit.TokenUrEncoder
 
@@ -70,43 +75,74 @@ fun QRCodeView(
 ) {
     var speed by remember { mutableStateOf(QRSpeed.Fast) }
     var size by remember { mutableStateOf(QRSize.Large) }
-    val sequence = remember(content, staticOnly, size) {
-        qrFrameSequence(content = content, staticOnly = staticOnly, chunkSize = size.chunkSize)
+    val isDirectlyStatic = staticOnly || content.length <= size.chunkSize
+    val staticBitmap = remember(content, isDirectlyStatic) {
+        if (isDirectlyStatic) runCatching { qrBitmap(content).asImageBitmap() }.getOrNull() else null
     }
-    var frame by remember(sequence) { mutableStateOf(sequence.firstFrame) }
+    var animatedBitmap by remember(content) { mutableStateOf<ImageBitmap?>(null) }
+    var animatedFailed by remember(content) { mutableStateOf(false) }
+    var totalParts by remember(content) { mutableIntStateOf(1) }
 
-    LaunchedEffect(sequence, speed) {
-        frame = sequence.firstFrame
+    LaunchedEffect(content, staticOnly, size, speed) {
+        if (staticOnly || content.length <= size.chunkSize) {
+            totalParts = 1
+            animatedFailed = false
+            return@LaunchedEffect
+        }
+        val sequence = withContext(Dispatchers.Default) {
+            qrFrameSequence(content = content, staticOnly = false, chunkSize = size.chunkSize)
+        }
+        totalParts = sequence.totalParts
+        var currentFrame = sequence.firstFrame
+        val firstImage = withContext(Dispatchers.Default) {
+            runCatching { qrBitmap(currentFrame).asImageBitmap() }.getOrNull()
+        }
+        animatedBitmap = firstImage
+        animatedFailed = firstImage == null
         val encoder = sequence.encoder ?: return@LaunchedEffect
         while (true) {
             delay(speed.intervalMillis)
-            frame = runCatching { encoder.nextPart() }.getOrDefault(frame)
+            val nextImage = withContext(Dispatchers.Default) {
+                val nextFrame = runCatching { encoder.nextPart() }.getOrDefault(currentFrame)
+                currentFrame = nextFrame
+                runCatching { qrBitmap(nextFrame).asImageBitmap() }.getOrNull()
+            }
+            if (nextImage != null) {
+                animatedBitmap = nextImage
+            }
         }
     }
 
-    val bitmap = remember(frame) { runCatching { qrBitmap(frame) }.getOrNull() }
+    val imageBitmap = if (isDirectlyStatic) staticBitmap else animatedBitmap
+    val unavailable = if (isDirectlyStatic) staticBitmap == null else animatedFailed
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        if (bitmap == null) {
-            Box(Modifier.fillMaxWidth().aspectRatio(1f), contentAlignment = Alignment.Center) {
-                Text("QR unavailable", color = MaterialTheme.colorScheme.secondary)
+        when {
+            imageBitmap != null -> {
+                Image(
+                    bitmap = imageBitmap,
+                    contentDescription = "QR code",
+                    modifier = Modifier.fillMaxWidth().aspectRatio(1f),
+                    // QR modules must stay on a hard black/white pixel grid.
+                    // Platform-dependent bitmap filtering introduces gray edge
+                    // pixels and can make both scanners and screenshot goldens
+                    // less reliable when the bitmap is scaled.
+                    filterQuality = FilterQuality.None,
+                )
             }
-        } else {
-            Image(
-                bitmap = bitmap.asImageBitmap(),
-                contentDescription = "QR code",
-                modifier = Modifier.fillMaxWidth().aspectRatio(1f),
-                // QR modules must stay on a hard black/white pixel grid.
-                // Platform-dependent bitmap filtering introduces gray edge
-                // pixels and can make both scanners and screenshot goldens
-                // less reliable when the bitmap is scaled.
-                filterQuality = FilterQuality.None,
-            )
+            unavailable -> {
+                Box(Modifier.fillMaxWidth().aspectRatio(1f), contentAlignment = Alignment.Center) {
+                    Text("QR unavailable", color = MaterialTheme.colorScheme.secondary)
+                }
+            }
+            else -> {
+                Box(Modifier.fillMaxWidth().aspectRatio(1f))
+            }
         }
-        if (showControls && sequence.totalParts > 1) {
+        if (showControls && totalParts > 1) {
             QRControlsRow(
                 speed = speed,
                 size = size,
@@ -167,21 +203,26 @@ internal fun qrFrameSequence(
     }
 }
 
-private fun qrBitmap(content: String, size: Int = 768): Bitmap {
-    val matrix = QRCodeWriter().encode(
-        content,
-        BarcodeFormat.QR_CODE,
-        size,
-        size,
-        mapOf(EncodeHintType.MARGIN to 1),
-    )
-    val pixels = IntArray(size * size)
-    for (y in 0 until size) {
-        for (x in 0 until size) {
-            pixels[y * size + x] = if (matrix[x, y]) 0xff000000.toInt() else 0xffffffff.toInt()
+internal fun qrBitMatrix(content: String): BitMatrix = QRCodeWriter().encode(
+    content,
+    BarcodeFormat.QR_CODE,
+    0,
+    0,
+    mapOf(EncodeHintType.MARGIN to 1),
+)
+
+private fun qrBitmap(content: String): Bitmap {
+    val matrix = qrBitMatrix(content)
+    val width = matrix.width
+    val height = matrix.height
+    val pixels = IntArray(width * height)
+    for (y in 0 until height) {
+        val rowOffset = y * width
+        for (x in 0 until width) {
+            pixels[rowOffset + x] = if (matrix[x, y]) 0xff000000.toInt() else 0xffffffff.toInt()
         }
     }
-    return Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888).apply {
-        setPixels(pixels, 0, size, 0, 0, size, size)
+    return Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).apply {
+        setPixels(pixels, 0, width, 0, 0, width, height)
     }
 }

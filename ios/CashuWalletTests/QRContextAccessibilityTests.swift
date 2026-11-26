@@ -91,4 +91,13 @@ final class QRContextAccessibilityTests: XCTestCase {
         XCTAssertFalse(expired.monitorsMintQuoteWhileOpen)
     }
 
+    func testQRImageRendersAtNativeModuleDimensions() throws {
+        XCTAssertNil(QRCodeView.generateQRImage(from: ""))
+
+        let image = try XCTUnwrap(QRCodeView.generateQRImage(from: "lnbc2500n1deterministicpreviewrequest"))
+        let cgImage = try XCTUnwrap(image.cgImage)
+        XCTAssertEqual(cgImage.width, cgImage.height)
+        XCTAssertGreaterThanOrEqual(cgImage.width, 21)
+        XCTAssertLessThan(cgImage.width, 100, "Expected 1 px per QR module without CPU upscaling")
+    }
 }

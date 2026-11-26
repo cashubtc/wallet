@@ -430,7 +430,7 @@ struct LightningAddressReceiveContent: View {
                     if preparing {
                         ProgressView("Preparing to receive…")
                     } else {
-                        QRCodeView(content: address, showControls: false)
+                        QRCodeView(content: address, showControls: false, staticOnly: true)
                             .padding()
                             .frame(width: min(280, geometry.size.width - 48),
                                    height: min(280, geometry.size.width - 48))

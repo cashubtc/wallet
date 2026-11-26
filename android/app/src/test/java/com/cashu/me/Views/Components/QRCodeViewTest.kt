@@ -2,6 +2,7 @@ package com.cashu.me.Views.Components
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -50,5 +51,13 @@ class QRCodeViewTest {
         assertEquals(content, sequence.firstFrame)
         assertEquals(1, sequence.totalParts)
         assertNull(sequence.encoder)
+    }
+
+    @Test
+    fun qrBitMatrixUsesNativeModuleDimensions() {
+        val matrix = qrBitMatrix("lnbc2500n1deterministicpreviewrequest")
+
+        assertEquals(matrix.width, matrix.height)
+        assertTrue("Expected native module width, got ${matrix.width}", matrix.width in 23..100)
     }
 }
