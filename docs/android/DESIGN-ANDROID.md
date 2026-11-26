@@ -75,6 +75,11 @@ like a port, make the Android-native choice instead.
   tokens), not hand-tuned tweens. Choreography constants that are literal iOS
   copies (70ms stagger step, 1100ms waiting-pulse, 900ms spinner period) live
   in `ui/theme/Motion.kt` (`CashuMotion`).
+  *(2026-11-26: the two recipes that used to be typed at every call site are
+  named there too. `quietSpec()` and `quietFade()` are the spring behind a
+  value or label changing in place; `statusSwap()` is a sheet body giving way
+  to the payment status screen. iOS holds the same roles in
+  `DesignSystem/CashuMotion.swift`.)*
 - **Shared motion primitives** (`ui/components/`): `SpinnerRing` (Canvas port
   of the iOS trimmed-arc payment spinner; reduce-motion falls back to
   `CircularProgressIndicator`), `IconSwap` (glyph replacement ≙ iOS
@@ -129,6 +134,9 @@ like a port, make the Android-native choice instead.
   spatial, even for scale: Expressive's spatial springs are under-damped
   (0.6–0.8) and a press must not overshoot — it is a state flip, not a reflow,
   and no gesture momentum preceded it.
+  *(2026-11-26, correction: number-pad keys do not scale. A key has no surface
+  to compress, so it dims to 0.4 over 100 ms and returns the same way
+  (`NumberPad.kt`). Only CTAs spring-scale.)*
 - Lists animate placement (`Modifier.animateItem()` — History, Home recent,
   Mint discovery), reveals expand/shrink, page dots stretch into pills.
 - **Route swap (Transfer, 2026-09-30)**: *(the original recipe in this first
@@ -179,6 +187,11 @@ like a port, make the Android-native choice instead.
   The earlier per-digit odometer roll read as too much and was retired
   (2026-07-10). Home's received-delta beat still swaps into the fiat slot for
   2.5s with the sanctioned celebration spring (`BalanceDisplay`).
+  *(2026-11-26, correction: the home balance and its fiat line are the
+  exception. Since the payment-arrival work they roll only the digits that
+  changed (`RollingAmountText`, a critically damped `Spring.StiffnessMediumLow`),
+  the twin of iOS `.numericText`, so an arriving payment reads as the balance
+  changing. A change of unit still cross-fades, as does every other amount.)*
 - **Private balance** (2026-10-25): the home balance's tap cycle ends in a
   private step that masks the hero, Recent rows and History rows with fixed asterisks.
   It uses the same `AmountText` cross-fade as every other amount swap, and the

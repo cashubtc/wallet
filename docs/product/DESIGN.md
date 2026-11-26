@@ -1695,6 +1695,20 @@ cross-fades and value-driven container animations.
 `.linear(duration: 2).repeatForever()` for the ActivityOrb rotation only.
 No bounce, no elastic, no custom cubic-bezier, no `.interactiveSpring`.
 
+*(2026-11-26: these values now live in
+`ios/CashuWallet/DesignSystem/CashuMotion.swift` as named roles: `press`,
+`flip`, `settle`, `reflow`, `crossFade`, `stepSwap`, `reducedFade`,
+`valueRoll`, `celebration`, `toastEnter` and `toastExit`. A call site names a
+role, and `MotionGuardTests` keeps hand-typed curves from spreading. Two values
+the list above left out are sanctioned by name. The confirmation toast enters
+on `.spring(response: 0.38, dampingFraction: 0.9)`. The bare `.snappy`, which
+is SwiftUI's half-second default, is `valueRoll` where a money value rolls to a
+new value and `settle` where an error line or banner arrives. A bare `.snappy`
+is never typed at a call site: it reads as quick while being the slowest curve
+in the app. Anything tapped often takes `flip`, a quarter second; that covers
+each digit typed on the number pad, the bitcoin and fiat flip on an amount,
+the home balance step and the unit pager dots.)*
+
 **Carve-outs** *(added 2026-07-06 — motion audit, design-motion-principles /
 Jakub-Krehel production-polish lens; both refine the seven, neither adds a new
 curve or a delight beat):*
