@@ -55,7 +55,7 @@ extension WalletManager {
             return outcome
         } catch {
             // A failed transfer may have removed its quotes or changed its row.
-            await loadTransactions()
+            await loadTransactions(includeRemoteObservations: false)
             throw error
         }
     }

@@ -57,7 +57,7 @@ extension WalletManager {
         }
 
         await refreshBalance()
-        await loadTransactions()
+        await loadTransactions(includeRemoteObservations: false)
         SentryService.breadcrumb("Token sent", category: "wallet.token")
         return result
     }
@@ -107,7 +107,7 @@ extension WalletManager {
         }
 
         await refreshBalance()
-        await loadTransactions()
+        await loadTransactions(includeRemoteObservations: false)
         SentryService.breadcrumb("Token received", category: "wallet.token")
         return outcome.amount
     }
@@ -193,7 +193,7 @@ extension WalletManager {
         }
 
         await refreshBalance()
-        await loadTransactions()
+        await loadTransactions(includeRemoteObservations: false)
         SentryService.breadcrumb("Token received", category: "wallet.token")
 
         var userInfo: [String: Any] = [
@@ -279,7 +279,7 @@ extension WalletManager {
             amount = try await receiveTokens(tokenString: token.token)
         }
         transactionService.removePendingReceiveToken(tokenId: token.tokenId)
-        await loadTransactions()
+        await loadTransactions(includeRemoteObservations: false)
         return amount
     }
 
@@ -330,7 +330,7 @@ extension WalletManager {
             return try await wallet.checkSendStatus(operationId: sagaId)
         }
         if claimed {
-            await loadTransactions()
+            await loadTransactions(includeRemoteObservations: false)
         }
         return claimed
     }
@@ -403,9 +403,9 @@ extension WalletManager {
                 // No local rows to merge anymore: only a claim changes history.
                 if claimedAny {
                     await self.refreshBalanceAssumingWalletOperationLease()
-                    await self.loadTransactionsAssumingWalletOperationLease()
+                    await self.loadTransactionsAssumingWalletOperationLease(includeRemoteObservations: false)
                 } else if foundPending {
-                    await self.loadTransactionsAssumingWalletOperationLease()
+                    await self.loadTransactionsAssumingWalletOperationLease(includeRemoteObservations: false)
                 }
             }
         } catch is CancellationError {

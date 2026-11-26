@@ -162,11 +162,52 @@ enum OnchainExplorer {
         return URL(string: "\(descriptor.webBaseURL)/tx/\(txid)")
     }
 
+    private struct CachedTipHeight {
+        let height: Int
+        let fetchedAt: Date
+    }
+
+    private static let tipHeightCacheTTL: TimeInterval = 30
+    private static let tipHeightCacheLock = NSLock()
+    private static var tipHeightCache: [String: CachedTipHeight] = [:]
+
+    static func clearTipHeightCacheForTesting() {
+        tipHeightCacheLock.withLock {
+            tipHeightCache.removeAll()
+        }
+    }
+
     static func observePayment(
         for address: String,
         mintURL: String?,
         expectedAmount: UInt64,
         createdAfter: Date
+    ) async -> OnchainPaymentObservation? {
+        await observePayment(
+            for: address,
+            mintURL: mintURL,
+            expectedAmount: expectedAmount,
+            createdAfter: createdAfter,
+            now: Date.init,
+            fetch: { url in
+                let (data, response) = try await URLSession.shared.data(for: explorerAPIRequest(url: url))
+                if let httpResponse = response as? HTTPURLResponse,
+                   !(200...299).contains(httpResponse.statusCode) {
+                    AppLogger.wallet.error("Failed to inspect on-chain address activity: HTTP \(httpResponse.statusCode)")
+                    return nil
+                }
+                return data
+            }
+        )
+    }
+
+    static func observePayment(
+        for address: String,
+        mintURL: String?,
+        expectedAmount: UInt64,
+        createdAfter: Date,
+        now: () -> Date,
+        fetch: (URL) async throws -> Data?
     ) async -> OnchainPaymentObservation? {
         guard let descriptor = descriptor(for: address, mintURL: mintURL) else {
             return nil
@@ -178,19 +219,19 @@ enum OnchainExplorer {
         }
 
         do {
-            let request = explorerAPIRequest(url: url)
-
-            let (data, response) = try await URLSession.shared.data(for: request)
-            if let httpResponse = response as? HTTPURLResponse,
-               !(200...299).contains(httpResponse.statusCode) {
-                AppLogger.wallet.error("Failed to inspect on-chain address activity: HTTP \(httpResponse.statusCode)")
+            guard let data = try await fetch(url) else {
                 return nil
             }
 
             let transactions = try JSONDecoder().decode([ExplorerTransaction].self, from: data)
+            // Short-circuit before fetching tip height: an unfunded address has
+            // no transactions and needs no block-height lookup.
+            guard !transactions.isEmpty else {
+                return nil
+            }
+
             let earliestBlockTime = Int(createdAfter.timeIntervalSince1970)
             let normalizedAddressLowercased = normalizedAddress.lowercased()
-            let tipHeight = await currentTipHeight(using: descriptor)
 
             for transaction in transactions {
                 let matchingAmount = transaction.vout
@@ -202,11 +243,16 @@ enum OnchainExplorer {
                     continue
                 }
 
-                let status = await freshStatusIfNeeded(for: transaction, using: descriptor)
+                let status = await freshStatusIfNeeded(for: transaction, using: descriptor, fetch: fetch)
 
                 if let blockTime = status.blockTime, blockTime < earliestBlockTime {
                     continue
                 }
+
+                // Only confirmed transactions compute confirmation counts from tip height.
+                let tipHeight = status.confirmed
+                    ? await currentTipHeight(using: descriptor, now: now, fetch: fetch)
+                    : nil
 
                 return OnchainPaymentObservation(
                     txid: transaction.txid,
@@ -270,36 +316,51 @@ enum OnchainExplorer {
         )
     }
 
-    private static func currentTipHeight(using descriptor: ExplorerDescriptor) async -> Int? {
-        if let url = URL(string: "\(descriptor.apiBaseURL)/blocks/tip/height"),
-           let tipHeight = await tipHeight(from: url) {
-            return tipHeight
-        }
-
-        guard let url = URL(string: "\(descriptor.apiBaseURL)/blocks") else {
-            return nil
-        }
-
-        do {
-            let (data, response) = try await URLSession.shared.data(for: explorerAPIRequest(url: url))
-            if let httpResponse = response as? HTTPURLResponse,
-               !(200...299).contains(httpResponse.statusCode) {
+    private static func currentTipHeight(
+        using descriptor: ExplorerDescriptor,
+        now: () -> Date,
+        fetch: (URL) async throws -> Data?
+    ) async -> Int? {
+        let currentDate = now()
+        if let cachedHeight = tipHeightCacheLock.withLock({ () -> Int? in
+            guard let cached = tipHeightCache[descriptor.apiBaseURL],
+                  currentDate.timeIntervalSince(cached.fetchedAt) < tipHeightCacheTTL else {
                 return nil
             }
-
-            let blocks = try JSONDecoder().decode([ExplorerBlock].self, from: data)
-            return blocks.map(\.height).max()
-        } catch {
-            AppLogger.wallet.error("Failed to inspect on-chain tip height: \(error)")
-            return nil
+            return cached.height
+        }) {
+            return cachedHeight
         }
+
+        var resolvedHeight: Int?
+        if let url = URL(string: "\(descriptor.apiBaseURL)/blocks/tip/height"),
+           let tipHeight = await tipHeight(from: url, fetch: fetch) {
+            resolvedHeight = tipHeight
+        } else if let url = URL(string: "\(descriptor.apiBaseURL)/blocks") {
+            do {
+                if let data = try await fetch(url) {
+                    let blocks = try JSONDecoder().decode([ExplorerBlock].self, from: data)
+                    resolvedHeight = blocks.map(\.height).max()
+                }
+            } catch {
+                AppLogger.wallet.error("Failed to inspect on-chain tip height: \(error)")
+            }
+        }
+
+        if let resolvedHeight {
+            tipHeightCacheLock.withLock {
+                tipHeightCache[descriptor.apiBaseURL] = CachedTipHeight(height: resolvedHeight, fetchedAt: currentDate)
+            }
+        }
+        return resolvedHeight
     }
 
-    private static func tipHeight(from url: URL) async -> Int? {
+    private static func tipHeight(
+        from url: URL,
+        fetch: (URL) async throws -> Data?
+    ) async -> Int? {
         do {
-            let (data, response) = try await URLSession.shared.data(for: explorerAPIRequest(url: url))
-            if let httpResponse = response as? HTTPURLResponse,
-               !(200...299).contains(httpResponse.statusCode) {
+            guard let data = try await fetch(url) else {
                 return nil
             }
 
@@ -313,7 +374,8 @@ enum OnchainExplorer {
 
     private static func freshStatusIfNeeded(
         for transaction: ExplorerTransaction,
-        using descriptor: ExplorerDescriptor
+        using descriptor: ExplorerDescriptor,
+        fetch: (URL) async throws -> Data?
     ) async -> ExplorerTransactionStatus {
         guard transaction.status.confirmed,
               transaction.status.blockHeight == nil,
@@ -322,9 +384,7 @@ enum OnchainExplorer {
         }
 
         do {
-            let (data, response) = try await URLSession.shared.data(for: explorerAPIRequest(url: url))
-            if let httpResponse = response as? HTTPURLResponse,
-               !(200...299).contains(httpResponse.statusCode) {
+            guard let data = try await fetch(url) else {
                 return transaction.status
             }
 

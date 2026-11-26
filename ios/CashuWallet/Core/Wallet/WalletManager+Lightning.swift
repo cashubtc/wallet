@@ -23,7 +23,7 @@ extension WalletManager {
                 description: description
             )
             self.rememberMintQuoteForScheduling(quote)
-            await self.loadTransactionsAssumingWalletOperationLease()
+            await self.loadTransactionsAssumingWalletOperationLease(includeRemoteObservations: false)
             return quote
         }
     }
@@ -89,7 +89,7 @@ extension WalletManager {
             do {
                 let amount = try await self.lightningService.mintTokens(quoteId: quoteId)
                 await self.refreshBalanceAssumingWalletOperationLease()
-                await self.loadTransactionsAssumingWalletOperationLease()
+                await self.loadTransactionsAssumingWalletOperationLease(includeRemoteObservations: false)
                 return amount
             } catch {
                 await self.captureWalletFailureDiagnostics(kind: .mint, quoteID: quoteId)
@@ -215,7 +215,7 @@ extension WalletManager {
             // the foreground poll reconcile it. Refresh so held funds leave the
             // balance and the pending payment shows in History (Android parity).
             await refreshBalance()
-            await loadTransactions()
+            await loadTransactions(includeRemoteObservations: false)
             throw recoveryError
         }
         let result = confirmation.result
@@ -235,14 +235,14 @@ extension WalletManager {
                 Task { [weak self] in
                     guard (try? await deferred.value) != nil else { return }
                     await self?.refreshBalance()
-                    await self?.loadTransactions()
+                    await self?.loadTransactions(includeRemoteObservations: false)
                 }
             }
         } else {
             SentryService.breadcrumb("Lightning payment sent", category: "wallet.lightning")
         }
         await refreshBalance()
-        await loadTransactions()
+        await loadTransactions(includeRemoteObservations: false)
         return result
     }
 }

@@ -858,4 +858,80 @@ final class OnchainDepositStatusTests: XCTestCase {
         XCTAssertNil(OnchainDepositStatus.expired.historyText)
         XCTAssertNil(OnchainDepositStatus.received(amount: 2_317).historyText)
     }
+
+    func testOnchainExplorerSkipsTipHeightWhenAddressHasNoTransactions() async {
+        OnchainExplorer.clearTipHeightCacheForTesting()
+        var requestedURLs: [String] = []
+
+        let result = await OnchainExplorer.observePayment(
+            for: "bc1qempty",
+            mintURL: nil,
+            expectedAmount: 1,
+            createdAfter: Date(timeIntervalSince1970: 0),
+            now: { Date(timeIntervalSince1970: 1_000) },
+            fetch: { url in
+                requestedURLs.append(url.absoluteString)
+                return Data("[]".utf8)
+            }
+        )
+
+        XCTAssertNil(result)
+        XCTAssertEqual(requestedURLs, ["https://mempool.space/api/address/bc1qempty/txs"])
+    }
+
+    func testOnchainExplorerSkipsTipHeightForUnconfirmedTransaction() async {
+        OnchainExplorer.clearTipHeightCacheForTesting()
+        var requestedURLs: [String] = []
+        let payload = #"[{"txid":"mempool-tx","status":{"confirmed":false},"vout":[{"scriptpubkey_address":"bc1qunconfirmed","value":2500}]}]"#
+
+        let result = await OnchainExplorer.observePayment(
+            for: "bc1qunconfirmed",
+            mintURL: nil,
+            expectedAmount: 1,
+            createdAfter: Date(timeIntervalSince1970: 0),
+            now: { Date(timeIntervalSince1970: 1_000) },
+            fetch: { url in
+                requestedURLs.append(url.absoluteString)
+                return Data(payload.utf8)
+            }
+        )
+
+        XCTAssertEqual(result, OnchainPaymentObservation(txid: "mempool-tx", amount: 2500, confirmed: false, confirmations: nil))
+        XCTAssertEqual(requestedURLs, ["https://mempool.space/api/address/bc1qunconfirmed/txs"])
+    }
+
+    func testOnchainExplorerCachesTipHeightWithinTTL() async {
+        OnchainExplorer.clearTipHeightCacheForTesting()
+        var requestedURLs: [String] = []
+        var now = Date(timeIntervalSince1970: 10_000)
+        let payload = #"[{"txid":"confirmed-tx","status":{"confirmed":true,"block_height":100,"block_time":5},"vout":[{"scriptpubkey_address":"bc1qconfirmed","value":1000}]}]"#
+
+        let fetch: (URL) async throws -> Data? = { url in
+            requestedURLs.append(url.absoluteString)
+            if url.absoluteString.hasSuffix("/blocks/tip/height") {
+                return Data("102".utf8)
+            }
+            return Data(payload.utf8)
+        }
+
+        let first = await OnchainExplorer.observePayment(
+            for: "bc1qconfirmed", mintURL: nil, expectedAmount: 1,
+            createdAfter: Date(timeIntervalSince1970: 0), now: { now }, fetch: fetch
+        )
+        now = now.addingTimeInterval(15)
+        let second = await OnchainExplorer.observePayment(
+            for: "bc1qconfirmed", mintURL: nil, expectedAmount: 1,
+            createdAfter: Date(timeIntervalSince1970: 0), now: { now }, fetch: fetch
+        )
+        now = now.addingTimeInterval(35)
+        let third = await OnchainExplorer.observePayment(
+            for: "bc1qconfirmed", mintURL: nil, expectedAmount: 1,
+            createdAfter: Date(timeIntervalSince1970: 0), now: { now }, fetch: fetch
+        )
+
+        XCTAssertEqual(first?.confirmations, 3)
+        XCTAssertEqual(second?.confirmations, 3)
+        XCTAssertEqual(third?.confirmations, 3)
+        XCTAssertEqual(requestedURLs.filter { $0.hasSuffix("/blocks/tip/height") }.count, 2)
+    }
 }

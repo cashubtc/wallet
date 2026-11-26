@@ -138,7 +138,7 @@ extension WalletManager {
                         }
 
                         await self.refreshBalanceAssumingWalletOperationLease()
-                        await self.loadTransactionsAssumingWalletOperationLease()
+                        await self.loadTransactionsAssumingWalletOperationLease(includeRemoteObservations: false)
                         let inFlow: Bool
                         if let npcQuote, let address {
                             inFlow = NPCService.shared.publishReceivedPayment(NPCPaymentReceipt(
