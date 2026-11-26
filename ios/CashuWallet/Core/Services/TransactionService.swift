@@ -62,7 +62,8 @@ class TransactionService: ObservableObject {
         guard let repo = walletRepository(), let database = walletDatabase() else { return }
 
         loadPendingReceiveTokens()
-        var mintQuoteTimestamps = loadMintQuoteTimestamps()
+        let initialMintQuoteTimestamps = loadMintQuoteTimestamps()
+        var mintQuoteTimestamps = initialMintQuoteTimestamps
 
         // Get transactions from tracked wallets. CDK persists every send,
         // receive, mint, and melt with a stable saga-derived id and a native
@@ -70,6 +71,9 @@ class TransactionService: ObservableObject {
         // CDK retains the individual attempts for recovery and diagnostics.
         var allTransactions: [WalletTransaction] = []
         var quoteIdsWithTransactions: Set<String> = []
+        var savedTokens = walletStore.loadSavedTokens()
+        var savedTokensDirty = false
+        let mintTransfers = walletStore.loadMintTransfers()
         let retryStates = onchainRetryStates()
         let trackedMintUrls = Set(getTrackedMintUrls().filter { !$0.isEmpty }.map(MintURLIdentity.normalized))
         let previous = transactions.filter {
@@ -116,7 +120,7 @@ class TransactionService: ObservableObject {
                             kind = tx.paymentRequest != nil ? .lightning : .ecash
                         }
 
-                        let storedToken = kind == .ecash ? self.getToken(txId: tx.id.hex) : nil
+                        let storedToken = kind == .ecash ? savedTokens[tx.id.hex] : nil
 
                         var walletTransaction = WalletTransaction(
                             id: tx.id.hex,
@@ -164,7 +168,8 @@ class TransactionService: ObservableObject {
                         guard let sagaId = walletTxs[index].sagaId,
                               let token = await self.sendTokenFromSaga(operationId: sagaId) else { continue }
                         walletTxs[index].token = token
-                        self.saveToken(txId: walletTxs[index].id, token: token)
+                        savedTokens[walletTxs[index].id] = token
+                        savedTokensDirty = true
                     }
                     allTransactions.append(contentsOf: walletTxs)
                 } catch is CancellationError {
@@ -180,6 +185,9 @@ class TransactionService: ObservableObject {
                     )
                 }
         }
+        if savedTokensDirty {
+            walletStore.saveSavedTokens(savedTokens)
+        }
 
         if let walletDatabase = walletDatabase() {
             do {
@@ -189,7 +197,7 @@ class TransactionService: ObservableObject {
                 // rows. Quotes that already have a transaction are skipped.
                 // A transfer's destination quote is paid by the wallet itself,
                 // so it is never an invoice the user is waiting on.
-                let transferQuoteIDs = walletStore.loadMintTransfers().ownedMintQuoteIDs
+                let transferQuoteIDs = mintTransfers.ownedMintQuoteIDs
                 let pendingMintQuotes = try await walletDatabase.getUnissuedMintQuotes()
                     .filter { !transferQuoteIDs.contains($0.id) }
                 let pendingQuoteTransactions = await pendingTransactions(
@@ -198,7 +206,8 @@ class TransactionService: ObservableObject {
                     quoteIdsWithTransactions: quoteIdsWithTransactions,
                     timestamps: &mintQuoteTimestamps,
                     includeRemoteObservations: includeRemoteObservations,
-                    observingQuoteID: observingQuoteID
+                    observingQuoteID: observingQuoteID,
+                    retryStates: retryStates
                 )
                 allTransactions.append(contentsOf: pendingQuoteTransactions)
             } catch is CancellationError {
@@ -235,7 +244,11 @@ class TransactionService: ObservableObject {
         })
 
         guard !Task.isCancelled else { return }
-        persistMintQuoteTimestamps(for: allTransactions, using: mintQuoteTimestamps)
+        persistMintQuoteTimestamps(
+            for: allTransactions,
+            using: mintQuoteTimestamps,
+            initial: initialMintQuoteTimestamps
+        )
 
         // Restore from durable request metadata each load, even after payment/relaunch.
         let requests = walletStore.loadCashuRequests()
@@ -250,7 +263,7 @@ class TransactionService: ObservableObject {
         let mints = walletStore.loadMints()
         transactions = MintTransferProjection.project(
             rows,
-            records: walletStore.loadMintTransfers(),
+            records: mintTransfers,
             mintName: { MintInfo.displayName(for: $0, in: mints) }
         )
         if !hasLoadedTransactions { hasLoadedTransactions = true }
@@ -377,11 +390,14 @@ class TransactionService: ObservableObject {
         quoteIdsWithTransactions: Set<String>,
         timestamps: inout [String: TimeInterval],
         includeRemoteObservations: Bool,
-        observingQuoteID: String? = nil
+        observingQuoteID: String? = nil,
+        retryStates: [String: MintQuoteRetryState]? = nil
     ) async -> [WalletTransaction] {
         var transactions: [WalletTransaction] = []
         let savedObservations = walletStore.loadOnchainPaymentObservations()
-        let retryStates = onchainRetryStates()
+        let retryStates = retryStates ?? onchainRetryStates()
+        var savedPreimages = walletStore.loadPaymentPreimages()
+        var savedPreimagesDirty = false
         let onchainQuoteIDs = Set(quotes.filter {
             PaymentMethodKind.from($0.paymentMethod) == .onchain
         }.map(\.id))
@@ -478,11 +494,12 @@ class TransactionService: ObservableObject {
                 : quote.state == .issued || quote.amountIssued.value >= amount ? .completed
                 : .pending
 
-            var storedPaymentProof = lastOnchainObservation?.txid ?? getPreimage(quoteId: quote.id)
+            var storedPaymentProof = lastOnchainObservation?.txid ?? savedPreimages[quote.id]
             if let observation {
                 storedPaymentProof = observation.txid
-                if getPreimage(quoteId: quote.id) != observation.txid {
-                    savePreimage(quoteId: quote.id, preimage: observation.txid)
+                if savedPreimages[quote.id] != observation.txid {
+                    savedPreimages[quote.id] = observation.txid
+                    savedPreimagesDirty = true
                 }
             }
             // One vocabulary with the receive sheet and the receipt.
@@ -519,6 +536,9 @@ class TransactionService: ObservableObject {
 
         if retainedObservations != savedObservations {
             walletStore.saveOnchainPaymentObservations(retainedObservations)
+        }
+        if savedPreimagesDirty {
+            walletStore.savePaymentPreimages(savedPreimages)
         }
         return transactions
     }
@@ -564,7 +584,8 @@ class TransactionService: ObservableObject {
 
     private func persistMintQuoteTimestamps(
         for transactions: [WalletTransaction],
-        using timestamps: [String: TimeInterval]
+        using timestamps: [String: TimeInterval],
+        initial: [String: TimeInterval]
     ) {
         let pendingQuoteIDs = Set(
             transactions
@@ -574,7 +595,9 @@ class TransactionService: ObservableObject {
 
         let prunedTimestamps = timestamps.filter { pendingQuoteIDs.contains($0.key) }
 
-        walletStore.saveMintQuoteTimestamps(prunedTimestamps)
+        if prunedTimestamps != initial {
+            walletStore.saveMintQuoteTimestamps(prunedTimestamps)
+        }
     }
 }
 

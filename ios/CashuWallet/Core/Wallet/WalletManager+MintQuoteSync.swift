@@ -42,14 +42,48 @@ extension WalletManager {
                 if result.newlyIssued > 0 || result.hasSettledPayment {
                     await self.refreshBalanceAssumingWalletOperationLease()
                 }
-                await self.loadTransactionsAssumingWalletOperationLease(
-                    observingQuoteID: observingQuoteID
-                )
+                if self.shouldReloadTransactionsAfterMintQuoteRefresh(
+                    quoteId: quoteId,
+                    result: result
+                ) {
+                    await self.loadTransactionsAssumingWalletOperationLease(
+                        observingQuoteID: observingQuoteID
+                    )
+                }
                 return result
             }
         } catch {
             return nil
         }
+    }
+
+    /// Skip full SQLite + UserDefaults history rebuilds on unchanged unpaid
+    /// Lightning ticks while a receive sheet polls every 2 seconds. On-chain
+    /// quotes still reload so scoped explorer observations keep updating.
+    private func shouldReloadTransactionsAfterMintQuoteRefresh(
+        quoteId: String,
+        result: MintQuoteReconciliationResult
+    ) -> Bool {
+        let hasExistingHistoryRow = transactionService.transactions.contains {
+            $0.quoteId == quoteId || $0.id == quoteId
+        }
+        return Self.shouldReloadHistoryAfterMintQuoteRefresh(
+            result: result,
+            hasExistingHistoryRow: hasExistingHistoryRow
+        )
+    }
+
+    nonisolated static func shouldReloadHistoryAfterMintQuoteRefresh(
+        result: MintQuoteReconciliationResult,
+        hasExistingHistoryRow: Bool
+    ) -> Bool {
+        if result.quote.paymentMethod == .onchain { return true }
+        if result.newlyIssued > 0 || result.hasSettledPayment || result.hadOutstandingPayment { return true }
+        if result.quote.state != .pending || result.retryStatus.state != .none || result.quote.isExpired {
+            return true
+        }
+        if result.quote.paymentMethod == .bolt11 && !hasExistingHistoryRow { return true }
+        return false
     }
 
     /// Restore the last honest paid-but-unissued state when a receive screen is

@@ -858,4 +858,171 @@ final class OnchainDepositStatusTests: XCTestCase {
         XCTAssertNil(OnchainDepositStatus.expired.historyText)
         XCTAssertNil(OnchainDepositStatus.received(amount: 2_317).historyText)
     }
+
+    @MainActor
+    func testPendingTransactionsReadsAndWritesPreimagesOncePerLoad() async {
+        let mintURL = "https://mint.example.com"
+        let storage = CountingStorage()
+        let store = WalletStore(storage: storage)
+        store.savePaymentPreimages(["quote-1": "existing-txid"])
+        storage.resetCounts()
+
+        let service = TransactionService(
+            walletRepository: { nil },
+            walletDatabase: { nil },
+            getTrackedMintUrls: { [mintURL] },
+            walletStore: store,
+            observeOnchainPayment: { address, _, _, _ in
+                OnchainPaymentObservation(txid: "tx-\(address)", amount: 100, confirmed: false, confirmations: nil)
+            }
+        )
+
+        func makeQuote(id: String, method: Cdk.PaymentMethod, request: String) -> MintQuote {
+            MintQuote(
+                id: id,
+                amount: method == .bolt11 ? Amount(value: 100) : nil,
+                unit: .sat,
+                request: request,
+                state: .unpaid,
+                expiry: 0,
+                mintUrl: MintUrl(url: mintURL),
+                amountIssued: Amount(value: 0),
+                amountPaid: Amount(value: 0),
+                updatedAt: 1,
+                estimatedBlocks: nil,
+                paymentMethod: method,
+                secretKey: nil,
+                usedByOperation: nil,
+                version: 0
+            )
+        }
+
+        let quotes = [
+            makeQuote(id: "quote-1", method: .bolt11, request: "lnbc1a"),
+            makeQuote(id: "quote-2", method: .bolt11, request: "lnbc1b"),
+            makeQuote(id: "quote-3", method: .onchain, request: "bc1qone"),
+            makeQuote(id: "quote-4", method: .onchain, request: "bc1qtwo")
+        ]
+        var timestamps: [String: TimeInterval] = [:]
+        let rows = await service.pendingTransactions(
+            from: quotes,
+            trackedMintUrls: [mintURL],
+            quoteIdsWithTransactions: [],
+            timestamps: &timestamps,
+            includeRemoteObservations: true,
+            retryStates: [:]
+        )
+
+        XCTAssertEqual(rows.count, 4)
+        XCTAssertEqual(storage.readCounts[StorageKeys.paymentPreimages], 1)
+        XCTAssertEqual(storage.writeCounts[StorageKeys.paymentPreimages], 1)
+        XCTAssertEqual(storage.readCounts[StorageKeys.mintQuoteSchedules] ?? 0, 0)
+        XCTAssertEqual(store.loadPaymentPreimages()["quote-3"], "tx-bc1qone")
+        XCTAssertEqual(store.loadPaymentPreimages()["quote-4"], "tx-bc1qtwo")
+    }
+
+    func testShouldReloadHistoryAfterMintQuoteRefreshSkipsUnchangedUnpaidLightning() {
+        func makeResult(
+            method: PaymentMethodKind,
+            state: MintQuoteState = .pending,
+            amountPaid: UInt64 = 0,
+            amountIssued: UInt64 = 0,
+            expiry: UInt64? = UInt64(Date().addingTimeInterval(600).timeIntervalSince1970),
+            retryState: MintQuoteRetryState = .none
+        ) -> MintQuoteReconciliationResult {
+            let quote = MintQuoteInfo(
+                id: "q1",
+                request: "req",
+                amount: 100,
+                isAmountless: method == .bolt12,
+                paymentMethod: method,
+                state: state,
+                expiry: expiry,
+                createdAt: nil,
+                amountPaid: amountPaid,
+                amountIssued: amountIssued
+            )
+            return MintQuoteReconciliationResult(
+                observed: quote,
+                retryStatus: MintQuoteRetryStatus(state: retryState)
+            )
+        }
+
+        XCTAssertFalse(
+            WalletManager.shouldReloadHistoryAfterMintQuoteRefresh(
+                result: makeResult(method: .bolt11),
+                hasExistingHistoryRow: true
+            )
+        )
+        XCTAssertTrue(
+            WalletManager.shouldReloadHistoryAfterMintQuoteRefresh(
+                result: makeResult(method: .bolt11),
+                hasExistingHistoryRow: false
+            )
+        )
+        XCTAssertFalse(
+            WalletManager.shouldReloadHistoryAfterMintQuoteRefresh(
+                result: makeResult(method: .bolt12),
+                hasExistingHistoryRow: false
+            )
+        )
+        XCTAssertTrue(
+            WalletManager.shouldReloadHistoryAfterMintQuoteRefresh(
+                result: makeResult(method: .onchain),
+                hasExistingHistoryRow: true
+            ),
+            "On-chain polls must still reload so scoped explorer observations update"
+        )
+        XCTAssertTrue(
+            WalletManager.shouldReloadHistoryAfterMintQuoteRefresh(
+                result: makeResult(method: .bolt11, expiry: 1),
+                hasExistingHistoryRow: true
+            )
+        )
+        XCTAssertTrue(
+            WalletManager.shouldReloadHistoryAfterMintQuoteRefresh(
+                result: makeResult(method: .bolt11, amountPaid: 100),
+                hasExistingHistoryRow: true
+            )
+        )
+        XCTAssertTrue(
+            WalletManager.shouldReloadHistoryAfterMintQuoteRefresh(
+                result: makeResult(method: .bolt11, retryState: .retryScheduled),
+                hasExistingHistoryRow: true
+            )
+        )
+    }
+}
+
+private final class CountingStorage: StorageProtocol {
+    private let backing = InMemoryStorage()
+    var readCounts: [String: Int] = [:]
+    var writeCounts: [String: Int] = [:]
+
+    func resetCounts() {
+        readCounts.removeAll()
+        writeCounts.removeAll()
+    }
+
+    func set<T: Codable>(_ value: T, forKey key: String) throws {
+        writeCounts[key, default: 0] += 1
+        try backing.set(value, forKey: key)
+    }
+
+    func get<T: Codable>(forKey key: String) throws -> T? {
+        readCounts[key, default: 0] += 1
+        return try backing.get(forKey: key)
+    }
+
+    func remove(forKey key: String) throws {
+        try backing.remove(forKey: key)
+    }
+
+    func exists(forKey key: String) -> Bool {
+        backing.exists(forKey: key)
+    }
+
+    func keys(withPrefix prefix: String) -> [String] {
+        backing.keys(withPrefix: prefix)
+    }
 }
