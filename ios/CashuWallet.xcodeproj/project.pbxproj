@@ -1096,7 +1096,7 @@
 			);
 			mainGroup = 4000000000000000;
 			packageReferences = (
-				720E47A42FEC721E00E02CD0 /* XCRemoteSwiftPackageReference "cdk-swift" */,
+				720E47A42FEC721E00E02CD0 /* XCLocalSwiftPackageReference "LocalPackages/cdk-swift-pr2696" */,
 				AACC000000000001 /* XCRemoteSwiftPackageReference "sentry-cocoa" */,
 			);
 			productRefGroup = 4100000000000002 /* Products */;
@@ -1713,15 +1713,14 @@
 		};
 /* End XCConfigurationList section */
 
-/* Begin XCRemoteSwiftPackageReference section */
-		720E47A42FEC721E00E02CD0 /* XCRemoteSwiftPackageReference "cdk-swift" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/cashubtc/cdk-swift";
-			requirement = {
-				kind = exactVersion;
-				version = 0.18.3;
-			};
+/* Begin XCLocalSwiftPackageReference section */
+		720E47A42FEC721E00E02CD0 /* XCLocalSwiftPackageReference "LocalPackages/cdk-swift-pr2696" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = LocalPackages/cdk-swift-pr2696;
 		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCRemoteSwiftPackageReference section */
 		AACC000000000001 /* XCRemoteSwiftPackageReference "sentry-cocoa" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/getsentry/sentry-cocoa";
@@ -1735,7 +1734,7 @@
 /* Begin XCSwiftPackageProductDependency section */
 		720E47A52FEC721E00E02CD0 /* Cdk */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 720E47A42FEC721E00E02CD0 /* XCRemoteSwiftPackageReference "cdk-swift" */;
+			package = 720E47A42FEC721E00E02CD0 /* XCLocalSwiftPackageReference "LocalPackages/cdk-swift-pr2696" */;
 			productName = Cdk;
 		};
 		AACC000000000002 /* Sentry */ = {
@@ -1745,7 +1744,7 @@
 		};
 		E118F77A2062DDD58C0A6DA3 /* Cdk */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 720E47A42FEC721E00E02CD0 /* XCRemoteSwiftPackageReference "cdk-swift" */;
+			package = 720E47A42FEC721E00E02CD0 /* XCLocalSwiftPackageReference "LocalPackages/cdk-swift-pr2696" */;
 			productName = Cdk;
 		};
 /* End XCSwiftPackageProductDependency section */

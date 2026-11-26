@@ -1,15 +1,6 @@
 {
-  "originHash" : "2ed1896600e7e226b2f6487cd0836a99018c090583667435dc201a48a8cbd60d",
+  "originHash" : "6c405f2efb58b1f61d8833ff41994a0958077833154ef162ebe80cc847a7abca",
   "pins" : [
-    {
-      "identity" : "cdk-swift",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/cashubtc/cdk-swift",
-      "state" : {
-        "revision" : "b6ff62cd656164c897a4064a9b7b20e546b7ee5a",
-        "version" : "0.18.3"
-      }
-    },
     {
       "identity" : "sentry-cocoa",
       "kind" : "remoteSourceControl",
