@@ -317,7 +317,10 @@ private fun NwcBudgetSheet(
     onDismiss: () -> Unit,
 ) {
     var text by remember(currentBudget) { mutableStateOf(currentBudget?.toString().orEmpty()) }
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        scrimColor = CashuTheme.colors.sheetScrim,
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()

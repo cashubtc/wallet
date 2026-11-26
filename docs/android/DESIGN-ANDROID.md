@@ -254,7 +254,9 @@ like a port, make the Android-native choice instead.
 - Bottom sheets (`ModalBottomSheet`) for choosers/pickers/inspectors; pushed
   destinations for flows. `NavigationBar` for tabs. Simple confirmations use
   `ActionConfirmationSheet`; destructive actions use a red primary button
-  with white text.
+  with white text. Every sheet passes `scrimColor = CashuTheme.colors.sheetScrim`:
+  black at 20% in light, the amount iOS dims its sheets by, and Material's 32%
+  in dark. `SheetScrimGuardTest` fails on a sheet that omits it.
 - Text inputs go through `CashuTextField`. **One carve-out (2026-08-08):** the
   seed-entry card in `SeedWordEntry.kt` uses a bare `BasicTextField`, because
   `CashuTextField`'s job is to supply the container and here the *card is* the

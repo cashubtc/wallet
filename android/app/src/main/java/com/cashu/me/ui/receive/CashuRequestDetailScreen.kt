@@ -619,6 +619,7 @@ private fun CashuRequestAmountEditSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
+        scrimColor = CashuTheme.colors.sheetScrim,
         containerColor = MaterialTheme.colorScheme.background,
     ) {
         Column(
