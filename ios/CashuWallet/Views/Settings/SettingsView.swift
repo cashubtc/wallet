@@ -1342,6 +1342,7 @@ struct ICloudBackupSettingsView: View {
     @State private var showEnableConfirm = false
     @State private var showDisableConfirm = false
     @State private var didBackUp = false
+    @State private var backedUpResetTask: Task<Void, Never>?
     @State private var backupError: String?
 
     var body: some View {
@@ -1385,8 +1386,10 @@ struct ICloudBackupSettingsView: View {
                         if didBackUp {
                             Label("Backed up", systemImage: "checkmark")
                                 .foregroundStyle(.green)
+                                .transition(.opacity)
                         } else {
                             Text("Back Up Now")
+                                .transition(.opacity)
                         }
                     }
                 }
@@ -1419,6 +1422,7 @@ struct ICloudBackupSettingsView: View {
         }
         .bottomSheetBackdropHost()
         .errorBanner($backupError, retry: { backUpNow() })
+        .onDisappear { backedUpResetTask?.cancel() }
     }
 
     private var enabledBinding: Binding<Bool> {
@@ -1437,9 +1441,14 @@ struct ICloudBackupSettingsView: View {
             backupError = message
             return
         }
-        didBackUp = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-            didBackUp = false
+        withAnimation(.easeInOut(duration: 0.2)) { didBackUp = true }
+        // One pending reset at a time: a second tap restarts the three seconds
+        // instead of inheriting what is left of the first.
+        backedUpResetTask?.cancel()
+        backedUpResetTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeInOut(duration: 0.2)) { didBackUp = false }
         }
     }
 
