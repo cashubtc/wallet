@@ -368,6 +368,10 @@ struct MainWalletView: View {
                         .transition(balanceMaskTransition)
                 }
             }
+            // The swap happens inside the Button's label, where the button's
+            // own press animation would otherwise time it. Name the animation
+            // here so hiding and showing run at the speed of every other step.
+            .animation(reduceMotion ? .easeOut(duration: 0.2) : .snappy(duration: 0.25), value: hidden)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
