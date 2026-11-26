@@ -45,7 +45,7 @@ extension WalletManager {
 
                 if settledAny {
                     await self.refreshBalanceAssumingWalletOperationLease()
-                    await self.loadTransactionsAssumingWalletOperationLease()
+                    await self.loadTransactionsAssumingWalletOperationLease(includeRemoteObservations: false)
                 }
             }
         } catch {

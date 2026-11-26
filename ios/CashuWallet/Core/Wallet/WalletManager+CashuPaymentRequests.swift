@@ -205,11 +205,11 @@ extension WalletManager {
                 )
             } catch {
                 await self.refreshBalanceAssumingWalletOperationLease()
-                await self.loadTransactionsAssumingWalletOperationLease()
+                await self.loadTransactionsAssumingWalletOperationLease(includeRemoteObservations: false)
                 throw error
             }
             await self.refreshBalanceAssumingWalletOperationLease()
-            await self.loadTransactionsAssumingWalletOperationLease()
+            await self.loadTransactionsAssumingWalletOperationLease(includeRemoteObservations: false)
         }
     }
 

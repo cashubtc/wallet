@@ -750,7 +750,7 @@ class WalletManager(
         val amount = withLoadingResult {
             gateway.mintTokens(quoteId).also {
                 refreshBalance()
-                loadTransactions()
+                loadTransactions(includeRemoteObservations = false)
             }
         }
         publishMintQuoteReceipt(quoteId, amount, unit, confirmationOwner)
@@ -930,7 +930,7 @@ class WalletManager(
             markNPCQuoteProcessed(quote.id)
             p2pkPubkey?.let(settingsManager::markP2PKKeyUsed)
             refreshBalance()
-            loadTransactions()
+            loadTransactions(includeRemoteObservations = false)
             val confirmationOwner = npcService.publishReceivedPayment(com.cashu.me.Core.NPCPaymentReceipt(
                 quoteId = quote.id,
                 address = address,
@@ -965,7 +965,7 @@ class WalletManager(
                 gateway.meltTokens(quoteId, mintUrl)
             } catch (failure: com.cashu.me.Core.CDK.MeltPaymentRecoveryException) {
                 refreshBalance()
-                loadTransactions()
+                loadTransactions(includeRemoteObservations = false)
                 throw failure
             }
             val result = confirmation.result
@@ -979,7 +979,7 @@ class WalletManager(
                 watchPendingMelt(pendingMelt, quoteId)
             }
             refreshBalance()
-            loadTransactions()
+            loadTransactions(includeRemoteObservations = false)
             result
         }
 
@@ -1001,7 +1001,7 @@ class WalletManager(
             try {
                 withContext(Dispatchers.IO) { pendingMelt.wait() }
                 refreshBalance()
-                loadTransactions()
+                loadTransactions(includeRemoteObservations = false)
             } catch (error: Throwable) {
                 // Recovery polling retries the reconciliation later.
                 AppLogger.wallet.error("Pending melt wait failed for quote $quoteId", error)
@@ -1031,7 +1031,7 @@ class WalletManager(
 
         if (settledAny) {
             refreshBalance()
-            loadTransactions()
+            loadTransactions(includeRemoteObservations = false)
         }
     }
 
@@ -1135,7 +1135,7 @@ class WalletManager(
                 if (error is CancellationException) throw error
                 AppLogger.wallet.error("Unable to cache confirmed send", error)
             }
-            refreshAfterConfirmedSend({ refreshBalance() }, { loadTransactions() })
+            refreshAfterConfirmedSend({ refreshBalance() }, { loadTransactions(includeRemoteObservations = false) })
             result
         }
     }
@@ -1156,7 +1156,7 @@ class WalletManager(
                 }
         } finally {
             withContext(kotlinx.coroutines.NonCancellable) {
-                refreshAfterConfirmedSend({ refreshBalance() }, { loadTransactions() })
+                refreshAfterConfirmedSend({ refreshBalance() }, { loadTransactions(includeRemoteObservations = false) })
             }
         }
     }
@@ -1206,7 +1206,7 @@ class WalletManager(
                     },
                 )
                 refreshBalance()
-                loadTransactions()
+                loadTransactions(includeRemoteObservations = false)
             }
         }
         confirmationOwner?.let { publishReceivedPayment(amount, unit, it) }
@@ -1259,7 +1259,7 @@ class WalletManager(
                     (walletStore.loadProcessedCashuRequests() + processedId).distinct().sorted(),
                 )
                 refreshBalance()
-                loadTransactions()
+                loadTransactions(includeRemoteObservations = false)
             }
         }
         publishReceivedPayment(
@@ -1291,7 +1291,7 @@ class WalletManager(
                 }
             } finally {
                 refreshBalance()
-                loadTransactions()
+                loadTransactions(includeRemoteObservations = false)
             }
         }
         publishReceivedPayment(
@@ -1342,7 +1342,7 @@ class WalletManager(
             val claimed = checkPendingSendClaimInternal(transaction)
             if (claimed) {
                 refreshBalance()
-                loadTransactions()
+                loadTransactions(includeRemoteObservations = false)
             }
             claimed
         }
@@ -1441,9 +1441,9 @@ class WalletManager(
             // No local rows to merge anymore: only a claim changes history.
             if (claimedCount > 0) {
                 refreshBalance()
-                loadTransactions()
+                loadTransactions(includeRemoteObservations = false)
             } else if (foundPending) {
-                loadTransactions()
+                loadTransactions(includeRemoteObservations = false)
             }
             claimedCount
         }
@@ -1456,14 +1456,14 @@ class WalletManager(
     suspend fun checkSendRecovery(context: PendingSendRecovery): PendingSendRecovery = withLoadingResult {
         val result = gateway.checkSendRecovery(context)
         refreshBalance()
-        loadTransactions()
+        loadTransactions(includeRemoteObservations = false)
         result
     }
 
     suspend fun reclaimPendingSend(operationId: String, mintUrl: String, unit: String): Long = withLoadingResult {
         val amount = gateway.revokePendingSend(mintUrl, operationId, unit)
         refreshBalance()
-        loadTransactions()
+        loadTransactions(includeRemoteObservations = false)
         amount
     }
 
@@ -1491,7 +1491,7 @@ class WalletManager(
                     gateway.payCashuPaymentRequest(request, amount, mintUrl)
                 },
                 refreshBalance = { refreshBalance() },
-                loadTransactions = { loadTransactions() },
+                loadTransactions = { loadTransactions(includeRemoteObservations = false) },
             )
         }
     }
@@ -1564,7 +1564,7 @@ class WalletManager(
         val fundingConfirmation = gateway.meltTokens(sourceMeltQuote.id, source.url)
         fundingConfirmation.pendingMelt?.let { watchPendingMelt(it, sourceMeltQuote.id) }
         refreshBalance()
-        loadTransactions()
+        loadTransactions(includeRemoteObservations = false)
 
         finishCashuRequestTopUpAndPayInternal(
             encoded = encoded,
@@ -1599,7 +1599,7 @@ class WalletManager(
                 encoded, amountSats, targetMintUrl,
                 payCashuPaymentRequest = { request, amount, mint -> gateway.payCashuPaymentRequest(request, amount, mint) },
                 refreshBalance = { refreshBalance() },
-                loadTransactions = { loadTransactions() },
+                loadTransactions = { loadTransactions(includeRemoteObservations = false) },
             )
         } catch (cancellation: CancellationException) {
             throw cancellation
@@ -1691,7 +1691,7 @@ class WalletManager(
                 throw cancellation
             } catch (error: Throwable) {
                 // A failed transfer may have removed its quotes or changed its row.
-                runCatching { loadTransactions() }
+                runCatching { loadTransactions(includeRemoteObservations = false) }
                 throw error
             } finally {
                 mintTransfersInFlight -= plan.id
@@ -1736,12 +1736,12 @@ class WalletManager(
                 gateway.meltAllUnspentSkippingSwap(quoteId, mintUrl, selection.expectedInputFee)
             } catch (failure: com.cashu.me.Core.CDK.MeltPaymentRecoveryException) {
                 refreshBalance()
-                loadTransactions()
+                loadTransactions(includeRemoteObservations = false)
                 throw failure
             }
             confirmation.residualSettlement?.let { watchResidualMeltSettlement(it, quoteId) }
             refreshBalance()
-            loadTransactions()
+            loadTransactions(includeRemoteObservations = false)
             confirmation.result
         }
     }
@@ -1779,7 +1779,7 @@ class WalletManager(
             try {
                 settlement.await()
                 refreshBalance()
-                loadTransactions()
+                loadTransactions(includeRemoteObservations = false)
             } catch (error: Throwable) {
                 // Recovery polling retries the reconciliation later.
                 AppLogger.wallet.error("Residual melt settlement failed for quote $quoteId", error)

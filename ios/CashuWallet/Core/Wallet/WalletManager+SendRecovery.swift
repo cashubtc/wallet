@@ -29,7 +29,7 @@ extension WalletManager {
             return try await self.sendRecoverySnapshot(wallet: wallet, context: context)
         }
         await refreshBalance()
-        await loadTransactions()
+        await loadTransactions(includeRemoteObservations: false)
         return result
     }
 
@@ -42,7 +42,7 @@ extension WalletManager {
             return try await wallet.revokeSend(operationId: operationID).value
         }
         await refreshBalance()
-        await loadTransactions()
+        await loadTransactions(includeRemoteObservations: false)
         return amount
     }
 }

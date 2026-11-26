@@ -18,6 +18,13 @@ data class OnchainPaymentObservation(
 
 object OnchainExplorer {
     private val json = Json { ignoreUnknownKeys = true }
+    private const val TIP_HEIGHT_CACHE_TTL_MS = 30_000L
+    private val tipHeightCacheLock = Any()
+    private val tipHeightCache = mutableMapOf<String, CachedTipHeight>()
+
+    internal fun clearTipHeightCacheForTesting() {
+        synchronized(tipHeightCacheLock) { tipHeightCache.clear() }
+    }
 
     fun addressWebUrl(address: String, mintUrl: String?): String? {
         val descriptor = descriptor(address = address, mintUrl = mintUrl) ?: return null
@@ -35,14 +42,33 @@ object OnchainExplorer {
         mintUrl: String?,
         expectedAmount: Long,
         createdAfterEpochMillis: Long,
+    ): OnchainPaymentObservation? = observePayment(
+        address = address,
+        mintUrl = mintUrl,
+        expectedAmount = expectedAmount,
+        createdAfterEpochMillis = createdAfterEpochMillis,
+        nowEpochMillis = System::currentTimeMillis,
+        fetch = ::httpGet,
+    )
+
+    internal suspend fun observePayment(
+        address: String,
+        mintUrl: String?,
+        expectedAmount: Long,
+        createdAfterEpochMillis: Long,
+        nowEpochMillis: () -> Long,
+        fetch: suspend (String) -> String?,
     ): OnchainPaymentObservation? {
         val descriptor = descriptor(address = address, mintUrl = mintUrl) ?: return null
         val normalizedAddress = PaymentRequestParser.normalizeBitcoinRequest(address)
         val transactionsUrl = "${descriptor.apiBaseUrl}/address/$normalizedAddress/txs"
-        val body = httpGet(transactionsUrl) ?: return null
+        val body = fetch(transactionsUrl) ?: return null
         return runCatching {
             val transactions = json.decodeFromString<List<ExplorerTransaction>>(body)
-            val tipHeight = currentTipHeight(descriptor)
+            // Short-circuit before fetching tip height: an unfunded address has
+            // no transactions and needs no block-height lookup.
+            if (transactions.isEmpty()) return@runCatching null
+
             val earliestBlockTime = createdAfterEpochMillis / 1000
             val normalizedLower = normalizedAddress.lowercase()
 
@@ -52,9 +78,16 @@ object OnchainExplorer {
                     .maxOfOrNull { it.value } ?: 0
                 if (matchingAmount < expectedAmount) return@firstNotNullOfOrNull null
 
-                val status = freshStatusIfNeeded(transaction, descriptor)
+                val status = freshStatusIfNeeded(transaction, descriptor, fetch)
                 if (status.blockTime != null && status.blockTime < earliestBlockTime) {
                     return@firstNotNullOfOrNull null
+                }
+
+                // Only confirmed transactions compute confirmation counts from tip height.
+                val tipHeight = if (status.confirmed) {
+                    currentTipHeight(descriptor, nowEpochMillis, fetch)
+                } else {
+                    null
                 }
 
                 OnchainPaymentObservation(
@@ -129,27 +162,49 @@ object OnchainExplorer {
         )
     }
 
-    private suspend fun currentTipHeight(descriptor: ExplorerDescriptor): Int? {
-        httpGet("${descriptor.apiBaseUrl}/blocks/tip/height")
+    private suspend fun currentTipHeight(
+        descriptor: ExplorerDescriptor,
+        nowEpochMillis: () -> Long,
+        fetch: suspend (String) -> String?,
+    ): Int? {
+        val now = nowEpochMillis()
+        synchronized(tipHeightCacheLock) {
+            val cached = tipHeightCache[descriptor.apiBaseUrl]
+            if (cached != null && now - cached.fetchedAtEpochMillis < TIP_HEIGHT_CACHE_TTL_MS) {
+                return cached.height
+            }
+        }
+
+        val resolved = fetch("${descriptor.apiBaseUrl}/blocks/tip/height")
             ?.trim()
             ?.toIntOrNull()
-            ?.let { return it }
+            ?: fetch("${descriptor.apiBaseUrl}/blocks")?.let { body ->
+                runCatching {
+                    json.decodeFromString<List<ExplorerBlock>>(body).maxOfOrNull { it.height }
+                }.getOrNull()
+            }
 
-        val body = httpGet("${descriptor.apiBaseUrl}/blocks") ?: return null
-        return runCatching {
-            json.decodeFromString<List<ExplorerBlock>>(body).maxOfOrNull { it.height }
-        }.getOrNull()
+        if (resolved != null) {
+            synchronized(tipHeightCacheLock) {
+                tipHeightCache[descriptor.apiBaseUrl] = CachedTipHeight(
+                    height = resolved,
+                    fetchedAtEpochMillis = now,
+                )
+            }
+        }
+        return resolved
     }
 
     private suspend fun freshStatusIfNeeded(
         transaction: ExplorerTransaction,
         descriptor: ExplorerDescriptor,
+        fetch: suspend (String) -> String?,
     ): ExplorerTransactionStatus {
         if (!transaction.status.confirmed || transaction.status.blockHeight != null) {
             return transaction.status
         }
 
-        val body = httpGet("${descriptor.apiBaseUrl}/tx/${transaction.txid}/status") ?: return transaction.status
+        val body = fetch("${descriptor.apiBaseUrl}/tx/${transaction.txid}/status") ?: return transaction.status
         return runCatching {
             json.decodeFromString<ExplorerTransactionStatus>(body)
         }.getOrDefault(transaction.status)
@@ -174,6 +229,11 @@ object OnchainExplorer {
             connection.disconnect()
         }
     }
+
+    private data class CachedTipHeight(
+        val height: Int,
+        val fetchedAtEpochMillis: Long,
+    )
 
     private data class ExplorerDescriptor(
         val webBaseUrl: String,

@@ -1,5 +1,6 @@
 package com.cashu.me.Core
 
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -80,5 +81,72 @@ class OnchainExplorerTest {
     @Test
     fun unknownNetworkWithoutMintHasNoExplorer() {
         assertNull(OnchainExplorer.addressWebUrl("unknown", mintUrl = null))
+    }
+
+    @Test
+    fun observePaymentSkipsTipHeightWhenAddressHasNoTransactions() = runBlocking {
+        OnchainExplorer.clearTipHeightCacheForTesting()
+        val requestedUrls = mutableListOf<String>()
+
+        val result = OnchainExplorer.observePayment(
+            address = "bc1qempty",
+            mintUrl = null,
+            expectedAmount = 1,
+            createdAfterEpochMillis = 0,
+            nowEpochMillis = { 1_000L },
+            fetch = { url ->
+                requestedUrls += url
+                "[]"
+            },
+        )
+
+        assertNull(result)
+        assertEquals(listOf("https://mempool.space/api/address/bc1qempty/txs"), requestedUrls)
+    }
+
+    @Test
+    fun observePaymentSkipsTipHeightForUnconfirmedTransaction() = runBlocking {
+        OnchainExplorer.clearTipHeightCacheForTesting()
+        val requestedUrls = mutableListOf<String>()
+        val txsJson = """[{"txid":"mempool-tx","status":{"confirmed":false},"vout":[{"scriptpubkey_address":"bc1qunconfirmed","value":2500}]}]"""
+
+        val result = OnchainExplorer.observePayment(
+            address = "bc1qunconfirmed",
+            mintUrl = null,
+            expectedAmount = 1,
+            createdAfterEpochMillis = 0,
+            nowEpochMillis = { 1_000L },
+            fetch = { url ->
+                requestedUrls += url
+                txsJson
+            },
+        )
+
+        assertEquals(OnchainPaymentObservation("mempool-tx", 2500, confirmed = false, confirmations = null), result)
+        assertEquals(listOf("https://mempool.space/api/address/bc1qunconfirmed/txs"), requestedUrls)
+    }
+
+    @Test
+    fun observePaymentCachesTipHeightWithinTtl() = runBlocking {
+        OnchainExplorer.clearTipHeightCacheForTesting()
+        val requestedUrls = mutableListOf<String>()
+        var now = 10_000L
+        val txsJson = """[{"txid":"confirmed-tx","status":{"confirmed":true,"block_height":100,"block_time":5},"vout":[{"scriptpubkey_address":"bc1qconfirmed","value":1000}]}]"""
+
+        suspend fun fetch(url: String): String {
+            requestedUrls += url
+            return if (url.endsWith("/blocks/tip/height")) "102" else txsJson
+        }
+
+        val first = OnchainExplorer.observePayment("bc1qconfirmed", null, 1, 0, { now }, ::fetch)
+        now += 15_000L
+        val second = OnchainExplorer.observePayment("bc1qconfirmed", null, 1, 0, { now }, ::fetch)
+        now += 35_000L
+        val third = OnchainExplorer.observePayment("bc1qconfirmed", null, 1, 0, { now }, ::fetch)
+
+        assertEquals(3, first?.confirmations)
+        assertEquals(3, second?.confirmations)
+        assertEquals(3, third?.confirmations)
+        assertEquals(2, requestedUrls.count { it.endsWith("/blocks/tip/height") })
     }
 }
