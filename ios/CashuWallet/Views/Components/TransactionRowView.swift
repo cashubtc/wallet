@@ -13,6 +13,8 @@ struct TransactionRowView: View {
     let onSelect: () -> Void
 
     var body: some View {
+        let title = transaction.displayTitle(mints: mints)
+        let relativeDate = Self.formatRelativeDate(transaction.date)
         Button(action: onSelect) {
             HStack(spacing: 14) {
                 TransactionIcon(
@@ -23,11 +25,11 @@ struct TransactionRowView: View {
                     .frame(width: 36, height: 36)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(transaction.displayTitle(mints: mints))
+                    Text(title)
                         .font(.body.weight(.medium))
                         .lineLimit(1)
 
-                    Text(Self.formatRelativeDate(transaction.date))
+                    Text(relativeDate)
                         .cashuText(.metadata)
                         .foregroundStyle(.secondary)
                 }
@@ -42,16 +44,20 @@ struct TransactionRowView: View {
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(rowAccessibilityLabel(for: transaction))
+        .accessibilityLabel(rowAccessibilityLabel(for: transaction, title: title, relativeDate: relativeDate))
         .accessibilityHint(accessibilityHint)
     }
 
-    private func rowAccessibilityLabel(for transaction: WalletTransaction) -> String {
+    private func rowAccessibilityLabel(
+        for transaction: WalletTransaction,
+        title: String,
+        relativeDate: String
+    ) -> String {
         [
-            transaction.displayTitle(mints: mints),
+            title,
             transaction.isUnfundedAddress ? nil : formatAmount(transaction),
             transaction.status == .completed ? "completed" : transaction.displayStatusText.lowercased(),
-            Self.formatRelativeDate(transaction.date),
+            relativeDate,
         ]
         .compactMap { $0 }
         .joined(separator: ", ")

@@ -81,4 +81,40 @@ final class HistorySearchTests: XCTestCase {
         XCTAssertTrue(HistorySearch.matches(query: "", request: req, receivedTotal: 0))
         XCTAssertTrue(HistorySearch.matches(query: "   ", request: req, receivedTotal: 0))
     }
+
+    func testReceivedTotalsByRequestIDAggregatesInSinglePass() {
+        let now = Date()
+        let tx1 = WalletTransaction(id: "tx-1", amount: 100, type: .incoming, kind: .ecash, date: now, memo: nil, status: .completed)
+        let tx2 = WalletTransaction(id: "tx-2", amount: 250, type: .incoming, kind: .ecash, date: now, memo: nil, status: .completed)
+        let tx3 = WalletTransaction(id: "tx-3", amount: 500, type: .incoming, kind: .ecash, date: now, memo: nil, status: .completed)
+
+        let reqMulti = CashuRequest(
+            id: "req-multi",
+            encoded: "creqAmulti",
+            amount: 500,
+            receivedPayments: [
+                .init(transactionId: "tx-1", amount: 100, receivedAt: now),
+                .init(transactionId: "tx-2", amount: 250, receivedAt: now),
+                .init(transactionId: "tx-1", amount: 100, receivedAt: now), // duplicate tx id counted once
+            ]
+        )
+        let reqMissing = CashuRequest(
+            id: "req-missing",
+            encoded: "creqAmissing",
+            amount: 100,
+            receivedPayments: [
+                .init(transactionId: "tx-unknown", amount: 100, receivedAt: now),
+            ]
+        )
+        let reqEmpty = CashuRequest(id: "req-empty", encoded: "creqAempty", amount: 100)
+
+        let totals = HistoryView.receivedTotalsByRequestID(
+            requests: [reqMulti, reqMissing, reqEmpty],
+            transactions: [tx1, tx2, tx3]
+        )
+
+        XCTAssertEqual(totals["req-multi"], 350)
+        XCTAssertEqual(totals["req-missing"], 0)
+        XCTAssertNil(totals["req-empty"])
+    }
 }

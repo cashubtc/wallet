@@ -1,5 +1,7 @@
 package com.cashu.me.Core
 
+import com.cashu.me.Core.Protocols.CurrencyAmount
+import com.cashu.me.Core.Protocols.CurrencyRegistry
 import java.util.Locale
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -237,5 +239,66 @@ class AmountFormatterTest {
         assertEquals(AmountParts("****", AmountParts.Affix.None), hidden.primaryParts)
         assertNull(hidden.secondary)
         assertEquals("+****", AmountFormatter.HiddenDelta)
+    }
+
+    @Test
+    fun cachedFiatFormattersStayAccurateAcrossInterleavedCurrenciesAndParts() {
+        val expectedByCode = mutableMapOf<String, String>()
+        for (code in SettingsManager.supportedFiatCurrencies) {
+            val full = formatter.formatFiat(amountSats = 300_000, btcPrice = 20_000.0, currencyCode = code)
+            expectedByCode[code] = requireNotNull(full)
+            val parts = formatter.fiatParts(amountSats = 300_000, btcPrice = 20_000.0, currencyCode = code)
+            assertEquals(full, parts?.joined)
+            assertEquals(
+                "fiatParts must not mutate cached full currency formatter for $code",
+                full,
+                formatter.formatFiat(amountSats = 300_000, btcPrice = 20_000.0, currencyCode = code),
+            )
+        }
+
+        for (code in SettingsManager.supportedFiatCurrencies.reversed()) {
+            assertEquals(
+                expectedByCode[code],
+                formatter.formatFiat(amountSats = 300_000, btcPrice = 20_000.0, currencyCode = code),
+            )
+        }
+    }
+
+    @Test
+    fun defaultLocaleFormatterRespectsLocaleDefaultChanges() {
+        val originalLocale = Locale.getDefault()
+        val dynamicFormatter = AmountFormatter()
+        try {
+            Locale.setDefault(Locale.US)
+            assertEquals("1,234 sat", dynamicFormatter.formatWalletSats(1_234, useBitcoinSymbol = false))
+            assertEquals(".", dynamicFormatter.decimalSeparator)
+            assertEquals("$60.00", dynamicFormatter.formatFiat(300_000, 20_000.0, "USD"))
+
+            Locale.setDefault(Locale.GERMANY)
+            assertEquals("1.234 sat", dynamicFormatter.formatWalletSats(1_234, useBitcoinSymbol = false))
+            assertEquals(",", dynamicFormatter.decimalSeparator)
+            assertEquals("$60.00", dynamicFormatter.formatFiat(300_000, 20_000.0, "USD"))
+
+            Locale.setDefault(Locale.US)
+            assertEquals("1,234 sat", dynamicFormatter.formatWalletSats(1_234, useBitcoinSymbol = false))
+            assertEquals(".", dynamicFormatter.decimalSeparator)
+        } finally {
+            Locale.setDefault(originalLocale)
+        }
+    }
+
+    @Test
+    fun currencyAmountCachedFormattersRespectLocaleAndDecimals() {
+        assertEquals("₿12,345", CurrencyAmount.sats(12_345).formatted(locale = Locale.US))
+        assertEquals("₿12.345", CurrencyAmount.sats(12_345).formatted(locale = Locale.GERMANY))
+        assertEquals("$1,234.56", CurrencyAmount.usdCents(123_456).formatted(locale = Locale.US))
+        assertEquals("$1.234,56", CurrencyAmount.usdCents(123_456).formatted(locale = Locale.GERMANY))
+        assertEquals(
+            "4,200 PTS",
+            CurrencyAmount(4_200, CurrencyRegistry.currencyForMintUnit("pts")).formatted(locale = Locale.US),
+        )
+        // Re-check earlier cached entries after interleaved locales and fraction digits.
+        assertEquals("$1,234.56", CurrencyAmount.usdCents(123_456).formatted(locale = Locale.US))
+        assertEquals("₿12,345", CurrencyAmount.sats(12_345).formatted(locale = Locale.US))
     }
 }

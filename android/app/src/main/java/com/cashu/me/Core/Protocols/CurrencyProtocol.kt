@@ -63,11 +63,7 @@ data class CurrencyAmount(
         }
 
     fun formatted(showSymbol: Boolean = true, locale: Locale = Locale.US): String {
-        val formatter = NumberFormat.getNumberInstance(locale).apply {
-            minimumFractionDigits = this@CurrencyAmount.currency.decimals
-            maximumFractionDigits = this@CurrencyAmount.currency.decimals
-            isGroupingUsed = true
-        }
+        val formatter = numberFormat(locale, currency.decimals)
         val formattedValue = formatter.format(displayValue)
         if (!showSymbol) return formattedValue
         return when (currency.symbolPosition) {
@@ -76,7 +72,31 @@ data class CurrencyAmount(
         }
     }
 
+    private data class FormatKey(val locale: Locale, val decimals: Int)
+
     companion object {
+        private const val MAX_THREAD_LOCAL_FORMATS = 64
+
+        private val threadLocalFormats = ThreadLocal.withInitial {
+            HashMap<FormatKey, NumberFormat>()
+        }
+
+        private fun numberFormat(locale: Locale, decimals: Int): NumberFormat {
+            val cache = threadLocalFormats.get() ?: HashMap<FormatKey, NumberFormat>().also {
+                threadLocalFormats.set(it)
+            }
+            val key = FormatKey(locale, decimals)
+            cache[key]?.let { return it }
+            if (cache.size >= MAX_THREAD_LOCAL_FORMATS) {
+                cache.clear()
+            }
+            return NumberFormat.getNumberInstance(locale).apply {
+                minimumFractionDigits = decimals
+                maximumFractionDigits = decimals
+                isGroupingUsed = true
+            }.also { cache[key] = it }
+        }
+
         fun sats(value: Long): CurrencyAmount = CurrencyAmount(value, WalletCurrencies.Satoshi)
         fun usdCents(cents: Long): CurrencyAmount = CurrencyAmount(cents, WalletCurrencies.Usd)
         fun eurCents(cents: Long): CurrencyAmount = CurrencyAmount(cents, WalletCurrencies.Eur)

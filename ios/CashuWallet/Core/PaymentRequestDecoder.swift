@@ -57,36 +57,7 @@ actor CdkRuntime {
     }
 
     func lightningMetadata(from raw: String) -> LightningRequestMetadata? {
-        let normalized = PaymentRequestDecoder.encodedLightningRequest(from: raw)
-            ?? PaymentRequestParser.normalizeLightningRequest(raw)
-
-        guard !normalized.isEmpty else { return nil }
-
-        if let decoded = try? decodeInvoice(invoiceStr: normalized) {
-            let paymentMethod: PaymentMethodKind
-            switch decoded.paymentType {
-            case .bolt11:
-                paymentMethod = .bolt11
-            case .bolt12:
-                paymentMethod = .bolt12
-            }
-
-            return LightningRequestMetadata(
-                normalizedRequest: normalized,
-                paymentMethod: paymentMethod,
-                amountSats: decoded.amountMsat.map(PaymentRequestDecoder.satsCeiling(from:)),
-                amountMsat: decoded.amountMsat
-            )
-        }
-
-        guard let offer = PaymentRequestParser.bolt12OfferMetadata(from: normalized) else { return nil }
-
-        return LightningRequestMetadata(
-            normalizedRequest: offer.normalizedRequest,
-            paymentMethod: .bolt12,
-            amountSats: offer.amountMsat.map(PaymentRequestDecoder.satsCeiling(from:)),
-            amountMsat: offer.amountMsat
-        )
+        PaymentRequestDecoder.lightningMetadata(from: raw)
     }
 
     func tokenPreview(from tokenString: String) throws -> TokenPreview {
@@ -178,12 +149,131 @@ enum PaymentRequestMode: String, Equatable, Sendable {
     case onchain
 }
 
+struct DecodedInvoiceSnapshot: Equatable, Sendable {
+    let paymentMethod: PaymentMethodKind
+    let amountMsat: UInt64?
+    let description: String?
+}
+
+/// Bounded thread-safe cache for synchronous `decodeInvoice` FFI calls.
+/// Caches both decoded invoices and negative lookups so repeated History search
+/// and receipt renders do not re-enter Rust FFI for the same request string.
+private final class DecodedInvoiceCache: @unchecked Sendable {
+    typealias RawDecoder = @Sendable (String) -> DecodedInvoiceSnapshot?
+
+    private enum Entry: Sendable {
+        case decoded(DecodedInvoiceSnapshot)
+        case invalid
+    }
+
+    private let lock = NSLock()
+    private let capacity: Int
+    private var entries: [String: Entry] = [:]
+    private var insertionOrder: [String] = []
+    private var generation: UInt64 = 0
+    private var decoder: RawDecoder = DecodedInvoiceCache.defaultDecode
+
+    init(capacity: Int = 256) {
+        self.capacity = capacity
+    }
+
+    func decode(_ normalized: String) -> DecodedInvoiceSnapshot? {
+        enum Lookup {
+            case hit(Entry)
+            case miss(generation: UInt64, decoder: RawDecoder)
+        }
+
+        let lookup: Lookup = lock.withLock {
+            if let entry = entries[normalized] {
+                return .hit(entry)
+            }
+            return .miss(generation: generation, decoder: decoder)
+        }
+
+        switch lookup {
+        case .hit(.decoded(let snapshot)):
+            return snapshot
+        case .hit(.invalid):
+            return nil
+        case .miss(let lookupGeneration, let activeDecoder):
+            // Invoke FFI outside the lock so concurrent decodes never serialize.
+            let snapshot = activeDecoder(normalized)
+            let entry: Entry = snapshot.map(Entry.decoded) ?? .invalid
+            lock.withLock {
+                guard generation == lookupGeneration else { return }
+                if entries[normalized] == nil {
+                    if insertionOrder.count >= capacity, let evicted = insertionOrder.first {
+                        insertionOrder.removeFirst()
+                        entries.removeValue(forKey: evicted)
+                    }
+                    insertionOrder.append(normalized)
+                }
+                entries[normalized] = entry
+            }
+            return snapshot
+        }
+    }
+
+    func reset() {
+        lock.withLock {
+            entries.removeAll()
+            insertionOrder.removeAll()
+            generation &+= 1
+        }
+    }
+
+    func setDecoder(_ override: RawDecoder?) {
+        lock.withLock {
+            entries.removeAll()
+            insertionOrder.removeAll()
+            generation &+= 1
+            decoder = override ?? Self.defaultDecode
+        }
+    }
+
+    static func defaultDecode(_ normalized: String) -> DecodedInvoiceSnapshot? {
+        guard let decoded = try? decodeInvoice(invoiceStr: normalized) else {
+            return nil
+        }
+        let method: PaymentMethodKind
+        switch decoded.paymentType {
+        case .bolt11:
+            method = .bolt11
+        case .bolt12:
+            method = .bolt12
+        }
+        return DecodedInvoiceSnapshot(
+            paymentMethod: method,
+            amountMsat: decoded.amountMsat,
+            description: decoded.description
+        )
+    }
+}
+
 /// Centralized payment-request decoder. Wraps `PaymentRequestParser` +
 /// CashuDevKit's `decodeInvoice`, with a BOLT12 envelope/TLV fallback for
 /// valid amountless offers that CDK's stricter decoder rejects. The chip
 /// preview, recents tap, scan callback, and live decode feedback all share this
 /// single classification path.
 enum PaymentRequestDecoder {
+    private static let invoiceCache = DecodedInvoiceCache(capacity: 256)
+
+    static let invoiceCacheCapacity = 256
+
+    static func resetInvoiceCacheForTesting() {
+        invoiceCache.reset()
+    }
+
+    static func setInvoiceDecoderForTesting(
+        _ override: (@Sendable (String) -> DecodedInvoiceSnapshot?)?
+    ) {
+        invoiceCache.setDecoder(override)
+    }
+
+    static func defaultDecodeInvoiceForTesting(_ normalized: String) -> DecodedInvoiceSnapshot? {
+        DecodedInvoiceCache.defaultDecode(normalized)
+    }
+
     /// Recover immutable descriptions from persisted invoices, including older history.
     static func description(from raw: String?) -> String? {
         guard let raw, !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
@@ -235,22 +325,13 @@ enum PaymentRequestDecoder {
     }
 
     static func encodedLightningRequest(from raw: String) -> String? {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-
-        let normalized: String
-        if let bitcoinURI = bitcoinPaymentURI(from: trimmed),
-           let lightning = bitcoinURI.lightning {
-            normalized = PaymentRequestParser.normalizeLightningRequest(lightning)
-        } else {
-            normalized = PaymentRequestParser.normalizeLightningRequest(trimmed)
-        }
+        guard let normalized = normalizedLightningCandidate(from: raw) else { return nil }
 
         if let offer = PaymentRequestParser.bolt12OfferMetadata(from: normalized) {
             return offer.normalizedRequest
         }
 
-        guard (try? decodeInvoice(invoiceStr: normalized)) != nil else {
+        guard invoiceCache.decode(normalized) != nil else {
             return nil
         }
 
@@ -298,20 +379,73 @@ enum PaymentRequestDecoder {
         )
     }
 
-    private static func decodedLightningRequest(from raw: String) -> PaymentRequestDecodeResult? {
-        guard let normalized = encodedLightningRequest(from: raw) else { return nil }
+    static func lightningPaymentMethod(from raw: String) -> PaymentMethodKind? {
+        guard let normalized = normalizedLightningCandidate(from: raw) else { return nil }
+        let offer = PaymentRequestParser.bolt12OfferMetadata(from: normalized)
+        let lookupKey = offer?.normalizedRequest ?? normalized
 
-        if let decoded = try? decodeInvoice(invoiceStr: normalized) {
+        if let decoded = invoiceCache.decode(lookupKey) {
+            return decoded.paymentMethod
+        }
+
+        return offer != nil ? .bolt12 : nil
+    }
+
+    fileprivate static func lightningMetadata(from raw: String) -> LightningRequestMetadata? {
+        guard let normalized = normalizedLightningCandidate(from: raw) else { return nil }
+        let offer = PaymentRequestParser.bolt12OfferMetadata(from: normalized)
+        let lookupKey = offer?.normalizedRequest ?? normalized
+
+        if let decoded = invoiceCache.decode(lookupKey) {
+            return LightningRequestMetadata(
+                normalizedRequest: lookupKey,
+                paymentMethod: decoded.paymentMethod,
+                amountSats: decoded.amountMsat.map(satsCeiling(from:)),
+                amountMsat: decoded.amountMsat
+            )
+        }
+
+        guard let offer else { return nil }
+        return LightningRequestMetadata(
+            normalizedRequest: offer.normalizedRequest,
+            paymentMethod: .bolt12,
+            amountSats: offer.amountMsat.map(satsCeiling(from:)),
+            amountMsat: offer.amountMsat
+        )
+    }
+
+    private static func normalizedLightningCandidate(from raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        let normalized: String
+        if let bitcoinURI = bitcoinPaymentURI(from: trimmed),
+           let lightning = bitcoinURI.lightning {
+            normalized = PaymentRequestParser.normalizeLightningRequest(lightning)
+        } else {
+            normalized = PaymentRequestParser.normalizeLightningRequest(trimmed)
+        }
+        return normalized.isEmpty ? nil : normalized
+    }
+
+    private static func decodedLightningRequest(from raw: String) -> PaymentRequestDecodeResult? {
+        guard let normalized = normalizedLightningCandidate(from: raw) else { return nil }
+        let offer = PaymentRequestParser.bolt12OfferMetadata(from: normalized)
+        let lookupKey = offer?.normalizedRequest ?? normalized
+
+        if let decoded = invoiceCache.decode(lookupKey) {
             let amountSats: UInt64? = decoded.amountMsat.map(satsCeiling(from:))
-            switch decoded.paymentType {
+            switch decoded.paymentMethod {
             case .bolt11:
                 return .bolt11(amountSats: amountSats, description: decoded.description)
             case .bolt12:
                 return .bolt12(amountSats: amountSats, description: decoded.description)
+            case .onchain:
+                return nil
             }
         }
 
-        guard let offer = PaymentRequestParser.bolt12OfferMetadata(from: normalized) else { return nil }
+        guard let offer else { return nil }
         return .bolt12(
             amountSats: offer.amountMsat.map(satsCeiling(from:)),
             description: offer.description

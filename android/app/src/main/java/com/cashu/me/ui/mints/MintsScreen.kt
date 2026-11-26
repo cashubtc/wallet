@@ -152,7 +152,7 @@ fun MintsScreen(
             ),
         ) {
             if (removalError != null) {
-                item("removal-error") {
+                item(key = "removal-error", contentType = "notice") {
                     InlineNotice(
                         text = removalError.orEmpty(),
                         severity = NoticeSeverity.Error,
@@ -162,7 +162,11 @@ fun MintsScreen(
             }
             if (walletState.mints.isNotEmpty()) {
                 val mintCount = walletState.mints.size
-                itemsIndexed(walletState.mints, key = { _, mint -> mint.url }) { index, mint ->
+                itemsIndexed(
+                    items = walletState.mints,
+                    key = { _, mint -> mint.url },
+                    contentType = { _, _ -> "mint" },
+                ) { index, mint ->
                     val isActive = walletState.activeMint?.url == mint.url
                     val shape = groupItemShape(index, mintCount, MaterialTheme.shapes.medium)
                     Column(modifier = Modifier.animateItem()) {
@@ -182,13 +186,13 @@ fun MintsScreen(
                     }
                 }
 
-                item("cards-gap") {
+                item(key = "cards-gap", contentType = "spacer") {
                     Spacer(Modifier.height(CashuTheme.spacing.section))
                 }
             }
 
             if (canTransfer) {
-                item("transfer-row") {
+                item(key = "transfer-row", contentType = "action-row") {
                     ListEntryRow(
                         shape = groupItemShape(0, actionCount, MaterialTheme.shapes.medium),
                         leadingIcon = {
@@ -206,7 +210,7 @@ fun MintsScreen(
                 }
             }
 
-            item("add-row") {
+            item(key = "add-row", contentType = "action-row") {
                 ListEntryRow(
                     shape = groupItemShape(actionOffset, actionCount, MaterialTheme.shapes.medium),
                     leadingIcon = {
@@ -226,7 +230,7 @@ fun MintsScreen(
                 )
             }
 
-            item("discover-row") {
+            item(key = "discover-row", contentType = "action-row") {
                 // Quiet nav-row weight: plain monochrome glyph, no filled circle.
                 ListEntryRow(
                     shape = groupItemShape(actionOffset + 1, actionCount, MaterialTheme.shapes.medium),

@@ -197,8 +197,10 @@ struct TransactionDetailView: View {
 
             // Detail rows on canvas, led by Status + Date. Type is
             // omitted — the nav title names it.
+            let rows = detailRows
+            let visibleDescription = transaction.descriptionHash == nil ? transaction.displayDescription : nil
             VStack(spacing: 0) {
-                ForEach(Array(detailRows.enumerated()), id: \.offset) { _, row in
+                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                     if let copyValue = row.copyValue {
                         PaymentMetadataRow(label: row.label, value: row.value, layout: .history,
                                            symbol: "doc.on.doc", hint: "Copies the \(row.label.lowercased()) to clipboard") {
@@ -209,14 +211,12 @@ struct TransactionDetailView: View {
                     } else {
                         PaymentMetadataRow(label: row.label, value: row.value, layout: .history)
                     }
-                    if row.label == "Mint", transaction.descriptionHash == nil,
-                       let description = transaction.displayDescription {
+                    if row.label == "Mint", let description = visibleDescription {
                         DescriptionDetailRow(description: description, layout: .history)
                     }
                 }
-                if !detailRows.contains(where: { $0.label == "Mint" }),
-                   transaction.descriptionHash == nil,
-                   let description = transaction.displayDescription {
+                if !rows.contains(where: { $0.label == "Mint" }),
+                   let description = visibleDescription {
                     DescriptionDetailRow(description: description, layout: .history)
                 }
                 if let explorerURL = onchainExplorerURL {
@@ -532,15 +532,16 @@ struct TransactionReceiptAmountPair: View {
     }
 
     var body: some View {
+        let display = amountDisplay
         VStack(spacing: AmountPairMetrics.spacing) {
             AmountLockup(
-                parts: amountDisplay.primaryParts,
+                parts: display.primaryParts,
                 role: role,
                 value: Double(transaction.amount),
                 accessibilityPrefix: "Amount"
             )
 
-            if let secondary = amountDisplay.secondary {
+            if let secondary = display.secondary {
                 Text(secondary)
                     .cashuText(.bodyEmphasis)
                     .monospacedDigit()

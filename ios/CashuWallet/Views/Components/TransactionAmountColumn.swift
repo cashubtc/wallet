@@ -29,7 +29,8 @@ struct TransactionAmountColumn: View {
     }
 
     private var amountStack: some View {
-        ZStack(alignment: .trailing) {
+        let display = amountDisplay
+        return ZStack(alignment: .trailing) {
             VStack(alignment: .trailing, spacing: 2) {
                 // The Row rung of the amount ladder. It carries the tabular figures,
                 // the line limit, the digit transition and the deliberate absence of
@@ -40,13 +41,13 @@ struct TransactionAmountColumn: View {
                         HiddenDigitsText(role: .amountRow)
                             .cashuText(.amountRow)
                     } else {
-                        Text(amountSign + amountDisplay.primary)
+                        Text(amountSign + display.primary)
                             .cashuAmount(.amountRow, value: Double(transaction.amount))
                     }
                 }
                 .foregroundStyle(amountColor)
 
-                if let secondaryAmount {
+                if let secondaryAmount = display.secondary {
                     Text(settings.hideBalances ? AmountFormatter.hiddenDigits : secondaryAmount)
                         .font(.subheadline)
                         .monospacedDigit()
@@ -72,10 +73,6 @@ struct TransactionAmountColumn: View {
     // unsigned; direction remains explicit in the title.
     private var amountSign: String {
         transaction.status == .completed && transaction.type == .incoming ? "+" : ""
-    }
-
-    private var secondaryAmount: String? {
-        amountDisplay.secondary
     }
 
     private var amountDisplay: AmountDisplayText {

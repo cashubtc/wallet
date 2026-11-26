@@ -216,16 +216,20 @@ fun MintDiscoveryContent(
                     contentPadding = PaddingValues(bottom = CashuTheme.spacing.section),
                 ) {
                     if (discoveryState.isDiscovering) {
-                        item(key = "discovering") {
+                        item(key = "discovering", contentType = "discovering") {
                             DiscoveringRow(modifier = Modifier.animateItem())
                         }
                     }
 
                     if (addedMints.isNotEmpty()) {
-                        item(key = "added-header") {
+                        item(key = "added-header", contentType = "section-header") {
                             DiscoverySectionHeader("Added", modifier = Modifier.animateItem())
                         }
-                        items(addedMints, key = { "mint-${it.url}" }) { mint ->
+                        items(
+                            items = addedMints,
+                            key = { "mint-${it.url}" },
+                            contentType = { "discovery-row" },
+                        ) { mint ->
                             Column(modifier = Modifier.animateItem()) {
                                 DiscoveryRow(
                                     mint = mint,
@@ -237,10 +241,14 @@ fun MintDiscoveryContent(
                     }
 
                     if (discoverableMints.isNotEmpty()) {
-                        item(key = "discovered-header") {
+                        item(key = "discovered-header", contentType = "section-header") {
                             DiscoverySectionHeader("Discovered", modifier = Modifier.animateItem())
                         }
-                        items(discoverableMints, key = { "mint-${it.url}" }) { mint ->
+                        items(
+                            items = discoverableMints,
+                            key = { "mint-${it.url}" },
+                            contentType = { "discovery-row" },
+                        ) { mint ->
                             Column(modifier = Modifier.animateItem()) {
                                 DiscoveryRow(
                                     mint = mint,

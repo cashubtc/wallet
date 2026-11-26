@@ -69,22 +69,95 @@ object PaymentRequestParser {
 
     fun paymentMethod(request: String): PaymentMethodKind? {
         if (isHumanReadableLightningAddress(request)) return null
-        val normalized = PaymentRequestDecoder.encodedLightningRequest(request) ?: normalizeLightningRequest(request)
-        runCatching { decodeInvoice(normalized) }.getOrNull()?.let { decoded ->
-            return when (decoded.paymentType) {
-                CdkPaymentType.BOLT11 -> PaymentMethodKind.Bolt11
-                CdkPaymentType.BOLT12 -> PaymentMethodKind.Bolt12
-            }
-        }
-        if (LightningRequestParser.parseBolt12Offer(normalized) != null) {
-            return PaymentMethodKind.Bolt12
-        }
+        PaymentRequestDecoder.lightningPaymentMethod(request)?.let { return it }
         if (isBitcoinAddress(request)) return PaymentMethodKind.Onchain
         return null
     }
 }
 
+internal data class DecodedInvoiceSnapshot(
+    val paymentMethod: PaymentMethodKind,
+    val amountMsat: Long?,
+    val description: String?,
+)
+
 object PaymentRequestDecoder {
+    internal const val INVOICE_CACHE_CAPACITY = 256
+
+    private sealed interface CachedInvoiceEntry {
+        data class Decoded(val snapshot: DecodedInvoiceSnapshot) : CachedInvoiceEntry
+        data object Invalid : CachedInvoiceEntry
+    }
+
+    private data class NormalizedLightningCandidate(
+        val normalized: String,
+        val fromBitcoinUri: Boolean,
+    )
+
+    private val invoiceCacheLock = Any()
+    private val invoiceCache = object : LinkedHashMap<String, CachedInvoiceEntry>(64, 0.75f, true) {
+        override fun removeEldestEntry(
+            eldest: MutableMap.MutableEntry<String, CachedInvoiceEntry>?,
+        ): Boolean = size > INVOICE_CACHE_CAPACITY
+    }
+    private var invoiceCacheGeneration = 0L
+
+    @Volatile
+    private var invoiceDecoder: (String) -> DecodedInvoiceSnapshot? = ::defaultDecodeInvoice
+
+    internal fun resetInvoiceCacheForTesting() {
+        synchronized(invoiceCacheLock) {
+            invoiceCache.clear()
+            invoiceCacheGeneration += 1L
+        }
+    }
+
+    internal fun setInvoiceDecoderForTesting(override: ((String) -> DecodedInvoiceSnapshot?)?) {
+        synchronized(invoiceCacheLock) {
+            invoiceCache.clear()
+            invoiceCacheGeneration += 1L
+            invoiceDecoder = override ?: ::defaultDecodeInvoice
+        }
+    }
+
+    private fun defaultDecodeInvoice(normalized: String): DecodedInvoiceSnapshot? =
+        runCatching { decodeInvoice(normalized) }.getOrNull()?.let { decoded ->
+            val paymentMethod = when (decoded.paymentType) {
+                CdkPaymentType.BOLT11 -> PaymentMethodKind.Bolt11
+                CdkPaymentType.BOLT12 -> PaymentMethodKind.Bolt12
+            }
+            DecodedInvoiceSnapshot(
+                paymentMethod = paymentMethod,
+                amountMsat = decoded.amountMsat?.toLong(),
+                description = decoded.description,
+            )
+        }
+
+    private fun decodeInvoiceCached(normalized: String): DecodedInvoiceSnapshot? {
+        val lookupGeneration: Long
+        val activeDecoder: (String) -> DecodedInvoiceSnapshot?
+        synchronized(invoiceCacheLock) {
+            when (val cached = invoiceCache[normalized]) {
+                is CachedInvoiceEntry.Decoded -> return cached.snapshot
+                CachedInvoiceEntry.Invalid -> return null
+                null -> {
+                    lookupGeneration = invoiceCacheGeneration
+                    activeDecoder = invoiceDecoder
+                }
+            }
+        }
+
+        // Run FFI outside the cache lock so concurrent decodes never serialize.
+        val snapshot = activeDecoder(normalized)
+        val entry = snapshot?.let(CachedInvoiceEntry::Decoded) ?: CachedInvoiceEntry.Invalid
+        synchronized(invoiceCacheLock) {
+            if (invoiceCacheGeneration == lookupGeneration) {
+                invoiceCache[normalized] = entry
+            }
+        }
+        return snapshot
+    }
+
     /** Recover immutable descriptions from persisted invoices, including older history. */
     fun description(raw: String?): String? {
         if (raw.isNullOrBlank()) return null
@@ -129,15 +202,33 @@ object PaymentRequestDecoder {
     }
 
     fun encodedLightningRequest(raw: String): String? {
+        val candidate = normalizedLightningCandidate(raw) ?: return null
+        LightningRequestParser.parseBolt12Offer(candidate.normalized)?.let { return it.request }
+        if (candidate.fromBitcoinUri) return candidate.normalized
+        return if (decodeInvoiceCached(candidate.normalized) != null) candidate.normalized else null
+    }
+
+    internal fun lightningPaymentMethod(raw: String): PaymentMethodKind? {
+        val candidate = normalizedLightningCandidate(raw) ?: return null
+        val offer = LightningRequestParser.parseBolt12Offer(candidate.normalized)
+        val lookupKey = offer?.request ?: candidate.normalized
+        decodeInvoiceCached(lookupKey)?.let { return it.paymentMethod }
+        return if (offer != null) PaymentMethodKind.Bolt12 else null
+    }
+
+    private fun normalizedLightningCandidate(raw: String): NormalizedLightningCandidate? {
         val trimmed = raw.trim()
         if (trimmed.isEmpty()) return null
         bitcoinPaymentURI(trimmed)?.lightning?.let { embedded ->
             val normalized = PaymentRequestParser.normalizeLightningRequest(embedded)
-            return LightningRequestParser.parseBolt12Offer(normalized)?.request ?: normalized
+            return normalized.takeIf(String::isNotEmpty)?.let {
+                NormalizedLightningCandidate(normalized = it, fromBitcoinUri = true)
+            }
         }
         val normalized = PaymentRequestParser.normalizeLightningRequest(trimmed)
-        LightningRequestParser.parseBolt12Offer(normalized)?.let { return it.request }
-        return if (runCatching { decodeInvoice(normalized) }.isSuccess) normalized else null
+        return normalized.takeIf(String::isNotEmpty)?.let {
+            NormalizedLightningCandidate(normalized = it, fromBitcoinUri = false)
+        }
     }
 
     fun encodedCashuPaymentRequest(raw: String): String? {
@@ -176,16 +267,18 @@ object PaymentRequestDecoder {
     }
 
     private fun decodedLightningRequest(raw: String): PaymentRequestDecodeResult? {
-        val normalized = encodedLightningRequest(raw) ?: return null
-        runCatching { decodeInvoice(normalized) }.getOrNull()?.let { decoded ->
-            val amountSats = decoded.amountMsat?.let { (it.toLong() + 999) / 1000 }
-            return when (decoded.paymentType) {
-                CdkPaymentType.BOLT11 -> PaymentRequestDecodeResult.Bolt11(amountSats, decoded.description)
-                CdkPaymentType.BOLT12 -> PaymentRequestDecodeResult.Bolt12(amountSats, decoded.description)
+        val candidate = normalizedLightningCandidate(raw) ?: return null
+        val offer = LightningRequestParser.parseBolt12Offer(candidate.normalized)
+        val lookupKey = offer?.request ?: candidate.normalized
+        decodeInvoiceCached(lookupKey)?.let { decoded ->
+            val amountSats = decoded.amountMsat?.let { (it + 999L) / 1000L }
+            return when (decoded.paymentMethod) {
+                PaymentMethodKind.Bolt11 -> PaymentRequestDecodeResult.Bolt11(amountSats, decoded.description)
+                PaymentMethodKind.Bolt12 -> PaymentRequestDecodeResult.Bolt12(amountSats, decoded.description)
+                PaymentMethodKind.Onchain -> null
             }
         }
-        val offer = LightningRequestParser.parseBolt12Offer(normalized) ?: return null
-        return PaymentRequestDecodeResult.Bolt12(offer.amountSats, offer.description)
+        return offer?.let { PaymentRequestDecodeResult.Bolt12(it.amountSats, it.description) }
     }
 
     fun amountLocked(result: PaymentRequestDecodeResult): Boolean = when (result) {

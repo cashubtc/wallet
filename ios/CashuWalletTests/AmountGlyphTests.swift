@@ -61,3 +61,63 @@ final class AmountGlyphTests: XCTestCase {
         XCTAssertEqual(Set(names).count, names.count)
     }
 }
+
+final class AmountFormatterCachingTests: XCTestCase {
+    func testCachedFiatFormattersStayAccurateAcrossInterleavedCurrenciesAndParts() {
+        let currencies = ["USD", "EUR", "GBP", "JPY", "CAD", "CHF"]
+        var expectedFull: [String: String] = [:]
+
+        for code in currencies {
+            let formatted = AmountFormatter.fiat(1_234.56, currencyCode: code)
+            expectedFull[code] = formatted
+            let parts = AmountFormatter.fiatParts(1_234.56, currencyCode: code)
+            let affix = AmountFormatter.currencyAffix(currencyCode: code)
+
+            XCTAssertEqual(parts.affix, affix)
+            XCTAssertEqual(parts.value, "1234.56")
+            XCTAssertEqual(
+                AmountFormatter.fiat(1_234.56, currencyCode: code),
+                formatted,
+                "fiatParts must not mutate the cached full currency formatter for \(code)"
+            )
+        }
+
+        // Second pass verifies cached entries do not bleed across currencies.
+        for code in currencies.reversed() {
+            XCTAssertEqual(AmountFormatter.fiat(1_234.56, currencyCode: code), expectedFull[code])
+        }
+        XCTAssertEqual(AmountFormatter.fiat(1_234.56, currencyCode: "USD"), "$1234.56")
+        XCTAssertEqual(AmountFormatter.fiat(1_234.56, currencyCode: "EUR"), "€1234.56")
+    }
+
+    func testCachedFiatFormattersRespectLocaleAndFractionDigits() {
+        let posix = Locale(identifier: "en_US_POSIX")
+        let german = Locale(identifier: "de_DE")
+
+        let posixEur = AmountFormatter.fiat(1_234.5, currencyCode: "EUR", locale: posix, fractionDigits: 2)
+        let germanEur = AmountFormatter.fiat(1_234.5, currencyCode: "EUR", locale: german, fractionDigits: 2)
+        let zeroFraction = AmountFormatter.fiat(1_234.5, currencyCode: "JPY", locale: posix, fractionDigits: 0)
+        let twoFraction = AmountFormatter.fiat(1_234.5, currencyCode: "JPY", locale: posix, fractionDigits: 2)
+
+        XCTAssertEqual(posixEur, "€1234.50")
+        XCTAssertTrue(germanEur.contains("1.234,50"), "German locale should group with '.' and decimal ',' (got \(germanEur))")
+        XCTAssertFalse(zeroFraction.contains("."), "0 fraction digits must omit decimal separator (got \(zeroFraction))")
+        XCTAssertTrue(twoFraction.contains(".50"), "2 fraction digits must retain decimals (got \(twoFraction))")
+        XCTAssertEqual(AmountFormatter.fiat(1_234.5, currencyCode: "USD"), "$1234.50")
+    }
+
+    func testCurrencyAmountCachedFormattersStayAccurateAcrossUnits() {
+        XCTAssertEqual(CurrencyAmount.sats(12_345).formatted(), "₿12,345")
+        XCTAssertEqual(CurrencyAmount.sats(12_345).formatted(showSymbol: false), "12,345")
+        XCTAssertEqual(CurrencyAmount.usdCents(123_456).formatted(), "$1,234.56")
+        XCTAssertEqual(CurrencyAmount.usdCents(123_456).formatted(showSymbol: false), "1,234.56")
+        XCTAssertEqual(CurrencyAmount.eurCents(50).formatted(), "€0.50")
+        XCTAssertEqual(
+            CurrencyAmount(value: 4_200, currency: GenericCurrency(unit: "pts")).formatted(),
+            "4,200 PTS"
+        )
+        // Re-verify interleaved cached formatter entries preserve their fraction digits.
+        XCTAssertEqual(CurrencyAmount.sats(999_999).formatted(), "₿999,999")
+        XCTAssertEqual(CurrencyAmount.usdCents(100).formatted(), "$1.00")
+    }
+}

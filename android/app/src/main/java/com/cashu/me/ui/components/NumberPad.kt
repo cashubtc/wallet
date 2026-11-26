@@ -26,6 +26,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.layout
@@ -62,16 +63,41 @@ fun NumberPad(
     modifier: Modifier = Modifier,
     decimals: Int = 0,
 ) {
+    val latestAmount = rememberUpdatedState(amount)
+    val latestOnAmountChange = rememberUpdatedState(onAmountChange)
+    val latestDecimals = rememberUpdatedState(decimals)
     // Labelled with the locale's separator; the raw string stays canonical.
     val separatorKey = remember(decimals) {
         if (decimals > 0) AmountFormatter.decimalSeparator() else ""
     }
-    val rows = listOf(
-        listOf("1", "2", "3"),
-        listOf("4", "5", "6"),
-        listOf("7", "8", "9"),
-        listOf(separatorKey, "0", "delete"),
-    )
+    val rows = remember(separatorKey) {
+        listOf(
+            listOf("1", "2", "3"),
+            listOf("4", "5", "6"),
+            listOf("7", "8", "9"),
+            listOf(separatorKey, "0", "delete"),
+        )
+    }
+    val onSeparatorClick = remember {
+        {
+            latestOnAmountChange.value(
+                UnitAmountEntry.appendSeparator(latestAmount.value, latestDecimals.value),
+            )
+        }
+    }
+    val onDeleteClick = remember {
+        {
+            val current = latestAmount.value
+            if (current.isNotEmpty()) {
+                latestOnAmountChange.value(UnitAmountEntry.backspace(current))
+            }
+        }
+    }
+    val onDeleteLongClick = remember {
+        {
+            if (latestAmount.value.isNotEmpty()) latestOnAmountChange.value("")
+        }
+    }
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
         val keyHeight = ((maxHeight - KeyGap * 3) / 4)
             .coerceIn(NumberPadMinimumKeyHeight, NumberPadPreferredKeyHeight)
@@ -90,9 +116,7 @@ fun NumberPad(
                             separatorKey -> NumberPadKey(
                                 modifier = Modifier.weight(1f).height(keyHeight),
                                 contentDescription = "Decimal point",
-                                onClick = {
-                                    onAmountChange(UnitAmountEntry.appendSeparator(amount, decimals))
-                                },
+                                onClick = onSeparatorClick,
                             ) {
                                 Text(
                                     text = key,
@@ -102,31 +126,36 @@ fun NumberPad(
                             "delete" -> NumberPadKey(
                                 modifier = Modifier.weight(1f).height(keyHeight),
                                 contentDescription = "Delete. Long press to clear.",
-                                onClick = {
-                                    if (amount.isNotEmpty()) {
-                                        onAmountChange(UnitAmountEntry.backspace(amount))
-                                    }
-                                },
-                                onLongClick = {
-                                    if (amount.isNotEmpty()) onAmountChange("")
-                                },
+                                onClick = onDeleteClick,
+                                onLongClick = onDeleteLongClick,
                             ) {
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Outlined.Backspace,
                                     contentDescription = null,
                                 )
                             }
-                            else -> NumberPadKey(
-                                modifier = Modifier.weight(1f).height(keyHeight),
-                                contentDescription = key,
-                                onClick = {
-                                    onAmountChange(UnitAmountEntry.append(key, amount, decimals))
-                                },
-                            ) {
-                                Text(
-                                    text = key,
-                                    style = CashuTheme.type.numberPadKey,
-                                )
+                            else -> {
+                                val onDigitClick = remember(key) {
+                                    {
+                                        latestOnAmountChange.value(
+                                            UnitAmountEntry.append(
+                                                key,
+                                                latestAmount.value,
+                                                latestDecimals.value,
+                                            ),
+                                        )
+                                    }
+                                }
+                                NumberPadKey(
+                                    modifier = Modifier.weight(1f).height(keyHeight),
+                                    contentDescription = key,
+                                    onClick = onDigitClick,
+                                ) {
+                                    Text(
+                                        text = key,
+                                        style = CashuTheme.type.numberPadKey,
+                                    )
+                                }
                             }
                         }
                     }

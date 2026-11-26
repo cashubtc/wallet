@@ -11,6 +11,7 @@ struct RestoreFlowState {
     var stagedMintIconUrls: [String: String] = [:]
     var stagedMintNames: [String: String] = [:]
     /// Returns whether checksum review took focus away from the field.
+    @MainActor
     mutating func reviewChecksum(validate: (String) -> Bool) -> Bool {
         guard seedEntry.isComplete else { return false }
         guard !validate(seedEntry.phrase) else {
@@ -24,6 +25,7 @@ struct RestoreFlowState {
     }
 
     /// Returns the intended keyboard focus after a paste and checksum review.
+    @MainActor
     mutating func pasteSeed(_ content: String, validate: (String) -> Bool) -> Bool {
         switch seedEntry.fill(from: content) {
         case .filled:
