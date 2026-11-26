@@ -388,7 +388,7 @@ struct MainWalletView: View {
     /// drops out doesn't.
     private func cycleHomeBalance(to next: HomeBalanceStep) {
         HapticFeedback.selection()
-        withAnimation(reduceMotion ? .easeOut(duration: 0.2) : .snappy) {
+        withAnimation(reduceMotion ? .easeOut(duration: 0.2) : .snappy(duration: 0.25)) {
             settings.applyHomeBalanceStep(next)
         }
     }
@@ -408,7 +408,7 @@ struct MainWalletView: View {
                     )
             }
         }
-        .animation(reduceMotion ? nil : .snappy, value: selected)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: selected)
         .accessibilityHidden(true)
     }
 
