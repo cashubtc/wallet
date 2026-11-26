@@ -309,9 +309,10 @@ fun PaymentStatusScreen(
                                         modifier = Modifier
                                             .size(StatusGlyphSize)
                                             .graphicsLayer {
+                                                val bounceScale = bounce.value
                                                 val grow = if (mountedCelebrating) glyphGrow else 1f
-                                                scaleX = bounce * grow
-                                                scaleY = bounce * grow
+                                                scaleX = bounceScale * grow
+                                                scaleY = bounceScale * grow
                                                 alpha = if (mountedCelebrating) glyphAlpha else 1f
                                             }
                                             .materializeBlur(

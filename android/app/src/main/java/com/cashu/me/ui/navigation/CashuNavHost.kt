@@ -27,7 +27,6 @@ import com.cashu.me.ui.shell.WalletFlow
 import com.cashu.me.ui.shell.WalletFlowSheetHost
 import com.cashu.me.ui.receive.ReceiveLightningScreen
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavGraphBuilder
@@ -58,8 +57,10 @@ import com.cashu.me.ui.settings.NwcSettingsScreen
 import com.cashu.me.ui.settings.P2PKScreen
 import com.cashu.me.ui.settings.LicensesScreen
 import com.cashu.me.ui.settings.PrivacyScreen
+import com.cashu.me.ui.components.animatedBlur
 import com.cashu.me.ui.settings.SettingsScreen
 import com.cashu.me.ui.theme.CashuMotion
+import com.cashu.me.ui.theme.rememberReducedMotion
 import java.net.URLDecoder
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
@@ -104,8 +105,9 @@ fun CashuNavHost(
     LaunchedEffect(receiptTransaction, receiptRequest) {
         receiptBackdropVisible = receiptTransaction != null || receiptRequest != null
     }
-    val receiptBackdropBlur by animateDpAsState(
-        targetValue = if (receiptBackdropVisible) 2.dp else 0.dp,
+    val reducedMotion = rememberReducedMotion()
+    val receiptBackdropBlur = animateDpAsState(
+        targetValue = if (receiptBackdropVisible && !reducedMotion) 2.dp else 0.dp,
         animationSpec = tween(
             durationMillis = if (receiptBackdropVisible) 180 else 30,
             easing = LinearOutSlowInEasing,
@@ -116,7 +118,7 @@ fun CashuNavHost(
     NavHost(
         navController = navController,
         startDestination = Routes.HOME,
-        modifier = modifier.blur(receiptBackdropBlur),
+        modifier = modifier.animatedBlur(receiptBackdropBlur),
         // Shared-axis X for pushed destinations, spring-driven (M3 Expressive).
         enterTransition = pushEnter,
         exitTransition = pushExit,

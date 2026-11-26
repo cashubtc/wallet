@@ -9,7 +9,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -69,7 +69,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -113,6 +112,7 @@ import com.cashu.me.ui.components.MintAvatar
 import com.cashu.me.ui.components.NoticeSeverity
 import com.cashu.me.ui.components.PrimaryButton
 import com.cashu.me.ui.components.TextButtonContext
+import com.cashu.me.ui.components.animatedBlur
 import com.cashu.me.ui.components.morphBlur
 import com.cashu.me.ui.mints.RecommendedMints
 import com.cashu.me.ui.restore.RestoreMintsStageContent
@@ -1349,14 +1349,18 @@ internal fun SeedPhraseReveal(
  */
 @Composable
 private fun SeedGrid(words: List<String>, revealed: Boolean) {
-    val canBlur = !LocalInspectionMode.current && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+    val reducedMotion = rememberReducedMotion()
+    val canBlur = !LocalInspectionMode.current &&
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+        !reducedMotion
     // The reveal is a ramp, not a cut: the radius animates 9 → 0 on reveal
     // (and back on hide), so the placeholder → real-word swap lands under a
     // still-heavy blur and resolves — iOS `.blur(radius:)` on `.snappy`.
     // First composition initializes at the target, so a hidden grid never
-    // passes through radius 0.
-    val blurRadius by animateFloatAsState(
-        targetValue = if (!revealed && canBlur) SeedBlurRadius.value else 0f,
+    // passes through radius 0. Under reduced motion the target stays 0.dp and
+    // the unblurred fade keeps the reveal overlay legible.
+    val blurRadiusState = animateDpAsState(
+        targetValue = if (!revealed && canBlur) SeedBlurRadius else 0.dp,
         animationSpec = spring(stiffness = Spring.StiffnessMedium),
         label = "seed-reveal-blur",
     )
@@ -1393,7 +1397,7 @@ private fun SeedGrid(words: List<String>, revealed: Boolean) {
                         }
                     },
                 )
-                .then(if (blurRadius > 0.05f) Modifier.blur(blurRadius.dp) else Modifier),
+                .then(if (canBlur) Modifier.animatedBlur(blurRadiusState) else Modifier),
             verticalArrangement = Arrangement.spacedBy(SeedGridRowGap),
         ) {
             words.chunked(columns).forEachIndexed { rowIndex, rowWords ->

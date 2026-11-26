@@ -41,7 +41,6 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -92,6 +91,7 @@ import com.cashu.me.ui.onboarding.OnboardingScreen
 import com.cashu.me.ui.components.ConfirmationToastController
 import com.cashu.me.ui.components.ConfirmationToastHost
 import com.cashu.me.ui.components.LocalConfirmationToastController
+import com.cashu.me.ui.components.animatedBlur
 import com.cashu.me.ui.navigation.Routes
 import com.cashu.me.ui.navigation.TopTab
 import com.cashu.me.ui.navigation.cashuRequestDetailRouteFor
@@ -109,6 +109,7 @@ import com.cashu.me.ui.security.AppLockGate
 import com.cashu.me.ui.security.PrivacyCover
 import com.cashu.me.ui.security.SecureWindowEffect
 import com.cashu.me.ui.theme.CashuTheme
+import com.cashu.me.ui.theme.rememberReducedMotion
 import com.cashu.me.ui.testing.UiTestTags
 
 /**
@@ -344,8 +345,9 @@ private fun AuthenticatedShell(container: AppContainer) {
     // its in-sheet scan.
     var receiveTokenDetail by remember { mutableStateOf<String?>(null) }
     var receiveDetailDismissLocked by remember { mutableStateOf(false) }
-    val sheetBackdropBlur by animateDpAsState(
-        targetValue = if (isFlowBackdropVisible) 2.dp else 0.dp,
+    val reducedMotion = rememberReducedMotion()
+    val sheetBackdropBlur = animateDpAsState(
+        targetValue = if (isFlowBackdropVisible && !reducedMotion) 2.dp else 0.dp,
         // Keep presentation soft, but clear depth quickly as soon as dismissal
         // begins so the backdrop does not linger after the sheet is gone.
         animationSpec = tween(
@@ -538,7 +540,7 @@ private fun AuthenticatedShell(container: AppContainer) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .blur(sheetBackdropBlur),
+            .animatedBlur(sheetBackdropBlur),
     ) {
         WalletScaffold(
             container = container,

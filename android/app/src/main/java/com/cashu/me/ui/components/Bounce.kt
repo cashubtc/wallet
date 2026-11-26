@@ -5,6 +5,7 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -15,8 +16,9 @@ private const val BounceSettleDamping = 0.5f
 
 /**
  * One-shot glyph bounce — the Compose equivalent of iOS
- * `.symbolEffect(.bounce, value:)`. Returns a scale to apply via
- * `graphicsLayer`; it springs 1 → 1.15 → 1 whenever [trigger] changes.
+ * `.symbolEffect(.bounce, value:)`. Returns a [State] holding the animated
+ * scale; read `.value` inside `Modifier.graphicsLayer` so the spring 1 → 1.15 →
+ * 1 runs in the draw phase without recomposing when [trigger] changes.
  *
  * @param trigger stable value; each change fires one bounce.
  * @param bounceOnEntry also bounce on first composition (celebration glyphs
@@ -26,7 +28,7 @@ private const val BounceSettleDamping = 0.5f
  * Reduce-motion renders the resting scale, matching the iOS gating.
  */
 @Composable
-fun rememberBounceScale(trigger: Any?, bounceOnEntry: Boolean = false): Float {
+fun rememberBounceScale(trigger: Any?, bounceOnEntry: Boolean = false): State<Float> {
     val reduced by rememberUpdatedState(rememberReducedMotion())
     val scale = remember { Animatable(1f) }
     val firstRun = remember { booleanArrayOf(true) }
@@ -41,5 +43,5 @@ fun rememberBounceScale(trigger: Any?, bounceOnEntry: Boolean = false): Float {
             spring(dampingRatio = BounceSettleDamping, stiffness = Spring.StiffnessMedium),
         )
     }
-    return scale.value
+    return scale.asState()
 }
