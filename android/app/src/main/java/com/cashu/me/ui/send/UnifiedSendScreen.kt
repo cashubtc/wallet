@@ -51,6 +51,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -261,6 +262,7 @@ fun UnifiedSendScreen(
     var cashuTargetMintPreviews by remember { mutableStateOf<List<MintInfo>>(emptyList()) }
     var selectedCashuTargetMintUrl by remember { mutableStateOf<String?>(null) }
     var meltQuote by remember { mutableStateOf<MeltQuoteInfo?>(null) }
+    var quoteRetryGeneration by remember { mutableIntStateOf(0) }
     var topUpContext by remember { mutableStateOf<CashuRequestTopUpContext?>(null) }
     var quoteError by remember { mutableStateOf<String?>(null) }
     // Structured companion to quoteError: whether the failure was the mint
@@ -610,7 +612,7 @@ fun UnifiedSendScreen(
         cancelMax()
     }
 
-    LaunchedEffect(step, locked, confirmAmount, activeMintUrl) {
+    LaunchedEffect(step, locked, confirmAmount, activeMintUrl, quoteRetryGeneration) {
         if (step != SendStep.Confirm) return@LaunchedEffect
         val rail = locked as? LockedRail.Melt ?: return@LaunchedEffect
         meltQuote = null
@@ -1014,10 +1016,7 @@ fun UnifiedSendScreen(
                                 onRetryQuote = {
                                     quoteError = null
                                     quoteErrorInsufficient = false
-                                    // Re-trigger the prefetch by nudging state.
-                                    val current = selectedMintUrl
-                                    selectedMintUrl = null
-                                    selectedMintUrl = current
+                                    quoteRetryGeneration += 1
                                 },
                                 // goBack's Confirm→Amount branch is exactly the
                                 // "change amount" reset; fixed-amount rails

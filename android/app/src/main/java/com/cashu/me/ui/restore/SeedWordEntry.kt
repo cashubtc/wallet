@@ -15,15 +15,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -667,38 +665,52 @@ private fun SeedWordReviewGrid(words: List<String>, onSelect: (Int) -> Unit) {
         val available = (maxWidth - CardPadding * 2).coerceAtLeast(1.dp)
         val minimumWidth = indexWidth + CashuTheme.spacing.tight + wordWidth
         val scale = (available / minimumWidth).coerceAtMost(1f)
-        LazyVerticalGrid(
-            columns = GridCells.Adaptive(minimumWidth.coerceAtMost(available)),
+        val gap = CashuTheme.spacing.default
+        val columns = ((available + gap) / (minimumWidth + gap)).toInt().coerceAtLeast(1)
+        // Non-scrollable Column of Rows (matching OnboardingScreen's SeedGrid):
+        // RestoreSeedStageContent hosts this inside a verticalScroll Column,
+        // where an unbounded LazyVerticalGrid crashes on infinite maxHeight.
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .testTag(UiTestTags.SeedWordReview)
                 .clip(RoundedCornerShape(CardRadius))
                 .background(MaterialTheme.colorScheme.surfaceContainerHighest)
                 .padding(CardPadding),
-            horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
             verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.comfortable),
         ) {
-            itemsIndexed(words) { index, word ->
+            words.chunked(columns).forEachIndexed { rowIndex, rowWords ->
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onSelect(index) }
-                        .semantics { contentDescription = "Word ${index + 1}, $word" },
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.tight),
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(gap),
                 ) {
-                    Text(
-                        text = "%02d".format(index + 1),
-                        style = indexStyle.scaledBy(scale),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        text = word,
-                        style = wordStyle.scaledBy(scale),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        softWrap = false,
-                    )
+                    rowWords.forEachIndexed { colIndex, word ->
+                        val index = rowIndex * columns + colIndex
+                        Row(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { onSelect(index) }
+                                .semantics { contentDescription = "Word ${index + 1}, $word" },
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.tight),
+                        ) {
+                            Text(
+                                text = "%02d".format(index + 1),
+                                style = indexStyle.scaledBy(scale),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Text(
+                                text = word,
+                                style = wordStyle.scaledBy(scale),
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                softWrap = false,
+                            )
+                        }
+                    }
+                    repeat(columns - rowWords.size) {
+                        Spacer(Modifier.weight(1f))
+                    }
                 }
             }
         }
