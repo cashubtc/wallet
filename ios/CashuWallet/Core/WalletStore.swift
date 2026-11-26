@@ -37,6 +37,22 @@ final class WalletStore {
         if updated != current { set(updated, forKey: StorageKeys.removedMintUrls) }
     }
 
+    /// Resume checkpoint for an interrupted seed restore, keyed by normalized mint URL.
+    func restoreCheckpoint(url: String) -> MintRestoreCheckpoint? {
+        let all: [String: MintRestoreCheckpoint] = value(forKey: StorageKeys.restoreCheckpoints) ?? [:]
+        return all[MintURLIdentity.normalized(url)]
+    }
+
+    func saveRestoreCheckpoint(_ checkpoint: MintRestoreCheckpoint?, url: String) {
+        var all: [String: MintRestoreCheckpoint] = value(forKey: StorageKeys.restoreCheckpoints) ?? [:]
+        all[MintURLIdentity.normalized(url)] = checkpoint
+        if all.isEmpty {
+            remove(keys: [StorageKeys.restoreCheckpoints])
+        } else {
+            set(all, forKey: StorageKeys.restoreCheckpoints)
+        }
+    }
+
     func loadBalancesByUnit() -> [String: UInt64] {
         value(forKey: StorageKeys.balancesByUnit) ?? [:]
     }

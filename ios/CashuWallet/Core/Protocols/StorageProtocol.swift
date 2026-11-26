@@ -101,6 +101,7 @@ enum StorageKeys {
     static let processedNPCQuotes = "wallet.processedNPCQuotes"
     static let nostrMintBackupLastBackupDate = "wallet.nostrMintBackup.lastBackupDate"
     static let pendingICloudRestoreMintURLs = "wallet.pendingICloudRestoreMintURLs"
+    static let restoreCheckpoints = "wallet.restoreCheckpoints.v1"
 
     // Onboarding completion marker. Written `false` when a wallet is installed
     // and `true` only when onboarding is fully passed; absent on installs that

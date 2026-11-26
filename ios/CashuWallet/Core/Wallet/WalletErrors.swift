@@ -103,6 +103,9 @@ enum WalletErrorMessage {
         if let recovery = error as? PendingSendRecovery {
             return .caution(recovery.localizedDescription).terminal()
         }
+        if let interrupted = error as? MintRestoreInterrupted {
+            return .caution(interrupted.localizedDescription)
+        }
         if let checkpointError = error as? WalletCheckpointError {
             return .error(checkpointError.localizedDescription)
         }
@@ -221,6 +224,11 @@ enum WalletErrorMessage {
             // The token was created but transport delivery failed; the send
             // stays pending and is reclaimed via revokeSend if unclaimed.
             return .caution("The delivery outcome is uncertain. Check the pending send before paying again.").terminal()
+        case .RestoreInterrupted(_, _, let errorMessage):
+            // Restore callers normally wrap this in `MintRestoreInterrupted`
+            // after saving a checkpoint. Reaching here means it escaped that path.
+            return classified(forRawMessage: errorMessage)
+                ?? cleanedCDKMessage(errorMessage)
         }
     }
 

@@ -110,6 +110,7 @@ final class NostrMintBackupService: ObservableObject {
         case .Cdk(_, let errorMessage): message = errorMessage
         case .Internal(let errorMessage): message = errorMessage
         case .PaymentRequestDeliveryFailed(_, let errorMessage): message = errorMessage
+        case .RestoreInterrupted(_, _, let errorMessage): message = errorMessage
         }
         return message.lowercased().contains("no backup event found")
     }
