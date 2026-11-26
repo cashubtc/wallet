@@ -727,6 +727,54 @@ final class MultiUnitSupportTests: XCTestCase {
         XCTAssertEqual(AmountFormatter.entryAppendUnit(".", to: "500", decimals: 2), "500")
     }
 
+    /// Mirrors Android's `UnifiedSendAmountEntryTest.sendMaxUsesFiatEntryWithoutExceedingTheSatBalance`.
+    func testMaxEntryStringTrimsFiatCentsSoItNeverExceedsMaxSats() {
+        let btcPrice = 50_000.0
+        let balance: UInt64 = 12_350
+        let raw = AmountFormatter.maxEntryString(maxSats: balance, unit: .fiat, btcPrice: btcPrice)
+        let convertedSats = AmountFormatter.entrySats(raw: raw, unit: .fiat, btcPrice: btcPrice)
+
+        XCTAssertEqual(raw, "6.17")
+        XCTAssertEqual(convertedSats, 12_340)
+        XCTAssertLessThanOrEqual(convertedSats, balance)
+        XCTAssertGreaterThan(AmountFormatter.entrySats(raw: "6.18", unit: .fiat, btcPrice: btcPrice), balance)
+    }
+
+    func testMaxEntryStringNeverExceedsMaxSatsAcrossFiatRoundingBoundaries() {
+        let prices: [Double] = [20_000, 50_000, 67_891.23, 97_123.45, 100_000, 1_000_000]
+        let balances: [UInt64] = [
+            0, 1, 2, 9, 10, 11, 19, 20, 21, 99, 100, 101,
+            498, 499, 500, 1_300, 1_301, 12_349, 12_350, 12_351,
+            99_999, 100_000, 100_001, 1_234_567, 21_000_000,
+        ]
+
+        for btcPrice in prices {
+            for balance in balances {
+                let raw = AmountFormatter.maxEntryString(maxSats: balance, unit: .fiat, btcPrice: btcPrice)
+                let convertedSats = AmountFormatter.entrySats(raw: raw, unit: .fiat, btcPrice: btcPrice)
+                XCTAssertLessThanOrEqual(
+                    convertedSats,
+                    balance,
+                    "Fiat max '\(raw)' converted to \(convertedSats) sats > \(balance) at BTC=\(btcPrice)"
+                )
+                // Adding one more cent must strictly exceed the balance (maximal fit).
+                let nextCents = AmountFormatter.entryBaseUnits(raw: raw, decimals: 2) + 1
+                let nextRaw = AmountFormatter.entryString(baseUnits: nextCents, decimals: 2)
+                XCTAssertGreaterThan(
+                    AmountFormatter.entrySats(raw: nextRaw, unit: .fiat, btcPrice: btcPrice),
+                    balance,
+                    "Fiat max '\(raw)' left room for '\(nextRaw)' under \(balance) at BTC=\(btcPrice)"
+                )
+            }
+        }
+
+        // Sats mode stays exact, and unusable fiat prices return empty instead of overflowing.
+        XCTAssertEqual(AmountFormatter.maxEntryString(maxSats: 12_350, unit: .sats, btcPrice: 50_000), "12350")
+        XCTAssertEqual(AmountFormatter.maxEntryString(maxSats: 0, unit: .sats, btcPrice: 50_000), "")
+        XCTAssertEqual(AmountFormatter.maxEntryString(maxSats: 12_350, unit: .fiat, btcPrice: 0), "")
+        XCTAssertEqual(AmountFormatter.maxEntryString(maxSats: 12_350, unit: .fiat, btcPrice: .nan), "")
+    }
+
     func testUSDDisplayUsesLeadingBareDollarSymbol() {
         XCTAssertEqual(AmountFormatter.fiat(60, currencyCode: "USD"), "$60.00")
         XCTAssertEqual(

@@ -95,6 +95,7 @@ import com.cashu.me.Core.compatibleMintsForCashuPaymentRequest
 import com.cashu.me.Core.isAmountlessBolt11
 import com.cashu.me.Core.meltPaymentMethod
 import com.cashu.me.Core.meltUnavailableReason
+import com.cashu.me.Core.CachedMaxMeltQuote
 import com.cashu.me.Core.largestPayableMeltAmount
 import com.cashu.me.Core.normalizedMintUrlForSelection
 import com.cashu.me.Core.presentation
@@ -261,6 +262,7 @@ fun UnifiedSendScreen(
     var cashuTargetMintPreviews by remember { mutableStateOf<List<MintInfo>>(emptyList()) }
     var selectedCashuTargetMintUrl by remember { mutableStateOf<String?>(null) }
     var meltQuote by remember { mutableStateOf<MeltQuoteInfo?>(null) }
+    var cachedMaxMeltQuote by remember { mutableStateOf<CachedMaxMeltQuote?>(null) }
     var topUpContext by remember { mutableStateOf<CashuRequestTopUpContext?>(null) }
     var quoteError by remember { mutableStateOf<String?>(null) }
     // Structured companion to quoteError: whether the failure was the mint
@@ -373,6 +375,7 @@ fun UnifiedSendScreen(
 
     fun reset(toInput: Boolean = true) {
         cancelMax()
+        cachedMaxMeltQuote = null
         locked = null
         amount = ""
         meltQuote = null
@@ -460,6 +463,7 @@ fun UnifiedSendScreen(
             meltQuote = meltQuote,
         )
         confirmError = null
+        if (rail is LockedRail.Melt) cachedMaxMeltQuote = null
         status = SendStatus.Sending(paymentDetails)
         scope.launch {
             try {
@@ -613,6 +617,21 @@ fun UnifiedSendScreen(
     LaunchedEffect(step, locked, confirmAmount, activeMintUrl) {
         if (step != SendStep.Confirm) return@LaunchedEffect
         val rail = locked as? LockedRail.Melt ?: return@LaunchedEffect
+        val reusableQuote = cachedMaxMeltQuote?.takeIf {
+            rail.knownAmount == null &&
+                it.matches(
+                    request = rail.raw,
+                    amount = confirmAmount,
+                    mintUrl = activeMintUrl,
+                )
+        }?.quote
+        if (reusableQuote != null) {
+            meltQuote = reusableQuote
+            quoteError = null
+            quoteErrorInsufficient = false
+            return@LaunchedEffect
+        }
+        cachedMaxMeltQuote = null
         meltQuote = null
         quoteError = null
         quoteErrorInsufficient = false
@@ -904,6 +923,7 @@ fun UnifiedSendScreen(
                                         amount = amount,
                                         onAmountChange = {
                                             cancelMax()
+                                            cachedMaxMeltQuote = null
                                             amount = it
                                         },
                                         mint = activeMint,
@@ -921,6 +941,7 @@ fun UnifiedSendScreen(
                                         onUseMax = onUseMax@{
                                             val mint = activeMint?.takeIf { it.balance > 0 } ?: return@onUseMax
                                             cancelMax()
+                                            cachedMaxMeltQuote = null
                                             val generation = maxGeneration
                                             val rail = locked as? LockedRail.Melt
                                             if (rail == null) {
@@ -939,15 +960,21 @@ fun UnifiedSendScreen(
                                                             request = rail.raw,
                                                             amountSats = candidate,
                                                             preferredMintURL = mint.url,
-                                                        ).totalAmount
+                                                        )
                                                     }
                                                     // Typing or switching mints meanwhile wins over a late result.
                                                     if (generation == maxGeneration && step == SendStep.Amount && amount == entryBeforeMax &&
                                                         selectedMintUrl == selectionBeforeMax
                                                     ) {
                                                         if (payable != null) {
-                                                            amount = UnifiedSendAmountEntry.maxRawForBalance(payable, entryContext)
-                                                            if (payable < mint.balance) {
+                                                            amount = UnifiedSendAmountEntry.maxRawForBalance(payable.amount, entryContext)
+                                                            cachedMaxMeltQuote = CachedMaxMeltQuote(
+                                                                request = rail.raw,
+                                                                amount = payable.amount,
+                                                                mintUrl = mint.url,
+                                                                quote = payable.quote,
+                                                            )
+                                                            if (payable.amount < mint.balance) {
                                                                 maxFeedback = "Amount adjusted for the network fee."
                                                             }
                                                         } else {
@@ -989,6 +1016,24 @@ fun UnifiedSendScreen(
                                         onContinue = onContinue@{
                                             if (findingMax) return@onContinue
                                             cancelMax()
+                                            val rail = locked as? LockedRail.Melt
+                                            val reusableQuote = rail?.takeIf { it.knownAmount == null }?.let {
+                                                cachedMaxMeltQuote?.takeIf { cached ->
+                                                    cached.matches(
+                                                        request = rail.raw,
+                                                        amount = enteredAmount,
+                                                        mintUrl = activeMintUrl,
+                                                    )
+                                                }?.quote
+                                            }
+                                            if (reusableQuote != null) {
+                                                meltQuote = reusableQuote
+                                                quoteError = null
+                                                quoteErrorInsufficient = false
+                                            } else {
+                                                cachedMaxMeltQuote = null
+                                                meltQuote = null
+                                            }
                                             cameFromAmount = true
                                             step = SendStep.Confirm
                                         },
@@ -1012,6 +1057,7 @@ fun UnifiedSendScreen(
                                 quoteError = quoteError,
                                 quoteErrorInsufficient = quoteErrorInsufficient,
                                 onRetryQuote = {
+                                    cachedMaxMeltQuote = null
                                     quoteError = null
                                     quoteErrorInsufficient = false
                                     // Re-trigger the prefetch by nudging state.
@@ -1047,6 +1093,7 @@ fun UnifiedSendScreen(
             unavailableReason = meltUnavailableReasonFor,
             onSelect = { mint ->
                 cancelMax()
+                cachedMaxMeltQuote = null
                 mint?.let { selectedMintUrl = it.url }
                 mintPickerOpen = false
             },

@@ -650,11 +650,7 @@ struct CashuPaymentRequestPayView: View {
 
     private func useMaximumAmount(from mint: MintInfo) {
         HapticFeedback.selection()
-        customAmountString = AmountFormatter.entryConverted(
-            raw: String(mint.balance),
-            from: .sats,
-            to: entryUnit
-        )
+        customAmountString = AmountFormatter.maxEntryString(maxSats: mint.balance, unit: entryUnit)
     }
 
     @ViewBuilder

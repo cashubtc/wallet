@@ -62,24 +62,85 @@ struct CrossMintQuotes {
     let inputFee: UInt64
 }
 
+/// One Send Max quote probe: either a melt quote returned by the mint, or just
+/// the required total when the mint rejected the candidate for insufficient
+/// balance before returning a quote.
+enum MeltMaxQuoteProbe {
+    case quote(MeltQuoteInfo)
+    case insufficientBalance(requiredTotal: UInt64)
+}
+
+/// Winning Send Max result: the largest amount the mint can pay from its
+/// balance paired with the `MeltQuoteInfo` that proved it, so Confirm can reuse
+/// the quote instead of creating a duplicate one.
+struct PayableMeltQuote {
+    let amount: UInt64
+    let quote: MeltQuoteInfo
+}
+
+/// Winning Send Max melt quote held between the Amount and Confirm steps so
+/// tapping Continue reuses it when still unexpired and matching the selected
+/// destination, amount, and mint.
+struct CachedMaxMeltQuote {
+    let request: String
+    let amount: UInt64
+    let mintURL: String
+    let quote: MeltQuoteInfo
+
+    func matches(request: String, amount: UInt64, mintURL: String, now: Date = Date()) -> Bool {
+        let normalizedTarget = MintURLIdentity.normalized(mintURL)
+        guard self.request == request,
+              self.amount == amount,
+              quote.amount == amount,
+              quote.state == .unpaid,
+              MintURLIdentity.normalized(self.mintURL) == normalizedTarget,
+              MintURLIdentity.normalized(quote.mintUrl) == normalizedTarget else {
+            return false
+        }
+        if let expiry = quote.expiry, expiry > 0 {
+            return now.timeIntervalSince1970 <= Double(expiry)
+        }
+        return true
+    }
+}
+
 /// What Max means for a Lightning or on-chain send: the largest amount a mint
-/// can pay from `balance` once its melt fee reserve is added. `requiredTotal`
-/// quotes the mint and returns amount + fee reserve. The reserve usually tracks
-/// the amount (a percentage with a floor), so each round steps down by the
-/// overshoot and a second quote normally settles it. Nil when nothing fits.
+/// can pay from `balance` once its melt fee reserve is added, paired with the
+/// winning `MeltQuoteInfo` so Confirm can reuse it without a second round-trip.
+/// `probe` quotes the mint for a candidate amount and returns either the quote
+/// or the required total when the mint rejected the candidate for insufficient
+/// balance. The reserve usually tracks the amount (a percentage with a floor),
+/// so each round steps down by the overshoot and a second quote normally
+/// settles it. Nil when nothing fits.
 /// Ecash Max stays the gross balance: its fees are the receiver's.
 func largestPayableMeltAmount(
     balance: UInt64,
     rounds: Int = 4,
-    requiredTotal: (UInt64) async throws -> UInt64
-) async throws -> UInt64? {
+    probe: (UInt64) async throws -> MeltMaxQuoteProbe
+) async throws -> PayableMeltQuote? {
     var amount = balance
     for _ in 0..<rounds {
         guard amount > 0 else { return nil }
         try Task.checkCancellation()
-        let total = try await requiredTotal(amount)
+        let attempt = try await probe(amount)
         try Task.checkCancellation()
-        if total <= balance { return amount }
+        let total: UInt64
+        switch attempt {
+        case .quote(let quote):
+            let sum = quote.amount.addingReportingOverflow(quote.feeReserve)
+            guard !sum.overflow else {
+                throw WalletError.networkError("The mint returned an invalid payment amount or fee.")
+            }
+            total = sum.partialValue
+            if total <= balance {
+                return PayableMeltQuote(amount: amount, quote: quote)
+            }
+        case .insufficientBalance(let requiredTotal):
+            guard requiredTotal > balance else {
+                throw WalletError.networkError("Couldn’t calculate the maximum amount. Try again or enter an amount.")
+            }
+            total = requiredTotal
+        }
         let overshoot = total - balance
         amount = amount > overshoot ? amount - overshoot : 0
     }
