@@ -6,12 +6,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -144,6 +139,8 @@ import com.cashu.me.ui.testing.UiTestTags
 import com.cashu.me.ui.theme.CashuMotion
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.fadeThrough
+import com.cashu.me.ui.theme.quietFade
+import com.cashu.me.ui.theme.statusSwap
 import com.cashu.me.ui.theme.withMonoDigits
 import com.cashu.me.ui.theme.AmountScale
 import kotlinx.coroutines.CancellationException
@@ -886,7 +883,7 @@ fun UnifiedSendScreen(
 
                             SendStep.Amount -> AnimatedContent(
                                 targetState = amountlessBlock,
-                                transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(150)) },
+                                transitionSpec = { statusSwap() },
                                 label = "unified-send-amountless-block",
                                 // Only blocked ↔ keypad swaps; the block's own
                                 // details update in place.
@@ -1280,8 +1277,7 @@ private fun InputFace(
                     AnimatedContent(
                         targetState = destination.isNotBlank(),
                         transitionSpec = {
-                            fadeIn(spring(stiffness = Spring.StiffnessMedium))
-                                .togetherWith(fadeOut(spring(stiffness = Spring.StiffnessMedium)))
+                            quietFade()
                         },
                         label = "input-trailing",
                     ) { hasInput ->

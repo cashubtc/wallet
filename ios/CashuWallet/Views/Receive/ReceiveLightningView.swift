@@ -125,7 +125,7 @@ struct ReceiveLightningView: View {
                             // Fast exit: when the payment lands, the QR clears
                             // quickly so the success terminal's staged check
                             // owns the moment.
-                            removal: .opacity.animation(.easeInOut(duration: 0.2))
+                            removal: .opacity.animation(CashuMotion.crossFade)
                         ))
                 } else if isCreatingRequest && (isAmountlessOffer || selectedMethod == .onchain) {
                     // Auto-creating requests (amountless BOLT12 or onchain) have no
@@ -140,9 +140,9 @@ struct ReceiveLightningView: View {
                         ))
                 }
             }
-            .animation(.smooth(duration: 0.3), value: mintQuote != nil)
-            .animation(.smooth(duration: 0.3), value: isPaid)
-            .animation(.smooth(duration: 0.3), value: requestFailure != nil)
+            .animation(CashuMotion.reflow, value: mintQuote != nil)
+            .animation(CashuMotion.reflow, value: isPaid)
+            .animation(CashuMotion.reflow, value: requestFailure != nil)
             .navigationBarTitleDisplayMode(.inline)
             .navigationTitle(screenTitle)
             // No nav bar chrome — the title floats over the black canvas. This
@@ -574,7 +574,7 @@ struct ReceiveLightningView: View {
                 )
             }
         }
-        .animation(.snappy, value: selectedMethod)
+        .animation(CashuMotion.settle, value: selectedMethod)
     }
 
     /// All-caps "ON-CHAIN" label sitting above the amount. On-chain receive is
@@ -947,10 +947,10 @@ struct ReceiveLightningView: View {
                 .transition(reduceMotion ? .opacity : .asymmetric(insertion: .scale(scale: 0.9).combined(with: .opacity), removal: .opacity))
             }
         }
-        .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.5, dampingFraction: 0.7), value: isPaid)
-        .animation(.easeInOut(duration: 0.2), value: isMinting)
-        .animation(.easeInOut(duration: 0.2), value: isExpired)
-        .animation(.easeInOut(duration: 0.2), value: mintRetryStatus.state)
+        .animation(reduceMotion ? CashuMotion.crossFade : CashuMotion.celebration, value: isPaid)
+        .animation(CashuMotion.crossFade, value: isMinting)
+        .animation(CashuMotion.crossFade, value: isExpired)
+        .animation(CashuMotion.crossFade, value: mintRetryStatus.state)
     }
 
     // MARK: - Helpers
@@ -1140,7 +1140,7 @@ struct ReceiveLightningView: View {
                 // when every body-read change of the landing is inside one
                 // animation, including the flag the Task's `defer` would
                 // otherwise clear outside it a moment later.
-                withAnimation(.smooth(duration: 0.3)) {
+                withAnimation(CashuMotion.reflow) {
                     mintQuote = quote
                     isCreatingRequest = false
                 }
@@ -1247,7 +1247,7 @@ struct ReceiveLightningView: View {
                 // Own run-loop pass for the landing; see the BOLT11 path above.
                 try? await Task.sleep(for: .milliseconds(1))
                 guard !Task.isCancelled else { return }
-                withAnimation(.smooth(duration: 0.3)) {
+                withAnimation(CashuMotion.reflow) {
                     quoteCreatedAt = quote.updatedAt ?? Date()
                     mintQuote = quote
                     isCreatingRequest = false
@@ -1323,7 +1323,7 @@ struct ReceiveLightningView: View {
                 guard !Task.isCancelled else { return }
                 // A reused address keeps the date it was made, the same date
                 // its History row shows.
-                withAnimation(.smooth(duration: 0.3)) {
+                withAnimation(CashuMotion.reflow) {
                     quoteCreatedAt = quote.updatedAt ?? Date()
                     mintQuote = quote
                     isCreatingRequest = false
@@ -1426,7 +1426,7 @@ struct ReceiveLightningView: View {
             // The refreshed quote lands in the same update as `isPaid`; set
             // outside the animation it would turn the QR face's exit into a cut.
             try? await Task.sleep(for: .milliseconds(1))
-            withAnimation(.smooth(duration: 0.3)) { mintQuote = result.quote }
+            withAnimation(CashuMotion.reflow) { mintQuote = result.quote }
             await completeReceivedQuote(receivedAmount: result.quote.amountIssued)
             return
         }
@@ -1542,7 +1542,7 @@ struct ReceiveLightningView: View {
             // so the swap first takes a run-loop pass of its own.
             try? await Task.sleep(for: .milliseconds(1))
             guard !Task.isCancelled, mintQuote?.id == quote.id else { return }
-            withAnimation(.smooth(duration: 0.3)) {
+            withAnimation(CashuMotion.reflow) {
                 mintQuote = result.quote
                 mintRetryStatus = result.retryStatus
             }
@@ -1576,7 +1576,7 @@ struct ReceiveLightningView: View {
         // the paid flag, the monitor state, and the wallet notification the
         // home screen listens to. Any of them landing outside it turned the
         // QR face's fast exit into a single-frame cut.
-        withAnimation(.smooth(duration: 0.3)) {
+        withAnimation(CashuMotion.reflow) {
             self.receivedAmount = receivedAmount
             isPaid = true
             // Returning to a reusable QR starts monitoring again with the
@@ -1649,7 +1649,7 @@ struct OnchainDepositStatusRow: View {
                 .lineLimit(stacked ? nil : 1)
                 .truncationMode(.tail)
                 .contentTransition(.opacity)
-                .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: current.text)
+                .animation(reduceMotion ? nil : CashuMotion.crossFade, value: current.text)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         // Always the interactive height, so becoming a button never moves a row.

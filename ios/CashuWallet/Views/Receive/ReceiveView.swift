@@ -96,7 +96,7 @@ struct UnifiedReceiveView: View {
         .padding(.bottom, 24)
         // Animate on the measured body, inside the content-fit ScrollView, so the
         // hint's entrance and the detent's resize run as one motion.
-        .animation(reduceMotion ? .easeInOut(duration: 0.2) : .snappy(duration: 0.25), value: inputHint != nil)
+        .animation(reduceMotion ? CashuMotion.crossFade : CashuMotion.flip, value: inputHint != nil)
         .contentFitMeasured { compactContentHeight = $0 }
         .scrollDismissesKeyboard(.interactively)
     }

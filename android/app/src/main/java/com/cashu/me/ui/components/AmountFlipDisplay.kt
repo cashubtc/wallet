@@ -2,7 +2,6 @@ package com.cashu.me.ui.components
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.LaunchedEffect
@@ -15,10 +14,6 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -52,6 +47,8 @@ import com.cashu.me.Core.AmountFormatter
 import com.cashu.me.Core.displayText
 import com.cashu.me.ui.theme.AmountScale
 import com.cashu.me.ui.theme.CashuTheme
+import com.cashu.me.ui.theme.quietFade
+import com.cashu.me.ui.theme.quietSpec
 import com.cashu.me.ui.theme.withMonoDigits
 
 /**
@@ -187,8 +184,7 @@ fun AmountFlipDisplay(
                 AnimatedContent(
                     targetState = display.effectivePrimary,
                     transitionSpec = {
-                        fadeIn(spring(stiffness = Spring.StiffnessMedium))
-                            .togetherWith(fadeOut(spring(stiffness = Spring.StiffnessMedium)))
+                        quietFade()
                     },
                     label = "amount-flip-hero",
                 ) { primaryState ->
@@ -231,14 +227,13 @@ fun AmountFlipDisplay(
                 // at first composition it is simply there.
                 val entrance = remember { Animatable(if (settled) 0f else 1f) }
                 LaunchedEffect(Unit) {
-                    entrance.animateTo(1f, spring(stiffness = Spring.StiffnessMedium))
+                    entrance.animateTo(1f, quietSpec())
                 }
                 AnimatedContent(
                     targetState = secondary,
                     modifier = Modifier.graphicsLayer { alpha = entrance.value },
                     transitionSpec = {
-                        fadeIn(spring(stiffness = Spring.StiffnessMedium))
-                            .togetherWith(fadeOut(spring(stiffness = Spring.StiffnessMedium)))
+                        quietFade()
                     },
                     label = "amount-flip-control",
                 ) { text ->
@@ -288,7 +283,7 @@ fun AmountNoteLine(note: AmountNote, modifier: Modifier = Modifier) {
     LaunchedEffect(Unit) { shown = true }
     val alpha by animateFloatAsState(
         targetValue = if (shown) 1f else 0f,
-        animationSpec = spring(stiffness = Spring.StiffnessMedium),
+        animationSpec = quietSpec(),
         label = "amount-note",
     )
     Text(

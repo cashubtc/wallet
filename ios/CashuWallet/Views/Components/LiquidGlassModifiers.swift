@@ -1046,7 +1046,7 @@ struct FullWidthCapsuleButtonStyle: ButtonStyle {
         .animation(
             reduceMotion
                 ? nil
-                : .snappy(duration: configuration.isPressed ? 0.09 : 0.18),
+                : CashuMotion.press(isPressed: configuration.isPressed),
             value: configuration.isPressed
         )
     }
@@ -1077,7 +1077,7 @@ struct FlatSheetSecondaryButtonStyle: ButtonStyle {
             .animation(
                 reduceMotion
                     ? nil
-                    : .snappy(duration: configuration.isPressed ? 0.09 : 0.18),
+                    : CashuMotion.press(isPressed: configuration.isPressed),
                 value: configuration.isPressed
             )
     }
@@ -1128,7 +1128,7 @@ struct TextLinkButtonStyle: ButtonStyle {
             .contentShape(Rectangle())
             .opacity(isEnabled ? (configuration.isPressed ? 0.6 : 1) : 0.4)
             .animation(
-                .snappy(duration: configuration.isPressed ? 0.09 : 0.18),
+                CashuMotion.press(isPressed: configuration.isPressed),
                 value: configuration.isPressed
             )
     }
@@ -1150,7 +1150,7 @@ struct CtaStackTextLinkButtonStyle: ButtonStyle {
             .contentShape(Rectangle())
             .opacity(isEnabled ? (configuration.isPressed ? 0.6 : 1) : 0.4)
             .animation(
-                .snappy(duration: configuration.isPressed ? 0.09 : 0.18),
+                CashuMotion.press(isPressed: configuration.isPressed),
                 value: configuration.isPressed
             )
     }

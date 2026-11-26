@@ -1,11 +1,6 @@
 package com.cashu.me.ui.components
 
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material3.LocalContentColor
@@ -27,6 +22,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import com.cashu.me.Core.AmountFormatter
 import com.cashu.me.ui.theme.CashuFonts
 import com.cashu.me.ui.theme.CashuTheme
+import com.cashu.me.ui.theme.quietFade
 import com.cashu.me.ui.theme.withMonoDigits
 import com.cashu.me.ui.theme.BitcoinSymbol
 import com.cashu.me.ui.theme.rememberReducedMotion
@@ -150,8 +146,7 @@ fun AmountText(
         targetState = text to styledText,
         contentKey = { it.first },
         transitionSpec = {
-            fadeIn(spring(stiffness = Spring.StiffnessMedium))
-                .togetherWith(fadeOut(spring(stiffness = Spring.StiffnessMedium)))
+            quietFade()
         },
         modifier = modifier,
         contentAlignment = contentAlignment,

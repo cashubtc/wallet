@@ -39,6 +39,7 @@ import com.cashu.me.ui.navigation.Routes
 import com.cashu.me.ui.navigation.TopTab
 import com.cashu.me.ui.navigation.navigateToTab
 import com.cashu.me.ui.theme.CashuTheme
+import com.cashu.me.ui.theme.quietSpec
 @Composable
 fun WalletScaffold(
     container: AppContainer,
@@ -67,13 +68,13 @@ fun WalletScaffold(
                         stiffness = Spring.StiffnessMediumLow,
                         visibilityThreshold = IntOffset.VisibilityThreshold,
                     ),
-                ) { it } + fadeIn(spring(stiffness = Spring.StiffnessMedium)),
+                ) { it } + fadeIn(quietSpec()),
                 exit = slideOutVertically(
                     spring(
                         stiffness = Spring.StiffnessMediumLow,
                         visibilityThreshold = IntOffset.VisibilityThreshold,
                     ),
-                ) { it } + fadeOut(spring(stiffness = Spring.StiffnessMedium)),
+                ) { it } + fadeOut(quietSpec()),
             ) {
                 CashuNavigationBar(
                     selected = selectedTab ?: TopTab.Home,

@@ -88,9 +88,9 @@ struct NWCSettingsView: View {
         }
         .navigationTitle("Wallet Connect")
         .toolbarBackground(.hidden, for: .navigationBar)
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: nwc.isEnabled)
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: nwc.connectionUri)
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: nwc.errorMessage)
+        .animation(reduceMotion ? nil : CashuMotion.crossFade, value: nwc.isEnabled)
+        .animation(reduceMotion ? nil : CashuMotion.crossFade, value: nwc.connectionUri)
+        .animation(reduceMotion ? nil : CashuMotion.crossFade, value: nwc.errorMessage)
         .backdropSheet(isPresented: $showMintPicker) {
             MintPickerSheet(
                 title: "Mint",

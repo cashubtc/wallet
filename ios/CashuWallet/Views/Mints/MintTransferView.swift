@@ -90,7 +90,7 @@ struct MintTransferView: View {
                         .transition(.opacity)
                 }
             }
-            .animation(.smooth(duration: 0.3), value: step)
+            .animation(CashuMotion.reflow, value: step)
             .navigationBarTitleDisplayMode(.inline)
             .navigationTitle("Transfer")
             .toolbarBackground(.hidden, for: .navigationBar)
@@ -236,7 +236,7 @@ struct MintTransferView: View {
                             // Next turn of the run loop: the note is inserted
                             // by this same change and has no frame yet.
                             DispatchQueue.main.async {
-                                withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) {
+                                withAnimation(reduceMotion ? nil : CashuMotion.flip) {
                                     // The note is the news, so its line is the
                                     // one brought to the pad's edge; the amount
                                     // shows above it as room allows.
@@ -245,7 +245,7 @@ struct MintTransferView: View {
                             }
                         }
                     }
-                    .animation(reduceMotion ? .easeInOut(duration: 0.2) : .snappy(duration: 0.25), value: amountNote)
+                    .animation(reduceMotion ? CashuMotion.crossFade : CashuMotion.flip, value: amountNote)
                 } else {
                     // The pad and the two mints are fixed; the amount takes
                     // what is left. On a short screen the destination gives up
@@ -264,7 +264,7 @@ struct MintTransferView: View {
                         // line rolled on the few keystrokes that changed it
                         // (the first digit, crossing the balance) and jumped
                         // on all the others.
-                        .animation(reduceMotion ? .easeInOut(duration: 0.2) : .snappy(duration: 0.25), value: amountNote)
+                        .animation(reduceMotion ? CashuMotion.crossFade : CashuMotion.flip, value: amountNote)
 
                     route(source: source, destination: destination, showsDestinationBalance: proxy.size.height >= 600)
                         .padding(.bottom, 8)
@@ -476,7 +476,7 @@ struct MintTransferView: View {
                 // The fee alone outweighs this mint's balance: a fact about the
                 // mint, said on its line, where the balance stops offering a
                 // maximum.
-                withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : .snappy(duration: 0.25)) {
+                withAnimation(reduceMotion ? CashuMotion.crossFade : CashuMotion.flip) {
                     feeShortfall = FeeShortfall(mintURL: source.url, balance: source.balance)
                 }
                 HapticFeedback.notification(.warning)
@@ -502,7 +502,7 @@ struct MintTransferView: View {
         HapticFeedback.selection()
         if let maxPlan, !maxPlan.isExpired() {
             // Already quoted: nothing to wait for.
-            withAnimation(.smooth(duration: 0.3)) {
+            withAnimation(CashuMotion.reflow) {
                 reviewFailure = nil
                 plan = maxPlan
                 step = .review
@@ -511,7 +511,7 @@ struct MintTransferView: View {
         }
         // Read before the Max quote is dropped: the amount is its amount.
         let amount = amountSats
-        withAnimation(.smooth(duration: 0.3)) {
+        withAnimation(CashuMotion.reflow) {
             reviewFailure = nil
             dropMaxPlan()
             plan = nil
@@ -582,7 +582,7 @@ struct MintTransferView: View {
         // The review fades out as it was and is cleared once it has gone, so
         // it shows no spinner on the way out. A Continue in the meantime has
         // already set up the next review, so it is left alone then.
-        withAnimation(.smooth(duration: 0.3)) {
+        withAnimation(CashuMotion.reflow) {
             step = .entry
         } completion: {
             guard step == .entry else { return }
@@ -637,9 +637,9 @@ struct MintTransferView: View {
                 .padding(.bottom, 16)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .animation(.smooth(duration: 0.3), value: plan != nil)
-        .animation(.smooth(duration: 0.3), value: reviewFailure)
-        .animation(.smooth(duration: 0.3), value: requoted)
+        .animation(CashuMotion.reflow, value: plan != nil)
+        .animation(CashuMotion.reflow, value: reviewFailure)
+        .animation(CashuMotion.reflow, value: requoted)
     }
 
     @ViewBuilder
@@ -723,7 +723,7 @@ struct MintTransferView: View {
             return
         }
         HapticFeedback.impact(.medium)
-        withAnimation(.smooth(duration: 0.3)) {
+        withAnimation(CashuMotion.reflow) {
             // The plan is spent whatever happens next.
             if maxPlan?.id == plan.id { maxPlan = nil }
             requoted = false
@@ -741,13 +741,13 @@ struct MintTransferView: View {
                 // The outcome changes the rows (Total leaves, the fee paid
                 // replaces the reserve), so it lands with the phase, as Send's
                 // `step = .sent` does.
-                withAnimation(.smooth(duration: 0.3)) {
+                withAnimation(CashuMotion.reflow) {
                     outcome = result
                     phase = .success
                 }
             } catch {
                 let message = error.walletMessage
-                withAnimation(.smooth(duration: 0.3)) {
+                withAnimation(CashuMotion.reflow) {
                     phase = .failure(
                         message: message.text,
                         isCaution: message.severity == .caution,
@@ -855,7 +855,7 @@ struct MintTransferView: View {
     /// has to be found afresh.
     private func retryTransfer() {
         guard let failed = plan, let route else { return }
-        withAnimation(.smooth(duration: 0.3)) {
+        withAnimation(CashuMotion.reflow) {
             plan = nil
             if failed.mode == .max {
                 amountString = ""

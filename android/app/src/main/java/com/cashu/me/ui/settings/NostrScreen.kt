@@ -8,9 +8,6 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -56,6 +53,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.cashu.me.ui.theme.quietFade
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -517,8 +515,7 @@ private fun NsecImportSheet(
                 AnimatedContent(
                     targetState = step,
                     transitionSpec = {
-                        fadeIn(spring(stiffness = Spring.StiffnessMedium)) togetherWith
-                            fadeOut(spring(stiffness = Spring.StiffnessMedium))
+                        quietFade()
                     },
                     label = "nsec-import-step",
                 ) { current ->

@@ -66,8 +66,8 @@ struct NostrKeysSettingsSection: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .animation(.easeInOut(duration: 0.2), value: nostrService.signerType)
-        .animation(.easeInOut(duration: 0.2), value: nostrKeyError)
+        .animation(CashuMotion.crossFade, value: nostrService.signerType)
+        .animation(CashuMotion.crossFade, value: nostrKeyError)
         .backdropSheet(isPresented: $showGenerateKeyConfirm) {
             ActionConfirmationSheet(
                 title: "Generate new key?",
@@ -326,8 +326,8 @@ struct NostrRelaysSettingsSection: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .animation(.easeInOut(duration: 0.2), value: settings.nostrRelays)
-        .animation(.easeInOut(duration: 0.2), value: relayError)
+        .animation(CashuMotion.crossFade, value: settings.nostrRelays)
+        .animation(CashuMotion.crossFade, value: relayError)
     }
 
     private func relayRow(_ relay: String) -> some View {
@@ -457,7 +457,7 @@ struct NostrMintBackupSettingsSection: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .animation(.easeInOut(duration: 0.2), value: backupError)
+        .animation(CashuMotion.crossFade, value: backupError)
     }
 
     private var footerText: String {

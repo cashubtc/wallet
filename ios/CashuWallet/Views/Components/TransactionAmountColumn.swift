@@ -91,7 +91,7 @@ struct TransactionAmountColumn: View {
     }
 
     private var swapAnimation: Animation {
-        reduceMotion ? .easeOut(duration: 0.2) : .snappy
+        reduceMotion ? CashuMotion.reducedFade : CashuMotion.valueRoll
     }
 }
 
