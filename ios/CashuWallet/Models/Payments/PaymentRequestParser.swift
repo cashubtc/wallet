@@ -61,20 +61,8 @@ enum PaymentRequestParser {
             return nil
         }
 
-        let normalizedRequest = PaymentRequestDecoder.encodedLightningRequest(from: request)
-            ?? normalizeLightningRequest(request)
-        if !normalizedRequest.isEmpty,
-           let decodedRequest = try? decodeInvoice(invoiceStr: normalizedRequest) {
-            switch decodedRequest.paymentType {
-            case .bolt11:
-                return .bolt11
-            case .bolt12:
-                return .bolt12
-            }
-        }
-
-        if bolt12OfferMetadata(from: normalizedRequest) != nil {
-            return .bolt12
+        if let method = PaymentRequestDecoder.lightningPaymentMethod(from: request) {
+            return method
         }
 
         if isBitcoinAddress(request) {

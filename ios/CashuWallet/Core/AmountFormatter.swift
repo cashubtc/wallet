@@ -84,12 +84,8 @@ struct AmountParts: Equatable {
 }
 
 enum AmountFormatter {
-    private static let decimalFormatter: NumberFormatter = {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.groupingSeparator = ","
-        return formatter
-    }()
+    private static let canonicalFiatLocale = Locale(identifier: "en_US_POSIX")
+    private static let formatterCache = AmountNumberFormatterCache()
 
     /// Private mode's stand-in for numerals: always four asterisks, whatever the
     /// amount, so the length never hints at it.
@@ -106,7 +102,12 @@ enum AmountFormatter {
     /// Sats decomposed for typesetting. The canonical source; `sats(_:…)` is
     /// this joined back up.
     static func satsParts(_ sats: UInt64, useBitcoinSymbol: Bool) -> AmountParts {
-        let formatted = decimalFormatter.string(from: NSNumber(value: sats)) ?? "\(sats)"
+        let formatted = formatterCache.formatDecimal(
+            sats,
+            locale: Locale.current,
+            groupingSeparator: ",",
+            maximumFractionDigits: 0
+        )
         return AmountParts(
             value: formatted,
             affix: useBitcoinSymbol ? .prefix("₿") : .suffix("sat")
@@ -131,8 +132,28 @@ enum AmountFormatter {
     /// presentation keeps the ISO currency's symbol and placement stable across
     /// device locales (USD is always "$60.00", never "US$60.00" or "60.00 $").
     static func fiat(_ amount: Double, currencyCode: String) -> String {
-        let formatter = currencyFormatter(currencyCode: currencyCode)
-        return formatter.string(from: NSNumber(value: amount)) ?? String(format: "%.2f", amount)
+        formatterCache.formatCurrency(
+            amount,
+            currencyCode: currencyCode,
+            locale: canonicalFiatLocale,
+            fractionDigits: fiatDecimals
+        )
+    }
+
+    /// Locale- and precision-parameterized currency formatting backed by the
+    /// same thread-safe formatter cache.
+    static func fiat(
+        _ amount: Double,
+        currencyCode: String,
+        locale: Locale,
+        fractionDigits: Int = 2
+    ) -> String {
+        formatterCache.formatCurrency(
+            amount,
+            currencyCode: currencyCode,
+            locale: locale,
+            fractionDigits: fractionDigits
+        )
     }
 
     /// Fiat decomposed for typesetting.
@@ -145,25 +166,21 @@ enum AmountFormatter {
     /// agree for every currency the app offers, so a divergence fails a test
     /// rather than shipping.
     static func fiatParts(_ amount: Double, currencyCode: String) -> AmountParts {
-        let formatter = currencyFormatter(currencyCode: currencyCode)
-        let affix = currencyAffix(currencyCode: currencyCode)
-        formatter.positivePrefix = ""
-        formatter.positiveSuffix = ""
-        let number = formatter.string(from: NSNumber(value: amount))
-            ?? String(format: "%.2f", amount)
-        return AmountParts(value: number, affix: affix)
+        formatterCache.formatCurrencyParts(
+            amount,
+            currencyCode: currencyCode,
+            locale: canonicalFiatLocale,
+            fractionDigits: fiatDecimals
+        )
     }
 
     /// Where this currency's symbol sits, and what it is.
     static func currencyAffix(currencyCode: String) -> AmountParts.Affix {
-        let formatter = currencyFormatter(currencyCode: currencyCode)
-        if let prefix = formatter.positivePrefix, !prefix.isEmpty {
-            return .prefix(prefix)
-        }
-        if let suffix = formatter.positiveSuffix, !suffix.isEmpty {
-            return .suffix(suffix)
-        }
-        return .none
+        formatterCache.currencyAffix(
+            currencyCode: currencyCode,
+            locale: canonicalFiatLocale,
+            fractionDigits: fiatDecimals
+        )
     }
 
     /// Converts sats at the supplied BTC price and formats the selected fiat
@@ -299,14 +316,6 @@ enum AmountFormatter {
         case .fiat: return fiatDecimals
         }
     }
-
-    /// Locale-aware grouping for the integer part of a typed fiat amount.
-    private static let fiatGroupingFormatter: NumberFormatter = {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.maximumFractionDigits = 0
-        return formatter
-    }()
 
     /// Satoshis represented by a typed string in the given entry unit.
     @MainActor
@@ -490,7 +499,12 @@ enum AmountFormatter {
         )
         let intRaw = parts.first.map(String.init) ?? ""
         let intValue = entryBaseUnits(raw: intRaw, decimals: 0)
-        let groupedInt = fiatGroupingFormatter.string(from: NSNumber(value: intValue)) ?? "\(intValue)"
+        let groupedInt = formatterCache.formatDecimal(
+            intValue,
+            locale: Locale.current,
+            groupingSeparator: nil,
+            maximumFractionDigits: 0
+        )
 
         guard raw.contains(entrySeparator) else { return groupedInt }
         let fracRaw = parts.count > 1 ? String(parts[1]) : ""
@@ -510,17 +524,193 @@ enum AmountFormatter {
     /// Wrap a partial numeric entry with the canonical currency prefix/suffix.
     @MainActor
     private static func wrapWithCurrencySymbol(_ number: String) -> String {
-        let formatter = currencyFormatter(currencyCode: PriceService.shared.currencyCode)
-        return (formatter.positivePrefix ?? "") + number + (formatter.positiveSuffix ?? "")
+        formatterCache.wrapCurrency(
+            number,
+            currencyCode: PriceService.shared.currencyCode,
+            locale: canonicalFiatLocale,
+            fractionDigits: fiatDecimals
+        )
+    }
+}
+
+/// Thread-safe cache of `NumberFormatter` instances keyed by currency code,
+/// locale identifier, and fraction digits. Formatting runs inside `NSLock.withLock`
+/// so mutable `NumberFormatter` instances are never exposed or shared unsafely.
+private final class AmountNumberFormatterCache: @unchecked Sendable {
+    private struct DecimalKey: Hashable {
+        let localeIdentifier: String
+        let groupingSeparator: String?
+        let maximumFractionDigits: Int
     }
 
-    private static func currencyFormatter(currencyCode: String) -> NumberFormatter {
+    private struct CurrencyKey: Hashable {
+        let currencyCode: String
+        let localeIdentifier: String
+        let fractionDigits: Int
+    }
+
+    private struct CurrencyEntry {
+        let fullFormatter: NumberFormatter
+        let bareFormatter: NumberFormatter
+        let positivePrefix: String
+        let positiveSuffix: String
+        let affix: AmountParts.Affix
+    }
+
+    private let lock = NSLock()
+    private var decimalFormatters: [DecimalKey: NumberFormatter] = [:]
+    private var currencyEntries: [CurrencyKey: CurrencyEntry] = [:]
+
+    func formatDecimal(
+        _ value: UInt64,
+        locale: Locale,
+        groupingSeparator: String?,
+        maximumFractionDigits: Int
+    ) -> String {
+        let key = DecimalKey(
+            localeIdentifier: locale.identifier,
+            groupingSeparator: groupingSeparator,
+            maximumFractionDigits: maximumFractionDigits
+        )
+        return lock.withLock {
+            let formatter: NumberFormatter
+            if let cached = decimalFormatters[key] {
+                formatter = cached
+            } else {
+                let created = NumberFormatter()
+                created.locale = locale
+                created.numberStyle = .decimal
+                created.maximumFractionDigits = maximumFractionDigits
+                if let groupingSeparator {
+                    created.groupingSeparator = groupingSeparator
+                }
+                decimalFormatters[key] = created
+                formatter = created
+            }
+            return formatter.string(from: NSNumber(value: value)) ?? "\(value)"
+        }
+    }
+
+    func formatCurrency(
+        _ amount: Double,
+        currencyCode: String,
+        locale: Locale,
+        fractionDigits: Int
+    ) -> String {
+        let key = CurrencyKey(
+            currencyCode: currencyCode.uppercased(),
+            localeIdentifier: locale.identifier,
+            fractionDigits: fractionDigits
+        )
+        return lock.withLock {
+            let entry = currencyEntry(for: key, locale: locale)
+            return entry.fullFormatter.string(from: NSNumber(value: amount))
+                ?? String(format: "%.\(fractionDigits)f", amount)
+        }
+    }
+
+    func formatCurrencyParts(
+        _ amount: Double,
+        currencyCode: String,
+        locale: Locale,
+        fractionDigits: Int
+    ) -> AmountParts {
+        let key = CurrencyKey(
+            currencyCode: currencyCode.uppercased(),
+            localeIdentifier: locale.identifier,
+            fractionDigits: fractionDigits
+        )
+        return lock.withLock {
+            let entry = currencyEntry(for: key, locale: locale)
+            let number = entry.bareFormatter.string(from: NSNumber(value: amount))
+                ?? String(format: "%.\(fractionDigits)f", amount)
+            return AmountParts(value: number, affix: entry.affix)
+        }
+    }
+
+    func currencyAffix(
+        currencyCode: String,
+        locale: Locale,
+        fractionDigits: Int
+    ) -> AmountParts.Affix {
+        let key = CurrencyKey(
+            currencyCode: currencyCode.uppercased(),
+            localeIdentifier: locale.identifier,
+            fractionDigits: fractionDigits
+        )
+        return lock.withLock {
+            currencyEntry(for: key, locale: locale).affix
+        }
+    }
+
+    func wrapCurrency(
+        _ number: String,
+        currencyCode: String,
+        locale: Locale,
+        fractionDigits: Int
+    ) -> String {
+        let key = CurrencyKey(
+            currencyCode: currencyCode.uppercased(),
+            localeIdentifier: locale.identifier,
+            fractionDigits: fractionDigits
+        )
+        return lock.withLock {
+            let entry = currencyEntry(for: key, locale: locale)
+            return entry.positivePrefix + number + entry.positiveSuffix
+        }
+    }
+
+    private func currencyEntry(for key: CurrencyKey, locale: Locale) -> CurrencyEntry {
+        if let cached = currencyEntries[key] {
+            return cached
+        }
+
+        let fullFormatter = makeCurrencyFormatter(
+            currencyCode: key.currencyCode,
+            locale: locale,
+            fractionDigits: key.fractionDigits
+        )
+        let positivePrefix = fullFormatter.positivePrefix ?? ""
+        let positiveSuffix = fullFormatter.positiveSuffix ?? ""
+        let affix: AmountParts.Affix
+        if !positivePrefix.isEmpty {
+            affix = .prefix(positivePrefix)
+        } else if !positiveSuffix.isEmpty {
+            affix = .suffix(positiveSuffix)
+        } else {
+            affix = .none
+        }
+
+        let bareFormatter = makeCurrencyFormatter(
+            currencyCode: key.currencyCode,
+            locale: locale,
+            fractionDigits: key.fractionDigits
+        )
+        bareFormatter.positivePrefix = ""
+        bareFormatter.positiveSuffix = ""
+
+        let entry = CurrencyEntry(
+            fullFormatter: fullFormatter,
+            bareFormatter: bareFormatter,
+            positivePrefix: positivePrefix,
+            positiveSuffix: positiveSuffix,
+            affix: affix
+        )
+        currencyEntries[key] = entry
+        return entry
+    }
+
+    private func makeCurrencyFormatter(
+        currencyCode: String,
+        locale: Locale,
+        fractionDigits: Int
+    ) -> NumberFormatter {
         let formatter = NumberFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.locale = locale
         formatter.numberStyle = .currency
-        formatter.currencyCode = currencyCode.uppercased()
-        formatter.minimumFractionDigits = 2
-        formatter.maximumFractionDigits = 2
+        formatter.currencyCode = currencyCode
+        formatter.minimumFractionDigits = fractionDigits
+        formatter.maximumFractionDigits = fractionDigits
         // NumberFormatter can inject a regular or non-breaking space between a
         // currency symbol and the number. Wallet-native currency amounts use a
         // compact affix ("$12.23"), so converted BTC amounts must match it.

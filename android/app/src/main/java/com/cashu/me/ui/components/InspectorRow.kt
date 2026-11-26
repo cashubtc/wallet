@@ -40,6 +40,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -90,12 +91,33 @@ fun InspectorRow(
     loading: Boolean = false,
     style: InspectorRowStyle = InspectorRowStyle.Payment,
 ) {
-    val paymentDetails = style == InspectorRowStyle.Payment
     val rowStyle = if (style == InspectorRowStyle.Standard) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.bodyMedium
     val columnModifier = when (style) {
         InspectorRowStyle.Payment -> modifier.paymentDetailWidth()
         InspectorRowStyle.History -> modifier.fillMaxWidth().heightIn(min = 48.dp)
         InspectorRowStyle.Standard -> modifier.fillMaxWidth()
+    }
+    // Standard rows never stack, so bypass BoxWithConstraints subcomposition
+    // and TextMeasurer text measurement on this hot path.
+    if (style == InspectorRowStyle.Standard) {
+        InspectorRowContent(
+            label = label,
+            value = value,
+            rowStyle = rowStyle,
+            style = style,
+            stacked = false,
+            leadingIcon = leadingIcon,
+            editable = editable,
+            onClick = onClick,
+            trailingIcon = trailingIcon,
+            trailingIconTint = trailingIconTint,
+            valueMonospaced = valueMonospaced,
+            valueColor = valueColor,
+            secondaryValue = secondaryValue,
+            loading = loading,
+            modifier = columnModifier,
+        )
+        return
     }
     val textMeasurer = rememberTextMeasurer()
     val density = LocalDensity.current
@@ -108,92 +130,133 @@ fun InspectorRow(
             (maxWidth - CashuTheme.spacing.comfortable * 2 - decorationWidth).roundToPx()
         }
         val labelWidth = textMeasurer.measure(AnnotatedString(label), rowStyle, maxLines = 1, softWrap = false).size.width
-        val valueWidth = textMeasurer.measure(AnnotatedString(value),
-            if (valueMonospaced) rowStyle.withMonoDigits() else rowStyle, maxLines = 1, softWrap = false).size.width
-        val stacked = style != InspectorRowStyle.Standard &&
-            (density.fontScale > 1.3f || labelWidth + valueWidth > availableWidth)
-        val rowMod = if (onClick != null) {
-            Modifier.heightIn(min = 48.dp).clickable(onClick = onClick)
-        } else {
-            Modifier
+        val valueWidth = textMeasurer.measure(
+            AnnotatedString(value),
+            if (valueMonospaced) rowStyle.withMonoDigits() else rowStyle,
+            maxLines = 1,
+            softWrap = false,
+        ).size.width
+        val stacked = density.fontScale > 1.3f || labelWidth + valueWidth > availableWidth
+        InspectorRowContent(
+            label = label,
+            value = value,
+            rowStyle = rowStyle,
+            style = style,
+            stacked = stacked,
+            leadingIcon = leadingIcon,
+            editable = editable,
+            onClick = onClick,
+            trailingIcon = trailingIcon,
+            trailingIconTint = trailingIconTint,
+            valueMonospaced = valueMonospaced,
+            valueColor = valueColor,
+            secondaryValue = secondaryValue,
+            loading = loading,
+            modifier = Modifier,
+        )
+    }
+}
+
+@Composable
+private fun InspectorRowContent(
+    label: String,
+    value: String,
+    rowStyle: TextStyle,
+    style: InspectorRowStyle,
+    stacked: Boolean,
+    leadingIcon: ImageVector?,
+    editable: Boolean,
+    onClick: (() -> Unit)?,
+    trailingIcon: ImageVector?,
+    trailingIconTint: Color?,
+    valueMonospaced: Boolean,
+    valueColor: Color?,
+    secondaryValue: String?,
+    loading: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val paymentDetails = style == InspectorRowStyle.Payment
+    val rowMod = if (onClick != null) {
+        modifier.heightIn(min = 48.dp).clickable(onClick = onClick)
+    } else {
+        modifier
+    }
+    Column(
+        modifier = rowMod.padding(
+            horizontal = CashuTheme.spacing.comfortable,
+            vertical = if (paymentDetails) CashuTheme.spacing.snug else CashuTheme.spacing.default,
+        ),
+        verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug, Alignment.CenterVertically),
+    ) {
+        if (stacked) {
+            Text(label, style = rowStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Column(
-            modifier = rowMod.padding(
-                horizontal = CashuTheme.spacing.comfortable,
-                vertical = if (paymentDetails) CashuTheme.spacing.snug else CashuTheme.spacing.default,
-            ),
-            verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug, Alignment.CenterVertically),
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
         ) {
-            if (stacked) {
-                Text(label, style = rowStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (leadingIcon != null) {
+                Icon(
+                    imageVector = leadingIcon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(InspectorLeadingIconSize),
+                )
             }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
-            ) {
-                if (leadingIcon != null) {
-                    Icon(
-                        imageVector = leadingIcon,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(InspectorLeadingIconSize),
-                    )
-                }
-                if (!stacked) {
-                    Text(
-                        text = label,
-                        style = rowStyle,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                // Values align to the trailing edge in columns, or to the label
-                // above when a row stacks for long values or accessibility text.
-                Box(modifier = Modifier.weight(1f), contentAlignment = if (stacked) Alignment.CenterStart else Alignment.CenterEnd) {
-                    SkeletonValue(loading = loading) {
-                        Column(horizontalAlignment = if (stacked) Alignment.Start else Alignment.End) {
+            if (!stacked) {
+                Text(
+                    text = label,
+                    style = rowStyle,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            // Values align to the trailing edge in columns, or to the label
+            // above when a row stacks for long values or accessibility text.
+            Box(modifier = Modifier.weight(1f), contentAlignment = if (stacked) Alignment.CenterStart else Alignment.CenterEnd) {
+                SkeletonValue(loading = loading) {
+                    Column(horizontalAlignment = if (stacked) Alignment.Start else Alignment.End) {
+                        Text(
+                            text = value,
+                            modifier = if (stacked) Modifier.fillMaxWidth() else Modifier,
+                            style = if (valueMonospaced) {
+                                rowStyle.withMonoDigits()
+                            } else rowStyle,
+                            color = valueColor ?: MaterialTheme.colorScheme.onSurface,
+                            maxLines = if (stacked) Int.MAX_VALUE else if (style == InspectorRowStyle.Standard) 1 else 2,
+                            overflow = if (stacked) TextOverflow.Clip else TextOverflow.MiddleEllipsis,
+                            textAlign = if (stacked) TextAlign.Start else TextAlign.End,
+                        )
+                        if (secondaryValue != null) {
                             Text(
-                                text = value,
+                                text = secondaryValue,
                                 modifier = if (stacked) Modifier.fillMaxWidth() else Modifier,
                                 style = if (valueMonospaced) {
-                                    rowStyle.withMonoDigits()
-                                } else rowStyle,
-                                color = valueColor ?: MaterialTheme.colorScheme.onSurface,
-                                maxLines = if (stacked) Int.MAX_VALUE else if (style == InspectorRowStyle.Standard) 1 else 2,
+                                    MaterialTheme.typography.bodyMedium.withMonoDigits()
+                                } else MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = if (stacked) Int.MAX_VALUE else 1,
                                 overflow = if (stacked) TextOverflow.Clip else TextOverflow.MiddleEllipsis,
                                 textAlign = if (stacked) TextAlign.Start else TextAlign.End,
                             )
-                            if (secondaryValue != null) {
-                                Text(
-                                    text = secondaryValue,
-                                    modifier = if (stacked) Modifier.fillMaxWidth() else Modifier,
-                                    style = if (valueMonospaced) {
-                                        MaterialTheme.typography.bodyMedium.withMonoDigits()
-                                    } else MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = if (stacked) Int.MAX_VALUE else 1,
-                                    overflow = if (stacked) TextOverflow.Clip else TextOverflow.MiddleEllipsis,
-                                    textAlign = if (stacked) TextAlign.Start else TextAlign.End,
-                                )
-                            }
                         }
                     }
                 }
-                if (editable) {
-                    Icon(
-                        imageVector = Icons.Outlined.Edit,
-                        contentDescription = "Edit $label",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(InspectorEditHintSize),
-                    )
-                } else if (trailingIcon != null) {
-                    Icon(
-                        imageVector = trailingIcon,
-                        contentDescription = null,
-                        tint = trailingIconTint ?: MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(InspectorEditHintSize),
-                    )
-                }
+            }
+            if (editable) {
+                Icon(
+                    imageVector = Icons.Outlined.Edit,
+                    contentDescription = "Edit $label",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(InspectorEditHintSize),
+                )
+            } else if (trailingIcon != null) {
+                Icon(
+                    imageVector = trailingIcon,
+                    contentDescription = null,
+                    tint = trailingIconTint ?: MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(InspectorEditHintSize),
+                )
             }
         }
     }

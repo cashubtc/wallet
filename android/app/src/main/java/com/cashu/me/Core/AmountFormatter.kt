@@ -1,21 +1,28 @@
 package com.cashu.me.Core
 
+import java.text.DecimalFormat
 import java.text.DecimalFormatSymbols
 import java.text.NumberFormat
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import com.cashu.me.Core.Protocols.CurrencyDisplay
 import com.cashu.me.Core.Protocols.CurrencyAmount
 import com.cashu.me.Core.Protocols.CurrencyRegistry
 
 class AmountFormatter(
-    private val locale: Locale = Locale.getDefault(),
+    private val explicitLocale: Locale? = null,
 ) : CurrencyDisplay {
+
+    private val locale: Locale
+        get() = explicitLocale ?: Locale.getDefault()
+
     /**
      * The locale's decimal separator ("." or ","), used as the keypad's decimal
      * key label and when rendering a partially typed amount. Raw entry strings
      * are always canonical — see [UnitAmountEntry.SEPARATOR].
      */
-    val decimalSeparator: String = decimalSeparator(locale)
+    val decimalSeparator: String
+        get() = decimalSeparator(locale)
 
     override fun formatSats(amount: Long, includeUnit: Boolean): String {
         return formatSatsValue(amount, includeUnit = includeUnit, useBitcoinSymbol = false)
@@ -34,7 +41,7 @@ class AmountFormatter(
      * [formatSatsValue] is just the joined form.
      */
     fun satsParts(amount: Long, useBitcoinSymbol: Boolean): AmountParts = AmountParts(
-        value = NumberFormat.getIntegerInstance(locale).format(amount),
+        value = integerFormat(locale).format(amount),
         affix = if (useBitcoinSymbol) {
             AmountParts.Affix.Prefix("₿")
         } else {
@@ -55,16 +62,16 @@ class AmountFormatter(
 
     /** Where this currency's symbol sits, and what it is. */
     fun currencyAffix(currencyCode: String): AmountParts.Affix {
-        val format = NumberFormat.getCurrencyInstance(Locale.US).apply {
-            runCatching { currency = java.util.Currency.getInstance(currencyCode.uppercase()) }
-        }
-        val decimalFormat = format as? java.text.DecimalFormat
-        val prefix = decimalFormat?.positivePrefix?.trim().orEmpty()
-        val suffix = decimalFormat?.positiveSuffix?.trim().orEmpty()
-        return when {
-            prefix.isNotEmpty() -> AmountParts.Affix.Prefix(prefix)
-            suffix.isNotEmpty() -> AmountParts.Affix.Suffix(suffix)
-            else -> AmountParts.Affix.None
+        val normalizedCode = currencyCode.uppercase(Locale.US)
+        return currencyAffixCache.computeIfAbsent(normalizedCode) { code ->
+            val decimalFormat = currencyFormat(code, bare = false) as? DecimalFormat
+            val prefix = decimalFormat?.positivePrefix?.trim().orEmpty()
+            val suffix = decimalFormat?.positiveSuffix?.trim().orEmpty()
+            when {
+                prefix.isNotEmpty() -> AmountParts.Affix.Prefix(prefix)
+                suffix.isNotEmpty() -> AmountParts.Affix.Suffix(suffix)
+                else -> AmountParts.Affix.None
+            }
         }
     }
 
@@ -82,16 +89,9 @@ class AmountFormatter(
         val price = btcPrice ?: return null
         val fiat = amountSats.toDouble() / 100_000_000.0 * price
         if (fiat < 0.01) return null
-        val affix = currencyAffix(currencyCode)
-        val format = NumberFormat.getCurrencyInstance(Locale.US).apply {
-            minimumFractionDigits = 2
-            maximumFractionDigits = 2
-            runCatching { currency = java.util.Currency.getInstance(currencyCode.uppercase()) }
-        }
-        (format as? java.text.DecimalFormat)?.apply {
-            positivePrefix = ""
-            positiveSuffix = ""
-        }
+        val normalizedCode = currencyCode.uppercase(Locale.US)
+        val affix = currencyAffix(normalizedCode)
+        val format = currencyFormat(normalizedCode, bare = true)
         return AmountParts(value = format.format(fiat), affix = affix)
     }
 
@@ -136,7 +136,7 @@ class AmountFormatter(
     private fun partialNumber(raw: String): String {
         val parts = raw.split(UnitAmountEntry.SEPARATOR)
         val intValue = parts.getOrNull(0)?.toLongOrNull() ?: 0L
-        val grouped = NumberFormat.getIntegerInstance(locale).format(intValue)
+        val grouped = integerFormat(locale).format(intValue)
         if (!raw.contains(UnitAmountEntry.SEPARATOR)) return grouped
         return grouped + decimalSeparator + parts.getOrNull(1).orEmpty()
     }
@@ -177,11 +177,7 @@ class AmountFormatter(
         // Wallet amounts use one stable currency presentation regardless of the
         // device locale. In particular, USD must be "$60.00", not "US$60.00"
         // or "60.00 $" on devices whose locale is outside the US.
-        val format = NumberFormat.getCurrencyInstance(Locale.US).apply {
-            minimumFractionDigits = 2
-            maximumFractionDigits = 2
-        }
-        runCatching { format.currency = java.util.Currency.getInstance(currencyCode.uppercase()) }
+        val format = currencyFormat(currencyCode.uppercase(Locale.US), bare = false)
         return format.format(fiat)
     }
 
@@ -191,7 +187,53 @@ class AmountFormatter(
         else -> formatSats(amount)
     }
 
+    private sealed interface FormatCacheKey {
+        data class Integer(val locale: Locale) : FormatCacheKey
+        data class Currency(val locale: Locale, val currencyCode: String, val bare: Boolean) : FormatCacheKey
+    }
+
     companion object {
+        private const val MAX_THREAD_LOCAL_FORMATS = 64
+
+        private val threadLocalFormats = ThreadLocal.withInitial {
+            HashMap<FormatCacheKey, NumberFormat>()
+        }
+
+        private val currencyAffixCache = ConcurrentHashMap<String, AmountParts.Affix>()
+
+        private fun getOrCreateFormat(
+            key: FormatCacheKey,
+            factory: () -> NumberFormat,
+        ): NumberFormat {
+            val cache = threadLocalFormats.get() ?: HashMap<FormatCacheKey, NumberFormat>().also {
+                threadLocalFormats.set(it)
+            }
+            cache[key]?.let { return it }
+            if (cache.size >= MAX_THREAD_LOCAL_FORMATS) {
+                cache.clear()
+            }
+            return factory().also { cache[key] = it }
+        }
+
+        private fun integerFormat(locale: Locale): NumberFormat =
+            getOrCreateFormat(FormatCacheKey.Integer(locale)) {
+                NumberFormat.getIntegerInstance(locale)
+            }
+
+        private fun currencyFormat(currencyCode: String, bare: Boolean): NumberFormat =
+            getOrCreateFormat(FormatCacheKey.Currency(Locale.US, currencyCode, bare)) {
+                NumberFormat.getCurrencyInstance(Locale.US).apply {
+                    minimumFractionDigits = 2
+                    maximumFractionDigits = 2
+                    runCatching { currency = java.util.Currency.getInstance(currencyCode) }
+                    if (bare) {
+                        (this as? DecimalFormat)?.apply {
+                            positivePrefix = ""
+                            positiveSuffix = ""
+                        }
+                    }
+                }
+            }
         /**
          * Private mode's stand-in for an amount's digits. Always four, so the
          * length never hints at how much is there.

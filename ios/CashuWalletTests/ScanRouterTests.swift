@@ -148,3 +148,117 @@ final class PaymentRequestDisplayTests: XCTestCase {
         XCTAssertEqual(PaymentRequestDecoder.displayRequest(address, result: .lightningAddress(address)), address)
     }
 }
+
+final class PaymentRequestDecoderCachingTests: XCTestCase {
+    private final class InvocationCounter: @unchecked Sendable {
+        private let lock = NSLock()
+        private var count = 0
+
+        var value: Int {
+            lock.withLock { count }
+        }
+
+        func increment() {
+            lock.withLock { count += 1 }
+        }
+    }
+
+    private let specBolt11Invoice =
+        "lnbc1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdpl2pkx2ctnv5sxxmmwwd5kgetjypeh2ursdae8g6twvus8g6rfwvs8qun0dfjkxaq9qrsgq357wnc5r2ueh7ck6q93dj32dlqnls087fxdwk8qakdyafkq3yap9us6v52vjjsrvywa6rt52cm9r9zqt8r2t7mlcwspyetp5h2tztugp9lfyql"
+
+    override func tearDown() {
+        PaymentRequestDecoder.setInvoiceDecoderForTesting(nil)
+        super.tearDown()
+    }
+
+    func testDecodeInvoiceRunsOnceAndReusesCacheAcrossEntryPoints() {
+        let counter = InvocationCounter()
+        PaymentRequestDecoder.setInvoiceDecoderForTesting { normalized in
+            counter.increment()
+            return PaymentRequestDecoder.defaultDecodeInvoiceForTesting(normalized)
+        }
+
+        let first = PaymentRequestDecoder.decode(specBolt11Invoice)
+        XCTAssertTrue(first.isAmountlessBolt11)
+        XCTAssertEqual(counter.value, 1, "decode() must not call decodeInvoice twice")
+
+        XCTAssertEqual(PaymentRequestDecoder.decode(specBolt11Invoice), first)
+        XCTAssertEqual(PaymentRequestDecoder.decode("lightning:\(specBolt11Invoice)"), first)
+        XCTAssertEqual(
+            PaymentRequestDecoder.encodedLightningRequest(from: specBolt11Invoice),
+            specBolt11Invoice
+        )
+        XCTAssertEqual(
+            PaymentRequestDecoder.description(from: specBolt11Invoice),
+            "Please consider supporting this project"
+        )
+        XCTAssertEqual(PaymentRequestParser.paymentMethod(for: specBolt11Invoice), .bolt11)
+        XCTAssertEqual(counter.value, 1, "repeated decode/description/paymentMethod calls must hit cache")
+    }
+
+    func testCdkRuntimeLightningMetadataSharesSingleDecodeCache() async {
+        let counter = InvocationCounter()
+        PaymentRequestDecoder.setInvoiceDecoderForTesting { normalized in
+            counter.increment()
+            return PaymentRequestDecoder.defaultDecodeInvoiceForTesting(normalized)
+        }
+
+        let first = await CdkRuntime.shared.lightningMetadata(from: specBolt11Invoice)
+        let second = await CdkRuntime.shared.lightningMetadata(from: "lightning:\(specBolt11Invoice)")
+
+        XCTAssertEqual(first?.paymentMethod, .bolt11)
+        XCTAssertEqual(second, first)
+        XCTAssertEqual(counter.value, 1)
+    }
+
+    func testNonInvoicesAreNegativelyCachedForRepeatedLookups() {
+        let counter = InvocationCounter()
+        PaymentRequestDecoder.setInvoiceDecoderForTesting { normalized in
+            counter.increment()
+            return PaymentRequestDecoder.defaultDecodeInvoiceForTesting(normalized)
+        }
+
+        let address = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4"
+        XCTAssertNil(PaymentRequestDecoder.description(from: address))
+        XCTAssertNil(PaymentRequestDecoder.description(from: address))
+        XCTAssertNil(PaymentRequestDecoder.description(from: address))
+        XCTAssertEqual(counter.value, 1)
+    }
+
+    func testInvoiceCacheIsBoundedAndEvictsOldestEntries() {
+        let counter = InvocationCounter()
+        PaymentRequestDecoder.setInvoiceDecoderForTesting { normalized in
+            counter.increment()
+            guard normalized.hasPrefix("lnbc-cache-") else { return nil }
+            return DecodedInvoiceSnapshot(
+                paymentMethod: .bolt11,
+                amountMsat: 21_000,
+                description: normalized
+            )
+        }
+
+        let capacity = PaymentRequestDecoder.invoiceCacheCapacity
+        for index in 0...capacity {
+            let key = "lnbc-cache-\(index)"
+            XCTAssertEqual(
+                PaymentRequestDecoder.decode(key),
+                .bolt11(amountSats: 21, description: key)
+            )
+        }
+        XCTAssertEqual(counter.value, capacity + 1)
+
+        // Most recent key remains cached.
+        XCTAssertEqual(
+            PaymentRequestDecoder.description(from: "lnbc-cache-\(capacity)"),
+            "lnbc-cache-\(capacity)"
+        )
+        XCTAssertEqual(counter.value, capacity + 1)
+
+        // Oldest key was evicted and decodes cleanly again.
+        XCTAssertEqual(
+            PaymentRequestDecoder.description(from: "lnbc-cache-0"),
+            "lnbc-cache-0"
+        )
+        XCTAssertEqual(counter.value, capacity + 2)
+    }
+}

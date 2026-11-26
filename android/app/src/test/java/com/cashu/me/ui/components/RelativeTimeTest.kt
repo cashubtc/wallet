@@ -1,10 +1,13 @@
 package com.cashu.me.ui.components
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Test
 import java.time.Instant
 import java.time.ZoneId
 import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 class RelativeTimeTest {
@@ -76,5 +79,100 @@ class RelativeTimeTest {
             zone = zone,
         )
         assertEquals("2 hr ago", stale)
+    }
+
+    @Test
+    fun relativeTimestampFormatsAllRangesForUsLocale() {
+        assertEquals(
+            "Now",
+            formatRelativeTimestamp(
+                epochMillis = nowMillis - TimeUnit.SECONDS.toMillis(30),
+                nowMillis = nowMillis,
+                zone = zone,
+                locale = Locale.US,
+            ),
+        )
+        assertEquals(
+            "15 min ago",
+            formatRelativeTimestamp(
+                epochMillis = nowMillis - TimeUnit.MINUTES.toMillis(15),
+                nowMillis = nowMillis,
+                zone = zone,
+                locale = Locale.US,
+            ),
+        )
+        assertEquals(
+            "09:30",
+            formatRelativeTimestamp(
+                epochMillis = Instant.parse("2026-08-02T09:30:00Z").toEpochMilli(),
+                nowMillis = nowMillis,
+                zone = zone,
+                locale = Locale.US,
+            ),
+        )
+        assertEquals(
+            "Yesterday 22:15",
+            formatRelativeTimestamp(
+                epochMillis = Instant.parse("2026-08-01T22:15:00Z").toEpochMilli(),
+                nowMillis = nowMillis,
+                zone = zone,
+                locale = Locale.US,
+            ),
+        )
+        assertEquals(
+            "May 22",
+            formatRelativeTimestamp(
+                epochMillis = Instant.parse("2026-05-22T12:00:00Z").toEpochMilli(),
+                nowMillis = nowMillis,
+                zone = zone,
+                locale = Locale.US,
+            ),
+        )
+        assertEquals(
+            "Dec 22 2025",
+            formatRelativeTimestamp(
+                epochMillis = Instant.parse("2025-12-22T12:00:00Z").toEpochMilli(),
+                nowMillis = nowMillis,
+                zone = zone,
+                locale = Locale.US,
+            ),
+        )
+    }
+
+    @Test
+    fun relativeTimestampRespectsLocaleChangesAcrossCachedFormatters() {
+        val sameYearDate = Instant.parse("2026-03-15T10:00:00Z").atZone(zone)
+        val sameYearMillis = sameYearDate.toInstant().toEpochMilli()
+        val olderYearDate = Instant.parse("2025-12-15T10:00:00Z").atZone(zone)
+        val olderYearMillis = olderYearDate.toInstant().toEpochMilli()
+
+        val expectedUsSameYear = DateTimeFormatter.ofPattern("MMM d", Locale.US).format(sameYearDate)
+        val expectedDeSameYear = DateTimeFormatter.ofPattern("MMM d", Locale.GERMANY).format(sameYearDate)
+        val expectedUsOlder = DateTimeFormatter.ofPattern("MMM d yyyy", Locale.US).format(olderYearDate)
+        val expectedDeOlder = DateTimeFormatter.ofPattern("MMM d yyyy", Locale.GERMANY).format(olderYearDate)
+
+        assertNotEquals(expectedUsOlder, expectedDeOlder)
+
+        assertEquals(
+            expectedUsSameYear,
+            formatRelativeTimestamp(sameYearMillis, nowMillis, zone, Locale.US),
+        )
+        assertEquals(
+            expectedDeSameYear,
+            formatRelativeTimestamp(sameYearMillis, nowMillis, zone, Locale.GERMANY),
+        )
+        assertEquals(
+            expectedUsOlder,
+            formatRelativeTimestamp(olderYearMillis, nowMillis, zone, Locale.US),
+        )
+        assertEquals(
+            expectedDeOlder,
+            formatRelativeTimestamp(olderYearMillis, nowMillis, zone, Locale.GERMANY),
+        )
+        // Re-verify Locale.US after Locale.GERMANY to ensure cached entries stay isolated.
+        assertEquals(
+            expectedUsOlder,
+            formatRelativeTimestamp(olderYearMillis, nowMillis, zone, Locale.US),
+        )
     }
 }

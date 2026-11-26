@@ -1,7 +1,9 @@
 package com.cashu.me.Core
 
 import com.cashu.me.Models.PaymentMethodKind
+import java.util.concurrent.atomic.AtomicInteger
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -212,5 +214,99 @@ class PaymentRequestDecoderTest {
             address,
             PaymentRequestDecoder.displayRequest(address, PaymentRequestDecodeResult.LightningAddress(address)),
         )
+    }
+
+    @Test
+    fun decodeCallsInvoiceDecoderOnceAndCachesAcrossEntryPoints() {
+        val calls = AtomicInteger(0)
+        val invoice = "lnbc2500u1cachetestinvoice"
+        PaymentRequestDecoder.setInvoiceDecoderForTesting { normalized ->
+            calls.incrementAndGet()
+            if (normalized == invoice) {
+                DecodedInvoiceSnapshot(
+                    paymentMethod = PaymentMethodKind.Bolt11,
+                    amountMsat = 250_000_000L,
+                    description = "Coffee",
+                )
+            } else {
+                null
+            }
+        }
+        try {
+            val expected = PaymentRequestDecodeResult.Bolt11(amountSats = 250_000L, description = "Coffee")
+            assertEquals(expected, PaymentRequestDecoder.decode(invoice))
+            assertEquals("decode() must invoke decodeInvoice once, not twice", 1, calls.get())
+
+            assertEquals(expected, PaymentRequestDecoder.decode(invoice))
+            assertEquals(expected, PaymentRequestDecoder.decode("lightning:$invoice"))
+            assertEquals(
+                expected,
+                PaymentRequestDecoder.decode(
+                    "bitcoin:bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080?lightning=$invoice",
+                ),
+            )
+            assertEquals("Coffee", PaymentRequestDecoder.description(invoice))
+            assertEquals(invoice, PaymentRequestDecoder.encodedLightningRequest(invoice))
+            assertEquals(PaymentMethodKind.Bolt11, PaymentRequestParser.paymentMethod(invoice))
+            assertEquals("cached invoice lookups must not re-enter decodeInvoice", 1, calls.get())
+        } finally {
+            PaymentRequestDecoder.setInvoiceDecoderForTesting(null)
+        }
+    }
+
+    @Test
+    fun invalidInvoicesAreNegativelyCachedForRepeatedLookups() {
+        val calls = AtomicInteger(0)
+        PaymentRequestDecoder.setInvoiceDecoderForTesting {
+            calls.incrementAndGet()
+            null
+        }
+        try {
+            val address = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080"
+            assertNull(PaymentRequestDecoder.description(address))
+            assertNull(PaymentRequestDecoder.description(address))
+            assertNull(PaymentRequestDecoder.description(address))
+            assertEquals(1, calls.get())
+        } finally {
+            PaymentRequestDecoder.setInvoiceDecoderForTesting(null)
+        }
+    }
+
+    @Test
+    fun invoiceCacheEvictsLeastRecentlyUsedEntriesBeyondCapacity() {
+        val calls = AtomicInteger(0)
+        PaymentRequestDecoder.setInvoiceDecoderForTesting { normalized ->
+            calls.incrementAndGet()
+            if (normalized.startsWith("lnbc-cache-")) {
+                DecodedInvoiceSnapshot(
+                    paymentMethod = PaymentMethodKind.Bolt11,
+                    amountMsat = 21_000L,
+                    description = normalized,
+                )
+            } else {
+                null
+            }
+        }
+        try {
+            val capacity = PaymentRequestDecoder.INVOICE_CACHE_CAPACITY
+            for (index in 0..capacity) {
+                val key = "lnbc-cache-$index"
+                assertEquals(
+                    PaymentRequestDecodeResult.Bolt11(amountSats = 21L, description = key),
+                    PaymentRequestDecoder.decode(key),
+                )
+            }
+            assertEquals(capacity + 1, calls.get())
+
+            // Most recently used entry remains cached.
+            assertEquals("lnbc-cache-$capacity", PaymentRequestDecoder.description("lnbc-cache-$capacity"))
+            assertEquals(capacity + 1, calls.get())
+
+            // Least recently used entry was evicted and re-decodes cleanly.
+            assertEquals("lnbc-cache-0", PaymentRequestDecoder.description("lnbc-cache-0"))
+            assertEquals(capacity + 2, calls.get())
+        } finally {
+            PaymentRequestDecoder.setInvoiceDecoderForTesting(null)
+        }
     }
 }

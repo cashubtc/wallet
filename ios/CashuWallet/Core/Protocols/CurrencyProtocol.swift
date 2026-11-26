@@ -120,16 +120,11 @@ struct CurrencyAmount: Equatable {
     
     /// Formatted string for display
     func formatted(showSymbol: Bool = true) -> String {
-        let formatter = NumberFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.numberStyle = .decimal
-        formatter.minimumFractionDigits = currency.decimals
-        formatter.maximumFractionDigits = currency.decimals
-        formatter.usesGroupingSeparator = true
-        formatter.groupingSeparator = ","
-        formatter.decimalSeparator = "."
-        
-        let formattedValue = formatter.string(from: NSNumber(value: displayValue)) ?? "\(displayValue)"
+        let formattedValue = CurrencyAmountFormatterCache.shared.format(
+            displayValue,
+            currencyCode: currency.code,
+            fractionDigits: currency.decimals
+        )
         
         guard showSymbol else { return formattedValue }
         
@@ -145,6 +140,53 @@ struct CurrencyAmount: Equatable {
     
     static func == (lhs: CurrencyAmount, rhs: CurrencyAmount) -> Bool {
         lhs.value == rhs.value && lhs.currency.code == rhs.currency.code
+    }
+}
+
+/// Thread-safe cache of `NumberFormatter` instances for `CurrencyAmount.formatted()`.
+private final class CurrencyAmountFormatterCache: @unchecked Sendable {
+    static let shared = CurrencyAmountFormatterCache()
+
+    private struct Key: Hashable {
+        let currencyCode: String
+        let localeIdentifier: String
+        let fractionDigits: Int
+    }
+
+    private let lock = NSLock()
+    private var formatters: [Key: NumberFormatter] = [:]
+
+    private init() {}
+
+    func format(
+        _ value: Double,
+        currencyCode: String,
+        locale: Locale = Locale(identifier: "en_US_POSIX"),
+        fractionDigits: Int
+    ) -> String {
+        let key = Key(
+            currencyCode: currencyCode.uppercased(),
+            localeIdentifier: locale.identifier,
+            fractionDigits: fractionDigits
+        )
+        return lock.withLock {
+            let formatter: NumberFormatter
+            if let cached = formatters[key] {
+                formatter = cached
+            } else {
+                let created = NumberFormatter()
+                created.locale = locale
+                created.numberStyle = .decimal
+                created.minimumFractionDigits = fractionDigits
+                created.maximumFractionDigits = fractionDigits
+                created.usesGroupingSeparator = true
+                created.groupingSeparator = ","
+                created.decimalSeparator = "."
+                formatters[key] = created
+                formatter = created
+            }
+            return formatter.string(from: NSNumber(value: value)) ?? "\(value)"
+        }
     }
 }
 

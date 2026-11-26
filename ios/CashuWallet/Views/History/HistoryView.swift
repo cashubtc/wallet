@@ -75,9 +75,12 @@ struct HistoryView: View {
     }
 
     var body: some View {
+        let receivedTotals = receivedTotalByRequestID
+        let items = filteredItems(receivedTotals: receivedTotals)
+
         NavigationStack {
             Group {
-                if filteredItems.isEmpty {
+                if items.isEmpty {
                     // Don't show the empty state until the first load finishes:
                     // rendering it during the (fast, local) initial load made it
                     // swoop in for a beat before a populated list arrived. The
@@ -91,7 +94,7 @@ struct HistoryView: View {
                         Color.clear
                     }
                 } else {
-                    historyList
+                    historyList(items: items, receivedTotals: receivedTotals)
                 }
             }
             .navigationTitle("History")
@@ -219,8 +222,13 @@ struct HistoryView: View {
         }
     }
 
-    private var historyList: some View {
-        ScrollViewReader { proxy in
+    private func historyList(
+        items: [HistoryItem],
+        receivedTotals: [String: UInt64]
+    ) -> some View {
+        let visible = Array(items.prefix(visibleCount))
+        let sections = sectionsWithOffsets(for: visible)
+        return ScrollViewReader { proxy in
             // A `List` (not a hand-built ScrollView) is what `.searchable` and
             // `.refreshable` are designed to coordinate with — it owns the
             // UISearchController/refresh-control plumbing so pull-to-refresh
@@ -228,7 +236,7 @@ struct HistoryView: View {
             // plain rows (not `Section` headers) to keep them non-pinned, and
             // native separators are hidden so activity rows flow on the canvas.
             List {
-                ForEach(sectionsWithOffsets, id: \.group.title) { entry in
+                ForEach(sections, id: \.group.title) { entry in
                     sectionHeader(entry.group.title)
                         .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
                         .listRowSeparator(.hidden)
@@ -237,7 +245,7 @@ struct HistoryView: View {
                     ForEach(Array(entry.group.items.enumerated()), id: \.element.id) { index, item in
                         let globalIndex = entry.startIndex + index
                         VStack(spacing: 0) {
-                            row(for: item)
+                            row(for: item, receivedTotals: receivedTotals)
                         }
                         .id(item.id)
                         .onAppear {
@@ -269,7 +277,7 @@ struct HistoryView: View {
                 await walletManager.checkAllPendingTokens()
             }
             .onChange(of: scrollResetToken) { _, _ in
-                if let firstId = visibleItems.first?.id {
+                if let firstId = visible.first?.id {
                     if reduceMotion {
                         proxy.scrollTo(firstId, anchor: .top)
                     } else {
@@ -283,8 +291,9 @@ struct HistoryView: View {
     }
 
     private func extendWindow() {
-        guard visibleCount < filteredItems.count else { return }
-        visibleCount = min(visibleCount + pageStep, filteredItems.count)
+        let items = filteredItems
+        guard visibleCount < items.count else { return }
+        visibleCount = min(visibleCount + pageStep, items.count)
     }
 
     private func sectionHeader(_ title: String) -> some View {
@@ -298,12 +307,19 @@ struct HistoryView: View {
     }
 
     @ViewBuilder
-    private func row(for item: HistoryItem) -> some View {
+    private func row(
+        for item: HistoryItem,
+        receivedTotals: [String: UInt64]
+    ) -> some View {
         switch item {
         case .transaction(let tx):
             transactionRow(transaction: tx)
         case .request(let req, let activity):
-            cashuRequestRow(request: req, activity: activity)
+            cashuRequestRow(
+                request: req,
+                activity: activity,
+                receivedAmount: receivedTotals[req.id] ?? 0
+            )
         }
     }
 
@@ -314,10 +330,10 @@ struct HistoryView: View {
 
     /// groupedSections paired with a running row offset, so each row can be
     /// assigned a continuous "global index" for the entrance stagger.
-    private var sectionsWithOffsets: [SectionWithOffset] {
+    private func sectionsWithOffsets(for items: [HistoryItem]) -> [SectionWithOffset] {
         var result: [SectionWithOffset] = []
         var offset = 0
-        for g in groupedSections {
+        for g in groupedSections(for: items) {
             result.append(.init(group: g, startIndex: offset))
             offset += g.items.count
         }
@@ -331,8 +347,7 @@ struct HistoryView: View {
         let items: [HistoryItem]
     }
 
-    private var groupedSections: [HistoryGroup] {
-        let items = visibleItems
+    private func groupedSections(for items: [HistoryItem]) -> [HistoryGroup] {
         guard !items.isEmpty else { return [] }
 
         let calendar = Calendar.current
@@ -388,18 +403,47 @@ struct HistoryView: View {
         Set(requestStore.requests.flatMap { $0.receivedPayments.map(\.transactionId) })
     }
 
-    /// Sum of wallet-transaction amounts attached to this request.
-    private func totalReceived(for request: CashuRequest) -> UInt64 {
-        let ids = Set(request.receivedPayments.map(\.transactionId))
-        guard !ids.isEmpty else { return 0 }
-        return walletManager.transactions
-            .filter { ids.contains($0.id) }
-            .reduce(UInt64(0)) { $0 + $1.amount }
+    /// Precomputed map of each Cashu Request id to the sum of attached
+    /// wallet-transaction amounts in a single O(T + R) pass.
+    private var receivedTotalByRequestID: [String: UInt64] {
+        Self.receivedTotalsByRequestID(
+            requests: requestStore.requests,
+            transactions: walletManager.transactions
+        )
+    }
+
+    static func receivedTotalsByRequestID(
+        requests: [CashuRequest],
+        transactions: [WalletTransaction]
+    ) -> [String: UInt64] {
+        guard !requests.isEmpty, !transactions.isEmpty else { return [:] }
+        var amountByTxID: [String: UInt64] = [:]
+        amountByTxID.reserveCapacity(transactions.count)
+        for tx in transactions {
+            amountByTxID[tx.id, default: 0] += tx.amount
+        }
+
+        var totals: [String: UInt64] = [:]
+        totals.reserveCapacity(requests.count)
+        for request in requests {
+            guard !request.receivedPayments.isEmpty else { continue }
+            var seenTxIDs = Set<String>()
+            var total: UInt64 = 0
+            for payment in request.receivedPayments where seenTxIDs.insert(payment.transactionId).inserted {
+                total += amountByTxID[payment.transactionId] ?? 0
+            }
+            totals[request.id] = total
+        }
+        return totals
     }
 
     /// Surviving transactions (not claimed by any Cashu Request) merged with
     /// every Cashu Request, then filtered by toolbar mode and search text.
     private var filteredItems: [HistoryItem] {
+        filteredItems(receivedTotals: receivedTotalByRequestID)
+    }
+
+    private func filteredItems(receivedTotals: [String: UInt64]) -> [HistoryItem] {
         let claimed = requestClaimedTxIds
         let txItems: [HistoryItem] = walletManager.transactions
             .filter { !claimed.contains($0.id) }
@@ -415,7 +459,10 @@ struct HistoryView: View {
             .map { .request($0, activity: $0.lastActivityAt(transactionDates: transactionDates)) }
 
         let combined = (txItems + reqItems).sorted { $0.date > $1.date }
-        return combined.filter { matchesSearch($0) }
+        guard !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return combined
+        }
+        return combined.filter { matchesSearch($0, receivedTotals: receivedTotals) }
     }
 
     private func matchesFilter(transaction: WalletTransaction) -> Bool {
@@ -434,7 +481,7 @@ struct HistoryView: View {
         }
     }
 
-    private func matchesSearch(_ item: HistoryItem) -> Bool {
+    private func matchesSearch(_ item: HistoryItem, receivedTotals: [String: UInt64]) -> Bool {
         switch item {
         case .transaction(let tx):
             return HistorySearch.matches(query: searchText, transaction: tx, mints: walletManager.mints)
@@ -442,13 +489,9 @@ struct HistoryView: View {
             return HistorySearch.matches(
                 query: searchText,
                 request: req,
-                receivedTotal: totalReceived(for: req)
+                receivedTotal: receivedTotals[req.id] ?? 0
             )
         }
-    }
-
-    private var visibleItems: [HistoryItem] {
-        Array(filteredItems.prefix(visibleCount))
     }
 
     // MARK: - Empty State
@@ -482,9 +525,12 @@ struct HistoryView: View {
 
     // MARK: - Cashu Request Row
 
-    private func cashuRequestRow(request: CashuRequest, activity: Date) -> some View {
+    private func cashuRequestRow(
+        request: CashuRequest,
+        activity: Date,
+        receivedAmount: UInt64
+    ) -> some View {
         let isReceived = !request.receivedPayments.isEmpty
-        let receivedAmount = totalReceived(for: request)
         return Button {
             HapticFeedback.selection()
             isSearchFocused = false

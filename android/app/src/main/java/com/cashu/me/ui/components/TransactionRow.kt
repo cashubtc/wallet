@@ -143,6 +143,7 @@ fun TransactionRow(
                     .copy(fontWeight = FontWeight.Medium)
                     .withMonoDigits(),
                 color = amountColor,
+                animated = false,
                 maxLines = 1,
             )
             if (model.secondaryAmount != null) {
@@ -154,6 +155,7 @@ fun TransactionRow(
                         .copy(fontWeight = FontWeight.Normal)
                         .withMonoDigits(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    animated = false,
                     maxLines = 1,
                 )
             }

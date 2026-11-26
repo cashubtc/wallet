@@ -151,6 +151,7 @@ fun CashuRequestRow(
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     },
+                    animated = false,
                     maxLines = 1,
                 )
             }
@@ -162,6 +163,7 @@ fun CashuRequestRow(
                         .copy(fontWeight = FontWeight.Normal)
                         .withMonoDigits(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    animated = false,
                     maxLines = 1,
                 )
             }

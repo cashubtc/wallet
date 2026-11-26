@@ -278,7 +278,7 @@ fun HomeScreen(
                     bottom = CashuTheme.spacing.section,
                 ),
             ) {
-                item("section-header") {
+                item(key = "section-header", contentType = "section-header") {
                     // Fades in with a wallet's first row instead of popping.
                     AnimatedVisibility(
                         visible = recentTransactions.isNotEmpty(),
@@ -289,7 +289,7 @@ fun HomeScreen(
                     }
                 }
                 if (recentTransactions.isEmpty()) {
-                    item("empty") {
+                    item(key = "empty", contentType = "empty") {
                         val hasMints = walletState.mints.isNotEmpty()
                         // iOS: a single quiet tray empty state, centered in the region
                         // below the pinned header (containerRelativeFrame parity) —
@@ -308,7 +308,11 @@ fun HomeScreen(
                         )
                     }
                 } else {
-                    items(recentTransactions, key = { it.id }) { tx ->
+                    items(
+                        items = recentTransactions,
+                        key = { it.id },
+                        contentType = { "transaction" },
+                    ) { tx ->
                         // The system list insertion when a payment lands: rows
                         // below glide down on a spring and the new row fades in
                         // where it sits. The shell's HomeArrivalCoordinator
@@ -336,7 +340,7 @@ fun HomeScreen(
                             )
                         }
                     }
-                    item("view-all") {
+                    item(key = "view-all", contentType = "view-all") {
                         Row(
                             modifier = Modifier
                                 // Glides down with the rows a new payment pushes

@@ -6,7 +6,25 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+
+private data class RelativeDateFormatters(
+    val shortTime: DateTimeFormatter,
+    val sameYearDate: DateTimeFormatter,
+    val differentYearDate: DateTimeFormatter,
+)
+
+private val relativeDateFormattersCache = ConcurrentHashMap<Locale, RelativeDateFormatters>()
+
+private fun relativeDateFormatters(locale: Locale): RelativeDateFormatters =
+    relativeDateFormattersCache.computeIfAbsent(locale) { loc ->
+        RelativeDateFormatters(
+            shortTime = DateTimeFormatter.ofPattern("HH:mm", loc),
+            sameYearDate = DateTimeFormatter.ofPattern("MMM d", loc),
+            differentYearDate = DateTimeFormatter.ofPattern("MMM d yyyy", loc),
+        )
+    }
 
 /**
  * Smart relative timestamp matching iOS HistoryView.formatRelativeDate:
@@ -31,18 +49,17 @@ fun formatRelativeTimestamp(
     val nowDate: LocalDate = nowZoned.toLocalDate()
     val thenDate: LocalDate = thenZoned.toLocalDate()
 
-    val shortTime = DateTimeFormatter.ofPattern("HH:mm", locale)
-    val sameYearDate = DateTimeFormatter.ofPattern("MMM d", locale)
-    val differentYearDate = DateTimeFormatter.ofPattern("MMM d yyyy", locale)
+    if (thenDate == nowDate) {
+        val minutes = TimeUnit.MILLISECONDS.toMinutes(deltaMs)
+        if (minutes < 60) return "$minutes min ago"
+        return relativeDateFormatters(locale).shortTime.format(thenZoned)
+    }
 
+    val formatters = relativeDateFormatters(locale)
     return when {
-        thenDate == nowDate -> {
-            val minutes = TimeUnit.MILLISECONDS.toMinutes(deltaMs)
-            if (minutes < 60) "$minutes min ago" else shortTime.format(thenZoned)
-        }
-        thenDate == nowDate.minusDays(1) -> "Yesterday ${shortTime.format(thenZoned)}"
-        thenDate.year == nowDate.year -> sameYearDate.format(thenZoned)
-        else -> differentYearDate.format(thenZoned)
+        thenDate == nowDate.minusDays(1) -> "Yesterday ${formatters.shortTime.format(thenZoned)}"
+        thenDate.year == nowDate.year -> formatters.sameYearDate.format(thenZoned)
+        else -> formatters.differentYearDate.format(thenZoned)
     }
 }
 

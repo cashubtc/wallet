@@ -319,10 +319,22 @@ fun HistoryScreen(
                         ),
                     ) {
                         sections.forEach { section ->
-                            item(key = "header-${section.title}") {
+                            item(
+                                key = "header-${section.title}",
+                                contentType = "section-header",
+                            ) {
                                 SectionHeader(section.title.uppercase())
                             }
-                            items(section.items, key = { it.key }) { item ->
+                            items(
+                                items = section.items,
+                                key = { it.key },
+                                contentType = { item ->
+                                    when (item) {
+                                        is HistoryItem.Tx -> "transaction"
+                                        is HistoryItem.Req -> "cashu-request"
+                                    }
+                                },
+                            ) { item ->
                                 // Spring-animated placement on filter/search changes.
                                 Column(modifier = Modifier.animateItem()) {
                                 when (item) {
