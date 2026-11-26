@@ -1208,6 +1208,14 @@ extension WalletManager {
             await self.refreshBalance()
             guard !Task.isCancelled else { return }
 
+            // Ensure returning wallets (including zero-balance wallets with no
+            // unspent proofs or pending quotes) always load local history even
+            // when Home wasn't mounted yet (e.g., under App Lock).
+            if !self.hasLoadedTransactions {
+                await self.loadTransactions(includeRemoteObservations: false)
+                guard !Task.isCancelled else { return }
+            }
+
             let recoveredWalletState = await self.performBestEffortWalletStartupMaintenance()
             guard !Task.isCancelled else { return }
 

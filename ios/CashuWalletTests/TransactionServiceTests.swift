@@ -858,4 +858,16 @@ final class OnchainDepositStatusTests: XCTestCase {
         XCTAssertNil(OnchainDepositStatus.expired.historyText)
         XCTAssertNil(OnchainDepositStatus.received(amount: 2_317).historyText)
     }
+
+    func testHomeEmptyActivityStaysHiddenUntilTransactionsHaveLoaded() {
+        XCTAssertFalse(
+            MainWalletView.showsNoActivityEmptyState(hasMints: true, hasLoadedTransactions: false)
+        )
+        XCTAssertFalse(
+            MainWalletView.showsNoActivityEmptyState(hasMints: false, hasLoadedTransactions: true)
+        )
+        XCTAssertTrue(
+            MainWalletView.showsNoActivityEmptyState(hasMints: true, hasLoadedTransactions: true)
+        )
+    }
 }

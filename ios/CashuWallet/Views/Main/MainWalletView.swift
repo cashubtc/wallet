@@ -176,7 +176,10 @@ struct MainWalletView: View {
                     .environmentObject(walletManager)
                     .observeBottomSheetDismissal { isSheetDismissing = $0 }
             }
-            .task { await walletManager.loadTransactions() }
+            .task(id: walletManager.isRuntimeReady) {
+                guard walletManager.isRuntimeReady else { return }
+                await walletManager.loadTransactions(includeRemoteObservations: false)
+            }
         }
         .bottomSheetBackdrop(
             isPresented: isBottomSheetPresented && !isSheetDismissing
@@ -588,6 +591,10 @@ struct MainWalletView: View {
 
     // MARK: - Recent Activity
 
+    nonisolated static func showsNoActivityEmptyState(hasMints: Bool, hasLoadedTransactions: Bool) -> Bool {
+        hasMints && hasLoadedTransactions
+    }
+
     @ViewBuilder
     private var recentContent: some View {
         let items = recentItems
@@ -601,7 +608,10 @@ struct MainWalletView: View {
                         actionTitle: "Add mint",
                         action: { navigationManager.activeWalletSheet = .connectMint }
                     )
-                } else {
+                } else if Self.showsNoActivityEmptyState(
+                    hasMints: !walletManager.mints.isEmpty,
+                    hasLoadedTransactions: walletManager.hasLoadedTransactions
+                ) {
                     // Same shared component, size, and centered placement as the
                     // History empty state, but with its own tray icon and copy
                     // (recent-activity framing vs. History's clock + "history"). No
@@ -612,6 +622,11 @@ struct MainWalletView: View {
                         systemImage: "tray",
                         description: "Your recent payments will show up here."
                     )
+                } else {
+                    // Match HistoryView: keep the pre-load slot quiet until the
+                    // local transaction read finishes so returning wallets never
+                    // flash "No Activity Yet" underneath a real balance.
+                    Color.clear
                 }
             }
             .containerRelativeFrame(.vertical)
